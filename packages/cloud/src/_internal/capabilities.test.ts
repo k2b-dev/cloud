@@ -38,7 +38,7 @@ const context = {
 
 const example = () =>
   defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
     types: {
       item: { title: "Item", description: "One test item.", reader: "get" },
     },
@@ -161,7 +161,7 @@ describe("capability v1 compilation", () => {
   test("requires resource readers to be canonical Queries", () => {
     const definitions = (reader: string, input: z.ZodType) =>
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: { item: { title: "Item", description: "One item.", reader } },
         queries: {
           read: {
@@ -239,7 +239,7 @@ describe("capability v1 compilation", () => {
       run: async () => ok({ data: {} }),
     };
     const compile = (effects: { destructive?: boolean; openWorld?: boolean }) =>
-      compileCapabilities("example", defineCapabilities({ protocolVersion: 1, actions: { write: { ...action, ...effects } } }));
+      compileCapabilities("example", defineCapabilities({ protocolVersion: 2, actions: { write: { ...action, ...effects } } }));
     expect(compile({}).manifest.actions[0]?.approval).toBe("none");
     expect(() => compile({ destructive: true })).toThrow("cannot skip approval");
     expect(() => compile({ openWorld: true })).toThrow("cannot skip approval");
@@ -261,7 +261,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           actions: { update: { ...action, openWorld: false } },
         }),
       ),
@@ -271,7 +271,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           actions: {
             update: {
               ...action,
@@ -293,7 +293,7 @@ describe("capability v1 compilation", () => {
       run: async () => ok({ data: {} }),
     };
     const compile = (action: Record<string, unknown>) =>
-      compileCapabilities("example", defineCapabilities({ protocolVersion: 1, actions: { remove: { ...base, ...action } as never } }));
+      compileCapabilities("example", defineCapabilities({ protocolVersion: 2, actions: { remove: { ...base, ...action } as never } }));
     const review = async () => ok({ message: "This item will be deleted." });
 
     expect(() => compile({ destructive: true, openWorld: false, idempotency: "required" })).toThrow(
@@ -325,7 +325,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           types: { item: { title: "Item", description: "One item." } },
           queries: {
             item: {
@@ -354,7 +354,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           queries: {
             bad: {
               title: "Bad",
@@ -373,7 +373,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           queries: {
             bad: {
               title: "Bad",
@@ -392,7 +392,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           actions: {
             bad: {
               title: "Bad",
@@ -414,7 +414,7 @@ describe("capability v1 compilation", () => {
     const compiled = compileCapabilities(
       "example",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         queries: {
           normalize: {
             title: "Normalize",
@@ -441,7 +441,7 @@ describe("capability v1 compilation", () => {
 
   test("publishes defaulted inputs as optional and applies defaults in Core", () => {
     const definitions = defineCapabilities({
-      protocolVersion: 1,
+      protocolVersion: 2,
       queries: {
         list: {
           title: "List items",
@@ -465,7 +465,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           queries: {
             bad: {
               title: "Bad",
@@ -500,7 +500,7 @@ describe("capability v1 compilation", () => {
     const compiled = compileCapabilities(
       "example",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         queries: {
           first: searchQuery,
           second: {
@@ -524,7 +524,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           queries: {
             first: searchQuery,
             local_only: {
@@ -542,7 +542,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           queries: {
             search: {
               title: "Search items",
@@ -563,7 +563,7 @@ describe("capability v1 compilation", () => {
     const compiled = compileCapabilities(
       "example",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: { item: { title: "Item", description: "One test item." } },
         queries: {
           list: {
@@ -629,7 +629,7 @@ describe("capability v1 compilation", () => {
     const compiled = compileCapabilities(
       "example",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: { item: { title: "Item", description: "One item." } },
         queries: {
           search: {
@@ -686,7 +686,7 @@ describe("capability v1 compilation", () => {
       ]),
     );
 
-    expect(() => compileCapabilities("example", defineCapabilities({ protocolVersion: 1, queries }))).toThrow(
+    expect(() => compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries }))).toThrow(
       "manifest exceeds the 262144-byte",
     );
   });
@@ -716,7 +716,7 @@ describe("capability v1 compilation", () => {
       compileCapabilities(
         "example",
         defineCapabilities({
-          protocolVersion: 1,
+          protocolVersion: 2,
           queries: {
             get: {
               title: "Get item",
@@ -1317,7 +1317,7 @@ test("search scope declarations survive localization and reject unsupported dire
     },
   };
   const definitions = defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
     types: { notebook: { title: "Notebook", description: "A notebook." } },
     queries: { search: query },
     presentation: {

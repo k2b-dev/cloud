@@ -77,3 +77,10 @@ read its current fields and confirmation requirements.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+
+## Compose from global search
+
+An open contact with an email address contributes **Compose email to NAME**
+to the global search, including app-scoped searches. Selecting it opens Mail
+with a permission-checked recipient. Multiple addresses prompt a choice.

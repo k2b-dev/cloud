@@ -242,7 +242,7 @@ try {
   sessionKeys = await identity.listIdentityJwks("session");
   invocationKeys = await identity.listIdentityJwks("invocation");
   const definitions = defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
     types: { item: { title: "Item", description: "A benchmark item." } },
     queries: {
       search: {

@@ -187,7 +187,7 @@ if (process.env.CLOUD_IDENTITY_POOL_INTEGRATION !== "1") {
 
     test("real capability dispatch shares pool1 through signing, mandate validation and audit", async () => {
       const definitions = defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: {},
         queries: {
           read: {

@@ -1,3 +1,4 @@
+import { MailComposeCommandInputSchema } from "./commands";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
@@ -3652,8 +3653,18 @@ const actionDefinitions = {
 
 export const mailCapabilities = localizeCapabilityErrors(
   defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
     presentation: mailCapabilityPresentation,
+    commands: {
+      compose: {
+        title: "Compose email",
+        description: "Write a new message in Mail.",
+        icon: "ti ti-mail-plus",
+        keywords: ["email", "nachricht", "verfassen"],
+        input: MailComposeCommandInputSchema,
+        path: "/app/mail/compose",
+      },
+    },
     types: {
       mailbox: { title: "Mailbox", description: "A mailbox the actor may access.", icon: "ti ti-inbox", reader: "mailbox.read" },
       "sender-identity": { title: "Sender identity", description: "A From identity configured for a mailbox.", icon: "ti ti-user-send" },

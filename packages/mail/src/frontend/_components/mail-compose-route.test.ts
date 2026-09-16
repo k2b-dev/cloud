@@ -9,12 +9,14 @@ import {
 } from "./mail-compose-route";
 
 describe("Mail compose routes", () => {
-  test("keeps only same-mailbox workspace return locations", () => {
+  test("keeps explicit internal return destinations and rejects external destinations", () => {
     const mailboxId = "Box001";
     expect(mailDraftReturnHref(`/app/mail/${mailboxId}?conversation=one#message`, mailboxId)).toBe(
       `/app/mail/${mailboxId}?conversation=one#message`,
     );
-    expect(mailDraftReturnHref(`/app/mail/${mailboxId}/automations`, mailboxId)).toBe(`/app/mail/${mailboxId}`);
+    expect(mailDraftReturnHref(`/app/mail/${mailboxId}/automations`, mailboxId)).toBe(`/app/mail/${mailboxId}/automations`);
+    expect(mailDraftReturnHref("/app/contacts?contact=AbCd12", mailboxId)).toBe("/app/contacts?contact=AbCd12");
+    expect(mailDraftReturnHref("//attacker.example/path", mailboxId)).toBe(`/app/mail/${mailboxId}`);
     expect(mailDraftReturnHref("https://attacker.example/path", mailboxId)).toBe(`/app/mail/${mailboxId}`);
     expect(mailDraftReturnHref("http://[", mailboxId)).toBe(`/app/mail/${mailboxId}`);
   });
@@ -45,6 +47,10 @@ describe("Mail compose routes", () => {
       "/app/mail/Box001?view=mine&conversation=Conv02",
     );
     expect(mailConversationHref("Box001", "Conv02", "https://attacker.example/path")).toBe("/app/mail/Box001?conversation=Conv02");
+  });
+
+  test("a completed compose returns to an explicit cross-app context without adding Mail state", () => {
+    expect(mailConversationHref("Box001", "Conv02", "/app/contacts?contact=AbCd12#details")).toBe("/app/contacts?contact=AbCd12#details");
   });
 
   test("registers the same-origin mailto landing route and degrades safely", () => {

@@ -1,12 +1,6 @@
-export const mailDraftReturnHref = (value: string, mailboxId: string): string => {
-  const fallback = `/app/mail/${mailboxId}`;
-  try {
-    const url = new URL(value, "http://mail.local");
-    return url.pathname === fallback ? `${url.pathname}${url.search}${url.hash}` : fallback;
-  } catch {
-    return fallback;
-  }
-};
+import { CommandPathSchema } from "@k2b/cloud/contracts";
+export const mailDraftReturnHref = (value: string, mailboxId: string): string =>
+  CommandPathSchema.safeParse(value).success ? value : `/app/mail/${mailboxId}`;
 
 export const mailDraftHref = (mailboxId: string, draftId: string, returnHref: string, options: { popout?: boolean } = {}): string => {
   const query = new URLSearchParams({ return: mailDraftReturnHref(returnHref, mailboxId) });
@@ -16,6 +10,7 @@ export const mailDraftHref = (mailboxId: string, draftId: string, returnHref: st
 
 export const mailConversationHref = (mailboxId: string, conversationId: string, returnHref: string): string => {
   const target = new URL(mailDraftReturnHref(returnHref, mailboxId), "http://mail.local");
+  if (target.pathname !== `/app/mail/${mailboxId}`) return `${target.pathname}${target.search}${target.hash}`;
   target.searchParams.delete("message");
   target.searchParams.set("conversation", conversationId);
   return `${target.pathname}${target.search}`;

@@ -474,7 +474,7 @@ const runLocationDelete = async (input: z.infer<typeof LocationTargetInputSchema
   );
 
 export const weatherCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: weatherCapabilityPresentation,
   types: {
     location: {

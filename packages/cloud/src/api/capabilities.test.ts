@@ -34,7 +34,8 @@ mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, 
 const compiled = compileCapabilities(
   "demo",
   defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
+    commands: { compose: { title: "Compose", description: "Open the editor.", path: "/app/demo", input: z.object({}).strict() } },
     types: { item: { title: "Item", description: "One demo item." } },
     queries: {
       get: {
@@ -852,4 +853,46 @@ describe("capability API", () => {
 
 test("shared catalog loader rejects limits outside the public schema", async () => {
   await expect(loadCapabilityCatalogPage({ limit: 26 }, { listApps: async () => [] })).rejects.toThrow("between 1 and 25");
+});
+
+test("Command resolution uses APP_URL and the live owning route without invoking the provider", async () => {
+  const capability = entry();
+  const app = buildCapabilityRoutes({
+    authenticate,
+    getCapability: async () => capability,
+    listApps: async () => [{ ...summary(capability), routes: ["/app/demo"] }],
+    appUrl: async () => "https://public.example.test",
+    fetch: async () => {
+      throw new Error("Commands must not invoke providers");
+    },
+  });
+  const response = await app.request("http://internal/capabilities/v1/commands/demo/compose", {
+    method: "POST",
+    body: JSON.stringify({ input: {}, returnTo: "/app/contacts" }),
+    headers: { "content-type": "application/json" },
+  });
+  expect(response.status).toBe(200);
+  const data = await response.json();
+  expect(new URL(data.href).origin).toBe("https://public.example.test");
+  expect(new URL(data.href).searchParams.get("commandReturn")).toBe("/app/contacts");
+  const invalid = await app.request("http://internal/capabilities/v1/commands/demo/compose", {
+    method: "POST",
+    body: JSON.stringify({ input: { unexpected: true } }),
+  });
+  expect(invalid.status).toBe(400);
+});
+
+test("a Command cannot direct the user into another app's owned route", async () => {
+  const capability = entry();
+  const app = buildCapabilityRoutes({
+    authenticate,
+    getCapability: async () => capability,
+    listApps: async () => [{ ...summary(capability), id: "other", routes: ["/app/demo"] }],
+    appUrl: async () => "https://public.example.test",
+  });
+  const response = await app.request("http://internal/capabilities/v1/commands/demo/compose", {
+    method: "POST",
+    body: JSON.stringify({ input: {} }),
+  });
+  expect(response.status).toBe(503);
 });

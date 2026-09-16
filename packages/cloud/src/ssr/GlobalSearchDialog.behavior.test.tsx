@@ -37,6 +37,8 @@ const searchResponse = (title: string) =>
     ],
   });
 
+const commandCatalogResponse = () => Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
+
 const catalogResponse = () =>
   Response.json({
     query: "",
@@ -56,6 +58,7 @@ describe("GlobalSearchDialog query lifecycle", () => {
     const originalFetch = globalThis.fetch;
     const requests: Array<{ signal: AbortSignal; response: ReturnType<typeof deferred<Response>> }> = [];
     globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
+      if (String(_input).includes("/capabilities/v1/catalog")) return Promise.resolve(commandCatalogResponse());
       const response = deferred<Response>();
       requests.push({ signal: init?.signal as AbortSignal, response });
       return response.promise;
@@ -106,7 +109,11 @@ test("Mod+Enter and modified click open a new tab without losing the current sea
   if (isServer) return;
   const dom = createDomTestHarness();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = Object.assign(() => Promise.resolve(searchResponse("Alpha")), { preconnect: originalFetch.preconnect });
+  globalThis.fetch = Object.assign(
+    (input: RequestInfo | URL) =>
+      Promise.resolve(String(input).includes("/capabilities/v1/catalog") ? commandCatalogResponse() : searchResponse("Alpha")),
+    { preconnect: originalFetch.preconnect },
+  );
   const opened: unknown[][] = [];
   dom.window.open = (...args) => {
     opened.push(args);
@@ -145,7 +152,10 @@ test("navigation failure preserves the search; retry waits for the handler and i
   if (isServer) return;
   const dom = createDomTestHarness();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = Object.assign(async () => searchResponse("Alpha"), { preconnect: originalFetch.preconnect });
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => (String(input).includes("/capabilities/v1/catalog") ? commandCatalogResponse() : searchResponse("Alpha")),
+    { preconnect: originalFetch.preconnect },
+  );
   const { registerSearchNavigation } = await import("../browser/search-bridge");
   const { default: GlobalSearchDialog } = await import("./GlobalSearchDialog");
   let calls = 0;
@@ -179,6 +189,56 @@ test("navigation failure preserves the search; retry waits for the handler and i
   } finally {
     stop();
     dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+test("Command new-tab launch reserves a tab before resolution and preserves the palette", async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const resolution = deferred<Response>();
+  globalThis.fetch = Object.assign(
+    (input: RequestInfo | URL) => {
+      if (String(input).includes("/capabilities/v1/commands/")) return resolution.promise;
+      return Promise.resolve(String(input).includes("/capabilities/v1/catalog") ? commandCatalogResponse() : catalogResponse());
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const opened: unknown[][] = [];
+  const destinations: string[] = [];
+  const target = { opener: {}, location: { replace: (href: string) => destinations.push(href) }, close: () => {} };
+  dom.window.open = (...args) => {
+    opened.push(args);
+    return target as unknown as ReturnType<typeof dom.window.open>;
+  };
+  const { registerContextAwareCommand } = await import("../browser/command-bridge");
+  const remove = registerContextAwareCommand({
+    id: "compose.current",
+    title: "Compose for current item",
+    description: "Open the form.",
+    action: { command: "demo.compose", input: {} },
+  });
+  const { default: GlobalSearchDialog } = await import("./GlobalSearchDialog");
+  let closed = 0;
+  delegateEvents(["input", "click", "keydown"]);
+  const dispose = render(() => <GlobalSearchDialog close={() => closed++} />, dom.root);
+  try {
+    await waitFor(() => Boolean(dom.root.querySelector('[role="option"]')), "context action");
+    const input = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }));
+    expect(opened).toEqual([["about:blank", "_blank"]]);
+    expect(target.opener).toBeNull();
+    expect(destinations).toEqual([]);
+    resolution.resolve(Response.json({ href: "https://configured.example/app/demo?command=demo.compose" }));
+    await waitFor(() => destinations.length === 1, "resolved Command link");
+    expect(destinations).toEqual(["https://configured.example/app/demo?command=demo.compose"]);
+    expect(closed).toBe(0);
+  } finally {
+    dispose();
+    remove();
     globalThis.fetch = originalFetch;
     dom.cleanup();
   }

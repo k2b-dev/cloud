@@ -688,6 +688,7 @@ export default function MailDetailsPanel(props: {
             </Show>
 
             <MailConversationContext
+              subject={props.subject}
               mailboxId={props.mailboxId}
               conversationId={props.conversationId}
               requestUrl={props.requestUrl}

@@ -163,3 +163,15 @@ send-safety review and approval.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+
+## Commands in global search
+
+**Compose email** opens the Mail compose flow. A contact-context Command first
+loads the contact with your current permissions; choose an address when the
+contact has several. Mail still asks for a writable mailbox and verified sender.
+Nothing is sent automatically.
+
+Creating a task or event from a conversation now opens the existing Spaces
+form. The source conversation appears as a removable link before submission.
+Calendar invitation, RSVP, and delivery workflows keep their existing behavior.

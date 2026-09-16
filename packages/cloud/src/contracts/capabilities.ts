@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { CommandPathSchema } from "./commands";
 import type { AccessSubject, RequestActor, User } from "./shared";
 
-export const CAPABILITY_PROTOCOL_VERSION = 1 as const;
+export const CAPABILITY_PROTOCOL_VERSION = 2 as const;
 export const CAPABILITY_MAX_REQUEST_BYTES = 256 * 1024;
 export const CAPABILITY_MAX_RESULT_BYTES = 256 * 1024;
 export const CAPABILITY_MAX_CATALOG_BYTES = 2 * 1024 * 1024;
@@ -349,6 +350,7 @@ export type CapabilityPresentationTranslation = {
   types?: Readonly<Record<string, { title?: string; description?: string }>>;
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   actions?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
+  commands?: Readonly<Record<string, Pick<CapabilityOperationPresentationTranslation, "title" | "description" | "input">>>;
 };
 
 export type CapabilityPresentationCatalog = {
@@ -393,6 +395,29 @@ export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>,
   ) => CapabilityInvocationResult<z.output<Data>> | Promise<CapabilityInvocationResult<z.output<Data>>>;
 };
 
+/** A declarative UI entry. Resolution never executes application code or writes domain data. */
+export type CapabilityCommandDefinition = {
+  title: string;
+  description: string;
+  icon?: string;
+  keywords?: readonly string[];
+  input: z.ZodType;
+  path: string;
+};
+
+export const CapabilityCommandManifestSchema = z
+  .object({
+    localId: CapabilityLocalIdSchema,
+    title: z.string().min(1).max(120),
+    description: z.string().min(1).max(1000),
+    icon: z.string().min(1).max(120).optional(),
+    keywords: z.array(z.string().min(1).max(120)).max(30),
+    inputSchema: z.record(z.string(), z.unknown()),
+    path: CommandPathSchema,
+  })
+  .strict();
+export type CapabilityCommandManifest = z.infer<typeof CapabilityCommandManifestSchema>;
+
 type CapabilityDefinitionCatalog<T> = Readonly<Record<string, T>>;
 
 export type CapabilityDefinitions = {
@@ -401,6 +426,7 @@ export type CapabilityDefinitions = {
   types?: CapabilityDefinitionCatalog<CapabilityResourceTypeDefinition>;
   queries?: CapabilityDefinitionCatalog<CapabilityQueryDefinition>;
   actions?: CapabilityDefinitionCatalog<CapabilityActionDefinition>;
+  commands?: CapabilityDefinitionCatalog<CapabilityCommandDefinition>;
 };
 
 /**
@@ -469,6 +495,7 @@ export const CapabilityManifestSchema = z
     types: z.array(CapabilityResourceTypeManifestSchema).max(200),
     queries: z.array(CapabilityQueryManifestSchema).max(200),
     actions: z.array(CapabilityActionManifestSchema).max(200),
+    commands: z.array(CapabilityCommandManifestSchema).max(200),
   })
   .strict();
 

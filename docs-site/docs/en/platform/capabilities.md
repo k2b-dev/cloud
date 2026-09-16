@@ -1,6 +1,6 @@
 ---
 title: App capabilities
-navTitle: Types, Queries & Actions
+navTitle: Types, Queries, Actions & Commands
 section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
@@ -12,7 +12,7 @@ updated: 2026-09-08
 
 Capabilities are an application's small, versioned machine interface. An app
 publishes addressable resource **Types**, read-only **Queries**, and mutating
-**Actions** from one `defineCapabilities()` declaration.
+**Actions**, and interactive **Commands** from one `defineCapabilities()` declaration.
 
 The declaration exists so a separately deployed provider can describe a stable
 operation once while Cloud projects it into cross-app calls, AI tools, the
@@ -89,7 +89,7 @@ const visibleItem = (id: string, subject: AccessSubject): Item | null => {
 };
 
 export const inventoryCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   types: {
     item: {
       title: "Inventory item",
@@ -241,7 +241,7 @@ under `presentation` when the application ships another language:
 
 ```ts
 export const inventoryCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: {
     baseLocale: "en",
     translations: {
@@ -684,7 +684,7 @@ fail the Action rather than applying a different effect.
 
 Cloud validates the declaration at startup:
 
-- `protocolVersion` is currently `1`;
+- `protocolVersion` is currently `2`;
 - local IDs start with a lower-case letter and may contain `.`, `_`, or `-`;
 - one local ID may occur only once across Types, Queries, and Actions;
 - inputs are closed `z.object(...).strict()` schemas;
@@ -1192,3 +1192,102 @@ Operators read this history at
 this table; they record their own domain effects with
 [Audit events](/en/docs/platform/audit-events) and correlate them through
 `context.requestId`.
+
+## Open an interactive flow with Commands
+
+A **Query** reads, an **Action** changes domain state, and a **Command** opens an
+application-owned interface. Declare Commands beside Queries and Actions. Their
+local IDs share the same namespace, so use distinct IDs such as `task.compose`
+for a form and `task.create` for a mutation.
+
+```ts
+const ComposeInput = z.object({
+  spaceId: z.string().optional().describe("Optional destination Space ID."),
+}).strict();
+
+const capabilities = defineCapabilities({
+  protocolVersion: 2,
+  commands: {
+    "task.compose": {
+      title: "New task",
+      description: "Create a task in Spaces.",
+      icon: "ti ti-checkbox",
+      keywords: ["todo"],
+      input: ComposeInput,
+      path: "/app/spaces",
+    },
+  },
+});
+```
+
+The path must belong to the application's live registered routes. Resolution
+validates the declared input and returns a URL based on the `app.url` setting
+(`APP_URL`), never the caller's browser origin. It does not call an app handler,
+create a record, or authorize a later mutation. The destination page and its
+normal services still check access. Commands are not mutating AI tools.
+
+Resolve a link from another application or an external client:
+
+```ts
+import { resolveCommand } from "@k2b/cloud/capabilities";
+
+const result = await resolveCommand("spaces.task.compose", { spaceId: "AbCd12" }, {}, {
+  baseUrl: "https://cloud.example/api",
+  headers: { authorization: `Bearer ${token}` },
+});
+if (result.ok) console.log(result.data.href);
+```
+
+The HTTP equivalent is `POST /api/capabilities/v1/commands/:appId/:localId`
+with `{ "input": {} }`, returning `{ "href": "https://…" }`. It requires an
+authenticated caller with read scope. Invalid input returns 400, missing
+Commands 404, and unavailable or mismatched route owners 503.
+
+For an in-browser interaction, use `openCommand`:
+
+```ts
+import { openCommand } from "@k2b/cloud/browser/commands";
+
+await openCommand("spaces.task.compose", {
+  source: { type: "mail.conversation", id: "AbCd12" },
+});
+```
+
+Register a handler in the island that owns the form. Use the same input schema
+as the declaration and dispose registrations when their owner unmounts:
+
+```ts
+import { consumeCommandLink, registerCommandHandler } from "@k2b/cloud/browser/commands";
+import { onCleanup, onMount } from "solid-js";
+
+onMount(() => {
+  onCleanup(registerCommandHandler("spaces.task.compose", ComposeInput,
+    (input) => openTaskForm(input),
+    (input) => !input.spaceId || input.spaceId === currentSpaceId(),
+  ));
+  void consumeCommandLink();
+});
+```
+
+`openCommand` offers the request to mounted handlers synchronously. Exactly one
+accepting handler owns it; with no owner Cloud resolves the link and navigates.
+Overlapping owners produce an error before either runs; use `accepts` to keep ownership unambiguous.
+A rejected handler surfaces an error and never triggers fallback navigation.
+Document events connect independent islands without a shared Solid context.
+`consumeCommandLink` consumes the URL parameters before handing control to the
+form, so reload and Back do not reopen a consumed interaction. It reports
+invalid or unavailable entries; it never silently invokes a different Command.
+
+Keep URL input to small public references and options. Links are limited to
+8 KiB; do not put message bodies, calendar files, tokens, or secrets in them.
+The receiving app reads referenced resources with the current user's authority
+and shows the source visibly before submission.
+
+An optional `{ returnTo: "/app/contacts?contact=AbCd12" }` may be supplied as the
+third argument. Only internal root-relative paths are accepted. The destination
+app decides when returning makes sense, normally after completion or explicit
+cancellation. This is a return link, not a webhook or cross-page callback.
+Omit it when users should stay with their newly created content.
+
+Localize titles, descriptions, and input field descriptions under
+`presentation.translations.<locale>.commands`, keyed by local Command ID.

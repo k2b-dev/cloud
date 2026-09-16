@@ -1008,7 +1008,7 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
 };
 
 export const notebooksCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: notebooksCapabilityPresentation,
   types: {
     notebook: {

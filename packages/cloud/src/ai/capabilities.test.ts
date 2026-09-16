@@ -61,7 +61,7 @@ const capabilityApp = (
   const compiled = compileCapabilities(
     appId,
     defineCapabilities({
-      protocolVersion: 1,
+      protocolVersion: 2,
       types: { item: { title: "Item", description: "One item." } },
       queries: {
         list: {
@@ -133,7 +133,7 @@ describe("AI capability catalog", () => {
     const compiled = compileCapabilities(
       "contacts",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: { contact: { title: "Contact", description: "One contact.", reader: "contact.read" } },
         queries: {
           "contact.read": {

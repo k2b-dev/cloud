@@ -1,6 +1,19 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import type { Paginated } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Avatar, Button, ButtonLink, DescriptionList, DetailPanel, Dropdown, IconButton, Placeholder, Tag, Tooltip, useLocale } from "@k2b/ui";
+import {
+  Avatar,
+  Button,
+  ButtonLink,
+  DescriptionList,
+  DetailPanel,
+  Dropdown,
+  IconButton,
+  Placeholder,
+  Tag,
+  Tooltip,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactNote, ContactRef } from "../../service";
@@ -131,6 +144,20 @@ export default function ContactDetailPanel(props: Props) {
     return selected && isCurrentQuerySnapshot(loaded, selected.source) ? loaded : null;
   });
   const contact = createMemo(() => detailSnapshot()?.contact ?? null);
+  createEffect(() => {
+    const current = contact();
+    if (!current?.emails.length) return;
+    const name = resolveContactName(current, t().unnamedContact);
+    onCleanup(
+      registerContextAwareCommand({
+        id: `contacts.${current.id}.compose`,
+        title: t().composeToContact({ name }),
+        description: t().composeToContactDescription,
+        icon: "ti ti-mail-plus",
+        action: { command: "mail.compose", input: { contact: { type: "contacts.contact", id: current.id } } },
+      }),
+    );
+  });
   const contactId = () => target()?.contactId ?? null;
   const bookId = () => target()?.bookId ?? null;
 
@@ -671,7 +698,9 @@ export default function ContactDetailPanel(props: Props) {
                                           size="xs"
                                           onClick={() => actions.unlinkMember(member, c())}
                                           class="shrink-0 text-dimmed opacity-100 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                                          label={t().removeMemberLabel({ name: resolveContactName(member as ContactRef, t().unnamedContact) })}
+                                          label={t().removeMemberLabel({
+                                            name: resolveContactName(member as ContactRef, t().unnamedContact),
+                                          })}
                                         >
                                           <i class="ti ti-unlink" aria-hidden="true" />
                                         </IconButton>

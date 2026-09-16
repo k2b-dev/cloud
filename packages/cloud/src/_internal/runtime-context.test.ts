@@ -72,7 +72,7 @@ describe("buildRuntimeFromRegistry", () => {
     const manifest = compileCapabilities(
       "example",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         queries: {
           search: {
             title: "Search examples",

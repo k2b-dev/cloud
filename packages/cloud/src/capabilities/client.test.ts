@@ -46,10 +46,10 @@ describe("public capability client", () => {
       limit: 10,
       fetch: async (input) => {
         url = String(input);
-        return Response.json({ protocolVersion: 1, apps: [], page: { hasMore: false } });
+        return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
       },
     });
-    expect(result).toEqual({ ok: true, data: { protocolVersion: 1, apps: [], page: { hasMore: false } } });
+    expect(result).toEqual({ ok: true, data: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
     expect(url).toBe("/api/capabilities/v1/catalog?cursor=demo&limit=10");
   });
 
@@ -69,15 +69,16 @@ describe("public capability client", () => {
       appIcon: "ti ti-box",
       appDescription: "",
       manifest: {
-        protocolVersion: 1 as const,
+        protocolVersion: 2 as const,
         appId,
         manifestHash: "0".repeat(64),
         types: [],
         queries: Array.from({ length: 200 }, (_, index) => operation(index)),
         actions: [],
+        commands: [],
       },
     });
-    const payload = { protocolVersion: 1, apps: [app("one"), app("two")], page: { hasMore: false } };
+    const payload = { protocolVersion: 2, apps: [app("one"), app("two")], page: { hasMore: false } };
     expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBeGreaterThan(256 * 1024);
 
     const result = await listCapabilityCatalog({ fetch: async () => Response.json(payload) });

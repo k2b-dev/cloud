@@ -15,3 +15,5 @@ export * from "./app-approval";
 // Core app bar administration and shared shortcut values.
 export { RailAccessSchema, RailAdminInputSchema, RailAdminSchema, type RailAdminEntry, type RailAdminState } from "./rail-admin";
 export type { RailShortcut } from "./rail-preferences";
+
+export * from "./commands";

@@ -63,6 +63,10 @@ jobs:
         run: |
           bun test --isolate packages/cloud/src/_internal/capabilities.test.ts packages/notebooks/src/capabilities.test.ts packages/spaces/src/capabilities.test.ts packages/contacts/src/capabilities.test.ts packages/notebooks/src/frontend/\[id\]/_components/editor/note-navigation.test.ts packages/notebooks/src/frontend/\[id\]/_components/book/book-state.test.ts
           bun test --isolate --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts packages/notebooks/src/frontend/\[id\]/_components/book/BookController.behavior.test.tsx
+      - name: Verify interactive Commands and context actions
+        run: |
+          bun test --isolate packages/cloud/src/capabilities/command-link.test.ts packages/cloud/src/browser/command-bridge.test.ts packages/cloud/src/api/capabilities.test.ts packages/spaces/src/commands.test.ts packages/mail/src/commands.test.ts packages/mail/src/frontend/_components/mail-compose-route.test.ts packages/mail/src/api/conversation-context.test.ts
+          bun test --isolate --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts packages/mail/src/frontend/_components/MailComposeIntentPage.behavior.test.tsx
       - name: Verify native list search and URL state
         run: bun test --isolate packages/cloud/src/ssr/islands/SearchBar.render.test.tsx packages/cloud/src/ssr/url-filter.test.ts packages/accounts/src/frontend/groups/detail/group-detail-url.test.ts packages/gateway-ops/src/observability/logs/_components/types.test.ts
       - name: Verify Dashboard and OAuth editor behavior

@@ -1,5 +1,7 @@
+import { spaceCommandMessages } from "../../../../commands";
 import {
   Button,
+  useLocale,
   CheckboxCard,
   DatePicker,
   DateRangePicker,
@@ -49,6 +51,9 @@ export type { ItemFormData } from "./item-form/types";
  */
 export default function ItemForm(props: ItemFormProps) {
   const t = useSpaceMessages();
+  const locale = useLocale();
+  const commandMessages = () => spaceCommandMessages.resolve([locale()]).t;
+  const [references, setReferences] = createSignal(props.defaults?.references ?? []);
   const isEditMode = () => !!props.item;
   const initialIsEvent = () => Boolean(props.item?.startsAt && props.item?.endsAt);
   const dateTimeInitial = (value?: string | null) => (props.dateConfig?.timeZone ? (value ?? "") : (value?.slice(0, 16) ?? ""));
@@ -198,6 +203,7 @@ export default function ItemForm(props: ItemFormProps) {
     }
 
     props.onSubmit({
+      ...(!isEditMode() && references().length ? { references: references() } : {}),
       columnId: columnId() || defaultColumnId(),
       title: title().trim(),
       description: description().trim() || undefined,
@@ -239,6 +245,22 @@ export default function ItemForm(props: ItemFormProps) {
       >
         <PanelDialog.Header title={props.title ?? defaultTitle()} icon={props.icon ?? defaultIcon()} close={props.onCancel} />
         <PanelDialog.Body>
+          <Show when={!isEditMode() && references().length}>
+            <PanelDialog.Section title={commandMessages().linkedSource} icon="ti ti-link">
+              <For each={references()}>
+                {(reference) => (
+                  <Button
+                    variant="subtle"
+                    size="sm"
+                    aria-label={commandMessages().removeSource({ title: reference.label })}
+                    onClick={() => setReferences((items) => items.filter((item) => item !== reference))}
+                  >
+                    <i class="ti ti-link" aria-hidden="true" /> {reference.label} <i class="ti ti-x" aria-hidden="true" />
+                  </Button>
+                )}
+              </For>
+            </PanelDialog.Section>
+          </Show>
           <Show when={!isEditMode()}>
             <SegmentedControl
               ariaLabel={t.type}

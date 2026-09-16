@@ -37,7 +37,6 @@ describe("Mail conversation context OpenAPI contract", () => {
       spec.paths?.[`${base}/related`]?.get,
       history,
       spec.paths?.[`${base}/spaces/items`]?.get,
-      spec.paths?.[`${base}/spaces/items`]?.post,
       spec.paths?.[`${base}/spaces/link`]?.post,
       spec.paths?.[`${base}/spaces/unlink`]?.post,
     ];
@@ -46,6 +45,8 @@ describe("Mail conversation context OpenAPI contract", () => {
     expect(operations.every((operation) => operation?.security?.length === 1)).toBe(true);
     expect(operations.every((operation) => operation?.responses?.["200"])).toBe(true);
     expect(history?.responses?.["503"]).toBeDefined();
+    expect(spec.paths?.[`${base}/spaces/items`]?.post).toBeUndefined();
+    expect(spec.paths?.["/mailboxes/{mailboxId}/spaces/{spaceId}"]).toBeUndefined();
   });
 
   test("projects related conversation identities at the public route", async () => {

@@ -48,7 +48,7 @@ const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callb
 const compiled = compileCapabilities(
   "demo",
   defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
     types: { item: { title: "Item", description: "One demo item.", reader: "get" } },
     queries: {
       get: {
@@ -577,7 +577,7 @@ describe("capability MCP projection", () => {
     const longCompiled = compileCapabilities(
       appId,
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         queries: {
           [localId]: {
             title: "Long query",
@@ -616,7 +616,7 @@ describe("capability MCP projection", () => {
   });
 
   test("rejects stale capabilities for both discovery and direct invocation", async () => {
-    const staleSummary = { ...summary(app), capabilities: { protocolVersion: 1 as const, manifestHash: "stale" } };
+    const staleSummary = { ...summary(app), capabilities: { protocolVersion: 2 as const, manifestHash: "stale" } };
     const routes = createMcpRoutes({ listApps: async () => [staleSummary], getCapability: async () => app });
     const listed = await rpc(routes, { jsonrpc: "2.0", id: 52, method: "tools/list", params: {} });
     expect(((await listed.json()) as { result: { tools: Tool[] } }).result.tools.some((tool) => tool.name.startsWith("demo__"))).toBe(

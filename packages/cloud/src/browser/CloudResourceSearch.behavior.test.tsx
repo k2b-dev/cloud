@@ -427,3 +427,126 @@ test("public navigation search browses and filters Tools without calling authent
     dom.cleanup();
   }
 });
+
+if (!isServer)
+  test("context actions are visible but never implicitly selected; > discovers global actions", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(async () => Response.json({ query: "", count: 0, apps: [], items: [] }), { preconnect: () => {} });
+    const { createSignal } = await import("solid-js");
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    delegateEvents(["input", "click", "keydown"]);
+    const [contextVisible, setContextVisible] = createSignal(true);
+    const calls: string[] = [];
+    const context = { id: "done", title: "Complete Summer party", description: "The current task", context: true, action: () => {} };
+    const globalCommand = {
+      id: "spaces.task.compose",
+      title: "New task",
+      description: "Create in Spaces",
+      action: { command: "spaces.task.compose", input: {} },
+    };
+    const dispose = render(
+      () => (
+        <CloudResourceSearch
+          onClose={() => {}}
+          onSelect={() => {}}
+          commands={[...(contextVisible() ? [context] : []), globalCommand]}
+          onCommand={(command) => calls.push(command.id)}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      await waitFor(() => dom.root.textContent?.includes("Complete Summer party") ?? false, "context action");
+      const input = dom.root.querySelector<HTMLInputElement>("input")!;
+      expect(dom.root.textContent).not.toContain("New task");
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(calls).toEqual([]);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(calls).toEqual(["done"]);
+      setContextVisible(false);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(calls).toEqual(["done"]);
+      input.value = ">";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => dom.root.textContent?.includes("New task") ?? false, "command catalog");
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(calls).toEqual(["done"]);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(calls).toEqual(["done", "spaces.task.compose"]);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("resource pickers never expose Commands even if a caller passes them", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(async () => Response.json({ query: "", count: 0, apps: [], items: [] }), { preconnect: () => {} });
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    const dispose = render(
+      () => (
+        <CloudResourceSearch
+          selectionMode
+          onClose={() => {}}
+          onSelect={() => {}}
+          commands={[{ id: "done", title: "Complete Summer party", description: "Current", context: true, action: () => {} }]}
+          onCommand={() => {
+            throw new Error("Picker must not run Commands");
+          }}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      await Bun.sleep(10);
+      expect(dom.root.textContent).not.toContain("Complete Summer party");
+      expect(dom.root.querySelector('[aria-selected="true"]')).toBeNull();
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("context actions precede results in an empty scoped search and follow content when typing", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(async () => Response.json({ query: "", count: 1, apps: [], items: [item("Task notes")] }), {
+      preconnect: originalFetch.preconnect,
+    });
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    delegateEvents(["input"]);
+    const dispose = render(
+      () => (
+        <CloudResourceSearch
+          onClose={() => {}}
+          onSelect={() => {}}
+          initialAppId="notebooks"
+          commands={[{ id: "done", title: "Complete task", description: "Current item", context: true, action: () => {} }]}
+          onCommand={() => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      await waitFor(() => dom.root.querySelectorAll('[role="option"]').length === 2, "scoped contents");
+      expect(dom.root.querySelector('[role="option"]')?.textContent).toContain("Complete task");
+      expect(dom.root.querySelector('[role="option"][aria-selected="true"]')).toBeNull();
+      const input = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+      input.value = "task";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => dom.root.querySelector('[role="option"]')?.textContent?.includes("Task notes") ?? false, "content first");
+      expect(dom.root.querySelectorAll('[role="option"]')[1]?.textContent).toContain("Complete task");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });

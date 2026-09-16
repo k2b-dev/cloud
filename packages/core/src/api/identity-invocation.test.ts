@@ -23,7 +23,7 @@ const registryEntry: CapabilityRegistryEntry = {
   appDescription: "Spaces app",
   endpoint: "http://spaces:3000/api/_internal/capabilities/v1",
   manifest: {
-    protocolVersion: 1,
+    protocolVersion: 2,
     appId: "spaces",
     manifestHash: "b".repeat(64),
     types: [],
@@ -39,6 +39,7 @@ const registryEntry: CapabilityRegistryEntry = {
       },
     ],
     actions: [],
+    commands: [],
   },
 };
 

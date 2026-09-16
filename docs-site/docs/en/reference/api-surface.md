@@ -191,6 +191,7 @@ documents all process variables; that larger list is not the shape of `env`.
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@k2b/cloud/browser/search` | Supported, browser | Open global search with an optional context and register app navigation | [Universal search](/en/docs/platform/search) |
+| `@k2b/cloud/browser/commands` | Supported, browser | Open interactive Commands, handle command links, and register context actions | [Capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/clients/core` | Platform-owned, browser | Typed client for the Core platform API | — |
 | `@k2b/cloud/workflows/language` | Supported | Workflow compiler, parser, and authoring | [Author workflows](/en/docs/automation/author-and-publish-workflows) |
@@ -284,3 +285,10 @@ island. See [Application shells](/en/docs/frontend/application-shells#supply-mob
 The standalone UI exports `createNavigation`, `Navigation`, `NavigationItem`,
 `NavigationController`, `NavigationOptions`, `NavigationProps`,
 `findNavigationItem`, `BottomSheet`, `BottomSheetProps`, and `bottomSheetOptions`.
+
+
+`@k2b/cloud/browser/commands` exports `openCommand`, `registerCommandHandler`,
+`registerContextAwareCommand`, and `consumeCommandLink` for interactive
+[Commands](/en/docs/platform/capabilities#open-an-interactive-flow-with-commands)
+and context actions in the global palette. `@k2b/cloud/capabilities` exports
+`resolveCommand` for authenticated HTTP clients that need an entry URL.

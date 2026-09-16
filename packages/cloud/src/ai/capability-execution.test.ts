@@ -52,7 +52,7 @@ const app = () => {
   const compiled = compileCapabilities(
     "demo",
     defineCapabilities({
-      protocolVersion: 1,
+      protocolVersion: 2,
       types: { item: { title: "Item", description: "One item." } },
       queries: {},
       actions: {

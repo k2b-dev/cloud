@@ -27,7 +27,7 @@ const capabilityEntry = (reader = true): CapabilityRegistryEntry => {
   const manifest = compileCapabilities(
     "contacts",
     defineCapabilities({
-      protocolVersion: 1,
+      protocolVersion: 2,
       types: {
         contact: {
           title: "Contact",

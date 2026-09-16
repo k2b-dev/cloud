@@ -549,7 +549,7 @@ const runSavedQueryExecute = async (input: z.infer<typeof SavedQueryExecuteInput
 };
 
 export const pulseCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: pulseCapabilityPresentation,
   types: {
     base: {

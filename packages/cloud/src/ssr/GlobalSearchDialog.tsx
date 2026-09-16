@@ -1,4 +1,9 @@
 import { type DialogRender, dialogCore, toast, useLocale } from "@k2b/ui";
+import { query } from "@k2b/stdlib/solid";
+import { resolveCommand } from "../capabilities/client";
+import { COMMANDS_CHANGED, collectContextAwareCommands } from "../browser/command-bridge";
+import { openCommand } from "../browser/commands";
+import { loadSearchCommands, type PaletteCommand } from "../browser/search-commands";
 import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import type { SearchItem } from "../api/search/schemas";
 import CloudResourceSearch from "../browser/CloudResourceSearch";
@@ -19,6 +24,51 @@ type GlobalSearchDialogProps = {
 export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
   const locale = useLocale();
   const messages = () => resourceSearchMessages.resolve([locale()]).t;
+  const [contextCommands, setContextCommands] = createSignal<PaletteCommand[]>([]);
+  const commandsQuery = query.create({
+    source: locale,
+    enabled: () => props.searchResources !== false,
+    load: (locale, { abortSignal }) => loadSearchCommands(locale, abortSignal),
+  });
+  onMount(() => {
+    const update = () => setContextCommands(collectContextAwareCommands().map((command) => ({ ...command, context: true })));
+    window.addEventListener(COMMANDS_CHANGED, update);
+    update();
+    onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
+  });
+  const runCommand = async (command: PaletteCommand, newTab: boolean) => {
+    if (navigating()) return;
+    // Check live ownership once more; a background panel may have closed since rendering.
+    if (command.context && !collectContextAwareCommands().some((current) => current.id === command.id && current.action === command.action))
+      return;
+    setNavigating(true);
+    setNavigationError(false);
+    const target = command.action;
+    if (newTab && typeof target !== "function") {
+      // Reserve synchronously inside the user gesture; never lose it to popup blocking.
+      const tab = window.open("about:blank", "_blank");
+      if (tab) tab.opener = null;
+      try {
+        if (!tab) throw new Error("Popup blocked");
+        const result = await resolveCommand(target.command, target.input, target.options);
+        if (!result.ok) throw new Error(result.error.message);
+        tab.location.replace(result.data.href);
+      } catch {
+        tab?.close();
+        if (active) setNavigationError(true);
+      } finally {
+        if (active) setNavigating(false);
+      }
+      return;
+    }
+    props.close();
+    try {
+      if (typeof target === "function") await target();
+      else await openCommand(target.command, target.input, target.options);
+    } catch {
+      toast.error(messages().commandFailed);
+    }
+  };
   let host!: HTMLDivElement;
   onMount(() => {
     if (props.context) onCleanup(attachSpotlightPosition(host, props.context, messages));
@@ -57,6 +107,10 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
   return (
     <div ref={host} class="cloud-global-search">
       <CloudResourceSearch
+        commands={[...contextCommands(), ...(commandsQuery.data() ?? [])]}
+        commandsLoading={commandsQuery.loading()}
+        commandsError={Boolean(commandsQuery.error())}
+        onCommand={props.searchResources === false ? undefined : (command, newTab) => void runCommand(command, newTab)}
         request={props.request}
         disabled={navigating()}
         navigationError={navigationError() ? messages().navigationFailed : undefined}

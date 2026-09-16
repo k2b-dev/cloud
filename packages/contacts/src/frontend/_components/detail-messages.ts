@@ -8,6 +8,8 @@ export const detailMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      composeToContact: ({ name }: { name: string }) => `Compose email to ${name}`,
+      composeToContactDescription: "Opens Mail with this contact as the recipient.",
       // Shared
       unnamedContact: "Unnamed contact",
       cancel: "Cancel",
@@ -191,6 +193,8 @@ export const detailMessages = i18n.define({
       directReports: ({ count }: { count: number }) => `${count} direct report${count === 1 ? "" : "s"}`,
     },
     de: {
+      composeToContact: ({ name }) => `E-Mail an ${name} verfassen`,
+      composeToContactDescription: "Öffnet Mail mit diesem Kontakt als Empfänger.",
       // Shared
       unnamedContact: "Kontakt ohne Namen",
       cancel: "Abbrechen",

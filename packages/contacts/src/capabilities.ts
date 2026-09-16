@@ -1057,7 +1057,7 @@ const runNoteCreate = async (input: z.infer<typeof ContactNoteCreateInputSchema>
 };
 
 export const contactsCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: contactsCapabilityPresentation,
   types: {
     contact: {

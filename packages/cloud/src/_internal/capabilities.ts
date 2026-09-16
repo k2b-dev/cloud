@@ -11,6 +11,8 @@ import {
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
   type CapabilityDefinitions,
+  type CapabilityCommandManifest,
+  CapabilityCommandManifestSchema,
   type CapabilityError,
   CapabilityErrorSchema,
   type CapabilityExecutionContext,
@@ -190,12 +192,14 @@ const compileSchemaPresentation = (
 
 const compileOperationPresentation = (
   value: unknown,
-  operation: CapabilityQueryManifest | CapabilityActionManifest,
+  operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
   label: string,
 ): CapabilityOperationPresentationTranslation => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const translation = value as Record<string, unknown>;
-  const allowed = new Set(["title", "description", "input", "data", "searchTags"]);
+  const allowed = new Set(
+    "path" in operation ? ["title", "description", "input"] : ["title", "description", "input", "data", "searchTags"],
+  );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
   if (extra) throw new Error(`${label} contains unsupported field "${extra}"`);
   if (translation.title !== undefined) {
@@ -238,7 +242,7 @@ const compileOperationPresentation = (
     );
   }
   const input = compileSchemaPresentation(translation.input, operation.inputSchema, `${label}.input`);
-  const data = compileSchemaPresentation(translation.data, operation.dataSchema, `${label}.data`);
+  const data = "dataSchema" in operation ? compileSchemaPresentation(translation.data, operation.dataSchema, `${label}.data`) : undefined;
   return {
     ...(typeof translation.title === "string" ? { title: translation.title.trim() } : {}),
     ...(typeof translation.description === "string" ? { description: translation.description.trim() } : {}),
@@ -263,6 +267,7 @@ export const compileCapabilityPresentation = (manifest: CapabilityManifest, valu
   const types = new Map(manifest.types.map((type) => [type.localId, type]));
   const queries = new Map(manifest.queries.map((operation) => [operation.localId, operation]));
   const actions = new Map(manifest.actions.map((operation) => [operation.localId, operation]));
+  const commands = new Map(manifest.commands.map((operation) => [operation.localId, operation]));
   const translations: Record<string, CapabilityPresentationTranslation> = {};
   for (const [locale, rawTranslation] of Object.entries(catalog.translations as Record<string, unknown>)) {
     const canonical = canonicalLocale(locale);
@@ -273,7 +278,7 @@ export const compileCapabilityPresentation = (manifest: CapabilityManifest, valu
       throw new Error(`Capability presentation translation ${canonical} must be an object`);
     }
     const raw = rawTranslation as Record<string, unknown>;
-    const extra = Object.keys(raw).find((key) => key !== "types" && key !== "queries" && key !== "actions");
+    const extra = Object.keys(raw).find((key) => key !== "types" && key !== "queries" && key !== "actions" && key !== "commands");
     if (extra) throw new Error(`Capability presentation translation ${canonical} contains unsupported field "${extra}"`);
     const compileGroup = <T>(
       group: unknown,
@@ -311,10 +316,12 @@ export const compileCapabilityPresentation = (manifest: CapabilityManifest, valu
     });
     const translatedQueries = compileGroup(raw.queries, queries, "Query", compileOperationPresentation);
     const translatedActions = compileGroup(raw.actions, actions, "Action", compileOperationPresentation);
+    const translatedCommands = compileGroup(raw.commands, commands, "Command", compileOperationPresentation);
     translations[canonical] = {
       ...(translatedTypes ? { types: translatedTypes } : {}),
       ...(translatedQueries ? { queries: translatedQueries } : {}),
       ...(translatedActions ? { actions: translatedActions } : {}),
+      ...(translatedCommands ? { commands: translatedCommands } : {}),
     };
   }
   return { baseLocale, translations };
@@ -551,12 +558,30 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     });
   }
 
+  const commands = Object.entries(definitions.commands ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([localId, definition]) => {
+      registerLocalId(localId, "Command");
+      const inputSchema = projectSchema(definition.input, `Command ${localId} input`, "input");
+      assertClosedObjectInput(inputSchema, `Command ${localId} input`);
+      return CapabilityCommandManifestSchema.parse({
+        localId,
+        title: definition.title.trim(),
+        description: definition.description.trim(),
+        icon: definition.icon,
+        keywords: [...(definition.keywords ?? [])],
+        inputSchema,
+        path: definition.path,
+      });
+    });
+
   const manifestBase = {
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     appId,
     types,
     queries: [...queries.values()].map((entry) => entry.manifest),
     actions: [...actions.values()].map((entry) => entry.manifest),
+    commands,
   };
   const manifest = CapabilityManifestSchema.parse({
     ...manifestBase,
@@ -651,6 +676,17 @@ export const resolveCapabilityManifestPresentation = (
             : {}),
         };
       }),
+      commands: current.commands.map((operation) => {
+        const copy = translation.commands?.[operation.localId];
+        return copy
+          ? {
+              ...operation,
+              title: copy.title ?? operation.title,
+              description: copy.description ?? operation.description,
+              inputSchema: applySchemaPresentation(operation.inputSchema, copy.input),
+            }
+          : operation;
+      }),
       actions: current.actions.map((operation) => {
         const copy = translation.actions?.[operation.localId];
         return copy
@@ -710,6 +746,11 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
         throw new Error(`Operation ${operation.localId} advertises Universal Search with non-canonical schemas`);
       }
     }
+  }
+  for (const command of manifest.commands) {
+    registerLocalId(command.localId, "Command");
+    z.fromJSONSchema(structuredClone(command.inputSchema));
+    assertClosedObjectInput(command.inputSchema, `Command ${command.localId} input`);
   }
   const queries = new Map(manifest.queries.map((query) => [query.localId, query]));
   for (const type of manifest.types) {
@@ -816,6 +857,12 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
     else if (type.reader && current.reader !== type.reader) issues.push(`Type ${type.localId} reader changed`);
   }
 
+  const nextCommands = new Map(next.commands.map((command) => [command.localId, command]));
+  for (const command of previous.commands) {
+    const current = nextCommands.get(command.localId);
+    if (!current) issues.push(`Command ${command.localId} was removed`);
+    else issues.push(...schemaEvolutionIssues(command.inputSchema, current.inputSchema, `Command ${command.localId} input`, "input"));
+  }
   const nextQueries = new Map(next.queries.map((operation) => [operation.localId, operation]));
   const nextActions = new Map(next.actions.map((operation) => [operation.localId, operation]));
   for (const operation of previous.queries) {

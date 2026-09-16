@@ -5,7 +5,6 @@ import { z } from "zod";
 import {
   type MailConversationContext,
   type MailConversationContextQuery,
-  type MailConversationSpaceCreateInput,
   mailConversationParticipantSchema,
   relatedConversationReasonSchema,
   type RelatedConversationSummary,
@@ -14,9 +13,7 @@ import {
 import {
   type AppIntegrationFailure,
   type AppIntegrationRequest,
-  createSpaceItemForResource,
   findSpaceItemsByResource,
-  getCalendarSpace,
   linkSpaceItemResource,
   resolveContacts,
   searchSpaceItems,
@@ -153,20 +150,6 @@ export const searchConversationSpaceItems = async (params: {
   return result.ok ? ok(result.data) : integrationFailure(result);
 };
 
-export const getConversationSpace = async (params: {
-  context: MailRequestContext;
-  request: AppIntegrationRequest;
-  mailboxId: string;
-  conversationId: string;
-  spaceId: string;
-}) => {
-  const resource = await requireConversationResource(params);
-  if (!resource.ok) return resource;
-  const result = await getCalendarSpace(params.spaceId, params.request);
-  if (!result.ok) return integrationFailure(result);
-  return result.data.permission === "read" ? fail(err.forbidden("Write access to the selected Space is required")) : ok(result.data);
-};
-
 export const linkConversationSpaceItem = async (params: {
   context: MailRequestContext;
   request: AppIntegrationRequest;
@@ -190,20 +173,6 @@ export const unlinkConversationSpaceItem = async (params: {
   const resource = await requireConversationResource(params);
   if (!resource.ok) return resource;
   const result = await unlinkSpaceItemResource({ itemId: params.itemId, ref: resource.data.ref }, params.request);
-  return result.ok ? ok(result.data) : integrationFailure(result);
-};
-
-export const createConversationSpaceItem = async (params: {
-  context: MailRequestContext;
-  request: AppIntegrationRequest;
-  mailboxId: string;
-  conversationId: string;
-  input: MailConversationSpaceCreateInput;
-}) => {
-  const resource = await requireConversationResource(params);
-  if (!resource.ok) return resource;
-  const { kind, ...input } = params.input;
-  const result = await createSpaceItemForResource(kind, { ...input, references: [resource.data] }, params.request);
   return result.ok ? ok(result.data) : integrationFailure(result);
 };
 

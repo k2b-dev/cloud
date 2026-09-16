@@ -4,6 +4,11 @@ export const resourceSearchMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      actions: "Actions",
+      contextActions: "On this page",
+      commandPlaceholder: "Find an action…",
+      commandFailed: "Could not open this action. Try again.",
+      commandHint: "Choose an action, or type > next time.",
       searchFailed: "Search is currently unavailable. Try again.",
       navigationFailed: "Could not open this result. Try again.",
       partialFailure: "Some search sources are unavailable. Results may be incomplete.",
@@ -40,6 +45,11 @@ export const resourceSearchMessages = i18n.define({
       loadingTags: "Loading filters…",
     },
     de: {
+      actions: "Aktionen",
+      contextActions: "Auf dieser Seite",
+      commandPlaceholder: "Aktion finden…",
+      commandFailed: "Die Aktion konnte nicht geöffnet werden. Versuche es erneut.",
+      commandHint: "Wähle eine Aktion – beim nächsten Mal geht auch >.",
       searchFailed: "Suche gerade nicht erreichbar. Versuche es erneut.",
       navigationFailed: "Der Treffer konnte nicht geöffnet werden. Versuche es erneut.",
       partialFailure: "Einige Suchquellen sind nicht erreichbar. Ergebnisse können unvollständig sein.",

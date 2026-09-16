@@ -15,7 +15,7 @@ const loadItemForActor = async (itemId: string, _actor: AuthContext["Variables"]
 });
 
 export const inventoryCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   types: {
     item: {
       title: "Inventory item",

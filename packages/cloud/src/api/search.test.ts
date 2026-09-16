@@ -14,7 +14,7 @@ import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createSearchRoutes as buildSearchRoutes } from "./search";
 
 const capabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   types: {
     item: { title: "Item", description: "A searchable test item." },
   },
@@ -202,7 +202,7 @@ describe("global capability search", () => {
     const multiManifest = compileCapabilities(
       "demo",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: { item: { title: "Item", description: "One search result." } },
         queries: {
           first: {
@@ -241,7 +241,7 @@ describe("global capability search", () => {
     const multiManifest = compileCapabilities(
       "demo",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: { item: { title: "Item", description: "One search result." } },
         queries: {
           first: capabilities.queries.search,
@@ -438,7 +438,7 @@ describe("global capability search", () => {
     const readableManifest = compileCapabilities(
       "demo",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: {
           navigation: { title: "Navigation item", description: "Navigation only." },
           readable: { title: "Readable item", description: "Readable item.", reader: "read" },

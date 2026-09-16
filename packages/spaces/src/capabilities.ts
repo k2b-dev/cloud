@@ -1,3 +1,4 @@
+import { SpaceComposeInputSchema } from "./commands";
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -1699,8 +1700,26 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
   });
 
 export const spacesCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: spacesCapabilityPresentation,
+  commands: {
+    "task.compose": {
+      title: "New task",
+      description: "Create a task in Spaces.",
+      icon: "ti ti-checkbox",
+      keywords: ["todo", "aufgabe"],
+      input: SpaceComposeInputSchema,
+      path: "/app/spaces",
+    },
+    "event.compose": {
+      title: "New event",
+      description: "Create an event in Spaces.",
+      icon: "ti ti-calendar-event",
+      keywords: ["calendar", "termin"],
+      input: SpaceComposeInputSchema,
+      path: "/app/spaces",
+    },
+  },
   types: {
     space: { title: "Space", description: "A permission-scoped collaboration space.", icon: "ti ti-layout-kanban", reader: "space.read" },
     item: { title: "Space item", description: "A task or event inside a space.", icon: "ti ti-checkbox", reader: "item.read" },

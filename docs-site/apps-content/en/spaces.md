@@ -194,3 +194,11 @@ pass it explicitly: the CLI default selected by `spaces use` is profile-wide.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+
+## Commands in global search
+
+Use **Actions** (or `>`) in the Cloud search to create a task or event. Inside a
+Space, the form uses that Space; elsewhere, choose a writable Space first.
+An open writable item contributes explicitly named edit and completion actions.
+Blocked or completed tasks do not offer completion.

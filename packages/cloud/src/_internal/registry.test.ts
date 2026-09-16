@@ -8,7 +8,7 @@ import { type AppRegistrySnapshot, requireUsableAppRegistry, resolveLiveCapabili
 const compiled = compileCapabilities(
   "demo",
   defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
     queries: {
       ping: {
         title: "Ping",
@@ -30,7 +30,7 @@ const liveApp = {
   appearance: { accent: "#0f766e" as const },
   baseUrl: "http://demo:3000/custom/path",
   routes: ["/app/demo"],
-  capabilities: { protocolVersion: 1, manifestHash: compiled.manifest.manifestHash },
+  capabilities: { protocolVersion: 2, manifestHash: compiled.manifest.manifestHash },
 };
 
 describe("requireUsableAppRegistry", () => {

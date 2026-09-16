@@ -59,7 +59,7 @@ test("an absent operation in a ready manifest still returns HTML404", async () =
       selected: {
         kind: "ready",
         app: appSummary,
-        manifest: { protocolVersion: 1, appId: "mail", manifestHash: "a".repeat(64), types: [], queries: [], actions: [] },
+        manifest: { protocolVersion: 2, appId: "mail", manifestHash: "a".repeat(64), types: [], queries: [], actions: [], commands: [] },
       },
     }),
   );

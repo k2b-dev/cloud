@@ -22,7 +22,7 @@ export default function SpaceSidebar(props: Props) {
 
   return (
     <>
-      <SpaceNavigation {...props} />
+      <SpaceNavigation ctx={props.ctx} baseUrl={props.baseUrl} dateConfig={props.dateConfig} />
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
           <div class="flex flex-col gap-3">

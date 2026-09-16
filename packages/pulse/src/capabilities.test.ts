@@ -81,7 +81,7 @@ const postgresTest = databaseAvailable ? test : test.skip;
 
 describe("Pulse capabilities", () => {
   test("declares and compiles the curated read-only v1 surface", () => {
-    expect(pulseCapabilities.protocolVersion).toBe(1);
+    expect(pulseCapabilities.protocolVersion).toBe(2);
     expect(Object.keys(pulseCapabilities.types ?? {}).sort()).toEqual(["base", "resource", "saved_query", "source"]);
     expect(Object.keys(pulseCapabilities.queries ?? {}).sort()).toEqual([
       "base.list",

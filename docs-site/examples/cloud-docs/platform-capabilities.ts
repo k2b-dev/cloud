@@ -39,7 +39,15 @@ const visibleItems = (subject: AccessSubject): Item[] =>
   [...items.values()].filter((item) => subject.type === "user" && subject.userId === item.ownerId);
 
 export const inventoryCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
+  commands: {
+    "item.compose": {
+      title: "New inventory item",
+      description: "Open the inventory item form.",
+      input: z.object({}).strict(),
+      path: "/app/inventory",
+    },
+  },
   types: {
     item: {
       title: "Inventory item",

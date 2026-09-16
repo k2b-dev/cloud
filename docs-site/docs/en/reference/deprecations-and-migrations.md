@@ -427,3 +427,18 @@ no compatibility renderer. Use `createNavigation` and let the host render
 `Navigation`; Cloud applications bind it through `WorkspaceNavigationProvider`
 or the SSR `WorkspaceNavigation` island. Keep `SidebarDesktop` for desktop.
 See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
+
+
+## Capability protocol 2
+
+Capability manifests now include a required `commands` array. Providers declare
+`protocolVersion: 2`; compilation emits an empty array when no Commands are
+published. Protocol 1 manifests are rejected, with no compatibility adapter.
+Upgrade the shared package and every provider together. The existing
+`/capabilities/v1` HTTP routes remain unchanged; the manifest protocol is a
+separate contract. No database migration is required.
+
+Mail's interactive task/event creation now opens the owning Spaces form through
+a Command. The old Mail `POST .../conversations/:conversationId/spaces/items`
+and `GET .../spaces/:spaceId` form-support routes are removed. Existing resource
+link/unlink operations and calendar automation continue to use their domain APIs.

@@ -1,10 +1,11 @@
 import type { DateContext } from "@k2b/stdlib";
-import type { Recurrence, SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import type { Recurrence, SpaceColumn, SpaceItem, SpaceTag, SpaceItemResourceReferenceInput } from "@/contracts";
 
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type ItemType = "task" | "event";
 
 export type ItemFormData = {
+  references?: SpaceItemResourceReferenceInput[];
   columnId: string;
   title: string;
   description?: string;

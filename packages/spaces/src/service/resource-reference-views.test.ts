@@ -16,7 +16,7 @@ const caller: CapabilityCaller = {
 const manifest = compileCapabilityManifest(
   "provider",
   defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
     types: {
       item: { title: "Item", description: "One readable item.", icon: "ti ti-box", reader: "item.read" },
       navigation: { title: "Navigation", description: "One navigation-only item." },

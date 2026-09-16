@@ -262,35 +262,6 @@ export type MailConversationContext = z.infer<typeof mailConversationContextSche
 
 export const mailConversationSpaceSearchQuerySchema = z.object({ query: z.string().trim().max(500).default("") }).strict();
 export const mailConversationSpaceLinkInputSchema = z.object({ itemId: ResourceShortIdSchema }).strict();
-export const mailConversationSpaceCreateInputSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("task"),
-      spaceId: ResourceShortIdSchema,
-      columnId: ResourceShortIdSchema,
-      title: z.string().trim().min(1).max(200),
-      deadline: z.string().datetime().optional(),
-      priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("event"),
-      spaceId: ResourceShortIdSchema,
-      columnId: ResourceShortIdSchema,
-      title: z.string().trim().min(1).max(200),
-      startsAt: z.string().datetime(),
-      endsAt: z.string().datetime(),
-      allDay: z.boolean().optional(),
-    })
-    .strict()
-    .refine((value) => new Date(value.endsAt) > new Date(value.startsAt), {
-      message: "End time must be after start time",
-      path: ["endsAt"],
-    }),
-]);
-export type MailConversationSpaceCreateInput = z.infer<typeof mailConversationSpaceCreateInputSchema>;
-
 export const relatedMailSummarySchema = z
   .object({
     id: ResourceShortIdSchema,

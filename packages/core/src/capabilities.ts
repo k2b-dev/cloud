@@ -548,7 +548,7 @@ const readableOwnedChat = async (chatId: string, userId: string): Promise<AiConv
   (await ownedChat(chatId, userId)) ?? ownedChat(chatId, userId, true);
 
 export const aiCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: coreCapabilityPresentation,
   types: {
     "ai.chat": {

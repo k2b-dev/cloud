@@ -101,7 +101,7 @@ describe("Assistant Cloud references", () => {
     const catalog: CapabilityCatalogClientResult = {
       ok: true,
       data: {
-        protocolVersion: 1,
+        protocolVersion: 2,
         apps: [
           {
             appId: "notebooks",
@@ -109,7 +109,7 @@ describe("Assistant Cloud references", () => {
             appIcon: "ti ti-notebook",
             appDescription: "Markdown notebooks.",
             manifest: {
-              protocolVersion: 1,
+              protocolVersion: 2,
               appId: "notebooks",
               manifestHash: "a".repeat(64),
               types: [
@@ -132,7 +132,7 @@ describe("Assistant Cloud references", () => {
                   openWorld: false,
                 },
               ],
-              actions: [],
+              actions: [], commands: [],
             },
           },
         ],

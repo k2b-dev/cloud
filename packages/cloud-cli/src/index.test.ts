@@ -460,7 +460,7 @@ describe("cloud CLI OAuth session handling", () => {
       openWorld: false,
     }));
     const catalog = {
-      protocolVersion: 1,
+      protocolVersion: 2,
       apps: [
         {
           appId: "large",
@@ -468,12 +468,12 @@ describe("cloud CLI OAuth session handling", () => {
           appIcon: "ti ti-box",
           appDescription: "Large capability catalog fixture.",
           manifest: {
-            protocolVersion: 1,
+            protocolVersion: 2,
             appId: "large",
             manifestHash: "1".repeat(64),
             types: [],
             queries,
-            actions: [],
+            actions: [], commands: [],
           },
         },
       ],

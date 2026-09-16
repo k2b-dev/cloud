@@ -465,7 +465,7 @@ const runAssignmentCancel = async (input: z.infer<typeof AssignmentCancelInputSc
 };
 
 export const venueCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: venueCapabilityPresentation,
   types: {
     venue: {

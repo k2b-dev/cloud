@@ -147,3 +147,35 @@ export const reviewCapabilityAction = async <TInput = unknown>(
     return unavailable(cause, undefined, clientLocale(options.headers));
   }
 };
+
+/** Resolve an interactive entry; this never runs a domain mutation. */
+export const resolveCommand = async (
+  command: string,
+  input: unknown = {},
+  commandOptions: import("../contracts/commands").CommandOptions = {},
+  options: CapabilityHttpOptions & { signal?: AbortSignal } = {},
+): Promise<import("./types").CapabilityResultState<{ href: string }>> => {
+  const { CommandRequestSchema, CommandLinkSchema } = await import("../contracts/commands");
+  const separator = command.indexOf(".");
+  if (separator < 1) throw new Error("Expected a qualified Command id");
+  const appId = command.slice(0, separator);
+  const localId = command.slice(separator + 1);
+  const body = CommandRequestSchema.parse({ input, ...commandOptions });
+  const headers = new Headers(options.headers);
+  headers.set("content-type", "application/json");
+  try {
+    const response = await (options.fetch ?? globalThis.fetch)(
+      requestUrl(options.baseUrl ?? "/api", `/capabilities/v1/commands/${encodeURIComponent(appId)}/${encodeURIComponent(localId)}`),
+      {
+        method: "POST",
+        headers,
+        credentials: "same-origin",
+        body: JSON.stringify(body),
+        signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+      },
+    );
+    return await readCapabilityResponse(response, CommandLinkSchema);
+  } catch (cause) {
+    return unavailable(cause, undefined, clientLocale(options.headers));
+  }
+};

@@ -1,3 +1,5 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { spaceCommandMessages } from "../../../../commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
@@ -506,6 +508,7 @@ export default function ItemDetailPanel(props: Props) {
   const handleEdit = async () => {
     if (editPromptPending || editItemMutation.loading()) return;
     editPromptPending = true;
+    const target = { spaceId: props.spaceId, itemId: props.item.id };
     try {
       const data = await openEditItemDialog({
         spaceId: props.spaceId,
@@ -514,7 +517,7 @@ export default function ItemDetailPanel(props: Props) {
         tags: props.tags,
         dateConfig: props.dateConfig,
       });
-      if (data) void editItemMutation.mutate({ spaceId: props.spaceId, itemId: props.item.id, data, locale: props.dateConfig?.locale });
+      if (data) void editItemMutation.mutate({ ...target, data, locale: props.dateConfig?.locale });
     } finally {
       editPromptPending = false;
     }
@@ -535,6 +538,36 @@ export default function ItemDetailPanel(props: Props) {
   const isEvent = () => Boolean(props.item.startsAt && props.item.endsAt);
   const isCompleted = () => !!props.item.completedAt;
   const completionBlocked = () => !isCompleted() && activeBlockerCount() > 0;
+  createEffect(() => {
+    if (!canEditItem() || isLoading()) return;
+    const itemId = props.item.id;
+    const title = props.item.title;
+    const copy = spaceCommandMessages.resolve([locale()]).t;
+    onCleanup(
+      registerContextAwareCommand({
+        id: `spaces.${itemId}.edit`,
+        title: copy.edit({ title }),
+        description: copy.currentItem,
+        icon: "ti ti-edit",
+        action: () => {
+          if (props.item.id === itemId && canEditItem() && !isLoading()) return handleEdit();
+        },
+      }),
+    );
+    if (!isCompleted() && !completionBlocked())
+      onCleanup(
+        registerContextAwareCommand({
+          id: `spaces.${itemId}.complete`,
+          title: copy.complete({ title }),
+          description: copy.currentItem,
+          icon: "ti ti-checkbox",
+          action: () => {
+            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked() && !isCompleted())
+              return completeMutation.mutate(true);
+          },
+        }),
+      );
+  });
   const recurrenceSummary = () =>
     summarizeRecurrence(props.item.recurrence, {
       startsAt: scheduleStart(),

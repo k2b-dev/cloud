@@ -38,7 +38,7 @@ describe("capabilities CLI", () => {
     const manifest = compileCapabilities(
       "contacts",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: { contact: { title: "Contact", description: "One contact.", reader: "contact.read" } },
         queries: {
           "contact.read": {
@@ -57,7 +57,7 @@ describe("capabilities CLI", () => {
       requests.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
       if (path.includes("cursor=")) {
         return Response.json({
-          protocolVersion: 1,
+          protocolVersion: 2,
           apps: [
             {
               appId: "contacts",
@@ -71,7 +71,7 @@ describe("capabilities CLI", () => {
         });
       }
       if (path.startsWith("/api/capabilities/v1/catalog")) {
-        return Response.json({ protocolVersion: 1, apps: [], page: { hasMore: true, nextCursor: "before-contacts" } });
+        return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "before-contacts" } });
       }
       return Response.json({ data: { id: "contact-1" } });
     });
@@ -85,20 +85,20 @@ describe("capabilities CLI", () => {
 
   test("fails closed for missing apps, Types without readers, and repeated catalog cursors", async () => {
     const missing = createContext(["read", "missing.item", "one"], {}, async () =>
-      Response.json({ protocolVersion: 1, apps: [], page: { hasMore: false } }),
+      Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } }),
     );
     await expect(capabilitiesCliModule.run(missing.ctx)).rejects.toThrow("Capability app missing is unavailable");
 
     const noReaderManifest = compileCapabilities(
       "contacts",
       defineCapabilities({
-        protocolVersion: 1,
+        protocolVersion: 2,
         types: { contact: { title: "Contact", description: "One contact." } },
       }),
     ).manifest;
     const noReader = createContext(["read", "contacts.contact", "one"], {}, async () =>
       Response.json({
-        protocolVersion: 1,
+        protocolVersion: 2,
         apps: [
           {
             appId: "contacts",
@@ -114,7 +114,7 @@ describe("capabilities CLI", () => {
     await expect(capabilitiesCliModule.run(noReader.ctx)).rejects.toThrow("unknown or has no reader");
 
     const repeated = createContext(["read", "missing.item", "one"], {}, async () =>
-      Response.json({ protocolVersion: 1, apps: [], page: { hasMore: true, nextCursor: "same" } }),
+      Response.json({ protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "same" } }),
     );
     await expect(capabilitiesCliModule.run(repeated.ctx)).rejects.toThrow("repeated cursor");
   });
@@ -188,14 +188,14 @@ describe("capabilities CLI", () => {
   });
 
   test("accepts catalog pages above the invocation result limit", async () => {
-    const payload = JSON.stringify({ protocolVersion: 1, apps: [], page: { hasMore: false } });
+    const payload = JSON.stringify({ protocolVersion: 2, apps: [], page: { hasMore: false } });
     const { ctx, lines } = createContext(["catalog"], {}, async () => new Response(`${" ".repeat(300 * 1024)}${payload}`));
     await capabilitiesCliModule.run(ctx);
     expect(lines).toContain(payload);
   });
 
   test("rejects invalid catalog and invocation envelopes", async () => {
-    const invalidCatalog = createContext(["catalog"], {}, async () => Response.json({ protocolVersion: 1, apps: [] }));
+    const invalidCatalog = createContext(["catalog"], {}, async () => Response.json({ protocolVersion: 2, apps: [] }));
     await expect(capabilitiesCliModule.run(invalidCatalog.ctx)).rejects.toThrow();
 
     const invalidResult = createContext(["query", "contacts", "search"], { input: "{}" }, async () => Response.json({ value: [] }));

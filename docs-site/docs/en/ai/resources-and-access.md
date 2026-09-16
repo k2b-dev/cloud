@@ -34,7 +34,7 @@ import { defineCapabilities } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const inventoryCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   types: {
     item: {
       title: "Inventory item",

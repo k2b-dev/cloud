@@ -172,7 +172,7 @@ const loadRecordAction = async (input: z.infer<typeof recordActionInput>, contex
 };
 
 export const dailyCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   types: {
     document: { title: "Grids Document", description: "One stored immutable document and its artifact metadata.", reader: "document.read" },
     "workflow-run": { title: "Grids Workflow Run", description: "Status of one accepted workflow operation.", reader: "workflow.run.read" },
@@ -1373,7 +1373,7 @@ const prepareViewCreate = async (input: z.infer<typeof ViewCreateInputSchema>, c
 };
 
 export const gridsCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   presentation: gridsCapabilityPresentation,
   types: {
     ...dailyCapabilities.types,

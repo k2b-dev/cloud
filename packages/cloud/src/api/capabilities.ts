@@ -45,7 +45,9 @@ import {
   requiresAuth,
   v,
 } from "../server";
-import { logger } from "../services";
+import { logger, settings } from "../services";
+import { resolveCommandLink } from "../capabilities/command-link";
+import { CommandRequestSchema, CommandLinkSchema } from "../contracts/commands";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import type { InvocationAuthority } from "../services/identity/invocation-token";
@@ -98,6 +100,7 @@ export type CapabilityRouteDependencies = {
   withMandateIssueAuthority?: typeof withMandateIssueAuthority;
   queryTimeoutMs?: number;
   actionTimeoutMs?: number;
+  appUrl?: () => Promise<string>;
 };
 
 export type CapabilityDispatchDependencies = Pick<
@@ -725,6 +728,51 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
           log.warn("Capability catalog unavailable", { error: error instanceof Error ? error.message : String(error) });
           const unavailable = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, messages.registryUnavailable, 503);
           return capabilityJsonResponse(unavailable.body, unavailable.status);
+        }
+      },
+    )
+    .post(
+      "/capabilities/v1/commands/:appId/:capabilityId",
+      describeRoute({
+        tags: ["Capabilities"],
+        summary: "Resolve an interactive Command link",
+        ...requiresAuth,
+        responses: {
+          200: jsonResponse(CommandLinkSchema, "Command entry URL"),
+          400: jsonResponse(CapabilityErrorSchema, "Invalid command input"),
+          404: jsonResponse(CapabilityErrorSchema, "Command unavailable"),
+        },
+      }),
+      requireReadScope,
+      async (c) => {
+        const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
+        const request = body.ok ? CommandRequestSchema.safeParse(body.data) : null;
+        if (!request?.success) return c.json({ code: "VALIDATION_FAILED", message: capabilityMessages(getLocale(c)).requestBodyJson }, 400);
+        const appId = c.req.param("appId");
+        const entry = await (dependencies.getCapability ?? getCapability)(appId);
+        const command = entry?.manifest.commands.find((command) => command.localId === c.req.param("capabilityId"));
+        if (!command)
+          return c.json(
+            {
+              code: "CAPABILITY_NOT_FOUND",
+              message: capabilityMessages(getLocale(c)).notFound({ kind: "Command", reference: `${appId}.${c.req.param("capabilityId")}` }),
+            },
+            404,
+          );
+        const apps = await (dependencies.listApps ?? listApps)();
+        const pathname = new URL(command.path, "https://cloud.invalid").pathname;
+        const owner = apps
+          .flatMap((app) => app.routes.map((prefix) => ({ app, prefix })))
+          .filter(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+          .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.app;
+        if (owner?.id !== appId)
+          return c.json({ code: "APP_UNAVAILABLE", message: capabilityMessages(getLocale(c)).appUnavailable({ appId }) }, 503);
+        try {
+          const appUrl = await (dependencies.appUrl ?? (() => settings.get<string>("app.url")))();
+          return c.json(resolveCommandLink(appId, command, request.data.input, { returnTo: request.data.returnTo }, appUrl));
+        } catch (error) {
+          if (!(error instanceof z.ZodError) && !(error instanceof Error && error.message === "Command link is too large")) throw error;
+          return c.json({ code: "VALIDATION_FAILED", message: capabilityMessages(getLocale(c)).inputSchemaMismatch }, 400);
         }
       },
     )

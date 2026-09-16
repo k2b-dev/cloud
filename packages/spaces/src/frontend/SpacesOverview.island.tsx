@@ -1,3 +1,4 @@
+import { createSpaceCommands } from "./space-commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { listenPopState, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
@@ -335,6 +336,7 @@ const activityIcon = (action: string) =>
             : "ti ti-pencil";
 
 export default function SpacesOverview(props: Props) {
+  createSpaceCommands({ dateConfig: props.dateConfig });
   const locale = useLocale();
   const { t } = overviewMessages.resolve([locale()]);
   const localizeStarter = (starter: SpaceStarter): SpaceStarter => ({

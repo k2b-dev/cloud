@@ -10,7 +10,13 @@ import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./
 import { resourceSearchMessages } from "./resource-search-messages";
 import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
 
+import { commandSearchItem, matchingCommands, type PaletteCommand } from "./search-commands";
+
 export type CloudResourceSearchProps = {
+  commands?: readonly PaletteCommand[];
+  commandsLoading?: boolean;
+  commandsError?: boolean;
+  onCommand?: (command: PaletteCommand, newTab: boolean) => void;
   onSelect: (item: SearchItem) => void;
   onOpenInNewTab?: (item: SearchItem) => void;
   onClose: () => void;
@@ -71,19 +77,26 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   let bodyRef!: HTMLDivElement;
   let backRef: HTMLButtonElement | undefined;
 
-  const tagContext = createMemo(() => tagAtCursor(input(), caret()));
-  const choosingTag = () => browsingTags() || tagContext() !== null;
+  const commandMode = () => !props.selectionMode && Boolean(props.onCommand) && input().trimStart().startsWith(">");
+  const commandQuery = () => (commandMode() ? input().trimStart().slice(1).trim() : textQuery());
+  const commandFor = (item: SearchItem) =>
+    item.ref.type === "cloud.command" ? visibleCommands().find((command) => command.id === item.ref.id) : undefined;
+  const tagContext = createMemo(() => (commandMode() ? null : tagAtCursor(input(), caret())));
+  const choosingTag = () => !commandMode() && (browsingTags() || tagContext() !== null);
   const textQuery = createMemo(() => {
     const ctx = tagContext();
     return (ctx ? input().slice(0, ctx.start) + input().slice(ctx.end) : input()).trim();
   });
-  const canSearch = () => Boolean(appId()) || tags().length > 0 || textQuery().length >= 2;
+  const visibleCommands = createMemo(() =>
+    props.selectionMode || !props.onCommand ? [] : matchingCommands(props.commands ?? [], commandQuery(), commandMode()),
+  );
+  const canSearch = () => !commandMode() && (Boolean(appId()) || tags().length > 0 || textQuery().length >= 2);
   const desiredUrl = createMemo(() =>
     cloudResourceSearchUrl({
       query: canSearch() ? textQuery() : "",
-      tags: tags(),
-      appId: appId(),
-      scope: scope()?.ref,
+      tags: commandMode() ? [] : tags(),
+      appId: commandMode() ? undefined : appId(),
+      scope: commandMode() ? undefined : scope()?.ref,
       requireReader: props.requireReader,
     }),
   );
@@ -122,7 +135,8 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       : [],
   );
   const items = createMemo(() => {
-    if (!canSearch()) return [];
+    const commands = visibleCommands().map((command) => commandSearchItem(command, command.context ? t().contextActions : t().actions));
+    if (!canSearch()) return commands;
     // Keep last-good rows only within the same context, never across scope changes.
     const loaded = new URL(searchQuery.data()?.url ?? "/api/search", "https://cloud.invalid");
     const sameScope =
@@ -132,13 +146,17 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     const resources = filterCloudResourceSearchItems(sameScope ? (response()?.items ?? []) : [], props).sort(
       (a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.title.localeCompare(b.title),
     );
-    return [...groupByApp(resources), ...groupByApp(navigation())];
+    const results = [...groupByApp(resources), ...groupByApp(navigation())];
+    // Context actions stay visible when opening an app-scoped search without text.
+    return textQuery() ? [...results, ...commands] : [...commands, ...results];
   });
-  const selectable = (item: SearchItem) => !props.disabled && !choosingTag() && (navigation().includes(item) || (fresh() && !pending()));
+  const selectable = (item: SearchItem) =>
+    !props.disabled && !choosingTag() && (commandFor(item) || navigation().includes(item) || (fresh() && !pending()));
   const activeItem = () => items()[activeIndex()];
   const selectedItem = () => items().find((item) => itemKey(item) === selectedKey());
   const previewItem = () => (props.selectionMode ? (selectedItem() ?? activeItem()) : activeItem());
-  const showResults = () => !choosingTag() && items().length > 0;
+  const showList = () => !choosingTag() && items().length > 0;
+  const showResults = () => showList() && (canSearch() || commandMode());
   const unknownTags = () => (fresh() && !pending() ? (response()?.unsupportedTags ?? []) : []);
 
   const { debouncedFn: scheduleSearch, cancel } = timed.debounce((url: string) => setSearchUrl(url), 200);
@@ -164,8 +182,9 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     setMobileDetails(false);
   });
   createEffect(() => {
-    searchQuery.data();
-    setActiveIndex(0);
+    items();
+    // Mutating/context actions are never selected implicitly as the page context changes.
+    setActiveIndex(items()[0]?.ref.type === "cloud.command" ? -1 : 0);
   });
   createEffect(() => {
     suggestions();
@@ -228,6 +247,11 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   };
   const chooseItem = (item: SearchItem) => {
     if (!selectable(item)) return;
+    const command = commandFor(item);
+    if (command) {
+      props.onCommand?.(command, false);
+      return;
+    }
     if (props.selectionMode) {
       setSelectedKey(itemKey(item));
       setActiveIndex(items().indexOf(item));
@@ -235,6 +259,12 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   };
   const scrollOption = (index: number, kind: "tag" | "result") => {
     queueMicrotask(() => bodyRef?.querySelector<HTMLElement>(`[data-${kind}-index="${index}"]`)?.scrollIntoView({ block: "nearest" }));
+  };
+  const openNewTab = (item: SearchItem) => {
+    const command = commandFor(item);
+    if (command) {
+      if (typeof command.action !== "function") props.onCommand?.(command, true);
+    } else props.onOpenInNewTab?.(item);
   };
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.isComposing) return;
@@ -269,14 +299,19 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!items().length) return;
-      const next = (activeIndex() + (event.key === "ArrowDown" ? 1 : -1) + items().length) % items().length;
+      const next =
+        activeIndex() < 0
+          ? event.key === "ArrowDown"
+            ? 0
+            : items().length - 1
+          : (activeIndex() + (event.key === "ArrowDown" ? 1 : -1) + items().length) % items().length;
       setActiveIndex(next);
       scrollOption(next, "result");
     } else if (event.key === "Enter" && activeItem()) {
       event.preventDefault();
       const item = activeItem()!;
       if ((event.metaKey || event.ctrlKey) && props.onOpenInNewTab && !props.selectionMode) {
-        if (selectable(item)) props.onOpenInNewTab(item);
+        if (selectable(item)) openNewTab(item);
       } else chooseItem(item);
     } else if (event.key === "Backspace" && !input() && tags().length) {
       event.preventDefault();
@@ -307,7 +342,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
         <i class="ti ti-x" aria-hidden="true" />
       </IconButton>
       <label class="cloud-resource-search__input">
-        <Show when={pending() && !choosingTag()} fallback={<i class="ti ti-search" aria-hidden="true" />}>
+        <Show
+          when={commandMode() ? props.commandsLoading : pending() && !choosingTag()}
+          fallback={<i class="ti ti-search" aria-hidden="true" />}
+        >
           <i class="ti ti-loader-2 animate-spin" role="status" aria-label={t().loading} />
         </Show>
         <div class="cloud-resource-search__field">
@@ -354,13 +392,13 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             aria-autocomplete="list"
             aria-label={t().searchCloudResources}
             aria-controls={`${id}-options`}
-            aria-expanded={choosingTag() ? suggestions().length > 0 : showResults()}
+            aria-expanded={choosingTag() ? suggestions().length > 0 : showList()}
             aria-activedescendant={
               choosingTag()
                 ? suggestions().length
                   ? `${id}-tag-${tagIndex()}`
                   : undefined
-                : showResults()
+                : showList() && activeIndex() >= 0
                   ? `${id}-result-${activeIndex()}`
                   : undefined
             }
@@ -371,10 +409,12 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             onKeyUp={updateCaret}
             onKeyDown={handleKeyDown}
             placeholder={
-              tags().length
-                ? ""
-                : (props.placeholder ??
-                  (props.selectionMode ? t().pickerPlaceholder : scope() ? t().scopedSearchPlaceholder : t().searchPlaceholder))
+              commandMode()
+                ? t().commandPlaceholder
+                : tags().length
+                  ? ""
+                  : (props.placeholder ??
+                    (props.selectionMode ? t().pickerPlaceholder : scope() ? t().scopedSearchPlaceholder : t().searchPlaceholder))
             }
             autocomplete="off"
             autocapitalize="off"
@@ -408,7 +448,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   {t().partialFailure}
                 </p>
               </Show>
-              <Show when={!canSearch()}>
+              <Show when={!canSearch() && !commandMode()}>
                 <div class="cloud-resource-search__idle">
                   <p>{props.selectionMode ? t().pickerHint : props.searchResources === false ? t().navigationHint : t().startHint}</p>
                   <div class="cloud-resource-search__quick" aria-busy={!response() && !searchQuery.error()}>
@@ -437,10 +477,31 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                         {t().allTags}
                       </Button>
                     </Show>
+                    <Show when={props.onCommand && !props.selectionMode}>
+                      <Button
+                        variant="text"
+                        size="xs"
+                        onClick={() => {
+                          setInput(">");
+                          setCaret(1);
+                          focusInput();
+                        }}
+                      >
+                        {t().actions}
+                      </Button>
+                    </Show>
                   </div>
                 </div>
               </Show>
-              <Show when={showResults()}>
+              <Show when={commandMode()}>
+                <p class="cloud-resource-search__hint">{t().commandHint}</p>
+              </Show>
+              <Show when={props.commandsError && commandMode()}>
+                <p role="status" class="cloud-resource-search__hint">
+                  {t().commandFailed}
+                </p>
+              </Show>
+              <Show when={showList()}>
                 <div class="cloud-resource-search__count" aria-live="polite">
                   {t().resultCount({ count: items().length })}
                 </div>
@@ -471,7 +532,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                           }}
                           onClick={(event) => {
                             if ((event.metaKey || event.ctrlKey) && props.onOpenInNewTab && !props.selectionMode) {
-                              if (selectable(item)) props.onOpenInNewTab(item);
+                              if (selectable(item)) openNewTab(item);
                             } else chooseItem(item);
                           }}
                         >
@@ -490,7 +551,14 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                 </section>
               </Show>
               <Show
-                when={canSearch() && !items().length && !pending() && fresh() && !searchQuery.error() && !response()?.failedApps?.length}
+                when={
+                  (canSearch() || commandMode()) &&
+                  !items().length &&
+                  !pending() &&
+                  fresh() &&
+                  !searchQuery.error() &&
+                  !response()?.failedApps?.length
+                }
               >
                 <p class="cloud-resource-search__hint" role="status">
                   {unknownTags().length ? t().unsupportedTags : t().noMatches}
@@ -546,6 +614,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
           <Show when={showResults()}>
             <Button
               class="cloud-resource-search__details"
+              disabled={!previewItem()}
               variant="text"
               size="xs"
               onClick={() => {
@@ -562,7 +631,14 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
               <div class="cloud-resource-search__keys">
                 <span>↑ ↓ {t().navigate}</span>
                 <span>↵ {choosingTag() ? t().select : t().open}</span>
-                <Show when={props.onOpenInNewTab && !props.selectionMode && !choosingTag()}>
+                <Show
+                  when={
+                    props.onOpenInNewTab &&
+                    !props.selectionMode &&
+                    !choosingTag() &&
+                    (!activeItem() || typeof commandFor(activeItem()!)?.action !== "function")
+                  }
+                >
                   <span>⌘/Ctrl ↵ {t().newTab}</span>
                 </Show>
               </div>

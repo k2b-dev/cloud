@@ -1,6 +1,8 @@
+import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { mailCommandMessages } from "../../commands";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, DetailPanel, Placeholder, prompts, useLocale } from "@k2b/ui";
-import { createMemo, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailConversationContext } from "../../contracts";
 import { assertCursorProgress } from "../pagination";
@@ -10,7 +12,13 @@ import { buildMailContactParticipantRows } from "./mail-contact-context";
 import { buildExactParticipantSearchHref } from "./mail-navigation";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
-export default function MailConversationContext(props: { mailboxId: string; conversationId: string; requestUrl: string; active: boolean }) {
+export default function MailConversationContext(props: {
+  mailboxId: string;
+  conversationId: string;
+  requestUrl: string;
+  active: boolean;
+  subject?: string;
+}) {
   const locale = useLocale();
   const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const contexts = query.createInfinite<string, MailConversationContext, string>({
@@ -174,97 +182,27 @@ export default function MailConversationContext(props: { mailboxId: string; conv
   };
 
   const createSpaceItem = async (kind: "task" | "event") => {
-    const mailboxId = props.mailboxId;
-    const conversationId = props.conversationId;
-    const destinationsResponse = await apiClient.mailboxes[":mailboxId"]["calendar-destinations"].$get({
-      param: { mailboxId },
-    });
-    if (!destinationsResponse.ok) return void prompts.error(await readApiError(destinationsResponse, messages().couldNotLoadSpaces));
-    const destinations = await destinationsResponse.json();
-    const selected = await prompts.search<{ id: string; name: string }>(
-      ({ query }) =>
-        Promise.resolve(
-          destinations.items
-            .filter((space) => space.name.toLowerCase().includes(query.toLowerCase()))
-            .map((space) => ({ value: space, label: space.name, icon: "ti ti-layout-kanban" })),
-        ),
-      {
-        title: messages().chooseSpaceTitle,
-        icon: "ti ti-layout-kanban",
-        placeholder: messages().searchWritableSpaces,
-        minQueryLength: 0,
-        noResultsText: messages().noWritableSpacesFound,
-        size: "small",
-      },
-    );
-    if (!selected?.value) return;
-    const destination = selected.value;
-    const spaceResponse = await apiClient.mailboxes[":mailboxId"].spaces[":spaceId"].$get({
-      param: { mailboxId, spaceId: destination.id },
-      query: { conversationId },
-    });
-    if (!spaceResponse.ok) return void prompts.error(await readApiError(spaceResponse, messages().couldNotLoadSpaceKanbans));
-    const space = await spaceResponse.json();
-    const kanbans = space.columns.filter((column) => !column.isDone);
-    const defaultKanban = kanbans[0];
-    if (!defaultKanban) return void prompts.error(messages().noOpenKanban);
-    const titleField = { type: "text" as const, label: messages().title, required: true, maxLength: 200 };
-    const kanbanField = {
-      type: "select" as const,
-      label: messages().kanban,
-      required: true,
-      default: defaultKanban.id,
-      options: kanbans.map((kanban) => ({ id: kanban.id, label: kanban.name })),
-    };
-    const json =
-      kind === "task"
-        ? await (async () => {
-            const values = await prompts.form({
-              title: messages().newSpaceTask,
-              icon: "ti ti-checkbox",
-              confirmText: messages().create,
-              fields: { title: titleField, columnId: kanbanField, deadline: { type: "datetime", label: messages().deadline } },
-            });
-            return values?.columnId && values.title
-              ? {
-                  kind,
-                  spaceId: destination.id,
-                  columnId: values.columnId,
-                  title: values.title,
-                  ...(values.deadline ? { deadline: new Date(values.deadline).toISOString() } : {}),
-                }
-              : null;
-          })()
-        : await (async () => {
-            const values = await prompts.form({
-              title: messages().newSpaceEvent,
-              icon: "ti ti-calendar-event",
-              confirmText: messages().create,
-              fields: {
-                title: titleField,
-                startsAt: { type: "datetime", label: messages().starts, required: true },
-                endsAt: { type: "datetime", label: messages().ends, required: true },
-              },
-            });
-            return values?.title && values.startsAt && values.endsAt
-              ? {
-                  kind,
-                  spaceId: destination.id,
-                  columnId: defaultKanban.id,
-                  title: values.title,
-                  startsAt: new Date(values.startsAt).toISOString(),
-                  endsAt: new Date(values.endsAt).toISOString(),
-                }
-              : null;
-          })();
-    if (!json) return;
-    const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].spaces.items.$post({
-      param: { mailboxId, conversationId },
-      json,
-    });
-    if (!response.ok) return void prompts.error(await readApiError(response, messages().couldNotCreateSpaceItem({ kind })));
-    await reconcileSpacesAfterWrite(mailboxId, conversationId, messages().spaceItemCreatedRefreshFailed({ kind }));
+    try {
+      await openCommand(`spaces.${kind}.compose`, { source: { type: "mail.conversation", id: props.conversationId } });
+    } catch (error) {
+      await prompts.error(error instanceof Error ? error.message : messages().couldNotLoadSpaces);
+    }
   };
+  createEffect(() => {
+    if (!props.active || context()?.spaces.status !== "ready") return;
+    const id = props.conversationId;
+    const t = mailCommandMessages.resolve([locale()]).t;
+    for (const kind of ["task", "event"] as const)
+      onCleanup(
+        registerContextAwareCommand({
+          id: `mail.${id}.${kind}`,
+          title: kind === "task" ? t.sourceTask : t.sourceEvent,
+          description: props.subject ? `“${props.subject}” · ${t.sourceDescription}` : t.sourceDescription,
+          icon: kind === "task" ? "ti ti-checkbox" : "ti ti-calendar-event",
+          action: { command: `spaces.${kind}.compose`, input: { source: { type: "mail.conversation", id } } },
+        }),
+      );
+  });
 
   onCleanup(() => createParticipantContact.abort());
 

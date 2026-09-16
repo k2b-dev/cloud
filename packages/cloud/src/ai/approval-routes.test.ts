@@ -26,7 +26,7 @@ const pass: MiddlewareHandler<AuthContext> = async (_c, next) => next();
 const capabilityManifest = compileCapabilities(
   "demo",
   defineCapabilities({
-    protocolVersion: 1,
+    protocolVersion: 2,
     types: { item: { title: "Item", description: "A test item." } },
     actions: {
       rename: {

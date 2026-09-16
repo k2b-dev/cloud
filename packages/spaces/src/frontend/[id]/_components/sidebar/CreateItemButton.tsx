@@ -3,7 +3,7 @@ import { type HotkeyMap, hotkeys, mutation as mutations } from "@k2b/stdlib/soli
 import { AppWorkspace, Button, dialogCore, prompts, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import type { SpaceColumn, SpaceItem, SpaceTag, SpaceItemResourceReferenceInput } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -49,7 +49,7 @@ export function createItemController(props: Props) {
     },
     onError: (err) => prompts.error(err.message),
   });
-  const createItem = async () => {
+  const createItem = async (options: { type?: ItemType; references?: SpaceItemResourceReferenceInput[]; returnTo?: string } = {}) => {
     if (dialogPending() || mutation.loading()) return;
     setDialogPending(true);
     try {
@@ -60,7 +60,7 @@ export function createItemController(props: Props) {
             columns={props.columns}
             tags={props.tags}
             quickCreate
-            defaults={{ type: defaultType(), columnId: props.defaultColumnId }}
+            defaults={{ type: options.type ?? defaultType(), columnId: props.defaultColumnId, references: options.references }}
             onSubmit={(data) => close(data)}
             onCancel={() => close(null)}
             dateConfig={props.dateConfig}
@@ -68,7 +68,10 @@ export function createItemController(props: Props) {
         ),
         itemCreateDialogOptions,
       );
-      if (intent) void mutation.mutate(intent);
+      if (intent) {
+        await mutation.mutate(intent);
+        if (!mutation.error() && options.returnTo) window.location.assign(options.returnTo);
+      } else if (options.returnTo) window.location.assign(options.returnTo);
     } finally {
       setDialogPending(false);
     }

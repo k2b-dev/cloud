@@ -16,7 +16,7 @@ const PROVIDER_LATENCY_MS = 5;
 const ISSUER = "https://cloud.test";
 
 const capabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   types: { item: { title: "Item", description: "A benchmark item." } },
   queries: {
     search: {

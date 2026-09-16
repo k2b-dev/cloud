@@ -12,8 +12,6 @@ import {
   calendarInvitationImportResultSchema,
   calendarInvitationPreviewSchema,
   calendarParticipationStatusSchema,
-  spaceDetailSchema,
-  spacesItemMutationDataSchema,
   spacesItemReferenceRemoveDataSchema,
   spacesItemResourceReferenceSchema,
   spacesItemSearchDataSchema,
@@ -59,7 +57,6 @@ import {
   mailCommandInputSchema,
   mailConversationContextQuerySchema,
   mailConversationContextSchema,
-  mailConversationSpaceCreateInputSchema,
   mailConversationSpaceLinkInputSchema,
   mailConversationSpaceSearchQuerySchema,
   mailFocusPageSchema,
@@ -901,29 +898,6 @@ const mailOperationsApi = new Hono<MailApiContext>()
       return respondAppDependency(c, result);
     },
   )
-  .post(
-    "/mailboxes/:mailboxId/conversations/:conversationId/spaces/items",
-    describeRoute({
-      tags: ["Mail:Context"],
-      summary: "Create a linked Space task or event",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(spacesItemMutationDataSchema, "Created Space item"),
-        503: jsonResponse(ErrorResponseSchema, "Spaces unavailable"),
-      },
-    }),
-    v("param", mailboxAndIdParamSchema("conversationId")),
-    v("json", mailConversationSpaceCreateInputSchema),
-    async (c) => {
-      const result = await conversationContext.createConversationSpaceItem({
-        context: requestContext(c),
-        request: integrationRequest(c),
-        ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
-        input: c.req.valid("json"),
-      });
-      return respondAppDependency(c, result);
-    },
-  )
   .get(
     "/mailboxes/:mailboxId/conversations/:conversationId/related",
     describeRoute({
@@ -1006,34 +980,6 @@ const mailOperationsApi = new Hono<MailApiContext>()
       });
       if (!destinations.ok) return respondPublic(c, destinations);
       return respondPublic(c, destinations);
-    },
-  )
-  .get(
-    "/mailboxes/:mailboxId/spaces/:spaceId",
-    describeRoute({
-      tags: ["Mail:Context"],
-      summary: "Read a writable Space for Mail item creation",
-      ...requiresAuth,
-      responses: {
-        200: jsonResponse(spaceDetailSchema, "Space detail"),
-        503: jsonResponse(ErrorResponseSchema, "Spaces unavailable"),
-      },
-    }),
-    v("param", z.object({ mailboxId: ResourceShortIdSchema, spaceId: ResourceShortIdSchema })),
-    v("query", z.object({ conversationId: ResourceShortIdSchema }).strict()),
-    async (c) => {
-      const mailboxId = internalMailboxId(c);
-      const conversationId = c.req.valid("query").conversationId;
-      const internalConversationId = await publicResources.resolveMailboxPublicId("conversations", mailboxId, conversationId);
-      if (!internalConversationId) return respondPublic(c, fail(err.notFound("Conversation")));
-      const result = await conversationContext.getConversationSpace({
-        context: requestContext(c),
-        request: integrationRequest(c),
-        mailboxId,
-        conversationId: internalConversationId,
-        spaceId: c.req.valid("param").spaceId,
-      });
-      return respondAppDependency(c, result);
     },
   )
   .put(
@@ -2930,10 +2876,7 @@ const adminApi = new Hono<MailApiContext>()
     respondPublic(c, security.updateSettings({ context: requestContext(c), ...c.req.valid("json") })),
   );
 
-const authenticatedApi = new Hono<MailApiContext>()
-  .route("/", resourceRoutes)
-  .route("/", adminApi)
-  .route("/", mailOperationsApi);
+const authenticatedApi = new Hono<MailApiContext>().route("/", resourceRoutes).route("/", adminApi).route("/", mailOperationsApi);
 
 const api = new Hono<MailApiContext>()
   .use(rateLimit())

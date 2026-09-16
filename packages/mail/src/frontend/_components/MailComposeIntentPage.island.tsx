@@ -1,6 +1,11 @@
+import { CommandPathSchema } from "@k2b/cloud/contracts";
+import { consumeCommandLink, openCommand, registerCommandHandler } from "@k2b/cloud/browser/commands";
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
+import { z } from "zod";
+import { MailComposeCommandInputSchema, mailCommandMessages } from "../../commands";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, NoticeCard, Placeholder, prompts, ScrollArea, Select, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
@@ -25,7 +30,71 @@ export default function MailComposeIntentPage(props: {
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
-  const parsedIntent = parseMailtoIntent(props.mailto);
+  const [mailto, setMailto] = createSignal(props.mailto);
+  const [returnHref, setReturnHref] = createSignal(CommandPathSchema.safeParse(props.returnHref).success ? props.returnHref : null);
+  const [commandLoading, setCommandLoading] = createSignal(false);
+  const [commandError, setCommandError] = createSignal<string>();
+  const [retryCommand, setRetryCommand] = createSignal<() => Promise<void>>();
+  const parsedIntent = createMemo(() => parseMailtoIntent(mailto()));
+  const commandAbort = new AbortController();
+  onCleanup(() => commandAbort.abort());
+  onMount(() => {
+    onCleanup(
+      registerCommandHandler("mail.compose", MailComposeCommandInputSchema, async (input, options) => {
+        if (commandLoading()) throw new Error(t().preparingMessage);
+        setRetryCommand(() => () => openCommand("mail.compose", input, options));
+        setCommandLoading(true);
+        setCommandError(undefined);
+        setMailto(null);
+        setReturnHref(options.returnTo ?? null);
+        try {
+          if (input.contact) {
+            const result = await invokeCapabilityWithDataSchema(
+              {
+                appId: "contacts",
+                capabilityId: "contact.read",
+                kind: "query",
+                input: { id: input.contact.id },
+                signal: commandAbort.signal,
+              },
+              z.object({ emails: z.array(z.object({ email: z.email(), label: z.string().nullable() })) }),
+            );
+            const copy = mailCommandMessages.resolve([locale()]).t;
+            if (!result.ok || !result.data.data.emails.length) throw new Error(copy.unavailable);
+            const emails = result.data.data.emails;
+            const selected =
+              emails.length === 1
+                ? emails[0]
+                : (
+                    await prompts.search<{ email: string }>(
+                      async ({ query }) =>
+                        emails
+                          .filter((email) => email.email.includes(query))
+                          .map((email) => ({ value: email, label: email.email, desc: email.label ?? undefined })),
+                      { title: copy.recipient, minQueryLength: 0 },
+                    )
+                  )?.value;
+            if (commandAbort.signal.aborted || !selected) return;
+            setMailto(`mailto:${encodeURIComponent(selected.email)}`);
+          }
+        } catch (error) {
+          setCommandError(error instanceof Error ? error.message : mailCommandMessages.resolve([locale()]).t.unavailable);
+          throw error;
+        } finally {
+          setCommandLoading(false);
+        }
+      }),
+    );
+    void consumeCommandLink();
+  });
+  const intentData = () => {
+    const parsed = parsedIntent();
+    return parsed.ok ? parsed.intent : undefined;
+  };
+  const intentError = () => {
+    const parsed = parsedIntent();
+    return !parsed.ok ? intentErrorMessage(parsed.code) : undefined;
+  };
   const intentErrorMessage = (code: MailComposeIntentErrorCode): string => {
     switch (code) {
       case "too_large":
@@ -90,7 +159,8 @@ export default function MailComposeIntentPage(props: {
   const selectedIdentity = createMemo(() => identities().find((identity) => identity.id === identityId()) ?? null);
   const draftCreation = mutations.create<{ seed: MailDraftSeed; identityId: string }, { mailboxId: string; identity: SenderIdentity }>({
     mutation: async ({ mailboxId: selectedMailboxId, identity }, { abortSignal }) => {
-      if (!parsedIntent.ok) throw new Error(intentErrorMessage(parsedIntent.code));
+      const parsed = parsedIntent();
+      if (!parsed.ok) throw new Error(intentErrorMessage(parsed.code));
       const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
         {
           param: { mailboxId: selectedMailboxId },
@@ -99,12 +169,12 @@ export default function MailComposeIntentPage(props: {
               kind: "compose",
               input: {
                 senderIdentityId: identity.id,
-                to: parsedIntent.intent.to,
-                cc: parsedIntent.intent.cc,
-                bcc: parsedIntent.intent.bcc,
-                subject: parsedIntent.intent.subject,
-                body: parsedIntent.intent.body,
-                ...(parsedIntent.intent.body ? { format: "plain" as const } : {}),
+                to: parsed.intent.to,
+                cc: parsed.intent.cc,
+                bcc: parsed.intent.bcc,
+                subject: parsed.intent.subject,
+                body: parsed.intent.body,
+                ...(parsed.intent.body ? { format: "plain" as const } : {}),
                 intent: "new",
                 conversationId: null,
                 sourceMessageId: null,
@@ -129,8 +199,8 @@ export default function MailComposeIntentPage(props: {
         return;
       }
       const fallbackReturnHref = `/app/mail/${seed.mailboxId}`;
-      const returnHref = props.returnHref ? mailDraftReturnHref(props.returnHref, seed.mailboxId) : fallbackReturnHref;
-      window.location.replace(mailDraftSeedHref(seed.mailboxId, seed.id, returnHref));
+      const destination = returnHref() ? mailDraftReturnHref(returnHref()!, seed.mailboxId) : fallbackReturnHref;
+      window.location.replace(mailDraftSeedHref(seed.mailboxId, seed.id, destination));
     },
     onError: (error) => {
       setAutoStartFailed(true);
@@ -145,13 +215,22 @@ export default function MailComposeIntentPage(props: {
   const createDraft = () => {
     const selectedMailboxId = mailboxId();
     const identity = selectedIdentity();
-    if (!selectedMailboxId || !identity || draftCreation.loading()) return;
+    if (!selectedMailboxId || !identity || draftCreation.loading() || commandLoading() || commandError()) return;
     draftCreation.mutate({ mailboxId: selectedMailboxId, identity });
   };
 
   let autoStartAttempted = false;
   createEffect(() => {
-    if (!props.autoStart || autoStartAttempted || !parsedIntent.ok || identityLoading() || identityError()) return;
+    if (
+      !props.autoStart ||
+      commandLoading() ||
+      commandError() ||
+      autoStartAttempted ||
+      !parsedIntent().ok ||
+      identityLoading() ||
+      identityError()
+    )
+      return;
     if (!selectedMailbox() || !selectedIdentity()) return;
     autoStartAttempted = true;
     createDraft();
@@ -160,7 +239,7 @@ export default function MailComposeIntentPage(props: {
   const autoStartPending = createMemo(
     () =>
       props.autoStart &&
-      parsedIntent.ok &&
+      parsedIntent().ok &&
       Boolean(selectedMailbox()) &&
       !autoStartFailed() &&
       !identityError() &&
@@ -194,10 +273,10 @@ export default function MailComposeIntentPage(props: {
           fallback={<Placeholder state="empty" title={t().noWritableMailbox} description={t().noWritableMailboxDescription} />}
         >
           <Show
-            when={parsedIntent.ok}
+            when={parsedIntent().ok}
             fallback={
               <NoticeCard tone="danger" icon={false}>
-                {!parsedIntent.ok && intentErrorMessage(parsedIntent.code)}
+                {intentError()}
               </NoticeCard>
             }
           >
@@ -242,27 +321,52 @@ export default function MailComposeIntentPage(props: {
                 </NoticeCard>
               </Show>
             </div>
-            <Show when={props.mailto}>
+            <Show when={commandError()}>
+              {(error) => (
+                <NoticeCard tone="danger" role="alert" bodyClass="flex items-center justify-between gap-3">
+                  <span>{error()}</span>
+                  <Button variant="secondary" size="sm" disabled={commandLoading()} onClick={() => void retryCommand()?.().catch(() => {})}>
+                    {t().retry}
+                  </Button>
+                </NoticeCard>
+              )}
+            </Show>
+            <Show when={mailto()}>
               <div class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3 text-sm">
                 <p class="font-medium text-primary">{t().emailLink}</p>
                 <p class="mt-1 truncate text-secondary">
-                  {parsedIntent.ok && parsedIntent.intent.to.length > 0
-                    ? t().toAddresses({ value: parsedIntent.intent.to.map((recipient) => recipient.address).join(", ") })
+                  {Boolean(intentData()?.to.length)
+                    ? t().toAddresses({
+                        value: intentData()!
+                          .to.map((recipient) => recipient.address)
+                          .join(", "),
+                      })
                     : t().noRecipientSupplied}
                 </p>
-                <Show when={parsedIntent.ok && parsedIntent.intent.subject}>
-                  <p class="truncate text-secondary">{parsedIntent.ok && parsedIntent.intent.subject}</p>
+                <Show when={intentData()?.subject}>
+                  <p class="truncate text-secondary">{intentData()?.subject}</p>
                 </Show>
               </div>
             </Show>
             <div class="flex items-center justify-between gap-3">
-              <ButtonLink variant="secondary" size="sm" href={selectedMailbox() ? `/app/mail/${selectedMailbox()!.id}` : "/app/mail"}>
+              <ButtonLink
+                variant="secondary"
+                size="sm"
+                href={returnHref() ?? (selectedMailbox() ? `/app/mail/${selectedMailbox()!.id}` : "/app/mail")}
+              >
                 {t().cancel}
               </ButtonLink>
               <Button
                 size="sm"
                 type="button"
-                disabled={!selectedMailbox() || !selectedIdentity() || identityLoading() || draftCreation.loading()}
+                disabled={
+                  !selectedMailbox() ||
+                  !selectedIdentity() ||
+                  identityLoading() ||
+                  draftCreation.loading() ||
+                  commandLoading() ||
+                  Boolean(commandError())
+                }
                 onClick={createDraft}
               >
                 <i class={`ti ${draftCreation.loading() ? "ti-loader-2 animate-spin" : "ti-arrow-right"}`} aria-hidden="true" />

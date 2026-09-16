@@ -72,7 +72,7 @@ import {
 import { ok } from "@k2b/stdlib";
 
 export const inventoryCapabilities = defineCapabilities({
-  protocolVersion: 1,
+  protocolVersion: 2,
   types: {
     item: {
       title: "Inventory item",
@@ -370,3 +370,45 @@ result limits are applied. An empty unscoped request returns only the app
 catalog without calling providers. The picker owns this platform-specific
 discovery UI; `@k2b/ui` remains independent of Cloud applications and resource
 contracts.
+
+## Actions in the global palette
+
+The global search also discovers [Commands](/en/docs/platform/capabilities#open-an-interactive-flow-with-commands).
+Click **Actions** or type `>` to browse them. Ordinary text searches show
+matching actions after resource and page results. Only Commands whose input
+schema accepts `{}` appear globally; other Commands remain callable with
+explicit input. Resource pickers never show or execute Commands.
+
+Register useful actions for the currently visible resource from its island:
+
+```ts
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { createEffect, onCleanup } from "solid-js";
+
+createEffect(() => {
+  const contact = currentContact();
+  if (!contact?.emails.length) return;
+  onCleanup(registerContextAwareCommand({
+    id: `contact.${contact.id}.email`,
+    title: `Compose email to ${contact.name}`,
+    description: "Opens Mail with this contact as the recipient.",
+    icon: "ti ti-mail-plus",
+    action: {
+      command: "mail.compose",
+      input: { contact: { type: "contacts.contact", id: contact.id } },
+    },
+  }));
+});
+```
+
+Alternatively, `action` may be a local function that opens existing UI or calls
+the same permission-aware mutation as a visible button. Bind the target in the
+registration and remove the entry when the resource changes, disappears, or
+becomes unavailable. Avoid ambiguous labels such as “Edit” without a target.
+Use the application's normal locale catalog for these labels.
+
+Up to three context actions appear before typing, in both the global and
+app-scoped search. The Actions view exposes the full list. Actions are never
+implicitly selected when first shown or replaced: click them, or select with
+an arrow key before pressing Enter. Cmd/Ctrl+Enter opens linkable Commands in a
+new tab and leaves the palette open; local functions cannot open in a new tab.
