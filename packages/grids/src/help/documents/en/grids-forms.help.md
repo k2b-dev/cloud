@@ -6,6 +6,10 @@ description: Build focused and validated record-entry flows.
 order: 130
 ---
 Forms validate and write records into one table. Use a Grids App for multi-page flows.
+
+Before sending, Forms check required inputs, value formats and configured field limits in your browser. Errors appear beside the inputs; submitting focuses the first invalid field and sends no request. After that, errors update as you correct the values. The server still validates every submission, including permissions and references to other records.
+
+Number inputs omit insignificant trailing zeros: `1.0000` appears as `1`. Fractional quantities and exact decimal values remain supported; the text you are typing stays intact until you leave the input.
 Unsaved or submitting forms warn before leaving the page.
 
 **Calculated values** shows up to 20 read-only formulas from visible inputs. Labels allow 200 characters, hints 2,000. Incomplete values show a dash; empty lists hide the summary. Errors remain visible.

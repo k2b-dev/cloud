@@ -19,10 +19,11 @@ import { materializeFieldDefault } from "../../../field-defaults";
 import { objectListRecordInputValues } from "../../../field-types/object-list";
 import type { Field, FormFieldEntry } from "../../../service";
 import RelationPicker from "../records/RelationPicker";
+import { formFieldClass, formLayoutClass } from "./field-layout";
+import { formFieldError } from "./form-input-validation";
 import type { InlineCreateDraft, InlineCreateState } from "./form-submit-payload";
 import { gridsFormMessages } from "./messages";
 import { ObjectListInput } from "./ObjectListInput";
-import { formFieldClass, formLayoutClass } from "./field-layout";
 import PrincipalInput from "./PrincipalInput";
 
 export { buildFormSubmitPayload, type InlineCreateState } from "./form-submit-payload";
@@ -105,6 +106,7 @@ export function FieldInput(props: {
   onChange: (v: unknown) => void;
   /** Render an inline error string. Reactive on purpose. */
   error?: () => string | undefined;
+  validate?: boolean;
   /** Required for relation rendering — drives RelationPicker chip
    *  deep-links. Omitted for the field designer's default-value editor;
    *  RelationPicker degrades to a non-deep-linkable picker there. */
@@ -197,6 +199,8 @@ export function FieldInput(props: {
       );
 
     case "number": {
+      const [editing, setEditing] = createSignal(false);
+      const [draft, setDraft] = createSignal("");
       const decimalPlaces = (props.field.config as { decimalPlaces?: number }).decimalPlaces;
       const unit = (props.field.config as { unit?: string }).unit;
       const unitPosition = (props.field.config as { unitPosition?: "prefix" | "suffix" }).unitPosition ?? "suffix";
@@ -206,14 +210,27 @@ export function FieldInput(props: {
         if (typeof v === "object" && "amount" in v) return String((v as { amount?: unknown }).amount ?? "");
         return String(v);
       };
+      const compactNumberText = () =>
+        numberText().replace(/^([+-]?\d+)\.(\d+)$/, (_match, integer: string, fraction: string) => {
+          const significant = fraction.replace(/0+$/, "");
+          return significant ? `${integer}.${significant}` : integer;
+        });
       return (
         <TextInput
           name={props.field.id}
           label={label}
           description={helpText}
           required={required}
-          value={numberText}
-          onValueChange={(v) => props.onChange(v)}
+          value={() => (editing() ? draft() : compactNumberText())}
+          onFocus={() => {
+            setDraft(compactNumberText());
+            setEditing(true);
+          }}
+          onBlur={() => setEditing(false)}
+          onValueChange={(v) => {
+            setDraft(v);
+            props.onChange(v);
+          }}
           inputMode={decimalPlaces === 0 ? "numeric" : "decimal"}
           icon="ti ti-number"
           prefix={unit && unitPosition === "prefix" ? <span class="font-mono">{unit}</span> : undefined}
@@ -453,6 +470,7 @@ export function FieldInput(props: {
               onCreateDraft={createInlineDraft}
               onUseExisting={useExistingRecord}
               targetFields={props.inlineTargetFields?.[cfg.targetTableId]}
+              validate={props.validate}
               dateConfig={props.dateConfig}
             />
           </Show>
@@ -504,6 +522,7 @@ function InlineRelationCreate(props: {
   onCreateDraft: () => void;
   onUseExisting: () => void;
   targetFields?: FrontendField[];
+  validate?: boolean;
   dateConfig?: DateContext;
 }) {
   const locale = useLocale();
@@ -592,19 +611,31 @@ function InlineRelationCreate(props: {
                   </div>
                 </Show>
                 <div class={formLayoutClass}>
-                <For each={inlineFields()}>
-                  {(field) => (
-                    <div class={formFieldClass(inlineEntryFor(field).width)}>
-                    <FieldInput
-                      field={field}
-                      entry={inlineEntryFor(field)}
-                      value={draft().data[field.id]}
-                      onChange={(value) => setDraftField(index, field.id, value)}
-                      dateConfig={props.dateConfig}
-                    />
-                    </div>
-                  )}
-                </For>
+                  <For each={inlineFields()}>
+                    {(field) => (
+                      <div class={formFieldClass(inlineEntryFor(field).width)}>
+                        <FieldInput
+                          field={field}
+                          entry={inlineEntryFor(field)}
+                          value={draft().data[field.id]}
+                          onChange={(value) => setDraftField(index, field.id, value)}
+                          error={() =>
+                            props.validate
+                              ? formFieldError(
+                                  field,
+                                  inlineEntryFor(field),
+                                  draft().data[field.id] !== undefined
+                                    ? draft().data[field.id]
+                                    : (inlineEntryFor(field).defaultValue ?? field.defaultValue),
+                                  { locale: locale(), dateConfig: props.dateConfig },
+                                )
+                              : undefined
+                          }
+                          dateConfig={props.dateConfig}
+                        />
+                      </div>
+                    )}
+                  </For>
                 </div>
               </div>
             )}

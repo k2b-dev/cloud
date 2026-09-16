@@ -15,6 +15,7 @@ import {
   type InlineCreateState,
   userInputEntriesOf,
 } from "./form-fields";
+import { formFieldError } from "./form-input-validation";
 import type { FormEditState } from "./form-submit-payload";
 import { gridsFormMessages } from "./messages";
 
@@ -66,7 +67,39 @@ export default function FormSubmit(props: Props) {
   const [error, setError] = createSignal<string | null>(null);
   const [done, setDone] = createSignal(false);
   const [clientReady, setClientReady] = createSignal(false);
-  const validationFailures = createMemo(() => evaluateFormValidations(props.form.config.validations, values(), fieldsById));
+  const [validationAttempted, setValidationAttempted] = createSignal(false);
+  const validationFailures = createMemo(() => {
+    const failures: Array<{ errorFieldId: string; message: string }> = evaluateFormValidations(
+      props.form.config.validations,
+      values(),
+      fieldsById,
+    );
+    if (!validationAttempted()) return failures;
+    const context = { locale: locale(), dateConfig: props.dateConfig };
+    for (const entry of entries) {
+      const field = fieldsById.get(entry.fieldId);
+      if (!field || field.deletedAt) continue;
+      let message = formFieldError(field, entry, values()[field.id], context);
+      if (!message && entry.inlineCreate?.enabled) {
+        const targetFields = props.inlineTargetFields?.[String(field.config.targetTableId)] ?? [];
+        for (const draft of inlineCreates()[field.id] ?? []) {
+          for (const inlineEntry of entry.inlineCreate.fields ?? []) {
+            const target = targetFields.find((field) => field.id === inlineEntry.fieldId);
+            if (!target) continue;
+            const value = draft.data[target.id] !== undefined ? draft.data[target.id] : (inlineEntry.defaultValue ?? target.defaultValue);
+            const detail = formFieldError(target, inlineEntry, value, context);
+            if (detail) {
+              message = `${inlineEntry.label || target.name}: ${detail}`;
+              break;
+            }
+          }
+          if (message) break;
+        }
+      }
+      if (message) failures.push({ errorFieldId: field.id, message });
+    }
+    return failures;
+  });
   const validationErrors = createMemo(() =>
     Object.fromEntries(validationFailures().map((failure) => [failure.errorFieldId, failure.message])),
   );
@@ -102,9 +135,22 @@ export default function FormSubmit(props: Props) {
     event.preventDefault();
     if (props.preview || submitting()) return;
     setError(null);
-    const invalid = validationFailures()[0];
+    if (!pendingSubmission()) {
+      // Include native controls/autofill before validating or disabling fields.
+      const captured = { ...values() };
+      for (const [key, value] of formRef ? new FormData(formRef).entries() : []) {
+        if (typeof value === "string" && fieldsById.has(key)) captured[key] = value;
+      }
+      setValues(captured);
+      setValidationAttempted(true);
+    }
+    const invalid = pendingSubmission() ? undefined : entries.find((entry) => validationErrors()[entry.fieldId]);
     if (invalid) {
-      formRef?.querySelector<HTMLElement>(`[name="${invalid.errorFieldId}"]`)?.focus();
+      const field = formRef?.querySelector<HTMLElement>(`[data-grids-form-field="${invalid.fieldId}"]`);
+      const control =
+        field?.querySelector<HTMLElement>('[aria-invalid="true"]') ??
+        field?.querySelector<HTMLElement>('input:not([type="hidden"]), textarea, [role="combobox"], button, [tabindex]');
+      control?.focus();
       return;
     }
     // Capture native controls before the pending fieldset disables them.
@@ -209,6 +255,7 @@ export default function FormSubmit(props: Props) {
           ref={formRef}
           class="flex flex-col gap-3"
           data-grids-public-form-ready={clientReady() ? "true" : "false"}
+          noValidate
           onSubmit={handleSubmit}
         >
           <fieldset disabled={submitting() || pendingSubmission() !== null} class={formLayoutClass}>
@@ -223,24 +270,25 @@ export default function FormSubmit(props: Props) {
                 const field = fieldsById.get(entry.fieldId);
                 if (!field || field.deletedAt) return null;
                 return (
-                  <div class={formFieldClass(entry.width)}>
-                  <FieldInput
-                    field={field}
-                    entry={entry}
-                    value={values()[entry.fieldId]}
-                    relationLabels={props.relationLabels}
-                    relationLookupUrl={
-                      props.relationLookupFields?.includes(entry.fieldId)
-                        ? props.submitUrl?.replace(/\/submit(?=\?|$)/, `/relations/${entry.fieldId}/lookup`)
-                        : undefined
-                    }
-                    onChange={(v) => setValue(entry.fieldId, v)}
-                    error={() => validationErrors()[entry.fieldId]}
-                    inlineCreates={inlineCreates}
-                    onInlineCreatesChange={setInlineDrafts}
-                    inlineTargetFields={props.inlineTargetFields}
-                    dateConfig={props.dateConfig}
-                  />
+                  <div class={formFieldClass(entry.width)} data-grids-form-field={entry.fieldId}>
+                    <FieldInput
+                      field={field}
+                      entry={entry}
+                      value={values()[entry.fieldId]}
+                      relationLabels={props.relationLabels}
+                      relationLookupUrl={
+                        props.relationLookupFields?.includes(entry.fieldId)
+                          ? props.submitUrl?.replace(/\/submit(?=\?|$)/, `/relations/${entry.fieldId}/lookup`)
+                          : undefined
+                      }
+                      onChange={(v) => setValue(entry.fieldId, v)}
+                      error={() => validationErrors()[entry.fieldId]}
+                      validate={validationAttempted()}
+                      inlineCreates={inlineCreates}
+                      onInlineCreatesChange={setInlineDrafts}
+                      inlineTargetFields={props.inlineTargetFields}
+                      dateConfig={props.dateConfig}
+                    />
                   </div>
                 );
               }}

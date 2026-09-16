@@ -8,6 +8,10 @@ order: 130
 Ungespeicherte oder sendende Formulare warnen beim Verlassen der Seite.
 Formulare validieren und schreiben Datensätze in eine Tabelle. Nutze eine Grids App für mehrseitige Abläufe.
 
+Vor dem Absenden prüfen Formulare Pflichtangaben, Werteformate und konfigurierte Feldgrenzen im Browser. Fehler erscheinen direkt an den Eingaben; beim Absenden erhält das erste fehlerhafte Feld den Fokus und es wird keine Anfrage gesendet. Danach aktualisieren sich die Hinweise beim Korrigieren. Der Server prüft weiterhin jede Übermittlung, einschließlich Berechtigungen und Verweisen auf andere Datensätze.
+
+Zahleingaben zeigen keine angehängten Nachkommanullen: `1.0000` erscheint als `1`. Dezimalmengen und exakte Werte bleiben erlaubt; während du tippst, bleibt der eingegebene Text bis zum Verlassen des Feldes erhalten.
+
 **Berechnete Werte** zeigt bis zu 20 schreibgeschützte Formeln aus sichtbaren Eingaben. Beschriftungen erlauben 200 Zeichen, Hinweise 2.000. Unvollständige Werte zeigen einen Strich; leere Listen verbergen die Zusammenfassung. Fehler bleiben sichtbar.
 
 **Feldbreite** setzt `width: "fullWidth"` (Standard) oder `"compact"` an `user_input`, `computedFields`, `inlineCreate.fields` und Objektlisten-Unterspalten. Aufeinanderfolgende kompakte Felder teilen Platz und umbrechen in Reihenfolge; volle Breite beginnt eine ganze Zeile. Das gilt auch für berechnete Spalten. `detailsOnly`-Berechnungen erscheinen auf Nachfrage, nur bei vorhandenen Zeilen.
