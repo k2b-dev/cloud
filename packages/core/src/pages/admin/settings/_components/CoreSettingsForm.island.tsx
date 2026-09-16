@@ -1843,6 +1843,7 @@ async function openAiProfileDialog(input: {
     );
     const [inputPrice, setInputPrice] = createSignal<number | null>(input.profile?.pricing?.inputPerMillion ?? null);
     const [outputPrice, setOutputPrice] = createSignal<number | null>(input.profile?.pricing?.outputPerMillion ?? null);
+    const [maxOutputTokens, setMaxOutputTokens] = createSignal<number | null>(input.profile?.maxOutputTokens ?? null);
     const [contextWindow, setContextWindow] = createSignal<number | null>(input.profile?.contextWindow ?? null);
     const [maxLoadedTools, setMaxLoadedTools] = createSignal<number | null>(
       typeof input.profile?.maxLoadedTools === "number" && input.profile.maxLoadedTools > 0 ? input.profile.maxLoadedTools : null,
@@ -1982,6 +1983,14 @@ async function openAiProfileDialog(input: {
         }
         nextProfile.pricing = prices;
       } else delete nextProfile.pricing;
+
+      const outputLimit = maxOutputTokens();
+      if (outputLimit !== null && (!Number.isSafeInteger(outputLimit) || outputLimit < 1)) {
+        fail(t().outputLimitInvalid, "advanced");
+        return;
+      }
+      if (outputLimit !== null) nextProfile.maxOutputTokens = outputLimit;
+      else delete nextProfile.maxOutputTokens;
 
       const context = contextWindow();
       if (typeof context === "number" && context > 0) nextProfile.contextWindow = context;
@@ -2252,6 +2261,17 @@ async function openAiProfileDialog(input: {
                       value={contextWindow}
                       onValueChange={setContextWindow}
                       min={1}
+                      clearable
+                      showSteppers={false}
+                      placeholder={t().providerDefault}
+                    />
+                    <NumberInput
+                      label={t().outputLimit}
+                      description={t().outputLimitDescription}
+                      value={maxOutputTokens}
+                      onValueChange={setMaxOutputTokens}
+                      min={1}
+                      step={1}
                       clearable
                       showSteppers={false}
                       placeholder={t().providerDefault}

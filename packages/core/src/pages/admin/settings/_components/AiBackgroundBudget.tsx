@@ -105,9 +105,17 @@ export default function AiBackgroundBudget(props: {
                     const response = await api.background.release.$post();
                     if (!response.ok)
                       throw new Error(
-                        de()
-                          ? "Freigabe nicht möglich: Verbrauch oder unbekannte Kosten liegen noch über der Freigabegrenze."
-                          : "Cannot release: usage or unknown costs still prevent admission.",
+                        response.status === 409
+                          ? de()
+                            ? "Freigabe nicht möglich: Der Verbrauch ist noch zu hoch oder Kosten sind noch ungeklärt."
+                            : "Cannot release: usage or unknown costs still prevent admission."
+                          : response.status === 403
+                            ? de()
+                              ? "Keine Berechtigung zur Freigabe."
+                              : "You do not have permission to release the stop."
+                            : de()
+                              ? "Freigabe fehlgeschlagen. Bitte erneut versuchen."
+                              : "Could not release the stop. Please try again.",
                       );
                     await refresh();
                     // Release changes the configuration revision. Reload before editing again.

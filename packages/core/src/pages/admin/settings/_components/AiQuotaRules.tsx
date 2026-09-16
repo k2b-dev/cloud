@@ -1,3 +1,4 @@
+import { hasBillableAiPricing } from "@k2b/cloud/shared";
 import AiBackgroundBudget from "./AiBackgroundBudget";
 import {
   Button,
@@ -23,7 +24,13 @@ import { quotaMessages } from "./ai-quota-messages";
 const api = coreClient.admin.core["ai-quotas"];
 export default function AiQuotaRules(props: {
   config: AiQuotaConfig;
-  models: { id: string; label: string; pricing?: { inputPerMillion: number; outputPerMillion: number } }[];
+  models: {
+    id: string;
+    label: string;
+    enabled: boolean;
+    capabilities: string[];
+    pricing?: { inputPerMillion: number; outputPerMillion: number };
+  }[];
 }) {
   const locale = useLocale(),
     t = () => quotaMessages.resolve([locale()]).t;
@@ -33,8 +40,15 @@ export default function AiQuotaRules(props: {
     [error, setError] = createSignal("");
   const dirty = () => JSON.stringify(draft()) !== JSON.stringify(saved());
   const name = (scope: string) => (scope === "*" ? t().all : (props.models.find((m) => m.id === scope)?.label ?? scope));
+  const chatModels = () => props.models.filter((m) => m.enabled && !m.capabilities.includes("transcription"));
+  const unpriced = () => chatModels().filter((m) => !m.pricing);
   const scopes = () =>
-    ["*", ...props.models.filter((m) => m.pricing).map((m) => m.id)].filter((scope) => !draft().rules.some((r) => r.scope === scope));
+    [
+      "*",
+      ...chatModels()
+        .filter((m) => hasBillableAiPricing(m.pricing))
+        .map((m) => m.id),
+    ].filter((scope) => !draft().rules.some((r) => r.scope === scope));
   onMount(() => {
     let leaving = false;
     const unload = (event: BeforeUnloadEvent) => {
@@ -231,7 +245,7 @@ export default function AiQuotaRules(props: {
   }
   return (
     <div class="flex min-w-0 flex-col gap-3">
-      <Show when={props.models.some((model) => !model.pricing)}>
+      <Show when={unpriced().length > 0}>
         <NoticeCard tone="warning" title={locale().startsWith("de") ? "Modelle ohne Kostenlimits" : "Models without cost limits"}>
           <p>
             {locale().startsWith("de")
@@ -239,7 +253,7 @@ export default function AiQuotaRules(props: {
               : "These models have no configured prices. They remain unlimited and are not covered by cost limits."}
           </p>
           <ul>
-            <For each={props.models.filter((model) => !model.pricing)}>{(model) => <li>{model.label}</li>}</For>
+            <For each={unpriced()}>{(model) => <li>{model.label}</li>}</For>
           </ul>
         </NoticeCard>
       </Show>

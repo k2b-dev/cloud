@@ -1,6 +1,7 @@
 import { AiModelPricingSchema, type AiModelPricing } from "../../shared/ai-costs";
 import {
   AiQuotaConfigSchema,
+  AiQuotaReportQuerySchema,
   AiQuotaIdentitySchema,
   AiQuotaResetSchema,
   type AiQuotaConfig,
@@ -92,6 +93,25 @@ export const aiQuotaCommands = [
         result.models.map((model) => ({ ...model, pricing: model.pricing ? JSON.stringify(model.pricing) : "unpriced" })),
         [{ key: "id" }, { key: "label" }, { key: "pricing" }],
       );
+    },
+  }),
+  command("ai quotas report", {
+    summary: "Report chat costs and current allowances with the same filters as the admin page",
+    flags: {
+      range: flag.enum(["24h", "7d", "30d", "90d"] as const, { default: "30d" }),
+      until: flag.string({ description: "ISO period end; reuse query.until for consistent pagination" }),
+      search: flag.string({ description: "Search identity labels" }),
+      model: flag.string({ description: "Model profile ID" }),
+      status: flag.enum(["all", "available", "exhausted", "unknown", "unlimited", "disabled"] as const, { default: "all" }),
+      sort: flag.enum(["label", "cost", "lastUsed"] as const, { default: "lastUsed" }),
+      direction: flag.enum(["asc", "desc"] as const, { default: "desc" }),
+      page: flag.int({ min: 1, max: 1_000_000, default: 1 }),
+      identity: flag.string({ description: "Optional selected identity UUID" }),
+      identityType: flag.enum(["user", "service_account"] as const, { default: "user" }),
+    },
+    async run({ ctx, flags }) {
+      const query = AiQuotaReportQuerySchema.parse(flags);
+      print(ctx, await apiGet(ctx, `${path}/report${queryString(query)}`));
     },
   }),
   command("ai quotas users", {

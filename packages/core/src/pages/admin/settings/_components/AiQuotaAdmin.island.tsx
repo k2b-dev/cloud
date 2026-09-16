@@ -37,7 +37,13 @@ import AiQuotaCharts from "./AiQuotaCharts";
 const api = coreClient.admin.core["ai-quotas"];
 export default function AiQuotaAdmin(props: {
   config: AiQuotaConfig;
-  models: { id: string; label: string; pricing?: { inputPerMillion: number; outputPerMillion: number } }[];
+  models: {
+    id: string;
+    label: string;
+    enabled: boolean;
+    capabilities: string[];
+    pricing?: { inputPerMillion: number; outputPerMillion: number };
+  }[];
   report: AiQuotaReport;
 }) {
   const locale = useLocale(),

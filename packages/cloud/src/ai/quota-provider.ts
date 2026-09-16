@@ -2,7 +2,8 @@ import { isAssistantChatTurn } from "./assistant-models";
 import { estimateTokens, type Provider } from "@k2b/nessi";
 import type { AccessSubject } from "../server/services/access";
 import { sql } from "bun";
-import { beginAiCall, finishAiCall, type AiCallContext } from "./inference-calls";
+import { setTimeout as delay } from "node:timers/promises";
+import { AiBackgroundAdmissionError, beginAiCall, finishAiCall, type AiCallContext } from "./inference-calls";
 import type { AiModelProfile } from "./types";
 import { logger } from "../services/logging";
 const log = logger("ai:quotas");
@@ -39,14 +40,28 @@ export function inferenceProvider(
           JSON.stringify(request.responseFormat ?? {}).length) /
           4,
       );
-    const call = await lifecycle.begin(
-      profile,
-      ctx,
-      inputTokens,
-      request.maxOutputTokens ?? profile.maxOutputTokens,
-      // Nessi's Anthropic adapter defaults to 1024; other adapters leave the maximum to the model.
-      provider.family === "anthropic" ? 1024 : provider.contextWindow,
-    );
+    // Wait up to one reservation lease before delegating to the caller's retry policy.
+    // No provider request or new reservation exists while waiting; cancellation stays active.
+    const deadline = Date.now() + 120_000;
+    const admit = async () => {
+      for (;;) {
+        request.signal?.throwIfAborted();
+        try {
+          return await lifecycle.begin(
+            profile,
+            ctx,
+            inputTokens,
+            request.maxOutputTokens ?? profile.maxOutputTokens,
+            // Nessi's Anthropic adapter defaults to 1024; other adapters use the model default.
+            provider.family === "anthropic" ? 1024 : provider.contextWindow,
+          );
+        } catch (error) {
+          if (!(error instanceof AiBackgroundAdmissionError) || !error.retryable || Date.now() >= deadline) throw error;
+          await delay(1_000, undefined, { signal: request.signal });
+        }
+      }
+    };
+    const call = await admit();
     const heartbeat = setInterval(() => {
       void lifecycle.heartbeat(call.id).catch(() => log.warn("AI accounting heartbeat failed", { callId: call.id }));
     }, 30_000);

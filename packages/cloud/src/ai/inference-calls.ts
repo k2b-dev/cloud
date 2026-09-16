@@ -12,6 +12,19 @@ export class AiBackgroundCostError extends Error {
   }
 }
 
+/** Admission can fail without latching the instance-wide emergency stop. */
+export class AiBackgroundAdmissionError extends Error {
+  readonly code: string;
+  constructor(readonly retryable: boolean) {
+    super(
+      retryable
+        ? "Background AI budget is reserved by running calls. Try again after they finish."
+        : "This call cannot fit in the remaining background AI budget.",
+    );
+    this.code = retryable ? "ai_background_budget_reserved" : "ai_background_budget_insufficient";
+  }
+}
+
 export type AiCallContext = {
   kind: "chat" | "background";
   task: string;
@@ -67,13 +80,15 @@ export async function beginAiCall(
     await db`SELECT singleton FROM ai.cost_config WHERE singleton FOR UPDATE`;
     const config = await aiQuotas.config(db);
     let remaining: bigint | undefined;
+    let backgroundHeadroom: bigint | undefined;
     if (hasBillableAiPricing(profile.pricing) && context.kind === "background" && config.background?.enabled) {
       const state = await checkBackgroundBudget(db);
       if (state.stoppedAt || aiDecimalUnits(state.usedExact) >= aiBudgetUnits(config.background.stopAt) || state.unknown) {
         await db`UPDATE ai.cost_config SET background_stopped_at=COALESCE(background_stopped_at,clock_timestamp()) WHERE singleton`;
         return { error: new AiBackgroundCostError() };
       }
-      remaining = aiBudgetUnits(config.background.stopAt) - aiDecimalUnits(state.usedExact) - aiDecimalUnits(state.reservedExact);
+      backgroundHeadroom = aiBudgetUnits(config.background.stopAt) - aiDecimalUnits(state.usedExact);
+      remaining = backgroundHeadroom - aiDecimalUnits(state.reservedExact);
     }
     if (hasBillableAiPricing(profile.pricing) && context.kind === "chat" && context.subject && config.enabled) {
       const now = new Date();
@@ -111,7 +126,9 @@ export async function beginAiCall(
       if (inputCost > remaining || affordable < 1)
         return {
           error:
-            context.kind === "background" ? new AiBackgroundCostError() : new AiQuotaError("quota_exhausted", "Chat cost limit reached."),
+            context.kind === "background"
+              ? new AiBackgroundAdmissionError(backgroundHeadroom !== undefined && inputCost + outputPrice <= backgroundHeadroom)
+              : new AiQuotaError("quota_exhausted", "Chat cost limit reached."),
         };
       const reserveOutput = Math.min(requestedOutput ?? outputBound ?? affordable, affordable);
       // Preserve adapter defaults unless an explicit maximum or budget requires a cap.

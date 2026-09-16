@@ -32,8 +32,9 @@ therefore affects only new calls. Costs are calculated centrally with decimal
 precision; application authors never calculate charges in individual workflows.
 
 **Unpriced models remain unlimited**, even when a user has exhausted a wildcard
-budget or the background emergency stop is active. They appear in a warning on
-**Rules**. Only priced chat models can be selected for a new model-specific rule.
+budget or the background emergency stop is active. Active unpriced chat models appear in a warning on
+**Rules**; audio and disabled profiles are excluded. Only enabled chat models with
+a nonzero input or output price can be selected for a new model-specific rule.
 Removing a model's prices makes subsequent calls unlimited; previous costs remain.
 Audio prices are not supported yet: the current transcription response does not
 supply a reliable billable duration. Audio calls remain visible as unpriced.
@@ -173,13 +174,27 @@ running can finish and are still accounted. Reservations prevent parallel worker
 from spending the same remaining estimate. Unknown priced background costs also
 trip the stop rather than appearing free.
 
+A budget held by running calls does not trigger the emergency stop. Background
+calls wait, with cancellation support, for up to two minutes for a reservation
+to settle. If the budget remains reserved, the caller can retry; workflow AI uses
+its existing bounded retry policy. A call whose estimated input and one output
+token cannot fit even without pending reservations is rejected without latching
+the stop.
+
+Set **Advanced → Default output limit (tokens)** in the provider dialog to bound
+response length and reservations. Tasks can supply their own output limit.
+Leaving it empty preserves provider defaults; admission uses the provider's
+context window as a conservative bound when no output maximum is known.
+
 Once triggered, the stop **stays active until explicitly released**; the next day
 does not automatically restart work. Review Usage, then wait for costs to leave
 the rolling window, raise the threshold, or disable the stop. Save configuration
 changes before choosing **Release stop**. Release is rejected while known costs
 are still at/above the threshold or unknown costs remain in the window. There is
 no bulk restart of failed workflows: an operator decides which work to retry.
-Unpriced models and direct Assistant calls remain unaffected.
+Releasing a latched stop advances the configuration revision. Export the
+configuration again before the next CLI update. Unpriced models and direct
+Assistant calls remain unaffected.
 
 ## Operate through the CLI
 
@@ -193,6 +208,7 @@ cld admin ai quotas config set --config-file quotas.json --yes --json
 cld admin ai quotas background status --json
 cld admin ai quotas background release --yes --json
 cld admin ai quotas users --search Alex --json
+cld admin ai quotas report --range 7d --sort cost --status exhausted --json
 cld admin ai quotas balance --type user --id USER_UUID --json
 cld admin ai quotas reset --type user --id USER_UUID --scope '*' \
   --request-id RESET_UUID --yes --json
@@ -218,6 +234,11 @@ Resets are idempotent by request UUID. Reuse the UUID after an uncertain respons
 a new intentional reset needs a new UUID. Quote `*` to avoid shell expansion.
 Changing `hours` through the CLI keeps the submitted `anchor`; also change the
 anchor when intentionally starting a new window.
+
+`ai quotas report` returns the same chat cost report and current balances as the
+Assistant limits page. It supports `--range`, `--until`, `--search`, `--model`,
+`--status`, `--sort`, `--direction`, `--page`, `--identity` and `--identity-type`.
+Reuse `query.until` when fetching subsequent pages.
 
 Usage list commands are `users`, `models`, `tasks`, `apps`, `workflows`, `launches`,
 `feedback` and `runs`. Use `--json` for the envelope including unit and pagination,

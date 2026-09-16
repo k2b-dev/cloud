@@ -21,7 +21,7 @@ test("quota users and measured charts render with SSR data", async () => {
   const html = renderToString(() =>
     createComponent(Admin, {
       config: { enabled: false, revision: 0, rules: [] },
-      models: [{ id: "a", label: "Model A" }],
+      models: [{ id: "a", label: "Model A", enabled: true, capabilities: ["streaming"] }],
       report,
     }),
   );
@@ -38,7 +38,7 @@ for (const locale of ["en", "de"])
         createComponent(LocaleProvider, {
           locale,
           get children() {
-            return createComponent(Panel, { config, models: [{ id: "a", label: "Model A" }] });
+            return createComponent(Panel, { config, models: [{ id: "a", label: "Model A", enabled: true, capabilities: ["streaming"] }] });
           },
         }),
       );
@@ -81,4 +81,34 @@ test("principal picker placeholder follows both audience and service-account fla
     );
     expect(html).toContain(expected);
   }
+});
+
+test("unpriced warning excludes audio, disabled and explicitly free models", () => {
+  const model = { enabled: true, capabilities: ["streaming"] };
+  const html = renderToString(() =>
+    createComponent(Panel, {
+      config: { enabled: false, revision: 0, rules: [] },
+      models: [
+        { ...model, id: "chat", label: "Unpriced chat" },
+        { ...model, id: "audio", label: "Unpriced audio", capabilities: ["transcription"] },
+        { ...model, id: "disabled", label: "Disabled model", enabled: false },
+        { ...model, id: "free", label: "Free model", pricing: { inputPerMillion: 0, outputPerMillion: 0 } },
+      ],
+    }),
+  );
+  expect(html).toContain("Unpriced chat");
+  for (const excluded of ["Unpriced audio", "Disabled model", "Free model"]) expect(html).not.toContain(excluded);
+});
+
+test("audio-only and disabled unpriced profiles do not show an empty warning", () => {
+  const html = renderToString(() =>
+    createComponent(Panel, {
+      config: { enabled: false, revision: 0, rules: [] },
+      models: [
+        { id: "audio", label: "Audio", enabled: true, capabilities: ["transcription"] },
+        { id: "off", label: "Off", enabled: false, capabilities: ["streaming"] },
+      ],
+    }),
+  );
+  expect(html).not.toContain("Models without cost limits");
 });

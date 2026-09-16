@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AiModelPricingSchema } from "../shared/ai-costs";
+import { AiModelPricingSchema, hasBillableAiPricing } from "../shared/ai-costs";
 import { setAiModelPricing } from "../ai/model-pricing";
 import { backgroundCostState, releaseBackgroundCostStop, AiBackgroundCostError } from "../ai/inference-calls";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -27,6 +27,7 @@ export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthCon
           id: m.id,
           label: m.label,
           pricing: m.pricing,
+          enabled: m.enabled,
           capabilities: m.capabilities,
         })),
       }),
@@ -44,14 +45,16 @@ export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthCon
     .get("/report", v("query", AiQuotaReportQuerySchema), async (c) => c.json(await quotaReport(c.req.valid("query"))))
     .put("/", v("json", AiQuotaConfigSchema), async (c) => {
       const config = c.req.valid("json"),
-        models = (await readAiSettingsState()).profiles.filter((model) => model.pricing && !model.capabilities.includes("transcription")),
+        models = (await readAiSettingsState()).profiles.filter(
+          (model) => model.enabled && hasBillableAiPricing(model.pricing) && !model.capabilities.includes("transcription"),
+        ),
         previous = await aiQuotas.config();
       if (
         config.rules.some(
           (r) => r.scope !== "*" && !models.some((m) => m.id === r.scope) && !previous.rules.some((old) => old.scope === r.scope),
         )
       )
-        return c.json({ message: "Select an available chat model or all chat models." }, 400);
+        return c.json({ message: "Select an enabled chat model with nonzero prices or all chat models." }, 400);
       return c.json(await aiQuotas.save(config, c.get("user")!.id));
     })
     .get("/users", v("query", AiQuotaUsersQuerySchema), async (c) => {

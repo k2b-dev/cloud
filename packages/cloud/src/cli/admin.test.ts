@@ -622,6 +622,47 @@ describe("Assistant quota administration", () => {
     expect(read.lines).toHaveLength(0);
   });
 
+  test("quota report exposes filtered costs and balances through the admin CLI", async () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const report = { items: [{ id, cost: 0.125001, balances: [{ scope: "chat", used: 0.125001, limit: 1 }] }], total: 1 };
+    const result = createContext(
+      ["ai", "quotas", "report"],
+      {
+        range: "7d",
+        until: "2026-09-16T00:00:00Z",
+        search: "A & B",
+        model: "chat",
+        status: "available",
+        sort: "cost",
+        direction: "asc",
+        page: "2",
+        identity: id,
+        "identity-type": "service_account",
+      },
+      [jsonResponse(report)],
+    );
+    result.ctx.options.output = "json";
+    await adminCli.run(result.ctx);
+    const url = new URL(result.calls[0]!.path, "http://cloud.test");
+    expect(url.pathname).toBe("/api/admin/core/ai-quotas/report");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      view: "users",
+      range: "7d",
+      until: "2026-09-16T00:00:00Z",
+      search: "A & B",
+      model: "chat",
+      status: "available",
+      sort: "cost",
+      direction: "asc",
+      page: "2",
+      identity: id,
+      identityType: "service_account",
+    });
+    expect(JSON.parse(result.lines[0]!)).toEqual(report);
+    const invalid = createContext(["ai", "quotas", "report"], { until: "not-a-date" });
+    await expect(adminCli.run(invalid.ctx)).rejects.toThrow();
+    expect(invalid.calls).toHaveLength(0);
+  });
   test("pricing discovery and mutation preserve exact prices and optimistic concurrency", async () => {
     const previous = { inputPerMillion: 0.25, outputPerMillion: 1.5 };
     const pricing = { inputPerMillion: 0.125001, outputPerMillion: 0 };

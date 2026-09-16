@@ -1,8 +1,8 @@
-import { expect, test } from "bun:test";
+import { expect, test, spyOn } from "bun:test";
 import type { Provider, ProviderEvent } from "@k2b/nessi";
 import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
-import { AiBackgroundCostError, type AiCallContext } from "./inference-calls";
+import { AiBackgroundAdmissionError, AiBackgroundCostError, type AiCallContext } from "./inference-calls";
 const profile: AiModelProfile = {
   id: "a",
   label: "A",
@@ -175,4 +175,53 @@ test("unrestricted admission preserves undefined provider output defaults", asyn
   await wrapped.complete({ messages: [] });
   await wrapped.complete({ messages: [], maxOutputTokens: 123 });
   expect(observed).toEqual([undefined, 123]);
+});
+
+test("background admission waits for reservations without calling the provider twice", async () => {
+  const f = fixture([]);
+  const admit = f.lifecycle.begin;
+  let attempts = 0;
+  f.lifecycle.begin = async (...args) => {
+    if (++attempts === 1) throw new AiBackgroundAdmissionError(true);
+    return admit(...args);
+  };
+  await f.wrap().complete(request);
+  expect(attempts).toBe(2);
+  expect(f.calls).toBe(1);
+  expect(f.booked).toHaveLength(1);
+});
+test("waiting for a reservation can be canceled without spending or booking", async () => {
+  const f = fixture([]);
+  const controller = new AbortController();
+  f.lifecycle.begin = async () => {
+    queueMicrotask(() => controller.abort());
+    throw new AiBackgroundAdmissionError(true);
+  };
+  await expect(f.wrap().complete({ ...request, signal: controller.signal })).rejects.toThrow();
+  expect(f.calls).toBe(0);
+  expect(f.booked).toHaveLength(0);
+});
+test("a call too expensive even without reservations does not wait", async () => {
+  const f = fixture([]);
+  f.lifecycle.begin = async () => {
+    throw new AiBackgroundAdmissionError(false);
+  };
+  await expect(f.wrap().complete(request)).rejects.toMatchObject({ code: "ai_background_budget_insufficient" });
+  expect(f.calls).toBe(0);
+});
+
+test("reservation waiting is bounded and returns a retryable error on timeout", async () => {
+  const f = fixture([]);
+  const now = spyOn(Date, "now").mockReturnValue(0);
+  f.lifecycle.begin = async () => {
+    now.mockReturnValue(120_000);
+    throw new AiBackgroundAdmissionError(true);
+  };
+  try {
+    await expect(f.wrap().complete(request)).rejects.toMatchObject({ code: "ai_background_budget_reserved", retryable: true });
+    expect(f.calls).toBe(0);
+    expect(f.booked).toHaveLength(0);
+  } finally {
+    now.mockRestore();
+  }
 });

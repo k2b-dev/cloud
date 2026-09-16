@@ -21,3 +21,15 @@ describe("Core notification definitions", () => {
     expect(reminder.delivery?.required).toEqual(["email"]);
   });
 });
+
+test("AI cost notifications format reference amounts in the recipient locale", async () => {
+  const notice = app.notifications.backgroundCosts;
+  const data = { kind: "warning" as const, cost: 1234.567891, unit: "Credits" };
+  for (const [locale, amount] of [
+    ["de", "1.234,567891"],
+    ["en", "1,234.567891"],
+  ]) {
+    expect((await notice.render(data, { locale: locale! })).body).toContain(`${amount} Credits`);
+    expect((await notice.email!(data, { locale: locale! })).content).toContain(`${amount} Credits`);
+  }
+});

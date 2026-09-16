@@ -244,7 +244,13 @@ export default ssr<AuthContext>(async (c) => {
   const quotaData = quotaReportData
     ? {
         config: await quotaAdminConfig(),
-        models: (await readAiSettingsState()).profiles.map((m) => ({ id: m.id, label: m.label, pricing: m.pricing })),
+        models: (await readAiSettingsState()).profiles.map((m) => ({
+          id: m.id,
+          label: m.label,
+          pricing: m.pricing,
+          enabled: m.enabled,
+          capabilities: m.capabilities,
+        })),
         report: quotaReportData,
       }
     : null;

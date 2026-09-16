@@ -208,6 +208,10 @@ export const aiSettingsMessages = i18n.define({
       storedKeyDescription: "Key stored · leave empty to keep it.",
       newKeyDescription: "No key stored yet.",
       policyDescription: "Processing boundary and runtime capabilities used by app policies.",
+      outputLimit: "Default output limit (tokens)",
+      outputLimitDescription:
+        "Maximum response size unless a task specifies its own limit. Also bounds budget reservations. Empty uses the provider default.",
+      outputLimitInvalid: "Enter a positive whole number for the output limit, or leave it empty.",
       contextWindow: "Context window",
       contextWindowDescription: "Optional maximum token context. Leave empty to use the provider default.",
       loadedToolLimit: "Loaded tool limit",
@@ -455,6 +459,10 @@ export const aiSettingsMessages = i18n.define({
       storedKeyDescription: "Schlüssel hinterlegt · leer lassen zum Beibehalten.",
       newKeyDescription: "Noch kein Schlüssel hinterlegt.",
       policyDescription: "Verarbeitungsgrenze und Laufzeit-Capabilities für App-Richtlinien.",
+      outputLimit: "Standard-Outputlimit (Tokens)",
+      outputLimitDescription:
+        "Maximale Antwortlänge, sofern die Aufgabe kein eigenes Limit setzt. Begrenzt auch Budgetreservierungen. Leer verwendet den Anbieterstandard.",
+      outputLimitInvalid: "Gib eine positive ganze Zahl für das Outputlimit ein oder lasse es leer.",
       contextWindow: "Kontextfenster",
       contextWindowDescription: "Optionale maximale Token-Anzahl im Kontext. Leer verwendet den Anbieterstandard.",
       loadedToolLimit: "Limit geladener Werkzeuge",

@@ -1,5 +1,5 @@
 import * as store from "./store";
-import { AiBackgroundCostError } from "../../ai/inference-calls";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
 import { describe, expect, test, spyOn } from "bun:test";
 import type { z } from "zod";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
@@ -87,3 +87,38 @@ test("background cost stop fails the workflow task without scheduling another at
     requeue.mockRestore();
   }
 });
+
+for (const retryable of [true, false])
+  test(`background admission retryable=${retryable} follows the bounded workflow retry policy`, async () => {
+    const claim = spyOn(store, "claimWorkflowAiTask").mockResolvedValue(task);
+    const cancel = spyOn(store, "workflowAiTaskCancellationRequested").mockResolvedValue(false);
+    const fail = spyOn(store, "failWorkflowAiTask").mockResolvedValue(null);
+    const requeue = spyOn(store, "requeueWorkflowAiTask").mockResolvedValue(undefined);
+    try {
+      const outcome = await processWorkflowAiTask(
+        task.id,
+        {
+          signal: new AbortController().signal,
+          heartbeat: async () => {},
+        },
+        {
+          maxAttempts: 3,
+          cancelPollMs: 500,
+          runStructured: async () => {
+            throw new AiBackgroundAdmissionError(retryable);
+          },
+        },
+      ).catch((error) => {
+        expect(error).toMatchObject({ retryable, code: retryable ? "ai_background_budget_reserved" : "ai_background_budget_insufficient" });
+        return settleWorkflowAiAttemptFailure(task.id, error, 0, 3);
+      });
+      expect(outcome).toBe(retryable ? "retry" : "failed");
+      expect(requeue).toHaveBeenCalledTimes(retryable ? 1 : 0);
+      expect(fail).toHaveBeenCalledTimes(retryable ? 0 : 1);
+    } finally {
+      claim.mockRestore();
+      cancel.mockRestore();
+      fail.mockRestore();
+      requeue.mockRestore();
+    }
+  });

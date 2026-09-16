@@ -19,7 +19,7 @@ const notificationMessages = i18n.define({
     en: {
       costWarning: "Background AI cost warning",
       costStop: "Background AI stopped",
-      costBody: ({ cost, unit }: { cost: number; unit: string }) =>
+      costBody: ({ cost, unit }: { cost: string; unit: string }) =>
         `Reference costs over the last 24 hours: ${cost} ${unit}. Review Usage rules and the contributing workflows.`,
       responseReady: "Assistant response ready",
       responseFinished: "Your Assistant response has finished.",
@@ -50,12 +50,12 @@ export const AI_NOTIFICATIONS = {
     data: z.object({ kind: z.enum(["warning", "stop"]), cost: z.number(), unit: z.string() }),
     render: (data, { locale }) => ({
       title: data.kind === "stop" ? text(locale).costStop : text(locale).costWarning,
-      body: text(locale).costBody(data),
+      body: text(locale).costBody({ ...data, cost: data.cost.toLocaleString(locale, { maximumFractionDigits: 6 }) }),
       targetHref: "/admin/settings?tab=ai-quotas&view=rules",
     }),
     email: (data, { locale }) => ({
       subject: data.kind === "stop" ? text(locale).costStop : text(locale).costWarning,
-      content: text(locale).costBody(data),
+      content: text(locale).costBody({ ...data, cost: data.cost.toLocaleString(locale, { maximumFractionDigits: 6 }) }),
     }),
   }),
   turnCompleted: notification({

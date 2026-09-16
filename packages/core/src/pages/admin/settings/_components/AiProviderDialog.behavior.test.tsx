@@ -166,6 +166,29 @@ describe("Provider dialog", () => {
       ui.cleanup();
     }
   });
+  test("output limit can be edited and cleared without losing unrelated profile settings", async () => {
+    const ui = await setup();
+    try {
+      ui.section("Advanced");
+      ui.fill("Default output limit (tokens)", "4096");
+      ui.button("Apply to draft").click();
+      await tick();
+      ui.button("Edit profile").click();
+      await tick();
+      ui.section("Advanced");
+      expect(ui.input("Default output limit (tokens)").value).toBe("4096");
+      expect(ui.input("Context window").value).toBe("32000");
+      ui.fill("Default output limit (tokens)", "");
+      ui.button("Apply to draft").click();
+      await tick();
+      ui.button("Edit profile").click();
+      await tick();
+      ui.section("Advanced");
+      expect(ui.input("Default output limit (tokens)").value).toBe("");
+    } finally {
+      ui.cleanup();
+    }
+  });
   test("turning reference prices off removes them from the draft without changing stored credentials", async () => {
     const ui = await setup();
     try {

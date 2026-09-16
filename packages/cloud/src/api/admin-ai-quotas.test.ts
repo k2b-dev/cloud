@@ -1,4 +1,8 @@
-import { expect, test } from "bun:test";
+import * as settings from "../ai/settings";
+import { aiQuotas } from "../ai/quotas";
+import { buildProjectedUser } from "../services/session/user";
+import type { AiModelProfile } from "../ai/types";
+import { expect, test, spyOn } from "bun:test";
 import { createAdminAiQuotaRoutes } from "./admin-ai-quotas";
 import { AiQuotaConfigSchema } from "../shared/ai-quotas";
 test("all quota reads and mutations require administrator authentication", async () => {
@@ -52,4 +56,62 @@ test("cost configuration accepts fractional amounts and rejects invalid emergenc
     { enabled: true, warnAt: -1, stopAt: 5 },
   ])
     expect(AiQuotaConfigSchema.safeParse({ ...config, background }).success).toBe(false);
+});
+
+test("new scopes require active billable chat models while existing scopes stay editable", async () => {
+  const model: AiModelProfile = {
+    id: "paid",
+    label: "Paid",
+    provider: "openai",
+    model: "chat",
+    enabled: true,
+    capabilities: ["streaming"],
+    dataBoundary: "hosted",
+    pricing: { inputPerMillion: 0, outputPerMillion: 1 },
+  };
+  const profiles = [
+    model,
+    { ...model, id: "unpriced", pricing: undefined },
+    { ...model, id: "free", pricing: { inputPerMillion: 0, outputPerMillion: 0 } },
+    { ...model, id: "audio", capabilities: ["transcription" as const] },
+    { ...model, id: "disabled", enabled: false },
+  ];
+  const config = { enabled: true, revision: 0, rules: [] };
+  const read = spyOn(settings, "readAiSettingsState").mockResolvedValue({
+    ok: true,
+    enabled: true,
+    defaultModelId: "paid",
+    globalInstructions: "",
+    compactionInstructions: "",
+    maxToolResultChars: 1000,
+    firecrawlConfigured: false,
+    profiles,
+  });
+  const current = spyOn(aiQuotas, "config").mockResolvedValue(config);
+  const save = spyOn(aiQuotas, "save").mockImplementation(async (value) => value);
+  const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: true });
+  const app = createAdminAiQuotaRoutes(async (c, next) => {
+    c.set("user", user);
+    await next();
+  });
+  const rule = (scope: string) => ({ scope, hours: 24, anchor: "2026-09-16T00:00:00Z", grants: [] });
+  const put = (scope: string) =>
+    app.request("/", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...config, rules: [rule(scope)] }),
+    });
+  try {
+    for (const scope of ["free", "unpriced", "audio", "disabled", "missing"]) expect((await put(scope)).status).toBe(400);
+    expect(save).not.toHaveBeenCalled();
+    expect((await put("paid")).status).toBe(200);
+    expect((await put("*")).status).toBe(200);
+    current.mockResolvedValue({ ...config, rules: [rule("free"), rule("missing")] });
+    expect((await put("free")).status).toBe(200);
+    expect((await put("missing")).status).toBe(200);
+  } finally {
+    read.mockRestore();
+    current.mockRestore();
+    save.mockRestore();
+  }
 });

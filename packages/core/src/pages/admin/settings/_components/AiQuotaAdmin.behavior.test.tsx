@@ -207,3 +207,93 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+if (!isServer)
+  test("new rule scope picker excludes free, unpriced, audio and disabled models", async () => {
+    const dom = createDomTestHarness();
+    const { default: Rules } = await import("./AiQuotaRules");
+    const { dialogCore } = await import("@k2b/ui");
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(async () => Response.json({ used: 0, reserved: 0, unknown: 0, stoppedAt: null }), {
+        preconnect: globalThis.fetch.preconnect,
+      }),
+    );
+    const model = {
+      id: "paid",
+      label: "Paid chat",
+      enabled: true,
+      capabilities: ["streaming"],
+      pricing: { inputPerMillion: 0, outputPerMillion: 1 },
+    };
+    const dispose = render(
+      () =>
+        createComponent(Rules, {
+          config: { enabled: false, revision: 0, rules: [] },
+          models: [
+            model,
+            { ...model, id: "free", label: "Free chat", pricing: { inputPerMillion: 0, outputPerMillion: 0 } },
+            { ...model, id: "unpriced", label: "Unpriced chat", pricing: undefined },
+            { ...model, id: "audio", label: "Audio", capabilities: ["transcription"] },
+            { ...model, id: "disabled", label: "Disabled chat", enabled: false },
+          ],
+        }),
+      dom.root,
+    );
+    try {
+      await tick();
+      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"))
+        .find((b) => b.textContent === "Add rule")!
+        .click();
+      await tick();
+      const field = Array.from(dom.document.querySelectorAll("label")).find((l) => l.textContent === "Scope")!;
+      (dom.document.getElementById(field.htmlFor) as HTMLElement).click();
+      await tick();
+      const choices = Array.from(dom.document.querySelectorAll('[role="option"]')).map((o) => o.getAttribute("aria-label"));
+      expect(choices).toEqual(["All chat models", "Paid chat"]);
+    } finally {
+      dialogCore.close();
+      dispose();
+      fetch.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  for (const status of [403, 409, 500])
+    test(`background release HTTP ${status} reports the actual failure category`, async () => {
+      const dom = createDomTestHarness();
+      const { default: Budget } = await import("./AiBackgroundBudget");
+      const fetch = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          async (_url: unknown, init?: RequestInit) =>
+            init?.method === "POST"
+              ? Response.json({ message: "test" }, { status })
+              : Response.json({ used: 0, reserved: 0, unknown: 0, stoppedAt: "2026-09-16T00:00:00Z" }),
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+      const dispose = render(
+        () =>
+          createComponent(Budget, {
+            config: { enabled: false, revision: 0, rules: [] },
+            change: () => {},
+            disabled: false,
+            canRelease: true,
+          }),
+        dom.root,
+      );
+      try {
+        await tick();
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"))
+          .find((b) => b.textContent === "Release stop")!
+          .click();
+        await tick();
+        expect(dom.root.textContent).toContain(
+          status === 403 ? "do not have permission" : status === 409 ? "unknown costs still prevent" : "Please try again",
+        );
+      } finally {
+        dispose();
+        fetch.mockRestore();
+        dom.cleanup();
+      }
+    });

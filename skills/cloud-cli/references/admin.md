@@ -331,8 +331,17 @@ and separate image or audio model calls. Enforcement is off by default.
 cld admin ai quotas config get --json > quotas.json
 cld admin ai quotas models --json
 cld admin ai quotas users --search "Alex" --page 1 --json
+cld admin ai quotas report --range 7d --sort cost --status exhausted --json
 cld admin ai quotas balance --type user --id <user-uuid> --json
 ```
+
+`report` returns period costs, charts, and current per-model balances from the
+same report as the GUI. Filters: `--range` (`24h`, `7d`, `30d`, `90d`), `--search`,
+`--model`, `--status` (`all`, `available`, `exhausted`, `unknown`, `unlimited`,
+`disabled`), `--sort` (`label`, `cost`, `lastUsed`), `--direction` (`asc`, `desc`),
+`--page`, and optional `--identity` plus `--identity-type` (`user`,
+`service_account`). Reuse the returned `query.until` with `--until` for subsequent
+pages. Unlike `users`, this report includes costs and effective allowances.
 
 Without a search, `users` lists identities with direct chat activity, including
 service accounts. `--search` also finds identities that have not used chat yet.
@@ -444,6 +453,10 @@ Warnings/stops notify platform administrators through Cloud notifications.
 Existing calls can finish. Once triggered, the stop latches until explicit
 release; it does not reset the next day. Release requires usage below the saved
 threshold and no unknown priced costs in the window, or disabled enforcement.
+Releasing a latched stop advances the configuration revision: run
+`cld admin ai quotas config get --json` again before the next configuration write.
+Pending reservations alone do not latch the stop. Calls wait for capacity for up
+to two minutes, then follow the caller's retry policy if still blocked.
 Raise the threshold or disable it through `config set` before releasing when
 needed. The operator separately chooses which failed workflows to retry.
 

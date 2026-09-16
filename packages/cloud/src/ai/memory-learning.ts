@@ -1,4 +1,4 @@
-import { AiBackgroundCostError } from "./inference-calls";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { sql } from "bun";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -514,7 +514,7 @@ export const learnAiMemoriesFromPrivateChats = async (
       if (status === "skipped") summary.skipped += 1;
       processedCandidates += 1;
     } catch (error) {
-      if (error instanceof AiBackgroundCostError) {
+      if (error instanceof AiBackgroundCostError || error instanceof AiBackgroundAdmissionError) {
         summary.skipped += 1;
         if (runId)
           await aiMemoryLearningRuns.finish({
@@ -620,7 +620,7 @@ export const learnAiMemoriesFromPrivateChats = async (
       summary.updated += changes.filter((change) => change.action === "updated" || change.action === "merged").length;
       if (changes.length === 0) summary.skipped += 1;
     } catch (error) {
-      if (error instanceof AiBackgroundCostError) {
+      if (error instanceof AiBackgroundCostError || error instanceof AiBackgroundAdmissionError) {
         summary.skipped += 1;
         if (runId)
           await aiMemoryLearningRuns.finish({

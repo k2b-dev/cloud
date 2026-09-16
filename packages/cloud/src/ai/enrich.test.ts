@@ -1,4 +1,4 @@
-import { AiBackgroundCostError } from "./inference-calls";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { describe, expect, it } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import type { z } from "zod";
@@ -213,23 +213,24 @@ describe("enrichDirtyAiConversations", () => {
     expect(applied[0]?.title).toBeUndefined();
   });
 
-  it("skips the optional batch when the background cost stop is active", async () => {
-    const target = conversation();
-    const { store, failed, recorded } = makeStore([target], [stored(1, userMessage("hello"))]);
-    const summary = await enrichDirtyAiConversations({
-      deps: {
-        store,
-        structured: async () => {
-          throw new AiBackgroundCostError();
+  for (const error of [new AiBackgroundCostError(), new AiBackgroundAdmissionError(true), new AiBackgroundAdmissionError(false)])
+    it(`skips the optional batch on ${error.code} without poisoning conversations`, async () => {
+      const target = conversation();
+      const { store, failed, recorded } = makeStore([target], [stored(1, userMessage("hello"))]);
+      const summary = await enrichDirtyAiConversations({
+        deps: {
+          store,
+          structured: async () => {
+            throw error;
+          },
+          resolveModel: async () => fakeResolvedModel,
         },
-        resolveModel: async () => fakeResolvedModel,
-      },
+      });
+      expect(summary.skipped).toBe(1);
+      expect(summary.failed).toBe(0);
+      expect(failed).toEqual([]);
+      expect(recorded[0]).toMatchObject({ status: "skipped" });
     });
-    expect(summary.skipped).toBe(1);
-    expect(summary.failed).toBe(0);
-    expect(failed).toEqual([]);
-    expect(recorded[0]).toMatchObject({ status: "skipped" });
-  });
 
   it("marks failing conversations for backoff", async () => {
     const target = conversation();

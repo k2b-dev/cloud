@@ -1,4 +1,4 @@
-import { AiBackgroundCostError } from "./inference-calls";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { z } from "zod";
 import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
@@ -258,7 +258,7 @@ export const enrichDirtyAiConversations = async (input: {
         try {
           await enrichOne(conversation, span);
         } catch (error) {
-          if (error instanceof AiBackgroundCostError) {
+          if (error instanceof AiBackgroundCostError || error instanceof AiBackgroundAdmissionError) {
             summary.skipped += 1;
             await store.recordEnrichmentRun({ conversationId: conversation.id, status: "skipped", trigger });
             break;

@@ -402,6 +402,24 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     const call = await beginAiCall(pricedModel(), { kind: "background", task: "unrestricted" }, 20, undefined, 200_000);
     expect(call.maxOutputTokens).toBeUndefined();
   });
+  test("temporary reservations do not latch the stop and release capacity on settlement", async () => {
+    await aiQuotas.save({ ...(await aiQuotas.config()), background: { enabled: true, warnAt: null, stopAt: 10 } }, user);
+    const first = await beginAiCall(pricedModel(), { kind: "background", task: "first" }, 1, 9);
+    await expect(beginAiCall(pricedModel(), { kind: "background", task: "waiting" }, 1, 1)).rejects.toMatchObject({
+      code: "ai_background_budget_reserved",
+      retryable: true,
+    });
+    // Too-large input cannot become affordable even when pending calls release their reservations.
+    await expect(beginAiCall(pricedModel(), { kind: "background", task: "too-large" }, 10, 1)).rejects.toMatchObject({
+      code: "ai_background_budget_insufficient",
+      retryable: false,
+    });
+    expect(await backgroundCostState()).toMatchObject({ stoppedAt: null, reserved: 10, used: 0 });
+    expect((await sql`SELECT * FROM ai.cost_alerts`).length).toBe(0);
+    await finishAiCall(first.id, { input: 1, output: 1 }, "ok");
+    await expect(beginAiCall(pricedModel(), { kind: "background", task: "next" }, 1, 1)).resolves.toBeDefined();
+    expect(await backgroundCostState()).toMatchObject({ stoppedAt: null, used: 2 });
+  });
   test("background warning and stop are durable, deduplicated, and separate from chat budgets", async () => {
     await save([rule("*", 100)]);
     await aiQuotas.save({ ...(await aiQuotas.config()), background: { enabled: true, warnAt: 1, stopAt: 2 } }, user);

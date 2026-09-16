@@ -1,4 +1,4 @@
-import { AiBackgroundCostError } from "../../ai/inference-calls";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
 import { StructuredOutputError } from "@k2b/nessi";
 import type { Job, Worker } from "@k2b/sync";
 import { z } from "zod";
@@ -160,6 +160,7 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
 };
 
 const retryableError = (error: unknown): boolean => {
+  if (error instanceof AiBackgroundAdmissionError) return error.retryable;
   if (error instanceof AiBackgroundCostError) return false;
   if (isAiSettingsError(error)) return false;
   if (error instanceof StructuredOutputError) return error.code === "loop_failed";
@@ -167,7 +168,7 @@ const retryableError = (error: unknown): boolean => {
 };
 
 const errorCode = (error: unknown): string => {
-  if (error instanceof AiBackgroundCostError) return error.code;
+  if (error instanceof AiBackgroundCostError || error instanceof AiBackgroundAdmissionError) return error.code;
   if (isAiSettingsError(error)) return error.aiError.code.toUpperCase();
   if (error instanceof StructuredOutputError) return `WORKFLOW_AI_${error.code.toUpperCase()}`;
   return "WORKFLOW_AI_PROVIDER_ERROR";

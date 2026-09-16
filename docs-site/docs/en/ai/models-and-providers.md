@@ -37,7 +37,9 @@ has four collapsible sections. Opening another section preserves your draft:
 - **Access:** choose who may use the model in Assistant and set its data
   boundary. Model access and cost budgets remain separate settings.
 - **Advanced:** enable or disable the profile, choose its supported chat
-  capabilities and optionally set context or tool limits. **Image analysis**
+  capabilities and optionally set context, output or tool limits. The default
+  output limit also bounds budget reservations; tasks can override it. Leave it
+  empty to retain the provider default. **Image analysis**
   is a Text / Chat capability, not a separate usage category.
 
 **Apply to draft** updates the settings form. Save that form to persist the
