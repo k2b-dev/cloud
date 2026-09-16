@@ -46,6 +46,25 @@ separately.
 
 Use `PanelDialog.Section` for meaningful field groups. Keep the primary save action in `PanelDialog.Footer`.
 
+Pass `hideable` to a section for optional settings. Closed sections show a flat
+summary row with an eye icon at the trailing edge. Open sections use the normal
+section border, background, heading, and content inset, with an eye-off button
+at the upper right. This changes section visibility, not the dialog's `surface`.
+
+```tsx
+<PanelDialog.Section hideable title="Connection" subtitle="API settings" icon="ti ti-plug">
+  <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} />
+</PanelDialog.Section>
+```
+
+Hideable sections start closed. Use `defaultOpen` to start expanded, or control
+them with `open` and `onOpenChange`. The callback requests a change; the owner
+can refuse it or open a section after a validation error. `disabled` blocks the
+toggle, not the fields. Children stay mounted so unsaved edits survive closing.
+Keyboard focus moves to the visible toggle when the focused control is hidden.
+Ordinary sections keep their existing appearance and behavior.
+
+
 Footer children can move onto separate rows when space is limited. Put a hint
 first and the action group last: the group keeps its width and moves below the
 hint before its buttons are squeezed. A trailing flex group containing direct
@@ -105,7 +124,10 @@ type PanelDialogFooterProps = {
 
 type PanelDialogSectionProps = {
   title: JSX.Element; subtitle?: JSX.Element; icon?: string; actions?: JSX.Element; children: JSX.Element;
-};
+} & (
+  | { hideable?: false; open?: never; defaultOpen?: never; onOpenChange?: never; disabled?: never }
+  | { hideable: true; open?: boolean; defaultOpen?: boolean; onOpenChange?: (open: boolean) => void; disabled?: boolean }
+);
 
 type PanelDialogTabOption<T extends string = string> = {
   value: T; label: JSX.Element; icon?: string; disabled?: boolean;
@@ -128,7 +150,7 @@ Tabs use pressed buttons inside a labelled group. Pass `ariaLabel` when the defa
 ## Runtime
 
 `PanelDialog` can render layout on the server, but the dialog host, tabs, close
-controls, and form mutations require hydrated client code.
+controls, hideable sections, and form mutations require hydrated client code.
 
 `confirmDiscardIfDirty` returns immediately when its boolean or accessor is
 false. Otherwise it opens the package confirmation prompt and resolves to the

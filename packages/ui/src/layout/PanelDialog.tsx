@@ -1,4 +1,5 @@
-import { createContext, type JSX, Show, useContext } from "solid-js";
+import { createContext, createEffect, createSignal, createUniqueId, type JSX, Show, useContext } from "solid-js";
+import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
 import { prompts } from "../feedback/prompts";
@@ -36,7 +37,10 @@ export type PanelDialogSectionProps = {
   icon?: string;
   actions?: JSX.Element;
   children: JSX.Element;
-};
+} & (
+  | { hideable?: false; open?: never; defaultOpen?: never; onOpenChange?: never; disabled?: never }
+  | { hideable: true; open?: boolean; defaultOpen?: boolean; onOpenChange?: (open: boolean) => void; disabled?: boolean }
+);
 
 export type PanelDialogTabOption<T extends string = string> = {
   value: T;
@@ -143,29 +147,100 @@ const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => (
   </footer>
 );
 
-const PanelDialogSection = (props: PanelDialogSectionProps): JSX.Element => (
-  <section class="k2b-panel-dialog__section" data-surface={usePanelDialogSurface()}>
-    <header>
-      <Show when={props.icon}>
-        {(icon) => (
-          <span class="k2b-panel-dialog__section-icon">
-            <i class={icon()} aria-hidden="true" />
-          </span>
-        )}
+const PanelDialogSection = (props: PanelDialogSectionProps): JSX.Element => {
+  const id = `k2b-panel-dialog-section-${createUniqueId()}`;
+  const [internalOpen, setInternalOpen] = createSignal(props.defaultOpen ?? false);
+  const open = () => !props.hideable || (props.open ?? internalOpen());
+  let section: HTMLElement | undefined;
+  let expand: HTMLButtonElement | undefined;
+  let collapse: HTMLButtonElement | undefined;
+  const toggle = (next: boolean) => {
+    if (props.disabled) return;
+    if (props.open === undefined) setInternalOpen(next);
+    props.onOpenChange?.(next);
+  };
+  createEffect(() => {
+    if (!props.hideable) return;
+    const expanded = open();
+    queueMicrotask(() => {
+      if (expanded !== open()) return;
+      const active = section?.ownerDocument.activeElement;
+      if (expanded && active === expand) collapse?.focus();
+      if (!expanded && active && active !== expand && section?.contains(active)) expand?.focus();
+    });
+  });
+
+  return (
+    <section
+      ref={section}
+      class="k2b-panel-dialog__section"
+      data-surface={usePanelDialogSurface()}
+      data-hideable={props.hideable || undefined}
+      data-open={props.hideable ? open() : undefined}
+      aria-labelledby={open() ? id : `${id}-closed`}
+    >
+      <Show when={props.hideable}>
+        <div hidden={open()}>
+          <Button
+            ref={expand}
+            variant="ghost"
+            class="k2b-panel-dialog__section-summary"
+            disabled={props.disabled}
+            aria-expanded={false}
+            aria-controls={`${id}-body`}
+            onClick={() => toggle(true)}
+          >
+            <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+            <span class="k2b-panel-dialog__section-copy">
+              <span id={`${id}-closed`} class="k2b-panel-dialog__section-title">
+                {props.title}
+              </span>
+              <Show when={props.subtitle}>
+                <span class="k2b-panel-dialog__section-subtitle">{props.subtitle}</span>
+              </Show>
+            </span>
+            <i class="ti ti-eye" aria-hidden="true" />
+          </Button>
+        </div>
       </Show>
-      <div>
-        <h3>{props.title}</h3>
-        <Show when={props.subtitle}>
-          <p>{props.subtitle}</p>
+      <header hidden={!open()}>
+        <Show when={props.icon}>
+          {(icon) => (
+            <span class="k2b-panel-dialog__section-icon">
+              <i class={icon()} aria-hidden="true" />
+            </span>
+          )}
         </Show>
+        <div>
+          <h3 id={id}>{props.title}</h3>
+          <Show when={props.subtitle}>
+            <p>{props.subtitle}</p>
+          </Show>
+        </div>
+        <Show when={props.actions}>
+          <div class="k2b-panel-dialog__actions">{props.actions}</div>
+        </Show>
+        <Show when={props.hideable}>
+          <Button
+            ref={collapse}
+            variant="ghost"
+            size="sm"
+            disabled={props.disabled}
+            aria-labelledby={id}
+            aria-expanded={true}
+            aria-controls={`${id}-body`}
+            onClick={() => toggle(false)}
+          >
+            <i class="ti ti-eye-off" aria-hidden="true" />
+          </Button>
+        </Show>
+      </header>
+      <div id={`${id}-body`} class="k2b-panel-dialog__section-body" hidden={!open()}>
+        {props.children}
       </div>
-      <Show when={props.actions}>
-        <div class="k2b-panel-dialog__actions">{props.actions}</div>
-      </Show>
-    </header>
-    <div class="k2b-panel-dialog__section-body">{props.children}</div>
-  </section>
-);
+    </section>
+  );
+};
 
 const PanelDialogTabs = <T extends string>(props: PanelDialogTabsProps<T>): JSX.Element => {
   const messages = useUiMessages();

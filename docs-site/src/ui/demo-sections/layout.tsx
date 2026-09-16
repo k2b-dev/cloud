@@ -729,17 +729,28 @@ const SettingsSaveBarDemo = () => (
 
 const PanelDemo = () => {
   const [tab, setTab] = createSignal("general");
+  const [baseUrl, setBaseUrl] = createSignal("");
+  const [reference, setReference] = createSignal("");
   return (
     <DemoCard
       id="panel-dialog"
       chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
-      description="A composable contained or floating frame for complex editors. The host chooses how it opens."
-      code={`<PanelDialog surface="contained">
+      description="Compare a regular section with two hideable sections: Connection starts open, Advanced starts closed. Use the eye buttons to toggle them; edited values stay intact."
+      code={`const [baseUrl, setBaseUrl] = createSignal("");
+const [reference, setReference] = createSignal("");
+
+<PanelDialog surface="contained">
   <PanelDialog.Header title="Edit project" subtitle="General settings" icon="ti ti-settings" />
   <PanelDialog.Tabs value={tab()} onValueChange={setTab} options={tabOptions} />
   <PanelDialog.Body>
     <PanelDialog.Section title="Profile" subtitle="Visible to collaborators" icon="ti ti-user">
       <TextInput label="Name" value="Launch plan" />
+    </PanelDialog.Section>
+    <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings" icon="ti ti-plug">
+      <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} placeholder="https://api.example.com/v1" />
+    </PanelDialog.Section>
+    <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings" icon="ti ti-adjustments">
+      <TextInput label="Internal reference" value={reference()} onValueChange={setReference} />
     </PanelDialog.Section>
   </PanelDialog.Body>
   <PanelDialog.Footer>
@@ -761,6 +772,12 @@ const PanelDemo = () => {
         <PanelDialog.Body>
           <PanelDialog.Section title="Profile" subtitle="Visible to collaborators" icon="ti ti-user">
             <TextInput label="Name" value="Launch plan" />
+          </PanelDialog.Section>
+          <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings" icon="ti ti-plug">
+            <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} placeholder="https://api.example.com/v1" />
+          </PanelDialog.Section>
+          <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings" icon="ti ti-adjustments">
+            <TextInput label="Internal reference" value={reference()} onValueChange={setReference} />
           </PanelDialog.Section>
         </PanelDialog.Body>
         <PanelDialog.Footer>
