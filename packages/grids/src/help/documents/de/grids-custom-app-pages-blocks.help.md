@@ -88,6 +88,26 @@ Das Starten eines Workflows erfolgt asynchron. Die Schaltfläche verfolgt ihre e
 
 Die Laufzeit validiert die veröffentlichte App-Freigabe, exakte Seite, Block, Aktion, Launcher, Workflow-Revision, Seitendatensätze und `availableWhen`-Abfrage erneut. Eine Aktion, die in der unveränderlichen Capability-Menge der Veröffentlichung fehlt, wird ausgelassen. Workflow-Aktionen erfordern ein angemeldetes Konto.
 
+#### Dokumente im Hintergrund erstellen
+
+Für eine Dokumentaktion am Seitendatensatz setzt du `background` auf
+`{ acceptedMessage, documentBlockId, documentTemplateId }`. Der referenzierte
+Datensatzblock muss diese Vorlage ohne Verfügbarkeitsbedingung anzeigen.
+Eine solche Seite hat eine Ergebnisvorlage; mehrere Aktionen dürfen sie erzeugen.
+Nach Annahme erscheint die konfigurierte Nachricht. Du kannst weiterarbeiten.
+
+Nach Navigation oder Neuladen bleibt der Status sichtbar. Sobald die gespeicherte
+Datei vorhanden ist, öffnet die Aktion das Dokument. Gleichzeitige Aufrufe derselben
+veröffentlichten Aktion mit denselben Seitendatensätzen und Eingaben verwenden den
+laufenden Auftrag, auch bei verschiedenen berechtigten App-Lesern. Sichtbar ist nur
+der Dokumentstatus, nicht die Eingaben, Ergebnisse oder internen Fehler anderer
+Nutzer. Erfordert der Workflow eine administrative Prüfung, ist kein neuer Start möglich.
+
+Ein Datensatzlistenblock in Tabellendarstellung zeigt mit `workflowStatus: true`
+diese Zustände pro Zeile. Dafür muss seine Zeilennavigation direkt mit `ROW.id`
+auf die uneingeschränkt verfügbare Dokumentseite zeigen. Die Liste bleibt suchbar
+und in Seiten unterteilt. Sichtbare laufende Einträge werden aktualisiert.
+
 ### Scanner
 
 Scanner bettet eine vorhandene aktivierte Scanner-Ausführungsoption ein. Angemeldete lesende Personen der App können mit der Kamera scannen oder einen Code manuell eingeben. Öffentliche anonyme Personen sehen stattdessen eine Aufforderung zur Anmeldung. Sitzungswerte werden einmal beim Öffnen des Scanners abgefragt, Werte nach dem Scan für jeden Code.

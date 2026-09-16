@@ -100,24 +100,25 @@ const messages = i18n.define({
       refundBankError: "Add the recipient's refund IBAN and account holder under Business partners before issuing the credit note.",
       seller: "Your company",
       buyer: "Business partner",
-      issueInvoiceAction: "Issue / retrieve invoice",
-      issueSelfBillingAction: "Issue / retrieve self-billing",
-      issueCorrectionAction: "Issue / retrieve credit note",
-      issueSelfBillingConfirm:
-        "Issue this self-billing document, or retrieve the same document if already issued? This does not transfer money.",
+      issueInvoiceAction: "Issue invoice",
+      issueSelfBillingAction: "Issue self-billing",
+      issueCorrectionAction: "Issue credit note",
+      issueSelfBillingConfirm: "Issue this self-billing document? This does not transfer money.",
       issueCorrectionConfirm:
-        "Issue this credit note and reduce the invoice balance, or retrieve the same document if already issued? Issued data is immutable. This does not refund money.",
+        "Issue this credit note and reduce the invoice balance? Issued data is immutable. This does not refund money.",
       issue: "Issue invoice",
-      issueConfirm: "Issue this invoice and freeze its data, or retrieve the same document if already issued?",
+      issueConfirm: "Issue this invoice and freeze its data?",
       issueError:
         "Check issuer setup and the selected business partner. If the invoice was just issued, run this action again to retrieve it.",
       setupKey: "Setup key",
+      creationAccepted:
+        "Document creation requested. You can keep working. Find its status and the finished document under Billing documents.",
       drafts: "Drafts",
       issued: "Finalized",
       frozen: "Finalized details",
       noBills: "No billing documents yet.",
       finalizedHelp:
-        "These details can no longer be edited. Open an entry's Documents section for its official number and file; REF identifies only the internal record. The Issue / retrieve action completes a missing file or retrieves the same document, never a second one.",
+        "These details can no longer be edited. Open an entry's Documents section for its official number and file; REF identifies only the internal record. Continue creation completes a missing file. Open document opens the finished file with its original number.",
       newCorrection: "Prepare correction",
       issueCorrection: "Issue correction",
       correctionError:
@@ -218,24 +219,24 @@ const messages = i18n.define({
         "Ergänze unter Geschäftspartner die Erstattungs-IBAN und den Kontoinhaber des Empfängers, bevor du die Korrektur ausstellst.",
       seller: "Dein Unternehmen",
       buyer: "Geschäftspartner",
-      issueInvoiceAction: "Rechnung ausstellen / abrufen",
-      issueSelfBillingAction: "Provisionsgutschrift ausstellen / abrufen",
-      issueCorrectionAction: "Korrektur ausstellen / abrufen",
-      issueSelfBillingConfirm:
-        "Provisionsgutschrift ausstellen oder den bereits ausgestellten Beleg abrufen? Ausgestellte Daten sind unveränderlich. Dies überweist kein Geld.",
+      issueInvoiceAction: "Rechnung ausstellen",
+      issueSelfBillingAction: "Provisionsgutschrift ausstellen",
+      issueCorrectionAction: "Korrektur ausstellen",
+      issueSelfBillingConfirm: "Provisionsgutschrift ausstellen? Ausgestellte Daten sind unveränderlich. Dies überweist kein Geld.",
       issueCorrectionConfirm:
-        "Korrektur ausstellen und den Rechnungssaldo mindern oder den bereits ausgestellten Beleg abrufen? Ausgestellte Daten sind unveränderlich. Dies erstattet kein Geld.",
+        "Korrektur ausstellen und den Rechnungssaldo mindern? Ausgestellte Daten sind unveränderlich. Dies erstattet kein Geld.",
       issue: "Rechnung ausstellen",
-      issueConfirm: "Rechnung ausstellen und ihre Daten festschreiben oder den bereits ausgestellten Beleg abrufen?",
+      issueConfirm: "Rechnung ausstellen und ihre Daten festschreiben?",
       issueError:
         "Prüfe Ausstellerangaben und Geschäftspartner. Wurde die Rechnung gerade ausgestellt, führe die Aktion erneut aus, um sie abzurufen.",
       setupKey: "Einrichtungsschlüssel",
+      creationAccepted: "Belegerstellung beauftragt. Du kannst weiterarbeiten. Status und fertiges Dokument findest du unter Abrechnungen.",
       drafts: "Entwürfe",
       issued: "Festgeschrieben",
       frozen: "Festgeschriebene Angaben",
       noBills: "Noch keine Abrechnungen vorhanden.",
       finalizedHelp:
-        "Diese Angaben sind nicht mehr bearbeitbar. Öffne den Abschnitt Dokumente eines Eintrags für seine offizielle Nummer und Datei; REF bezeichnet nur den internen Datensatz. Ausstellen / abrufen ergänzt eine fehlende Datei oder ruft denselben Beleg ab, niemals einen zweiten.",
+        "Diese Angaben sind nicht mehr bearbeitbar. Öffne den Abschnitt Dokumente eines Eintrags für seine offizielle Nummer und Datei; REF bezeichnet nur den internen Datensatz. Erstellung fortsetzen ergänzt eine fehlende Datei. Dokument öffnen öffnet die fertige Datei mit ihrer ursprünglichen Nummer.",
       newCorrection: "Korrektur vorbereiten",
       issueCorrection: "Korrektur ausstellen",
       correctionError:
@@ -294,8 +295,7 @@ export function createBillingTemplate(locale?: string): GridTemplate {
       ...(["invoice_date", "service_date", "due_date", "date", "amount", "postal_code", "city", "vat_id"].includes(key)
         ? { width: "compact" }
         : {}),
-      ...((creating && key === "invoice_date") || (tableKey === "payments" && key === "date")
-        ? { defaultValue: { kind: "now" } } : {}),
+      ...((creating && key === "invoice_date") || (tableKey === "payments" && key === "date") ? { defaultValue: { kind: "now" } } : {}),
       ...(["positions", "due_date"].includes(key) ? { required: true } : {}),
       helpText: fieldHelp(tableKey, key),
       ...(inlineCreate && tableKey === "bills" && key === "party"

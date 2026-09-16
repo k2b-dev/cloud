@@ -263,7 +263,13 @@ const customAppAuthorizationIsAvailable = async (params: {
       candidate.target === "action" && candidate.pageId === page.id && candidate.blockId === block.id && candidate.actionId === action.id,
   );
   if (!(await evaluate(action.availableWhen?.query, actionCapability, context))) return false;
-  if (block.type !== "records" && block.type !== "referenced_records") return authorization.recordId === undefined;
+  if (block.type === "actions") {
+    if (action.kind === "workflow" && "background" in action && action.background) {
+      return authorization.background === true && Boolean(page.record) && authorization.recordId === pageParams[page.record!.id.path];
+    }
+    return !authorization.background && authorization.recordId === undefined;
+  }
+  if (authorization.background) return false;
   if (!authorization.recordId) return false;
   return recordsContain([authorization.recordId], authorization.search, authorization.cursor);
 };

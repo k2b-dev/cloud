@@ -39,7 +39,7 @@ Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–
 | `type` | Weitere Pflichtfelder | Optional und Standardwerte |
 | --- | --- | --- |
 | `markdown` | `markdown` (bis 20.000 Zeichen, leer erlaubt) | keine |
-| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowNavigate`, `rowActions` (bis 6) |
+| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `workflowStatus`, `rowNavigate`, `rowActions` (bis 6) |
 | `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (bis 6) |
 | `metrics` | `source` | keine |
 | `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (je 1–60) |
@@ -115,3 +115,14 @@ Ermittelte IDs und vollständige Formularwerte verwenden: Pflichtwerte beibehalt
 Der Server bestimmt das Bearbeitungsziel aus dem Seitendatensatz, niemals aus einer `recordId` im Body. Base-Schreiber verwenden entsprechend `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, mit aktuellen Versionen aus `records get`. HTTP: `POST /api/grids/forms/FORM/records/REC001`; Anlegen: `POST /api/grids/forms/FORM/submit`.
 
 Schlüssel: nichtleer, höchstens 200 Zeichen, ohne NUL; Gültigkeit je Formular/Tabelle und Akteur. Exakte Wiederholungen liefern dieselbe Datensatz-ID ohne weitere Änderung. Andere Payloads, gelöschte Ergebnisse oder alte Versionen ergeben `409`. Nach Timeouts denselben Body/Schlüssel wiederholen oder Ergebnis prüfen; ohne Schlüssel drohen Duplikate. Nach bestätigten Versionskonflikten neu laden und prüfen. Validierungsfehler (`400`/`422`) und Zugriffsfehler (`401`/`403`/`404`) sind keine Speicherung. Anlegen liefert `201`, Bearbeiten `200`, mit `recordId` und optionaler App-Erfolgsnavigation.
+
+### Dokumentaktionen im Hintergrund
+
+Workflow-Aktionen können `background: { acceptedMessage, documentBlockId,
+documentTemplateId }` setzen. Dafür braucht die Seite einen Datensatz und einen
+uneingeschränkt verfügbaren Datensatzblock mit dieser Dokumentvorlage. Pro Seite
+ist eine Ergebnisvorlage vorgesehen. `GET` auf dem Aktionsendpunkt liest den
+aktuellen Dokumentstatus; `POST` bestätigt die Annahme direkt. Diese Aktionen
+liefern den Dokumentstatus statt einer Workflow-Lauf-ID. Nur aktuell berechtigte
+App-Leser dürfen ihn sehen. Bei `needs_attention` ist kein weiterer Start möglich;
+ein fertiges Dokument wird direkt geöffnet.

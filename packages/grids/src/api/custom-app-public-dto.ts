@@ -276,5 +276,12 @@ export const projectPublishedRecords = async (
     ...(presentation ? { presentation } : {}),
     ...(cards ? { cards } : {}),
     ...(rowNavigationParams ? { rowNavigationParams } : {}),
+    ...(published.workflowStates
+      ? {
+          workflowStates: Object.fromEntries(
+            Object.entries(published.workflowStates).map(([id, state]) => [requiredProjected(recordIds, id, "record"), state]),
+          ),
+        }
+      : {}),
   };
 };

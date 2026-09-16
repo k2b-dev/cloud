@@ -1,5 +1,6 @@
 import type { DslQueryPreviewResponse, Field, GridRecord, RecordDisplayConfig } from "../contracts";
-import type { CustomAppCapabilities, CustomAppPage, CustomAppRowNavigation } from "../custom-apps/contracts";
+import type { BackgroundDocumentState } from "../custom-apps/background-state";
+import type { CustomAppCapabilities, CustomAppDefinition, CustomAppPage, CustomAppRowNavigation } from "../custom-apps/contracts";
 import { createCustomAppFileToken } from "../custom-apps/file-token";
 import { projectCustomAppRecord } from "../custom-apps/record-projection";
 import { customAppRecordsDisplayFieldHash, isSafeInlineCardImageMimeType } from "../custom-apps/records-display-capability";
@@ -7,6 +8,7 @@ import { type CustomAppRecordsLikeBlock, referencedRecordsGqlSource } from "../c
 import type { DslQueryContextValues } from "../query-dsl/parameters";
 import { decodeDslResultCursor, gqlResultFingerprint } from "../query-dsl/result-cursor";
 import type { SqlClient } from "./audit";
+import { backgroundStatusPage, loadBackgroundDocumentStates } from "./custom-app-background";
 import {
   customAppRecordRelationSnapshot,
   customAppRelationLabelFieldIdsByTableId,
@@ -27,6 +29,7 @@ type RecordsCapability = CustomAppCapabilities["views"][number] | CustomAppCapab
 type PublishedCustomAppRecordsResult = {
   response: DslQueryPreviewResponse;
   primaryTableId: string;
+  workflowStates?: Record<string, BackgroundDocumentState>;
   rowNavigationParams?: Record<string, Record<string, string>>;
   presentation?: { fields: Field[] };
   cards?: {
@@ -64,6 +67,7 @@ const customAppRowNavigationParams = (
 
 /** Executes the exact published Records source used by SSR and row-action admission. */
 export const executePublishedCustomAppRecords = async (input: {
+  definition?: CustomAppDefinition;
   baseId: string;
   customAppId: string;
   publishedAt: string;
@@ -190,8 +194,27 @@ export const executePublishedCustomAppRecords = async (input: {
       new Map(allFields.map((field) => [field.shortId, field.id])),
     );
   }
+  let workflowStates: Record<string, BackgroundDocumentState> | undefined;
+  if (response.ok && block.type === "records" && block.workflowStatus && input.definition) {
+    const targetPage = backgroundStatusPage(input.definition, block.rowNavigate?.pageId);
+    if (!targetPage) return null;
+    workflowStates = await loadBackgroundDocumentStates({
+      baseId: input.baseId,
+      appId: input.customAppId,
+      publishedAt: input.publishedAt,
+      page: targetPage,
+      capabilities: input.capabilities,
+      records: response.rows.flatMap((row) => (row.recordId ? [{ id: row.recordId, finalizedAt: row.recordMeta?.finalizedAt }] : [])),
+    });
+  }
   if (!response.ok || block.display.kind !== "cards") {
-    return { response, primaryTableId, presentation, ...(rowNavigationParams ? { rowNavigationParams } : {}) };
+    return {
+      response,
+      primaryTableId,
+      presentation,
+      ...(workflowStates ? { workflowStates } : {}),
+      ...(rowNavigationParams ? { rowNavigationParams } : {}),
+    };
   }
   if (block.type === "referenced_records") {
     const fieldsByShortId = new Map(presentationFields.map((field) => [field.shortId, field]));

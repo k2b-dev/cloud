@@ -1,5 +1,9 @@
 import { beforeAll, expect, spyOn } from "bun:test";
+import type { User } from "@k2b/cloud/contracts";
+import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
+import { Hono } from "hono";
+import { createCustomAppsApi } from "../api/custom-apps";
 import { buildCustomAppQueryContext } from "../custom-apps/query-context";
 import { createGermanBillingProfile, germanBillingProfile } from "../document-profiles/einvoice-de";
 import { postgresTest, testUuid } from "../integration-test-utils";
@@ -141,19 +145,23 @@ postgresTest(
             actionId,
             revision: capability.revision,
             timeZone: "UTC",
-            ...(recordId ? { recordId } : {}),
+            ...(["issue", "lookup-check"].includes(actionId)
+              ? { background: true as const, recordId: pageParams.bill_id }
+              : recordId
+                ? { recordId }
+                : {}),
           },
         });
         if (!result.ok) throw new Error(JSON.stringify(result.error));
         checkpoint(`${actionId} accepted`);
         return result.data.runId;
       };
-      const finish = async (runId: string) => {
+      const finish = async (runId: string, expected = "succeeded") => {
         for (let attempt = 0; attempt < 40; attempt++) {
           await runGridsWorkflowRun(runId);
           const [run] = await sql`SELECT state, error FROM workflows.run WHERE id = ${runId}::uuid`;
           if (["failed", "succeeded", "needs_attention", "canceled"].includes(run.state)) {
-            expect(run.state, JSON.stringify(run.error)).toBe("succeeded");
+            expect(run.state, JSON.stringify(run.error)).toBe(expected);
             checkpoint("run succeeded");
             return;
           }
@@ -200,18 +208,106 @@ postgresTest(
       });
       expect(available.ok, JSON.stringify(available)).toBe(true);
       if (available.ok) expect(available.rows).toHaveLength(1);
+      let user: User = {
+        id: actorId,
+        uid: actorId,
+        roles: ["user"],
+        provider: "local",
+        profile: "user",
+        givenname: "Billing",
+        sn: "Reader",
+        displayName: "Billing app reader",
+        mail: null,
+        avatarHash: null,
+        accountExpires: null,
+        lastLoginLocal: null,
+        memberofGroup: [],
+        memberofGroupIds: [],
+        manages: [],
+        managesGroupIds: [],
+        ipa: null,
+      };
+      const api = new Hono<AuthContext>();
+      api.use("*", async (c, next) => {
+        c.set("actor", { kind: "user", user });
+        c.set("accessSubject", { type: "user", userId: user.id });
+        c.set("user", user);
+        await next();
+      });
+      api.route(
+        "/",
+        createCustomAppsApi({ loadOptionalActor: async (_c, next) => next(), requireAuthenticated: async (_c, next) => next() }),
+      );
+      const endpoint = `/runtime/${app.shortId}/bill/actions/actions/issue?bill_id=${draft.data.shortId}`;
+      const post = () =>
+        api.request(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ operationId: testUuid() }),
+        });
+      const accepted = await Promise.all([post(), post()]);
+      for (const response of accepted) {
+        expect(response.status, await response.clone().text()).toBe(202);
+        expect(await response.json()).toEqual({ status: "running" });
+      }
+      // No worker has run: admission and status must work while rendering is arbitrarily delayed.
+      expect(await (await api.request(endpoint)).json()).toMatchObject({ status: "running" });
+      const originalUser = user;
+      const secondActorId = testUuid();
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+        VALUES (${secondActorId}::uuid, ${secondActorId}, 'local', 'user', 'Second billing reader', 'Second', 'Reader')`;
+      const secondGrant = await grantAccess({
+        resourceType: "customApp",
+        resourceId: app.id,
+        permission: "read",
+        principal: { type: "user", userId: secondActorId },
+      });
+      if (!secondGrant.ok) throw new Error(secondGrant.error.message);
+      user = { ...originalUser, id: secondActorId, uid: secondActorId };
+      expect((await (await post()).json()).status).toBe("running");
+      expect((await (await api.request(endpoint)).json()).status).toBe("running");
+      user = originalUser;
       const issueRun = await issue();
+      const [admitted] = await sql`SELECT count(*)::int AS count FROM grids.workflow_run_profile WHERE base_id = ${baseId}::uuid`;
+      expect(admitted.count).toBe(1);
+      const reloaded = await api.request(`/runtime/${app.shortId}/bill?bill_id=${draft.data.shortId}`);
+      expect(reloaded.status, await reloaded.clone().text()).toBe(200);
+      expect(await reloaded.text()).toContain('"status":"running"');
+      const overview = await api.request(`/runtime/${app.shortId}/invoices/bills/records`);
+      expect(overview.status, await overview.clone().text()).toBe(200);
+      expect(await overview.text()).toContain('"status":"running"');
+
       const scope = await getWorkflowRunScope(issueRun);
       if (!scope) throw new Error("Missing accepted run scope");
       // This actor has no Base grant: only the exact published App action can run.
       expect(await canExecuteWorkflow({ ...scope, workflowId: scope.workflow.id, authorization: { kind: "workflow" } })).toBe(false);
-      await finish(issueRun);
+      render.mockImplementationOnce(async () => {
+        throw new Error("Private renderer unavailable");
+      });
+      await finish(issueRun, "failed");
+      const failure = await (await api.request(endpoint)).json();
+      expect(failure.status).toBe("failed");
+      expect(JSON.stringify(failure)).not.toContain("Private renderer");
+      expect((await get(bills.id, draft.data.id))?.finalizedAt).not.toBeNull();
+      await sql`UPDATE workflows.run SET state = 'needs_attention' WHERE id = ${issueRun}::uuid`;
+      expect((await (await post()).json()).status).toBe("attention");
+      await sql`UPDATE workflows.run SET state = 'failed' WHERE id = ${issueRun}::uuid`;
+      expect((await (await post()).json()).status).toBe("running");
+      await finish(await issue());
       expect((await get(bills.id, draft.data.id))?.finalizedAt).not.toBeNull();
       expect(await canExecuteRun(scope)).toBe(true);
+      const finished = await (await api.request(endpoint)).json();
+      expect(finished.status).toBe("ready");
+      expect(finished.downloadUrl).toContain("/documents/");
+      expect(finished).not.toHaveProperty("runId");
+      expect((await (await post()).json()).status).toBe("ready");
+      const [afterReady] = await sql`SELECT count(*)::int AS count FROM grids.workflow_run_profile WHERE base_id = ${baseId}::uuid`;
+      expect(afterReady.count).toBe(2);
+
       await finish(await issue());
       const documents = await sql`SELECT id FROM grids.documents WHERE base_id = ${baseId}::uuid`;
       expect(documents).toHaveLength(1);
-      expect(render).toHaveBeenCalledTimes(1);
+      expect(render).toHaveBeenCalledTimes(2);
 
       const payment = await create(
         payments.id,
@@ -224,7 +320,7 @@ postgresTest(
       expect((await get(payments.id, payment.data.id))?.finalizedAt).not.toBeNull();
       const discarded = await create(bills.id, draftData, null, "form");
       if (!discarded.ok) throw new Error(discarded.error.message);
-      await finish(await start("drafts", "bills", "discard", {}, { bill: discarded.data.shortId }, discarded.data.id));
+      await finish(await start("bill", "actions", "discard", { bill_id: discarded.data.id }, { bill: discarded.data.shortId }));
       expect(await get(bills.id, discarded.data.id)).toBeNull();
 
       await sql`UPDATE grids.workflow_launchers SET enabled = false WHERE id = ${scope.launcherId}::uuid`;
@@ -232,6 +328,8 @@ postgresTest(
       await sql`UPDATE grids.workflow_launchers SET enabled = true WHERE id = ${scope.launcherId}::uuid`;
       await sql`DELETE FROM auth.access WHERE id = ${granted.data.accessId}::uuid`;
       expect(await canExecuteRun(scope)).toBe(false);
+      expect((await api.request(endpoint)).status).toBe(404);
+      expect((await post()).status).toBe(404);
     } finally {
       render.mockRestore();
     }

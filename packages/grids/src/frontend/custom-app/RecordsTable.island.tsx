@@ -1,8 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, DataTable, type DataTableColumn, IconButton, Placeholder, prompts, TextInput, toast } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { PublicField, PublicGridRecord } from "../../api/public-dto";
 import type { DslQueryPreviewResponse, RecordDisplayConfig } from "../../contracts";
+import type { BackgroundDocumentState } from "../../custom-apps/background-state";
 import type { CustomAppRowNavigation } from "../../custom-apps/contracts";
 import { customAppRowHref } from "../../custom-apps/routing";
 import type { GridFilePreview } from "../../service";
@@ -16,6 +17,7 @@ import { type CustomAppWorkflowOperation, invokeCustomAppWorkflow } from "./work
 
 type QuerySuccess = Extract<DslQueryPreviewResponse, { ok: true }>;
 export type CustomAppRecordsSuccess = QuerySuccess & {
+  workflowStates?: Record<string, BackgroundDocumentState>;
   presentation?: { fields: PublicField[] };
   rowNavigationParams?: Record<string, Record<string, string>>;
   cards?: {
@@ -89,7 +91,7 @@ export default function RecordsTable(props: {
     workflowController?.abort();
   });
 
-  const loadPage = async (nextCursor: string | null, nextQuery: string, nextHistory: Array<string | null>) => {
+  const loadPage = async (nextCursor: string | null, nextQuery: string, nextHistory: Array<string | null>, quiet = false) => {
     if (props.preview || !props.endpoint) return;
     requestController?.abort();
     const controller = new AbortController();
@@ -110,12 +112,39 @@ export default function RecordsTable(props: {
       setCursor(nextCursor);
       setHistory(nextHistory);
     } catch (cause) {
-      if (!controller.signal.aborted) toast.error(cause instanceof Error ? cause.message : messages().recordsLoadFailed);
+      if (!controller.signal.aborted && !quiet) toast.error(cause instanceof Error ? cause.message : messages().recordsLoadFailed);
     } finally {
       if (requestController === controller) requestController = null;
       if (!controller.signal.aborted) setLoading(false);
     }
   };
+
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshStatuses = async () => {
+    if (disposed) return;
+    if (
+      !document.hidden &&
+      !requestController &&
+      !pendingKey() &&
+      Object.values(result().workflowStates ?? {}).some((state) => state.status === "running")
+    ) {
+      await loadPage(cursor(), appliedQuery(), history(), true);
+    }
+    if (!disposed) statusTimer = setTimeout(() => void refreshStatuses(), 5000);
+  };
+  const focusRefresh = () => {
+    if (result().workflowStates && !requestController) void loadPage(cursor(), appliedQuery(), history());
+  };
+  onMount(() => {
+    if (result().workflowStates) {
+      statusTimer = setTimeout(() => void refreshStatuses(), 5000);
+      window.addEventListener("focus", focusRefresh);
+      onCleanup(() => window.removeEventListener("focus", focusRefresh));
+    }
+  });
+  onCleanup(() => {
+    clearTimeout(statusTimer);
+  });
 
   const onSearch = (value: string) => {
     setQuery(value);
@@ -188,6 +217,8 @@ export default function RecordsTable(props: {
       value: (row: ReturnType<typeof rows>[number]) => row.values[column.key],
       class: ["text", "longtext", "relation"].includes(column.type) ? "min-w-48" : "min-w-32",
     }));
+    if (result().workflowStates)
+      value.push({ id: "__workflowStatus", header: messages().documentStatus, value: (row) => row.recordId, class: "min-w-40" });
     if ((props.rowActions?.length ?? 0) > 0) {
       value.push({ id: "__actions", header: messages().actions, value: (row) => row.recordId, class: "min-w-28" });
     }
@@ -300,6 +331,18 @@ export default function RecordsTable(props: {
               }
               empty={<span>{appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}</span>}
               renderCell={({ row, col, value }) => {
+                if (col.id === "__workflowStatus") {
+                  const state = row.recordId ? result().workflowStates?.[row.recordId] : undefined;
+                  return state?.status === "ready"
+                    ? messages().documentReady
+                    : state?.status === "running"
+                      ? messages().documentCreating
+                      : state?.status === "failed" || state?.status === "attention"
+                        ? messages().documentFailed
+                        : state?.status === "missing"
+                          ? messages().documentMissing
+                          : messages().documentDraft;
+                }
                 if (col.id === "__actions") {
                   if (!row.recordId) return null;
                   return (

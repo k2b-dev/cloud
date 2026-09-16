@@ -90,6 +90,7 @@ export type GridsWorkflowAuthorization =
       blockId: string;
       actionId: string;
       recordId?: string;
+      background?: true;
       search?: string;
       cursor?: string;
       revision: number;
@@ -732,6 +733,20 @@ export const startWorkflowRun = async (input: StartWorkflowRunInput): Promise<Re
     await lockWorkflowCatalogMutation(scopeId, tx);
     const replay = await replayWorkflowRun(input, tx);
     if (replay) return replay.ok ? ok({ runId: replay.data.runId, created: false }) : replay;
+    // The catalog lock serializes admission across tabs and actors. Only a
+    // current, authorized background action can join an existing active run.
+    if (input.mode === "execute" && input.authorization.kind === "custom-app-action" && input.authorization.background) {
+      const [active] = await tx<Array<{ id: string }>>`
+        SELECT r.id::text AS id FROM workflows.run r
+        JOIN grids.workflow_run_profile p ON p.run_id = r.id
+        WHERE p.base_id = ${scopeId}::uuid AND p.launcher_id = ${input.launcherId ?? null}::uuid
+          AND r.mode = 'execute' AND r.state IN ('queued', 'running', 'waiting')
+          AND ((r.authorization_snapshot->'authorization') - 'timeZone') = (${input.authorization}::jsonb - 'timeZone')
+          AND r.inputs = ${input.inputs}::jsonb
+        ORDER BY r.created_at DESC, r.id DESC LIMIT 1
+      `;
+      if (active) return ok({ runId: active.id, created: false });
+    }
     const current = await getWorkflow(input.workflow.id, false, tx);
     if (!current) return fail({ ...err.notFound("workflow"), message: t.workflowNotFound });
     if (current.revision !== input.workflow.revision) return fail(workflowConflict(t.workflowChangedCaller));

@@ -147,6 +147,14 @@ const CustomAppActionSchema = z.discriminatedUnion("kind", [
       launcherId: CustomAppResourceIdSchema,
       inputs: z.record(z.string().trim().min(1).max(120), CustomAppValueBindingSchema).default({}),
       confirm: z.string().trim().min(1).max(240).optional(),
+      background: z
+        .object({
+          acceptedMessage: z.string().trim().min(1).max(400),
+          documentBlockId: CustomAppLocalIdSchema,
+          documentTemplateId: CustomAppResourceIdSchema,
+        })
+        .strict()
+        .optional(),
       ...CustomAppAvailabilityShape,
     })
     .strict(),
@@ -249,6 +257,7 @@ const CustomAppRecordsBlockSchema = z
     searchable: z.boolean().default(true),
     pageSize: z.number().int().min(5).max(100).default(25),
     rowNavigate: CustomAppRowNavigationSchema.optional(),
+    workflowStatus: z.boolean().optional(),
     rowActions: z.array(CustomAppRowActionSchema).max(6).optional(),
     ...CustomAppAvailabilityShape,
   })
@@ -611,6 +620,63 @@ export const CustomAppDefinitionSchema = z
                 ctx.addIssue({ code: "custom", message: `Duplicate field id "${fieldId}"`, path: [...blockPath, ...fieldPath] });
               }
               seenFieldIds.add(fieldId);
+            }
+            if (block.type === "records" && block.workflowStatus) {
+              const target = definition.pages.find((candidate) => candidate.id === block.rowNavigate?.pageId);
+              if (
+                !target?.record ||
+                block.display.kind !== "table" ||
+                !block.rowNavigate ||
+                Object.values(block.rowNavigate.params).some((binding) => binding.path !== "id") ||
+                target.availableWhen ||
+                target.rows.some((row) =>
+                  row.columns.some((column) =>
+                    column.blocks.some((block) => block.type === "record" && block.documents && block.availableWhen),
+                  ),
+                )
+              ) {
+                ctx.addIssue({
+                  code: "custom",
+                  message: "Workflow status requires direct row navigation to an unconditional Record page and document block",
+                  path: [...blockPath, "workflowStatus"],
+                });
+              }
+            }
+            if (block.type === "actions") {
+              const targets = page.rows
+                .flatMap((row) => row.columns.flatMap((column) => column.blocks))
+                .flatMap((block) =>
+                  block.type === "actions"
+                    ? block.actions.flatMap((action) =>
+                        action.kind === "workflow" && action.background ? [action.background.documentTemplateId] : [],
+                      )
+                    : [],
+                );
+              if (new Set(targets).size > 1)
+                ctx.addIssue({
+                  code: "custom",
+                  message: "A background document page has one result template",
+                  path: [...blockPath, "actions"],
+                });
+              for (const [index, action] of block.actions.entries()) {
+                if (action.kind !== "workflow" || !action.background) continue;
+                const documentBlock = page.rows
+                  .flatMap((row) => row.columns.flatMap((column) => column.blocks))
+                  .find((candidate) => candidate.id === action.background!.documentBlockId);
+                if (
+                  !page.record ||
+                  documentBlock?.type !== "record" ||
+                  documentBlock.availableWhen ||
+                  !documentBlock.documents?.templateIds.includes(action.background.documentTemplateId)
+                ) {
+                  ctx.addIssue({
+                    code: "custom",
+                    message:
+                      "Background document actions require a page record and an unconditional document block exposing their template",
+                    path: [...blockPath, "actions", index, "background"],
+                  });
+                }
+              }
             }
             if (block.type === "record" && !page.record) {
               ctx.addIssue({ code: "custom", message: "A Record block requires a page record", path: [...blockPath, "type"] });
@@ -1221,7 +1287,7 @@ export const CUSTOM_APP_REFERENCE = {
     },
     actions: {
       required: ["id", "type", "actions"],
-      note: "Navigate inside the app or invoke an exact published workflow launcher and follow its scoped result",
+      note: "Navigate inside the app or invoke an exact published workflow launcher; background document actions acknowledge acceptance and recover durable status",
     },
     scanner: {
       required: ["id", "type", "launcherId"],

@@ -10,7 +10,7 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
       kind: "grids.custom-app",
       name: t.title,
       icon: "receipt",
-      startPageId: "drafts",
+      startPageId: "invoices",
       sidebar: {
         actions: [
           {
@@ -87,8 +87,8 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
           ],
         },
         {
-          id: "drafts",
-          title: t.drafts,
+          id: "invoices",
+          title: t.bills,
           navigation: { visible: true },
           parameters: {},
           rows: [
@@ -144,7 +144,8 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                     {
                       id: "bills",
                       type: "records" as const,
-                      title: t.drafts,
+                      title: t.bills,
+                      workflowStatus: true,
                       emptyText: t.noBills,
                       source: {
                         kind: "gql" as const,
@@ -161,7 +162,7 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           field("bills.invoice_date"),
                           ", ",
                           field("bills.gross"),
-                          "\nwhere record.finalizationState = 'draft'\nsort record.createdAt desc",
+                          "\nsort record.createdAt desc",
                         ),
                       },
                       display: { kind: "table" as const, columnIds: [] },
@@ -173,18 +174,6 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                         history: "push" as const,
                         params: { bill_id: { source: "ROW" as const, path: "id" as const } },
                       },
-                      rowActions: [
-                        {
-                          id: "discard",
-                          kind: "workflow",
-                          label: t.discardDraft,
-                          icon: "trash",
-                          showLabel: true,
-                          launcherId: launcher("discard_draft"),
-                          inputs: { bill: { source: "ROW", path: "id" } },
-                          confirm: t.discardDraftConfirm,
-                        },
-                      ],
                     },
                   ],
                 },
@@ -350,6 +339,24 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           },
                         },
                         {
+                          id: "discard",
+                          kind: "workflow",
+                          label: t.discardDraft,
+                          icon: "trash",
+                          launcherId: launcher("discard_draft"),
+                          inputs: { bill: { source: "RECORD", path: "id" } },
+                          confirm: t.discardDraftConfirm,
+                          availableWhen: {
+                            query: formula(
+                              "from table ",
+                              table("bills"),
+                              "\nselect ",
+                              field("bills.reference"),
+                              "\nwhere record.id = @params.bill_id and record.finalizationState = 'draft'\nlimit 1",
+                            ),
+                          },
+                        },
+                        {
                           id: "issue-self-billing",
                           kind: "workflow",
                           label: t.issueSelfBillingAction,
@@ -357,6 +364,11 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           launcherId: launcher("issue_self_billing"),
                           inputs: { bill: { source: "RECORD", path: "id" } },
                           confirm: t.issueSelfBillingConfirm,
+                          background: {
+                            acceptedMessage: t.creationAccepted,
+                            documentBlockId: "identity",
+                            documentTemplateId: documentTemplate("billing"),
+                          },
                           availableWhen: {
                             query: formula(
                               "from table ",
@@ -396,6 +408,11 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           launcherId: launcher("issue_correction"),
                           inputs: { bill: { source: "RECORD", path: "id" } },
                           confirm: t.issueCorrectionConfirm,
+                          background: {
+                            acceptedMessage: t.creationAccepted,
+                            documentBlockId: "identity",
+                            documentTemplateId: documentTemplate("billing"),
+                          },
                           availableWhen: {
                             query: formula(
                               "from table ",
@@ -416,6 +433,11 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           launcherId: launcher("issue_invoice"),
                           inputs: { bill: { source: "RECORD", path: "id" } },
                           confirm: t.issueConfirm,
+                          background: {
+                            acceptedMessage: t.creationAccepted,
+                            documentBlockId: "identity",
+                            documentTemplateId: documentTemplate("billing"),
+                          },
                           availableWhen: {
                             query: formula(
                               "from table ",

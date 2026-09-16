@@ -1,6 +1,8 @@
 import { Button, ButtonLink, prompts } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
+import type { BackgroundDocumentState } from "../../custom-apps/background-state";
 import { openFinancialExportDialog } from "../_components/workflows/FinancialExportDialog";
+import BackgroundAction from "./BackgroundAction";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
 import { type CustomAppWorkflowOperation, invokeCustomAppWorkflow } from "./workflow-action-client";
 
@@ -20,6 +22,7 @@ export type CustomAppRenderedAction =
       icon?: string;
       endpoint: string;
       confirm?: string;
+      background?: { acceptedMessage: string; state: BackgroundDocumentState };
     };
 
 export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
@@ -86,51 +89,58 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
         <For each={props.actions}>
           {(action) => (
             <Show
-              when={action.kind === "workflow"}
+              when={action.kind === "workflow" && action.background ? action : undefined}
               fallback={
-                <ButtonLink
-                  href={(action as Extract<CustomAppRenderedAction, { kind: "navigate" }>).href}
-                  onClick={(event) => {
-                    const navigateAction = action as Extract<CustomAppRenderedAction, { kind: "navigate" }>;
-                    if (
-                      navigateAction.history !== "replace" ||
-                      event.defaultPrevented ||
-                      event.button !== 0 ||
-                      event.metaKey ||
-                      event.ctrlKey ||
-                      event.shiftKey ||
-                      event.altKey ||
-                      (event.currentTarget.target && event.currentTarget.target !== "_self") ||
-                      event.currentTarget.hasAttribute("download")
-                    ) {
-                      return;
-                    }
-                    event.preventDefault();
-                    window.location.replace(navigateAction.href);
-                  }}
-                  variant="secondary"
-                  size="sm"
+                <Show
+                  when={action.kind === "workflow"}
+                  fallback={
+                    <ButtonLink
+                      href={(action as Extract<CustomAppRenderedAction, { kind: "navigate" }>).href}
+                      onClick={(event) => {
+                        const navigateAction = action as Extract<CustomAppRenderedAction, { kind: "navigate" }>;
+                        if (
+                          navigateAction.history !== "replace" ||
+                          event.defaultPrevented ||
+                          event.button !== 0 ||
+                          event.metaKey ||
+                          event.ctrlKey ||
+                          event.shiftKey ||
+                          event.altKey ||
+                          (event.currentTarget.target && event.currentTarget.target !== "_self") ||
+                          event.currentTarget.hasAttribute("download")
+                        ) {
+                          return;
+                        }
+                        event.preventDefault();
+                        window.location.replace(navigateAction.href);
+                      }}
+                      variant="secondary"
+                      size="sm"
+                    >
+                      <Show when={action.icon}>
+                        <i class={`ti ti-${action.icon}`} aria-hidden="true" />
+                      </Show>
+                      {action.label}
+                    </ButtonLink>
+                  }
                 >
-                  <Show when={action.icon}>
-                    <i class={`ti ti-${action.icon}`} aria-hidden="true" />
-                  </Show>
-                  {action.label}
-                </ButtonLink>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={pendingId() === action.id}
+                    loadingLabel={messages().starting}
+                    disabled={Boolean(pendingId())}
+                    onClick={() => void invoke(action as Extract<CustomAppRenderedAction, { kind: "workflow" }>)}
+                  >
+                    <Show when={action.icon}>
+                      <i class={`ti ti-${action.icon}`} aria-hidden="true" />
+                    </Show>
+                    {operations()[action.id] ? messages().checkWorkflowStatus : action.label}
+                  </Button>
+                </Show>
               }
             >
-              <Button
-                variant="primary"
-                size="sm"
-                loading={pendingId() === action.id}
-                loadingLabel={messages().starting}
-                disabled={Boolean(pendingId())}
-                onClick={() => void invoke(action as Extract<CustomAppRenderedAction, { kind: "workflow" }>)}
-              >
-                <Show when={action.icon}>
-                  <i class={`ti ti-${action.icon}`} aria-hidden="true" />
-                </Show>
-                {operations()[action.id] ? messages().checkWorkflowStatus : action.label}
-              </Button>
+              {(backgroundAction) => <BackgroundAction {...backgroundAction()} {...backgroundAction().background!} />}
             </Show>
           )}
         </For>

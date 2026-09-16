@@ -21,10 +21,12 @@ import { customAppWorkflowStatusMessage } from "../custom-apps/workflow-status-m
 import { isRecordWritableFieldType } from "../field-types";
 import { toWorkflowRunEventSummary } from "../lib/workflow-run-events";
 import { gridsService } from "../service";
+import { backgroundDocumentHref, loadBackgroundDocumentStates } from "../service/custom-app-background";
 import { prepareCustomAppDocumentPreview } from "../service/custom-app-document-preview";
 import { resolvePublishedCustomAppForm } from "../service/custom-app-published-form";
 import { buildCustomAppRecordLabelCache, customAppRecordRelationsMatchPublished } from "../service/custom-app-record-relations";
 import { executePublishedCustomAppRecords } from "../service/custom-app-records-query";
+import { waitForCustomAppWorkflowChange, workflowCommittedChanges } from "../service/custom-app-workflow-progress";
 import type { CustomApp, CustomAppDraftSave, CustomAppSummary } from "../service/custom-apps";
 import { getMaxFileSizeBytes } from "../service/file-limits";
 import {
@@ -37,7 +39,6 @@ import {
 } from "../service/public-resources";
 import type { RecordComment } from "../service/record-comments";
 import type { GridFile } from "../service/types";
-import { workflowCommittedChanges, waitForCustomAppWorkflowChange } from "../service/custom-app-workflow-progress";
 import { latestWorkflowRunEventCursor } from "../service/workflow-run-events";
 import { getWorkflowDocumentConfirmation, getWorkflowRunScope } from "../service/workflow-runs";
 import { projectGridRecord, projectPublishedRecords, requiredProjected } from "./custom-app-public-dto";
@@ -737,6 +738,7 @@ export const createCustomAppsApi = (
       }
       const query = c.req.valid("query");
       const published = await executePublishedCustomAppRecords({
+        definition: runtime.definition,
         baseId: runtime.app.baseId,
         customAppId: runtime.app.id,
         publishedAt: runtime.app.publishedAt!,
@@ -1294,7 +1296,7 @@ export const createCustomAppsApi = (
         return c.body(null, 204);
       },
     )
-    .post("/runtime/:shortId/:pageId/:blockId/actions/:actionId", v("json", CustomAppActionInvocationSchema), async (c) => {
+    .on(["GET", "POST"], "/runtime/:shortId/:pageId/:blockId/actions/:actionId", async (c) => {
       const runtime = await resolvePublishedRuntime(c);
       if (!runtime) return c.json({ message: apiMessages(c).actionNotFound }, 404);
       const { app, capabilities, page, pageParams } = runtime;
@@ -1332,9 +1334,43 @@ export const createCustomAppsApi = (
         if (!resolved.ok) return c.json({ message: apiMessages(c).actionNotFound }, 404);
         inputs[name] = resolved.value;
       }
+      const backgroundState = async () => {
+        if (!action.background || !bindingContext.pageRecord) return null;
+        if (
+          !(await runtime.available(
+            "block",
+            runtime.blocks.get(action.background.documentBlockId)?.availableWhen?.query,
+            action.background.documentBlockId,
+          ))
+        )
+          return null;
+        const states = await loadBackgroundDocumentStates({
+          baseId: app.baseId,
+          appId: app.id,
+          publishedAt: app.publishedAt!,
+          page,
+          capabilities,
+          records: [bindingContext.pageRecord],
+        });
+        const state = states[bindingContext.pageRecord.id];
+        return state
+          ? { ...state, downloadUrl: backgroundDocumentHref(app.shortId, page.id, await projectRecordParams(pageParams), state) }
+          : null;
+      };
+      if (c.req.method === "GET") {
+        const state = await backgroundState();
+        return state ? c.json(state) : c.json({ message: apiMessages(c).actionNotFound }, 404);
+      }
+      const invocation = CustomAppActionInvocationSchema.safeParse(await c.req.json().catch(() => null));
+      if (!invocation.success) return c.json({ message: apiMessages(c).invalidRequest }, 400);
+      if (action.background) {
+        const state = await backgroundState();
+        if (!state) return c.json({ message: apiMessages(c).actionNotFound }, 404);
+        if (state.status === "ready" || state.status === "running" || state.status === "attention") return c.json(state, 202);
+      }
       const result = await invokeCustomAppLauncher({
         launcherId,
-        operationId: c.req.valid("json").operationId,
+        operationId: invocation.data.operationId,
         mode: "execute",
         expectedRevision: capability.revision,
         principal: currentWorkflowPrincipal(c),
@@ -1350,9 +1386,11 @@ export const createCustomAppsApi = (
           blockId: block.id,
           actionId: action.id,
           revision: capability.revision,
+          ...(action.background && bindingContext.pageRecord ? { background: true as const, recordId: bindingContext.pageRecord.id } : {}),
         },
       });
       if (!result.ok) return respond(c, () => Promise.resolve(result));
+      if (action.background) return c.json({ status: "running" as const }, 202);
       const [projected, publicPageParams] = await Promise.all([projectWorkflowInvocation(result.data), projectRecordParams(pageParams)]);
       return c.json(
         {

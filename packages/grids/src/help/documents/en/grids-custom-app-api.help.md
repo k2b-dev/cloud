@@ -39,7 +39,7 @@ Every block requires `id` and `type`; all accept optional `title` (1–160 chara
 | `type` | Additional required keys | Optional keys and defaults |
 | --- | --- | --- |
 | `markdown` | `markdown` (up to 20,000 characters; empty is allowed) | none |
-| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowNavigate`, `rowActions` (up to 6) |
+| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `workflowStatus`, `rowNavigate`, `rowActions` (up to 6) |
 | `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (up to 6) |
 | `metrics` | `source` | none |
 | `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (each 1–60) |
@@ -115,3 +115,14 @@ Use discovered IDs and full Form values, retaining required inputs and explicit 
 The server chooses the edit target from the bound page Record, never a body `recordId`. For Base writers the equivalent is `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, using current versions from `records get`. The HTTP endpoint is `POST /api/grids/forms/FORM/records/REC001`; create uses `POST /api/grids/forms/FORM/submit`.
 
 Keys: nonblank, at most 200 characters, no NUL; scoped to Form/table and actor. Exact retries return the original Record ID without another write. Changed payloads, deleted results or stale versions conflict (`409`). After timeouts, retry the same body/key or inspect the result; unkeyed creates can duplicate. After confirmed stale versions, reload and review before a new attempt. Validation (`400`/`422`) and access failures (`401`/`403`/`404`) are not successful saves. Create returns `201`, edit `200`, with `recordId` and optional App success navigation.
+
+### Background document actions
+
+Workflow actions may set `background: { acceptedMessage, documentBlockId,
+documentTemplateId }`. This requires a Record page and an unconditional Record
+block exposing that template. Each page has one background result template.
+`GET` on the action endpoint recovers its current document status; `POST` returns
+acceptance immediately. These actions return document presentation instead of a
+run ID. Only currently authorized App readers can read that presentation.
+`needs_attention` prevents another start; a finished document opens directly.
+See [Pages and blocks](/app/grids/help/grids-custom-app-pages-blocks).

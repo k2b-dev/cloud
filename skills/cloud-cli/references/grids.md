@@ -862,7 +862,7 @@ For quick orientation, every block accepts `id`, `type`, optional `title` and `a
 | Block | Required besides id/type | Optional (defaults where defined) |
 | --- | --- | --- |
 | `markdown` | `markdown` | none |
-| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `rowNavigate`, `rowActions` |
+| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `workflowStatus`, `rowNavigate`, `rowActions` |
 | `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `rowActions` |
 | `metrics` | `source` | none |
 | `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle`, `limit:100`, `valueFormat`, `xAxisLabel`, `yAxisLabel` |
@@ -1834,3 +1834,11 @@ workflow-launchers list|create|update|delete|invoke
 workflow-runs list|get|cancel|steps|documents|download-documents|preview-export|confirm-export|file|download-file
 workflow-emails list
 ```
+
+Background document actions on Record pages use `background: { acceptedMessage,
+documentBlockId, documentTemplateId }`. They acknowledge acceptance immediately and
+recover document status after navigation. A single result template is exposed by
+an unconditional Record block. Records tables can show the state with
+`workflowStatus: true` and direct `ROW.id` navigation to that page. Existing Apps
+must be updated and republished to use this flow; no stored definition migration
+is performed.

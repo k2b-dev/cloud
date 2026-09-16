@@ -88,6 +88,25 @@ Starting a workflow is asynchronous. The button follows its scoped run and repor
 
 The runtime revalidates the published app grant, exact page, block, action, launcher, workflow revision, page records, and `availableWhen` query. An action missing from the immutable publication capability set is omitted. Workflow actions require an authenticated account.
 
+#### Background document actions
+
+Set a workflow action's `background` to `{ acceptedMessage, documentBlockId,
+documentTemplateId }` for a document created from the page record. The referenced
+Record block must expose that template without an availability condition. One
+background document page has one result template; several actions may create it.
+The configured message appears after acceptance, and the user can keep working.
+
+The action recovers its status after navigation or reload and opens the stored
+file when ready. Concurrent requests for the same published action, page records,
+and inputs join the active run, including requests from another authorized App
+reader. Readers see document state, not another user's workflow inputs, outputs,
+or raw errors. Administrator attention disables another start.
+
+A table Records block with `workflowStatus: true` shows these states beside its
+rows. It requires direct `ROW.id` navigation to the document's unconditional
+Record page. The list remains paginated and searchable. The runtime refreshes
+visible running entries; it does not wait for completion before showing the page.
+
 ### Scanner
 
 Scanner embeds one existing enabled Scanner run option. Signed-in app readers may scan with the camera or enter a code manually; public anonymous readers see a sign-in prompt instead. Session values are asked once when the scanner opens, and after-scan values are asked for each code.

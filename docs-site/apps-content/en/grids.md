@@ -71,10 +71,14 @@ never alongside unsaved inputs. **Record payment** also opens a separate form.
    not usable company or bank details.
 2. Create an invoice draft, choose or create the business partner, and enter
    positions. Review the calculated totals before issuing.
-3. Issue the document. This freezes the bill's values and uses a template
-   configured to issue once per finalized record. If rendering is interrupted,
-   use the same **Issue / retrieve** action on the finalized entry; do not create a
-   replacement invoice. Finalization alone does not prove that the file exists.
+3. Choose **Issue invoice**, **Issue self-billing**, or **Issue credit note**.
+   Once the request is accepted, you can navigate away and keep working.
+   **Billing documents** keeps drafts, running requests, failed requests, and
+   finished documents together. Reloading preserves their status. **Open document**
+   appears only when the stored file exists. Finalization alone is not completion.
+   If rendering fails after finalization, use **Continue creation** on the same
+   bill. It retains the original document number. A workflow requiring administrator
+   attention cannot be restarted from this button.
 4. Record actual payments separately, review the saved entry, then choose
    **Confirm payment**. Unconfirmed payments remain visible but do not affect
    balances. Confirmation requires a finalized bill and freezes the payment;
@@ -82,7 +86,7 @@ never alongside unsaved inputs. **Record payment** also opens a separate form.
    combines confirmed payments and finalized corrections without multiplying
    either through joins. Recording a payment does not initiate a bank transfer.
 
-Use **Discard draft** on the draft list to move an unfinished bill to Trash.
+Use **Discard draft** on the bill detail page to move an unfinished bill to Trash.
 Issued bills and their documents cannot be discarded this way.
 
 The `REF-…` value identifies an internal record; it is not an invoice number

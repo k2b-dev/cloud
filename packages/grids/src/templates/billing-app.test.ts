@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { CustomAppDefinitionSchema } from "../custom-apps/contracts";
+import { createObjectListEntry, ObjectListConfigSchema } from "../field-types/object-list";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { createBillingTemplate } from "./billing";
 import { billingLineConfig } from "./billing-lines";
-import { createObjectListEntry, ObjectListConfigSchema } from "../field-types/object-list";
 
 const workflowQueries = (value: unknown): string[] => {
   if (!value || typeof value !== "object") return [];
@@ -18,8 +18,11 @@ for (const locale of ["en", "de"]) {
     expect(row).toEqual({ Qty001: "1.0000", Unit01: ["C62"], Vat001: ["vat019"] });
     for (const key of ["payment", "refund"]) {
       expect(template.forms?.find((form) => form.key === key)?.config.fields).toContainEqual({
-        kind: "user_input", fieldId: { $ref: "field", key: "payments.date" },
-        width: "compact", defaultValue: { kind: "now" }, helpText: expect.any(String),
+        kind: "user_input",
+        fieldId: { $ref: "field", key: "payments.date" },
+        width: "compact",
+        defaultValue: { kind: "now" },
+        helpText: expect.any(String),
       });
     }
     for (const key of ["edit_draft", "edit_self_billing", "edit_correction"]) {
@@ -120,7 +123,30 @@ for (const locale of ["en", "de"]) {
     const authored = resolve(template.customApps?.[0]?.definition);
     if (!authored || typeof authored !== "object") throw new Error("Missing billing app");
     const app = CustomAppDefinitionSchema.parse({ ...authored, id: "APP001", baseId: "BASE01" });
-    expect(app.startPageId).toBe("drafts");
+    expect(app.startPageId).toBe("invoices");
+    const overview = app.pages
+      .find((page) => page.id === "invoices")!
+      .rows.flatMap((row) => row.columns.flatMap((column) => column.blocks))
+      .find((block) => block.id === "bills");
+    expect(overview).toMatchObject({ type: "records", workflowStatus: true });
+    if (overview?.type !== "records" || overview.source.kind !== "gql") throw new Error("Missing billing overview");
+    expect(overview.source.query).not.toContain("finalizationState = 'draft'");
+    const invalidStatus = structuredClone(app);
+    const invalidList = invalidStatus.pages
+      .find((page) => page.id === "invoices")!
+      .rows.flatMap((row) => row.columns.flatMap((column) => column.blocks))
+      .find((block) => block.id === "bills");
+    if (invalidList?.type === "records") delete invalidList.rowNavigate;
+    expect(CustomAppDefinitionSchema.safeParse(invalidStatus).success).toBe(false);
+    const documentActions = app.pages
+      .find((page) => page.id === "bill")!
+      .rows.flatMap((row) => row.columns.flatMap((column) => column.blocks))
+      .flatMap((block) =>
+        block.type === "actions" ? block.actions.filter((action) => action.kind === "workflow" && action.background) : [],
+      );
+    expect(documentActions).toHaveLength(3);
+    for (const action of documentActions) expect(action).toMatchObject({ background: { documentBlockId: "identity" } });
+
     expect(app.pages).toHaveLength(11);
     expect(app.pages.some((page) => page.id === "issued")).toBe(false);
     const balanceBlocks = app.pages
@@ -176,7 +202,7 @@ for (const locale of ["en", "de"]) {
     const details = app.pages.find((page) => page.id === "bill-details");
     expect(details?.navigation?.visible).toBe(false);
     expect(template.forms?.some((form) => form.key === "bill_details")).toBe(false);
-    const drafts = app.pages.find((page) => page.id === "drafts")!;
+    const drafts = app.pages.find((page) => page.id === "invoices")!;
     const blocks = drafts.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
     const setup = blocks.find((block) => block.id === "start-action");
     expect(setup?.type).toBe("actions");

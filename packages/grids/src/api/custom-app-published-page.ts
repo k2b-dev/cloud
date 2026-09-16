@@ -45,6 +45,7 @@ import type { CustomAppRecordsSuccess, CustomAppRenderedRowAction } from "../fro
 import { customAppRuntimeMessages } from "../frontend/custom-app/runtime-messages";
 import type { CustomAppRenderedSidebarAction } from "../frontend/custom-app/SidebarActions.island";
 import { gridsService } from "../service";
+import { backgroundDocumentHref, loadBackgroundDocumentStates } from "../service/custom-app-background";
 import {
   type CustomAppChartData,
   type CustomAppMetricCell,
@@ -567,6 +568,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
     blocks.map(async (block): Promise<[string, BlockResult]> => {
       try {
         const published = await executePublishedCustomAppRecords({
+          definition,
           baseId: app.baseId,
           customAppId: app.id,
           publishedAt: app.publishedAt!,
@@ -730,6 +732,16 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
   const actionBlocks = runtimePage.rows.flatMap((row) =>
     row.columns.flatMap((column) => column.blocks.filter((block): block is ActionsBlock => block.type === "actions")),
   );
+  const backgroundStates = pageRecord
+    ? await loadBackgroundDocumentStates({
+        baseId: app.baseId,
+        appId: app.id,
+        publishedAt: app.publishedAt!,
+        page,
+        capabilities,
+        records: [pageRecord],
+      })
+    : {};
   const actions = new Map<string, CustomAppRenderedAction[]>();
   for (const block of actionBlocks) {
     const rendered: CustomAppRenderedAction[] = [];
@@ -758,6 +770,17 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
           icon: action.icon,
           endpoint: customAppActionUrl(app.shortId, page.id, block.id, action.id, publicPageParams),
           confirm: action.confirm,
+          ...(action.background && pageRecord
+            ? {
+                background: {
+                  acceptedMessage: action.background.acceptedMessage,
+                  state: {
+                    ...backgroundStates[pageRecord.id]!,
+                    downloadUrl: backgroundDocumentHref(app.shortId, page.id, publicPageParams, backgroundStates[pageRecord.id]!),
+                  },
+                },
+              }
+            : {}),
         });
       }
     }

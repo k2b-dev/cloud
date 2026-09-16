@@ -46,6 +46,7 @@ const launcherAuthorizationSchema = z.discriminatedUnion("kind", [
       blockId: z.string().min(1),
       actionId: z.string().min(1),
       recordId: z.string().uuid().optional(),
+      background: z.literal(true).optional(),
       search: z.string().max(200).optional(),
       cursor: z.string().max(8_000).optional(),
       revision: z.number().int().positive(),
