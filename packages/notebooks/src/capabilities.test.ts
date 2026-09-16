@@ -1020,3 +1020,25 @@ describe("notebooks capabilities", () => {
     }
   });
 });
+
+test("note search enforces the requested notebook and rejects inaccessible contexts before searching", async () => {
+  const getNotebook = trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+  const search = trackedSpy(spyOn(noteSearch, "searchAcross")).mockResolvedValue({ hits: [], total: 0 });
+  const input = { query: "Knowledge", tags: [], limit: 10, scope: { type: "notebooks.notebook", id: notebook.shortId } };
+  expect((await notebooksCapabilities.queries["note.search"].run(input, userContext)).ok).toBe(true);
+  expect(search.mock.calls[0]?.[0].boundNotebookId).toBe(notebook.id);
+  permission.mockResolvedValue("none");
+  expect((await notebooksCapabilities.queries["note.search"].run(input, userContext)).ok).toBe(false);
+  permission.mockResolvedValue("admin");
+  getNotebook.mockResolvedValue({ ...notebook, id: otherNotebookId, shortId: otherNotebookShortId });
+  expect(
+    (
+      await notebooksCapabilities.queries["note.search"].run(
+        { ...input, scope: { ...input.scope, id: otherNotebookShortId } },
+        resourceContext(["read"]),
+      )
+    ).ok,
+  ).toBe(false);
+  expect(search).toHaveBeenCalledTimes(1);
+});

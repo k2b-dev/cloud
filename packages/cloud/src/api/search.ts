@@ -38,6 +38,7 @@ type HttpSearchProvider = {
   appIcon: string;
   endpoint: string;
   tags: string[];
+  scopeTypes: string[];
   typeIds: Set<string>;
   schemaHash: string;
 };
@@ -57,6 +58,7 @@ const getSearchProviders = (entries: CapabilityRegistryEntry[]): HttpSearchProvi
               appIcon: entry.appIcon,
               endpoint: `${entry.endpoint}/queries/${encodeURIComponent(query.localId)}`,
               tags: query.universalSearch.tags.flatMap((tag) => [tag.tag, ...(tag.aliases ?? [])]),
+              scopeTypes: (query.universalSearch.scopeTypes ?? []).map((type) => `${entry.appId}.${type}`),
               typeIds: new Set(entry.manifest.types.map((type) => `${entry.appId}.${type.localId}`)),
               schemaHash: query.schemaHash,
             },
@@ -216,11 +218,15 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // returned to the client so it can render a helpful empty state.
       const knownTags = new Set(providers.flatMap((p) => p.tags));
       const unsupportedTags = query.tag.filter((t) => !knownTags.has(t));
-      const appProviders = query.app ? providers.filter((provider) => provider.appId === query.app) : providers;
+      const scope = query.scope_type && query.scope_id ? { type: query.scope_type, id: query.scope_id } : undefined;
+      const appProviders = providers.filter(
+        (provider) => (!query.app || provider.appId === query.app) && (!scope || provider.scopeTypes.includes(scope.type)),
+      );
+      if (scope && !appProviders.length) return c.json({ code: "INVALID_SEARCH_SCOPE", message: "Search scope is unavailable" }, 400);
       const active =
         query.tag.length === 0 ? appProviders : appProviders.filter((provider) => provider.tags.some((tag) => query.tag.includes(tag)));
 
-      if (query.q.length === 0 && query.tag.length === 0 && !query.app) {
+      if (query.q.length === 0 && query.tag.length === 0 && !query.app && !scope) {
         return c.json({ query: "", count: 0, items: [], apps });
       }
 
@@ -322,6 +328,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
             input: {
               query: query.q,
               tags: scopedTags,
+              ...(scope ? { scope } : {}),
               limit: effectiveProviderLimit,
             },
           }),
@@ -416,6 +423,13 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
         items: sliced,
         apps,
         ...(unsupportedTags.length > 0 ? { unsupportedTags } : {}),
+        ...(settled.some((result) => result.status === "rejected")
+          ? {
+              failedApps: [
+                ...new Set(active.filter((_, index) => settled[index]?.status === "rejected").map((provider) => provider.appId)),
+              ],
+            }
+          : {}),
       });
     },
   );

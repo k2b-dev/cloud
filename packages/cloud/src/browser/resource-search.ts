@@ -8,12 +8,17 @@ export const cloudResourceSearchUrl = (request: {
   query: string;
   tags: readonly string[];
   appId?: string | null;
+  scope?: CloudResourceRef;
   requireReader?: boolean;
 }): string => {
   const params = new URLSearchParams({ provider_limit: String(PROVIDER_LIMIT) });
   if (request.query.length > 0) params.set("q", request.query);
   for (const tag of request.tags) params.append("tag", tag);
   if (request.appId) params.set("app", request.appId);
+  if (request.scope) {
+    params.set("scope_type", request.scope.type);
+    params.set("scope_id", request.scope.id);
+  }
   if (request.requireReader) params.set("require_reader", "true");
   return `/api/search?${params.toString()}`;
 };

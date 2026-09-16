@@ -8,6 +8,7 @@ import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigat
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";
 import { resourceSearchMessages } from "./resource-search-messages";
+import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
 
 export type CloudResourceSearchProps = {
   onSelect: (item: SearchItem) => void;
@@ -16,9 +17,13 @@ export type CloudResourceSearchProps = {
   selectionMode?: boolean;
   title?: string;
   initialAppId?: string;
+  request?: GlobalSearchOptions;
+  disabled?: boolean;
+  navigationError?: string;
   placeholder?: string;
   requireReader?: boolean;
   navigationItems?: readonly NavigationSearchItem[];
+  searchResources?: boolean;
   excludeRefs?: readonly CloudResourceRef[];
 };
 
@@ -39,7 +44,22 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const id = createUniqueId();
   const [input, setInput] = createSignal("");
   const [tags, setTags] = createSignal<string[]>([]);
-  const [appId, setAppId] = createSignal(props.initialAppId);
+  const [scope, setScope] = createSignal<SearchScope | undefined>(
+    props.request?.scope ?? (props.initialAppId ? { appId: props.initialAppId, label: props.initialAppId } : undefined),
+  );
+  const appId = () => scope()?.appId ?? scope()?.ref?.type.split(".")[0];
+  const scopeLabel = () =>
+    !props.request && props.initialAppId
+      ? (response()?.apps.find((app) => app.id === props.initialAppId)?.name ?? scope()?.label)
+      : scope()?.label;
+  createEffect(() => {
+    const request = props.request;
+    if (!request) return;
+    setScope(request.scope);
+    setTags([]);
+    setBrowsingTags(false);
+    queueMicrotask(() => inputRef?.focus());
+  });
   const [caret, setCaret] = createSignal(0);
   const [browsingTags, setBrowsingTags] = createSignal(false);
   const [activeIndex, setActiveIndex] = createSignal(0);
@@ -63,6 +83,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       query: canSearch() ? textQuery() : "",
       tags: tags(),
       appId: appId(),
+      scope: scope()?.ref,
       requireReader: props.requireReader,
     }),
   );
@@ -70,6 +91,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const searchQuery = query.create({
     source: searchUrl,
     load: async (url, { abortSignal }) => {
+      if (props.searchResources === false) {
+        const data: SearchResponse = { query: "", count: 0, apps: [], items: [] };
+        return { url, data };
+      }
       const response = await fetch(url, { signal: abortSignal, headers: { [LOCALE_HEADER]: locale() } });
       if (!response.ok) throw new Error(t().searchFailed);
       const data: SearchResponse = await response.json();
@@ -87,7 +112,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   );
   const suggestions = createMemo(() => matchingSearchTags(catalog(), tagContext()?.prefix ?? "", tags()));
   const navigation = createMemo(() =>
-    canSearch()
+    canSearch() && !scope()?.ref
       ? matchNavigationSearchItems(props.navigationItems ?? [], {
           query: textQuery(),
           tags: tags(),
@@ -98,12 +123,18 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   );
   const items = createMemo(() => {
     if (!canSearch()) return [];
-    const resources = filterCloudResourceSearchItems(response()?.items ?? [], props).sort(
+    // Keep last-good rows only within the same context, never across scope changes.
+    const loaded = new URL(searchQuery.data()?.url ?? "/api/search", "https://cloud.invalid");
+    const sameScope =
+      (loaded.searchParams.get("scope_type") ?? undefined) === scope()?.ref?.type &&
+      (loaded.searchParams.get("scope_id") ?? undefined) === scope()?.ref?.id &&
+      (loaded.searchParams.get("app") ?? undefined) === appId();
+    const resources = filterCloudResourceSearchItems(sameScope ? (response()?.items ?? []) : [], props).sort(
       (a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.title.localeCompare(b.title),
     );
     return [...groupByApp(resources), ...groupByApp(navigation())];
   });
-  const selectable = (item: SearchItem) => !choosingTag() && (navigation().includes(item) || (fresh() && !pending()));
+  const selectable = (item: SearchItem) => !props.disabled && !choosingTag() && (navigation().includes(item) || (fresh() && !pending()));
   const activeItem = () => items()[activeIndex()];
   const selectedItem = () => items().find((item) => itemKey(item) === selectedKey());
   const previewItem = () => (props.selectionMode ? (selectedItem() ?? activeItem()) : activeItem());
@@ -280,18 +311,21 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
           <i class="ti ti-loader-2 animate-spin" role="status" aria-label={t().loading} />
         </Show>
         <div class="cloud-resource-search__field">
-          <Show when={appId()}>
-            {(scope) => (
+          <Show when={scope()}>
+            {(context) => (
               <button
                 type="button"
-                class="cloud-resource-search__tag"
+                class="cloud-resource-search__tag max-w-full"
+                title={scopeLabel()}
                 onClick={() => {
-                  setAppId(undefined);
+                  setScope(undefined);
+                  setTags([]);
                   focusInput();
                 }}
-                aria-label={t().removeScope({ app: scope() })}
+                aria-label={t().removeScope({ app: scopeLabel() ?? context().label })}
               >
-                {response()?.apps.find((app) => app.id === scope())?.name ?? scope()} <i class="ti ti-x" aria-hidden="true" />
+                <Show when={context().icon}>{(icon) => <i class={`${icon()} shrink-0`} aria-hidden="true" />}</Show>
+                <span class="min-w-0 truncate">{scopeLabel()}</span> <i class="ti ti-x shrink-0" aria-hidden="true" />
               </button>
             )}
           </Show>
@@ -349,6 +383,13 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
           when={choosingTag()}
           fallback={
             <>
+              <Show when={props.navigationError}>
+                {(message) => (
+                  <p role="alert" class="cloud-resource-search__hint">
+                    {message()}
+                  </p>
+                )}
+              </Show>
               <Show when={searchQuery.error()}>
                 <div class="cloud-resource-search__hint" role="status">
                   {t().searchFailed}{" "}
@@ -357,9 +398,14 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   </Button>
                 </div>
               </Show>
+              <Show when={fresh() && response()?.failedApps?.length}>
+                <p class="cloud-resource-search__hint" role="status">
+                  {t().partialFailure}
+                </p>
+              </Show>
               <Show when={!canSearch()}>
                 <div class="cloud-resource-search__idle">
-                  <p>{props.selectionMode ? t().pickerHint : t().startHint}</p>
+                  <p>{props.selectionMode ? t().pickerHint : props.searchResources === false ? t().navigationHint : t().startHint}</p>
                   <div class="cloud-resource-search__quick" aria-busy={!response() && !searchQuery.error()}>
                     <Show
                       when={response() || searchQuery.error()}
@@ -438,7 +484,9 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   </For>
                 </section>
               </Show>
-              <Show when={canSearch() && !items().length && !pending() && fresh() && !searchQuery.error()}>
+              <Show
+                when={canSearch() && !items().length && !pending() && fresh() && !searchQuery.error() && !response()?.failedApps?.length}
+              >
                 <p class="cloud-resource-search__hint" role="status">
                   {unknownTags().length ? t().unsupportedTags : t().noMatches}
                 </p>

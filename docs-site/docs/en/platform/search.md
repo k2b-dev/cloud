@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-09-15
+updated: 2026-09-16
 ---
 
 # Universal search
@@ -37,7 +37,9 @@ searchLinks: [
 These links appear only in the global search dialog, below all resource
 results. Cloud includes them when the app is visible in the user's navigation
 catalog. The browser matches every search word against the label, description, and keywords,
-ignoring case, after at least two characters. An initial application scope applies; tag searches omit static links.
+ignoring case, after at least two characters. An explicit application context also shows
+its static links for an empty query and uses fuzzy matching. Resource contexts
+and tag searches omit static links.
 
 Use same-origin paths and public page labels. Destination routes still enforce
 their own authorization. Localize labels with
@@ -133,6 +135,7 @@ described in [App capabilities](/en/docs/platform/capabilities).
 | `query` | User-entered text; may be empty when a facet narrows the search |
 | `tags` | Canonical facets supported by this Query |
 | `limit` | Maximum results this provider may return |
+| `scope` | Optional `CloudResourceRef` identifying the resource whose contents to search |
 
 Each returned resource must:
 
@@ -193,7 +196,9 @@ traversal semantics when they have a stable cross-client use.
 
 Cloud ranks results by app-provided priority and title after merging providers.
 One provider failure does not fail the complete search: successful providers
-still return partial results with HTTP 200. A shared registry or invocation
+still return partial results with HTTP 200 and `failedApps` identifies unavailable
+sources. The browser shows an incomplete-results hint rather than claiming
+there were no matches. A shared registry or invocation
 signer failure returns HTTP 503, not a successful empty result. Log provider failures
 with [structured logging](/en/docs/platform/logging); the application's domain
 database remains the source of truth.
@@ -238,6 +243,97 @@ retain their modal selection behavior.
 Global search opens a result on click or Enter. The picker selects it first;
 **Add** confirms the choice. While a new resource search loads, earlier results
 remain visible but cannot be selected for the new query.
+
+## Open search from an application
+
+Use the public browser entry point instead of building a separate navigation
+Spotlight. The Cloud layout hosts one dialog across independent islands.
+
+```ts
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
+
+openGlobalSearch({
+  scope: {
+    ref: { type: "notebooks.notebook", id: notebook.shortId },
+    label: notebook.name,
+    icon: "ti ti-notebook",
+  },
+});
+
+// App-wide search, including all resource kinds and static links of this app:
+openGlobalSearch({ scope: { appId: "notebooks", label: "Notebooks" } });
+
+// Ordinary cross-app search:
+openGlobalSearch();
+```
+
+The context is a removable chip. Removing it clears the application restriction
+and tag filters while preserving the search text. Labels and icons are display
+metadata, never authorization. Concrete scopes are not listed in filter
+discovery. Reopening an existing dialog updates its context and focuses the
+input. Calls made before layout hydration wait for the host; only the latest
+request is retained, with a bounded wait and visible failure if it cannot open.
+On public pages, signed-out users can search the navigation links visible to
+them, such as Tools. The layout does not call the authenticated resource-search
+API for these users.
+
+Search providers must return resources that their destination views allow the
+user to open. Contacts search follows the same address-book membership checks
+as its regular search endpoint, including for platform administrators.
+
+A search Query declares the **local resource types** whose contents it accepts:
+
+```ts
+universalSearch: {
+  tags: [{ tag: "note", title: "Notes", description: "Find notes." }],
+  scopeTypes: ["notebook"],
+},
+```
+
+The Type must exist in the same capability declaration. Cloud selects only
+providers that accept the qualified scope type. HTTP requests carry
+`scope_type` and `scope_id` together; both are forwarded as `input.scope`.
+Opaque IDs keep their casing. The provider resolves the public ID, authorizes
+the containing resource against the current access subject and credential
+binding, and filters the existing search service. An invalid or inaccessible
+scope must never become an unscoped search. Direct capability invocations also
+reject scope types that the Query does not declare.
+
+Update all search-provider images with the shared input schema. Live manifests
+are checked against that exact schema; mixed old and new search contracts are
+not supported. This change needs no data migration.
+
+### Preserve application navigation
+
+Register a handler once in the active view and dispose it on unmount. Registration
+replaces the previous handler, including across separately bundled islands.
+
+```ts
+import { registerSearchNavigation } from "@k2b/cloud/browser/search";
+import { onCleanup, onMount } from "solid-js";
+
+onMount(() => {
+  onCleanup(registerSearchNavigation(async ({ href, ref }) => {
+    if (!canOpenInCurrentView(href)) return false;
+    await openInCurrentView(href, ref);
+    return true;
+  }));
+});
+```
+
+`href` is always available; static navigation links have no `ref`. Return `true`
+after handling the target, or `false` to use document navigation. A rejected
+handler keeps search open with an error; it does not force a reload. Reuse the
+application's existing save guards, history, and view-state logic. Being in the
+same application alone does not mean a route supports navigation without reload.
+The handler also applies when search was opened through the global shortcut.
+Modified clicks and Cmd/Ctrl+Enter bypass the handler and open a new tab.
+
+The browser bridge uses document-local events, not shared Solid context or
+cross-tab channels. Keep navigation and resource selection separate: link
+insertion, move targets, version comparison, and other pickers still return a
+selection rather than navigating. Embedded list filters keep filtering their
+current view.
 
 ## Let a user choose a Cloud resource
 

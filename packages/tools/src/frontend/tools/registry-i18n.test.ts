@@ -56,7 +56,7 @@ describe("Tools i18n catalogs", () => {
     const registry = resolveRegistry("de-CH");
     expect(registry.locale).toBe("de");
     expect(mustTool(registry, "color").name).toBe("Farbkonverter");
-    expect(toolSearchMessages.resolve(["de-CH"]).t.noResults).toBe("Keine Werkzeuge gefunden.");
+    expect(toolSearchMessages.resolve(["de-CH"]).t.tools).toBe("Werkzeuge");
   });
 
   test("search text matches German and English terms", () => {

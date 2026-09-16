@@ -1,3 +1,4 @@
+import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, Placeholder, prompts } from "@k2b/ui";
@@ -31,7 +32,7 @@ type Props = {
 
 type DetailHistory = "push" | "replace" | "none";
 type DetailSnapshot = { source: string; detail: SpaceItemDetail | null; notFound: boolean };
-type PendingNavigation = { id: number; source: string; history: DetailHistory; started: boolean };
+type PendingNavigation = { id: number; source: string; history: DetailHistory; started: boolean; settled?: (error?: Error) => void };
 
 class DetailAccessChangedError extends Error {}
 
@@ -101,6 +102,7 @@ export default function ItemDetailRoute(props: Props) {
   let disposed = false;
   onCleanup(() => {
     disposed = true;
+    pending()?.settled?.();
   });
 
   const wormholesQuery = query.create<string, SpaceWormhole[], { cursor: string | null }>({
@@ -170,7 +172,8 @@ export default function ItemDetailRoute(props: Props) {
     setPending(null);
     setSource(committedSource);
     if (request.history === "none") window.history.replaceState(null, "", committedSource);
-    if (error instanceof DetailAccessChangedError) window.location.reload();
+    if (request.settled) request.settled(error);
+    else if (error instanceof DetailAccessChangedError) window.location.reload();
     else prompts.error(error.message);
   };
 
@@ -194,6 +197,7 @@ export default function ItemDetailRoute(props: Props) {
       committedSource = href;
       writeHistory(href, request.history);
       publishSpacesDetailState(detailState(snapshot.detail));
+      request.settled?.();
       return;
     }
 
@@ -216,7 +220,8 @@ export default function ItemDetailRoute(props: Props) {
     }
   });
 
-  const navigateDetail = (href: string, history: DetailHistory) => {
+  const navigateDetail = (href: string, history: DetailHistory, settled?: (error?: Error) => void) => {
+    pending()?.settled?.();
     const request = detailRequest(href);
     const current = currentDetail();
     if (!request.itemId || (current && detailSource(href) === detailSource(source()))) {
@@ -225,13 +230,29 @@ export default function ItemDetailRoute(props: Props) {
       committedSource = href;
       writeHistory(href, history);
       publishSpacesDetailState(detailState(request.itemId ? current : null));
+      settled?.();
       return;
     }
-    setPending({ id: ++nextNavigationId, source: href, history, started: false });
+    setPending({ id: ++nextNavigationId, source: href, history, started: false, settled });
     setSource(href);
   };
 
   onMount(() => {
+    onCleanup(
+      registerSearchNavigation(({ href }) => {
+        const current = new URL(window.location.href);
+        const target = new URL(href, current);
+        const item = target.searchParams.get("item");
+        if (target.origin !== current.origin || target.pathname !== current.pathname || !item) return false;
+        current.searchParams.set("item", item);
+        current.searchParams.delete("mode");
+        current.searchParams.delete("occurrence");
+        if (target.searchParams.has("occurrence")) current.searchParams.set("occurrence", target.searchParams.get("occurrence")!);
+        return new Promise<boolean>((resolve, reject) => {
+          navigateDetail(`${current.pathname}${current.search}`, "push", (error) => (error ? reject(error) : resolve(true)));
+        });
+      }),
+    );
     const initial = currentDetail();
     if (initial) {
       writeHistory(initialSource, "none");

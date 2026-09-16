@@ -5,6 +5,8 @@ export const resourceSearchMessages = i18n.define({
   messages: {
     en: {
       searchFailed: "Search is currently unavailable. Try again.",
+      navigationFailed: "Could not open this result. Try again.",
+      partialFailure: "Some search sources are unavailable. Results may be incomplete.",
       searchPlaceholder: "Search Cloud…",
       searchCloudResources: "Search Cloud resources",
       chooseResource: "Choose a resource",
@@ -17,6 +19,7 @@ export const resourceSearchMessages = i18n.define({
       tagSuggestions: "Search filters",
       allTags: "All filters",
       backToSearch: "Back to search",
+      navigationHint: "Search available pages.",
       startHint: "Find content, or narrow your search with a tag.",
       pickerHint: "Find a note, file, or another resource.",
       noMatches: "No matches. Try another search term.",
@@ -37,6 +40,8 @@ export const resourceSearchMessages = i18n.define({
     },
     de: {
       searchFailed: "Suche gerade nicht erreichbar. Versuche es erneut.",
+      navigationFailed: "Der Treffer konnte nicht geöffnet werden. Versuche es erneut.",
+      partialFailure: "Einige Suchquellen sind nicht erreichbar. Ergebnisse können unvollständig sein.",
       searchPlaceholder: "Cloud durchsuchen…",
       searchCloudResources: "Cloud-Inhalte durchsuchen",
       chooseResource: "Ressource wählen",
@@ -49,6 +54,7 @@ export const resourceSearchMessages = i18n.define({
       tagSuggestions: "Suchfilter",
       allTags: "Alle Filter",
       backToSearch: "Zurück zur Suche",
+      navigationHint: "Verfügbare Seiten durchsuchen.",
       startHint: "Inhalte finden oder mit einem Tag eingrenzen.",
       pickerHint: "Finde eine Notiz, Datei oder einen anderen Inhalt.",
       noMatches: "Keine Treffer. Versuche einen anderen Suchbegriff.",

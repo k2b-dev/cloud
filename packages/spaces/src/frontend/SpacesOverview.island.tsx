@@ -1,3 +1,4 @@
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { listenPopState, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
@@ -12,7 +13,6 @@ import {
   dialogCore,
   IconButton,
   NoticeCard,
-  openSpotlightSearch,
   PanelDialog,
   Paper,
   Placeholder,
@@ -514,41 +514,7 @@ export default function SpacesOverview(props: Props) {
       return next;
     });
 
-  const openSearch = async () => {
-    const selected = await openSpotlightSearch<{ href: string }>({
-      title: t.searchTitle,
-      icon: "ti ti-search",
-      placeholder: t.searchPlaceholder,
-      minQueryLength: 1,
-      noResultsText: t.noSearchResults,
-      resolve: async ({ query, abortSignal }) => {
-        const term = query.trim();
-        const normalized = term.toLowerCase();
-        const spaces = props.spaces
-          .filter((space) => `${space.name} ${space.description ?? ""}`.toLowerCase().includes(normalized))
-          .slice(0, 8)
-          .map((space) => ({
-            value: { href: `/app/spaces/${space.id}` },
-            label: space.name,
-            desc: space.description ?? t.space,
-            icon: "ti ti-layout-kanban",
-          }));
-        const response = await apiClient.overview.search.$get({ query: { q: term, limit: "20" } }, { init: { signal: abortSignal } });
-        if (!response.ok) throw new Error(t.searchFailed);
-        const hits = await response.json();
-        return [
-          ...spaces,
-          ...hits.map((hit) => ({
-            value: { href: `/app/spaces/${hit.space.id}?item=${hit.item.id}` },
-            label: `${hit.item.title} · ${hit.space.name}`,
-            desc: hit.item.description ?? undefined,
-            icon: hit.item.startsAt && hit.item.endsAt ? "ti ti-calendar-event" : "ti ti-checkbox",
-          })),
-        ];
-      },
-    });
-    if (selected?.value) navigateTo(selected.value.href);
-  };
+  const openSearch = () => openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } });
 
   const activityFeed = () => (
     <Show

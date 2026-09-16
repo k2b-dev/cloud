@@ -1,13 +1,13 @@
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { DateContext } from "@k2b/stdlib";
 import { createNavigation } from "@k2b/ui";
-import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { useSpaceMessages } from "../../messages";
 import { createSpaceSearch } from "../search/SearchButton";
+import { createIcalCopy } from "./CopyICalButton";
 import { createItemController } from "./CreateItemButton";
 import { createSpaceSettings } from "./SpaceSettingsButton";
-import { createIcalCopy } from "./CopyICalButton";
-import { createSpaceViews } from "./ViewLinks";
 import type { SpaceContext } from "./types";
+import { createSpaceViews } from "./ViewLinks";
 
 export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: string; dateConfig?: DateContext }) {
   const t = useSpaceMessages();
@@ -34,12 +34,6 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
     },
     get spaceName() {
       return props.ctx.space.name;
-    },
-    get columns() {
-      return props.ctx.columns;
-    },
-    get query() {
-      return props.ctx.query;
     },
   });
   const settings = createSpaceSettings({

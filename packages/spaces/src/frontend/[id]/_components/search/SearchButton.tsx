@@ -1,118 +1,18 @@
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { type HotkeyMap, hotkeys } from "@k2b/stdlib/solid";
-import {
-  AppWorkspace,
-  openSpotlightSearch,
-  SPOTLIGHT_SHORTCUT,
-  SPOTLIGHT_SHORTCUT_TITLE,
-  SpotlightButton,
-  type SpotlightButtonVariant,
-} from "@k2b/ui";
-import { apiClient } from "@/api/client";
-import type { ItemFilter, SpaceColumn, SpaceItem } from "@/contracts";
+import { AppWorkspace, SPOTLIGHT_SHORTCUT, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant } from "@k2b/ui";
 import { useSpaceMessages } from "../../messages";
-import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
 type Props = {
   spaceId: string;
   spaceName: string;
-  columns: SpaceColumn[];
-  query: string;
   variant?: SpotlightButtonVariant;
   registerShortcut?: boolean;
 };
 
-const PAGE_SIZE = 20;
-
-const buildItemHref = (spaceId: string, query: string, itemId: string) => {
-  const params = new URLSearchParams(query);
-  params.set("item", itemId);
-  params.delete("mode");
-  const search = params.toString();
-  return `/app/spaces/${spaceId}${search ? `?${search}` : ""}`;
-};
-
-const itemIcon = (item: SpaceItem) => (item.startsAt && item.endsAt ? "ti ti-calendar-event" : "ti ti-checkbox");
-
-const compactDescription = (value: string | null | undefined, query: string): string | undefined => {
-  if (!value) return undefined;
-  const text = value.replace(/\s+/g, " ").trim();
-  if (!text) return undefined;
-
-  const needle = query.trim().toLowerCase();
-  const index = needle ? text.toLowerCase().indexOf(needle) : -1;
-  if (index === -1) return text.slice(0, 120);
-
-  const start = Math.max(0, index - 40);
-  const end = Math.min(text.length, index + needle.length + 80);
-  return `${start > 0 ? "..." : ""}${text.slice(start, end)}${end < text.length ? "..." : ""}`;
-};
-
-const searchRequest = (query: string): ItemFilter => ({
-  type: "all",
-  status: "all",
-  activity: "all",
-  assignedTo: "all",
-  deadlineFilter: "all",
-  search: query,
-  sort: "updated",
-  sortDesc: true,
-  groupBy: "none",
-  page: 1,
-  pageSize: PAGE_SIZE,
-});
-
 export function createSpaceSearch(props: Props) {
-  const t = useSpaceMessages();
-  const itemDescription = (item: SpaceItem, query: string): string | undefined => {
-    const column = props.columns.find((entry) => entry.id === item.columnId);
-    const priority = item.priority ? { urgent: t.urgent, high: t.high, medium: t.medium, low: t.low }[item.priority] : undefined;
-    const meta = [
-      item.startsAt && item.endsAt ? t.event : t.task,
-      column?.name,
-      item.completedAt ? t.completed : undefined,
-      priority,
-    ].filter(Boolean);
-    const snippet = compactDescription(item.description, query);
-    return [...meta, snippet].join(" · ") || undefined;
-  };
-  const openSearch = async () => {
-    const selected = await openSpotlightSearch<SpaceItem>({
-      title: t.searchInSpace({ space: props.spaceName }),
-      icon: "ti ti-layout-kanban",
-      placeholder: t.searchItems,
-      minQueryLength: 1,
-      noResultsText: t.noItemsFound,
-      resolve: async ({ query, abortSignal }) => {
-        const trimmed = query.trim();
-        if (!trimmed) return [];
-
-        const response = await apiClient[":id"].items.filter.$post(
-          {
-            param: { id: props.spaceId },
-            json: searchRequest(trimmed),
-          },
-          { init: { signal: abortSignal } },
-        );
-        if (!response.ok) return [];
-
-        const payload = await response.json();
-        return payload.items.map((item) => ({
-          value: item,
-          label: item.title,
-          desc: itemDescription(item, trimmed),
-          icon: itemIcon(item),
-        }));
-      },
-    });
-
-    if (selected?.value) {
-      const current = new URL(window.location.href);
-      const query = current.pathname === `/app/spaces/${props.spaceId}` ? current.search : props.query;
-      requestSpacesRouteNavigation(buildItemHref(props.spaceId, query, selected.value.id), { scroll: "preserve" });
-    }
-  };
-
-  return openSearch;
+  return () =>
+    openGlobalSearch({ scope: { ref: { type: "spaces.space", id: props.spaceId }, label: props.spaceName, icon: "ti ti-layout-kanban" } });
 }
 
 export default function SearchButton(props: Props) {

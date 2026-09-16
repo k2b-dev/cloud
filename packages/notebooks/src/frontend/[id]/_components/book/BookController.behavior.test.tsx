@@ -25,6 +25,12 @@ const snapshot = (noteId: string, title = noteId): BookSnapshot => ({
   html: `<h1 id="heading">${title}</h1>`,
 });
 const flush = () => Bun.sleep(20);
+// Exercise the event sent by the independently bundled Cloud layout.
+const requestSearchNavigation = async (target: { href: string }) => {
+  const detail: { target: { href: string }; handled?: Promise<boolean> } = { target };
+  window.dispatchEvent(new CustomEvent("cloud.search.navigate", { detail }));
+  return (await detail.handled) ?? false;
+};
 
 describe("Book controller", () => {
   if (isServer) {
@@ -81,6 +87,33 @@ describe("Book controller", () => {
       },
     };
   };
+
+  test("global search preserves book mode, awaits the loaded article and keeps failed navigation in place", async () => {
+    const state = await mount();
+    try {
+      const first = requestSearchNavigation({ href: "/app/notebooks/book01/notes/note02" });
+      await flush();
+      expect(state.requests.at(-1)?.href).toBe("/app/notebooks/book01/notes/note02?mode=book");
+      expect(state.dom.window.location.pathname).toContain("note01");
+      state.requests.at(-1)!.resolve(Response.json(snapshot("note02", "Second")));
+      await flush();
+      expect(state.article.textContent).toBe("Second");
+      expect(await first).toBe(true);
+      expect(state.article.textContent).toBe("Second");
+      expect(state.dom.window.location.search).toBe("?mode=book");
+      const failed = requestSearchNavigation({ href: "/app/notebooks/book01/notes/note03" });
+      const rejection = failed.catch((error: unknown) => error);
+      await flush();
+      state.requests.at(-1)!.resolve(new Response("Unavailable", { status: 503 }));
+      await flush();
+      expect(await rejection).toBeInstanceOf(Error);
+      expect(state.article.textContent).toBe("Second");
+      expect(state.dom.window.location.pathname).toContain("note02");
+      expect(await requestSearchNavigation({ href: "/app/tools" })).toBe(false);
+    } finally {
+      state.cleanup();
+    }
+  });
 
   test("preserves SSR HTML, loads only navigation targets, and rejects late responses", async () => {
     const app = await mount();

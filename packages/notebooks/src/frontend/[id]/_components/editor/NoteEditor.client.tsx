@@ -1,11 +1,12 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { registerSearchNavigation } from "@k2b/cloud/browser/search";
+import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { dropzone, query } from "@k2b/stdlib/solid";
 import { NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
-import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { createCodeMirror } from "solid-codemirror";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
@@ -250,6 +251,23 @@ export default function NoteEditor(props: Props) {
 
     document.addEventListener("click", onClick);
     window.addEventListener("popstate", onPopState);
+    onCleanup(
+      registerSearchNavigation(async ({ href }) => {
+        const target = inheritPresentationMode(href, window.location.href);
+        const noteTarget = resolveSameNotebookNoteTarget(target, window.location.href, props.notebookId);
+        const mode = requestedPresentationMode(new URL(target, window.location.href).searchParams);
+        if (noteTarget && !props.readOnly && (!mode || mode === "write")) {
+          const result = await navigateSoft(target, true);
+          if (result.kind === "fallback") throw new Error("Note navigation failed");
+          return true;
+        }
+        if (target !== href) {
+          window.location.assign(target);
+          return true;
+        }
+        return false;
+      }),
+    );
     const offSoftRequests = handleSoftNoteNavigationRequests((href, options) => navigateSoft(href, options.push));
     onCleanup(() => {
       document.removeEventListener("click", onClick);
@@ -380,7 +398,7 @@ function EditorInstance(props: EditorInstanceProps) {
 
   addExtension(editor.basicExtensions());
   addExtension(formattingKeymap({ notebookId: props.notebookId }));
-  addExtension(slashCommandsExtension({ notebookId: props.notebookId, locale: locale() }));
+  addExtension(slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }));
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));

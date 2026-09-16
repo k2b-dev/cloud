@@ -303,3 +303,127 @@ if (!isServer) {
     }
   });
 }
+
+test("resource context stays visible, preserves ID casing, and can be removed without losing the query", async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const requests: URL[] = [];
+  globalThis.fetch = (async (input) => {
+    requests.push(new URL(String(input), "http://localhost"));
+    return Response.json({ query: "", count: 1, apps: [], items: [item("result")] });
+  }) as typeof fetch;
+  const { default: Search } = await import("./CloudResourceSearch");
+  delegateEvents(["input", "click", "keydown"]);
+  const dispose = render(
+    () => (
+      <Search
+        request={{ scope: { ref: { type: "notebooks.notebook", id: "AaBb12" }, label: "Daily Journal", icon: "ti ti-notebook" } }}
+        onClose={() => {}}
+        onSelect={() => {}}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await waitFor(() => requests.length === 1, "scoped request");
+    expect(requests[0]?.searchParams.get("scope_id")).toBe("AaBb12");
+    expect(requests[0]?.searchParams.get("scope_type")).toBe("notebooks.notebook");
+    const input = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    input.value = "journal";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => requests.length === 2, "scoped text search");
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search beyond Daily Journal"]')!.click();
+    expect(input.value).toBe("journal");
+    await waitFor(() => requests.length === 3, "unscoped search");
+    expect(requests[2]?.searchParams.get("q")).toBe("journal");
+    expect(requests[2]?.searchParams.has("scope_id")).toBe(false);
+    expect(requests[2]?.searchParams.has("app")).toBe(false);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+test("a repeated open replaces context in place and does not show previous-scope results", async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const { createSignal } = await import("solid-js");
+  const { default: Search } = await import("./CloudResourceSearch");
+  const [request, setRequest] = createSignal<import("./search-bridge").GlobalSearchOptions>({
+    scope: { appId: "notebooks", label: "Notebooks" },
+  });
+  globalThis.fetch = (async (input) => {
+    const app = new URL(String(input), "http://localhost").searchParams.get("app");
+    return Response.json({ query: "", count: 1, apps: [], items: [{ ...item(app ?? "global"), appId: app }] });
+  }) as typeof fetch;
+  const dispose = render(() => <Search request={request()} onClose={() => {}} onSelect={() => {}} />, dom.root);
+  try {
+    await waitFor(() => dom.root.textContent?.includes("notebooks preview") ?? false, "initial results");
+    const originalInput = dom.root.querySelector("input");
+    setRequest({ scope: { appId: "spaces", label: "Spaces" } });
+    await Promise.resolve();
+    expect(dom.root.textContent).not.toContain("notebooks preview");
+    await waitFor(() => dom.root.textContent?.includes("spaces preview") ?? false, "new context results");
+    expect(dom.root.querySelector("input")).toBe(originalInput);
+    expect(dom.root.querySelector('[aria-label="Search beyond Spaces"]')).not.toBeNull();
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+test("public navigation search browses and filters Tools without calling authenticated resource APIs", async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = Object.assign(
+    async () => {
+      requests++;
+      return new Response(null, { status: 401 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+  const selected: SearchItem[] = [];
+  delegateEvents(["input", "click", "keydown"]);
+  const dispose = render(
+    () => (
+      <CloudResourceSearch
+        request={{ scope: { appId: "tools", label: "Tools" } }}
+        searchResources={false}
+        navigationItems={[
+          {
+            ...item("QR Code"),
+            appId: "tools",
+            appName: "Tools",
+            ref: { type: "cloud.navigation", id: "tools:qr" },
+            href: "/tools/qr",
+            readable: false,
+          },
+        ]}
+        onSelect={(value) => selected.push(value)}
+        onClose={() => {}}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await waitFor(() => !!dom.root.querySelector('[role="option"]'), "public tools");
+    const input = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    input.value = "qr";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => !!dom.root.querySelector('[role="option"][aria-disabled="false"]'), "public match");
+    dom.root.querySelector<HTMLButtonElement>('[role="option"]')!.click();
+    expect(selected[0]?.href).toBe("/tools/qr");
+    expect(requests).toBe(0);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});

@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { err, fail, ok, type Paginated, type Result } from "@k2b/stdlib";
 import {
   type CapabilityActionReview,
   type CapabilityExecutionContext,
@@ -15,6 +14,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit } from "@k2b/cloud/services";
+import { err, fail, ok, type Paginated, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
   CONTACT_COLLECTION_LIMIT,
@@ -51,7 +51,7 @@ import {
   FavoriteSetDataSchema,
   FavoriteSetInputSchema,
 } from "./capability-contracts";
-import { contactCapabilityMessages, type ContactCapabilityMessages } from "./capability-messages";
+import { type ContactCapabilityMessages, contactCapabilityMessages } from "./capability-messages";
 import { contactsCapabilityPresentation } from "./capability-presentation";
 import { type Contact, type ContactBook, type ContactNote, type ContactTag, contactsService } from "./service";
 import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID } from "./service/access";
@@ -375,9 +375,7 @@ const contactCollectionReview = (
   const truncated = full.length > CONTACT_REVIEW_BLOCK_MAX_CHARS;
   return {
     label: contactReviewLabels(t)[field],
-    value: truncated
-      ? `${full.slice(0, CONTACT_REVIEW_BLOCK_MAX_CHARS)}\n\n${t.previewTruncated}`
-      : full,
+    value: truncated ? `${full.slice(0, CONTACT_REVIEW_BLOCK_MAX_CHARS)}\n\n${t.previewTruncated}` : full,
     display: "block",
   };
 };
@@ -567,7 +565,6 @@ const runSearch = async (input: UniversalSearchInput, context: CapabilityExecuti
   const page = await contactsService.contact.search({
     subject: context.accessSubject,
     boundBookId: resourceBoundBookId(context),
-    bypassAccess: Boolean(user && hasRole(user, "admin")),
     pagination: { page: 1, perPage: input.limit },
     filter: {
       query: input.query,

@@ -1463,3 +1463,20 @@ test("work results preserve full escaped content within the capability envelope"
   expect(capabilityResultSchema(TaskWorkSchema).safeParse(envelope).success).toBe(true);
   expect(Buffer.byteLength(JSON.stringify(envelope))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
 });
+
+test("item search confines results to an authorized Space context", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const search = spyOn(spacesService.item, "searchAcross").mockResolvedValue([]);
+  const input = { query: "Ship", tags: [], limit: 5, scope: { type: "spaces.space", id: spaceId } };
+  expect((await spacesCapabilities.queries["item.search"].run(input, userContext)).ok).toBe(true);
+  expect(search.mock.calls[0]?.[0].boundSpaceId).toBe(spaceUuid);
+  permission.mockResolvedValue("none");
+  expect((await spacesCapabilities.queries["item.search"].run(input, userContext)).ok).toBe(false);
+  permission.mockResolvedValue("admin");
+  expect(
+    (await spacesCapabilities.queries["item.search"].run({ ...input, scope: { ...input.scope, id: otherSpaceId } }, serviceAccountContext))
+      .ok,
+  ).toBe(false);
+  expect(search).toHaveBeenCalledTimes(1);
+});

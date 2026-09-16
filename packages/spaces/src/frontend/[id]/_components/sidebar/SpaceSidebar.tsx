@@ -1,4 +1,3 @@
-import SpaceNavigation from "./SpaceNavigation.island";
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import { Show } from "solid-js";
@@ -6,6 +5,7 @@ import { useSpaceMessages } from "../../messages";
 import SearchButton from "../search/SearchButton.island";
 import CopyICalButton from "./CopyICalButton.island";
 import CreateItemButton from "./CreateItemButton.island";
+import SpaceNavigation from "./SpaceNavigation.island";
 import SpaceSettingsButton from "./SpaceSettingsButton.island";
 import type { SpaceContext } from "./types";
 import ViewLinks from "./ViewLinks.island";
@@ -41,14 +41,7 @@ export default function SpaceSidebar(props: Props) {
                 </div>
               </Show>
               <div style={`view-transition-name:${vt("search-desktop")}`}>
-                <SearchButton
-                  spaceId={props.ctx.space.id}
-                  spaceName={props.ctx.space.name}
-                  columns={props.ctx.columns}
-                  query={props.ctx.query}
-                  variant="icon"
-                  registerShortcut
-                />
+                <SearchButton spaceId={props.ctx.space.id} spaceName={props.ctx.space.name} variant="icon" registerShortcut />
               </div>
               <AppWorkspace.SidebarIconAction
                 href="/app/spaces"
@@ -75,13 +68,7 @@ export default function SpaceSidebar(props: Props) {
                 defaultType={props.ctx.currentView === "calendar" ? "event" : "task"}
               />
             </Show>
-            <SearchButton
-              spaceId={props.ctx.space.id}
-              spaceName={props.ctx.space.name}
-              columns={props.ctx.columns}
-              query={props.ctx.query}
-              variant="icon"
-            />
+            <SearchButton spaceId={props.ctx.space.id} spaceName={props.ctx.space.name} variant="icon" />
             <AppWorkspace.SidebarIconAction href="/app/spaces" navigation="document" icon="ti ti-layout-grid" label={t.allSpaces} />
             <ViewLinks spaceId={props.ctx.space.id} query={props.ctx.query} currentView={props.ctx.currentView} variant="collapsed" />
           </AppWorkspace.SidebarIconGrid>

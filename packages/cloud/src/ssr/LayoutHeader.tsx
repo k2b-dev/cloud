@@ -60,7 +60,12 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
             searchHelpApps={props.searchHelpApps}
             accent={props.accent}
           />
-          {props.authenticated && <GlobalSearchTrigger variant="header" registerHotkey searchLinks={props.searchLinks} />}
+          <GlobalSearchTrigger
+            variant={props.authenticated ? "header" : "host"}
+            registerHotkey
+            searchLinks={props.searchLinks}
+            searchResources={props.authenticated}
+          />
         </div>
         {props.authenticated ? (
           <>

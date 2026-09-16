@@ -132,8 +132,52 @@ test("Mod+Enter and modified click open a new tab without losing the current sea
     expect(closed).toBe(0);
     expect(input.value).toBe("alpha");
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await waitFor(() => closed === 1, "normal navigation to close search");
     expect(closed).toBe(1);
   } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+test("navigation failure preserves the search; retry waits for the handler and ignores duplicate clicks", async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => searchResponse("Alpha"), { preconnect: originalFetch.preconnect });
+  const { registerSearchNavigation } = await import("../browser/search-bridge");
+  const { default: GlobalSearchDialog } = await import("./GlobalSearchDialog");
+  let calls = 0;
+  let finish!: (value: boolean) => void;
+  const stop = registerSearchNavigation(async () => {
+    if (++calls === 1) throw new Error("Unsaved content could not be stored");
+    return new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+  });
+  let closed = 0;
+  delegateEvents(["input", "click", "keydown"]);
+  const dispose = render(() => <GlobalSearchDialog close={() => closed++} />, dom.root);
+  try {
+    const input = dom.root.querySelector<HTMLInputElement>("input")!;
+    input.value = "alpha";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => Boolean(dom.root.querySelector('[role="option"][aria-disabled="false"]')), "result");
+    const row = dom.root.querySelector<HTMLButtonElement>('[role="option"]')!;
+    row.click();
+    await waitFor(() => Boolean(dom.root.querySelector('[role="alert"]')), "navigation error");
+    expect(closed).toBe(0);
+    expect(input.value).toBe("alpha");
+    row.click();
+    row.click();
+    await Promise.resolve();
+    expect(calls).toBe(2);
+    expect(closed).toBe(0);
+    finish(true);
+    await waitFor(() => closed === 1, "navigation completes");
+  } finally {
+    stop();
     dispose();
     globalThis.fetch = originalFetch;
     dom.cleanup();

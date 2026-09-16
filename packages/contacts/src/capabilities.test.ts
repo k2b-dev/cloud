@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
@@ -7,7 +8,6 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { audit } from "@k2b/cloud/services";
 import { contactsCapabilities, decodeContactCapabilityCursor } from "./capabilities";
 import {
@@ -631,6 +631,20 @@ describe("contacts capabilities", () => {
       openHref: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}`,
       links: [{ rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` }],
     });
+  });
+
+  test("search respects book membership even for admins, matching contact navigation", async () => {
+    const search = spyOn(contactsService.contact, "search").mockImplementation(async (options) => ({
+      items: options.bypassAccess ? [contact] : [],
+      page: 1,
+      perPage: 20,
+      total: options.bypassAccess ? 1 : 0,
+      hasNext: false,
+    }));
+
+    const result = await contactsCapabilities.queries["contact.search"].run({ query: "Ada", tags: [], limit: 20 }, context);
+    expect(result).toEqual({ ok: true, data: { data: [] } });
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ subject: context.accessSubject, boundBookId: null }));
   });
 
   test("keeps exact resolution bounded and rejects unrelated contact fields", () => {

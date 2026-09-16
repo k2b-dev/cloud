@@ -29,9 +29,7 @@ describe("Spaces sidebar icon actions", () => {
     const create = renderToString(() =>
       createComponent(CreateItemButton, { spaceId: "Space1", columns: [], tags: [], variant: "icon", defaultType: "task" }),
     );
-    const search = renderToString(() =>
-      createComponent(SearchButton, { spaceId: "Space1", spaceName: "Planning", columns: [], query: "", variant: "icon" }),
-    );
+    const search = renderToString(() => createComponent(SearchButton, { spaceId: "Space1", spaceName: "Planning", variant: "icon" }));
 
     expect(create).toContain("k2b-app-workspace__sidebar-icon-action");
     expect(search).toContain("k2b-app-workspace__sidebar-icon-action");

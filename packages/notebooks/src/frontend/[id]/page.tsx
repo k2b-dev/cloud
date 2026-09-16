@@ -92,7 +92,12 @@ export default ssr<AuthContext>(async (c) => {
     >
       <link rel="stylesheet" href={katexStylesHref} />
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
-        <NotebookHotkeys notebookId={notebook.id} notebookName={notebook.name} canWrite={canWrite} />
+        <NotebookHotkeys
+          notebookId={notebook.id}
+          notebookName={notebook.name}
+          canWrite={canWrite}
+          ownsSearchNavigation={!selectedNote || isVersionsMode || isGraphMode}
+        />
         {!editorOwnsWorkspaceSocket && (
           <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} />
         )}

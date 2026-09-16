@@ -1,3 +1,4 @@
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
@@ -11,7 +12,6 @@ import {
   dialogCore,
   IconButton,
   LinkCard,
-  openSpotlightSearch,
   PanelDialog,
   Paper,
   Placeholder,
@@ -62,18 +62,6 @@ type Props = {
   dateConfig: DateContext;
 };
 type CreatedNotebook = { id: string };
-
-type SearchTarget = { href: string };
-type SearchResponse = {
-  data: Array<{
-    note: { id: string; title: string };
-    notebook: { id: string; name: string; icon: string | null };
-    snippet: string | null;
-  }>;
-};
-
-const cleanSnippet = (snippet: string | null): string | undefined =>
-  snippet?.replaceAll("\uE000", "").replaceAll("\uE001", "").replace(/\s+/g, " ").trim() || undefined;
 
 const errorMessage = async (response: Pick<Response, "json">, fallback: string) => {
   try {
@@ -357,44 +345,7 @@ export default function NotebooksOverview(props: Props) {
     );
   };
 
-  const openSearch = async () => {
-    const selected = await openSpotlightSearch<SearchTarget>({
-      title: t().searchTitle,
-      icon: "ti ti-search",
-      placeholder: t().searchPlaceholder,
-      minQueryLength: 1,
-      noResultsText: t().noSearchResults,
-      resolve: async ({ query, abortSignal }) => {
-        const trimmed = query.trim();
-        if (!trimmed) return [];
-        const normalized = trimmed.toLowerCase();
-        const notebookItems = props.notebooks
-          .filter((notebook) => `${notebook.name} ${notebook.description ?? ""}`.toLowerCase().includes(normalized))
-          .slice(0, 8)
-          .map((notebook) => ({
-            value: { href: `/app/notebooks/${notebook.id}` },
-            label: notebook.name,
-            desc: notebook.description ?? t().notebook,
-            icon: notebook.icon || "ti ti-notebook",
-          }));
-
-        const response = await apiClient.search.$get(
-          { query: { q: trimmed, page: "1", per_page: "20" } },
-          { init: { signal: abortSignal } },
-        );
-        if (!response.ok) throw new Error(t().searchFailed);
-        const payload = (await response.json()) as SearchResponse;
-        const noteItems = payload.data.map((hit) => ({
-          value: { href: `/app/notebooks/${hit.notebook.id}/notes/${hit.note.id}` },
-          label: `${hit.note.title} · ${hit.notebook.name}`,
-          desc: cleanSnippet(hit.snippet),
-          icon: hit.notebook.icon || "ti ti-note",
-        }));
-        return [...notebookItems, ...noteItems];
-      },
-    });
-    if (selected?.value) navigateTo(selected.value.href);
-  };
+  const openSearch = () => openGlobalSearch({ scope: { appId: "notebooks", label: t().notebooks, icon: "ti ti-notebook" } });
 
   onCleanup(() => {
     createNotebookMutation.abort();

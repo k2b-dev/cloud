@@ -406,7 +406,7 @@ const normalizeSearchTags = (definition: CapabilityQueryDefinition, label: strin
       ...(aliases.length > 0 ? { aliases } : {}),
     };
   });
-  return { tags };
+  return { tags, ...(definition.universalSearch.scopeTypes ? { scopeTypes: [...new Set(definition.universalSearch.scopeTypes)] } : {}) };
 };
 
 const compileOperationSchemas = (definition: CapabilityQueryDefinition | CapabilityActionDefinition, label: string) => {
@@ -483,6 +483,9 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       openWorld: definition.openWorld,
       universalSearch: normalizeSearchTags(definition, label),
     } satisfies CapabilityQueryManifest;
+    for (const type of manifest.universalSearch?.scopeTypes ?? []) {
+      if (!typeIds.has(qualifiedId(appId, type))) throw new Error(`${label} declares an unknown search scope type ${type}`);
+    }
     queries.set(localId, {
       definition,
       manifest,
@@ -636,6 +639,7 @@ export const resolveCapabilityManifestPresentation = (
           ...(operation.universalSearch
             ? {
                 universalSearch: {
+                  ...operation.universalSearch,
                   tags: operation.universalSearch.tags.map((tag) => {
                     const tagCopy = copy.searchTags?.[tag.tag];
                     return tagCopy
@@ -694,6 +698,9 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
     if (operation.schemaHash !== expectedSchemaHash)
       throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
     if ("universalSearch" in operation && operation.universalSearch) {
+      for (const type of operation.universalSearch.scopeTypes ?? []) {
+        if (!manifest.types.some((entry) => entry.localId === type)) throw new Error(`Unknown search scope type ${type}`);
+      }
       const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
       const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
       if (
@@ -1003,6 +1010,16 @@ export const invokeCompiledCapability = async (params: {
         details: { issues: input.error.issues },
       },
     };
+  }
+  if ("universalSearch" in operation.manifest && operation.manifest.universalSearch) {
+    const search = UniversalSearchInputSchema.parse(input.data);
+    if (
+      search.scope &&
+      !(operation.manifest.universalSearch.scopeTypes ?? []).some(
+        (type) => qualifiedId(params.compiled.manifest.appId, type) === search.scope!.type,
+      )
+    )
+      return { ok: false, error: { code: "VALIDATION_FAILED", message: "Unsupported search scope", status: 400 } };
   }
   try {
     const invoked = await operation.definition.run(input.data, context);

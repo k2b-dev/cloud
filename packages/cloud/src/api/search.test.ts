@@ -818,3 +818,50 @@ describe("global capability search", () => {
     }
   });
 });
+
+test("resource scopes preserve opaque IDs and route only to explicitly supporting providers", async () => {
+  const scoped = {
+    ...app,
+    manifest: compileCapabilities("demo", {
+      ...capabilities,
+      queries: {
+        search: {
+          ...capabilities.queries.search,
+          universalSearch: { ...capabilities.queries.search.universalSearch, scopeTypes: ["item"] },
+        },
+      },
+    }).manifest,
+  };
+  const calls: unknown[] = [];
+  const routes = createSearchRoutes({
+    authenticate,
+    listCapabilities: async () => [scoped, provider(2)],
+    fetch: async (_url, init) => {
+      calls.push(JSON.parse(String(init?.body)));
+      return Response.json({ data: [] });
+    },
+  });
+  const response = await routes.request("/search?scope_type=demo.item&scope_id=AaBb12");
+  expect(response.status).toBe(200);
+  expect(calls).toEqual([{ input: { query: "", tags: [], limit: 30, scope: { type: "demo.item", id: "AaBb12" } } }]);
+  for (const query of [
+    "scope_type=demo.item",
+    "scope_id=AaBb12",
+    "scope_type=other.item&scope_id=AaBb12",
+    "scope_type=demo.item&scope_id=AaBb12&app=other",
+  ]) {
+    expect((await routes.request(`/search?${query}`)).status).toBe(400);
+  }
+  expect(calls).toHaveLength(1);
+});
+
+test("reports a failed scoped provider instead of silently presenting a successful empty search", async () => {
+  const routes = createSearchRoutes({
+    authenticate,
+    listCapabilities: async () => [app],
+    fetch: async () => Response.json({ ok: false }, { status: 403 }),
+  });
+  const response = await routes.request("/search?app=demo&q=test");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ items: [], failedApps: ["demo"] });
+});

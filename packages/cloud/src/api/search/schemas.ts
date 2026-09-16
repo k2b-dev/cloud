@@ -30,21 +30,25 @@ const TagArraySchema = z.preprocess(
     .transform((tags) => [...new Set(tags.map((tag) => tag.toLowerCase()))]),
 );
 
-export const SearchQuerySchema = z.object({
-  q: z
-    .string()
-    .max(500)
-    .optional()
-    .default("")
-    .transform((query) => query.trim()),
-  tag: TagArraySchema.optional().default([]),
-  app: z.string().trim().min(1).max(120).optional(),
-  require_reader: z
-    .enum(["true"])
-    .optional()
-    .transform((value) => value === "true"),
-  provider_limit: z.coerce.number().int().min(1).max(30).optional().default(10),
-});
+export const SearchQuerySchema = z
+  .object({
+    q: z
+      .string()
+      .max(500)
+      .optional()
+      .default("")
+      .transform((query) => query.trim()),
+    tag: TagArraySchema.optional().default([]),
+    app: z.string().trim().min(1).max(120).optional(),
+    scope_type: CloudResourceRefSchema.shape.type.optional(),
+    scope_id: CloudResourceRefSchema.shape.id.optional(),
+    require_reader: z
+      .enum(["true"])
+      .optional()
+      .transform((value) => value === "true"),
+    provider_limit: z.coerce.number().int().min(1).max(30).optional().default(10),
+  })
+  .refine((value) => Boolean(value.scope_type) === Boolean(value.scope_id), { message: "Both scope_type and scope_id are required" });
 
 export const SearchAppSchema = z.object({
   id: z.string(),
@@ -74,6 +78,7 @@ export const SearchResponseSchema = z.object({
   items: z.array(SearchItemSchema),
   apps: z.array(SearchAppSchema),
   unsupportedTags: z.array(z.string()).optional(),
+  failedApps: z.array(z.string()).optional(),
 });
 
 export type SearchApp = z.infer<typeof SearchAppSchema>;

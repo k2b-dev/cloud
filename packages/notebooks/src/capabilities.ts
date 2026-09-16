@@ -1,4 +1,3 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -12,6 +11,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
   CommentBrowseDataSchema,
@@ -382,9 +382,11 @@ const runNoteSearch = async (input: UniversalSearchInput, context: CapabilityExe
   const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const scope = scopedNotebookId(context, "read");
   if (!scope.ok) return ok({ data: [] });
+  const target = input.scope ? await requireNotebookByShortId(input.scope.id, context) : null;
+  if (target && !target.ok) return target;
   const hits = await noteSearch.searchAcross({
     ...principalIds(context),
-    boundNotebookId: scope.data,
+    boundNotebookId: target?.data.notebook.id ?? scope.data,
     filters: { query: input.query },
     pagination: { page: 1, perPage: input.limit, offset: 0 },
   });
@@ -1054,6 +1056,7 @@ export const notebooksCapabilities = defineCapabilities({
       openWorld: false,
       universalSearch: {
         tags: [{ tag: "note", title: "Notes", description: "Show notes only.", aliases: ["notes", "markdown"] }],
+        scopeTypes: ["notebook"],
       },
       run: runNoteSearch,
     },

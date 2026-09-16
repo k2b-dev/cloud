@@ -1,3 +1,4 @@
+import { fuzzy } from "@k2b/stdlib";
 import type { SearchItem } from "../api/search/schemas";
 import type { AppMeta } from "../contracts/app";
 
@@ -30,10 +31,17 @@ export const matchNavigationSearchItems = (
   input: { query: string; tags: readonly string[]; appId?: string | null; requireReader?: boolean },
 ): NavigationSearchItem[] => {
   const query = input.query.trim().toLowerCase();
-  if (input.requireReader || input.tags.length > 0 || query.length < 2) return [];
+  if (input.requireReader || input.tags.length > 0 || (!input.appId && query.length < 2)) return [];
+  if (input.appId) {
+    const scoped = items.filter((item) => item.appId === input.appId);
+    return query
+      ? fuzzy
+          .filter(query, scoped, { key: (item) => [item.title, item.preview ?? "", ...(item.keywords ?? [])].join(" ") })
+          .map((hit) => hit.item)
+      : scoped;
+  }
   const words = query.split(/\s+/);
   return items.filter((item) => {
-    if (input.appId && item.appId !== input.appId) return false;
     const text = [item.title, item.preview ?? "", ...(item.keywords ?? [])].join(" ").toLowerCase();
     return words.every((word) => text.includes(word));
   });

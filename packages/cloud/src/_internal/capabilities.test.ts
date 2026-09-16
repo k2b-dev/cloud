@@ -226,13 +226,20 @@ describe("capability v1 compilation", () => {
   });
 
   test("no-approval actions must be non-destructive and closed-world", () => {
-    const action = { title: "Write", description: "Write a recoverable file.", input: z.object({}).strict(), data: z.object({}).strict(),
-      destructive: false, openWorld: false, idempotency: "required" as const, approval: "none" as const,
+    const action = {
+      title: "Write",
+      description: "Write a recoverable file.",
+      input: z.object({}).strict(),
+      data: z.object({}).strict(),
+      destructive: false,
+      openWorld: false,
+      idempotency: "required" as const,
+      approval: "none" as const,
       review: async () => ok({ message: "Write the file." }),
       run: async () => ok({ data: {} }),
     };
-    const compile = (effects: { destructive?: boolean; openWorld?: boolean }) => compileCapabilities("example",
-      defineCapabilities({ protocolVersion: 1, actions: { write: { ...action, ...effects } } }));
+    const compile = (effects: { destructive?: boolean; openWorld?: boolean }) =>
+      compileCapabilities("example", defineCapabilities({ protocolVersion: 1, actions: { write: { ...action, ...effects } } }));
     expect(compile({}).manifest.actions[0]?.approval).toBe("none");
     expect(() => compile({ destructive: true })).toThrow("cannot skip approval");
     expect(() => compile({ openWorld: true })).toThrow("cannot skip approval");
@@ -1293,4 +1300,65 @@ describe("capability v1 compilation", () => {
 test("semantic links cannot escape the Cloud origin through backslashes", () => {
   expect(CapabilitySemanticLinkSchema.safeParse({ rel: "open", href: "/app/demo" }).success).toBe(true);
   expect(CapabilitySemanticLinkSchema.safeParse({ rel: "open", href: "/\\\\evil.example/path" }).success).toBe(false);
+});
+
+test("search scope declarations survive localization and reject unsupported direct RPC scopes", async () => {
+  let invoked = false;
+  const query = {
+    title: "Search notes",
+    description: "Search notes within a notebook.",
+    input: UniversalSearchInputSchema,
+    data: UniversalSearchDataSchema,
+    openWorld: false,
+    universalSearch: { tags: [{ tag: "note", title: "Notes", description: "Find notes." }], scopeTypes: ["notebook"] },
+    run: async () => {
+      invoked = true;
+      return ok({ data: [] });
+    },
+  };
+  const definitions = defineCapabilities({
+    protocolVersion: 1,
+    types: { notebook: { title: "Notebook", description: "A notebook." } },
+    queries: { search: query },
+    presentation: {
+      baseLocale: "en",
+      translations: {
+        de: {
+          queries: {
+            search: {
+              title: "Notizen suchen",
+              description: "Notizen in einem Notizbuch suchen.",
+              searchTags: { note: { title: "Notizen", description: "Notizen finden." } },
+            },
+          },
+        },
+      },
+    },
+  });
+  const compiled = compileCapabilities("notes", definitions);
+  const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de");
+  expect(localized.queries[0]?.universalSearch?.scopeTypes).toEqual(["notebook"]);
+  expect(localized.queries[0]?.universalSearch?.tags[0]?.title).toBe("Notizen");
+  expect(parseCapabilityManifest(compiled.manifest, "notes").queries[0]?.universalSearch?.scopeTypes).toEqual(["notebook"]);
+  expect(() => compileCapabilities("notes", { ...definitions, types: {} })).toThrow("unknown search scope type");
+  const rejected = await invokeCompiledCapability({
+    compiled,
+    kind: "query",
+    localId: "search",
+    input: { query: "", tags: [], limit: 5, scope: { type: "other.notebook", id: "AaBb12" } },
+    expectedSchemaHash: compiled.manifest.queries[0]!.schemaHash,
+    context,
+  });
+  expect(rejected.ok).toBe(false);
+  expect(invoked).toBe(false);
+  const accepted = await invokeCompiledCapability({
+    compiled,
+    kind: "query",
+    localId: "search",
+    input: { query: "", tags: [], limit: 5, scope: { type: "notes.notebook", id: "AaBb12" } },
+    expectedSchemaHash: compiled.manifest.queries[0]!.schemaHash,
+    context,
+  });
+  expect(accepted.ok).toBe(true);
+  expect(invoked).toBe(true);
 });

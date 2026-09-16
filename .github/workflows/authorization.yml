@@ -57,8 +57,12 @@ jobs:
         run: bun test packages/cloud/src/api/search.test.ts packages/cloud/src/api/search/schemas.test.ts packages/cloud/src/_internal/bounded-json.test.ts
       - name: Verify global navigation search
         run: |
-          bun test packages/cloud/src/browser/navigation-search.test.ts packages/cloud/src/browser/resource-picker.test.ts packages/cloud/src/browser/resource-search-input.test.ts packages/cloud/src/browser/resource-search-messages.test.ts packages/tools/src/search-links.test.ts
+          bun test packages/cloud/src/browser/search-bridge.test.ts packages/cloud/src/browser/navigation-search.test.ts packages/cloud/src/browser/resource-picker.test.ts packages/cloud/src/browser/resource-search-input.test.ts packages/cloud/src/browser/resource-search-messages.test.ts packages/tools/src/search-links.test.ts
           bun test --isolate --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts packages/cloud/src/browser/CloudResourceSearch.behavior.test.tsx packages/cloud/src/ssr/GlobalSearchDialog.behavior.test.tsx packages/cloud/src/browser/spotlight-position.test.ts
+      - name: Verify contextual search providers and application navigation
+        run: |
+          bun test --isolate packages/cloud/src/_internal/capabilities.test.ts packages/notebooks/src/capabilities.test.ts packages/spaces/src/capabilities.test.ts packages/contacts/src/capabilities.test.ts packages/notebooks/src/frontend/\[id\]/_components/editor/note-navigation.test.ts packages/notebooks/src/frontend/\[id\]/_components/book/book-state.test.ts
+          bun test --isolate --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts packages/notebooks/src/frontend/\[id\]/_components/book/BookController.behavior.test.tsx
       - name: Verify native list search and URL state
         run: bun test --isolate packages/cloud/src/ssr/islands/SearchBar.render.test.tsx packages/cloud/src/ssr/url-filter.test.ts packages/accounts/src/frontend/groups/detail/group-detail-url.test.ts packages/gateway-ops/src/observability/logs/_components/types.test.ts
       - name: Verify Dashboard and OAuth editor behavior

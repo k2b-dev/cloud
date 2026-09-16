@@ -94,3 +94,11 @@ describe("global navigation search", () => {
     expect(navigationSearchItems([legacy], [legacy.id])[0]?.preview).toBeUndefined();
   });
 });
+
+test("an explicit app context browses static links and keeps fuzzy matching local", () => {
+  const items = navigationSearchItems([app], [app.id]);
+  expect(matchNavigationSearchItems(items, { query: "", tags: [], appId: app.id })).toHaveLength(1);
+  expect(matchNavigationSearchItems(items, { query: "cdgn", tags: [], appId: app.id })).toHaveLength(1);
+  expect(matchNavigationSearchItems(items, { query: "cdgn", tags: [] })).toHaveLength(0);
+  expect(matchNavigationSearchItems(items, { query: "", tags: [] })).toHaveLength(0);
+});

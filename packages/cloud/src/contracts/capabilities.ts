@@ -277,6 +277,9 @@ export const UniversalSearchInputSchema = z
   .object({
     query: z.string().max(500).describe("User-entered search text. Empty text is allowed when a facet narrows the query."),
     tags: z.array(z.string().min(1).max(64)).max(20).describe("Canonical search facets supported by this query."),
+    scope: CloudResourceRefSchema.optional().describe(
+      "Optional resource containing the search results; must be an explicitly supported scope type.",
+    ),
     limit: z.number().int().min(1).max(100).describe("Maximum number of results to return."),
   })
   .strict();
@@ -325,6 +328,8 @@ export type CapabilitySearchTagDefinition = {
 
 export type CapabilityUniversalSearchDefinition = {
   tags: readonly CapabilitySearchTagDefinition[];
+  /** Local resource types whose contents this Query can search. */
+  scopeTypes?: readonly string[];
 };
 
 export type CapabilitySchemaPresentation = Readonly<Record<string, string>>;
@@ -437,7 +442,7 @@ const CapabilityOperationManifestBaseSchema = z
 export const CapabilityQueryManifestSchema = CapabilityOperationManifestBaseSchema.extend({
   openWorld: z.boolean(),
   universalSearch: z
-    .object({ tags: z.array(CapabilitySearchTagManifestSchema).max(100) })
+    .object({ tags: z.array(CapabilitySearchTagManifestSchema).max(100), scopeTypes: z.array(CapabilityLocalIdSchema).max(100).optional() })
     .strict()
     .optional(),
 }).strict();

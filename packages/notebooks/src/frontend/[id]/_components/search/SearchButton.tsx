@@ -1,6 +1,4 @@
 import { AppWorkspace, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant, Tooltip, useLocale } from "@k2b/ui";
-import { navigateToNotebookNote } from "../../../lib/soft-navigation";
-import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { openNoteSearchPrompt } from "./openNoteSearchPrompt";
 
@@ -14,12 +12,7 @@ type Props = {
 export default function SearchButton(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const handleSearch = async () => {
-    const picked = await openNoteSearchPrompt(props.notebookId, props.notebookName, locale());
-    if (picked) {
-      void navigateToNotebookNote(buildNoteUrl(props.notebookId, picked.id));
-    }
-  };
+  const handleSearch = () => openNoteSearchPrompt(props.notebookId, props.notebookName);
 
   if (props.variant === "workspace-icon") {
     return (

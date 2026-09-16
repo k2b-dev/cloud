@@ -1,17 +1,15 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { navigateToNotebookNote } from "../../../lib/soft-navigation";
-import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
-import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
-import { useFavoriteNotes } from "./useFavoriteNotes";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { createNavigation, type NavigationItem, AppWorkspace, Button, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, createNavigation, type NavigationItem, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
+import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
 import SearchButton from "../search/SearchButton";
 import NotebookSettingsButton from "../settings/NotebookSettingsButton";
+import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import CreateNoteButton from "./CreateNoteButton";
 import NotebookNavigator from "./NotebookNavigator";
@@ -19,6 +17,7 @@ import NoteTree, { noteActionItems, useNoteActions } from "./NoteTree";
 import TagsButton, { openTagsModal } from "./TagsButton";
 import { type NoteTreeSort, sortNoteTree } from "./tree-utils";
 import type { NotebookContext, NoteTreeNode } from "./types";
+import { useFavoriteNotes } from "./useFavoriteNotes";
 import { useNotebookWorkspaceState } from "./useNotebookWorkspaceState";
 
 type Props = {
@@ -210,8 +209,7 @@ export default function NotebookSidebar(props: Props) {
         return;
       }
       if (action === "search") {
-        const picked = await openNoteSearchPrompt(notebook().id, notebook().name, locale());
-        if (picked) await navigateToNotebookNote(buildNoteUrl(notebook().id, picked.id, props.ctx.presentationMode));
+        openNoteSearchPrompt(notebook().id, notebook().name);
         return;
       }
       if (action.startsWith("sort:")) {

@@ -1,8 +1,6 @@
 import { startCompletion } from "@codemirror/autocomplete";
 import { crypto as stdCrypto } from "@k2b/stdlib";
-import { navigateToNotebookNote } from "../../../../lib/soft-navigation";
-import { buildNoteUrl } from "../../../../params";
-import { openNoteSwitchPrompt } from "../../search/openNoteSearchPrompt";
+import { openNoteSearchPrompt } from "../../search/openNoteSearchPrompt";
 import { openAttachmentPicker } from "../AttachmentPicker";
 import { insertAtCursor, insertCallout, insertCodeBlock, insertDataBlock, insertLink, insertTable, setHeading } from "../editor-actions";
 import type { SlashCommand } from "./types";
@@ -574,9 +572,7 @@ export const slashCommands: SlashCommand[] = [
     description: "Open a different note in this notebook",
     aliases: ["goto", "jump", "open", "nav"],
     run: async (_view, ctx) => {
-      const picked = await openNoteSwitchPrompt(ctx.notebookId);
-      if (!picked) return;
-      await navigateToNotebookNote(buildNoteUrl(ctx.notebookId, picked.id));
+      openNoteSearchPrompt(ctx.notebookId, ctx.notebookName);
     },
   },
 ];

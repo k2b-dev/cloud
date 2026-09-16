@@ -1,17 +1,20 @@
+import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { hotkeys, mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, SPOTLIGHT_SHORTCUT, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
+import { inheritPresentationMode } from "../../../../lib/presentation-url";
 import { onNotebookSearchRequest } from "../../../lib/hotkeys";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
-import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
 import { notebookWorkspaceMessages } from "../../messages";
+import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
 
 type Props = {
   notebookId: string;
   notebookName: string;
   canWrite: boolean;
+  ownsSearchNavigation: boolean;
 };
 
 type CreateNoteResult = {
@@ -37,12 +40,7 @@ export default function NotebookHotkeys(props: Props) {
     onError: (err) => prompts.error(err.message),
   });
 
-  const openSearch = async () => {
-    const picked = await openNoteSearchPrompt(props.notebookId, props.notebookName, locale());
-    if (picked) {
-      void navigateToNotebookNote(buildNoteUrl(props.notebookId, picked.id));
-    }
-  };
+  const openSearch = () => openNoteSearchPrompt(props.notebookId, props.notebookName);
 
   const createNote = async () => {
     if (!props.canWrite || createNoteMutation.loading()) return;
@@ -50,6 +48,15 @@ export default function NotebookHotkeys(props: Props) {
   };
 
   onMount(() => {
+    if (props.ownsSearchNavigation)
+      onCleanup(
+        registerSearchNavigation(({ href }) => {
+          const target = inheritPresentationMode(href, window.location.href);
+          if (target === href) return false;
+          window.location.assign(target);
+          return true;
+        }),
+      );
     const offSearchRequest = onNotebookSearchRequest(() => {
       void openSearch();
     });

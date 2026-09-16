@@ -1,3 +1,4 @@
+import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { query } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -9,7 +10,7 @@ import { bookMessages } from "./messages";
 
 type Props = { notebookId: string; initial: BookMetadata };
 type ScrollPosition = { top: number; left: number; windowX: number; windowY: number };
-type PendingNavigation = { href: string; hash: string; kind: "push" | "pop"; scroll?: ScrollPosition };
+type PendingNavigation = { href: string; hash: string; kind: "push" | "pop"; scroll?: ScrollPosition; settled?: (error?: Error) => void };
 const SCROLL_KEY = "notebooksBookScroll";
 
 /** Only metadata crosses the island boundary; the article stays server HTML. */
@@ -37,7 +38,7 @@ export default function BookController(props: Props) {
         { init: { signal: abortSignal } },
       );
       if (!response.ok) {
-        if ([401, 403, 404].includes(response.status) && !abortSignal.aborted) {
+        if ([401, 403, 404].includes(response.status) && !abortSignal.aborted && !pending?.settled) {
           article?.replaceChildren();
           window.location.assign(pending?.href ?? window.location.href);
         }
@@ -113,6 +114,16 @@ export default function BookController(props: Props) {
       }
     }
     saveScroll();
+    navigating?.settled?.();
+  });
+
+  createEffect(() => {
+    const error = workspace.error();
+    if (!error || !pending?.settled) return;
+    const failed = pending;
+    pending = undefined;
+    setSource(lastApplied.source);
+    failed.settled?.(error);
   });
 
   onMount(() => {
@@ -123,13 +134,23 @@ export default function BookController(props: Props) {
     history.scrollRestoration = "manual";
     history.replaceState(history.state, "", `${initialHref}${window.location.hash}`);
 
-    const navigate = (url: URL, kind: "push" | "pop", scroll?: ScrollPosition) => {
+    const navigate = (url: URL, kind: "push" | "pop", scroll?: ScrollPosition, settled?: (error?: Error) => void) => {
+      pending?.settled?.();
       if (kind === "push") saveScroll();
-      pending = { href: url.href, hash: url.hash, kind, scroll };
+      pending = { href: url.href, hash: url.hash, kind, scroll, settled };
       const next = `${url.pathname}${url.search}`;
       if (source() === next) void workspace.refresh();
       else setSource(next);
     };
+    onCleanup(
+      registerSearchNavigation(({ href }) => {
+        const target = bookNavigationTarget(href, window.location.href, props.notebookId);
+        if (!target || target.pathname.replace(/\/$/, "") === `/app/notebooks/${props.notebookId}`) return false;
+        return new Promise<boolean>((resolve, reject) => {
+          navigate(target, "push", undefined, (error) => (error ? reject(error) : resolve(true)));
+        });
+      }),
+    );
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
@@ -201,6 +222,8 @@ export default function BookController(props: Props) {
     window.addEventListener("scroll", saveScroll, { passive: true });
     onCleanup(() => {
       mounted = false;
+      pending?.settled?.();
+      pending = undefined;
       document.removeEventListener("click", onClick, true);
       document.removeEventListener("submit", onSubmit);
       window.removeEventListener("popstate", onPopState);

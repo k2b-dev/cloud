@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionReview,
@@ -17,6 +16,7 @@ import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
+import { err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
   CalendarDestinationListDataSchema,
@@ -526,9 +526,11 @@ const runItemSearch = async (
   if (wantsTasks && !wantsEvents) kinds = "task";
   else if (wantsEvents && !wantsTasks) kinds = "event";
 
+  const target = input.scope ? await requireSpace(input.scope.id, context, requiredLevel) : null;
+  if (target && !target.ok) return target;
   const hits = await spacesService.item.searchAcross({
     subject: context.accessSubject,
-    boundSpaceId: scope.data,
+    boundSpaceId: target?.data.internalId ?? scope.data,
     query: input.query,
     kinds,
     status: tags.has("todo") ? "open" : undefined,
@@ -1743,6 +1745,7 @@ export const spacesCapabilities = defineCapabilities({
       data: UniversalSearchDataSchema,
       openWorld: false,
       universalSearch: {
+        scopeTypes: ["space"],
         tags: [
           { tag: "task", title: "Tasks", description: "Show task items only.", aliases: ["tasks", "kanban"] },
           { tag: "todo", title: "Open tasks", description: "Show open tasks only." },

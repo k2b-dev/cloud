@@ -5,10 +5,20 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-10
+updated: 2026-09-16
 ---
 
 # Deprecations and migrations
+
+## Contextual Universal Search
+
+Search Queries now accept an optional resource scope in the canonical input
+schema and may declare local `scopeTypes`. Update all search-provider images
+together with the platform; old manifests do not match the new shared schema.
+No stored data changes are required. Use
+[the shared browser search API](/en/docs/platform/search#open-search-from-an-application)
+in place of app-local navigation Spotlight dialogs. Selection pickers remain
+separate.
 
 ## Production configuration cleanup
 
