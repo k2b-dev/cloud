@@ -198,7 +198,17 @@ const CustomAppPage = (props: {
   const messages = useCustomAppRuntimeMessages();
   return (
     <>
-    <CustomAppNavigation definition={props.definition} pageId={props.page.id} appId={props.shortId} actions={props.sidebarActions} />
+    <CustomAppNavigation
+      name={props.definition.name}
+      pages={props.definition.pages.filter((page) => page.navigation.visible).map((page) => ({
+        id: page.id,
+        title: page.title,
+        icon: page.navigation.icon,
+      }))}
+      pageId={props.page.id}
+      appId={props.shortId}
+      actions={props.sidebarActions}
+    />
     <CustomAppPageLayout
       definition={props.definition}
       page={props.page}
