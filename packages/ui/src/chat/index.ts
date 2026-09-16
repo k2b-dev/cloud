@@ -16,6 +16,7 @@ export type {
   ChatAction,
   ChatActivityTone,
   ChatAttachment,
+  ChatMention,
   ChatComposerState,
   ChatContextUsageData,
   ChatMessageStatus,
@@ -39,3 +40,5 @@ export const Chat = Object.assign(ChatRoot, {
   ContextUsage: ChatContextUsage,
   ContextPopup: ChatContextPopup,
 });
+
+export { reconcileChatMentions } from "./composer-document";

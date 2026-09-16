@@ -45,7 +45,7 @@ import {
 import { collectConversationResourceObservations } from "./resource-refs";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
 import { selectAiSkillCatalog } from "./skill-catalog";
-import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
+import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
 import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
@@ -975,9 +975,11 @@ export class AiTurnExecutor {
         })
       : prepared.tools;
 
+    const loadedSkills = await loadSelectedAiSkills(config.selectedSkillIds ?? [], turnId, skillSubject, activeTools.some(tool => tool.def.name === "load_skill"));
     const workingPlan = (await aiConversations.getConversation({ conversationId }))?.todoPlan;
     const systemPrompt = composeAiSystemPrompt({
       globalInstructions: settings.globalInstructions,
+      loadedSkills,
       turnInstructions: [
         material.systemPrompt,
         workingPlan

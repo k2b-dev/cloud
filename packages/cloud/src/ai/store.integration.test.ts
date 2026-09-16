@@ -76,6 +76,25 @@ const assistantMessage = (text: string): Message => ({
 const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "none" as const } };
 
 suite("AI conversation store integration", () => {
+  test("fork preserves the versions referenced by inline draft files", async () => {
+    const userId = await insertUser();
+    const source = await aiConversations.createConversation({ ownerUserId: userId });
+    const conversationIds = [source.id];
+    try {
+      const input = { conversationId: source.id, path: "notes.txt", mediaType: "text/plain" };
+      await aiFileStore.write({ ...input, bytes: new TextEncoder().encode("first") });
+      const file = await aiFileStore.write({ ...input, bytes: new TextEncoder().encode("second") });
+      expect(file.version).toBe(2);
+      const fork = await aiConversations.forkConversation({ sourceConversationId: source.id, ownerUserId: userId, throughSeq: 0 });
+      conversationIds.push(fork.id);
+      const saved = await aiConversations.saveDraft({ conversationId: fork.id, ownerUserId: userId,
+        expectedRevision: fork.draft.revision,
+        content: [{ type: "file", path: file.path, mediaType: file.mediaType, size: file.size, version: file.version, inline: true }],
+      });
+      expect(saved.ok).toBe(true);
+      expect(await readAiConversationFile({ conversationId: fork.id, ownerUserId: userId, path: file.path, version: file.version })).not.toBeNull();
+    } finally { await cleanupFixture({ userId, conversationIds }); }
+  });
   test("sidebar projects compact task progress without exposing tool arguments", async () => {
     const userId = await insertUser();
     const otherUserId = await insertUser();

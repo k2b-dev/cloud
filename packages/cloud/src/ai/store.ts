@@ -1052,8 +1052,8 @@ export const aiConversations: AiConversationService = {
         ORDER BY seq ASC
       `;
       await tx`
-        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at)
-        SELECT ${target.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at
+        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version)
+        SELECT ${target.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version
         FROM ai.files WHERE conversation_id = ${input.sourceConversationId}::uuid
       `;
       return rowToConversation(target);
@@ -1692,12 +1692,16 @@ export const aiConversations: AiConversationService = {
       `;
       if (!conversations[0]) return { ok: false as const, reason: "not_found" as const };
 
+      if (input.onlyUnassigned && conversations[0].project_id) return { ok: false as const, reason: "already_assigned" as const };
+
       const [activity] = await tx<{ exists: boolean }[]>`
         SELECT EXISTS (
           SELECT 1 FROM ai.turns
           WHERE conversation_id = ${input.conversationId}::uuid
             AND status IN ('queued', 'running', 'waiting_for_action')
-        ) AS exists
+        ) OR (${Boolean(input.onlyUnassigned)}::boolean AND EXISTS (
+          SELECT 1 FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed')
+        )) AS exists
       `;
       if (activity?.exists) return { ok: false as const, reason: "active_turn" as const };
 

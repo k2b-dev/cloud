@@ -27,6 +27,7 @@ import {
 import { type AiConversationStreamTransport, type AiStreamHandle, aiSseConversationStreamTransport } from "./transport";
 
 type ComposerDraftInput = {
+  draftContent?: AiDraftContentPart[];
   /** Bind local content to the server draft it was actually based on. */
   conversationId?: string;
   expectedDraftRevision?: number;
@@ -683,7 +684,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       }
     }
     const content: AiDraftContentPart[] = [
-      ...textParts,
+      ...(input.draftContent ?? textParts),
       ...(input.resources ?? []).map((resource) => ({ type: "resource" as const, ...resource })),
       ...(input.storedFiles ?? []).map((file) => ({ type: "file" as const, ...file })),
       ...uploaded.map((file) => ({ type: "file" as const, ...file })),
@@ -729,7 +730,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const queueMessage = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
     if (!input.conversationId || !isComposerDraftSendable(input)) return Promise.resolve(false);
     const conversationId = input.conversationId;
-    const key = JSON.stringify({message:input.message,content:input.content,resources:input.resources,storedFiles:input.storedFiles,model:input.modelProfileId});
+    const key = JSON.stringify({message:input.message,content:input.content,draftContent:input.draftContent,resources:input.resources,storedFiles:input.storedFiles,model:input.modelProfileId});
     return queueDraftOperation(async () => {
       try {
         const previous = queuedAttempts.get(conversationId);
@@ -808,7 +809,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
           ...optimistic,
           meta: { submittedDraftRevision: savedDraft.revision },
           message: { role: "user", content: savedDraft.content.map(part => ({
-            type: "text", text: part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }),
+            type: "text", text: part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : part.type === "project-file" ? `Project file: ${part.path}` : aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }),
           })) },
         } }));
         const result = await request<SubmitTurnResult>(
@@ -1269,7 +1270,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 export type AiChatController = ReturnType<typeof createAiChatController>;
 
 const isComposerDraftSendable = (input: ComposerDraftInput): boolean =>
-  Boolean(input.message?.trim() || input.content?.length || input.files?.length || input.resources?.length || input.storedFiles?.length);
+  Boolean(input.draftContent?.length || input.message?.trim() || input.content?.length || input.files?.length || input.resources?.length || input.storedFiles?.length);
 
 export const __aiControllerTest = {
   claimFrontendCall,

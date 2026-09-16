@@ -117,8 +117,9 @@ export type AiResolvedModel = {
 
 export type AiDraftContentPart =
   | { type: "text"; text: string }
-  | { type: "resource"; ref: CloudResourceRef; title?: string; icon?: string; href?: string }
-  | { type: "file"; path: string; mediaType: string; size: number; version: number };
+  | { type: "resource"; ref: CloudResourceRef; title?: string; icon?: string; href?: string; inline?: boolean }
+  | { type: "file"; path: string; mediaType: string; size: number; version: number; inline?: boolean }
+  | { type: "project-file"; path: string; inline?: boolean };
 
 export type AiConversationDraft = {
   content: AiDraftContentPart[];
@@ -252,7 +253,7 @@ export type AiConversationPage = {
 
 export type AiConversationProjectUpdateResult =
   | { ok: true; conversation: AiConversation }
-  | { ok: false; reason: "not_found" | "active_turn" };
+  | { ok: false; reason: "not_found" | "active_turn" | "already_assigned" };
 
 export type AiStoredMessage = {
   id: string;
@@ -553,6 +554,7 @@ export type AiConversationFileSnapshot = {
 };
 
 export type AiChatTurnRunConfig = {
+  selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
   assistantChat?: true;
   kind?: "chat";
@@ -735,6 +737,7 @@ export type AiConversationService = {
     conversationId: string;
     ownerUserId?: string;
     projectId: string | null;
+    onlyUnassigned?: boolean;
   }): Promise<AiConversationProjectUpdateResult>;
   setConversationPinned(input: { conversationId: string; ownerUserId?: string; pinned: boolean }): Promise<AiConversation | null>;
   setConversationDone(input: {

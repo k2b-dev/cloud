@@ -37,7 +37,7 @@ describe("@k2b/ui portable chat family", () => {
   });
 
   test("exposes one compound chat API without legacy runtime exports", () => {
-    expect(Object.keys(Chat)).toEqual(["Tasks", "Timeline", "Message", "Activity", "Composer", "ContextUsage"]);
+    expect(Object.keys(Chat)).toEqual(["Tasks", "Timeline", "Message", "Activity", "Composer", "ContextUsage", "ContextPopup"]);
     for (const legacyExport of ["ChatTimeline", "ChatMessage", "ChatActivity", "ChatComposer", "ChatContextUsage"]) {
       expect(legacyExport in publicUi).toBe(false);
     }
@@ -88,8 +88,7 @@ describe("@k2b/ui portable chat family", () => {
     );
 
     expect(html).toContain('role="group"');
-    expect(html).toContain('role="listbox"');
-    expect(html).toContain("/clear");
+    expect(html).not.toContain("/clear");
     expect(html).toContain("brief.pdf");
     expect(html).toContain('href="/files/brief"');
     expect(html).not.toContain("12 KB");
@@ -102,12 +101,12 @@ describe("@k2b/ui portable chat family", () => {
     expect(html).toContain('aria-label="Attachments" tabindex="0"');
     expect(html).toContain("Show in text field");
     expect(html).toContain("ti ti-text-plus");
-    expect(html).toContain('role="option"');
+    expect(html).not.toContain('role="listbox"');
     expect(html).toContain('role="menuitemradio"');
     expect(html).toContain("k2b-dropdown__copy");
   });
 
-  test("exposes the open command list as a combobox popup owned by the textarea", () => {
+  test("keeps slash drafts closed during SSR until the user positions the caret", () => {
     const commands = [
       {
         name: "clear",
@@ -132,12 +131,10 @@ describe("@k2b/ui portable chat family", () => {
       }),
     );
 
-    expect(withCommands).toContain('role="combobox"');
-    expect(withCommands).toContain('aria-autocomplete="list"');
-    expect(withCommands).toContain('aria-expanded="true"');
-    expect(withCommands).toMatch(/aria-controls="k2b-chat-commands-[^"]+"/);
-    expect(withCommands).toMatch(/aria-activedescendant="k2b-chat-commands-[^"]+-0"/);
-    expect(withCommands).toContain('tabindex="-1"');
+    expect(withCommands).not.toContain('role="listbox"');
+    expect(withCommands).not.toContain('role="combobox"');
+    expect(withCommands).not.toContain("aria-expanded");
+    expect(withCommands).not.toContain("aria-activedescendant");
 
     expect(withoutCommands).not.toContain('role="listbox"');
     expect(withoutCommands).not.toContain('role="combobox"');

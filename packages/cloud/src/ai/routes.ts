@@ -137,6 +137,7 @@ const ConversationMetadataInputSchema = z.object({
 });
 
 const ConversationProjectInputSchema = z.object({
+  onlyUnassigned: z.boolean().optional(),
   projectId: z.string().regex(AI_SHORT_ID_PATTERN).nullable(),
 });
 
@@ -671,8 +672,10 @@ export const aiRoutes = (() => {
           conversationId: conversation.id,
           ownerUserId: ctx.ownerUserId,
           projectId: project?.id ?? null,
+          onlyUnassigned: body.onlyUnassigned,
         });
         if (!result.ok) {
+          if (result.reason === "already_assigned") return respond(c, fail(err.conflict("This chat already belongs to a Project.")));
           if (result.reason === "active_turn") {
             return respond(c, fail(err.conflict("Wait for the active turn before changing the Project.")));
           }
@@ -825,6 +828,7 @@ export const aiRoutes = (() => {
         const resourceParts = conversation.draft.content.filter((part) => part.type === "resource");
         const turnContent = conversation.draft.content.map((part) => {
           if (part.type === "text") return { type: "text" as const, text: part.text };
+          if (part.type === "project-file") return { type: "text" as const, text: `Project file: ${part.path}` };
           if (part.type === "file") {
             return { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size };
           }

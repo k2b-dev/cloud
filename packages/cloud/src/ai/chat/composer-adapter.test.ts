@@ -8,12 +8,29 @@ import {
   aiComposerAttachmentRecords,
   aiComposerFileAccept,
   aiComposerSendInput,
+  aiComposerDraft,
   createAiPastedTextFile,
   readAiComposerFiles,
   shouldAttachAiPastedText,
 } from "./composer-adapter";
 
 describe("Cloud chat composer adapter", () => {
+  test("round-trips ordered Skill, file and Project file mentions through a saved draft", () => {
+    const content = [
+      { type: "text" as const, text: "Use " },
+      { type: "resource" as const, inline: true, ref: { type: "core.ai.skill", id: "Sk2345" }, title: "Invoices", icon: "ti ti-sparkles" },
+      { type: "text" as const, text: " with " },
+      { type: "file" as const, inline: true, path: "/bill.pdf", mediaType: "application/pdf", size: 12, version: 4 },
+      { type: "text" as const, text: " and " },
+      { type: "project-file" as const, inline: true, path: "/project/rules.md" },
+    ];
+    const draft = aiComposerDraft(content);
+    expect(draft.text).toBe("Use Invoices with bill.pdf and /project/rules.md");
+    expect(draft.mentions).toHaveLength(3);
+    const serialized = aiComposerSendInput({ intent: "queue", text: draft.text, mentions: draft.mentions, attachments: aiChatAttachments(draft.attachments) });
+    expect(serialized.draftContent).toEqual(content);
+    expect(serialized.resources).toBeUndefined();
+  });
   test("promotes long or overflowing pasted text to one plain-text file", () => {
     expect(shouldAttachAiPastedText("short", 0)).toBe(false);
     expect(shouldAttachAiPastedText("x".repeat(AI_PASTED_TEXT_ATTACHMENT_THRESHOLD), 0)).toBe(true);

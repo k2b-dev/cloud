@@ -32,6 +32,45 @@ const insertUser = async (label: string): Promise<string> => {
 };
 
 describe.skipIf(!databaseReady)("aiSkills (integration)", () => {
+  test("search ranks names and descriptions, tolerates typos, and checks access before limiting", async () => {
+    const userId = await insertUser("search"), otherId = await insertUser("search-other");
+    const owner = { type: "user" as const, userId }, other = { type: "user" as const, userId: otherId };
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const skills: Awaited<ReturnType<typeof aiSkills.create>>[] = [];
+    try {
+      skills.push(await aiSkills.create({ subject: owner, name: `zz-invoices-${suffix}`, description: "Match receipts to bank transactions.", instructions: "Private instructions never searched." }));
+      skills.push(await aiSkills.create({ subject: owner, name: `aa-ledger-${suffix}`, description: "Process invoices and reconcile accounting.", instructions: "Do the work." }));
+      skills.push(await aiSkills.create({ subject: other, name: `secret-invoices-${suffix}`, description: "Private invoices.", instructions: "Do the work." }));
+      const exact = await aiSkills.search(owner, `zz-invoices-${suffix}`, 1);
+      expect(exact.skills.map(skill => skill.id)).toEqual([skills[0]!.id]);
+      const fuzzy = await aiSkills.search(owner, "invioces", 1);
+      expect(fuzzy.skills.map(skill => skill.id)).toEqual([skills[0]!.id]);
+      expect(fuzzy.more).toBe(true);
+      expect((await aiSkills.search(owner, "reciepts transactions")).skills.map(skill => skill.id)).toEqual([skills[0]!.id]);
+      expect((await aiSkills.search(owner, "secret")).skills).toEqual([]);
+      expect((await aiSkills.search(owner, "Private instructions")).skills).toEqual([]);
+      expect((await aiSkills.search(owner, "%%%" )).skills).toEqual([]);
+      await aiSkills.setEnabled(skills[0]!.id, owner, false);
+      expect((await aiSkills.search(owner, "receipts")).skills).toEqual([]);
+      expect((await aiSkills.list(owner)).some(skill => skill.id === skills[0]!.id && !skill.enabled)).toBe(true);
+      await aiSkills.setEnabled(skills[0]!.id, owner, true);
+      // The result must remain discoverable beyond the old 200-row catalog cap.
+      await sql`INSERT INTO ai.skills (short_id, name, description, instructions)
+        SELECT 't' || lpad(n::text, 5, '0'), 'a-padding-' || ${suffix} || '-' || n, 'Other work', 'Work'
+        FROM generate_series(1, 201) n`;
+      await sql`INSERT INTO ai.skill_access(skill_id, access_id, short_id)
+        SELECT padding.id, original.access_id, padding.short_id FROM ai.skills padding
+        CROSS JOIN ai.skill_access original WHERE original.skill_id = ${skills[0]!.id}::uuid
+        AND padding.name LIKE ${'a-padding-' + suffix + '-%'} `;
+      expect((await aiSkills.search(owner, "receipts")).skills.map(skill => skill.id)).toEqual([skills[0]!.id]);
+      expect((await aiSkills.search(owner, "reciepts")).skills.map(skill => skill.id)).toEqual([skills[0]!.id]);
+    } finally {
+      await sql`DELETE FROM ai.skills WHERE name LIKE ${'a-padding-' + suffix + '-%'}`;
+      for (const skill of skills) await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherId}::uuid)`;
+    }
+  });
+
   test("grant revisions serialize reviewed changes and keep the last administrator", async () => {
     const ownerId = await insertUser("access-owner"), otherId = await insertUser("access-reader");
     const owner = { type: "user" as const, userId: ownerId };

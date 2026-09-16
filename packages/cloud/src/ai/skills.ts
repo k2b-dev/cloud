@@ -11,6 +11,7 @@ import {
   type Principal,
 } from "../server/services/access";
 import { toPgUuidArray } from "../services/postgres";
+import { aiSkillSearchSql, withAiSkillSearch } from "./skill-search";
 import { mountAiSkillFilePath } from "./file-mount";
 import { AI_SHORT_ID_PATTERN, withAiShortIdForDb } from "./short-id";
 import {
@@ -127,7 +128,7 @@ type SkillAccessRow = {
   display_name: string | null;
 };
 
-type SkillSummaryRow = SkillRow & {
+type SkillSummaryRow = Pick<SkillRow, "id" | "short_id" | "name" | "description" | "revision" | "created_at" | "updated_at"> & {
   permission: AiSkillPermission;
   reference_count: number;
   enabled: boolean;
@@ -565,11 +566,15 @@ export const aiSkills = {
     });
   },
 
-  async list(subject: AccessSubject | null): Promise<AiSkillSummary[]> {
+  async list(subject: AccessSubject | null, options: { query?: string; enabledOnly?: boolean; limit?: number } = {}): Promise<AiSkillSummary[]> {
     const match = accessMatch(subject);
     const userId = subject?.type === "user" ? subject.userId : null;
-    const rows = await sql<SkillSummaryRow[]>`
-      SELECT skill.*,
+    const query = (options.query ?? "").trim().slice(0, 200);
+    const limit = Math.max(1, Math.min(201, options.limit ?? 200));
+    const rows = await withAiSkillSearch(query, async (bm25) => {
+      const search = aiSkillSearchSql(query, bm25);
+      return sql<SkillSummaryRow[]>`
+      SELECT skill.id, skill.short_id, skill.name, skill.description, skill.revision, skill.created_at, skill.updated_at,
              (array_agg(access.permission ORDER BY
                CASE access.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END DESC
              ))[1] AS permission,
@@ -582,10 +587,12 @@ export const aiSkills = {
       LEFT JOIN ai.skill_user_disabled disabled
         ON disabled.skill_id = skill.id AND disabled.user_id = ${userId}::uuid
       WHERE access.permission <> 'none' AND ${match}
+        AND (${!options.enabledOnly} OR disabled.user_id IS NULL) AND ${search.matches}
       GROUP BY skill.id, disabled.user_id
-      ORDER BY skill.name, skill.id
-      LIMIT 200
+      ORDER BY ${search.rank} DESC, ${search.textRank} DESC, skill.name, skill.id
+      LIMIT ${limit}
     `;
+    });
     return rows.map((row) => ({
       id: row.id,
       shortId: row.short_id,
@@ -598,6 +605,12 @@ export const aiSkills = {
       createdAt: iso(row.created_at),
       updatedAt: iso(row.updated_at),
     }));
+  },
+
+  async search(subject: AccessSubject | null, query: string, limit = 30): Promise<{ skills: AiSkillSummary[]; more: boolean }> {
+    const size = Math.max(1, Math.min(200, limit));
+    const skills = await aiSkills.list(subject, { query, enabledOnly: true, limit: size + 1 });
+    return { skills: skills.slice(0, size), more: skills.length > size };
   },
 
   async get(skillId: string, subject: AccessSubject | null, required: AiSkillPermission = "read"): Promise<AiSkill | null> {

@@ -87,3 +87,18 @@ There is no automatic format conversion.
 Dictation errors stay in a notification until you close it. Choose **Retry**
 to repeat the failed step. Closing the notification does not discard the
 recording: its control still offers **Retry** and **Discard**.
+
+## Select slash commands and context
+
+Type `/` at a word boundary anywhere in the composer. Search by name or narrow
+the results with `/skill`, `/app`, `/file`, or `/project`. Arrow keys and Enter
+or Tab select a result; Escape closes suggestions and keeps your draft.
+Suggestions temporarily replace the task list above the composer.
+
+`/compact` compacts the chat, `/fork` branches after the latest response, and
+`/new` opens a new chat. Skills, apps, and files appear as highlighted references.
+Selected Skills load for the next response. Mentioning an app does not run it.
+
+You can permanently assign a Project once to a chat without a Project. Its
+instructions and files apply to future responses, and Project suggestions then
+disappear. Active and queued messages must finish before assignment.

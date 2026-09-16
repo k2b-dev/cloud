@@ -12,6 +12,7 @@ export {
   aiComposerAttachmentRecords,
   aiComposerFileAccept,
   aiComposerSendInput,
+  aiComposerDraft,
   createAiPastedTextFile,
   readAiComposerFiles,
   shouldAttachAiPastedText,

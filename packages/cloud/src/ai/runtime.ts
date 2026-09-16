@@ -1,3 +1,4 @@
+import { parseAiResourceMarker } from "./resource-markers";
 import { aiQuotas } from "./quotas";
 import { drainQueuedMessages } from "./message-queue";
 import { coreSettings } from "../services/settings/api";
@@ -143,6 +144,10 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
   if (input.assistantChat && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id);
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
+    selectedSkillIds: [...new Set((userMessage.role === "user" ? userMessage.content : []).flatMap(part => {
+      const marker = parseAiResourceMarker(typeof part === "string" ? part : part.type === "text" ? part.text : "");
+      return marker?.ref.type === "core.ai.skill" ? [marker.ref.id] : [];
+    }))],
     ...(input.assistantChat ? { assistantChat: true } : {}),
     input: canonicalInput,
     chatId: input.chatId,

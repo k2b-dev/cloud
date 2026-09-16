@@ -40,6 +40,27 @@ describe("global AI route registration", () => {
 });
 
 suite("global AI conversation boundaries", () => {
+  test("assigns a Project only once even when two requests race", async () => {
+    const userId = await insertUser();
+    const subject = { type: "user" as const, userId };
+    const first = await aiProjects.create({ subject, name: "First" });
+    const second = await aiProjects.create({ subject, name: "Second" });
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const results = await Promise.all([first, second].map(project => aiConversations.setConversationProject({
+        conversationId: chat.id, ownerUserId: userId, projectId: project.id, onlyUnassigned: true,
+      })));
+      expect(results.filter(result => result.ok)).toHaveLength(1);
+      expect(results.filter(result => !result.ok)).toEqual([{ ok: false, reason: "already_assigned" }]);
+      expect(await aiConversations.setConversationProject({
+        conversationId: chat.id, ownerUserId: userId, projectId: null, onlyUnassigned: true,
+      })).toEqual({ ok: false, reason: "already_assigned" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM ai.projects WHERE id IN (${first.id}::uuid,${second.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
   test("an upload storage failure produces a safe correlated diagnostic", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ownerUserId:userId});

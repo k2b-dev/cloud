@@ -38,6 +38,16 @@ const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
 afterEach(() => mock.restore());
 
 describe("AI Skill routes", () => {
+  test("search query uses the shared enabled Skill search and rejects oversized queries", async () => {
+    const search = spyOn(aiSkills, "search").mockResolvedValue({ skills: [skill()], more: false });
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
+    const response = await routes.request("/?q=reciepts");
+    expect(response.status).toBe(200);
+    expect(search).toHaveBeenCalledWith(subject, "reciepts");
+    expect((await response.json()).skills[0].id).toBe(skillShortId);
+    expect((await routes.request("/?q=" + "x".repeat(201))).status).toBe(400);
+  });
+
   test("previews a built-in template without reading or overwriting an installed Skill", async () => {
     const read = spyOn(aiSkills, "getByShortId");
     const update = spyOn(aiSkills, "update");

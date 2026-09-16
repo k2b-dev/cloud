@@ -86,3 +86,21 @@ Fehlerhinweise bleiben als Benachrichtigung sichtbar, bis du sie schließt.
 „Erneut versuchen“ wiederholt den fehlgeschlagenen Schritt. Das Schließen
 verwirft die Aufnahme nicht: Am Icon bleiben „Erneut versuchen“ und „Verwerfen“
 erreichbar.
+
+## Slash-Befehle und Kontext auswählen
+
+Tippe `/` an einer Wortgrenze im Eingabefeld, auch mitten im Text. Suche nach
+einem Namen oder grenze mit `/skill`, `/app`, `/file` oder `/project` ein.
+Pfeiltasten und Enter oder Tab wählen einen Treffer aus; Escape schließt die
+Vorschläge und erhält deinen Entwurf. Die Vorschläge ersetzen vorübergehend
+die Aufgabenanzeige über dem Eingabefeld.
+
+`/compact` kompaktiert den Chat, `/fork` zweigt ihn nach der letzten Antwort ab
+und `/new` öffnet einen neuen Chat. Skills, Apps und Dateien erscheinen als
+hervorgehobene Referenzen. Ausgewählte Skills werden für die nächste Antwort
+geladen. Eine App-Erwähnung führt noch keine Aktion aus.
+
+Ein Projekt kannst du einem Chat ohne Projekt einmalig dauerhaft zuordnen.
+Danach gelten seine Anweisungen und Dateien für neue Antworten; Projekt-Treffer
+verschwinden aus dem Slash-Menü. Laufende oder wartende Nachrichten müssen
+vorher abgeschlossen sein.

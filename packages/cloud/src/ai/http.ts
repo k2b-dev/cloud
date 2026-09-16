@@ -21,21 +21,24 @@ import { isAiSettingsError } from "./validate";
 
 export const AiDraftContentPartSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string().max(20_000) }),
-  AiResourceMarkerSchema.extend({ type: z.literal("resource") }),
+  AiResourceMarkerSchema.extend({ type: z.literal("resource"), inline: z.boolean().optional() }),
   z.object({
     type: z.literal("file"),
     path: z.string().trim().min(1).max(500),
     mediaType: z.string().trim().min(1).max(120),
     size: z.number().int().min(0),
     version: z.number().int().min(1),
+    inline: z.boolean().optional(),
   }),
+  z.object({ type: z.literal("project-file"), path: z.string().min(1).max(500).startsWith("/project/"), inline: z.boolean().optional() }),
 ]);
 
 export const AiConversationDraftInputSchema = z
   .object({
-    content: z.array(AiDraftContentPartSchema).max(20),
+    content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
   })
   .superRefine((value, context) => {
+    if (value.content.reduce((length, part) => length + (part.type === "text" ? part.text.length : 0), 0) > 20_000) context.addIssue({ code: "custom", path: ["content"], message: "Draft text exceeds 20000 characters" });
     if (value.content.filter((part) => part.type !== "text").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
       context.addIssue({ code: "custom", path: ["content"], message: `A draft can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items` });
     }
@@ -43,7 +46,7 @@ export const AiConversationDraftInputSchema = z
 
 export const AiInitialConversationDraftInputSchema = z
   .object({
-    content: z.array(z.union([AiDraftContentPartSchema.options[0], AiDraftContentPartSchema.options[1]])).max(20),
+    content: z.array(z.union([AiDraftContentPartSchema.options[0], AiDraftContentPartSchema.options[1]])).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
   })
   .superRefine((value, context) => {
     if (value.content.filter((part) => part.type === "resource").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
@@ -122,7 +125,7 @@ export const AiTurnInputSchema = z
     content: z
       .array(AiUserContentPartSchema)
       .min(1)
-      .max(AI_TURN_ATTACHMENT_MAX_ITEMS + 1)
+      .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1)
       .optional(),
     modelProfileId: z.string().trim().min(1).optional(),
     clientToolIds: z.array(AiClientToolIdSchema).max(1 + CODE_RUNTIME_TOOL_NAMES.length).refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique").optional(),
@@ -169,7 +172,7 @@ export const AiMessageRetryInputSchema = z
     content: z
       .array(AiUserContentPartSchema)
       .min(1)
-      .max(AI_TURN_ATTACHMENT_MAX_ITEMS + 1)
+      .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1)
       .optional(),
     modelProfileId: z.string().trim().min(1).optional(),
   })

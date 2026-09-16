@@ -21,6 +21,7 @@ export type AiForkMessageInput = {
 };
 
 export type AiComposerAttachment =
+  | { kind: "project-file"; id: string; name: string; path: string; icon: string }
   | {
       kind: "image";
       id: string;

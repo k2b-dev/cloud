@@ -97,8 +97,8 @@ export const artifactClient = {
     await checked(response);
     return z.object({runtime:z.string(),code:z.string()}).parse(await response.json());
   },
-  list: async (page = 1) => {
-    const response = await client.$get({ query: { page: String(page) } });
+  list: async (page = 1, q?: string, signal?: AbortSignal, conversationId?: string) => {
+    const response = await client.$get({ query: { page: String(page), q, conversationId } }, { init: { signal } });
     await checked(response); return response.json();
   },
   get: async (id: string, published = false, version?: number, conversationId?: string) => {

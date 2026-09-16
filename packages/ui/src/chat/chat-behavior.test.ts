@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ChatCommand } from "./ChatComposer";
 import {
-  filterChatCommands,
   executeChatAction,
   isChatNearBottom,
   nextChatCommandIndex,
@@ -10,12 +8,6 @@ import {
   runChatSubmission,
 } from "./chat-behavior";
 import type { ChatAttachment } from "./types";
-
-const commands: ChatCommand[] = [
-  { name: "clear", description: "Clear the conversation", action: () => undefined },
-  { name: "compact", description: "Compact the context", action: () => undefined },
-  { name: "help", description: "Show help", action: () => undefined },
-];
 
 type Draft = { value: string; attachments: readonly ChatAttachment[] };
 
@@ -53,14 +45,6 @@ describe("@k2b/ui chat behavior", () => {
     });
 
     expect(selected).toEqual(["retry"]);
-  });
-
-  test("matches only a single slash command token", () => {
-    expect(filterChatCommands("/", commands)).toHaveLength(3);
-    expect(filterChatCommands("/co", commands).map((command) => command.name)).toEqual(["compact"]);
-    expect(filterChatCommands("/unknown", commands)).toEqual([]);
-    expect(filterChatCommands("/clear now", commands)).toEqual([]);
-    expect(filterChatCommands("clear", commands)).toEqual([]);
   });
 
   test("wraps slash command navigation in both directions", () => {

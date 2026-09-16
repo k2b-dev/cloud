@@ -57,7 +57,12 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
   new Hono<AuthContext>()
     .use(dependencies.limit ?? rateLimit())
     .use("*", dependencies.authenticate ?? auth.requireRole("*"))
-    .get("/", async (c) => respond(c, ok({ skills: (await aiSkills.list(c.get("accessSubject") ?? null)).map(publicSummary) })))
+    .get("/", v("query", z.object({ q: z.string().trim().max(200).optional() })), async (c) => {
+      const subject = c.get("accessSubject") ?? null;
+      const { q } = c.req.valid("query");
+      const skills = q === undefined ? await aiSkills.list(subject) : (await aiSkills.search(subject, q)).skills;
+      return respond(c, ok({ skills: skills.map(publicSummary) }));
+    })
     .get("/templates/:name", dependencies.authenticate ?? auth.requireRole("authenticated"), (c) => {
       if (!c.get("accessSubject")) return respond(c, fail(err.forbidden("Skill templates require an authenticated access subject.")));
       const template = getBuiltinAiSkillTemplate(c.req.param("name"));

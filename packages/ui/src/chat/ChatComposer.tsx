@@ -1,12 +1,16 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onMount, onCleanup, untrack, Show } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { SelectChip } from "../inputs/SelectChip";
 import { useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
-import { executeChatAction, filterChatCommands, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
-import type { ChatAction, ChatAttachment, ChatComposerState, ChatContextUsageData, ChatModelOption, ChatSubmitInput } from "./types";
+import { executeChatAction, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
+import type { ChatAction, ChatAttachment, ChatMention, ChatComposerState, ChatContextUsageData, ChatModelOption, ChatSubmitInput } from "./types";
+
+import { chatCommandQuery, chatMentionSegments, reconcileChatMentions } from "./composer-document";
 
 const composerMaxInputHeight = 309;
+// Keep editor undo text within approximately 2 MiB, plus the current edit.
+const composerUndoBudgetChars = 1_000_000;
 
 export type ChatCommandContext = {
   setValue: (value: string) => void;
@@ -18,7 +22,11 @@ export type ChatCommand = {
   name: string;
   description: string;
   icon?: string;
-  action: (context: ChatCommandContext) => void | Promise<void>;
+  action?: (context: ChatCommandContext) => void | Promise<void>;
+  /** Selecting a reference inserts its display name and retains its opaque payload. */
+  mention?: ChatAttachment;
+  label?: string;
+  disabled?: boolean;
 };
 
 export type ChatFileSelection = {
@@ -53,6 +61,11 @@ export type ChatComposerProps = {
   /** Compact application-owned details immediately after the model selector. */
   modelDetails?: JSX.Element;
   commands?: readonly ChatCommand[];
+  searchCommands?: (query: string, signal: AbortSignal) => Promise<readonly ChatCommand[]>;
+  mentions?: readonly ChatMention[];
+  onMentionsChange?: (mentions: readonly ChatMention[]) => void;
+  /** Shared surface above the editor; suggestions temporarily replace this content. */
+  accessory?: JSX.Element;
   contextUsage?: ChatContextUsageData;
   contextActions?: readonly ChatAction[];
   /** Optional action inside the context details popup. */
@@ -69,6 +82,7 @@ export type ChatComposerProps = {
   disabled?: boolean;
   error?: string;
   focusToken?: unknown;
+  draftKey?: unknown;
   class?: string;
 };
 
@@ -92,13 +106,103 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const stopping = () => state() === "stopping";
   const runningSubmitIntent = () => props.runningSubmitIntent ?? "steer";
   const attachments = () => props.attachments ?? [];
-  const commands = () => props.commands ?? [];
-  const commandMatches = createMemo(() => filterChatCommands(props.value, commands()));
-  const commandsOpen = () => commandMatches().length > 0;
+  const [caret, setCaret] = createSignal(0);
+  const [selectionEnd, setSelectionEnd] = createSignal(0);
+  const [dismissed, setDismissed] = createSignal(false);
+  const [composing, setComposing] = createSignal(false);
+  const [searchResults, setSearchResults] = createSignal<readonly ChatCommand[]>([]);
+  const [searching, setSearching] = createSignal(false);
+  const [searchError, setSearchError] = createSignal(false);
+  const [executing, setExecuting] = createSignal(false);
+  let highlightRef: HTMLDivElement | undefined;
+  let commandListRef: HTMLDivElement | undefined;
+  const mentions = () => props.mentions ?? [];
+  const commandQuery = createMemo(() => dismissed() || composing() ? null : chatCommandQuery(props.value, caret(), selectionEnd()));
+  const commandMatches = createMemo(() => {
+    const token = commandQuery();
+    if (!token) return [];
+    return [...(props.commands ?? []).filter(command => command.name.toLowerCase().includes(token.query.toLowerCase())), ...searchResults()];
+  });
+  const commandsOpen = () => Boolean(commandQuery() && (props.commands?.length || props.searchCommands));
+  createEffect(() => {
+    if (!commandsOpen()) return;
+    let disposed = false;
+    const measure = () => {
+      if (disposed || !commandListRef) return;
+      let top = window.visualViewport?.offsetTop ?? 0;
+      for (let parent = commandListRef.parentElement; parent; parent = parent.parentElement) {
+        if (/(auto|scroll|hidden|clip)/.test(window.getComputedStyle(parent).overflowY)) {
+          top = Math.max(top, parent.getBoundingClientRect().top);
+        }
+      }
+      const bottom = commandListRef.parentElement!.getBoundingClientRect().bottom;
+      commandListRef.style.setProperty("--k2b-chat-command-space", `${Math.max(40, bottom - top - 8)}px`);
+    };
+    queueMicrotask(measure);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    window.visualViewport?.addEventListener("resize", measure);
+    onCleanup(() => {
+      disposed = true;
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+      window.visualViewport?.removeEventListener("resize", measure);
+    });
+  });
+  createEffect(() => {
+    const token = commandQuery();
+    setSearchResults([]);
+    setSearchError(false);
+    if (!token || !props.searchCommands) { setSearching(false); return; }
+    const abort = new AbortController();
+    setSearching(true);
+    const timer = setTimeout(() => {
+      Promise.resolve(props.searchCommands!(token.query, abort.signal)).then(results => {
+        if (!abort.signal.aborted) setSearchResults(results);
+      }).catch(() => { if (!abort.signal.aborted) setSearchError(true); }).finally(() => {
+        if (!abort.signal.aborted) setSearching(false);
+      });
+    }, 120);
+    onCleanup(() => { clearTimeout(timer); abort.abort(); });
+  });
+  const history: { value: string; mentions: readonly ChatMention[]; caret: number }[] = [];
+  let historyIndex = -1;
+  createEffect(() => { props.draftKey; untrack(() => { history.length = 0; historyIndex = -1; setDismissed(true); }); });
+  const snapshot = () => ({ value: props.value, mentions: [...mentions()], caret: textareaRef?.selectionStart ?? 0 });
+  const sameMentions = (a: readonly ChatMention[], b: readonly ChatMention[]) => a.length === b.length && a.every((item, index) => item.start === b[index]?.start && item.end === b[index]?.end && item.attachment === b[index]?.attachment);
+  const record = () => {
+    if (history[historyIndex]?.value !== props.value || !sameMentions(history[historyIndex]?.mentions ?? [], mentions())) {
+      history.splice(historyIndex + 1);
+      history.push(snapshot());
+      let size = history.reduce((total, entry) => total + entry.value.length, 0);
+      while (history.length > 2 && size > composerUndoBudgetChars) size -= history.shift()!.value.length;
+      historyIndex = history.length - 1;
+    }
+  };
+  const edit = (value: string, nextMentions = reconcileChatMentions(props.value, value, mentions())) => {
+    record();
+    props.onValueChange(value);
+    props.onMentionsChange?.(nextMentions);
+    record();
+    setDismissed(false);
+  };
+  const restoreHistory = (direction: -1 | 1) => {
+    record();
+    const next = history[historyIndex + direction];
+    if (!next) return;
+    historyIndex += direction;
+    props.onValueChange(next.value);
+    props.onMentionsChange?.(next.mentions);
+    queueMicrotask(() => { textareaRef?.setSelectionRange(next.caret, next.caret); syncCaret(); });
+  };
+  const syncCaret = () => {
+    setCaret(textareaRef?.selectionStart ?? props.value.length);
+    setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
+  };
   const selectedCommand = () => commandMatches()[selectedCommandIndex()];
-  const blocked = () => Boolean(props.disabled || stopping() || state() === "submitting" || addingFiles() || submitting());
+  const blocked = () => Boolean(props.disabled || stopping() || state() === "submitting" || executing() || addingFiles() || submitting());
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
-  const canSubmit = () => !blocked() && hasDraft();
+  const canSubmit = () => !blocked() && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
   const hasContextUsage = () => {
@@ -150,6 +254,20 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   createEffect(() => {
     commandMatches();
     setSelectedCommandIndex(0);
+  });
+
+  createEffect(() => {
+    const index = selectedCommandIndex();
+    commandMatches();
+    queueMicrotask(() => {
+      const list = commandListRef;
+      const item = list?.querySelector<HTMLElement>(`[id="${commandListId}-${index}"]`);
+      if (!list || !item?.isConnected) return;
+      if (item.offsetTop < list.scrollTop) list.scrollTop = item.offsetTop;
+      else if (item.offsetTop + item.offsetHeight > list.scrollTop + list.clientHeight) {
+        list.scrollTop = item.offsetTop + item.offsetHeight - list.clientHeight;
+      }
+    });
   });
 
   createEffect(() => {
@@ -207,10 +325,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const intent = running() ? runningSubmitIntent() : "send";
     const previousValue = props.value;
     const previousAttachments = attachments();
+    const previousMentions = mentions();
     const input: ChatSubmitInput = {
       intent,
-      text: previousValue.trim(),
-      attachments: intent === "send" ? previousAttachments : [],
+      text: previousValue,
+      mentions: previousMentions,
+      attachments: intent !== "steer" ? previousAttachments : [],
     };
 
     setSubmitting(true);
@@ -218,12 +338,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       await runChatSubmission({
         clear: () => {
           props.onValueChange("");
-          if (intent === "send") setAttachments([]);
+          props.onMentionsChange?.([]);
+          if (intent !== "steer") setAttachments([]);
         },
         perform: () => props.onSubmit(input),
         restore: () => {
           props.onValueChange(previousValue);
-          if (intent === "send") setAttachments(previousAttachments);
+          props.onMentionsChange?.(previousMentions);
+          if (intent !== "steer") setAttachments(previousAttachments);
         },
         onError: props.onError,
       });
@@ -237,31 +359,46 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
 
   const executeCommand = async (command: ChatCommand) => {
-    props.onValueChange("");
+    const token = commandQuery();
+    if (!token || command.disabled || blocked()) return;
+    const previous = snapshot();
+    const key = props.draftKey;
+    const replacement = command.mention ? command.mention.name + " " : "";
+    const nextValue = props.value.slice(0, token.start) + replacement + props.value.slice(token.end);
+    const nextMentions = reconcileChatMentions(props.value, nextValue, mentions());
+    if (command.mention) nextMentions.push({ start: token.start, end: token.start + command.mention.name.length, attachment: command.mention });
+    edit(nextValue, nextMentions);
+    setDismissed(true);
+    setExecuting(true);
+    let submitRequested = false;
     try {
-      await command.action({
-        setValue: props.onValueChange,
-        submit: () => void submit(),
-        focus,
-      });
+      await command.action?.({ setValue: value => edit(value), submit: () => { submitRequested = true; }, focus });
     } catch (error) {
+      submitRequested = false;
+      if (props.draftKey === key && props.value === nextValue) { props.onValueChange(previous.value); props.onMentionsChange?.(previous.mentions); }
       props.onError?.(error);
-    }
+    } finally { setExecuting(false); }
+    if (submitRequested && props.draftKey === key) await submit();
     queueMicrotask(() => {
-      autoResize();
-      focus();
+      if (props.draftKey !== key) return;
+      textareaRef?.setSelectionRange(token.start + replacement.length, token.start + replacement.length);
+      syncCaret(); autoResize(); focus();
     });
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.isComposing || composing()) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault(); restoreHistory(event.shiftKey ? 1 : -1); return;
+    }
     const matches = commandMatches();
-    if (matches.length > 0) {
+    if (commandsOpen()) {
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
         event.preventDefault();
         setSelectedCommandIndex((index) => nextChatCommandIndex(index, matches.length, event.key === "ArrowUp" ? -1 : 1));
         return;
       }
-      if (event.key === "Enter" || event.key === "Tab") {
+      if ((event.key === "Enter" || event.key === "Tab") && matches.length > 0) {
         event.preventDefault();
         const command = selectedCommand();
         if (command) void executeCommand(command);
@@ -269,7 +406,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        props.onValueChange("");
+        setDismissed(true);
         return;
       }
     }
@@ -280,6 +417,28 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
 
   return (
+    <div class="k2b-chat-composer-shell">
+    <Show when={commandsOpen() || props.accessory}>
+      <div class="k2b-chat-composer-slot">
+      <div style={{ visibility: commandsOpen() ? "hidden" : undefined }} inert={commandsOpen()}>{props.accessory}</div>
+      <Show when={commandsOpen()}><div class="k2b-chat-composer-accessory">
+        <div ref={commandListRef} id={commandListId} class="k2b-chat-composer__commands" role="listbox" aria-label={messages().commands}>
+          <For each={commandMatches()}>{(command, index) =>
+            <button id={`${commandListId}-${index()}`} type="button" role="option" tabIndex={-1}
+              aria-selected={index() === selectedCommandIndex()} aria-disabled={command.disabled}
+              data-active={index() === selectedCommandIndex() ? "true" : undefined}
+              onPointerDown={event => event.preventDefault()} onClick={() => void executeCommand(command)}>
+              <i class={command.icon ?? "ti ti-slash"} aria-hidden="true" />
+              <strong>{command.label ?? `/${command.name}`}</strong><small>{command.description}</small>
+            </button>
+          }</For>
+          <Show when={searching()}><div role="status" class="k2b-chat-composer__loading"><i class="ti ti-loader-2 k2b-spin" aria-hidden="true" /><strong>{messages().loading}</strong></div></Show>
+          <Show when={searchError()}><div role="status"><i class="ti ti-alert-circle" /> {messages().error}</div></Show>
+          <Show when={!searching() && !searchError() && commandMatches().length === 0}><div role="status">{messages().noResults}</div></Show>
+        </div>
+      </div></Show>
+      </div>
+    </Show>
     <section
       ref={composerRef}
       class={`k2b-chat-composer ${props.class ?? ""}`}
@@ -288,31 +447,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       role="group"
       aria-label={props.label ?? messages().messageComposer}
     >
-      <Show when={commandsOpen()}>
-        <div id={commandListId} class="k2b-chat-composer__commands" role="listbox" aria-label={messages().commands}>
-          <For each={commandMatches()}>
-            {(command, index) => (
-              <button
-                id={`${commandListId}-${index()}`}
-                type="button"
-                role="option"
-                tabIndex={-1}
-                aria-selected={index() === selectedCommandIndex()}
-                data-active={index() === selectedCommandIndex() ? "true" : undefined}
-                onPointerDown={(event) => event.preventDefault()}
-                onClick={() => void executeCommand(command)}
-              >
-                <i class={command.icon ?? "ti ti-slash"} aria-hidden="true" />
-                <span>
-                  <strong>/{command.name}</strong>
-                  <small>{command.description}</small>
-                </span>
-              </button>
-            )}
-          </For>
-        </div>
-      </Show>
-
       <Show when={attachments().length > 0}>
         <div class="k2b-chat-composer__attachments" role="list" aria-label={messages().attachments} tabIndex={0}>
           <For each={attachments()}>
@@ -414,9 +548,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             {messages().dropFilesToAttach}
           </div>
         </Show>
+        <Show when={mentions().length > 0}><div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
+          <For each={chatMentionSegments(props.value, mentions())}>{part => <span classList={{ "k2b-chat-composer__mention": Boolean(part.mention) }}>{part.text}</span>}</For>{"\n"}
+        </div></Show>
         {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: popup attributes are conditional with the combobox role */}
         <textarea
           ref={textareaRef}
+          classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
           rows={1}
           value={props.value}
           disabled={blocked()}
@@ -428,8 +566,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           aria-expanded={commandsOpen() ? "true" : undefined}
           aria-activedescendant={selectedCommand() ? `${commandListId}-${selectedCommandIndex()}` : undefined}
           onInput={(event) => {
-            props.onValueChange(event.currentTarget.value);
-            autoResize();
+            edit(event.currentTarget.value);
+            syncCaret(); autoResize();
           }}
           onPaste={(event) => {
             const clipboardData = event.clipboardData;
@@ -439,6 +577,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               return;
             }
             props.onPaste?.(event);
+          }}
+          onSelect={syncCaret}
+          onBlur={() => setDismissed(true)}
+          onClick={() => { setDismissed(false); syncCaret(); }}
+          onKeyUp={syncCaret}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => { setComposing(false); syncCaret(); }}
+          onScroll={() => { if (highlightRef && textareaRef) highlightRef.scrollTop = textareaRef.scrollTop; }}
+          onBeforeInput={event => {
+            if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
+              event.preventDefault(); restoreHistory(event.inputType === "historyUndo" ? -1 : 1);
+            }
           }}
           onKeyDown={onKeyDown}
         />
@@ -582,5 +732,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         </Show>
       </footer>
     </section>
+    </div>
   );
 }

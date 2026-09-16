@@ -506,3 +506,40 @@ visible while browsing a long app.
 Completed working plans hide automatically once every task is completed or cancelled.
 A checklist action beside context usage reopens or hides the saved plan. New open
 tasks restore the plan automatically; switching chats resets the disclosure.
+
+## Select commands and inline context
+
+Assistant recognizes `/` at a word boundary anywhere in the composer. Type a
+name, or narrow the suggestions with `/skill`, `/app`, `/file`, or `/project`
+followed by a search term. Select with the arrow keys and Enter or Tab; Escape
+closes the menu without changing the draft. URLs, paths, and code remain text.
+Suggestions temporarily replace the task list above the composer. Each result
+occupies one line; closing the menu restores the task list and its open state.
+
+`/compact`, `/fork`, and `/new` use the existing chat actions. Fork starts from
+the latest assistant response. Commands preserve the surrounding draft. Skills,
+Studio apps, and files insert highlighted references. Editing a reference's
+label turns it into ordinary text; undo restores its identity. Saving and
+reopening a draft preserves references, including versioned conversation files.
+Project file references name a read-only path in the current Project.
+
+Selecting a Project permanently assigns a previously unassigned chat. Future
+turns use that Project's instructions and files. Project results disappear once
+the chat belongs to a Project. A stale selection cannot replace an existing
+assignment, and assignment waits until active and queued work has finished.
+
+An explicitly attached Skill is loaded on the server for that turn, using the
+same permission checks and pinned revision as `load_skill`. Reference files are
+still read on demand. A restricted tool scope or revoked Skill produces an
+error; the runtime does not silently ignore the selection. Mentioning an app
+never executes it or grants access.
+
+`Chat.Composer` accepts controlled `mentions` and `onMentionsChange`, asynchronous
+`searchCommands(query, signal)`, and an `accessory` for the shared task surface.
+Set `draftKey` to the conversation or draft identity to isolate undo history.
+A command can supply an action or a `mention` containing a `ChatAttachment`;
+its payload stays application-owned. Mention offsets use the untrimmed text's
+UTF-16 positions. Use `aiComposerDraft()` to restore an ordered server draft and
+`aiComposerSendInput()` to preserve it when saving or sending. Hosts allowing
+context during an active response must handle the `queue` intent; steering
+continues to accept text only.

@@ -1,3 +1,5 @@
+import { assistantComposerCommands } from "./composer-commands";
+import { type ChatMention, reconcileChatMentions } from "@k2b/ui";
 import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import { parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
@@ -32,6 +34,7 @@ import {
   aiComposerAttachmentRecords,
   aiComposerFileAccept,
   aiComposerSendInput,
+  aiComposerDraft,
   aiLatestUsageSnapshot,
   createAiChatTimeline,
   createAiPastedTextFile,
@@ -323,7 +326,14 @@ export default function AssistantWorkspace(props: Props) {
     }
     return value;
   };
+  const [composerMentions, setComposerMentions] = createSignal<Record<string, readonly ChatMention[]>>({});
+  const mentionsFor = (key: string) => composerMentions()[key] ?? [];
+  const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
+    editComposerSession(session(key));
+    setComposerMentions(all => ({ ...all, [key]: mentions }));
+  };
   const setComposerDraft = (key: string, value: string) => {
+    setMentionsFor(key, reconcileChatMentions(composerDraft(key), value, mentionsFor(key)));
     editComposerSession(session(key));
     setComposerDrafts((current) => ({ ...current, [key]: value }));
   };
@@ -334,42 +344,10 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   const hydrateComposer = (key: string, draft: AiConversation["draft"]) => {
-    const conversation = { id: key, draft };
-    const text = conversation.draft.content
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("\n\n");
-    setComposerDrafts((current) => ({ ...current, [key]: text }));
-    const attachments = conversation.draft.content.flatMap((part): AiComposerAttachment[] => {
-      if (part.type === "resource") {
-        return [
-          {
-            kind: "resource",
-            id: `resource:${part.ref.type}:${part.ref.id}`,
-            name: part.title ?? part.ref.id,
-            ref: part.ref,
-            icon: part.icon ?? "ti ti-cloud",
-            href: part.href,
-          },
-        ];
-      }
-      if (part.type === "file") {
-        return [
-          {
-            kind: "stored-file",
-            id: `file:${part.path}:${part.version}`,
-            name: part.path.split("/").at(-1) || part.path,
-            path: part.path,
-            mediaType: part.mediaType,
-            size: part.size,
-            version: part.version,
-            icon: "ti-file",
-          },
-        ];
-      }
-      return [];
-    });
-    setComposerAttachments((current) => ({ ...current, [key]: attachments }));
+    const restored = aiComposerDraft(draft.content);
+    setComposerDrafts(current => ({ ...current, [key]: restored.text }));
+    setComposerAttachments(current => ({ ...current, [key]: restored.attachments }));
+    setComposerMentions(current => ({ ...current, [key]: restored.mentions }));
     const local = session(key);
     local.editGeneration++;
     local.baseRevision = draft.revision;
@@ -404,7 +382,7 @@ export default function AssistantWorkspace(props: Props) {
     return next;
   };
   const composerInput = (key: string) =>
-    aiComposerSendInput({ intent: "send", text: composerDraft(key), attachments: aiChatAttachments(composerAttachmentsFor(key)) });
+    aiComposerSendInput({ intent: "send", text: composerDraft(key), mentions: mentionsFor(key), attachments: aiChatAttachments(composerAttachmentsFor(key)) });
   const saveComposer = (key: string, target: string) =>
     serializeComposer(key, async () => {
       const local = session(key);
@@ -463,6 +441,7 @@ export default function AssistantWorkspace(props: Props) {
     const key = composerSessionKey();
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
+    mentionsFor(key);
     if (!session(key).dirty || session(key).conflict) return;
     if (!chat.activeConversationId() && !text && !files.length) return;
     const target = chat.activeConversationId();
@@ -475,6 +454,7 @@ export default function AssistantWorkspace(props: Props) {
         conversationId = created.id;
         setComposerDraft(conversationId, composerDraft(key));
         setComposerAttachmentsFor(conversationId, composerAttachmentsFor(key));
+        setMentionsFor(conversationId, mentionsFor(key));
         session(conversationId).baseRevision = created.draft.revision;
       }
       await saveComposer(conversationId, conversationId);
@@ -656,7 +636,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const queuedMessagesFor = (conversationId: string): AssistantQueuedMessage[] =>
     conversationId === chat.activeConversationId() ? (queuedMessages.data() ?? []).map(message => ({
-      ...message, editableText:message.content.filter(part=>part.type === "text").map(part=>part.text).join("\n"), text:message.content.map(part => part.type === "text" ? part.text : part.type === "file" ? part.path : part.title ?? part.ref.id).join(" · "),
+      ...message, editableText:aiComposerDraft(message.content).text, text:message.content.map(part => part.type === "text" ? part.text : (part.type === "file" || part.type === "project-file") ? part.path : part.title ?? part.ref.id).join(" · "),
     })) : [];
   const queueMessage = async (input: AiComposerSendInput) => {
     const conversationId = chat.activeConversationId();
@@ -1060,14 +1040,71 @@ export default function AssistantWorkspace(props: Props) {
             </Show>
           </div>
         </Show>
-        <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
+        <Chat.Composer
+          accessory={<Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
           <Chat.Tasks items={todoItems()} open={todoOpen()} onOpenChange={setTodoOpen}
             label={locale().startsWith("de") ? "Aufgaben" : "Tasks"} progressLabel={todoProgress()}
             statusLabels={locale().startsWith("de")
               ? { pending: "Offen", in_progress: chat.activeTurn()?.status === "running" ? "In Arbeit" : "Aktueller Schritt", completed: "Erledigt", cancelled: "Verworfen" }
               : { pending: "Pending", in_progress: chat.activeTurn()?.status === "running" ? "In progress" : "Current step", completed: "Completed", cancelled: "Cancelled" }} />
-        </Show>
-        <Chat.Composer
+        </Show>}
+          draftKey={sessionKey()}
+          mentions={mentionsFor(sessionKey())}
+          onMentionsChange={mentions => setMentionsFor(sessionKey(), mentions)}
+          commands={[
+            { name: "compact", description: locale().startsWith("de") ? "Chat-Kontext kompaktieren" : "Compact chat context", icon: "ti ti-fold",
+              disabled: projectComposer() || chat.running() || !chat.messages().length,
+              action: async () => { if (!await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })) throw new Error(t().chatActionFailed); } },
+            { name: "fork", description: locale().startsWith("de") ? "Chat ab der letzten Antwort abzweigen" : "Fork at the latest response", icon: "ti ti-git-fork",
+              disabled: projectComposer() || chat.running() || !chat.messages().some(message => message.message.role === "assistant"),
+              action: async () => {
+                const target = [...chat.messages()].reverse().find(message => message.message.role === "assistant");
+                if (!target) return;
+                const key = sessionKey();
+                const saved = await saveComposer(key, key);
+                if (!saved) throw new Error(t().chatActionFailed);
+                if (sessionKey() !== key) return;
+                const fork = await chat.forkMessage(target.id, {});
+                if (!fork) throw new Error(t().chatActionFailed);
+                hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
+                editComposerSession(session(fork.id));
+                if (!await saveComposer(fork.id, fork.id)) throw new Error(t().chatActionFailed);
+                if (chat.activeConversationId() === fork.id) focusComposer();
+              } },
+            { name: "new", description: locale().startsWith("de") ? "Neuen Chat öffnen" : "Open a new chat", icon: "ti ti-plus",
+              action: async () => {
+                const key = sessionKey();
+                if (chat.activeConversationId() && !projectComposer() && !await saveComposer(key, key)) throw new Error(t().chatActionFailed);
+                if (sessionKey() !== key) return;
+                await createAndFocusConversation();
+              } },
+          ]}
+          searchCommands={(query, signal) => assistantComposerCommands({ query, signal, locale: locale(),
+            conversationId: projectComposer() ? undefined : chat.activeConversationId() ?? undefined,
+            projectId: composerProps.projectId ?? chat.conversation()?.projectId, projects: projects(), running: chat.running(),
+            assignProject: async projectId => {
+              const key = sessionKey();
+              const text = composerDraft(key), attachments = composerAttachmentsFor(key), mentions = mentionsFor(key);
+              const existing = chat.activeConversationId();
+              const created = existing ? null : await createConversation(false);
+              const conversationId = existing ?? created?.id;
+              if (!conversationId) throw new Error(t().chatActionFailed);
+              if (created) {
+                setComposerDraft(conversationId, text);
+                setComposerAttachmentsFor(conversationId, attachments);
+                setMentionsFor(conversationId, mentions);
+                session(conversationId).baseRevision = created.draft.revision;
+              }
+              if (!await saveComposer(conversationId, conversationId)) throw new Error(t().chatActionFailed);
+              if (chat.activeConversationId() !== conversationId) return;
+              const updated = await assistantApi.assignProject(conversationId, projectId);
+              if (chat.activeConversationId() === conversationId) setEmptyProjectId(updated.projectId);
+              await Promise.all([
+                chat.refreshActiveConversation(),
+                sidebar.invalidate({ cursor: null, domains: new Set(["conversation-list"]), conversationIds: new Set([updated.id]), projectIds: null }),
+              ]);
+            },
+          })}
           submitTools={<dictation.Control />}
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}

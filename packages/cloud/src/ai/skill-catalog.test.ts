@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AI_SKILL_CATALOG_MAX_CHARS, aiSkillCatalogChars, searchAiSkillCatalog, selectAiSkillCatalog } from "./skill-catalog";
+import { AI_SKILL_CATALOG_MAX_CHARS, aiSkillCatalogChars, selectAiSkillCatalog } from "./skill-catalog";
 
 describe("Assistant Skill catalog", () => {
   test("keeps a fitting catalog complete and in source order", () => {
@@ -24,16 +24,4 @@ describe("Assistant Skill catalog", () => {
     expect(aiSkillCatalogChars(selected.skills)).toBeLessThanOrEqual(AI_SKILL_CATALOG_MAX_CHARS);
   });
 
-  test("search returns matching complete entries and reports more", () => {
-    const result = searchAiSkillCatalog(
-      [
-        { name: "cloud-mail", description: "Email and inbox workflows." },
-        { name: "newsletter", description: "Draft an email newsletter." },
-        { name: "cloud-spaces", description: "Tasks and events." },
-      ],
-      "email",
-      1,
-    );
-    expect(result).toEqual({ skills: [{ name: "cloud-mail", description: "Email and inbox workflows." }], more: true });
-  });
 });

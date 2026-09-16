@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   AiCreateConversationInputSchema,
+  AiConversationDraftInputSchema,
+  AiMessageRetryInputSchema,
   AiMessageFeedbackInputSchema,
   AiSteerInputSchema,
   AiTurnInputSchema,
@@ -10,6 +12,16 @@ import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import type { AiMessageFeedback } from "./types";
 
 describe("AI HTTP input helpers", () => {
+  test("allows text between sixteen inline references without relaxing the attachment bound", () => {
+    const content = Array.from({ length: AI_TURN_ATTACHMENT_MAX_ITEMS }, (_, index) => [
+      { type: "text", text: "use " },
+      { type: "resource", ref: { type: "core.ai.skill", id: `Skill${index}` }, title: `Skill ${index}`, inline: true },
+    ]).flat();
+    content.push({ type: "text", text: " please" });
+    expect(AiConversationDraftInputSchema.safeParse({ content }).success).toBe(true);
+    expect(AiConversationDraftInputSchema.safeParse({ content: content.slice(0,-1).concat(content[1]!) }).success).toBe(false);
+    expect(AiMessageRetryInputSchema.safeParse({ content: content.map(() => ({ type: "text", text: "part" })) }).success).toBe(true);
+  });
   test("keeps the message when content contains only file references", () => {
     const input = AiTurnInputSchema.parse({
       message: "Describe this image",

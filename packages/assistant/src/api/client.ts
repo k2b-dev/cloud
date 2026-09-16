@@ -51,13 +51,23 @@ const readError = async (response: Pick<Response, "json">, fallback: string): Pr
 
 /** Typed conversation-management facade used by the Assistant UI. */
 export const assistantApi = {
+  listChatFiles: async (conversationId: string, signal?: AbortSignal) => {
+    const response = await client.conversations[":conversationId"].files.$get({ param: { conversationId }, query: {} }, { init: { signal } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load files"));
+    return (await response.json()).files;
+  },
+  assignProject: async (conversationId: string, projectId: string) => {
+    const response = await client.conversations[":conversationId"].project.$put({ param: { conversationId }, json: { projectId, onlyUnassigned: true } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to assign Project"));
+    return response.json();
+  },
   quotas: async (signal?: AbortSignal): Promise<import("@k2b/cloud/shared").AiChatQuotaSnapshot> => {
     const response = await client.quotas.$get({}, { init: { signal } });
     if (!response.ok) throw new Error(await readError(response, "Failed to load allowances"));
     return response.json();
   },
-  listSkills: async (): Promise<AiSkillSummary[]> => {
-    const response = await skillsClient.index.$get();
+  listSkills: async (signal?: AbortSignal, query?: string): Promise<AiSkillSummary[]> => {
+    const response = await skillsClient.index.$get({ query: query === undefined ? {} : { q: query } }, { init: { signal } });
     if (!response.ok) throw new Error(await readError(response, "Failed to load skills"));
     return (await response.json()).skills;
   },

@@ -60,14 +60,4 @@ export const selectAiSkillCatalog = (
   return { skills: selected, omitted: normalized.length - selected.length };
 };
 
-export const searchAiSkillCatalog = (
-  skills: readonly AiSkillCatalogEntry[],
-  query: string,
-  limit: number,
-): { skills: AiSkillCatalogEntry[]; more: boolean } => {
-  const normalized = skills.map((skill) => ({ name: skill.name, description: skill.description }));
-  const matches = ranked(normalized, query).filter((skill) => relevance(skill, query) > 0);
-  return { skills: matches.slice(0, limit), more: matches.length > limit };
-};
-
 export const aiSkillCatalogChars = (skills: readonly AiSkillCatalogEntry[]): number => skills.map(catalogLine).join("\n").length;

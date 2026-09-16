@@ -1425,6 +1425,22 @@ export const migrateCloudAi = async (): Promise<void> => {
       CONSTRAINT ai_skills_extra_frontmatter_check CHECK (jsonb_typeof(extra_frontmatter) = 'object')
     )
   `.simple();
+  // pg_trgm is a standard PostgreSQL extension, also used by Mail and Grids.
+  await sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`.simple();
+  await sql`ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS search_text TEXT
+    GENERATED ALWAYS AS (name || ' ' || description) STORED`.simple();
+  // Optional BM25 improves relevance without changing which Skills are visible.
+  try {
+    const [extension] = await sql<{ installed: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed
+    `;
+    if (extension?.installed) {
+      await sql.unsafe(`CREATE INDEX IF NOT EXISTS skills_search_bm25_idx
+        ON ai.skills USING bm25 ((search_text)) WITH (text_config='simple')`).simple();
+    }
+  } catch (error) {
+    console.warn("Optional Skill BM25 index unavailable; native Skill search remains active", error);
+  }
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_short_id ON ai.skills(short_id)`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_name ON ai.skills(name)`.simple();
   await sql`ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS managed_key TEXT`.simple();

@@ -66,4 +66,8 @@ export type ChatSubmitInput = {
   intent: ChatSubmitIntent;
   text: string;
   attachments: readonly ChatAttachment[];
+  mentions?: readonly ChatMention[];
 };
+
+/** Ranges use UTF-16 offsets into the untrimmed composer text. Payloads stay application-owned. */
+export type ChatMention = { start: number; end: number; attachment: ChatAttachment };

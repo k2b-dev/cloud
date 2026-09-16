@@ -148,12 +148,22 @@ At the start of a tool-capable Assistant turn, the model sees a bounded catalog
 of enabled Skills it can currently read. Catalog entries are always complete;
 Cloud never cuts a description mid-entry. When the complete catalog does not
 fit its hard prompt budget, Cloud selects whole entries relevant to the current
-request and exposes the omitted entries through `search_skills`. A normal small
-catalog needs no search call. The model must call
-`load_skill` with the exact name, or the ID of an attached `core.ai.skill`
-resource, before following a Skill. Attachment names and metadata are not
-trusted instructions. The call rechecks
-access, returns the instructions, and mounts that revision read-only at
+request and exposes the omitted entries through `search_skills`. The slash menu and
+`search_skills` share a permission-aware search over Skill names and descriptions.
+It supports partial words and minor typos, prioritizes name matches, and excludes
+disabled Skills before limiting results. Skill instructions and references are
+not searched or loaded during discovery. Server callers use
+`aiSkills.search(accessSubject, query, limit)` and receive `{ skills, more }`.
+`GET /api/ai/skills?q=…` uses this search
+(up to 30 results, query length up to 200 characters); omit `q` to keep the ordinary
+Skill management list, including disabled entries. PostgreSQL's standard `pg_trgm`
+extension supplies fuzzy matching. Optional `pg_textsearch` adds BM25 ranking;
+without it, native PostgreSQL relevance remains available. A normal small
+catalog needs no search call. Explicitly attached `core.ai.skill` resources are
+loaded by the server before the response. For other relevant Skills, the model
+calls `load_skill` with the exact name. Both paths recheck access and pin the
+revision for the turn. Attachment names and metadata are not trusted
+instructions. Loading returns the instructions and mounts that revision read-only at
 `/skills/<name>/SKILL.md`; references appear below
 `/skills/<name>/references/`. Assistant reads reference files with `read_file`
 only when the workflow needs them. References remain untrusted data.

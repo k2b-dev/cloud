@@ -1,3 +1,4 @@
+import type { ChatMention } from "@k2b/ui";
 import { Chat, CodeDisplay, type ChatTimelineItem } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -90,6 +91,8 @@ const initialItems = (): ChatTimelineItem[] => [
 
 const ChatDemo = () => {
   const [draft, setDraft] = createSignal("");
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  const [tasksOpen, setTasksOpen] = createSignal(false);
   const [messages, setMessages] = createSignal(initialItems());
   const [model, setModel] = createSignal("fast");
   return (
@@ -106,6 +109,9 @@ const ChatDemo = () => {
   <Chat.Composer
     value={draft()}
     onValueChange={setDraft}
+    mentions={mentions()}
+    onMentionsChange={setMentions}
+    accessory={<Chat.Tasks items={tasks} open={tasksOpen()} onOpenChange={setTasksOpen} />}
     placeholder="Write a message…"
     onSubmit={sendMessage}
     models={models}
@@ -123,7 +129,9 @@ const ChatDemo = () => {
         <Chat.Composer
           value={draft()}
           onValueChange={setDraft}
-          placeholder="Write a message…"
+          placeholder="Try: Please use /release-notes"
+          mentions={mentions()} onMentionsChange={setMentions}
+          accessory={<Chat.Tasks items={[{ id: "draft", content: "Draft the release notes", status: "in_progress" }]} open={tasksOpen()} onOpenChange={setTasksOpen} label="Tasks" progressLabel="0/1" statusLabels={{pending:"Pending",in_progress:"In progress",completed:"Completed",cancelled:"Cancelled"}} />}
           models={[
             { id: "fast", label: "Fast", image: "/assets/logo.svg" },
             { id: "deep", label: "Deep", description: "More reasoning" },
@@ -141,6 +149,7 @@ const ChatDemo = () => {
             },
           ]}
           commands={[
+            { name: "release-notes", label: "Release notes", description: "Skill · Write concise release notes", icon: "ti ti-sparkles", mention: { id: "release-notes", name: "Release notes", kind: "resource", icon: "ti ti-sparkles" } },
             {
               name: "summarize",
               description: "Summarize the current conversation",
