@@ -79,7 +79,7 @@ export default function MailComposeIntentPage(props: {
           }
         } catch (error) {
           setCommandError(error instanceof Error ? error.message : mailCommandMessages.resolve([locale()]).t.unavailable);
-          throw error;
+          // This form owns error feedback and retry; do not add a second global toast.
         } finally {
           setCommandLoading(false);
         }

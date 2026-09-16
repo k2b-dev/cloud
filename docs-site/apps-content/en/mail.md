@@ -174,4 +174,6 @@ Nothing is sent automatically.
 
 Creating a task or event from a conversation now opens the existing Spaces
 form. The source conversation appears as a removable link before submission.
+After saving or canceling, you return to the conversation with your Mail
+filters preserved.
 Calendar invitation, RSVP, and delivery workflows keep their existing behavior.

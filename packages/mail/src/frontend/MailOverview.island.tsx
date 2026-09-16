@@ -636,7 +636,7 @@ export default function MailOverview(props: {
                       conversationSummary={detail().conversationSummary}
                       messages={detail().detailMessages}
                       subject={detail().selectedSubject}
-                      requestUrl={`/app/mail/${selected().mailboxId}?conversation=${selected().conversationId}`}
+                      requestUrl={`/app/mail?${new URLSearchParams({ view: view(), mailbox: selected().mailboxId, conversation: selected().conversationId })}`}
                       dateConfig={props.dateConfig}
                       onCollaborationChange={() => void focusResults.invalidate()}
                       onConversationTagsChange={() => undefined}

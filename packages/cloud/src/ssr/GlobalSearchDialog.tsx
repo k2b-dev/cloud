@@ -25,22 +25,28 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
   const locale = useLocale();
   const messages = () => resourceSearchMessages.resolve([locale()]).t;
   const [contextCommands, setContextCommands] = createSignal<PaletteCommand[]>([]);
+  const updateContextCommands = () => setContextCommands(collectContextAwareCommands().map((command) => ({ ...command, context: true })));
   const commandsQuery = query.create({
     source: locale,
     enabled: () => props.searchResources !== false,
     load: (locale, { abortSignal }) => loadSearchCommands(locale, abortSignal),
   });
   onMount(() => {
-    const update = () => setContextCommands(collectContextAwareCommands().map((command) => ({ ...command, context: true })));
-    window.addEventListener(COMMANDS_CHANGED, update);
-    update();
-    onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
+    window.addEventListener(COMMANDS_CHANGED, updateContextCommands);
+    updateContextCommands();
+    onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, updateContextCommands));
   });
   const runCommand = async (command: PaletteCommand, newTab: boolean) => {
     if (navigating()) return;
     // Check live ownership once more; a background panel may have closed since rendering.
-    if (command.context && !collectContextAwareCommands().some((current) => current.id === command.id && current.action === command.action))
+    if (
+      command.context &&
+      !collectContextAwareCommands().some((current) => current.id === command.id && current.action === command.action)
+    ) {
+      updateContextCommands();
+      toast.error(messages().commandUnavailable);
       return;
+    }
     setNavigating(true);
     setNavigationError(false);
     const target = command.action;
@@ -65,8 +71,8 @@ export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
     try {
       if (typeof target === "function") await target();
       else await openCommand(target.command, target.input, target.options);
-    } catch {
-      toast.error(messages().commandFailed);
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : messages().commandFailed);
     }
   };
   let host!: HTMLDivElement;

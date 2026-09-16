@@ -41,7 +41,7 @@ if (!isServer)
       expect(dom.root.textContent).toContain("ada@example.test");
       expect(calls).toEqual(["/api/capabilities/v1/queries/contacts/contact.read"]);
       denied = true;
-      await expect(openCommand(target.command, target.input)).rejects.toThrow("unavailable");
+      await openCommand(target.command, target.input);
       expect(dom.root.textContent).not.toContain("ada@example.test");
       expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain("unavailable");
       denied = false;

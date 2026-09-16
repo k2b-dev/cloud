@@ -88,16 +88,20 @@ export const createSpaceCommands = (options: { current?: () => SpaceDetail | und
                   },
                   { title: t().chooseSpace, placeholder: t().findSpace, minQueryLength: 0, noResultsText: t().noSpaces, size: "small" },
                 );
-                if (!choice?.value || !active) return;
+                if (!active) return;
+                if (!choice?.value) {
+                  if (commandOptions.returnTo) window.location.assign(commandOptions.returnTo);
+                  return;
+                }
                 spaceId = choice.value.id;
               }
               const response = await apiClient[":id"]["settings-context"].$get(
                 { param: { id: spaceId } },
                 { init: { signal: abort.signal } },
               );
-              if (!response.ok) throw new Error(t().failed);
+              if (!response.ok) throw new Error(response.status === 403 ? t().cannotCreate : t().failed);
               const context = await response.json();
-              if (context.permission === "read") throw new Error(t().noSpaces);
+              if (context.permission === "read") throw new Error(t().cannotCreate);
               const references = input.source ? [await sourceReference(input.source)] : undefined;
               if (!active) return;
               setSpace(context.space);

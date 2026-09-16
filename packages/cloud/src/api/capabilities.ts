@@ -741,6 +741,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
           200: jsonResponse(CommandLinkSchema, "Command entry URL"),
           400: jsonResponse(CapabilityErrorSchema, "Invalid command input"),
           404: jsonResponse(CapabilityErrorSchema, "Command unavailable"),
+          503: jsonResponse(CapabilityErrorSchema, "Route owner unavailable"),
         },
       }),
       requireReadScope,

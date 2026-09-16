@@ -550,3 +550,94 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+if (!isServer)
+  test("late Commands preserve the keyboard-selected resource; explicit Command filters support Enter", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async () => Response.json({ query: "", count: 3, apps: [], items: [item("First"), item("Second"), item("Third")] }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const { createSignal } = await import("solid-js");
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    const command = {
+      id: "spaces.task.compose",
+      title: "New task",
+      description: "Create in Spaces",
+      action: { command: "spaces.task.compose", input: {} },
+    };
+    const [commands, setCommands] = createSignal<(typeof command)[]>([]);
+    const selected: string[] = [];
+    delegateEvents(["input", "keydown"]);
+    const dispose = render(
+      () => (
+        <CloudResourceSearch
+          initialAppId="notebooks"
+          commands={commands()}
+          onCommand={(command) => selected.push(command.id)}
+          onSelect={(item) => selected.push(item.ref.id)}
+          onClose={() => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      await waitFor(() => dom.root.querySelectorAll('[role="option"]').length === 3, "resources");
+      const input = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+      const key = (key: string) => input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      key("ArrowDown");
+      key("ArrowDown");
+      setCommands([command]);
+      key("Enter");
+      expect(selected).toEqual(["Third"]);
+      input.value = "> new task";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => dom.root.querySelectorAll('[role="option"]').length === 1, "filtered command");
+      key("Enter");
+      expect(selected).toEqual(["Third", "spaces.task.compose"]);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("context reordering follows the selected identity and removing it does not select another action", async () => {
+    const dom = createDomTestHarness();
+    const { createSignal } = await import("solid-js");
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    const first = { id: "first", title: "First", description: "Current", context: true, action: () => {} };
+    const second = { ...first, id: "second", title: "Second" };
+    const [commands, setCommands] = createSignal([first, second]);
+    const selected: string[] = [];
+    delegateEvents(["keydown"]);
+    const dispose = render(
+      () => (
+        <CloudResourceSearch
+          searchResources={false}
+          commands={commands()}
+          onCommand={(command) => selected.push(command.id)}
+          onSelect={() => {}}
+          onClose={() => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      await waitFor(() => dom.root.querySelectorAll('[role="option"]').length === 2, "context commands");
+      const input = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+      const key = (key: string) => input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      key("ArrowDown");
+      setCommands([second, first]);
+      key("Enter");
+      expect(selected).toEqual(["first"]);
+      setCommands([second]);
+      key("Enter");
+      expect(selected).toEqual(["first"]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });

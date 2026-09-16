@@ -686,7 +686,7 @@ Cloud validates the declaration at startup:
 
 - `protocolVersion` is currently `2`;
 - local IDs start with a lower-case letter and may contain `.`, `_`, or `-`;
-- one local ID may occur only once across Types, Queries, and Actions;
+- one local ID may occur only once across Types, Queries, Actions, and Commands;
 - inputs are closed `z.object(...).strict()` schemas;
 - every meaningful input field has a concise `.describe(...)` string;
 - input and data schemas must project to JSON Schema;
@@ -1276,7 +1276,10 @@ A rejected handler surfaces an error and never triggers fallback navigation.
 Document events connect independent islands without a shared Solid context.
 `consumeCommandLink` consumes the URL parameters before handing control to the
 form, so reload and Back do not reopen a consumed interaction. It reports
-invalid or unavailable entries; it never silently invokes a different Command.
+invalid or unavailable entries and clears their parameters as well, so reloading
+does not repeat the error. It never silently invokes a different Command.
+An unhandled handler rejection is displayed once with its message. A handler
+that presents its own inline error and retry should handle that failure itself.
 
 Keep URL input to small public references and options. Links are limited to
 8 KiB; do not put message bodies, calendar files, tokens, or secrets in them.

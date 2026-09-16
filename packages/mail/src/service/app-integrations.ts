@@ -38,7 +38,7 @@ const REQUIRED_SPACES_CONTEXT_QUERIES = [
   "space.read",
   "calendar-destination.list",
 ] as const;
-const REQUIRED_SPACES_CONTEXT_ACTIONS = ["item.reference.add", "item.reference.remove", "task.create", "event.create"] as const;
+const REQUIRED_SPACES_CONTEXT_ACTIONS = ["item.reference.add", "item.reference.remove"] as const;
 
 export type AppIntegrationRequest = {
   cookie?: string | null;
@@ -65,6 +65,7 @@ export const getSpacesMailIntegrationAvailability = async (): Promise<{
     if (!catalog.ok || !catalog.data) return { invitations: false, settings: false, composer: false, context: false };
     const queries = new Set(catalog.data.manifest.queries.map((operation) => operation.localId));
     const actions = new Set(catalog.data.manifest.actions.map((operation) => operation.localId));
+    const commands = new Set(catalog.data.manifest.commands.map((operation) => operation.localId));
     const invitations =
       REQUIRED_SPACES_INVITATION_QUERIES.every((id) => queries.has(id)) &&
       REQUIRED_SPACES_INVITATION_ACTIONS.every((id) => actions.has(id));
@@ -74,7 +75,10 @@ export const getSpacesMailIntegrationAvailability = async (): Promise<{
       composer:
         REQUIRED_SPACES_COMPOSER_QUERIES.every((id) => queries.has(id)) && REQUIRED_SPACES_COMPOSER_ACTIONS.every((id) => actions.has(id)),
       context:
-        REQUIRED_SPACES_CONTEXT_QUERIES.every((id) => queries.has(id)) && REQUIRED_SPACES_CONTEXT_ACTIONS.every((id) => actions.has(id)),
+        REQUIRED_SPACES_CONTEXT_QUERIES.every((id) => queries.has(id)) &&
+        REQUIRED_SPACES_CONTEXT_ACTIONS.every((id) => actions.has(id)) &&
+        commands.has("task.compose") &&
+        commands.has("event.compose"),
     };
   } catch {
     return { invitations: false, settings: false, composer: false, context: false };

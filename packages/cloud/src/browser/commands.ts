@@ -17,18 +17,28 @@ export const openCommand = async (command: string, input: unknown = {}, options:
   window.location.assign(result.data.href);
 };
 
-/** Call after this page's handlers have mounted. Invalid entries remain visible as an error, never a mutation. */
+/** Call after this page's handlers have mounted. Each entry is consumed, including invalid links. */
 export const consumeCommandLink = async (): Promise<void> => {
   const url = new URL(window.location.href);
+  const messages = resourceSearchMessages.resolve([document.documentElement.lang]).t;
+  let target: ReturnType<typeof readCommand>;
   try {
-    const target = readCommand(url);
-    if (!target) return;
-    const handled = requestCommandHandling({ command: target.id, input: target.input, options: target.options });
-    if (!handled) throw new Error("Command context is unavailable");
-    // Consume before showing interactive UI, preventing reload/back from reopening it.
-    window.history.replaceState(window.history.state, "", clearCommand(url));
-    await handled;
+    target = readCommand(url);
   } catch {
-    toast.error(resourceSearchMessages.resolve([document.documentElement.lang]).t.commandFailed);
+    window.history.replaceState(window.history.state, "", clearCommand(url));
+    toast.error(messages.commandFailed);
+    return;
+  }
+  if (!target) return;
+  window.history.replaceState(window.history.state, "", clearCommand(url));
+  try {
+    const handled = requestCommandHandling({ command: target.id, input: target.input, options: target.options });
+    if (!handled) {
+      toast.error(messages.commandUnavailable);
+      return;
+    }
+    await handled;
+  } catch (error) {
+    toast.error(error instanceof Error && error.message ? error.message : messages.commandFailed);
   }
 };

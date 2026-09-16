@@ -183,10 +183,14 @@ export default function MailConversationContext(props: {
 
   const createSpaceItem = async (kind: "task" | "event") => {
     try {
-      await openCommand(`spaces.${kind}.compose`, { source: { type: "mail.conversation", id: props.conversationId } });
+      await openCommand(`spaces.${kind}.compose`, { source: { type: "mail.conversation", id: props.conversationId } }, commandOptions());
     } catch (error) {
       await prompts.error(error instanceof Error ? error.message : messages().couldNotLoadSpaces);
     }
+  };
+  const commandOptions = () => {
+    const source = new URL(props.requestUrl, "https://mail.invalid");
+    return { returnTo: `${source.pathname}${source.search}${source.hash}` };
   };
   createEffect(() => {
     if (!props.active || context()?.spaces.status !== "ready") return;
@@ -199,7 +203,7 @@ export default function MailConversationContext(props: {
           title: kind === "task" ? t.sourceTask : t.sourceEvent,
           description: props.subject ? `“${props.subject}” · ${t.sourceDescription}` : t.sourceDescription,
           icon: kind === "task" ? "ti ti-checkbox" : "ti ti-calendar-event",
-          action: { command: `spaces.${kind}.compose`, input: { source: { type: "mail.conversation", id } } },
+          action: { command: `spaces.${kind}.compose`, input: { source: { type: "mail.conversation", id } }, options: commandOptions() },
         }),
       );
   });
@@ -311,7 +315,10 @@ export default function MailConversationContext(props: {
                             </Show>
                             <For each={participant.contacts}>
                               {(contact) => {
-                                const relatedMailHref = buildExactParticipantSearchHref(new URL(props.requestUrl), participant.email);
+                                const relatedMailHref = buildExactParticipantSearchHref(
+                                  new URL(props.requestUrl, "https://mail.invalid"),
+                                  participant.email,
+                                );
                                 const description = () =>
                                   [
                                     participant.showParticipantHeading ? null : participant.email,

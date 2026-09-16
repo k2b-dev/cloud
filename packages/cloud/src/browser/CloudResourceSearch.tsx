@@ -1,6 +1,6 @@
 import { query, timed } from "@k2b/stdlib/solid";
 import { Button, IconButton, ScrollArea, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { SearchItem, SearchResponse } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
 import { LOCALE_HEADER } from "../shared/locale";
@@ -69,6 +69,11 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const [caret, setCaret] = createSignal(0);
   const [browsingTags, setBrowsingTags] = createSignal(false);
   const [activeIndex, setActiveIndex] = createSignal(0);
+  let userSelected = false;
+  const selectIndex = (index: number) => {
+    userSelected = true;
+    setActiveIndex(index);
+  };
   const [tagIndex, setTagIndex] = createSignal(0);
   const [selectedKey, setSelectedKey] = createSignal<string>();
   const [mobileDetails, setMobileDetails] = createSignal(false);
@@ -181,17 +186,26 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     setSelectedKey(undefined);
     setMobileDetails(false);
   });
-  createEffect(() => {
-    items();
-    // Mutating/context actions are never selected implicitly as the page context changes.
-    setActiveIndex(items()[0]?.ref.type === "cloud.command" ? -1 : 0);
-  });
+  createEffect(
+    on(
+      () => ({ rows: items(), context: JSON.stringify([desiredUrl(), commandMode(), commandQuery()]) }),
+      (current, previous) => {
+        if (userSelected && previous?.context === current.context) {
+          const selected = previous.rows[activeIndex()];
+          // Preserve the actual target across asynchronous catalog/context updates.
+          // A removed target leaves no selection rather than selecting a different action.
+          setActiveIndex(selected ? current.rows.findIndex((row) => itemKey(row) === itemKey(selected)) : -1);
+        } else {
+          userSelected = false;
+          const explicitCommand = commandMode() && Boolean(commandQuery());
+          setActiveIndex(current.rows[0]?.ref.type === "cloud.command" && !explicitCommand ? -1 : 0);
+        }
+      },
+    ),
+  );
   createEffect(() => {
     suggestions();
     setTagIndex(0);
-  });
-  createEffect(() => {
-    if (activeIndex() >= items().length) setActiveIndex(0);
   });
   createEffect(() => {
     previewItem();
@@ -254,7 +268,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     }
     if (props.selectionMode) {
       setSelectedKey(itemKey(item));
-      setActiveIndex(items().indexOf(item));
+      selectIndex(items().indexOf(item));
     } else props.onSelect(item);
   };
   const scrollOption = (index: number, kind: "tag" | "result") => {
@@ -305,7 +319,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             ? 0
             : items().length - 1
           : (activeIndex() + (event.key === "ArrowDown" ? 1 : -1) + items().length) % items().length;
-      setActiveIndex(next);
+      selectIndex(next);
       scrollOption(next, "result");
     } else if (event.key === "Enter" && activeItem()) {
       event.preventDefault();
@@ -526,9 +540,9 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                             "is-active": activeIndex() === index(),
                             "is-selected": props.selectionMode && selectedKey() === itemKey(item),
                           }}
-                          onFocus={() => setActiveIndex(index())}
+                          onFocus={() => selectIndex(index())}
                           onMouseEnter={() => {
-                            if (!props.selectionMode) setActiveIndex(index());
+                            if (!props.selectionMode) selectIndex(index());
                           }}
                           onClick={(event) => {
                             if ((event.metaKey || event.ctrlKey) && props.onOpenInNewTab && !props.selectionMode) {

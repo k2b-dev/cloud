@@ -409,6 +409,8 @@ Use the application's normal locale catalog for these labels.
 
 Up to three context actions appear before typing, in both the global and
 app-scoped search. The Actions view exposes the full list. Actions are never
-implicitly selected when first shown or replaced: click them, or select with
-an arrow key before pressing Enter. Cmd/Ctrl+Enter opens linkable Commands in a
-new tab and leaves the palette open; local functions cannot open in a new tab.
+implicitly selected in an empty search: click them, or select with
+an arrow key before pressing Enter. Typing a filter after `>` selects the first
+matching action for Enter. Asynchronous catalog updates preserve the selected
+target; removing that target clears the selection. Cmd/Ctrl+Enter opens linkable
+Commands in a new tab and leaves the palette open; local functions cannot open in a new tab.
