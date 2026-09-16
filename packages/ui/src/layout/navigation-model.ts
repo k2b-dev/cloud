@@ -11,6 +11,8 @@ type NavigationEntry = {
   disabled?: boolean;
   color?: string;
   children?: readonly NavigationItem[];
+  /** Initial disclosure state; subsequent toggles remain local to the renderer. */
+  defaultExpanded?: boolean;
   actions?: readonly NavigationItem[];
 };
 

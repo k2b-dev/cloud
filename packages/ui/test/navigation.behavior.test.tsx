@@ -111,3 +111,28 @@ test("disabled parents block descendants and local links keep modified clicks na
   dispose();
   dom.cleanup();
 });
+
+test("collapsed groups disclose with a chevron without dismissing the host and preserve a user toggle", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const [name, setName] = createSignal("Projects");
+  let dismissed = 0;
+  const navigation = createNavigation({ items: () => [{ id: "projects", label: name(), defaultExpanded: false, children: [{ id: "one", label: "Work", href: "/project/one" }] }] });
+  const dispose = render(() => <Navigation navigation={navigation} label="Assistant" beforeSelect={() => { dismissed++; }} />, dom.root);
+  try {
+    const toggle = dom.root.querySelector<HTMLButtonElement>("button")!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.querySelector(".ti-chevron-right")).not.toBeNull();
+    expect(dom.root.querySelector("[hidden]")).not.toBeNull();
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.querySelector(".ti-chevron-down")).not.toBeNull();
+    expect(dom.root.querySelector("[hidden]")).toBeNull();
+    expect(dismissed).toBe(0);
+    setName("Projects updated");
+    expect(dom.root.querySelector("button")).toBe(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  } finally { dispose(); dom.cleanup(); }
+});

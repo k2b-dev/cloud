@@ -2,7 +2,7 @@ import { documentNavigate, Link } from "@k2b/ssr/nav";
 import { createSignal, For, Show } from "solid-js";
 import { Dropdown } from "../actions/Dropdown";
 import { useUiMessages } from "../intl/messages";
-import { type NavigationController, type NavigationItem } from "./navigation-model";
+import type { NavigationController, NavigationItem } from "./navigation-model";
 
 export type NavigationProps = {
   navigation: NavigationController;
@@ -24,7 +24,7 @@ export default function Navigation(props: NavigationProps) {
         {(id) => {
           const item = () => rows.items.find((entry) => entry.id === id)!;
           const disabled = () => rows.disabled || item().disabled;
-          const open = () => expanded()[id] ?? true;
+          const open = () => expanded()[id] ?? item().defaultExpanded ?? true;
           const toggle = () => setExpanded((current) => ({ ...current, [id]: !open() }));
           const content = () => (
             <>
@@ -59,6 +59,9 @@ export default function Navigation(props: NavigationProps) {
                       onClick={() => (item().action ? void activate(id) : toggle())}
                     >
                       {content()}
+                      <Show when={!item().action && item().children?.length}>
+                        <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
+                      </Show>
                     </button>
                   }
                 >

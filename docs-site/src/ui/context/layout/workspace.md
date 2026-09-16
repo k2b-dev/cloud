@@ -275,7 +275,7 @@ type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
 
 type AppWorkspaceSidebarItemProps = {
   variant?: "row" | "card"; context?: JSX.Element; contextMeta?: JSX.Element;
-  description?: JSX.Element; preview?: { label: string; content: JSX.Element; onOpenChange?: (open: boolean) => void };
+  description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void; active?: boolean; activeClass?: string; disabled?: boolean;
@@ -555,6 +555,10 @@ while closed; live content updates preserve its controls and focus. Do not start
 expensive subscriptions merely because a row exists. The preview can hold an
 explicit action that loads additional details.
 
+Hover previews use the shared `ScrollArea` internally. Overflowing content fades
+at the top and bottom while the popup border and shadow remain visible. Fades
+follow the current scroll position and disappear when an edge is reached.
+
 Use `SidebarSection` with `collapsible`, `count`, and `defaultOpen={false}` for
 completed items or other secondary groups. `open` and `onOpenChange` support
 controlled expansion. Counts remain application-owned; collapsing keeps child
@@ -577,6 +581,31 @@ persistent secondary group in `SidebarFooter`, with a bounded list if it can gro
 The live navigation showcase demonstrates generic jobs, documents and projects,
 manual or automatic status changes, an attention state, and moving items into and
 out of a completed section. Completion is a host action, separate from progress.
+
+For a row whose only action is opening its preview, set `preview.trigger="row"`
+and omit `href` and `onClick`. Hover and focus still open the same preview;
+clicking the row or its trailing chevron keeps it open. The chevron appears on
+hover or keyboard focus and remains visible on touch devices. Existing previews
+keep their separate info button and independent row navigation by default.
+A content callback receives `close` so selecting a destination can dismiss the
+preview before navigating or opening another dialog:
+
+```tsx
+<AppWorkspace.SidebarItem
+  icon="ti ti-folders"
+  preview={{
+    label: "Projects",
+    trigger: "row",
+    content: (close) => (
+      <AppWorkspace.SidebarItem href="/projects/example" onClick={close}>
+        Example project
+      </AppWorkspace.SidebarItem>
+    ),
+  }}
+>
+  Projects
+</AppWorkspace.SidebarItem>
+```
 
 Use `DescriptionList layout="compact"` inside previews for content-sized labels
 and a smaller column gap, keeping each label visually paired with its value.

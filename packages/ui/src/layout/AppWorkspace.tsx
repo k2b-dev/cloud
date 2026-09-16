@@ -244,7 +244,7 @@ export type AppWorkspaceSidebarItemProps = {
   /** Passive second line; keep controls in actions or preview. */
   description?: JSX.Element;
   /** Interactive details, also reachable through a dedicated button. */
-  preview?: { label: string; content: JSX.Element; onOpenChange?: (open: boolean) => void };
+  preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; onOpenChange?: (open: boolean) => void };
   href?: string;
   /** Document navigation by default; opt into enhanced navigation only when the owning island applies the target state. */
   navigation?: "enhanced" | "document";
@@ -914,7 +914,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       {singleAction()}
       <Show when={props.preview}>
         {(preview) => (
-          <SidebarItemPreview label={preview().label} onOpenChange={preview().onOpenChange}>
+          <SidebarItemPreview label={preview().label} trigger={preview().trigger} onOpenChange={preview().onOpenChange}>
             {preview().content}
           </SidebarItemPreview>
         )}

@@ -27,6 +27,10 @@ key, or `children`. Optional fields are `icon`, `badge` (string or number),
 `description`, `active`, `disabled`, `color`, and secondary `actions`. Everything
 in the item tree is serializable; functions remain in the controller.
 
+A group without its own action toggles its children when selected and shows a
+chevron. Set `defaultExpanded: false` to start a group collapsed; omitted groups
+start expanded. Later toggles belong to the renderer and do not change the model.
+
 A parent destination and its expansion button are separate controls. Disabled
 parents also disable their descendants. Labels wrap naturally; long lists
 scroll in the host's body. Row identity survives badge and active-state updates.
