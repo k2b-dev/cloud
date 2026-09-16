@@ -14,7 +14,7 @@ describe("App actions", () => {
 
     expect(source).toContain("invokeCustomAppWorkflow");
     expect(source).not.toContain("Workflow started.");
-    expect(source).toContain("window.setTimeout(() => window.location.reload()");
+    expect(source).toContain("window.location.reload()");
     expect(client).toContain("started.statusUrl");
     expect(client).toContain('status.status === "succeeded"');
     expect(client).toContain('status.status === "failed"');

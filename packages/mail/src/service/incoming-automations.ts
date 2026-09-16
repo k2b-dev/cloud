@@ -3,7 +3,7 @@ import type { PumpState, Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { audit, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
-import { emitWorkflowEvent } from "@k2b/cloud/workflows/store";
+import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import {
   type CreateIncomingAutomation,
@@ -760,6 +760,7 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
           { db: tx },
         );
       });
+      notifyWorkflowWorker(MAIL_WORKFLOW_APP_ID);
     },
   }),
 );

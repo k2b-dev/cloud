@@ -145,7 +145,8 @@ Test each action class at its boundary:
 - config schema accepts and rejects the expected values;
 - `authorize` refuses revoked access;
 - `run` returns stable codes for domain failures;
-- `plan` reports the same effect cost as execution;
+- `cost` supplies the same counts to dry runs and execution;
+- execution never calls the dry-run `plan` hook;
 - idempotent actions reuse `effectKey`;
 - ambiguous actions reconcile every provider state;
 - transactional actions use the supplied transaction.

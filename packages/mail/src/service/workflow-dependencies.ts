@@ -1,6 +1,6 @@
 import { logger } from "@k2b/cloud/services";
 import type { WorkflowDependency } from "@k2b/cloud/workflows";
-import { wakeWorkflowRunsWaitingOn } from "@k2b/cloud/workflows/store";
+import { wakeWorkflowRunsWaitingOn, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 
 const log = logger("mail:workflow-dependencies");
 const MAIL_WORKFLOW_DEPENDENCY_RECHECK_MS = 30_000;
@@ -16,6 +16,7 @@ export const mailWorkflowDependencyDeadline = (now = new Date()): string =>
 export const publishMailWorkflowDependency = async (input: { mailboxId: string; dependency: WorkflowDependency }): Promise<void> => {
   try {
     await wakeWorkflowRunsWaitingOn({ appId: "mail", ...input.dependency });
+    notifyWorkflowWorker("mail");
   } catch (error) {
     log.warn("Failed to wake Mail workflow dependency", {
       mailboxId: input.mailboxId,

@@ -9,7 +9,7 @@ import {
   type WorkflowScheduleRegistration,
   workflowScheduleSlotKey,
 } from "@k2b/cloud/workflows/runtime";
-import { emitWorkflowEvent } from "@k2b/cloud/workflows/store";
+import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 
@@ -191,6 +191,7 @@ const register = async (registration: WorkflowScheduleRegistration, activation: 
         },
         { dispatch: "now" },
       );
+      notifyWorkflowWorker(MAIL_WORKFLOW_APP_ID);
       await trace.end({ spanKey, summary: { runId: emission.runIds[0] ?? null, status: emission.runIds.length ? "queued" : "ignored" } });
     },
   });

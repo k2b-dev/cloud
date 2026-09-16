@@ -139,19 +139,18 @@ export const runWorkflowAiAction = async (
   }
 };
 
-export const planWorkflowAiAction = async (
+export const workflowAiActionCost = async (
   ctx: Pick<WorkflowActionContext, "effectKey">,
-  summary: string,
   injected?: Pick<WorkflowAiActionDependencies, "exists">,
-): Promise<WorkflowPlannedEffect> => {
+): Promise<Record<string, number>> => {
   const deps = injected ?? (await dependencies());
-  const exists = await deps.exists(ctx.effectKey);
-  return {
-    summary,
-    ...(exists ? {} : { consumes: { maxAiCalls: 1 } }),
-    issues: ["AI output is not available during a dry run."],
-  };
+  return (await deps.exists(ctx.effectKey)) ? {} : { maxAiCalls: 1 };
 };
+
+const planWorkflowAiAction = async (summary: string): Promise<WorkflowPlannedEffect> => ({
+  summary,
+  issues: ["AI output is not available during a dry run."],
+});
 
 export const AI_WORKFLOW_ACTIONS = {
   aiExtractData: workflowAction.idempotent<typeof extractDataConfig, WorkflowJsonValue>({
@@ -159,7 +158,8 @@ export const AI_WORKFLOW_ACTIONS = {
     description: "Extracts one bounded, validated object from supplied input.",
     outputType: "core.value",
     config: extractDataConfig,
-    plan: (ctx) => planWorkflowAiAction(ctx, "Extract structured data with AI."),
+    cost: (ctx) => workflowAiActionCost(ctx),
+    plan: () => planWorkflowAiAction("Extract structured data with AI."),
     run: (ctx, values) =>
       runWorkflowAiAction(ctx, {
         kind: "extract_data",
@@ -190,7 +190,8 @@ export const AI_WORKFLOW_ACTIONS = {
         saveAs: identifier("Variable name for the generated text."),
       },
     },
-    plan: (ctx) => planWorkflowAiAction(ctx, "Generate text with AI."),
+    cost: (ctx) => workflowAiActionCost(ctx),
+    plan: () => planWorkflowAiAction("Generate text with AI."),
     run: (ctx, values) =>
       runWorkflowAiAction(ctx, {
         kind: "generate_text",
@@ -214,7 +215,8 @@ export const AI_WORKFLOW_ACTIONS = {
         saveAs: identifier("Variable name for the selected choice."),
       },
     },
-    plan: (ctx) => planWorkflowAiAction(ctx, "Classify one value with AI."),
+    cost: (ctx) => workflowAiActionCost(ctx),
+    plan: () => planWorkflowAiAction("Classify one value with AI."),
     run: (ctx, values) =>
       runWorkflowAiAction(ctx, {
         kind: "classify",
@@ -254,7 +256,8 @@ export const AI_WORKFLOW_ACTIONS = {
         saveAs: identifier("Variable name for the selected choices."),
       },
     },
-    plan: (ctx) => planWorkflowAiAction(ctx, "Classify multiple values with AI."),
+    cost: (ctx) => workflowAiActionCost(ctx),
+    plan: () => planWorkflowAiAction("Classify multiple values with AI."),
     run: (ctx, values) =>
       runWorkflowAiAction(ctx, {
         kind: "classify_many",

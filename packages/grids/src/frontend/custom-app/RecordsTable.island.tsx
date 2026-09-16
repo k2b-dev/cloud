@@ -217,6 +217,7 @@ export default function RecordsTable(props: {
       const outcome = await invokeCustomAppWorkflow({
         endpoint: action.endpoint,
         operation: active.operation,
+        onCommittedChanges: () => loadPage(cursor(), appliedQuery(), history()),
         onConfirmExport: openFinancialExportDialog,
         body: active.body,
         signal: controller.signal,

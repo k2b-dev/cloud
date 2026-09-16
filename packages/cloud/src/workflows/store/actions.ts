@@ -7,7 +7,7 @@
  * started, settle it afterwards. Both apps did, slightly differently, which is
  * how one of them ended up with no budget at all.
  *
- * The budget is charged from the action's own `plan` hook — the same hook a dry
+ * The budget is charged from the action's own `cost` hook — the same hook a dry
  * run uses. That is the point: preflight and execution cannot disagree about
  * what an action costs, because one function answers for both. Mail's known
  * defect was exactly that divergence, and here it is not a bug to fix but a
@@ -185,7 +185,7 @@ export type WorkflowActionPortOptions = {
 /**
  * Runs one declared action, with everything its effect class implies.
  *
- * The order is the contract: plan, then charge, then mark, then act, then
+ * The order is the contract: estimate costs, charge, mark, act, then
  * settle. Charging before acting is the only ordering that cannot overspend,
  * and marking before acting is the only one that leaves evidence when the
  * process dies mid-effect.
@@ -201,19 +201,12 @@ const runDeclaredAction = async (
   const effectKey = workflowEffectKey(ctx.run.runId, ctx.step.key);
   const journal = options.journal ?? kernelEffectJournal(options.db);
 
-  /**
-   * Asks the action what it would do, and charges the run for it.
-   *
-   * Only reached when there is a budget to charge: the answer is otherwise
-   * discarded, and `plan` is allowed to be expensive — an HTTP action resolves
-   * its target to check it is safe to call.
-   */
+  /** Charge declared costs without building a dry-run preview. */
   const charge = async (db?: SQL): Promise<Extract<WorkflowStepOutcome, { state: "failed" }> | null> => {
-    if (options.budget === false || !action.plan) return null;
-    const planned = await action.plan(actionContext(ctx, step, effectKey), config as never);
-    if (!planned.consumes || Object.keys(planned.consumes).length === 0) return null;
+    if (options.budget === false || !action.cost) return null;
+    const consumes = await action.cost(actionContext(ctx, step, effectKey, db), config as never);
+    if (Object.keys(consumes).length === 0) return null;
     const handle = db ?? options.db;
-    const consumes = planned.consumes;
     // Once per step, not once per attempt: a step that parked on a dependency
     // runs again to observe the effect it already paid for, and charging that
     // resume refuses the automation it already performed.
@@ -437,13 +430,12 @@ export const createWorkflowDryRunPort = (module: DefinedWorkflowModule): Workflo
           if (!action.plan) return { state: "unsupported" as const, reason: `${name} cannot be planned` };
 
           const planned = await action.plan(context, config as never);
+          const consumes = await action.cost?.(context, config as never);
           applySaveAs(ctx, step, (planned.output ?? undefined) as WorkflowJsonValue | undefined);
           return {
             state: "planned" as const,
             output: (planned.output ?? null) as WorkflowJsonValue,
-            effects: [
-              { action: name, summary: planned.summary, ...(planned.consumes ? { consumes: planned.consumes } : {}) } as WorkflowJsonValue,
-            ],
+            effects: [{ action: name, summary: planned.summary, ...(consumes ? { consumes } : {}) } as WorkflowJsonValue],
             // An issue names the step it belongs to, so the dry-run view can point
             // at what could not be determined rather than listing loose strings.
             ...(planned.issues?.length

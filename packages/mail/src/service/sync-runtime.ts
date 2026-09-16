@@ -1,17 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { JobContext, Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
-import {
-  createRuntimeLifecycle,
-  createRuntimeTaskTracker,
-  logger,
-  stopRuntimeJobs,
-  stopRuntimeResources,
-} from "@k2b/cloud/services";
+import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
-import { emitWorkflowEvent } from "@k2b/cloud/workflows/store";
+import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
@@ -1310,6 +1304,7 @@ export const commitSyncBatch = async (params: {
     }
     return { hydratedIds, draftImportSnapshotIds, draftExportSnapshotIds, flagsUpdated, removed, liveInvalidated };
   });
+  if (result.hydratedIds.length > 0) notifyWorkflowWorker(MAIL_WORKFLOW_APP_ID);
   if (result.liveInvalidated) await notifyMailInvalidations();
   return result;
 };

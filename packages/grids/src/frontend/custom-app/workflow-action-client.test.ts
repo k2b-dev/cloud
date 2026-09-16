@@ -180,3 +180,60 @@ describe("Grids App workflow action client", () => {
     expect(statusRequests).toBe(150);
   });
 });
+
+test("reads status immediately, waits for live changes, and refreshes committed data before completion", async () => {
+  const requests: string[] = [];
+  const changes: Array<string | null> = [];
+  const progress = mock(async () => {});
+  const responses = [
+    { status: "running", live: true, committedChanges: 0 },
+    { status: "running", live: true, committedChanges: 1 },
+    { status: "running", live: true, committedChanges: 1 },
+    { status: "succeeded", live: true, committedChanges: 1 },
+  ];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(String(input));
+      changes.push(new Headers(init?.headers).get("X-Workflow-Changes"));
+      return Response.json(responses.shift());
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const invocation = invokeCustomAppWorkflow({
+    endpoint: "/invoke",
+    operation: { operationId: "existing", statusUrl: "/status?record=1" },
+    signal: new AbortController().signal,
+    onCommittedChanges: progress,
+  });
+  expect(requests).toEqual(["/status?record=1"]);
+  expect((await invocation).kind).toBe("success");
+  expect(requests).toEqual(Array(4).fill("/status?record=1"));
+  expect(changes).toEqual([null, "0", "1", "1"]);
+  expect(progress).toHaveBeenCalledTimes(1);
+});
+
+test("a reviewed receipt still awaiting resume falls back to paced polling", async () => {
+  const pending = { runId: "RUN123", receiptId: "DOC123", sha256: "a".repeat(64) };
+  const headers: Headers[] = [];
+  const review = mock(async () => true);
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      headers.push(new Headers(init?.headers));
+      return Response.json(
+        headers.length <= 3
+          ? { status: "running", live: true, committedChanges: 0, documentConfirmation: pending }
+          : { status: "succeeded" },
+      );
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const result = await invokeCustomAppWorkflow({
+    endpoint: "/invoke",
+    operation: { operationId: "existing", statusUrl: "/status" },
+    signal: new AbortController().signal,
+    onConfirmExport: review,
+  });
+  expect(result.kind).toBe("success");
+  expect(review).toHaveBeenCalledTimes(1);
+  expect(headers.every((header) => !header.has("X-Workflow-Changes"))).toBe(true);
+});

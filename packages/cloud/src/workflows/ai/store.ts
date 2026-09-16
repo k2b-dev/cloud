@@ -1,3 +1,4 @@
+import { notifyWorkflowWorker } from "../store/worker-runtime";
 import { type SQL, sql } from "bun";
 import type { WorkflowJsonValue } from "../contracts";
 import { wakeWorkflowRunsWaitingOn } from "../store/runs";
@@ -225,6 +226,7 @@ export const workflowAiTaskCancellationRequested = async (id: string, db: SQL = 
 
 export const wakeWorkflowAiTask = async (task: Pick<WorkflowAiTask, "appId" | "id">): Promise<void> => {
   await wakeWorkflowRunsWaitingOn({ appId: task.appId, kind: WORKFLOW_AI_DEPENDENCY_KIND, key: task.id });
+  notifyWorkflowWorker(task.appId);
 };
 
 export const markWorkflowAiTaskCanceledIfRequested = async (id: string, db: SQL = sql): Promise<WorkflowAiTask | null> => {

@@ -37,6 +37,8 @@ import {
 } from "../service/public-resources";
 import type { RecordComment } from "../service/record-comments";
 import type { GridFile } from "../service/types";
+import { workflowCommittedChanges, waitForCustomAppWorkflowChange } from "../service/custom-app-workflow-progress";
+import { latestWorkflowRunEventCursor } from "../service/workflow-run-events";
 import { getWorkflowDocumentConfirmation, getWorkflowRunScope } from "../service/workflow-runs";
 import { projectGridRecord, projectPublishedRecords, requiredProjected } from "./custom-app-public-dto";
 import { loadPublishedCustomAppPage } from "./custom-app-published-page";
@@ -698,6 +700,8 @@ export const createCustomAppsApi = (
     getDocumentPdf?: typeof gridsService.document.getPdf;
     getWorkflowRunScope?: typeof getWorkflowRunScope;
     getWorkflowRun?: typeof gridsService.workflow.getRun;
+    waitForWorkflowChange?: typeof waitForCustomAppWorkflowChange;
+    workflowRunEventCursor?: typeof latestWorkflowRunEventCursor;
   } = {},
 ) => {
   const loadOptionalActor = deps.loadOptionalActor ?? auth.requireRole("*");
@@ -1460,74 +1464,101 @@ export const createCustomAppsApi = (
       "/runtime/:shortId/:pageId/:blockId/actions/:actionId/runs/:runId",
       requirePublicIdParam("runId", "workflowRun", "Workflow run"),
       async (c) => {
-        const runtime = await resolvePublishedPageRun(c);
-        if (!runtime) return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
-        const block = runtime.blocks.get(c.req.param("blockId") ?? "");
-        const action =
-          block?.type === "actions"
-            ? block.actions.find((candidate) => candidate.id === c.req.param("actionId") && candidate.kind === "workflow")
-            : block?.type === "records" || block?.type === "referenced_records"
-              ? block.rowActions?.find((candidate) => candidate.id === c.req.param("actionId"))
+        let watch: { baseId: string; workflowId: string; runId: string; after: string } | undefined;
+        let live = true;
+        let canWait = false;
+        const readStatus = async () => {
+          const runtime = await resolvePublishedPageRun(c);
+          if (!runtime) return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
+          const block = runtime.blocks.get(c.req.param("blockId") ?? "");
+          const action =
+            block?.type === "actions"
+              ? block.actions.find((candidate) => candidate.id === c.req.param("actionId") && candidate.kind === "workflow")
+              : block?.type === "records" || block?.type === "referenced_records"
+                ? block.rowActions?.find((candidate) => candidate.id === c.req.param("actionId"))
+                : null;
+          const workflowAction = action && "launcherId" in action ? action : null;
+          if (!block || !workflowAction) {
+            return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
+          }
+          const launcherId = await resolvePublicId("workflowLauncher", workflowAction.launcherId);
+          const capability = launcherId
+            ? runtime.capabilities.workflowLaunchers.find(
+                (candidate) =>
+                  "pageId" in candidate &&
+                  candidate.pageId === runtime.page.id &&
+                  candidate.blockId === block!.id &&
+                  candidate.actionId === workflowAction.id &&
+                  candidate.launcherId === launcherId,
+              )
+            : null;
+          const principal = currentWorkflowPrincipal(c);
+          // Capture before the database read so a transition in between is replayed.
+          const eventCursor =
+            capability && live
+              ? await (deps.workflowRunEventCursor ?? latestWorkflowRunEventCursor)(runtime.app.baseId, capability.workflowId).catch(
+                  () => null,
+                )
               : null;
-        const workflowAction = action && "launcherId" in action ? action : null;
-        if (!block || !workflowAction) {
-          return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
-        }
-        const launcherId = await resolvePublicId("workflowLauncher", workflowAction.launcherId);
-        const capability = launcherId
-          ? runtime.capabilities.workflowLaunchers.find(
-              (candidate) =>
-                "pageId" in candidate &&
-                candidate.pageId === runtime.page.id &&
-                candidate.blockId === block!.id &&
-                candidate.actionId === workflowAction.id &&
-                candidate.launcherId === launcherId,
-            )
-          : null;
-        const principal = currentWorkflowPrincipal(c);
-        const [scope, run] = capability
-          ? await Promise.all([loadWorkflowRunScope(internalIdParam(c, "runId")!), getWorkflowRun(internalIdParam(c, "runId")!)])
-          : [null, null];
-        const authorization = scope?.authorization;
-        if (
-          !block ||
-          !workflowAction ||
-          !capability ||
-          !scope ||
-          !run ||
-          scope.baseId !== runtime.app.baseId ||
-          run.baseId !== runtime.app.baseId ||
-          run.workflowId !== capability.workflowId ||
-          run.launcherId !== capability.launcherId ||
-          scope.principal.userId !== principal.userId ||
-          scope.principal.serviceAccountId !== principal.serviceAccountId ||
-          (scope.principal.actorServiceAccountId ?? null) !== (principal.actorServiceAccountId ?? null) ||
-          scope.launcherId !== capability.launcherId ||
-          scope.workflow.id !== capability.workflowId ||
-          run.workflowRevision !== capability.revision ||
-          authorization?.kind !== "custom-app-action" ||
-          authorization.customAppId !== runtime.app.id ||
-          authorization.publishedAt !== runtime.app.publishedAt ||
-          authorization.pageId !== runtime.page.id ||
-          !sameStringRecord(authorization.pageParams, runtime.pageParams) ||
-          authorization.blockId !== block.id ||
-          authorization.actionId !== workflowAction.id ||
-          authorization.revision !== capability.revision
-        ) {
-          return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
-        }
-        const status =
-          run.status === "succeeded" ? "succeeded" : ["failed", "canceled", "needs_attention"].includes(run.status) ? "failed" : "running";
-        const confirmation = run.status === "waiting" ? await getWorkflowDocumentConfirmation(run.id) : undefined;
-        return c.json({
-          status,
-          message: customAppWorkflowStatusMessage(run, apiMessages(c)),
-          ...(confirmation
-            ? {
-                documentConfirmation: { ...confirmation, runId: await requiredPublicId("workflowRun", run.id) },
-              }
-            : {}),
-        });
+          const [scope, run] = capability
+            ? await Promise.all([loadWorkflowRunScope(internalIdParam(c, "runId")!), getWorkflowRun(internalIdParam(c, "runId")!)])
+            : [null, null];
+          const authorization = scope?.authorization;
+          if (
+            !block ||
+            !workflowAction ||
+            !capability ||
+            !scope ||
+            !run ||
+            scope.baseId !== runtime.app.baseId ||
+            run.baseId !== runtime.app.baseId ||
+            run.workflowId !== capability.workflowId ||
+            run.launcherId !== capability.launcherId ||
+            scope.principal.userId !== principal.userId ||
+            scope.principal.serviceAccountId !== principal.serviceAccountId ||
+            (scope.principal.actorServiceAccountId ?? null) !== (principal.actorServiceAccountId ?? null) ||
+            scope.launcherId !== capability.launcherId ||
+            scope.workflow.id !== capability.workflowId ||
+            run.workflowRevision !== capability.revision ||
+            authorization?.kind !== "custom-app-action" ||
+            authorization.customAppId !== runtime.app.id ||
+            authorization.publishedAt !== runtime.app.publishedAt ||
+            authorization.pageId !== runtime.page.id ||
+            !sameStringRecord(authorization.pageParams, runtime.pageParams) ||
+            authorization.blockId !== block.id ||
+            authorization.actionId !== workflowAction.id ||
+            authorization.revision !== capability.revision
+          ) {
+            return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
+          }
+          watch = eventCursor ? { baseId: run.baseId, workflowId: capability.workflowId, runId: run.id, after: eventCursor } : undefined;
+          const committedChanges = await workflowCommittedChanges(run.id);
+          const status =
+            run.status === "succeeded"
+              ? "succeeded"
+              : ["failed", "canceled", "needs_attention"].includes(run.status)
+                ? "failed"
+                : "running";
+          const confirmation = run.status === "waiting" ? await getWorkflowDocumentConfirmation(run.id) : undefined;
+          canWait = status === "running" && !confirmation && c.req.header("X-Workflow-Changes") === String(committedChanges);
+          return c.json({
+            live: Boolean(eventCursor),
+            committedChanges,
+            status,
+            message: customAppWorkflowStatusMessage(run, apiMessages(c)),
+            ...(confirmation
+              ? {
+                  documentConfirmation: { ...confirmation, runId: await requiredPublicId("workflowRun", run.id) },
+                }
+              : {}),
+          });
+        };
+        const response = await readStatus();
+        if (!watch || !response.ok || !canWait) return response;
+        live = await (deps.waitForWorkflowChange ?? waitForCustomAppWorkflowChange)({ ...watch, signal: c.req.raw.signal });
+        c.req.raw.signal.throwIfAborted();
+        // Re-check the publication, actor and launcher grants after waiting.
+        return readStatus();
       },
     )
     .get("/by-base/:baseId", requirePublicIdParam("baseId", "base", "Base"), async (c) => {

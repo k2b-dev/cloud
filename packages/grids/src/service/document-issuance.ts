@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { RenderHtmlToPdfResult } from "@k2b/cloud/services";
-import { wakeWorkflowRunsWaitingOn } from "@k2b/cloud/workflows/store";
+import { wakeWorkflowRunsWaitingOn, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import { type DateContext, err, fail, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { sql as defaultSql, type SQL } from "bun";
 import { z } from "zod";
@@ -1328,6 +1328,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         // The kernel persists the signal even if confirmation races parking.
         await wakeWorkflowRunsWaitingOn({ appId: "grids", kind: "grids.document-confirmation", key: input.receiptId }, { db: tx });
       });
+      notifyWorkflowWorker("grids");
       return ok();
     } catch (error) {
       const known = serviceError(error);

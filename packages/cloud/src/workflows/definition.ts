@@ -136,8 +136,6 @@ export type WorkflowActionResult<Output> =
 export type WorkflowPlannedEffect = {
   /** Human-readable summary shown in the dry-run view. */
   summary: string;
-  /** Counts consumed from the effect budget, keyed by budget dimension. */
-  consumes?: Record<string, number>;
   /**
    * What the step would produce.
    *
@@ -220,6 +218,8 @@ type RunHook<Config, Output> = (ctx: WorkflowActionContext, config: Config) => P
  */
 type AuthorizeHook<Config> = (ctx: WorkflowActionContext, config: Config) => Promise<boolean>;
 type PlanHook<Config> = (ctx: WorkflowActionContext, config: Config) => Promise<WorkflowPlannedEffect>;
+/** Cheap, side-effect-free budget counts; shared by execution and dry runs. */
+type CostHook<Config> = (ctx: WorkflowActionContext, config: Config) => Record<string, number> | Promise<Record<string, number>>;
 
 /**
  * `NoInfer` because `run` alone defines what an action produces. Reconcile
@@ -240,6 +240,7 @@ export type WorkflowActionDefinition<Effect extends WorkflowEffectClass, Schema 
   run: RunHook<FromFieldSchema<Schema>, Output>;
   /** What a dry run reports. Required for everything that leaves the process. */
   plan?: PlanHook<FromFieldSchema<Schema>>;
+  cost?: CostHook<FromFieldSchema<Schema>>;
   /** Asks afterwards whether an ambiguous effect landed. */
   reconcile?: ReconcileHook<Output>;
   /** Re-checks permission at the moment of the effect, on the effect's own handle. */
@@ -252,6 +253,7 @@ type ActionBase<Schema extends ObjectSchema> = {
   description: string;
   config: Schema;
   outputType?: string;
+  cost?: CostHook<FromFieldSchema<Schema>>;
 };
 
 /**
@@ -272,7 +274,7 @@ type ActionBase<Schema extends ObjectSchema> = {
 export const workflowAction = {
   /** Deterministic given inputs and prior outcomes. Reading mutable state is not pure. */
   pure: <const Schema extends ObjectSchema, Output = void>(
-    definition: ActionBase<Schema> & {
+    definition: Omit<ActionBase<Schema>, "cost"> & {
       run: RunHook<FromFieldSchema<Schema>, Output>;
     },
   ): WorkflowActionDefinition<"pure", Schema, Output> => ({ ...definition, effect: "pure" }),
@@ -329,6 +331,7 @@ export type ErasedWorkflowAction = {
   outputType?: string;
   run: RunHook<never, unknown>;
   plan?: PlanHook<never>;
+  cost?: CostHook<never>;
   reconcile?: ReconcileHook<unknown>;
   authorize?: AuthorizeHook<never>;
 };

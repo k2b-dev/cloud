@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, spyOn } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
 import { err, fail, ok } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { snapshotTableReadAuthorizer } from "../api/documents-api-shared";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import * as queryPreview from "../query-dsl/preview";
 import { createDocumentForRecord } from "./document-core";
 import { captureRecordSnapshotDraft } from "./document-snapshots";
 import { createTemplate, updateTemplate } from "./document-templates";
@@ -62,6 +63,27 @@ const fixture = async () => {
 };
 
 describe("public Document capture and replay", () => {
+  postgresTest("logs the GQL failure reason without exposing source details to document consumers", async () => {
+    const item = await fixture();
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const preview = spyOn(queryPreview, "previewDslQuery").mockResolvedValue(fail(err.badInput("Query timed out")));
+    try {
+      const result = await createDocumentForRecord(item.input);
+      expect(result).toEqual(fail(err.badInput("The GQL source could not be executed.")));
+      expect(warn).toHaveBeenCalledWith("[grids:documents]", "Document GQL source failed", {
+        baseId: item.baseId,
+        tableId: item.table.id,
+        code: "BAD_INPUT",
+        reason: "Query timed out",
+      });
+      const [issued] = await sql`SELECT count(*)::int AS count FROM grids.documents WHERE base_id = ${item.baseId}::uuid`;
+      expect(issued.count).toBe(0);
+    } finally {
+      preview.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
   postgresTest("shares the captured root without applying snapshot graph pruning to rendering data", async () => {
     const item = await fixture();
     const targetId = testUuid();

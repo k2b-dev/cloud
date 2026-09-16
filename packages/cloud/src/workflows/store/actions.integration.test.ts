@@ -27,6 +27,7 @@ import {
   wakeWorkflowRunsWaitingOn,
 } from "./runs";
 import { runOneWorkflow as runWorker } from "./worker";
+import { createWorkflowWorkerPool } from "./worker-pool";
 
 let readiness: Promise<boolean> | null = null;
 const ready = (): Promise<boolean> => {
@@ -469,6 +470,56 @@ const effectRow = async (runId: string) => {
     expect((await getWorkflowRun(runId))?.state).toBe("needs_attention");
   });
 
+  test("independent database claims proceed while another run holds a worker slot", async () => {
+    expect(await ready()).toBe(true);
+    const held = await queued("probe.parallel");
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let calls = 0;
+    const port = createWorkflowActionPort(
+      workflowModule({
+        "probe.parallel": workflowAction.idempotent({
+          label: "Parallel",
+          description: "Parallel",
+          config: CONFIG,
+          plan: async () => {
+            throw new Error("Execution must not plan");
+          },
+          run: async (ctx) => {
+            calls++;
+            if (ctx.runId === held.runId) {
+              started.resolve();
+              await release.promise;
+            }
+            return { state: "succeeded", output: null };
+          },
+        }),
+      }),
+    );
+    const errors: unknown[] = [];
+    const pool = createWorkflowWorkerPool({
+      concurrency: 2,
+      onError: (error) => errors.push(error),
+      run: async () => (await runOneWorkflow({ worker: "parallel", actions: port })).state !== "idle",
+    });
+    pool.start();
+    try {
+      await started.promise;
+      const quick = await queued("probe.parallel");
+      pool.wake();
+      const deadline = Date.now() + 5_000;
+      while ((await getWorkflowRun(quick.runId))?.state !== "succeeded" && Date.now() < deadline) await Bun.sleep(10);
+      expect((await getWorkflowRun(quick.runId))?.state).toBe("succeeded");
+      expect((await getWorkflowRun(held.runId))?.state).toBe("running");
+      expect(calls).toBe(2);
+      expect(errors).toEqual([]);
+    } finally {
+      release.resolve();
+      await pool.stop();
+    }
+    expect((await getWorkflowRun(held.runId))?.state).toBe("succeeded");
+  });
+
   test("the budget is charged from the same hook a dry run reads", async () => {
     expect(await ready()).toBe(true);
     const { runId } = await queued("probe.blocked", { emails: 0 });
@@ -483,7 +534,8 @@ const effectRow = async (runId: string) => {
           ran = true;
           return { state: "succeeded", output: null };
         },
-        plan: async () => ({ summary: "send", consumes: { emails: 1 } }),
+        cost: () => ({ emails: 1 }),
+        plan: async () => ({ summary: "send" }),
         reconcile: async () => ({ state: "unknown", message: "" }),
       }),
     };
@@ -511,7 +563,10 @@ const effectRow = async (runId: string) => {
         label: "Move",
         description: "Moves.",
         config: CONFIG,
-        plan: async () => ({ summary: "move", consumes: { maxMoves: 1 } }),
+        cost: () => ({ maxMoves: 1 }),
+        plan: async () => {
+          throw new Error("Execution must never build a dry-run preview");
+        },
         run: async () => {
           calls += 1;
           return calls === 1 ? { state: "waiting" as const, dependency } : { state: "succeeded" as const, output: { moved: true } };
@@ -643,7 +698,8 @@ const effectRow = async (runId: string) => {
           ran = true;
           return { state: "succeeded", output: null };
         },
-        plan: async () => ({ summary: "write", consumes: { writes: 1 } }),
+        cost: () => ({ writes: 1 }),
+        plan: async () => ({ summary: "write" }),
         // Access can be revoked between queueing and running.
         authorize: async () => false,
       }),
@@ -835,9 +891,9 @@ const effectRow = async (runId: string) => {
         description: "Sends.",
         config: CONFIG,
         run: async () => ({ state: "succeeded", output: { id: "real" } }),
+        cost: () => ({ emails: 1 }),
         plan: async (_ctx, input) => ({
           summary: `send to ${input.to}`,
-          consumes: { emails: 1 },
           output: { id: "planned", planned: true },
         }),
         reconcile: async () => ({ state: "unknown", message: "" }),

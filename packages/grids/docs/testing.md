@@ -1,5 +1,39 @@
 # Run all Grids tests
 
+## Lightweight performance diagnosis
+
+From the repository root, run `bun run --cwd packages/grids perf:diagnose`.
+It uses the same local PostgreSQL, NATS, Gotenberg and `PDFTOTEXT` prerequisites
+as verification below, plus Docker with the local `valkey/valkey:8-alpine` image.
+It reuses those services and starts one small, temporary Valkey cache. Settings
+cache keys are global, so a separate database alone would mix diagnostic settings
+with the development stack. It creates a disposable database; the configured
+application database is never used for fixtures. The database, cache container and
+diagnostic Sync namespace are removed afterwards, including after a worker timeout.
+
+The runner measures three permission-aware GQL paths at 100 and 1,000 records,
+five real Inventory issue-position workflows, two Billing invoice/PDF workflows,
+and one further invoice with a concurrent GQL query and Inventory action. GQL has
+one warmup and five serial samples per query and size, plus three setup validation
+queries. Setup is outside the measured window. The
+parent stops the diagnostic worker after three minutes of measured work; setup
+also has a finite timeout. This is a small backend diagnosis, not a stress test
+or a browser/gateway latency measurement.
+
+The printed output directory contains `report.html`, `summary.md`, raw
+`results.json`, environment details, process logs and the three verified PDFs.
+Set `GRIDS_DIAGNOSTICS_DIR` to choose its parent directory. Reports retain all
+individual timings, including warmups. GQL spans separate context, parsing,
+resolution and execution; the diagnostic tracer does not persist production GQL
+traces. Workflow records separate queue and execution time. Admission time can
+overlap queue time, and control steps can contain child steps; do not add these
+overlapping spans together.
+PDF HTTP timing includes transport up to response headers, not only rendering.
+The first PDF uses the existing renderer and is not a guaranteed cold start.
+Median and range describe these small samples; they are not release thresholds.
+
+## Full verification
+
 From the repository root:
 
 ```bash
@@ -34,6 +68,23 @@ workflow store and runtime tests, database-wide outbox tests, remaining standard
 and DB tests, Sync tests, evidence exports, browser bundling, real PDF rendering
 and text extraction, isolated recovery/cleanup tests, and DOM interaction tests.
 The DOM phase uses the shared Solid preload; it does not launch a browser.
+
+The `workflow-concurrency` phase runs before other suites enqueue fixtures. It
+checks ten shared execution/dry-run slots, an eleventh queued run, validation of
+the setting, and a changed limit after restart. Ten simultaneous atomic writes
+must finish with the expected records; saturating the effect pool must not
+starve reference reads in the normal pool.
+
+Worker acceptance includes bounded parallel claims while one action is blocked,
+once-only effect charges, local and NATS wake notifications, recovery after a
+lost notification, and stopping without new claims. Custom App status checks
+revalidate actor and launcher access after waiting; client tests cover immediate
+status reads and refreshing committed changes before the workflow finishes.
+These behavior checks are release gates; laptop timing samples are diagnostic.
+Record guards verify access and identity without reading unused values; deleted
+records still fail. Document GQL failures retain their engine reason in the
+operator log (`grids:documents`) while consumers receive the generic document
+error. The focused integration tests cover both boundaries.
 
 The separate `process-crashes` phase carries a finalized-record document workflow
 through real child-process failures. It requires `GRIDS_CRASH_TEST=1`, which the

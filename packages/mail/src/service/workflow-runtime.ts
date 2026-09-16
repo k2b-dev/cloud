@@ -1,9 +1,10 @@
-import { createRuntimeLifecycle, createRuntimeTaskTracker, logger } from "@k2b/cloud/services";
+import { createRuntimeLifecycle } from "@k2b/cloud/services";
 import { AI_WORKFLOW_ACTIONS, createWorkflowBuiltinActionPorts, type WorkflowExecutionError } from "@k2b/cloud/workflows";
 import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@k2b/cloud/workflows/ai";
 import type { WorkflowExecuteActionPort, WorkflowTracePort } from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflowActionPort,
+  createWorkflowWorker,
   runOneWorkflow,
   tickWorkflows,
   type WorkflowRunClaim,
@@ -20,8 +21,6 @@ import { createMailWorkflowProjectedState, restoreMailWorkflowProjectedState } f
 import { createMailWorkflowValueResolver } from "./workflow-runtime-values";
 import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } from "./workflow-schedule-runtime";
 
-const log = logger("mail:workflows");
-const WORKER_INTERVAL_MS = 1_000;
 const workerId = `mail:${Bun.env.HOSTNAME ?? "local"}:${process.pid}`;
 
 const aiActionNames = new Set(Object.keys(AI_WORKFLOW_ACTIONS));
@@ -120,52 +119,31 @@ const workerPorts = { worker: workerId, appId: MAIL_WORKFLOW_APP_ID, module: mai
 export const runMailWorkflow = (runId: string, trace?: WorkflowTracePort) =>
   runOneWorkflow({ ...workerPorts, actions, runId, ...(trace ? { trace } : {}) });
 
-const drain = async (): Promise<void> => {
-  await tickWorkflows({ ...workerPorts, actions });
-};
-
-let workerTimer: ReturnType<typeof setInterval> | null = null;
-let draining = false;
-const tasks = createRuntimeTaskTracker();
-
-const drainOnce = (): void => {
-  if (draining) return;
-  draining = true;
-  const task = tasks.run(async () => {
-    try {
-      await drain();
-    } catch (error) {
-      log.error("Mail workflow worker tick failed", { error: error instanceof Error ? error.message : String(error) });
-    } finally {
-      draining = false;
-    }
-  });
-  if (task) void task.catch(() => undefined);
-  else draining = false;
-};
+const worker = createWorkflowWorker({
+  appId: MAIL_WORKFLOW_APP_ID,
+  concurrency: 2,
+  recover: () => tickWorkflows({ ...workerPorts, actions, maxRuns: 0 }),
+  run: async () => (await runOneWorkflow({ ...workerPorts, actions })).state !== "idle",
+});
 
 const lifecycle = createRuntimeLifecycle({
   start: async () => {
-    tasks.open();
     try {
       await startWorkflowAiRuntime();
       await startMailWorkflowScheduleRuntime();
       await wakeExpiredWorkflowRuns(100, { appId: MAIL_WORKFLOW_APP_ID });
-      drainOnce();
-      workerTimer = setInterval(drainOnce, WORKER_INTERVAL_MS);
+      await worker.start();
     } catch (error) {
       await stopMailWorkflowScheduleRuntime();
       stopWorkflowAiRuntime();
-      await tasks.close();
+      await worker.stop();
       throw error;
     }
   },
   stop: async () => {
-    if (workerTimer) clearInterval(workerTimer);
-    workerTimer = null;
+    await worker.stop();
     await stopMailWorkflowScheduleRuntime();
     stopWorkflowAiRuntime();
-    await tasks.close();
   },
 });
 

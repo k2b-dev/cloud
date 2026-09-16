@@ -69,7 +69,8 @@ describe("workflowAction", () => {
         exact<Exact<typeof input.retries, number | undefined>>(true);
         return { state: "succeeded", output: { id: input.to } };
       },
-      plan: async (_ctx, input) => ({ summary: `send to ${input.to}`, consumes: { sends: 1 } }),
+      cost: () => ({ sends: 1 }),
+      plan: async (_ctx, input) => ({ summary: `send to ${input.to}` }),
       reconcile: async () => ({ state: "unknown", message: "provider did not answer" }),
     });
 

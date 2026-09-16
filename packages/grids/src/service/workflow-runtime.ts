@@ -11,6 +11,7 @@
 import { err, fail, type Result } from "@k2b/stdlib";
 import { CursorMismatchError, RetentionGapError, type Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
+import { SQL } from "bun";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeResources, trace } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeLocale } from "@k2b/cloud/shared";
@@ -31,6 +32,8 @@ import {
 } from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflowActionPort,
+  createWorkflowWorker,
+  notifyWorkflowWorker,
   createWorkflowDryRunPort,
   dryRunOneWorkflow,
   runOneWorkflow,
@@ -38,6 +41,7 @@ import {
   type WorkflowRunClaim,
   wakeExpiredWorkflowRuns,
 } from "@k2b/cloud/workflows/store";
+import { app } from "../config";
 import type { WorkflowRunEventScope } from "../lib/workflow-run-events";
 import type {
   GridsWorkflow,
@@ -81,10 +85,6 @@ const workflowScheduler = lazySync((sync) =>
 );
 let scheduleWorker: Worker | undefined;
 const RECONCILE_INTERVAL_MS = 60_000;
-/** Short, because a button press waits for it. Dispatch is cheap when there is nothing to do. */
-const WORKER_INTERVAL_MS = 1_000;
-/** Bounds one tick: a worker that never returns cannot be stopped. */
-const MAX_DRY_RUNS_PER_TICK = 25;
 const SCHEDULE_PREFIX = "grids:workflow:";
 
 const workflowScheduleId = (workflow: Pick<GridsWorkflow, "id" | "revision">): string => `${SCHEDULE_PREFIX}${workflow.id}`;
@@ -296,7 +296,10 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
     requestFingerprint,
     context,
   });
-  if (replay) return replay;
+  if (replay) {
+    if (replay.ok) notifyWorkflowWorker(GRIDS_APP_ID);
+    return replay;
+  }
   if (input.expectedRevision !== undefined && input.expectedRevision !== workflow.revision) {
     return fail(workflowConflict(t.workflowChangedCaller));
   }
@@ -334,6 +337,7 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
     launcherId: input.launcherId ?? null,
     launcherKind: LAUNCHER_KIND_BY_CHANNEL[input.channel] ?? null,
   });
+  if (receipt.ok) notifyWorkflowWorker(GRIDS_APP_ID);
   // A run appears in the list the moment it is accepted, not when a worker
   // reaches it — a button that queues work has to show something immediately.
   if (receipt.ok && receipt.data.created) await publishRunEvent(receipt.data.runId, "accepted");
@@ -354,7 +358,19 @@ const workerId = `grids:${Bun.env.HOSTNAME ?? "local"}:${process.pid}`;
  * `src/workflows.ts` be a plain vocabulary rather than a factory — and what
  * lets one port serve every run this worker claims.
  */
-const declaredWorkflowActions = createWorkflowActionPort(gridsWorkflows);
+// Effects may hold a transaction while resolving references through the normal
+// read pool. Sharing that pool deadlocks once every connection holds an effect.
+// Bun's default pool limit (10) also bounds transactional writes independently
+// of slots occupied by HTTP/PDF work. Connections are opened lazily.
+let workflowEffectDb: SQL | undefined;
+let declaredWorkflowActions: WorkflowExecuteActionPort | undefined;
+const workflowEffectActions = (): WorkflowExecuteActionPort => {
+  if (!declaredWorkflowActions) {
+    workflowEffectDb = new SQL();
+    declaredWorkflowActions = createWorkflowActionPort(gridsWorkflows, { db: workflowEffectDb });
+  }
+  return declaredWorkflowActions;
+};
 const declaredWorkflowDryRunActions = createWorkflowDryRunPort(gridsWorkflows);
 const builtinWorkflowActions = createWorkflowBuiltinActionPorts({
   authorize: async (context): Promise<WorkflowExecutionError | undefined> => {
@@ -367,7 +383,7 @@ const builtinWorkflowActions = createWorkflowBuiltinActionPorts({
   },
 });
 const workflowActions: WorkflowExecuteActionPort = {
-  get: (action) => declaredWorkflowActions.get(action) ?? builtinWorkflowActions.execute.get(action),
+  get: (action) => workflowEffectActions().get(action) ?? builtinWorkflowActions.execute.get(action),
 };
 const workflowDryRunActions: WorkflowDryRunActionPort = {
   get: (action) => declaredWorkflowDryRunActions.get(action) ?? builtinWorkflowActions.dryRun.get(action),
@@ -403,20 +419,25 @@ export const runGridsWorkflowRun = (runId: string) => runOneWorkflow({ ...worker
 export const dryRunGridsWorkflowRun = (runId?: string) =>
   dryRunOneWorkflow({ ...workerPorts, actions: workflowDryRunActions, ...(runId === undefined ? {} : { runId }) });
 
-/**
- * One pass over this app's runs.
- *
- * `tickWorkflows` dispatches events, wakes parked runs and executes what is
- * ready. Dry runs are claimed by mode, so that loop never sees one and they are
- * drained separately — which is exactly what keeps a question from being
- * answered by doing the work.
- */
-const drainWorkflowRuns = async (): Promise<void> => {
-  await tickWorkflows({ ...workerPorts, actions: workflowActions });
-  for (let index = 0; index < MAX_DRY_RUNS_PER_TICK; index += 1) {
-    const outcome = await dryRunGridsWorkflowRun();
-    if (outcome.state === "idle") break;
-  }
+// Each lifecycle start takes one settings snapshot; active runs keep their slots
+// until drained. Executions and dry runs share the same per-process limit.
+let worker: ReturnType<typeof createWorkflowWorker> | undefined;
+const createGridsWorkflowWorker = (concurrency: number) => {
+  let preferDryRun = false;
+  return createWorkflowWorker({
+    appId: GRIDS_APP_ID,
+    concurrency,
+    recover: () => tickWorkflows({ ...workerPorts, actions: workflowActions, maxRuns: 0 }),
+    run: async () => {
+      const dryFirst = preferDryRun;
+      preferDryRun = !preferDryRun;
+      const execute = () => runOneWorkflow({ ...workerPorts, actions: workflowActions });
+      const dryRun = () => dryRunGridsWorkflowRun();
+      const first = await (dryFirst ? dryRun() : execute());
+      if (first.state !== "idle") return true;
+      return (await (dryFirst ? execute() : dryRun())).state !== "idle";
+    },
+  });
 };
 
 // ─── Schedules and record events ─────────────────────────────────────────────
@@ -612,8 +633,6 @@ export const reconcileWorkflowRuntime = async (): Promise<void> => {
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
-let workerTimer: ReturnType<typeof setInterval> | null = null;
-let draining = false;
 let runtimeEventController: AbortController | null = null;
 let runtimeEventTask: Promise<void> | null = null;
 const workflowRuntimeTasks = createRuntimeTaskTracker();
@@ -656,6 +675,7 @@ const startRuntimeEventReader = (after: string | null): void => {
 
 const workflowRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
+    worker = createGridsWorkflowWorker(await app.settings.get("grids.workflow_concurrency"));
     workflowRuntimeTasks.open();
     const eventCursor = await latestWorkflowRuntimeEventCursor().catch((error) => {
       log.warn("Could not initialize workflow runtime event reader", { error: errorMessage(error) });
@@ -678,17 +698,7 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
     });
     scheduleWorker = await workflowScheduler().process();
     startRuntimeEventReader(eventCursor);
-    workerTimer = setInterval(() => {
-      // A tick that outlives the interval must not start a second one: two
-      // overlapping drains would claim each other's runs and fight the lease.
-      if (draining) return;
-      draining = true;
-      const task = workflowRuntimeTasks.run(async () => {
-        await drainWorkflowRuns().catch((error) => log.warn("Workflow worker tick failed", { error: errorMessage(error) }));
-      });
-      if (task) void task.finally(() => (draining = false));
-      else draining = false;
-    }, WORKER_INTERVAL_MS);
+    await worker.start();
     reconcileTimer = setInterval(() => {
       workflowRuntimeTasks.run(async () => {
         await reconcileWorkflowRuntime().catch((error) => log.warn("Workflow runtime reconcile failed", { error: errorMessage(error) }));
@@ -696,12 +706,14 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
     }, RECONCILE_INTERVAL_MS);
   },
   stop: async () => {
-    if (workerTimer) clearInterval(workerTimer);
-    workerTimer = null;
     if (reconcileTimer) clearInterval(reconcileTimer);
     reconcileTimer = null;
     runtimeEventController?.abort();
     await stopRuntimeResources([
+      async () => {
+        await worker?.stop();
+        worker = undefined;
+      },
       async () => {
         workflowRuntimeTasks.close();
         await workflowRuntimeTasks.drain();
@@ -712,7 +724,9 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
         scheduleWorker = undefined;
       },
     ]);
-    draining = false;
+    await workflowEffectDb?.close();
+    workflowEffectDb = undefined;
+    declaredWorkflowActions = undefined;
     runtimeEventController = null;
     runtimeEventTask = null;
   },

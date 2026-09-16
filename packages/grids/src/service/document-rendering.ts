@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import {
   type GotenbergConfig,
+  logger,
   type RenderHtmlToPdfResult,
   type RenderTemplatePdfPreviewOptions,
   renderTemplatePdfPreview,
@@ -47,6 +48,7 @@ const RENDER_MAX_BYTES = 300_000;
 const DOCUMENT_QUERY_MAX_ROWS = 10_000;
 const DOCUMENT_IMAGE_MAX_BYTES = 2_000_000;
 const DOCUMENT_IMAGE_MAX_COUNT = 12;
+const log = logger("grids:documents");
 
 type DocumentTemplateRecordContext = Pick<GridRecord, "id" | "shortId" | "tableId" | "version" | "data" | "createdAt" | "updatedAt">;
 type DocumentTemplateTableContext = Pick<Table, "id" | "shortId" | "name">;
@@ -180,13 +182,24 @@ const executeDocumentGqlSource = async (params: {
     templateApp: params.templateApp,
     fieldsByTableId,
     timeZone: params.dateConfig?.timeZone,
+    locale: params.dateConfig?.locale,
     maxRows: DOCUMENT_QUERY_MAX_ROWS,
     // A document template is a deliberate data-product boundary. Its admin
     // chooses the stored GQL; readers can consume that output without source
     // table access, but cannot substitute GQL on this trusted execution path.
     viewer: { userId: null, userGroups: [], isAdmin: true },
   });
-  if (!preview.ok) return fail(err.badInput(t.sourceExecutionFailed));
+  if (!preview.ok) {
+    // Template consumers need not have source-table access. Keep the public
+    // error generic, but retain the query engine's reason for operators.
+    log.warn("Document GQL source failed", {
+      baseId: params.baseId,
+      tableId: params.tableId,
+      code: preview.error.code,
+      reason: preview.error.message,
+    });
+    return fail(err.badInput(t.sourceExecutionFailed));
+  }
 
   return ok({
     columns: preview.data.columns,
@@ -349,12 +362,15 @@ export const buildLiveRenderData = async (params: {
 }): Promise<Result<{ source: string; columns: unknown[]; rows: Array<Record<string, unknown>>; data: Record<string, unknown> }>> => {
   const appData = params.app ?? (await buildTemplateAppData());
   const businessData = await buildTemplateBusinessData(params.table.baseId, appData, params.client);
-  const recordMeta = params.includeScanMetadata === false ? {} : await buildRecordScanMeta({
-    baseId: params.table.baseId,
-    tableId: params.table.id,
-    recordId: params.record.id,
-    client: params.client,
-  });
+  const recordMeta =
+    params.includeScanMetadata === false
+      ? {}
+      : await buildRecordScanMeta({
+          baseId: params.table.baseId,
+          tableId: params.table.id,
+          recordId: params.record.id,
+          client: params.client,
+        });
   const fields = await listFields(params.table.id, false, params.client);
   const relatedRecordIds = fields.flatMap((field) => {
     if (field.type !== "relation") return [];

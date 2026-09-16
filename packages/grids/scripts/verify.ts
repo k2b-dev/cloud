@@ -141,6 +141,7 @@ if (process.argv.includes("--bootstrap")) {
       "src/frontend/_components/forms/ObjectListInput.behavior.test.tsx",
       "src/frontend/_components/forms/percent-input.behavior.test.tsx",
     ];
+    const workflowConcurrency = ["src/service/workflow-concurrency.integration.test.ts"];
     const ownSync = ["src/service/evidence-exports.integration.test.ts"];
     const bundleChecks = ["src/frontend/_components/dialogs/AuditPolicyDialog.bundle.test.ts"];
     const pdf = ["src/service/document-query-pdf.integration.test.ts"];
@@ -149,9 +150,15 @@ if (process.argv.includes("--bootstrap")) {
     const all = [...new Bun.Glob("{src,scripts,test}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
     const phases = [
       {
+        name: "workflow-concurrency",
+        files: workflowConcurrency,
+        flags: ["--timeout", "120000", "--preload", "./packages/grids/scripts/verify-sync-preload.ts"],
+      },
+      {
         name: "workflow-kernel",
         files: [
           ...new Bun.Glob("packages/cloud/src/workflows/store/*.integration.test.ts").scanSync(root),
+          "packages/cloud/src/workflows/store/worker-pool.test.ts",
           ...new Bun.Glob("packages/cloud/src/workflows/runtime/*.test.ts").scanSync(root),
         ]
           .sort()
@@ -165,6 +172,7 @@ if (process.argv.includes("--bootstrap")) {
         name: "database-and-standard",
         files: all.filter(
           (file) =>
+            !workflowConcurrency.includes(file) &&
             !special.includes(file) &&
             !dom.includes(file) &&
             !ownSync.includes(file) &&

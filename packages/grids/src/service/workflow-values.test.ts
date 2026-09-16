@@ -212,7 +212,8 @@ describe("workflow kernel value resolver", () => {
     const resolver = new GridsWorkflowValueResolver({
       canReadTable: async () => true,
       recordShortId: async () => recordShortId,
-      readRecord: async () => {
+      readRecord: async (_tableId, _recordId, relationsOnly) => {
+        expect(relationsOnly).toBe(false);
         reads += 1;
         return record;
       },
@@ -302,7 +303,12 @@ describe("workflow kernel value resolver", () => {
       canReadTable: async () => true,
       recordShortId: async (_resolvedTableId, resolvedRecordId) =>
         resolvedRecordId === otherRecordId ? otherRecordShortId : recordShortId,
-      readRecord: async (resolvedTableId, resolvedRecordId) => records.get(`${resolvedTableId}:${resolvedRecordId}`) ?? null,
+      readRecord: async (resolvedTableId, resolvedRecordId, relationsOnly) => {
+        // Resolving a relation never computes either record's other fields.
+        expect(resolvedTableId).toBe(tableId);
+        expect(relationsOnly).toBe(true);
+        return records.get(`${resolvedTableId}:${resolvedRecordId}`) ?? null;
+      },
     });
     const invocation = {
       workflowId: recordId,
@@ -348,6 +354,22 @@ describe("workflow kernel value resolver", () => {
       state: "resolved",
       value: [{ kind: "record", tableId: targetTableId, recordId: otherRecordId }],
     });
+
+    const missingTarget = new GridsWorkflowValueResolver({
+      canReadTable: async () => true,
+      recordShortId: async () => null,
+      readRecord: async (resolvedTableId, resolvedRecordId) => records.get(`${resolvedTableId}:${resolvedRecordId}`) ?? null,
+    });
+    await expect(
+      missingTarget.resolve({
+        reference: "inputs.item.Current archive",
+        path: relationPath,
+        plan: relationPlan,
+        invocation,
+        variables,
+        fallback: () => undefined,
+      }),
+    ).rejects.toThrow("related workflow record no longer exists");
 
     const deniedTarget = new GridsWorkflowValueResolver({
       canReadTable: async (resolvedTableId) => resolvedTableId !== targetTableId,

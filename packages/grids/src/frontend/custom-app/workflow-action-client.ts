@@ -52,6 +52,7 @@ export const invokeCustomAppWorkflow = async (input: {
   body?: Record<string, unknown>;
   signal: AbortSignal;
   onRunning?: () => void;
+  onCommittedChanges?: () => void | Promise<void>;
   messages?: CustomAppWorkflowMessages;
   operation?: CustomAppWorkflowOperation;
   onConfirmExport?: (preview: { runId: string; receiptId: string }, signal: AbortSignal) => Promise<boolean | undefined>;
@@ -73,16 +74,28 @@ export const invokeCustomAppWorkflow = async (input: {
   input.onRunning?.();
 
   const confirmedReceipts = new Set<string>();
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    await delay(Math.min(400 + attempt * 100, 2_000), input.signal);
-    let status: { status?: unknown; message?: unknown; documentConfirmation?: unknown };
+  let live = false;
+  let committedChanges = 0;
+  const deadline = Date.now() + 300_000;
+  for (let attempt = 0; attempt < 150 && Date.now() < deadline; attempt += 1) {
+    if (attempt > 0 && !live) await delay(Math.min(400 + attempt * 100, 2_000), input.signal);
+    input.signal.throwIfAborted();
+    let status: { status?: unknown; message?: unknown; documentConfirmation?: unknown; live?: unknown; committedChanges?: unknown };
     try {
-      const statusResponse = await fetch(operation.statusUrl, { headers: { Accept: "application/json" }, signal: input.signal });
+      const statusResponse = await fetch(operation.statusUrl, {
+        headers: { Accept: "application/json", ...(live ? { "X-Workflow-Changes": String(committedChanges) } : {}) },
+        signal: input.signal,
+      });
       if (!statusResponse.ok) return { kind: "running", message: messages.statusUnavailable };
       status = await statusResponse.json();
     } catch (error) {
       if (input.signal.aborted) throw error;
       return { kind: "running", message: messages.statusUnavailable };
+    }
+    live = status.live === true;
+    if (typeof status.committedChanges === "number" && status.committedChanges > committedChanges) {
+      committedChanges = status.committedChanges;
+      if (status.status !== "succeeded") await input.onCommittedChanges?.();
     }
     if (status.status === "succeeded") {
       return { kind: "success", message: typeof status.message === "string" ? status.message : messages.completed };
@@ -91,6 +104,8 @@ export const invokeCustomAppWorkflow = async (input: {
       return { kind: "error", message: typeof status.message === "string" ? status.message : messages.failed };
     }
     if (status.documentConfirmation !== undefined) {
+      // An already-reviewed receipt can remain visible until the worker resumes.
+      live = false;
       const pending = WorkflowPendingDocumentConfirmationSchema.safeParse(status.documentConfirmation);
       if (!pending.success) return { kind: "running", message: messages.statusUnavailable };
       if (!confirmedReceipts.has(pending.data.receiptId)) {

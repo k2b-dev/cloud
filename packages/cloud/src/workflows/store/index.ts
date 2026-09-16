@@ -105,3 +105,5 @@ export {
   type WorkflowWorkerOptions,
   type WorkflowWorkerOutcome,
 } from "./worker";
+
+export { createWorkflowWorker, notifyWorkflowWorker } from "./worker-runtime";

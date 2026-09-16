@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AiResolvedModel } from "../ai/types";
 import type { WorkflowAiTask } from "./ai/types";
-import { AI_WORKFLOW_ACTIONS, planWorkflowAiAction, runWorkflowAiAction } from "./ai-actions";
+import { AI_WORKFLOW_ACTIONS, workflowAiActionCost, runWorkflowAiAction } from "./ai-actions";
 
 const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   id: "00000000-0000-0000-0000-000000000001",
@@ -87,7 +87,7 @@ describe("shared workflow AI actions", () => {
   });
 
   test("charges one logical call only before the task exists", async () => {
-    expect(await planWorkflowAiAction(context, "Generate", { exists: async () => false })).toMatchObject({ consumes: { maxAiCalls: 1 } });
-    expect(await planWorkflowAiAction(context, "Generate", { exists: async () => true })).not.toHaveProperty("consumes");
+    expect(await workflowAiActionCost(context, { exists: async () => false })).toEqual({ maxAiCalls: 1 });
+    expect(await workflowAiActionCost(context, { exists: async () => true })).toEqual({});
   });
 });

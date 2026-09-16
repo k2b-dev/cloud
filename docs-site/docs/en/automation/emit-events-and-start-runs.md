@@ -77,23 +77,49 @@ run IDs.
 ```ts
 import {
   createWorkflowActionPort,
+  createWorkflowWorker,
+  notifyWorkflowWorker,
+  runOneWorkflow,
   tickWorkflows,
 } from "@k2b/cloud/workflows/store";
 
-const actions = createWorkflowActionPort(inventoryWorkflows);
-
-const result = await tickWorkflows({
+const ports = {
   worker: process.env.HOSTNAME ?? "inventory-local",
   appId: "inventory",
   module: inventoryWorkflows,
-  actions,
+  actions: createWorkflowActionPort(inventoryWorkflows),
   values: (claim) => createInventoryValueResolver(claim),
   trace: inventoryWorkflowTrace,
+};
+const worker = createWorkflowWorker({
+  appId: ports.appId,
+  concurrency: 2,
+  run: async () => (await runOneWorkflow(ports)).state !== "idle",
+  recover: () => tickWorkflows({ ...ports, maxRuns: 0 }),
 });
+// In the application's lifecycle, after Sync is available:
+await worker.start();
+// After committing an event, invocation or dependency wake:
+notifyWorkflowWorker("inventory");
+// In lifecycle.stop:
+await worker.stop();
 ```
 
-Call ticks from a bounded lifecycle loop. Do not start the next tick while the
-previous one is running.
+Choose concurrency from the application's database and downstream capacity.
+It limits active runs per process; multiple instances multiply that limit.
+Grids defaults to ten slots, configurable in Grids administration and applied
+after restart. Mail uses two slots. Independent runs can proceed beside a slow
+external action; steps inside one run retain their ordering and lease checks.
+
+Notifications wake local workers immediately and other instances through Sync.
+They carry no workflow data and are best effort. Call `notifyWorkflowWorker()`
+**after the outer transaction commits**. A one-second recovery scan handles
+missed notifications, deferred events, deadlines and expired leases. Stopping
+prevents new claims and drains accepted runs. A failed claim waits for the next
+wake instead of retrying in a tight loop.
+
+`tickWorkflows()` also remains available for bounded one-off passes. A worker's
+recovery callback uses `maxRuns: 0` so it never bypasses the slot limit.
 
 Every application worker must pass its `appId` and current module. The app ID
 keeps claims scoped to the app. Workers require a plan matching the current

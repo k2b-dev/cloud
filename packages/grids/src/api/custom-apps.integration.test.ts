@@ -1456,6 +1456,8 @@ describe("Grids App Form runtime", () => {
           error: null,
           resultMessage: "Approved",
         };
+        let denyStatusScope = false;
+        let statusWaits = 0;
         const createStatusApi = (serviceAccountId: string) =>
           new Hono<AuthContext>().route(
             "/apps",
@@ -1503,7 +1505,14 @@ describe("Grids App Form runtime", () => {
                   status: "queued",
                 });
               },
+              workflowRunEventCursor: async () => "internal-cursor",
+              waitForWorkflowChange: async () => {
+                statusWaits++;
+                denyStatusScope = true;
+                return true;
+              },
               getWorkflowRunScope: async (runId): Promise<GridsWorkflowRunScope | null> => {
+                if (denyStatusScope) return null;
                 const accepted = statusRuns.get(runId);
                 return accepted
                   ? {
@@ -1555,8 +1564,16 @@ describe("Grids App Form runtime", () => {
         const statusPath = delegatedAction.statusUrl.replace(/^\/api\/grids/, "");
         const ownStatus = await firstServiceAccountApi.request(statusPath);
         expect(ownStatus.status).toBe(200);
-        expect(await ownStatus.json()).toEqual({ status: "succeeded", message: "Approved" });
+        expect(await ownStatus.json()).toMatchObject({ status: "succeeded", message: "Approved", committedChanges: 0 });
         expect((await secondServiceAccountApi.request(statusPath)).status).toBe(404);
+
+        statusResult = { status: "running", error: null, resultMessage: null };
+        const waitingHeaders = { "X-Workflow-Changes": "0" };
+        expect((await secondServiceAccountApi.request(statusPath, { headers: waitingHeaders })).status).toBe(404);
+        expect(statusWaits).toBe(0);
+        expect((await firstServiceAccountApi.request(statusPath, { headers: waitingHeaders })).status).toBe(404);
+        expect(statusWaits).toBe(1);
+        denyStatusScope = false;
 
         for (const code of ["WORKFLOW_FAILED", "ATOMIC_CHECK_FAILED", "WORKFLOW_ACTION_ERROR"]) {
           statusResult = {
@@ -1566,7 +1583,7 @@ describe("Grids App Form runtime", () => {
           };
           const failedStatus = await firstServiceAccountApi.request(statusPath);
           expect(failedStatus.status).toBe(200);
-          expect(await failedStatus.json()).toEqual({
+          expect(await failedStatus.json()).toMatchObject({
             status: "failed",
             message: code === "WORKFLOW_ACTION_ERROR" ? apiMessagesForLocale("en").workflowStatusFailed : "Check the agreement and IBAN",
           });
@@ -1587,7 +1604,7 @@ describe("Grids App Form runtime", () => {
         const referencedStatusPath = referencedAction.statusUrl.replace(/^\/api\/grids/, "");
         const referencedStatus = await firstServiceAccountApi.request(referencedStatusPath);
         expect(referencedStatus.status).toBe(200);
-        expect(await referencedStatus.json()).toEqual({ status: "succeeded", message: "Approved" });
+        expect(await referencedStatus.json()).toMatchObject({ status: "succeeded", message: "Approved", committedChanges: 0 });
         expect((await secondServiceAccountApi.request(referencedStatusPath)).status).toBe(404);
 
         actionInvocation = null;
@@ -1719,7 +1736,7 @@ describe("Grids App Form runtime", () => {
         expect(actionInvocation).toBeNull();
         const hiddenActionStatus = await firstServiceAccountApi.request(statusPath);
         expect(hiddenActionStatus.status).toBe(200);
-        expect(await hiddenActionStatus.json()).toEqual({ status: "succeeded", message: "Approved" });
+        expect(await hiddenActionStatus.json()).toMatchObject({ status: "succeeded", message: "Approved", committedChanges: 0 });
         const hiddenBlockDefinition = structuredClone(actionDefinition);
         const hiddenActionBlock = hiddenBlockDefinition.pages[1]!.rows[0]!.columns[0]!.blocks.find((block) => block.id === "actions");
         if (!hiddenActionBlock) throw new Error("Action block is missing");

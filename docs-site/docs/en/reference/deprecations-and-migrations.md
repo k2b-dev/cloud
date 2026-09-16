@@ -10,6 +10,15 @@ updated: 2026-09-16
 
 # Deprecations and migrations
 
+## Workflow action costs
+
+Move budget counts from `plan().consumes` into the action's `cost(ctx, config)`
+hook. `plan()` now produces only dry-run summaries, issues and optional output;
+it is never called during execution. Both modes use `cost()` for budget counts.
+Update all action declarations together with the platform; there is no fallback
+to `plan().consumes`. No stored workflow data migration is required.
+See [effect budgets](/en/docs/automation/effects-retry-and-reconciliation#plan-and-charge-effects).
+
 ## Contextual Universal Search
 
 Search Queries now accept an optional resource scope in the canonical input

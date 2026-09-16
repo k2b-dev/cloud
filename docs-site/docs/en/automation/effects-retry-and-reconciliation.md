@@ -111,18 +111,21 @@ import {
 
 ## Plan and charge effects
 
-Non-pure actions implement `plan()`:
+Non-pure actions implement `plan()` for dry-run previews. Declare budget counts
+separately in a cheap, side-effect-free `cost()` hook:
 
 ```ts
+cost: () => ({ emails: 1 }),
 plan: async (_ctx, input) => ({
   summary: `Email ${input.to}`,
-  consumes: { emails: 1 },
   output: { messageId: "planned", planned: true },
 })
 ```
 
-The same plan drives dry runs and execution budgets. Synthetic outputs must say
-that they are planned.
+Execution and dry runs use the same `cost()` hook. Execution never calls
+`plan()`. An omitted cost means no effect-budget charge; it does not skip
+authorization, validation, or journaling. Keep those checks in `run()` or
+`authorize()`. Synthetic preview outputs must say that they are planned.
 
 Publication can set an `effectBudget`. The kernel charges the root run, so
 fan-out cannot multiply an allowed effect count. Each step is charged once: a
@@ -153,6 +156,7 @@ await wakeWorkflowRunsWaitingOn({
   kind: "inventory.approval",
   key: approvalId,
 });
+notifyWorkflowWorker("inventory");
 ```
 
 The signal is durable and safe around the race between parking and waking.

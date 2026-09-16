@@ -31,6 +31,23 @@ export const app = defineApp({
     requiresRoles: ["user"],
   },
   settings: {
+    "grids.workflow_concurrency": {
+      kind: "number",
+      label: "Concurrent workflow runs",
+      default: 10,
+      min: 1,
+      integer: true,
+      description: "Shared by executions and dry runs per Grids process. Changes take effect after restarting all Grids instances.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Parallele Workflow-Runs",
+            description:
+              "Gemeinsam für Ausführungen und Testläufe pro Grids-Prozess. Änderungen werden nach Neustart aller Grids-Instanzen wirksam.",
+          },
+        },
+      },
+    },
     "grids.query_pool_size": {
       kind: "number",
       label: "Query pool size",

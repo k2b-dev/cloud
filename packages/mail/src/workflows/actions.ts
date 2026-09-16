@@ -148,9 +148,8 @@ const attempt = async (run: () => Promise<ActionResult>): Promise<ActionResult> 
     return resultFailure(error);
   }
 };
-const planned = (summary: string, consumes: Record<string, number> = {}, output?: WorkflowJsonValue): WorkflowPlannedEffect => ({
+const planned = (summary: string, output?: WorkflowJsonValue): WorkflowPlannedEffect => ({
   summary,
-  ...(Object.keys(consumes).length ? { consumes } : {}),
   ...(output === undefined ? {} : { output }),
 });
 
@@ -315,7 +314,8 @@ const messageAction = (
     effect: "idempotent",
     config,
     authorize: authorized as ErasedWorkflowAction["authorize"],
-    plan: async () => planned(description, consumes),
+    cost: () => consumes,
+    plan: async () => planned(description),
     run: (ctx, rawValues) =>
       attempt(async () => {
         const values = rawValues as unknown as Record<string, WorkflowJsonValue>;
@@ -410,7 +410,8 @@ const conversationMutation = (
     effect: "transactional",
     config,
     authorize: authorized as ErasedWorkflowAction["authorize"],
-    plan: async () => planned(description, { maxCollaborationChanges: 1 }),
+    cost: () => ({ maxCollaborationChanges: 1 }),
+    plan: async () => planned(description),
     run: (ctx, rawValues) =>
       attempt(async () => {
         const values = rawValues as unknown as Record<string, WorkflowJsonValue>;
@@ -464,7 +465,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
       item: text("Spaces item ID.", false, 120),
     }),
     authorize: authorized,
-    plan: async () => planned("Link a Spaces item.", { maxCollaborationChanges: 1 }),
+    cost: () => ({ maxCollaborationChanges: 1 }),
+    plan: async () => planned("Link a Spaces item."),
     run: (ctx, values) =>
       attempt(async () => {
         await loadScope(ctx);
@@ -499,7 +501,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
       event: { kind: "value", description: "Event data object from AI extraction or explicit values." },
     }),
     authorize: authorized,
-    plan: async () => planned("Create a linked Spaces event.", { maxCollaborationChanges: 1, maxTargets: 1 }),
+    cost: () => ({ maxCollaborationChanges: 1, maxTargets: 1 }),
+    plan: async () => planned("Create a linked Spaces event."),
     run: (ctx, values) =>
       attempt(async () => {
         await loadScope(ctx);
@@ -624,7 +627,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
       summary: text("New conversation summary.", false, 50_000),
     }),
     authorize: authorized,
-    plan: async () => planned("Replace the conversation summary.", { maxCollaborationChanges: 1 }),
+    cost: () => ({ maxCollaborationChanges: 1 }),
+    plan: async () => planned("Replace the conversation summary."),
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -675,12 +679,14 @@ export const MAIL_WORKFLOW_ACTIONS = {
     outputType: "mail.reference",
     config: object({ conversation: conversationReference, saveAs: identifier("Optional variable name for the result.") }),
     authorize: authorized,
+    cost: () => ({ maxCollaborationChanges: 1 }),
     plan: async () =>
-      planned(
-        "Ensure the conversation has a reference number.",
-        { maxCollaborationChanges: 1 },
-        { value: "REFERENCE-PREVIEW", created: true, conversationId: "planned", conversationRevision: 1 },
-      ),
+      planned("Ensure the conversation has a reference number.", {
+        value: "REFERENCE-PREVIEW",
+        created: true,
+        conversationId: "planned",
+        conversationRevision: 1,
+      }),
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -724,7 +730,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
     description: "Adds a mailbox-local tag to a conversation.",
     config: object({ conversation: conversationReference, tag: text("Mailbox-local tag name or ID.", false, 500) }),
     authorize: authorized,
-    plan: async () => planned("Add a local tag.", { maxCollaborationChanges: 1 }),
+    cost: () => ({ maxCollaborationChanges: 1 }),
+    plan: async () => planned("Add a local tag."),
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -766,7 +773,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
     description: "Removes a mailbox-local tag from a conversation.",
     config: object({ conversation: conversationReference, tag: text("Mailbox-local tag name or ID.", false, 500) }),
     authorize: authorized,
-    plan: async () => planned("Remove a local tag.", { maxCollaborationChanges: 1 }),
+    cost: () => ({ maxCollaborationChanges: 1 }),
+    plan: async () => planned("Remove a local tag."),
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -808,7 +816,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
     description: "Adds an internal conversation comment.",
     config: object({ conversation: conversationReference, body: text("Internal comment body.", false, 50_000) }),
     authorize: authorized,
-    plan: async () => planned("Add an internal comment.", { maxCollaborationChanges: 1 }),
+    cost: () => ({ maxCollaborationChanges: 1 }),
+    plan: async () => planned("Add an internal comment."),
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -857,12 +866,14 @@ export const MAIL_WORKFLOW_ACTIONS = {
       saveAs: identifier("Variable name for the created draft.", false),
     }),
     authorize: authorized,
+    cost: () => ({ maxDrafts: 1 }),
     plan: async (ctx) =>
-      planned(
-        "Create a workflow draft.",
-        { maxDrafts: 1 },
-        { id: `planned:${ctx.stepKey}`, revision: 1, senderIdentityId: "planned", deliveryClass: "normal" },
-      ),
+      planned("Create a workflow draft.", {
+        id: `planned:${ctx.stepKey}`,
+        revision: 1,
+        senderIdentityId: "planned",
+        deliveryClass: "normal",
+      }),
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -920,12 +931,14 @@ export const MAIL_WORKFLOW_ACTIONS = {
       saveAs: identifier("Variable name for the created draft.", false),
     }),
     authorize: authorized,
+    cost: () => ({ maxDrafts: 1 }),
     plan: async (ctx) =>
-      planned(
-        "Create a reviewable reply draft.",
-        { maxDrafts: 1 },
-        { id: `planned:${ctx.stepKey}`, revision: 1, senderIdentityId: "planned", deliveryClass: "normal" },
-      ),
+      planned("Create a reviewable reply draft.", {
+        id: `planned:${ctx.stepKey}`,
+        revision: 1,
+        senderIdentityId: "planned",
+        deliveryClass: "normal",
+      }),
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -992,7 +1005,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
     description: "Schedules a workflow draft through the durable Mail outbox.",
     config: object({ draft: text("Draft value reference.", false, 500), scheduledAt: text("ISO timestamp.", false, 100) }),
     authorize: authorized,
-    plan: async () => planned("Schedule a workflow draft for sending.", { maxSends: 1 }),
+    cost: () => ({ maxSends: 1 }),
+    plan: async () => planned("Schedule a workflow draft for sending."),
     run: (ctx, values) =>
       attempt(async () => {
         const scope = await loadScope(ctx);
@@ -1028,7 +1042,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
       body: text("Notification body.", false, 2_000),
     }),
     authorize: authorized,
-    plan: async () => planned("Notify a mailbox user.", { maxNotifications: 1 }),
+    cost: () => ({ maxNotifications: 1 }),
+    plan: async () => planned("Notify a mailbox user."),
     run: (ctx, values) =>
       attempt(async () => {
         const scope = await loadScope(ctx);
@@ -1076,7 +1091,8 @@ export const MAIL_WORKFLOW_ACTIONS = {
       },
     }),
     authorize: authorized,
-    plan: async () => planned("Queue one guarded automatic reply.", { maxSends: 1, maxDrafts: 1 }),
+    cost: () => ({ maxSends: 1, maxDrafts: 1 }),
+    plan: async () => planned("Queue one guarded automatic reply."),
     run: (ctx, values) =>
       attempt(async () => {
         const scope = await loadScope(ctx);

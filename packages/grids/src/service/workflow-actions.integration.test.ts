@@ -48,6 +48,7 @@ import {
   setPolicy as setFinalizationPolicy,
 } from "./record-finalization";
 import { listReferencedBy } from "./referenced-by";
+import * as recordReads from "./records";
 import { canAccessWorkflowRunTable, canExecuteRun, documentActorForScope } from "./workflow-action-scope";
 import { loadWorkflowCatalog } from "./workflow-catalog";
 import { captureWorkflowDocumentSource, captureWorkflowRecordSource } from "./workflow-document-sources";
@@ -1481,6 +1482,32 @@ steps:
       expect((await stepRuns(executeRunId))[0]).toMatchObject({ state: "terminal" });
       expect((await stepRuns(dryRunId))[0]).toMatchObject({ state: "terminal" });
     } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("record guards avoid value reads and still reject deleted records", async () => {
+    const fixture = createFixture();
+    await insertFixture(fixture);
+    const read = spyOn(recordReads, "get");
+    try {
+      const plan = boundPlan([actionStep(0, "updateRecord", { record: "inputs.record", set: { Status: "Approved" } })], {
+        "steps.0.updateRecord.set.Status": fixture.statusFieldId,
+      });
+      const inputs = { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } };
+      const present = await queueRun(fixture, { plan, inputs, mode: "dryRun" });
+      expect(await drive(present, "dryRun")).toBe("succeeded");
+      expect(read).not.toHaveBeenCalled();
+      expect((await recordData(fixture.recordId))[fixture.statusFieldId]).not.toBe("Approved");
+      await sql`UPDATE grids.records SET deleted_at = now() WHERE id = ${fixture.recordId}::uuid`;
+      const deleted = await queueRun(fixture, { plan, inputs, mode: "dryRun" });
+      expect(await drive(deleted, "dryRun")).toBe("failed");
+      expect((await runRow(deleted)).error).toMatchObject({
+        code: "WORKFLOW_DRY_RUN_INDETERMINATE",
+        message: "Workflow record is no longer available",
+      });
+    } finally {
+      read.mockRestore();
       await cleanupFixture(fixture);
     }
   });

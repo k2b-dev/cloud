@@ -28,12 +28,10 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
   const [operations, setOperations] = createSignal<Record<string, CustomAppWorkflowOperation>>({});
   const [status, setStatus] = createSignal<{ kind: "running" | "success" | "error"; message: string } | null>(null);
   let controller: AbortController | null = null;
-  let reloadTimer: number | null = null;
   let disposed = false;
   onCleanup(() => {
     disposed = true;
     controller?.abort();
-    if (reloadTimer !== null) window.clearTimeout(reloadTimer);
   });
 
   const invoke = async (action: Extract<CustomAppRenderedAction, { kind: "workflow" }>) => {
@@ -72,7 +70,7 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
       setStatus(outcome);
       if (outcome.kind !== "running")
         setOperations((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== action.id)));
-      if (outcome.kind === "success") reloadTimer = window.setTimeout(() => window.location.reload(), 600);
+      if (outcome.kind === "success") window.location.reload();
     } catch (cause) {
       if (controller?.signal.aborted) return;
       setStatus({ kind: "error", message: cause instanceof Error ? cause.message : messages().workflowStartFailed });

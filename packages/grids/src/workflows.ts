@@ -45,7 +45,6 @@ import {
 } from "./service/documents";
 import { get as getEmailTemplate } from "./service/email-templates";
 import { listByTable as listFields } from "./service/field-read";
-import { getContent as getFileContent, listForRecordField } from "./service/files";
 import { assertMutationAllowed } from "./service/mutation-policy";
 import {
   assertRecordMutable,
@@ -60,7 +59,6 @@ import {
   softDeleteInTransaction,
   updateInTransaction as updateRecordInTransaction,
 } from "./service/record-write";
-import { get as getRecord } from "./service/records";
 import { get as getTable } from "./service/tables";
 import {
   actionError,
@@ -207,7 +205,7 @@ const atomicLockReferences = async (ctx: WorkflowActionContext, references: read
 };
 
 /**
- * Reads a record after checking the actor may, and confirms it still exists.
+ * Checks table access and confirms the record identity still exists.
  *
  * A planned record has no row yet — a dry run of "create then update" is a
  * legitimate plan — so it validates access and stops there.
@@ -221,11 +219,10 @@ const readableRecord = async (
   await currentTable(ctx, scope, reference.tableId);
   await requireTableAccess(scope, reference.tableId, required);
   if (reference.planned) return;
-  const record = await getRecord(reference.tableId, reference.recordId, {
-    includeRelations: true,
-    dateConfig: await dateContext(ctx),
-  });
-  if (!record) throw actionError("NOT_FOUND", runtimeText(ctx).recordUnavailable);
+  // This guard only needs identity. The owning action reads values in its
+  // transaction; evaluating formulas and expanding relations here repeats work.
+  const records = await publicIdsForRecords(reference.tableId, [reference.recordId]);
+  if (!records.has(reference.recordId)) throw actionError("NOT_FOUND", runtimeText(ctx).recordUnavailable);
 };
 
 /**
@@ -1589,6 +1586,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         };
       }),
 
+    cost: () => ({ documents: 1 }),
     plan: (ctx, config) =>
       planned(async () => {
         const scope = await workflowRunScope(ctx);
@@ -1665,7 +1663,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               runtimeText(ctx).generateDocument({ name: config.output.kind.toUpperCase() }) +
               (plannedDocuments ? ` ${runtimeText(ctx).plannedDocumentData}` : "") +
               (config.sourceVersions === "data" ? ` ${runtimeText(ctx).plannedSourceVersions}` : ""),
-            consumes: { documents: 1 },
             output: {
               kind: "document",
               id: `dry-run:${ctx.stepKey}`,
@@ -1694,7 +1691,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await requirePermission(scope, "write");
         return {
           summary: runtimeText(ctx).generateDocument({ name: template.name }),
-          consumes: { documents: 1 },
           output: {
             kind: "document",
             id: `dry-run:${ctx.stepKey}`,
@@ -1815,6 +1811,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         return { state: "succeeded", output };
       }),
 
+    cost: (_ctx, config) => ({ emails: config.to.length }),
     plan: (ctx, config) =>
       planned(async () => {
         const scope = await workflowRunScope(ctx);
@@ -1822,7 +1819,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const { template, recipients } = await emailInput(ctx, scope, config);
         return {
           summary: runtimeText(ctx).sendEmail({ name: template.name, count: recipients.length }),
-          consumes: { emails: recipients.length },
         };
       }),
   }),
@@ -1859,6 +1855,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         return { state: "succeeded", output: { status: result.status, ok: result.ok, body: result.body } };
       }),
 
+    cost: () => ({ httpRequests: 1 }),
     plan: (ctx, config) =>
       planned(async () => {
         await requireExecution(await workflowRunScope(ctx));
@@ -1866,7 +1863,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         requireOk(await preflightWorkflowHttp({ ...request, locale: invocationLocale(ctx) }));
         return {
           summary: `${request.method} ${new URL(request.url).host}`,
-          consumes: { httpRequests: 1 },
         };
       }),
 

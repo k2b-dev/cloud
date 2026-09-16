@@ -7,7 +7,8 @@ import { z } from "zod";
 import type { GridRecord } from "../contracts";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
 import { type PublicResourceType, projectPublicId } from "./public-resources";
-import { createReader } from "./record-read";
+import { listByTable as listFields } from "./field-read";
+import { createReader, publicIdsForRecords } from "./record-read";
 import { SHORT_ID_REGEX } from "./short-id";
 import { canAccessWorkflowBaseTable } from "./workflow-authorization";
 
@@ -31,7 +32,7 @@ type WorkflowInputPreparationOptions = {
 
 type WorkflowValueResolverDeps = {
   canReadTable: (tableId: string) => Promise<boolean>;
-  readRecord: (tableId: string, recordId: string) => Promise<GridRecord | null>;
+  readRecord: (tableId: string, recordId: string, relationsOnly: boolean) => Promise<GridRecord | null>;
   recordShortId: (tableId: string, recordId: string) => Promise<string | null>;
   publicResourceId?: (type: PublicResourceType, id: string) => Promise<string | null>;
 };
@@ -206,11 +207,11 @@ export class GridsWorkflowValueResolver implements WorkflowValueResolverPort {
     return permission;
   }
 
-  private readRecord(tableId: string, recordId: string): Promise<GridRecord | null> {
-    const key = `${tableId}:${recordId}`;
+  private readRecord(tableId: string, recordId: string, relationsOnly: boolean): Promise<GridRecord | null> {
+    const key = `${tableId}:${recordId}:${relationsOnly}`;
     let record = this.records.get(key);
     if (!record) {
-      record = this.deps.readRecord(tableId, recordId);
+      record = this.deps.readRecord(tableId, recordId, relationsOnly);
       this.records.set(key, record);
     }
     return record;
@@ -268,6 +269,9 @@ export class GridsWorkflowValueResolver implements WorkflowValueResolverPort {
     const fieldId = input.plan.bindings[workflowPathKey(input.path)];
     if (typeof fieldId !== "string") throw new Error(`workflow field binding is unavailable at "${workflowPathKey(input.path)}"`);
     if (!(await this.canReadTable(value.tableId))) throw new Error("workflow actor cannot read the referenced table");
+    const targetTableId = input.plan.bindings[workflowPathKey([...input.path, "$relationTarget"])];
+    const cardinality = input.plan.bindings[workflowPathKey([...input.path, "$relationCardinality"])];
+    const isRelation = typeof targetTableId === "string" && (cardinality === "single" || cardinality === "multiple");
     let fieldValue: WorkflowJsonValue;
     const snapshots = input.invocation.context?.workflowRecordSnapshots;
     if (snapshots && typeof snapshots === "object" && !Array.isArray(snapshots)) {
@@ -275,24 +279,22 @@ export class GridsWorkflowValueResolver implements WorkflowValueResolverPort {
       if (snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)) {
         fieldValue = snapshot[fieldId] ?? null;
       } else {
-        const record = await this.readRecord(value.tableId, value.recordId);
+        const record = await this.readRecord(value.tableId, value.recordId, isRelation);
         if (!record) throw new Error("referenced workflow record no longer exists");
         fieldValue = (record.data[fieldId] ?? null) as WorkflowJsonValue;
       }
     } else {
-      const record = await this.readRecord(value.tableId, value.recordId);
+      const record = await this.readRecord(value.tableId, value.recordId, isRelation);
       if (!record) throw new Error("referenced workflow record no longer exists");
       fieldValue = (record.data[fieldId] ?? null) as WorkflowJsonValue;
     }
-    const targetTableId = input.plan.bindings[workflowPathKey([...input.path, "$relationTarget"])];
-    const cardinality = input.plan.bindings[workflowPathKey([...input.path, "$relationCardinality"])];
-    if (typeof targetTableId !== "string" || (cardinality !== "single" && cardinality !== "multiple")) {
+    if (!isRelation) {
       return { state: "resolved", value: fieldValue };
     }
     if (!(await this.canReadTable(targetTableId))) throw new Error("workflow actor cannot read the related table");
     const recordIds = relationRecordIds(fieldValue, cardinality);
     for (const recordId of recordIds) {
-      if (!(await this.readRecord(targetTableId, recordId))) throw new Error("related workflow record no longer exists");
+      if (!(await this.recordShortId(targetTableId, recordId))) throw new Error("related workflow record no longer exists");
     }
     const references = recordIds.map((recordId) => recordReference(targetTableId, recordId));
     const resolvedRelation = cardinality === "single" ? (references[0] ?? null) : references;
@@ -358,19 +360,16 @@ export const createGridsWorkflowValueResolver = (
   const canReadTable = tableReadChecker(baseId, principal, options.canReadTable);
   return new GridsWorkflowValueResolver({
     canReadTable,
-    recordShortId: async (tableId, recordId) => {
-      const [row] = await sql<Array<{ short_id: string }>>`
-        SELECT short_id
-        FROM grids.records
-        WHERE table_id = ${tableId}::uuid AND id = ${recordId}::uuid AND deleted_at IS NULL
-      `;
-      return row?.short_id ?? null;
-    },
-    readRecord: async (tableId, recordId) => {
-      let reader = readers.get(tableId);
+    recordShortId: async (tableId, recordId) => (await publicIdsForRecords(tableId, [recordId])).get(recordId) ?? null,
+    readRecord: async (tableId, recordId, relationsOnly) => {
+      const key = `${tableId}:${relationsOnly}`;
+      let reader = readers.get(key);
       if (!reader) {
         if (!(await canReadTable(tableId))) return null;
+        // Relation references need links and their access checks, not every
+        // formula, rollup or HTML template on the source record.
         reader = createReader(tableId, {
+          ...(relationsOnly ? { fields: (await listFields(tableId)).filter((field) => field.type === "relation") } : {}),
           viewer: {
             userId: principal.userId,
             userGroups: principal.groupIds,
@@ -380,7 +379,7 @@ export const createGridsWorkflowValueResolver = (
             authorizeTable: canReadTable,
           },
         });
-        readers.set(tableId, reader);
+        readers.set(key, reader);
       }
       return (await reader).get(recordId);
     },
