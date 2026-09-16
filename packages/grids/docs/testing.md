@@ -35,6 +35,23 @@ and DB tests, Sync tests, evidence exports, browser bundling, real PDF rendering
 and text extraction, isolated recovery/cleanup tests, and DOM interaction tests.
 The DOM phase uses the shared Solid preload; it does not launch a browser.
 
+The separate `process-crashes` phase carries a finalized-record document workflow
+through real child-process failures. It requires `GRIDS_CRASH_TEST=1`, which the
+full runner sets, and refuses databases outside its `grids_verify_` namespace.
+It kills workers after number reservation, during artifact storage, after the
+document commit and after a local HTTP receiver accepts an effect. A fifth worker
+is suspended and resumed after another worker takes over, before the new owner
+renders its document. Two fresh workers race
+to recover each run after the real 120-second lease expires.
+
+Acceptance checks immutable finalization, one number and document, PDF contents
+and artifact hashes, atomic storage rollback, repeated and independent invocation keys, delivery
+of the committed finalization event and no repeated HTTP effect. An interrupted
+HTTP response must produce `needs_attention`. The test retains worker logs, PDFs,
+and a JSON result in the printed `grids-crash-*` directory. Its HTTP transport is
+routed to a disposable loopback receiver; production network restrictions remain
+covered by the HTTP client tests.
+
 Each phase retains JUnit and complete process logs, including module-load errors.
 The printed `grids-verification-*` directory also records the commit, dirty state,
 lockfile hash and runtime versions in `environment.json`. Set
@@ -60,6 +77,7 @@ database for those commands.
 
 Linting, coverage measurement, load tests and
 [visual browser checks](browser-regression-checklist.md) are separate checks.
-Passing certification does not prove recovery after a process crash or a complete
-backup restoration. Those require separate acceptance runs against disposable
-infrastructure, including durable data and document files.
+Process-crash acceptance covers this document workflow and its declared failure
+boundaries. It does not prove recovery from database or broker outages, every
+workflow, or a complete backup restoration. Restore acceptance remains a separate
+check against disposable infrastructure, including durable data and document files.

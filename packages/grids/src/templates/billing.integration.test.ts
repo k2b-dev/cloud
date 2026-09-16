@@ -203,9 +203,13 @@ for (const valid of [false, true]) {
   postgresTest(
     `billing authored invoice freezes party lookups ${valid ? "after valid profile input" : "only if profile validation succeeds"}`,
     async () => {
+      const started = performance.now();
+      const checkpoint = (phase: string) =>
+        console.info(`[billing finalization ${valid}] ${phase}: ${Math.round(performance.now() - started)}ms`);
       const definition = createBillingTemplate("en");
       const installed = await instantiateDefinition(definition, { withSampleData: false }, null, "en");
       if (!installed.ok) throw new Error(installed.error.message);
+      checkpoint("installed");
       const baseId = installed.data.id;
       const actorId = testUuid();
       try {
@@ -340,6 +344,7 @@ for (const valid of [false, true]) {
         expect(reread?.data[bills.ids.party_name!]).toBe(valid ? "Original buyer" : "Changed buyer");
         const docs = await sql`SELECT id FROM grids.documents WHERE base_id = ${baseId}::uuid`;
         expect(docs).toHaveLength(0);
+        checkpoint("verified");
       } finally {
         await deleteTestWorkflowScope(baseId);
         await sql`UPDATE grids.records SET finalized_at = NULL, finalized_by = NULL, final_revision_id = NULL WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid)`;
@@ -350,8 +355,11 @@ for (const valid of [false, true]) {
         await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
         await sql`DELETE FROM auth.access WHERE user_id = ${actorId}::uuid`;
         await sql`DELETE FROM auth.users WHERE id = ${actorId}::uuid`;
+        checkpoint("cleaned");
       }
     },
-    30_000,
+    // This includes installing a Base, running the authored workflow, checking
+    // frozen/live lookups and cleaning up. Use the existing full-journey budget.
+    180_000,
   );
 }

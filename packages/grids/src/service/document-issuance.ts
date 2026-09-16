@@ -526,6 +526,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     if (!requestHash.ok) return requestHash;
     try {
       const receipt = await db.begin(async (tx) => {
+        if (input.canReadTable) await authorizeSnapshot(input.snapshot, input.canReadTable, input.dateConfig?.locale, tx);
         const operation = await operationIdentity(
           {
             baseId: input.snapshot.baseId,
@@ -816,6 +817,10 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const templateData = templateSnapshot(frozen.template);
       const templateRevision = canonicalDocumentJson(templateData, input.dateConfig?.locale).sha256;
       const finalized = await db.begin(async (tx) => {
+        // Rendering runs outside the transaction. Re-check authority here;
+        // workflow callers also fence and lock their run through this callback.
+        // Take that lock before the receipt lock, as during reservation.
+        if (input.canReadTable) await authorizeSnapshot(frozen.snapshot, input.canReadTable, input.dateConfig?.locale, tx);
         const [locked] = await tx<IssuanceRow[]>`
           SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
           FROM grids.document_issuances WHERE id = ${receipt.id}::uuid FOR UPDATE

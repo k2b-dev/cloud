@@ -1561,7 +1561,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             recordId: record.recordId,
             actor: documentActorForScope(scope),
             idempotencyKey: ctx.effectKey,
-            canReadTable: ({ tableId }, client) => canAccessWorkflowRunTable(scope, tableId, "read", client),
+            canReadTable: async ({ tableId }, client) => {
+              await ctx.heartbeat(client);
+              const current = await workflowRunScope(ctx, client);
+              await requireExecution(current, client);
+              await requirePermission(current, "write", client);
+              return canAccessWorkflowRunTable(current, tableId, "read", client);
+            },
             viewer: {
               userId: scope.principal.userId,
               userGroups: scope.principal.groupIds,

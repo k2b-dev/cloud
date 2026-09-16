@@ -44,6 +44,7 @@ if (process.argv.includes("--bootstrap")) {
     GRIDS_PDF_URL: pdfUrl.toString(),
     GRIDS_GOTENBERG_TEST_URL: pdfUrl.toString(),
     CLOUD_DATABASE_TEST: "1",
+    GRIDS_CRASH_TEST: "1",
     GRIDS_DB_TEST: "1",
     GRIDS_SYNC_TEST: "1",
     GRIDS_RECORD_EVENTS_DB_TEST: "1",
@@ -143,6 +144,7 @@ if (process.argv.includes("--bootstrap")) {
     const ownSync = ["src/service/evidence-exports.integration.test.ts"];
     const bundleChecks = ["src/frontend/_components/dialogs/AuditPolicyDialog.bundle.test.ts"];
     const pdf = ["src/service/document-query-pdf.integration.test.ts"];
+    const crashes = ["src/service/document-workflow-crash.integration.test.ts"];
     const packageRoot = join(root, "packages/grids");
     const all = [...new Bun.Glob("{src,scripts,test}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
     const phases = [
@@ -167,6 +169,7 @@ if (process.argv.includes("--bootstrap")) {
             !dom.includes(file) &&
             !ownSync.includes(file) &&
             !bundleChecks.includes(file) &&
+            !crashes.includes(file) &&
             !pdf.includes(file),
         ),
         // These suites include multi-step migrations and history baselines;
@@ -178,6 +181,7 @@ if (process.argv.includes("--bootstrap")) {
       // Keep browser bundling isolated from process-global test plugins.
       { name: "browser-bundle", files: bundleChecks, flags: [] },
       { name: "pdf", files: pdf, flags: [] },
+      { name: "process-crashes", files: crashes, flags: [] },
       { name: "recovery-and-cleanup", files: special.slice(3, 5), flags: [] },
       { name: "dom", files: dom, flags: ["--isolate", "--conditions=browser", "--preload", "./packages/ui/test/solid-dom-preload.ts"] },
     ];

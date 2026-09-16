@@ -21,25 +21,24 @@ if (!databaseName) {
         created = true;
         const child = Bun.spawn([process.execPath, "test", import.meta.path], {
           env: { ...process.env, DATABASE_URL: target.toString(), GRIDS_RECORD_EVENTS_DB_CHILD: database },
-          stdout: "pipe",
-          stderr: "pipe",
+          // Preserve progress and failures even when the child times out.
+          stdout: "inherit",
+          stderr: "inherit",
         });
-        const [stdout, stderr, code] = await Promise.all([
-          new Response(child.stdout).text(),
-          new Response(child.stderr).text(),
-          child.exited,
-        ]);
-        expect({ code, output: code === 0 ? "passed" : `${stdout}\n${stderr}` }).toEqual({ code: 0, output: "passed" });
+        expect(await child.exited).toBe(0);
       } finally {
         if (created) await admin.unsafe(`DROP DATABASE "${database}"`);
         await admin.close({ timeout: 5 });
       }
     },
-    60_000,
+    // Child journey budget plus database creation and cleanup.
+    210_000,
   );
 } else {
   test("PG dispatcher retries once, preserves record order, and drains publication on shutdown", async () => {
     if (!enabled || !/^grids_events_[a-f0-9]{32}$/.test(databaseName)) throw new Error("Unexpected isolated database");
+    const started = performance.now();
+    const checkpoint = (phase: string) => console.info(`[record-event recovery] ${phase}: ${Math.round(performance.now() - started)}ms`);
     const { sql } = await import("bun");
     const { dispatchRecordEventOutboxBatch, enqueueRecordEvent, startRecordEventOutbox, stopRecordEventOutbox } = await import(
       "./record-event-outbox"
@@ -57,6 +56,7 @@ if (!databaseName) {
       await migrateWorkflows();
       await migrateLogging();
       await migrate();
+      checkpoint("migrated");
       const baseId = crypto.randomUUID();
       const tableId = crypto.randomUUID();
       const recordId = crypto.randomUUID();
@@ -145,6 +145,7 @@ if (!databaseName) {
       expect(pending?.count).toBe(1);
 
       await dispatchRecordEventOutboxBatch(new AbortController().signal, async () => undefined);
+      checkpoint("retry, ordering and graceful shutdown checked");
       // A stalled publication must not block every remaining resource's shutdown.
       // Exercise the actual 30-second deadline without pretending the I/O canceled.
       await enqueueRecordEvent(sql, event(recordId, 5));
@@ -185,6 +186,7 @@ if (!databaseName) {
       }
       await dispatchRecordEventOutboxBatch(new AbortController().signal, async () => undefined);
 
+      checkpoint("30-second shutdown deadline checked");
       // A dispatch pass has a fixed memory/work budget even after a long outage.
       await sql`
         INSERT INTO grids.record_event_outbox (base_id, table_id, record_id, payload)
@@ -196,6 +198,7 @@ if (!databaseName) {
       expect(await dispatchRecordEventOutboxBatch(new AbortController().signal, async () => undefined)).toBe(500);
       expect(await dispatchRecordEventOutboxBatch(new AbortController().signal, async () => undefined)).toBe(1);
 
+      checkpoint("501-event backlog drained");
       // An individual workflow's snapshot failure must surface from dispatch so
       // the delivery handler retains it instead of acknowledging silently.
       const { insertTestWorkflow } = await import("./workflow-test-fixture");
@@ -267,6 +270,7 @@ if (!databaseName) {
         error: expect.stringContaining("record event snapshot is missing or inconsistent"),
       });
 
+      checkpoint("20 failed delivery attempts retained");
       // Pre-cutover application DLQ history remains readable and is not rewritten.
       const [legacy] = await sql<{ id: string }[]>`
         INSERT INTO grids.record_event_delivery_failures (base_id, consumer_group, event_id, payload, error, attempts, status, dead_at)
@@ -308,9 +312,12 @@ if (!databaseName) {
       expect([...firstPage, ...secondPage]).toContainEqual(legacyFailure);
       expect(await listRecordEventDeliveryFailures(crypto.randomUUID(), 100, 100)).toEqual([]);
       expect(await listRecordEventDeliveryFailures(baseId, 100, -1)).toEqual(firstPage);
+      checkpoint("replay and permission boundaries checked");
     } finally {
       await stopRecordEventOutbox();
       await sql.close({ timeout: 5 });
     }
-  }, 60_000);
+    // Migrations, the real 30-second shutdown deadline, a 501-event backlog,
+    // retries and permission checks use the existing full-journey budget.
+  }, 180_000);
 }

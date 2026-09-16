@@ -207,6 +207,34 @@ describe("public Document capture and replay", () => {
     expect(count?.value).toBe(1);
   });
 
+  postgresTest("rechecks captured-table access after rendering before committing document bytes", async () => {
+    const item = await fixture();
+    let allowed = true;
+    const input = {
+      ...item.input,
+      canReadTable: async () => allowed,
+      renderPdf: async () => {
+        allowed = false;
+        return renderedPdf();
+      },
+    };
+    const denied = await createDocumentForRecord(input);
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) expect(denied.error.status).toBe(403);
+    const [pending] =
+      await sql`SELECT id::text, document_short_id, document_id FROM grids.document_issuances WHERE base_id = ${item.baseId}::uuid`;
+    expect(pending.document_id).toBeNull();
+    expect(await sql`SELECT id FROM grids.documents WHERE base_id = ${item.baseId}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT file_id FROM grids.file_protected_references WHERE base_id = ${item.baseId}::uuid`).toHaveLength(0);
+    allowed = true;
+    const resumed = await createDocumentForRecord({ ...input, renderPdf: async () => renderedPdf() });
+    if (!resumed.ok) throw resumed.error;
+    expect(resumed.data.shortId).toBe(pending.document_short_id);
+    expect(resumed.data.documentNumber).toBe("CAPTURE-1");
+    const receipts = await sql`SELECT id::text FROM grids.document_issuances WHERE base_id = ${item.baseId}::uuid`;
+    expect(receipts).toEqual([{ id: pending.id }]);
+  });
+
   postgresTest("resumes a pending receipt and replays completion after Record and template edits", async () => {
     const item = await fixture();
     let renderCalls = 0;
