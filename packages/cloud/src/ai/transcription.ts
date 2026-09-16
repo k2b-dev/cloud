@@ -1,3 +1,4 @@
+import { beginAiCall, finishAiCall } from "./inference-calls";
 import { openAICompatibleTranscription, type TranscriptionProvider } from "@k2b/nessi/ai";
 import { trace, logger, type TraceContext } from "../services/logging";
 import { coreSettings } from "../services";
@@ -77,6 +78,7 @@ export const runAiTranscription = async (input: RunAiTranscriptionInput): Promis
       let stage: TranscriptionStage = "input";
       let resolved: AiResolvedAudioModel | undefined;
       let succeeded = false;
+      let callId: string | undefined;
       const timeout = AbortSignal.timeout(AI_TRANSCRIPTION_TIMEOUT_MS);
       const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
       try {
@@ -91,6 +93,13 @@ export const runAiTranscription = async (input: RunAiTranscriptionInput): Promis
             .at(-1)
             ?.replace(/\.[^.]*$/, "") || "audio";
         stage = "provider";
+        callId = (
+          await beginAiCall(
+            { ...resolved.profile, pricing: undefined },
+            { kind: "background", task: input.task, appId: input.appId, traceId: span.traceId, ...input.attribution },
+            0,
+          )
+        ).id;
         const result = await resolved.provider.transcribe({
           file: new Blob([input.file], { type: format.mediaType }),
           filename: `${filename}.${format.extension}`,
@@ -114,6 +123,13 @@ export const runAiTranscription = async (input: RunAiTranscriptionInput): Promis
         });
         throw failure;
       } finally {
+        if (callId) {
+          try {
+            await finishAiCall(callId, undefined, succeeded ? "ok" : "failed");
+          } catch {
+            logger("ai:transcription").error("AI cost booking failed", { callId });
+          }
+        }
         await safelyRecordStructuredRun({
           traceId: span.traceId,
           task: input.task,

@@ -1,3 +1,4 @@
+import { AiBackgroundCostError } from "./inference-calls";
 import { describe, expect, it } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import type { z } from "zod";
@@ -20,7 +21,10 @@ const conversation = (overrides: Partial<AiEnrichmentCandidate> = {}): AiEnrichm
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: "2026-09-14T00:00:00.000Z",
+  archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -207,6 +211,24 @@ describe("enrichDirtyAiConversations", () => {
     expect(applied).toHaveLength(1);
     expect(applied[0]?.conversationId).toBe(second.id);
     expect(applied[0]?.title).toBeUndefined();
+  });
+
+  it("skips the optional batch when the background cost stop is active", async () => {
+    const target = conversation();
+    const { store, failed, recorded } = makeStore([target], [stored(1, userMessage("hello"))]);
+    const summary = await enrichDirtyAiConversations({
+      deps: {
+        store,
+        structured: async () => {
+          throw new AiBackgroundCostError();
+        },
+        resolveModel: async () => fakeResolvedModel,
+      },
+    });
+    expect(summary.skipped).toBe(1);
+    expect(summary.failed).toBe(0);
+    expect(failed).toEqual([]);
+    expect(recorded[0]).toMatchObject({ status: "skipped" });
   });
 
   it("marks failing conversations for backoff", async () => {

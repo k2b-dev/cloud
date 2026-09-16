@@ -1,4 +1,11 @@
-import { AiQuotaConfigSchema, AiQuotaIdentitySchema, AiQuotaResetSchema, type AiQuotaConfig, type AiQuotaIdentity } from "../../shared/ai-quotas";
+import { AiModelPricingSchema, type AiModelPricing } from "../../shared/ai-costs";
+import {
+  AiQuotaConfigSchema,
+  AiQuotaIdentitySchema,
+  AiQuotaResetSchema,
+  type AiQuotaConfig,
+  type AiQuotaIdentity,
+} from "../../shared/ai-quotas";
 import { cliText, command, confirmFlag, flag, printRows, printStructured, type CloudCliContext } from "../index";
 import { apiGet, apiJson, queryString, readJsonInput } from "./shared";
 
@@ -15,6 +22,48 @@ const confirm = (ctx: CloudCliContext, yes: boolean) => {
 };
 
 export const aiQuotaCommands = [
+  command("ai models pricing get", {
+    summary: "List configured model input/output reference prices per million tokens",
+    async run({ ctx }) {
+      print(ctx, await apiGet(ctx, `${path}/models`));
+    },
+  }),
+  command("ai models pricing set", {
+    summary: "Set one model's reference prices; JSON null removes prices and makes it unlimited",
+    flags: {
+      id: flag.string({ required: true, description: "Model profile ID" }),
+      pricing: flag.input({
+        required: true,
+        description: "{inputPerMillion,outputPerMillion} or null: --pricing, --pricing-file or --stdin",
+      }),
+      yes: confirmFlag("Confirm model price change"),
+    },
+    async run({ ctx, flags }) {
+      confirm(ctx, flags.yes);
+      const pricing = AiModelPricingSchema.nullable().parse(await readJsonInput<unknown>(flags.pricing, "model pricing"));
+      const current = await apiGet<{ models: { id: string; pricing?: AiModelPricing }[] }>(ctx, `${path}/models`);
+      const model = current.models.find((model) => model.id === flags.id);
+      if (!model) throw new Error("Model not found.");
+      print(
+        ctx,
+        await apiJson(ctx, "PUT", `${path}/models/${encodeURIComponent(flags.id!)}/pricing`, { pricing, expected: model.pricing ?? null }),
+      );
+    },
+  }),
+  command("ai quotas background status", {
+    summary: "Show rolling 24-hour background costs and emergency-stop state",
+    async run({ ctx }) {
+      print(ctx, await apiGet(ctx, `${path}/background`));
+    },
+  }),
+  command("ai quotas background release", {
+    summary: "Release the background emergency stop after reviewing costs",
+    flags: { yes: confirmFlag("Confirm release of the background AI emergency stop") },
+    async run({ ctx, flags }) {
+      confirm(ctx, flags.yes);
+      print(ctx, await apiJson(ctx, "POST", `${path}/background/release`, {}));
+    },
+  }),
   command("ai quotas config get", {
     summary: "Export Assistant limits, rules and revision (platform admin)",
     async run({ ctx }) {
@@ -34,10 +83,15 @@ export const aiQuotaCommands = [
     },
   }),
   command("ai quotas models", {
-    summary: "List model profile IDs available for quota rules; use * for all chat models",
+    summary: "List configured model profiles; only priced chat models support cost rules",
     async run({ ctx }) {
-      const result = await apiGet<{ models: { id: string; label: string }[] }>(ctx, `${path}/models`);
-      printRows(ctx, result, result.models, [{ key: "id" }, { key: "label" }]);
+      const result = await apiGet<{ models: { id: string; label: string; pricing?: AiModelPricing }[] }>(ctx, `${path}/models`);
+      printRows(
+        ctx,
+        result,
+        result.models.map((model) => ({ ...model, pricing: model.pricing ? JSON.stringify(model.pricing) : "unpriced" })),
+        [{ key: "id" }, { key: "label" }, { key: "pricing" }],
+      );
     },
   }),
   command("ai quotas users", {
@@ -47,12 +101,18 @@ export const aiQuotaCommands = [
       page: flag.int({ min: 1, default: 1 }),
     },
     async run({ ctx, flags }) {
-      const result = await apiGet<{ items: AiQuotaIdentity[]; total: number; page: number; perPage: number }>(ctx, `${path}/users${queryString(flags)}`);
+      const result = await apiGet<{ items: AiQuotaIdentity[]; total: number; page: number; perPage: number }>(
+        ctx,
+        `${path}/users${queryString(flags)}`,
+      );
       printRows(ctx, result, result.items, [{ key: "id" }, { key: "type" }, { key: "label" }, { key: "lastUsed" }]);
-      if (ctx.options.output === "text") ctx.print(cliText(ctx, {
-        en: `Page ${result.page}; ${result.total} identities.`,
-        de: `Seite ${result.page}; ${result.total} Identitäten.`,
-      }));
+      if (ctx.options.output === "text")
+        ctx.print(
+          cliText(ctx, {
+            en: `Page ${result.page}; ${result.total} identities.`,
+            de: `Seite ${result.page}; ${result.total} Identitäten.`,
+          }),
+        );
     },
   }),
   command("ai quotas balance", {

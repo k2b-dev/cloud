@@ -6,7 +6,11 @@ import { assistantApi } from "../api/client";
 import { quotaText } from "./quota-messages";
 
 export function quotaState(snapshot: AiChatQuotaSnapshot | null | undefined, model: string) {
-  const balances = snapshot?.enabled ? snapshot.balances.filter((b) => b.scope === "*" || b.scope === model) : [];
+  const balances = snapshot?.enabled
+    ? snapshot.balances
+        .filter((b) => b.scope === "*" || b.scope === model)
+        .map((b) => (snapshot.unlimitedModels?.includes(model) ? { ...b, bypassed: true } : b))
+    : [];
   const finite = balances.filter((b) => !b.bypassed && b.limit !== null);
   const unknown = finite.some((b) => b.unknown > 0);
   const remaining = finite.length ? Math.min(...finite.map((b) => (b.limit === 0 ? 0 : Math.max(0, 100 * (1 - b.used / b.limit!))))) : null;
@@ -59,7 +63,7 @@ export default function AssistantQuota(props: {
         : state().remaining === null
           ? t().unlimited
           : t().remaining({ percent: percent(state().remaining!) });
-  const number = (value: number) => value.toLocaleString(locale());
+  const number = (value: number) => value.toLocaleString(locale(), { maximumSignificantDigits: 6 });
   return (
     <Show when={props.model && state().balances.length}>
       <Chat.ContextPopup
@@ -101,7 +105,9 @@ export default function AssistantQuota(props: {
                       <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
                         <span>
                           {number(balance.used)}
-                          {unlimited() ? ` ${t().tokens}` : ` / ${number(balance.limit!)} ${t().tokens}`}
+                          {unlimited()
+                            ? ` ${props.snapshot?.unit ?? "EUR"}`
+                            : ` / ${number(balance.limit!)} ${props.snapshot?.unit ?? "EUR"}`}
                         </span>
                         <Show when={!unlimited()}>
                           <span>
@@ -109,7 +115,9 @@ export default function AssistantQuota(props: {
                           </span>
                         </Show>
                       </div>
-                      <Show when={balance.estimated}><p class="text-xs text-muted">{t().estimated}</p></Show>
+                      <Show when={balance.estimated}>
+                        <p class="text-xs text-muted">{t().estimated}</p>
+                      </Show>
                       <Show when={!unlimited() && balance.unknown}>
                         <p class="text-xs text-muted">{t().unknown}</p>
                       </Show>

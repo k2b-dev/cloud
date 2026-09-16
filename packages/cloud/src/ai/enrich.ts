@@ -1,3 +1,4 @@
+import { AiBackgroundCostError } from "./inference-calls";
 import { z } from "zod";
 import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
@@ -257,6 +258,11 @@ export const enrichDirtyAiConversations = async (input: {
         try {
           await enrichOne(conversation, span);
         } catch (error) {
+          if (error instanceof AiBackgroundCostError) {
+            summary.skipped += 1;
+            await store.recordEnrichmentRun({ conversationId: conversation.id, status: "skipped", trigger });
+            break;
+          }
           // Stays dirty; the failure marker backs it off so one poison chat
           // cannot burn a model call every single slot.
           summary.failed += 1;

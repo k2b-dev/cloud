@@ -49,8 +49,7 @@ export type AiModelProfile = {
   maxLoadedTools?: number;
   /** Tool-using model rounds per chat turn. Missing or <= 0 is unlimited. */
   maxToolRounds?: number;
-  creditsPerInputToken?: number;
-  creditsPerOutputToken?: number;
+  pricing?: import("../shared/ai-costs").AiModelPricing;
 };
 
 export type AiPublicModelProfile = Pick<
@@ -431,7 +430,16 @@ export type AiPendingTurnActionRecord = {
 
 export type AiTurnToolSource = { kind: "none" } | { kind: "default"; appTools?: boolean };
 
-export type AiClientToolId = "local_bash" | "code_run" | "code_action" | "code_inspect" | "code_interact" | "code_stop" | "code_open" | "code_export" | "code_secret";
+export type AiClientToolId =
+  | "local_bash"
+  | "code_run"
+  | "code_action"
+  | "code_inspect"
+  | "code_interact"
+  | "code_stop"
+  | "code_open"
+  | "code_export"
+  | "code_secret";
 
 /** Immutable project instructions and context manifest captured for one turn. */
 export type AiProjectPromptSnapshot = {

@@ -1,3 +1,4 @@
+import { inferenceProvider } from "./quota-provider";
 import type { Input, LoopAggregate, StructuredMeta, Usage } from "@k2b/nessi";
 import { nessi, StructuredOutputError } from "@k2b/nessi";
 import type { z } from "zod";
@@ -99,7 +100,13 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
 
         const result = await nessi.structured({
           agentId: "cloud-bg",
-          provider: resolved.provider,
+          provider: inferenceProvider(resolved.provider, resolved.profile, {
+            kind: "background",
+            task: input.task,
+            appId: input.appId,
+            traceId: span.traceId,
+            ...input.attribution,
+          }),
           systemPrompt: input.systemPrompt,
           input: input.input,
           output: input.output,

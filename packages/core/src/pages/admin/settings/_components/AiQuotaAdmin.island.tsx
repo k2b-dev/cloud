@@ -1,10 +1,12 @@
-import { query } from "@k2b/stdlib/solid";
 import { navigateTo } from "@k2b/ssr/nav";
 import {
   Button,
   ButtonLink,
   DataTable,
-  DetailPanel,
+  NoticeCard,
+  LocaleProvider,
+  dialogCore,
+  panelDialogOptions,
   FilterChip,
   Pagination,
   Placeholder,
@@ -14,7 +16,6 @@ import {
   StatGrid,
   TextInput,
   Tabs,
-  prompts,
   useLocale,
 } from "@k2b/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
@@ -24,28 +25,28 @@ import {
   type AiQuotaConfig,
   type AiQuotaReport,
   type AiQuotaReportQuery,
-  type AiQuotaSnapshot,
+  type AiQuotaIdentity as Identity,
   type AiQuotaStatus,
 } from "@k2b/cloud/shared";
 import { createSignal, For, Show } from "solid-js";
 import { quotaMessages } from "./ai-quota-messages";
+import AiQuotaIdentity from "./AiQuotaIdentity";
+import AiQuotaDetail from "./AiQuotaDetail";
 import AiQuotaRules from "./AiQuotaRules";
 import AiQuotaCharts from "./AiQuotaCharts";
 const api = coreClient.admin.core["ai-quotas"];
 export default function AiQuotaAdmin(props: {
   config: AiQuotaConfig;
-  models: { id: string; label: string }[];
+  models: { id: string; label: string; pricing?: { inputPerMillion: number; outputPerMillion: number } }[];
   report: AiQuotaReport;
-  balance: AiQuotaSnapshot | null;
 }) {
   const locale = useLocale(),
     t = () => quotaMessages.resolve([locale()]).t;
   const q = () => props.report.query;
   const [search, setSearch] = createSignal(q().search);
-  const [busy, setBusy] = createSignal(false),
-    [error, setError] = createSignal("");
-  const n = (v: number) => v.toLocaleString(locale());
+  const n = (v: number) => v.toLocaleString(locale(), { maximumFractionDigits: 6 });
   const name = (id: string) => (id === "*" ? t().all : (props.models.find((m) => m.id === id)?.label ?? id));
+  const amount = (v: number) => v.toLocaleString(locale(), { maximumSignificantDigits: 6 });
   const status = (s: AiQuotaStatus) =>
     ({ disabled: t().disabled, available: t().available, unlimited: t().unlimited, exhausted: t().exhausted, unknown: t().unknownStatus })[
       s
@@ -53,37 +54,34 @@ export default function AiQuotaAdmin(props: {
   const statusClass = (s: AiQuotaStatus) => (s === "unknown" || s === "exhausted" ? "text-amber-600 dark:text-amber-400" : "text-dimmed");
   const href = (patch: Partial<AiQuotaReportQuery>) => aiQuotaHref({ ...q(), ...patch });
   const change = (patch: Partial<AiQuotaReportQuery>) => navigateTo(href({ ...patch, page: 1, identity: undefined }));
-  const selected = () => props.report.selected;
-  const identityKey = () => (q().identity ? `${q().identityType}:${q().identity}` : "");
-  const balance = query.create({
-    source: identityKey,
-    initial: { source: identityKey(), data: { key: identityKey(), snapshot: props.balance } },
-    load: async (key, { abortSignal }) => {
-      if (!q().identity) return { key, snapshot: null };
-      const response = await api.balance.$get({ query: { type: q().identityType, id: q().identity! } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(t().error);
-      return { key, snapshot: await response.json() };
-    },
-  });
-  const shownBalance = () => (balance.data()?.key === identityKey() ? balance.data()?.snapshot : null);
-  async function reset(scope: string) {
-    if (busy() || !selected() || !shownBalance()) return;
-    const who = selected()!;
-    if (!(await prompts.confirm(`${who.label} · ${name(scope)}\n\n${t().resetConfirm}`))) return;
-    setBusy(true);
-    setError("");
-    try {
-      const response = await api.reset.$post({ json: { type: who.type, id: who.id, scope, requestId: crypto.randomUUID() } });
-      if (!response.ok) {
-        const body = await response.json();
-        throw new Error("message" in body ? body.message : t().error);
-      }
-      await navigateTo(href({ until: undefined }));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+  function openDetail(who: Identity) {
+    let changed = false;
+    void dialogCore
+      .open<void>((close, context) => {
+        const [saving, setSaving] = createSignal(false);
+        const requestClose = () => {
+          if (!saving()) close();
+        };
+        context.setDismissHandler(requestClose);
+        return (
+          <LocaleProvider locale={locale()}>
+            <AiQuotaDetail
+              unit={props.config.unit ?? "EUR"}
+              who={who}
+              modelName={name}
+              range={q().range}
+              close={requestClose}
+              saving={setSaving}
+              changed={() => {
+                changed = true;
+              }}
+            />
+          </LocaleProvider>
+        );
+      }, panelDialogOptions)
+      .then(() => {
+        if (changed) void navigateTo(href({ until: undefined, identity: undefined }));
+      });
   }
   return (
     <div class="app-rows min-w-0 p-3">
@@ -96,6 +94,7 @@ export default function AiQuotaAdmin(props: {
           <span class="text-xs text-dimmed">{props.config.enabled ? t().enabled : t().disabled}</span>
         </Show>
       </div>
+      <NoticeCard tone="info" title={t().tokenTitle} detail={t().tokenHint} />
       <Tabs
         ariaLabel={t().title}
         value={q().view}
@@ -173,9 +172,13 @@ export default function AiQuotaAdmin(props: {
             <StatGrid columns={4}>
               <StatCell label={t().active} value={n(props.report.overview.accounts)} sub={q().range} />
               <StatCell
-                label={t().input}
-                value={props.report.overview.calls && !props.report.overview.measured ? "—" : n(props.report.overview.input)}
-                sub={t().tokens}
+                label={t().cost}
+                value={
+                  props.report.overview.cost === null
+                    ? "—"
+                    : props.report.overview.cost.toLocaleString(locale(), { maximumSignificantDigits: 6 })
+                }
+                sub={props.config.unit ?? "EUR"}
               />
               <StatCell
                 label={t().output}
@@ -191,13 +194,12 @@ export default function AiQuotaAdmin(props: {
             <Show when={props.report.overview.calls > 0}>
               <AiQuotaCharts report={props.report} modelName={name} />
             </Show>
-            <div class={`grid min-w-0 gap-3 ${selected() ? "xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]" : ""}`}>
+            <div class="min-w-0">
               <DataTable.Panel class="self-start">
                 <DataTable.Header title={t().users} subtitle={`${props.report.total} · ${t().current}`} />
                 <DataTable
                   rows={props.report.items}
                   getRowId={(r) => `${r.type}:${r.id}`}
-                  selectedRowId={identityKey()}
                   density="compact"
                   surface="plain"
                   sort={{ key: q().sort, direction: q().direction }}
@@ -206,41 +208,57 @@ export default function AiQuotaAdmin(props: {
                   }
                   columns={[
                     { id: "label", header: t().account, sortable: true },
-                    { id: "tokens", header: t().tokens, align: "right", sortable: true },
-                    { id: "status", header: t().status },
+                    { id: "cost", header: t().cost, align: "right", sortable: true },
+                    { id: "balances", header: t().current },
                     { id: "lastUsed", header: t().lastUsed, sortable: true },
+                    { id: "details", header: t().details, align: "right" },
                   ]}
                   empty={<Placeholder variant="compact" title={t().noResults} description={t().noResultsHint} />}
                   renderCell={({ row, col }) => {
-                    if (col.id === "label")
-                      return (
-                        <a class="font-medium text-primary" href={href({ identity: row.id, identityType: row.type })}>
-                          {row.label}
-                          <Show when={row.type === "service_account"}>
-                            <span class="block text-xs text-dimmed">Service account</span>
-                          </Show>
-                        </a>
-                      );
-                    if (col.id === "tokens" && row.calls && !row.measured) return "—";
-                    if (col.id === "tokens")
+                    if (col.id === "label") return <AiQuotaIdentity type={row.type} label={row.label} />;
+                    if (col.id === "cost" && row.cost === null) return "—";
+                    if (col.id === "cost")
                       return (
                         <span class="tabular-nums">
-                          {n(row.input + row.output)}
+                          {row.cost === null ? "—" : amount(row.cost)} {props.config.unit ?? "EUR"}
                           <span class="block text-xs text-dimmed">
                             {n(row.input)} / {n(row.output)}
                           </span>
                         </span>
                       );
-                    if (col.id === "status")
+                    if (col.id === "balances")
                       return (
-                        <span class={statusClass(row.status)}>
-                          {status(row.status)}
-                          <Show when={row.scopes > 1}>
-                            <span class="block text-xs">
-                              {row.scopes} {t().limitedScopes} · {row.exhausted} {t().blockedScopes}
-                            </span>
-                          </Show>
-                        </span>
+                        <div class="flex min-w-48 flex-col gap-3 py-2">
+                          <For each={row.balances} fallback={<span class={statusClass(row.status)}>{status(row.status)}</span>}>
+                            {(b) => (
+                              <div class="flex flex-col gap-1">
+                                <div class="flex justify-between gap-4 text-xs">
+                                  <span>{name(b.scope)}</span>
+                                  <span class="tabular-nums text-dimmed">
+                                    {amount(b.used)} / {b.limit === null ? t().unlimited : amount(b.limit)} {props.config.unit ?? "EUR"}
+                                  </span>
+                                </div>
+                                <Show when={b.limit !== null && !b.bypassed}>
+                                  <ProgressBar
+                                    tone={b.limit !== null && b.used >= b.limit ? "danger" : "info"}
+                                    size="xs"
+                                    label={`${name(b.scope)} ${t().used}`}
+                                    value={b.limit === 0 ? 100 : (b.used / (b.limit ?? 1)) * 100}
+                                  />
+                                </Show>
+                                <Show when={b.bypassed || b.unknown}>
+                                  <span class="text-xs text-dimmed">{b.bypassed ? t().bypassed : t().unknownStatus}</span>
+                                </Show>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      );
+                    if (col.id === "details")
+                      return (
+                        <Button variant="ghost" size="sm" aria-label={`${t().details}: ${row.label}`} onClick={() => openDetail(row)}>
+                          <i class="ti ti-eye" aria-hidden="true" />
+                        </Button>
                       );
                     return <span class="text-xs text-dimmed">{row.lastUsed ? new Date(row.lastUsed).toLocaleString(locale()) : "—"}</span>;
                   }}
@@ -253,91 +271,6 @@ export default function AiQuotaAdmin(props: {
                   />
                 </DataTable.Footer>
               </DataTable.Panel>
-              <Show when={selected()}>
-                {(who) => (
-                  <aside class="paper min-w-0 p-3" aria-label={who().label}>
-                    <DetailPanel>
-                      <DetailPanel.Header
-                        title={who().label}
-                        subtitle={t().current}
-                        actions={
-                          <ButtonLink size="sm" variant="ghost" href={href({ identity: undefined })}>
-                            {t().close}
-                          </ButtonLink>
-                        }
-                      />
-                      <DetailPanel.Body>
-                        <Show when={error()}>
-                          <Placeholder state="error" description={error()} />
-                        </Show>
-                        <Show when={balance.loading()}>
-                          <Placeholder state="loading" />
-                        </Show>
-                        <Show when={balance.error()}>
-                          <Placeholder
-                            state="error"
-                            description={t().error}
-                            action={<Button onClick={() => balance.refresh()}>{t().refresh}</Button>}
-                          />
-                        </Show>
-                        <Show when={shownBalance() && !shownBalance()!.balances.length}>
-                          <p class="text-sm text-dimmed">{t().noRules}</p>
-                        </Show>
-                        <For each={shownBalance()?.balances}>
-                          {(b) => (
-                            <DetailPanel.Section title={name(b.scope)}>
-                              <p class="text-sm tabular-nums">
-                                {n(b.used)} / {b.limit === null ? t().unlimited : n(b.limit)} {t().tokens}
-                              </p>
-                              <Show when={b.limit !== null && !b.bypassed}>
-                                <ProgressBar
-                                  size="xs"
-                                  label={`${name(b.scope)} ${t().used}`}
-                                  value={b.limit === 0 ? 100 : (b.used / (b.limit ?? 1)) * 100}
-                                />
-                              </Show>
-                              <p class="text-xs text-dimmed">
-                                {t().input}: {n(b.input)} · {t().output}: {n(b.output)}
-                              </p>
-                              <p class="text-xs text-dimmed">
-                                {t().source}: {b.sources.join(", ") || t().missing}
-                              </p>
-                              <Show when={b.bypassed}>
-                                <p class="text-xs text-dimmed">{t().bypassed}</p>
-                              </Show>
-                              <Show when={b.estimated}>
-                                <p class="text-xs text-dimmed">
-                                  {t().estimated}: {n(b.estimated ?? 0)}
-                                </p>
-                              </Show>
-                              <Show when={b.unknown}>
-                                <p class="text-xs text-amber-600">
-                                  {t().unknown}: {n(b.unknown)}. {t().unknownHint}
-                                </p>
-                              </Show>
-                              <p class="text-xs text-dimmed">
-                                {t().until}: {new Date(b.resetsAt).toLocaleString(locale())}
-                              </p>
-                              <Button variant="secondary" size="sm" disabled={busy()} onClick={() => void reset(b.scope)}>
-                                {t().reset}
-                              </Button>
-                            </DetailPanel.Section>
-                          )}
-                        </For>
-                        <Show when={who().type === "user"}>
-                          <ButtonLink
-                            variant="ghost"
-                            size="sm"
-                            href={`/admin/settings?tab=ai-usage&view=comparisons&userId=${who().id}&range=${q().range}`}
-                          >
-                            {t().historyLink}
-                          </ButtonLink>
-                        </Show>
-                      </DetailPanel.Body>
-                    </DetailPanel>
-                  </aside>
-                )}
-              </Show>
             </div>
           </>
         }

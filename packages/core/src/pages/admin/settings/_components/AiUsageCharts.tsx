@@ -4,13 +4,18 @@ import { formatNumber } from "@k2b/cloud/shared";
 import { createMemo } from "solid-js";
 import { aiUsageMessages } from "./ai-usage-messages";
 
-export default function AiUsageCharts(props: { timeline: AiUsageReport["timeline"]; range: AiUsageReport["query"]["range"] }) {
+export default function AiUsageCharts(props: {
+  timeline: AiUsageReport["timeline"];
+  range: AiUsageReport["query"]["range"];
+  unit: string;
+}) {
   const locale = useLocale(),
     t = () => aiUsageMessages.resolve([locale()]).t;
   const date = (at: number) => `${new Date(at).toLocaleString(locale(), { timeZone: "UTC" })} UTC`;
   const n = (v: number) => formatNumber(v, { locale: locale(), decimals: 0 });
   const cursor = createChartCursor({ formatX: date });
-  const build = (metrics: { label: string; value: (p: AiUsageReport["timeline"][number]) => number | null }[]) => {
+  const amount = (value: number) => `${value.toLocaleString(locale(), { maximumSignificantDigits: 6 })} ${props.unit}`;
+  const build = (metrics: { label: string; value: (p: AiUsageReport["timeline"][number]) => number | null }[], format = n) => {
     const series = metrics.map((m) => ({
       label: m.label,
       data: props.timeline.flatMap((p) => (m.value(p) === null ? [] : [{ x: Date.parse(p.bucket), y: m.value(p)! }])),
@@ -36,13 +41,13 @@ export default function AiUsageCharts(props: { timeline: AiUsageReport["timeline
                 ...(props.range === "24h" ? { hour: "2-digit", minute: "2-digit" } : { month: "short", day: "numeric" }),
               }),
           },
-          yAxis: { format: (value) => formatNumber(value, { locale: locale(), compact: true }) },
+          yAxis: { format },
         },
         {
           key: ({ datum }) => `${datum.seriesIndex ?? 0}:${datum.index}`,
           tooltip: ({ datum }) => {
             const r = byKey.get(`${datum.seriesIndex ?? 0}:${datum.index}`)!;
-            return { title: date(r.at), rows: [{ label: r.label, value: n(r.value) }] };
+            return { title: date(r.at), rows: [{ label: r.label, value: format(r.value) }] };
           },
         },
       ),
@@ -55,6 +60,7 @@ export default function AiUsageCharts(props: { timeline: AiUsageReport["timeline
     ]),
   );
   const tokens = createMemo(() => build([{ label: t().tokens, value: (p) => p.tokens }]));
+  const costs = createMemo(() => build([{ label: t().cost, value: (p) => p.cost }], amount));
   type Row = ReturnType<typeof build>["rows"][number];
   const columns = [
     { id: "at", label: "UTC", value: (r: Row) => date(r.at), sortValue: (r: Row) => r.at },
@@ -63,6 +69,15 @@ export default function AiUsageCharts(props: { timeline: AiUsageReport["timeline
   ];
   return (
     <div class="grid min-w-0 gap-3 xl:grid-cols-2">
+      <ChartExplorer
+        class="paper p-3 xl:col-span-2"
+        height="14rem"
+        title={`${t().costOverTime} (${props.unit})`}
+        description={<span class="text-xs text-dimmed">{t().costOverTimeDescription}</span>}
+        data={costs()}
+        cursor={cursor}
+        columns={columns.map((c) => (c.id === "value" ? { ...c, label: t().cost, value: (r: Row) => amount(r.value) } : c))}
+      />
       <ChartExplorer
         class="paper p-3"
         height="14rem"

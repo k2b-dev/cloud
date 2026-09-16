@@ -10,8 +10,6 @@ const commonOptions = (profile: AiModelProfile, apiKey?: string) => ({
   baseURL: profile.baseURL,
   contextWindow: profile.contextWindow,
   temperature: profile.temperature,
-  creditsPerInputToken: profile.creditsPerInputToken,
-  creditsPerOutputToken: profile.creditsPerOutputToken,
   timeouts: PROVIDER_TIMEOUTS,
 });
 
@@ -33,8 +31,6 @@ export const createAiProvider = (profile: AiModelProfile, apiKey?: string): Prov
         baseURL: profile.baseURL,
         contextWindow: profile.contextWindow,
         temperature: profile.temperature,
-        creditsPerInputToken: profile.creditsPerInputToken,
-        creditsPerOutputToken: profile.creditsPerOutputToken,
         timeouts: PROVIDER_TIMEOUTS,
       });
     case "vllm":
@@ -45,8 +41,6 @@ export const createAiProvider = (profile: AiModelProfile, apiKey?: string): Prov
         apiKey,
         contextWindow: profile.contextWindow,
         temperature: profile.temperature,
-        creditsPerInputToken: profile.creditsPerInputToken,
-        creditsPerOutputToken: profile.creditsPerOutputToken,
         timeouts: PROVIDER_TIMEOUTS,
         compat: {
           toolCallIdPolicy: "passthrough",
@@ -66,8 +60,6 @@ export const createAiProvider = (profile: AiModelProfile, apiKey?: string): Prov
         apiKey,
         contextWindow: profile.contextWindow,
         temperature: profile.temperature,
-        creditsPerInputToken: profile.creditsPerInputToken,
-        creditsPerOutputToken: profile.creditsPerOutputToken,
         timeouts: PROVIDER_TIMEOUTS,
       });
   }

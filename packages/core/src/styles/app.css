@@ -48,3 +48,31 @@
   min-width: min(22rem, calc(100vw - 2rem));
   max-width: calc(100vw - 2rem);
 }
+
+.ai-quota-grant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 0.625rem;
+  background: var(--k2b-surface);
+  border: 1px solid var(--k2b-border);
+}
+.ai-quota-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1rem;
+  border-radius: 0.625rem;
+  background: var(--k2b-surface-muted);
+}
+.ai-quota-source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--k2b-surface);
+}

@@ -9,7 +9,6 @@ export const quotaText = i18n.define({
       estimated: "Includes estimated usage for interrupted calls",
       remaining: ({ percent }: { percent: string }) => `${percent} left`,
       used: "Used",
-      tokens: "tokens",
       reset: "Resets",
       refresh: "Refresh",
       refreshing: "Refreshing…",
@@ -18,7 +17,7 @@ export const quotaText = i18n.define({
       unknownShort: "Check usage",
       unknown: "Some calls could not be measured. Contact an administrator or wait for the reset.",
       exhausted: "This allowance is exhausted. Your draft stays here. Wait for the reset or select a model with available allowance.",
-      scope: "Input and output of direct chat calls. Separate image and audio functions are excluded.",
+      scope: "Reference costs of direct chat calls. Separate image/audio functions and unpriced or free models are excluded.",
     },
     de: {
       title: "Chat-Kontingente",
@@ -27,7 +26,6 @@ export const quotaText = i18n.define({
       estimated: "Enthält geschätzten Verbrauch abgebrochener Aufrufe",
       remaining: ({ percent }) => `${percent} frei`,
       used: "Verbraucht",
-      tokens: "Tokens",
       reset: "Reset",
       refresh: "Aktualisieren",
       refreshing: "Wird aktualisiert…",
@@ -37,7 +35,7 @@ export const quotaText = i18n.define({
       unknown: "Einige Aufrufe konnten nicht gemessen werden. Wende dich an einen Administrator oder warte auf den Reset.",
       exhausted:
         "Dieses Kontingent ist aufgebraucht. Dein Entwurf bleibt erhalten. Warte auf den Reset oder wähle ein Modell mit verfügbarem Kontingent.",
-      scope: "Input und Output direkter Chat-Aufrufe. Separate Bild- und Audiofunktionen sind ausgenommen.",
+      scope: "Referenzkosten direkter Chats. Separate Bild-/Audiofunktionen sowie unbepreiste und kostenlose Modelle sind ausgenommen.",
     },
   },
 });

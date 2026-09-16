@@ -1,23 +1,30 @@
+import AiBackgroundBudget from "./AiBackgroundBudget";
 import {
   Button,
   DataTable,
   NumberInput,
+  NoticeCard,
+  LocaleProvider,
   PanelDialog,
   Placeholder,
   Select,
   Switch,
   dialogCore,
-  panelDialogWideOptions,
+  panelDialogOptions,
   prompts,
   useLocale,
 } from "@k2b/ui";
 import { PrincipalPicker, principalKey } from "@k2b/cloud/access/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { AiQuotaConfigSchema, type AiQuotaConfig, type AiQuotaRule } from "@k2b/cloud/shared";
-import { createSignal, Index, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import AiQuotaIdentity from "./AiQuotaIdentity";
 import { quotaMessages } from "./ai-quota-messages";
 const api = coreClient.admin.core["ai-quotas"];
-export default function AiQuotaRules(props: { config: AiQuotaConfig; models: { id: string; label: string }[] }) {
+export default function AiQuotaRules(props: {
+  config: AiQuotaConfig;
+  models: { id: string; label: string; pricing?: { inputPerMillion: number; outputPerMillion: number } }[];
+}) {
   const locale = useLocale(),
     t = () => quotaMessages.resolve([locale()]).t;
   const [draft, setDraft] = createSignal(structuredClone(props.config));
@@ -26,7 +33,8 @@ export default function AiQuotaRules(props: { config: AiQuotaConfig; models: { i
     [error, setError] = createSignal("");
   const dirty = () => JSON.stringify(draft()) !== JSON.stringify(saved());
   const name = (scope: string) => (scope === "*" ? t().all : (props.models.find((m) => m.id === scope)?.label ?? scope));
-  const scopes = () => ["*", ...props.models.map((m) => m.id)].filter((scope) => !draft().rules.some((r) => r.scope === scope));
+  const scopes = () =>
+    ["*", ...props.models.filter((m) => m.pricing).map((m) => m.id)].filter((scope) => !draft().rules.some((r) => r.scope === scope));
   onMount(() => {
     let leaving = false;
     const unload = (event: BeforeUnloadEvent) => {
@@ -87,7 +95,7 @@ export default function AiQuotaRules(props: { config: AiQuotaConfig; models: { i
     if (!scope) return;
     void dialogCore.open<void>((close) => {
       const [rule, setRule] = createSignal<AiQuotaRule>(
-        structuredClone(original ?? { scope, hours: 168, anchor: "1970-01-01T00:00:00.000Z", grants: [] }),
+        structuredClone(original ?? { scope, hours: 24, anchor: "1970-01-01T00:00:00.000Z", grants: [] }),
       );
       const [issue, setIssue] = createSignal("");
       const update = (fn: (next: AiQuotaRule) => void) =>
@@ -97,121 +105,148 @@ export default function AiQuotaRules(props: { config: AiQuotaConfig; models: { i
           return next;
         });
       return (
-        <PanelDialog>
-          <PanelDialog.Header title={original ? t().edit : t().add} icon="ti ti-adjustments" close={close} />
-          <PanelDialog.Body>
-            <div class="flex flex-col gap-4">
-              <Show when={issue()}>
-                <Placeholder state="error" description={issue()} />
-              </Show>
-              <Select
-                label={t().scope}
-                value={rule().scope}
-                options={[...new Set([rule().scope, ...scopes()])].map((value) => ({ value, label: name(value) }))}
-                onValueChange={(value) =>
-                  value &&
-                  update((r) => {
-                    r.scope = value;
-                  })
-                }
-              />
-              <NumberInput
-                label={t().hours}
-                value={rule().hours}
-                min={1}
-                max={8760}
-                onValueChange={(value) =>
-                  update((r) => {
-                    r.hours = value ?? 1;
-                  })
-                }
-              />
-              <p class="text-xs text-dimmed">{t().hint}</p>
-              <p class="text-xs text-dimmed">{t().grantHint}</p>
-              <Index each={rule().grants}>
-                {(grant, i) => (
-                  <div class="flex flex-wrap items-center gap-3 border-b border-border pb-3">
-                    <span class="min-w-32 flex-1 text-sm">
-                      {grant().principal.type === "authenticated" ? t().allUsers : grant().displayName || principalKey(grant().principal)}
-                    </span>
-                    <Switch
-                      label={t().unlimited}
-                      value={grant().limit === null}
-                      onValueChange={(value) =>
-                        update((r) => {
-                          r.grants[i]!.limit = value ? null : 100000;
-                        })
-                      }
-                    />
-                    <Show when={grant().limit !== null}>
-                      <NumberInput
-                        class="w-36"
-                        label={t().tokens}
-                        min={0}
-                        value={grant().limit}
-                        onValueChange={(value) =>
-                          update((r) => {
-                            r.grants[i]!.limit = value ?? 0;
-                          })
-                        }
-                      />
-                    </Show>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        update((r) => {
-                          r.grants.splice(i, 1);
-                        })
-                      }
-                    >
-                      {t().remove}
-                    </Button>
-                  </div>
-                )}
-              </Index>
-              <PrincipalPicker
-                allowServiceAccounts
-                existing={rule().grants.map((g) => g.principal)}
-                onSelect={(principal, display) =>
-                  principal.type !== "public" &&
-                  update((r) => {
-                    r.grants.push({ principal, displayName: display.displayName, limit: 100000 });
-                  })
-                }
-              />
-            </div>
-          </PanelDialog.Body>
-          <PanelDialog.Footer>
-            <Button variant="ghost" onClick={() => close()}>
-              {t().cancel}
-            </Button>
-            <Button
-              onClick={() => {
-                const next = structuredClone(draft());
-                if (index === undefined) next.rules.push(rule());
-                else next.rules[index] = rule();
-                const result = AiQuotaConfigSchema.safeParse(next);
-                if (!result.success) {
-                  setIssue(result.error.issues.map((i) => i.message).join("; "));
-                  return;
-                }
-                setDraft(result.data);
-                close();
-              }}
-            >
-              {t().apply}
-            </Button>
-          </PanelDialog.Footer>
-        </PanelDialog>
+        <LocaleProvider locale={locale()}>
+          <PanelDialog>
+            <PanelDialog.Header title={original ? t().edit : t().add} icon="ti ti-adjustments" close={close} />
+            <PanelDialog.Body>
+              <div class="flex flex-col gap-4">
+                <Show when={issue()}>
+                  <Placeholder state="error" description={issue()} />
+                </Show>
+                <NoticeCard tone="info" title={t().tokenTitle} detail={t().tokenHint} />
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <Select
+                    label={t().scope}
+                    value={rule().scope}
+                    options={[...new Set([rule().scope, ...scopes()])].map((value) => ({ value, label: name(value) }))}
+                    onValueChange={(value) =>
+                      value &&
+                      update((r) => {
+                        r.scope = value;
+                      })
+                    }
+                  />
+                  <NumberInput
+                    showSteppers={false}
+                    label={t().hours}
+                    value={rule().hours}
+                    min={1}
+                    max={8760}
+                    onValueChange={(value) =>
+                      update((r) => {
+                        r.hours = value ?? 1;
+                      })
+                    }
+                  />
+                </div>
+                <p class="text-xs text-dimmed">{t().grantMax}</p>
+                <p class="text-xs text-dimmed">{t().grantHint}</p>
+                <Index each={rule().grants}>
+                  {(grant, i) => (
+                    <div class="ai-quota-grant">
+                      <AiQuotaIdentity type={grant().principal.type} label={grant().displayName || principalKey(grant().principal)} />
+                      <div class="flex flex-wrap items-center gap-2">
+                        <Select
+                          class="w-32"
+                          aria-label={t().limit}
+                          value={grant().limit === null ? "unlimited" : "cost"}
+                          options={[
+                            { value: "cost", label: t().cost },
+                            { value: "unlimited", label: t().unlimited },
+                          ]}
+                          onValueChange={(value) =>
+                            update((r) => {
+                              r.grants[i]!.limit = value === "unlimited" ? null : 10;
+                            })
+                          }
+                        />
+                        <Show when={grant().limit !== null}>
+                          <NumberInput
+                            showSteppers={false}
+                            class="w-36"
+                            step={0.000001}
+                            aria-label={`${t().cost} (${draft().unit ?? "EUR"})`}
+                            min={0}
+                            value={grant().limit}
+                            onValueChange={(value) =>
+                              update((r) => {
+                                r.grants[i]!.limit = value ?? 0;
+                              })
+                            }
+                          />
+                        </Show>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`${t().remove}: ${grant().principal.type === "authenticated" ? t().allUsers : grant().displayName || principalKey(grant().principal)}`}
+                          onClick={() =>
+                            update((r) => {
+                              r.grants.splice(i, 1);
+                            })
+                          }
+                        >
+                          <i class="ti ti-x" aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Index>
+                <PrincipalPicker
+                  allowServiceAccounts
+                  existing={rule().grants.map((g) => g.principal)}
+                  onSelect={(principal, display) =>
+                    principal.type !== "public" &&
+                    update((r) => {
+                      r.grants.push({ principal, displayName: display.displayName, limit: 10 });
+                    })
+                  }
+                />
+              </div>
+            </PanelDialog.Body>
+            <PanelDialog.Footer>
+              <Button variant="ghost" onClick={() => close()}>
+                {t().cancel}
+              </Button>
+              <Button
+                onClick={() => {
+                  const next = structuredClone(draft());
+                  if (index === undefined) next.rules.push(rule());
+                  else next.rules[index] = rule();
+                  const result = AiQuotaConfigSchema.safeParse(next);
+                  if (!result.success) {
+                    setIssue(result.error.issues.map((i) => i.message).join("; "));
+                    return;
+                  }
+                  setDraft(result.data);
+                  close();
+                }}
+              >
+                {t().apply}
+              </Button>
+            </PanelDialog.Footer>
+          </PanelDialog>
+        </LocaleProvider>
       );
-    }, panelDialogWideOptions);
+    }, panelDialogOptions);
   }
   return (
     <div class="flex min-w-0 flex-col gap-3">
+      <Show when={props.models.some((model) => !model.pricing)}>
+        <NoticeCard tone="warning" title={locale().startsWith("de") ? "Modelle ohne Kostenlimits" : "Models without cost limits"}>
+          <p>
+            {locale().startsWith("de")
+              ? "Für diese Modelle sind keine Kosten konfiguriert. Sie bleiben unbegrenzt nutzbar und werden von Kostenlimits nicht erfasst."
+              : "These models have no configured prices. They remain unlimited and are not covered by cost limits."}
+          </p>
+          <ul>
+            <For each={props.models.filter((model) => !model.pricing)}>{(model) => <li>{model.label}</li>}</For>
+          </ul>
+        </NoticeCard>
+      </Show>
+      <AiBackgroundBudget config={draft()} change={setDraft} disabled={busy()} canRelease={!dirty()} />
       <Switch
         label={t().enabled}
-        description={t().disabledHint}
+        description={draft().enabled ? t().hint : t().disabledHint}
         value={draft().enabled}
         disabled={busy()}
         onValueChange={(enabled) => setDraft((d) => ({ ...d, enabled }))}
@@ -242,16 +277,23 @@ export default function AiQuotaRules(props: { config: AiQuotaConfig; models: { i
             if (col.id === "hours") return row.hours;
             if (col.id === "grants")
               return (
-                <span class="text-xs text-dimmed">
-                  {row.grants
-                    .slice(0, 2)
-                    .map(
-                      (g) =>
-                        `${g.principal.type === "authenticated" ? t().allUsers : g.displayName || principalKey(g.principal)} · ${g.limit === null ? t().unlimited : g.limit.toLocaleString(locale())}`,
-                    )
-                    .join(", ") || t().emptyGrants}
-                  {row.grants.length > 2 ? ` (+${row.grants.length - 2})` : ""}
-                </span>
+                <div class="flex flex-col gap-2 py-1">
+                  <For each={row.grants.slice(0, 2)} fallback={<span class="text-xs text-dimmed">{t().emptyGrants}</span>}>
+                    {(g) => (
+                      <div class="flex items-center justify-between gap-4">
+                        <AiQuotaIdentity type={g.principal.type} label={g.displayName || principalKey(g.principal)} />
+                        <span class="text-xs tabular-nums text-dimmed">
+                          {g.limit === null
+                            ? t().unlimited
+                            : `${g.limit.toLocaleString(locale(), { maximumSignificantDigits: 6 })} ${draft().unit ?? "EUR"}`}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                  <Show when={row.grants.length > 2}>
+                    <span class="text-xs text-dimmed">+{row.grants.length - 2}</span>
+                  </Show>
+                </div>
               );
             return (
               <div class="flex justify-end gap-1">

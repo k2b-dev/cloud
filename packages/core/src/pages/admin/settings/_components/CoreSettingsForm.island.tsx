@@ -1,3 +1,4 @@
+import { aiReferenceCost, AiModelPricingSchema } from "@k2b/cloud/shared";
 /**
  * Core settings admin form.
  *
@@ -15,11 +16,11 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
   ButtonLink,
-  CheckboxCard,
   createTemplateEditorPanesLayout,
   DataTable,
   type DataTableColumn,
   dialogCore,
+  panelDialogOptions,
   IconButton,
   ImageInput,
   MultiSelectInput,
@@ -130,6 +131,7 @@ type Props = {
   /** Profile ids with a stored provider key. The keys themselves stay server-side. */
   aiCredentialProfileIds?: string[];
   aiModelAccess?: AiModelAccessMap;
+  aiAccountingUnit?: string;
   /** Which slice of the AI settings this page shows (the AI sidebar group splits them). */
   aiSection?: "general" | "providers" | "jobs";
   showAiJobsLink?: boolean;
@@ -166,8 +168,7 @@ type AiModelProfileDraft = {
   maxOutputTokens?: number;
   maxLoadedTools?: number;
   maxToolRounds?: number;
-  creditsPerInputToken?: number;
-  creditsPerOutputToken?: number;
+  pricing?: { inputPerMillion: number; outputPerMillion: number };
 } & Record<string, unknown>;
 
 const assistantAccessGrants = (entries: AccessEntry[]): AiModelAccessDraft["entries"] =>
@@ -618,6 +619,7 @@ export default function CoreSettingsForm(props: Props) {
           backgroundTaskPrompts={props.backgroundTaskPrompts}
           credentialProfileIds={props.aiCredentialProfileIds ?? []}
           modelAccess={props.aiModelAccess ?? {}}
+          accountingUnit={props.aiAccountingUnit ?? "EUR"}
           section={props.aiSection ?? "general"}
           showJobsLink={props.showAiJobsLink}
         />
@@ -937,8 +939,7 @@ const normalizeAiProfile = (value: unknown): AiModelProfileDraft | null => {
         : undefined,
     maxLoadedTools: typeof raw.maxLoadedTools === "number" && Number.isInteger(raw.maxLoadedTools) ? raw.maxLoadedTools : undefined,
     maxToolRounds: typeof raw.maxToolRounds === "number" && Number.isInteger(raw.maxToolRounds) ? raw.maxToolRounds : undefined,
-    creditsPerInputToken: typeof raw.creditsPerInputToken === "number" ? raw.creditsPerInputToken : undefined,
-    creditsPerOutputToken: typeof raw.creditsPerOutputToken === "number" ? raw.creditsPerOutputToken : undefined,
+    pricing: AiModelPricingSchema.safeParse(raw.pricing).data,
   };
 };
 
@@ -1090,6 +1091,7 @@ function AiSettingsPanel(props: {
   backgroundTaskPrompts?: Record<string, string[]>;
   credentialProfileIds: string[];
   modelAccess: AiModelAccessMap;
+  accountingUnit: string;
   section: "general" | "providers" | "jobs";
   showJobsLink?: boolean;
 }) {
@@ -1159,8 +1161,9 @@ function AiSettingsPanel(props: {
   const openProfile = (profile?: AiModelProfileDraft) =>
     openAiProfileDialog({
       profiles: profiles(),
+      accountingUnit: props.accountingUnit,
       profile,
-      hasCredential: profile ? hasCredential(profile) : false,
+      hasCredential: profile ? props.credentialProfileIds.includes(profile.id) : false,
       accessEntries: accessEntriesFor(profile),
       accessRevision: profile?.assistantAccess
         ? profile.assistantAccess.expectedRevision
@@ -1430,7 +1433,8 @@ function AiSettingsPanel(props: {
             description={t().turnTimeoutDescription}
             value={() => Number(props.valueOf("ai.turn_timeout_minutes") ?? 30) || null}
             onValueChange={(value) => props.onChange("ai.turn_timeout_minutes", value ?? 0)}
-            min={0} showSteppers={false}
+            min={0}
+            showSteppers={false}
             error={() => props.errorFor("ai.turn_timeout_minutes")}
           />
           <NumberInput
@@ -1790,6 +1794,7 @@ function AiProfilesTable(props: {
 
 async function openAiProfileDialog(input: {
   profiles: AiModelProfileDraft[];
+  accountingUnit: string;
   profile?: AiModelProfileDraft;
   /** Whether a key is already stored for this profile — the value is never available here. */
   hasCredential?: boolean;
@@ -1823,9 +1828,21 @@ async function openAiProfileDialog(input: {
       );
     const [enabled, setEnabled] = createSignal(input.profile?.enabled ?? true);
     const [capabilities, setCapabilities] = createSignal<string[]>(input.profile?.capabilities ?? ["streaming"]);
+    const isAudio = () => capabilities().includes("transcription");
+    let chatCapabilities = isAudio() ? ["streaming"] : [...capabilities()];
+    const [priced, setPriced] = createSignal(Boolean(input.profile?.pricing));
+    const [section, setSection] = createSignal<string | undefined>("connection");
+    const sectionControl = (name: string) => ({
+      get open() {
+        return section() === name;
+      },
+      onOpenChange: (open: boolean) => setSection(open ? name : undefined),
+    });
     const [dataBoundary, setDataBoundary] = createSignal<AiDataBoundary>(
       input.profile?.dataBoundary ?? defaultDataBoundary(initialProvider),
     );
+    const [inputPrice, setInputPrice] = createSignal<number | null>(input.profile?.pricing?.inputPerMillion ?? null);
+    const [outputPrice, setOutputPrice] = createSignal<number | null>(input.profile?.pricing?.outputPerMillion ?? null);
     const [contextWindow, setContextWindow] = createSignal<number | null>(input.profile?.contextWindow ?? null);
     const [maxLoadedTools, setMaxLoadedTools] = createSignal<number | null>(
       typeof input.profile?.maxLoadedTools === "number" && input.profile.maxLoadedTools > 0 ? input.profile.maxLoadedTools : null,
@@ -1836,21 +1853,62 @@ async function openAiProfileDialog(input: {
     const [image, setImage] = createSignal<string | null>(input.profile?.image ?? null);
     const [formError, setFormError] = createSignal<string | undefined>();
 
+    const validPricing = createMemo(() => {
+      const parsed = AiModelPricingSchema.safeParse({ inputPerMillion: inputPrice(), outputPerMillion: outputPrice() });
+      return parsed.success ? parsed.data : undefined;
+    });
+    const formatCost = (value: number) =>
+      `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format(value)} ${input.accountingUnit}`;
+    const costSummary = () => {
+      if (isAudio()) return t().audioCostsUnavailable;
+      if (!priced()) return t().unpricedSummary;
+      const prices = validPricing();
+      if (!prices) return t().pricesIncomplete;
+      if (prices.inputPerMillion === 0 && prices.outputPerMillion === 0) return t().freeSummary;
+      return t().priceSummary({ input: formatCost(prices.inputPerMillion), output: formatCost(prices.outputPerMillion) });
+    };
+    const fail = (message: string, target = "connection") => {
+      setSection(target);
+      setFormError(message);
+    };
     const currentProvider = () => providerOption(provider());
     const isCustomCompatible = () => provider() === "openai-compatible";
     const hasExistingCredential = () => Boolean(input.hasCredential) && input.profile?.provider === provider();
-    const showApiKey = () => providerSupportsProfileKey(provider()) || hasExistingCredential();
+    const draftCredential = () => (input.profile?.provider === provider() ? input.profile.apiKey?.trim() : undefined);
+    const hasUsableCredential = () => hasExistingCredential() || Boolean(draftCredential());
+    const showApiKey = () => providerSupportsProfileKey(provider()) || hasUsableCredential();
+    const keyDescription = () =>
+      apiKey().trim() || draftCredential()
+        ? t().draftKeyDescription
+        : hasExistingCredential()
+          ? t().storedKeyDescription
+          : providerRequiresProfileKey(provider())
+            ? t().newKeyDescription
+            : t().optionalKeyDescription;
 
     const chooseProvider = (next: string) => {
       if (!isProviderId(next)) return;
       const option = providerOption(next);
+      if (next !== provider()) setApiKey("");
       setProvider(next);
       setDataBoundary(defaultDataBoundary(next));
-      setModel(option.defaultModel);
+      setModel(isAudio() ? "" : option.defaultModel);
       setBaseURL(option.defaultBaseURL ?? "");
       if (!input.profile) {
         setLabel(option.label);
         setId(uniqueProfileId(option.label, input.profiles));
+      }
+    };
+
+    const chooseUsage = (value: string | null) => {
+      if (value === "audio" && !isAudio()) {
+        chatCapabilities = [...capabilities()];
+        setCapabilities(["transcription"]);
+        if (!["openai", "openai-compatible"].includes(provider())) chooseProvider("openai");
+        else setModel("");
+      } else if (value === "chat" && isAudio()) {
+        setCapabilities(chatCapabilities);
+        setModel(currentProvider().defaultModel);
       }
     };
 
@@ -1861,27 +1919,27 @@ async function openAiProfileDialog(input: {
       const nextBaseURL = baseURL().trim();
 
       if (!/^[a-z0-9][a-z0-9._-]*$/.test(nextId)) {
-        setFormError(t().invalidProfileId);
+        fail(t().invalidProfileId);
         return;
       }
       if (input.profiles.some((profile) => profile.id === nextId && profile.id !== input.profile?.id)) {
-        setFormError(t().duplicateProfileId({ id: nextId }));
+        fail(t().duplicateProfileId({ id: nextId }));
         return;
       }
       if (!nextLabel) {
-        setFormError(t().providerNameRequired);
+        fail(t().providerNameRequired);
         return;
       }
       if (!nextModel) {
-        setFormError(t().modelNameRequired);
+        fail(t().modelNameRequired);
         return;
       }
       if (isCustomCompatible() && !nextBaseURL) {
-        setFormError(t().customBaseUrlRequired);
+        fail(t().customBaseUrlRequired);
         return;
       }
-      if (providerRequiresProfileKey(provider()) && !apiKey().trim() && !hasExistingCredential()) {
-        setFormError(t().apiKeyRequired({ provider: currentProvider().label }));
+      if (providerRequiresProfileKey(provider()) && !apiKey().trim() && !hasUsableCredential()) {
+        fail(t().apiKeyRequired({ provider: currentProvider().label }));
         return;
       }
 
@@ -1889,7 +1947,7 @@ async function openAiProfileDialog(input: {
         capabilities().includes("transcription") &&
         (capabilities().some((value) => value !== "transcription") || !["openai", "openai-compatible"].includes(provider()))
       ) {
-        setFormError(t().invalidAudioProfile);
+        fail(t().invalidAudioProfile);
         return;
       }
       const nextProfile: AiModelProfileDraft = {
@@ -1903,9 +1961,9 @@ async function openAiProfileDialog(input: {
         dataBoundary: dataBoundary(),
       };
 
-      // Only a freshly typed key travels. An untouched field leaves the stored
-      // one alone, because the backend overwrites only what it is sent.
-      const nextApiKey = apiKey().trim();
+      // Preserve an unsaved key when reopening its profile. Stored secrets never
+      // return to the browser; omitting apiKey leaves those credentials intact.
+      const nextApiKey = apiKey().trim() || draftCredential();
       if (nextApiKey) nextProfile.apiKey = nextApiKey;
       else delete nextProfile.apiKey;
 
@@ -1915,6 +1973,15 @@ async function openAiProfileDialog(input: {
       const nextImage = image();
       if (nextImage) nextProfile.image = nextImage;
       else delete nextProfile.image;
+
+      if (priced() && !isAudio()) {
+        const prices = validPricing();
+        if (!prices) {
+          fail(t().pricesInvalid, "costs");
+          return;
+        }
+        nextProfile.pricing = prices;
+      } else delete nextProfile.pricing;
 
       const context = contextWindow();
       if (typeof context === "number" && context > 0) nextProfile.contextWindow = context;
@@ -1954,209 +2021,288 @@ async function openAiProfileDialog(input: {
         <PanelDialog>
           <PanelDialog.Header
             title={input.profile ? t().editProvider : t().addProvider}
-            subtitle={t().configureProfile}
+            subtitle={label()}
             icon="ti ti-sparkles"
             close={() => close(undefined)}
           />
           <PanelDialog.Body>
-            <PanelDialog.Section title={t().provider} subtitle={t().providerSectionDescription} icon="ti ti-sparkles">
-              <CheckboxCard
-                label={t().profileEnabled}
-                description={t().profileEnabledDescription}
-                icon="ti ti-power"
-                value={enabled}
-                onValueChange={setEnabled}
-              />
-
-              <CheckboxCard
-                label={t().restrictAssistantAccess}
-                description={t().restrictAssistantAccessDescription}
-                icon="ti ti-lock"
-                value={restricted}
-                onValueChange={setRestricted}
-              />
-              <Show when={restricted()}>
-                <PermissionEditor
-                  initialEntries={accessEntries()}
-                  allowPublic={false}
-                  allowAuthenticated={false}
-                  allowServiceAccounts
-                  allowedLevels={[{ level: "read", label: t().useModel }]}
-                  grantAccess={async (principal, _permission, display) => {
-                    const entry: AccessEntry = {
-                      id: crypto.randomUUID(),
-                      principal,
-                      permission: "read",
-                      createdAt: new Date().toISOString(),
-                      ...display,
-                    };
-                    setAccessEntries((entries) => [...entries, entry]);
-                    return entry;
-                  }}
-                  updateAccess={async () => {}}
-                  revokeAccess={async (id) => {
-                    setAccessEntries((entries) => entries.filter((entry) => entry.id !== id));
-                  }}
-                />
-                <Show when={accessEntries().length === 0}>
-                  <NoticeCard tone="warning">{t().assistantAccessEmpty}</NoticeCard>
-                </Show>
-              </Show>
-
-              <Select
-                label={t().provider}
-                description={t().providerDescription}
-                value={() => provider()}
-                onValueChange={(value) => value !== null && chooseProvider(value)}
-                options={localizedProviderOptions(t()).map((option) => ({
-                  id: option.id,
-                  label: option.label,
-                  description: option.description,
-                  icon: "ti ti-sparkles",
-                }))}
-                icon="ti ti-sparkles"
-              />
-
-              <div class="grid gap-3 sm:grid-cols-2">
-                <TextInput
-                  label={t().name}
-                  description={t().nameDescription}
-                  value={label}
-                  onValueChange={setLabel}
-                  placeholder={currentProvider().label}
-                />
-                <TextInput
-                  label={t().profileId}
-                  description={t().stableIdDescription}
-                  value={id}
-                  onValueChange={setId}
-                  placeholder="openrouter-fast"
-                  monospace
-                />
-              </div>
-
-              <TextInput
-                label={t().model}
-                description={t().modelDescription}
-                value={model}
-                onValueChange={setModel}
-                placeholder={currentProvider().defaultModel}
-                monospace
-              />
-
-              <TextInput
-                label={t().baseUrl}
-                description={t().baseUrlDescription}
-                value={baseURL}
-                onValueChange={setBaseURL}
-                placeholder={currentProvider().defaultBaseURL ?? t().optionalProviderOverride}
-                type="url"
-              />
-
-              <ImageInput
-                label={t().logo}
-                description={t().logoDescription}
-                variant="small"
-                value={image}
-                onValueChange={setImage}
-                transform={(file) => img.presets.avatar(file, 64, 0.8, "webp")}
-              />
-            </PanelDialog.Section>
-
-            <Show when={showApiKey()}>
-              <PanelDialog.Section title={t().credentials} subtitle={t().credentialsDescription} icon="ti ti-key">
-                <TextInput
-                  label={`${currentProvider().label} API key`}
-                  description={hasExistingCredential() ? t().storedKeyDescription : t().newKeyDescription}
-                  password
-                  value={apiKey}
-                  onValueChange={setApiKey}
-                  placeholder={hasExistingCredential() ? t().keepCurrentKey : t().providerApiKey}
-                />
+            <div class="grid gap-2">
+              <PanelDialog.Section
+                title={t().connection}
+                icon="ti ti-plug"
+                subtitle={`${currentProvider().label} · ${isAudio() ? t().audioUsage : t().textChat}`}
+                hideable
+                {...sectionControl("connection")}
+              >
+                <div class="grid gap-4">
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <Select
+                      label={t().usagePurpose}
+                      value={() => (isAudio() ? "audio" : "chat")}
+                      onValueChange={chooseUsage}
+                      options={[
+                        { id: "chat", label: t().textChat, icon: "ti ti-messages" },
+                        { id: "audio", label: t().audioUsage, icon: "ti ti-microphone" },
+                      ]}
+                    />
+                    <Select
+                      label={t().provider}
+                      value={provider}
+                      onValueChange={(value) => value !== null && chooseProvider(value)}
+                      options={localizedProviderOptions(t())
+                        .filter((option) => !isAudio() || ["openai", "openai-compatible"].includes(option.id))
+                        .map((option) => ({ id: option.id, label: option.label, description: option.description }))}
+                    />
+                  </div>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <TextInput label={t().name} value={label} onValueChange={setLabel} placeholder={currentProvider().label} />
+                    <TextInput
+                      label={t().model}
+                      value={model}
+                      onValueChange={setModel}
+                      placeholder={isAudio() ? "whisper-1" : currentProvider().defaultModel}
+                      monospace
+                    />
+                  </div>
+                  <Show when={isAudio()}>
+                    <p class="text-sm text-dimmed">{t().transcriptionDescription}</p>
+                  </Show>
+                  <div class="grid gap-3" classList={{ "sm:grid-cols-2": showApiKey() }}>
+                    <TextInput
+                      label={t().baseUrl}
+                      description={
+                        baseURL().trim()
+                          ? t().customEndpointDescription
+                          : isCustomCompatible()
+                            ? t().requiredEndpointDescription
+                            : t().defaultEndpointDescription
+                      }
+                      value={baseURL}
+                      onValueChange={setBaseURL}
+                      type="url"
+                      placeholder={
+                        currentProvider().defaultBaseURL ??
+                        (isCustomCompatible() ? "https://api.example.com/v1" : t().optionalProviderOverride)
+                      }
+                    />
+                    <Show when={showApiKey()}>
+                      <TextInput
+                        label={`${currentProvider().label} API key`}
+                        description={keyDescription()}
+                        password
+                        value={apiKey}
+                        onValueChange={setApiKey}
+                        placeholder={hasUsableCredential() ? t().keepCurrentKey : t().providerApiKey}
+                      />
+                    </Show>
+                  </div>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <TextInput label={t().profileId} description={t().stableIdDescription} value={id} onValueChange={setId} monospace />
+                    <ImageInput
+                      label={t().logo}
+                      description={t().logoDescription}
+                      variant="small"
+                      value={image}
+                      onValueChange={setImage}
+                      transform={(file) => img.presets.avatar(file, 64, 0.8, "webp")}
+                    />
+                  </div>
+                </div>
               </PanelDialog.Section>
-            </Show>
-
-            <PanelDialog.Section title={t().policy} subtitle={t().policyDescription} icon="ti ti-shield">
-              <Show when={!capabilities().includes("transcription")}>
-                <NumberInput
-                  label={t().contextWindow}
-                  description={t().contextWindowDescription}
-                  value={contextWindow}
-                  onValueChange={setContextWindow}
-                  min={1}
-                  clearable
-                  showSteppers={false}
-                  placeholder={t().providerDefault}
-                />
-
-                <NumberInput
-                  label={t().loadedToolLimit}
-                  description={t().loadedToolLimitDescription}
-                  value={maxLoadedTools}
-                  onValueChange={setMaxLoadedTools}
-                  min={0}
-                  clearable
-                  showSteppers={false}
-                  placeholder={t().unlimited}
-                />
-
-                <NumberInput
-                  label={t().toolRoundLimit}
-                  description={t().toolRoundLimitDescription}
-                  value={maxToolRounds}
-                  onValueChange={setMaxToolRounds}
-                  min={0}
-                  clearable
-                  showSteppers={false}
-                  placeholder={t().unlimited}
-                />
-              </Show>
-              <Select
-                label={t().dataBoundary}
-                description={t().dataBoundaryDescription}
-                value={() => dataBoundary()}
-                onValueChange={(value) => value !== null && setDataBoundary(value as AiDataBoundary)}
-                options={[...localizedBoundaryOptions(t())]}
-                icon="ti ti-shield"
-              />
-
-              <CheckboxCard
-                label={t().transcription}
-                description={t().transcriptionDescription}
-                value={() => capabilities().includes("transcription")}
-                onValueChange={(checked) => setCapabilities(checked ? ["transcription"] : ["streaming"])}
-              />
-              <Show when={!capabilities().includes("transcription")}>
-                <MultiSelectInput
-                  label={t().capabilities}
-                  description={t().capabilitiesDescription}
-                  value={capabilities}
-                  onValueChange={setCapabilities}
-                  options={localizedCapabilityOptions(t()).map((option) => ({ ...option, icon: "ti ti-bolt" }))}
-                  placeholder={t().chooseCapabilities}
-                  icon="ti ti-bolt"
-                  clearable
-                />
-              </Show>
-            </PanelDialog.Section>
+              <PanelDialog.Section title={t().costs} icon="ti ti-coins" subtitle={costSummary()} hideable {...sectionControl("costs")}>
+                <div class="grid gap-4">
+                  <Show when={!isAudio()} fallback={<NoticeCard>{t().audioCostsDescription}</NoticeCard>}>
+                    <Switch label={t().enterPrices} value={priced} onValueChange={setPriced} />
+                    <Show
+                      when={priced()}
+                      fallback={
+                        <NoticeCard tone="warning" title={t().unpricedSummary}>
+                          {t().unpricedWarning}
+                        </NoticeCard>
+                      }
+                    >
+                      <p class="text-sm text-dimmed">{t().priceUnit({ unit: input.accountingUnit })}</p>
+                      <div class="grid gap-3 sm:grid-cols-2">
+                        <NumberInput
+                          label={t().inputPrice}
+                          step={0.000001}
+                          value={inputPrice}
+                          onValueChange={setInputPrice}
+                          min={0}
+                          max={1000000}
+                          clearable
+                          showSteppers={false}
+                        />
+                        <NumberInput
+                          label={t().outputPrice}
+                          step={0.000001}
+                          value={outputPrice}
+                          onValueChange={setOutputPrice}
+                          min={0}
+                          max={1000000}
+                          clearable
+                          showSteppers={false}
+                        />
+                      </div>
+                      <Show when={validPricing()}>
+                        {(prices) => (
+                          <NoticeCard title={t().exampleCost({ cost: formatCost(aiReferenceCost(prices(), 10000, 2000)) })}>
+                            {t().exampleTokens}
+                          </NoticeCard>
+                        )}
+                      </Show>
+                      <p class="text-sm text-dimmed">{t().freePriceHint}</p>
+                    </Show>
+                    <PanelDialog.Section hideable title={t().costHelp} icon="ti ti-help">
+                      <p class="text-sm text-dimmed">{t().costHelpDescription}</p>
+                    </PanelDialog.Section>
+                  </Show>
+                </div>
+              </PanelDialog.Section>
+              <PanelDialog.Section
+                title={t().accessSection}
+                icon="ti ti-lock"
+                subtitle={restricted() ? t().restrictedSummary({ count: accessEntries().length }) : t().allAuthenticated}
+                hideable
+                {...sectionControl("access")}
+              >
+                <div class="grid gap-4">
+                  <Switch
+                    label={t().restrictAssistantAccess}
+                    description={t().restrictAssistantAccessDescription}
+                    value={restricted}
+                    onValueChange={setRestricted}
+                  />
+                  <Show when={restricted()}>
+                    <PermissionEditor
+                      initialEntries={accessEntries()}
+                      allowPublic={false}
+                      allowAuthenticated={false}
+                      allowServiceAccounts
+                      allowedLevels={[{ level: "read", label: t().useModel }]}
+                      grantAccess={async (principal, _permission, display) => {
+                        const entry: AccessEntry = {
+                          id: crypto.randomUUID(),
+                          principal,
+                          permission: "read",
+                          createdAt: new Date().toISOString(),
+                          ...display,
+                        };
+                        setAccessEntries((entries) => [...entries, entry]);
+                        return entry;
+                      }}
+                      updateAccess={async () => {}}
+                      revokeAccess={async (id) => {
+                        setAccessEntries((entries) => entries.filter((entry) => entry.id !== id));
+                      }}
+                    />
+                    <Show when={accessEntries().length === 0}>
+                      <NoticeCard tone="warning">{t().assistantAccessEmpty}</NoticeCard>
+                    </Show>
+                  </Show>
+                  <Select
+                    label={t().dataBoundary}
+                    description={t().dataBoundaryDescription}
+                    value={dataBoundary}
+                    onValueChange={(value) => {
+                      if (value === "hosted" || value === "private") setDataBoundary(value);
+                    }}
+                    options={[...localizedBoundaryOptions(t())]}
+                    icon="ti ti-shield"
+                  />
+                  <p class="text-sm text-dimmed">{t().accessBudgetHint}</p>
+                </div>
+              </PanelDialog.Section>
+              <PanelDialog.Section
+                title={t().advancedSection}
+                icon="ti ti-adjustments"
+                subtitle={
+                  enabled()
+                    ? isAudio()
+                      ? t().audioUsage
+                      : localizedCapabilityOptions(t())
+                          .filter((option) => capabilities().includes(option.id))
+                          .map((option) => option.label)
+                          .join(" · ") || t().textChat
+                    : t().disabledSuffix
+                }
+                hideable
+                {...sectionControl("advanced")}
+              >
+                <div class="grid gap-4">
+                  <Switch
+                    label={t().profileEnabled}
+                    description={t().profileEnabledDescription}
+                    value={enabled}
+                    onValueChange={setEnabled}
+                  />
+                  <Show when={!isAudio()}>
+                    <MultiSelectInput
+                      label={t().capabilities}
+                      description={t().chatCapabilitiesHelp}
+                      value={capabilities}
+                      onValueChange={setCapabilities}
+                      options={localizedCapabilityOptions(t()).map((option) => ({ ...option, icon: "ti ti-bolt" }))}
+                      placeholder={t().chooseCapabilities}
+                      clearable
+                    />
+                    <NumberInput
+                      label={t().contextWindow}
+                      description={t().contextWindowDescription}
+                      value={contextWindow}
+                      onValueChange={setContextWindow}
+                      min={1}
+                      clearable
+                      showSteppers={false}
+                      placeholder={t().providerDefault}
+                    />
+                    <PanelDialog.Section hideable title={t().toolLimits} icon="ti ti-tool">
+                      <div class="grid gap-4">
+                        <NumberInput
+                          label={t().loadedToolLimit}
+                          description={t().loadedToolLimitDescription}
+                          value={maxLoadedTools}
+                          onValueChange={setMaxLoadedTools}
+                          min={0}
+                          clearable
+                          showSteppers={false}
+                          placeholder={t().unlimited}
+                        />
+                        <NumberInput
+                          label={t().toolRoundLimit}
+                          description={t().toolRoundLimitDescription}
+                          value={maxToolRounds}
+                          onValueChange={setMaxToolRounds}
+                          min={0}
+                          clearable
+                          showSteppers={false}
+                          placeholder={t().unlimited}
+                        />
+                      </div>
+                    </PanelDialog.Section>
+                  </Show>
+                </div>
+              </PanelDialog.Section>
+            </div>
           </PanelDialog.Body>
           <PanelDialog.Footer>
             <div class="min-w-0">
               <FieldError error={formError} />
+              <p class="text-xs text-dimmed">{t().profileDraftHint}</p>
             </div>
             <div class="flex items-center gap-2">
               <Button type="button" variant="secondary" size="sm" onClick={() => close(undefined)}>
                 {t().cancel}
               </Button>
               <Button type="submit" variant="ai" size="sm">
-                <i class="ti ti-check" /> {t().applyChanges}
+                <i class="ti ti-check" /> {t().applyProfileDraft}
               </Button>
             </div>
           </PanelDialog.Footer>
         </PanelDialog>
       </form>
     );
-  }, panelDialogWideOptions);
+  }, panelDialogOptions);
 }
 
 function FieldRow(props: {

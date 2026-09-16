@@ -3,299 +3,252 @@ title: Usage and feedback
 navTitle: Usage and feedback
 section: AI
 order: 1065
-description: Filter AI usage, compare users and models, and inspect feedback and failed runs in Admin or the CLI.
+description: Inspect AI reference costs, configure Assistant budgets and a background emergency stop, and investigate workflow costs.
 tags: [ai, usage, feedback, administration]
-updated: 2026-09-08
+updated: 2026-09-16
 ---
 
 # Usage and feedback
 
-Open **Admin → AI → Usage**. This page and its HTTP endpoints require the
-administrator role. They expose usage metadata, feedback comments, and stored
-errors, without granting access to another user's private chat content.
+Open **Admin → AI → Usage** to see what AI calls cost by period, user, model,
+application, internal task, or workflow. The page and its APIs require a platform
+administrator. They expose metadata and feedback, not another user's chat content.
 
-## Filter and investigate
+## Configure reference prices
 
-The shared filters are period, user, model profile, actual provider model, and
-application. Compact filter chips apply selections immediately. Provider-model and application
-filters are under **More filters**, which stays open when either is active. Search user and
-model selectors by name or identifier. The runs view has a search row; submit
-text searches with Enter. **About these data** explains measurement and attribution
-limits. Filters, view, sorting,
-and pagination are stored in the URL. **Refresh** advances the period end;
-pagination retains the end time so new runs do not shift existing pages.
+In a model's settings, optionally enter **input** and **output** prices per
+**one million tokens**. Supply both prices or leave both empty. Zero means an
+explicitly free price; missing prices mean unpriced usage. Prices are nonnegative,
+with up to six decimal places and a maximum of 1,000,000 per million tokens.
 
-- **Overview** shows inference totals, coverage, timelines, application usage,
-  and chat launches. The two compact charts support an exact-value table and
-  copying data, with a shared UTC inspection cursor. Chat and background inference count once. Capability calls
-  are not inference and are not counted here; the platform records every
-  capability execution, from the assistant and from every other surface, at
-  [Observability](/en/docs/operations/observability).
-- **Users & models** displays one comparison table at a time. Switch between
-  users and models to compare volume, costs, failures, latency, throughput,
-  switches away, and feedback. Sort by volume, tokens, credits, failures,
-  negative count, or negative share. Table headers also select ascending or
-  descending ordering. Models are grouped by both profile and
-  actual provider model, so editing a profile does not merge different models.
-- **Feedback** filters current ratings by positive/negative and reason. The
-  totals retain the whole selected user/model cohort, so filtering to negative
-  feedback does not turn its denominator into 100%. Details show the full
-  stored comment, reasons, timestamps, and identifiers.
-- **Errors & runs** filters chat and background events by kind, status,
-  task, error code, or literal text in the task/error. **Show error** opens the
-  complete stored error plus attribution, duration, usage, and references.
-  **Copy details** copies the displayed information.
+Choose the shared **Accounting unit** on **Assistant limits → Rules**. The default
+is `EUR`; a fictional unit is also supported. Use the same unit for every model
+price and budget. After the first priced call, the unit cannot change. There is
+no currency conversion or automatic provider price lookup.
 
-Click a user or model to narrow the report. Click a failure count to open its
-matching runs. Run-specific filters apply only to the run list; rating and
-reason apply only to the feedback list.
+Reference cost is `(input tokens × input price + output tokens × output price) /
+1,000,000`. Each provider call keeps its price snapshot. A later price change
+therefore affects only new calls. Costs are calculated centrally with decimal
+precision; application authors never calculate charges in individual workflows.
 
-## Read the numbers correctly
+**Unpriced models remain unlimited**, even when a user has exhausted a wildcard
+budget or the background emergency stop is active. They appear in a warning on
+**Rules**. Only priced chat models can be selected for a new model-specific rule.
+Removing a model's prices makes subsequent calls unlimited; previous costs remain.
+Audio prices are not supported yet: the current transcription response does not
+supply a reliable billable duration. Audio calls remain visible as unpriced.
 
-Periods cover the start time of each run. Feedback uses current ratings on
-assistant messages belonging to chat turns started in that period, everywhere
-in the report. A rating added today to an older response does not move the
-response into today's period. Ratings can be edited or cleared; this is not a
-history of rating changes.
+These are **reference costs, not a provider invoice**. Coverage is limited to the
+input/output tokens the adapter reports. Cache discounts, separately billed
+cached input, hidden reasoning, and provider-specific image charges are not
+reconstructed. A direct chat with images uses its reported tokens; a separate
+image-inspection call belongs to background usage.
 
-Negative share is negative ratings divided by all ratings. Rating coverage is
-rated assistant messages divided by stored assistant messages in the selected
-chat turns. Read both alongside the counts: one negative rating out of one is
-not the same evidence as 100 out of 100. Background runs have no message ratings.
-The user is the chat owner; the current feedback endpoint only accepts feedback
-on the caller's own chats.
+## Read the report
 
-Unknown tokens and prices appear as **—**. Coverage reports the fraction of
-runs with measurements; partial totals sum only reported values. A reported
-zero is retained as zero. No price is inferred for a provider that omits it.
-Chat duration is generation time and background duration is elapsed inference
-time. Switching away is counted within the selected period before applying
-model filters.
+Use period, user, model profile, actual provider model, and application filters.
+Filters, view, sorting, and pagination are stored in the URL. **Refresh** advances
+the period end; pagination retains it. Models are grouped by profile and actual
+provider model so editing a profile does not combine different provider models.
 
-Chat accounting survives retry/edit removal of messages. Feedback and its
-coverage describe remaining messages; deleting a chat removes its chat turns
-and feedback. The standalone background ledger retains metadata and clears
-user/chat/turn references when their owners are deleted.
+- **Overview** shows reference costs, raw tokens, coverage, a UTC timeline,
+  applications, internal tasks, workflows, and chat launches. Charts also offer
+  a table of exact values and copying.
+- **Users & models** compares cost, calls, failures, latency, and feedback. Sort
+  by costs or tokens as well as the existing quality metrics.
+- **Feedback** shows current ratings and comments on remaining chat messages.
+  Negative share is negative ratings divided by all ratings; coverage is rated
+  messages divided by stored assistant messages. Read both alongside the counts.
+- **Errors & runs** lists individual provider attempts. Details show the model,
+  cost, measurement status, task, trace, and workflow/chat references. Workflow
+  references open the existing workflow observability page.
 
-## Background attribution
+One actual `stream()` or `complete()` attempt produces one record. Structured
+output repair and real retries are separate calls. Replaying a completed
+workflow step, copying a chat, or reopening a conversation does not call a
+provider and adds no cost. Chat compaction has its own background task record.
+Capability executions are not inference; inspect them in
+[Observability](/en/docs/operations/observability).
 
-`runAiStructured()` accepts optional `attribution` metadata with `userId`,
-`conversationId`, `turnId`, and `workflowRunId`. Supply existing identifiers only
-after authorizing the domain operation. This metadata is not authorization.
-When a conversation is supplied without a user, its owner supplies attribution.
-Cloud also records the trace ID of the structured attempt.
+Periods use each provider call's start time. Duration covers that call, not the
+whole chat turn or workflow. Feedback is counted once per chat turn even when
+that turn made several calls. It uses the current rating; editing feedback does
+not move the original response to today's period. Switches away compare a chat
+turn's model with the next turn in the same conversation.
 
-Built-in enrichment, personalization, image inspection, and compaction forward
-available chat/turn references. Workflow AI forwards its workflow run ID and an
-existing user from the run's actor snapshot when available. System-owned work
-may legitimately have no user. Prompt, input, and output content are not added
-to the ledger.
+Unknown costs appear as **—**, not zero. Totals sum known costs; coverage shows
+what fraction of calls has known costs. Explicit free pricing records zero even
+if token counts are unavailable. Interrupted streams without final usage use a
+labelled estimate based on request text, instructions, tool schemas and streamed
+output (roughly four characters per token). Binary file data is excluded.
+Reported usage takes precedence. Successful calls without usable usage, and
+calls orphaned by a process crash, retain unknown costs.
 
-Choose **Unassigned** for records without user attribution. Selecting a user
-excludes these records. Stored background errors are limited to 2,000 characters.
+Accounting survives retry/edit truncation and chat deletion. Deleting a user
+clears the user reference; workflow names, application, and version are captured
+at call time. Raw call records are retained for 8,760 hours with bounded cleanup;
+active calls are preserved. This is retained history, not a lifetime total.
 
-## Use the CLI
+## Attribute background work
 
-The same service backs `cld admin ai usage`. Comparison commands also accept
-`--direction asc|desc` (descending by default). JSON includes the server-resolved
-query, period, total count, page, and page size. List commands also accept
-`--jsonl` to emit one complete row per line from the requested page.
+`runAiStructured()` accepts `attribution` with `userId`, `conversationId`,
+`turnId`, `workflowRunId`, and `stepKey`. Authorize the domain operation before
+supplying existing IDs; attribution does not grant permission. A conversation
+can supply its owner's identity and launching application when not specified.
+
+Workflow AI supplies its run and step automatically. Cloud resolves the workflow
+ID, name, version, and application from the workflow store. The workflow table
+groups all calls for one definition, including after a rename. Click its name
+to open its runs in workflow observability. Filter usage by `workflowId` or
+`workflowRunId` to inspect costs for a definition or one execution.
+
+Compaction, enrichment, memory learning and image inspection appear under their
+own internal task names with available chat/turn references. They do not invent
+workflow references. System-owned tasks can have no user; choose **Unassigned**
+to inspect those calls. No prompts, source files or generated content are stored
+in the cost ledger.
+
+## Set Assistant budgets
+
+Open **Admin → AI → Assistant limits → Rules**. Enforcement is **off by default**.
+Priced usage is recorded while enforcement is off, so enabling budgets uses
+already-recorded consumption in the current window.
+
+Each rule selects a priced model profile or **All chat models**, a reset interval
+of 1–8,760 hours (new rules default to **24**), and assignments to users, groups,
+service accounts or all signed-in identities. An assignment gives a personal
+cost allowance, not a shared group pot. The largest matching allowance applies;
+assignments are never added together. No matching assignment means zero for that
+rule; no applicable rule means no limit.
+
+**Unlimited on All chat models overrides all model-specific budgets.** Otherwise
+both a finite wildcard and a finite model budget apply. Model-specific unlimited
+does not override a finite wildcard. Unpriced models are exempt from both.
+Model permissions remain separate, including for administrators.
+
+These budgets cover only direct Assistant calls, including API/CLI submissions,
+queued messages and retries. Compaction, enrichment, image inspection, audio,
+scheduled tasks and workflows are excluded. Switching chat models does not
+refill the shared wildcard allowance.
+
+Admission reserves estimated input and an affordable maximum output atomically
+across workers. The provider receives that output limit; completion replaces
+the reservation with actual reported costs. Estimates and provider-specific
+charges can still differ, so this is not an exact invoice ceiling. An unknown
+priced call blocks a finite budget until reset or the next window. Unlimited and
+disabled budgets do not block on unknown usage.
+
+**Users** lists accounts with direct-chat activity and their per-model balances.
+Search also finds accounts without usage. The eye button opens a modal with
+current allowances, matching grant identities, reset times and manual resets.
+Historical consumption follows the selected report period; current balances
+always follow each rule's current window. Percentages across model rules are
+never added together.
+
+**Reset allowance** resets one identity and one scope without deleting cost
+history or changing other scopes. Calls started before the reset stay in the
+old allowance even if they finish afterward. The action records its administrator
+and timestamp. Changing assignments or amounts does not reset usage. Changing
+an interval in the GUI starts a new period after confirmation.
+
+Rule dialogs edit a draft. **Save changes** persists the complete configuration;
+stale revisions require reloading and reconciling. Blocked queued messages are
+retained and checked again after a reset or window change. The Assistant's
+indicator shows cost allowances and refreshes after activity, on focus, and every
+30 seconds while visible. Disabled limits are invisible. Server admission remains
+authoritative and rejected submissions preserve the user's draft.
+
+## Set a background emergency stop
+
+On **Rules**, optionally enable **Background AI emergency stop**. Set a positive
+stop threshold and, optionally, a lower warning threshold in the shared unit.
+It covers combined priced background calls over the **rolling last 24 hours**:
+workflows, internal tasks, image inspection and compaction. It is independent of
+Assistant budgets and is off by default.
+
+Crossing a threshold creates a durable alert for platform administrators through
+Cloud notifications. Delivery uses existing notification preferences and the
+recovery worker. A stop prevents new priced background calls, while calls already
+running can finish and are still accounted. Reservations prevent parallel workers
+from spending the same remaining estimate. Unknown priced background costs also
+trip the stop rather than appearing free.
+
+Once triggered, the stop **stays active until explicitly released**; the next day
+does not automatically restart work. Review Usage, then wait for costs to leave
+the rolling window, raise the threshold, or disable the stop. Save configuration
+changes before choosing **Release stop**. Release is rejected while known costs
+are still at/above the threshold or unknown costs remain in the window. There is
+no bulk restart of failed workflows: an operator decides which work to retry.
+Unpriced models and direct Assistant calls remain unaffected.
+
+## Operate through the CLI
+
+All administration uses the same APIs and authorization as the GUI:
 
 ```bash
-cld admin ai usage facets --field userId --search Ada --json
-cld admin ai usage users --range 30d --sort negativeRate --json
-cld admin ai usage feedback --user USER_UUID --model MODEL_ID --rating down --json
-cld admin ai usage runs --kind background --status failed --search '404' --jsonl
-cld admin ai usage get background RUN_UUID --json
+cld admin ai models pricing get --json
+cld admin ai models pricing set --id MODEL_ID --pricing-file prices.json --yes --json
+cld admin ai quotas config get --json > quotas.json
+cld admin ai quotas config set --config-file quotas.json --yes --json
+cld admin ai quotas background status --json
+cld admin ai quotas background release --yes --json
+cld admin ai quotas users --search Alex --json
+cld admin ai quotas balance --type user --id USER_UUID --json
+cld admin ai quotas reset --type user --id USER_UUID --scope '*' \
+  --request-id RESET_UUID --yes --json
+cld admin ai usage workflows --range 30d --sort cost --json
+cld admin ai usage runs --workflow WORKFLOW_UUID --workflow-run RUN_UUID --json
 cld admin ai usage report --range 7d --json
 ```
 
-Other list commands are `models`, `tasks`, `apps`, and `launches`.
-Use `--provider-model` and `--app` for additional global filtering,
-`--reason` for feedback, and `--task` or `--error-code` for run lists.
-`--user unassigned` selects events without a user. `--page` and `--per-page`
-control pagination; page size is 1–100. Reuse the returned `query.until` via
-`--until` when exporting multiple pages. JSONL does not fetch subsequent pages
-automatically.
+`prices.json` is `{"inputPerMillion":0.5,"outputPerMillion":2}`; JSON `null` removes
+prices. The command reads current prices and sends them as an optimistic update
+precondition. It never replaces credentials or access grants. Configuration export
+includes `enabled`, `revision`, `unit`, `background` and `rules`. Preserve its
+revision and save the full edited document; `--stdin` is also supported.
+`background` is `{ "enabled": true, "warnAt": 5, "stopAt": 10 }`; `warnAt: null`
+disables the warning. Limits and thresholds accept up to six decimal places.
 
-For example, aggregate the negative counts returned for each user with `jq`,
-or retain full JSON reports for comparison with a later snapshot. The report
-contains user IDs as well as labels, so names do not become grouping keys.
+Rules carry `scope`, `hours`, `anchor` and `grants` with a cost `limit` (`null`
+means unlimited). `authenticated` matches signed-in users and service accounts.
+Use `user`/`userId`, `group`/`groupId`, or `service_account`/`serviceAccountId` for
+specific identities. Group membership follows the normal permission rules.
+
+Resets are idempotent by request UUID. Reuse the UUID after an uncertain response;
+a new intentional reset needs a new UUID. Quote `*` to avoid shell expansion.
+Changing `hours` through the CLI keeps the submitted `anchor`; also change the
+anchor when intentionally starting a new window.
+
+Usage list commands are `users`, `models`, `tasks`, `apps`, `workflows`, `launches`,
+`feedback` and `runs`. Use `--json` for the envelope including unit and pagination,
+or `--jsonl` for rows of one page. `--page` and `--per-page` (1–100) paginate;
+reuse the returned `query.until` as `--until` for consistent multipage exports.
+The CLI does not fetch later pages automatically.
 
 ## HTTP and server interfaces
 
-The Core endpoints are:
+Administrator endpoints:
 
-- `GET /api/admin/core/ai-usage/report`
-- `GET /api/admin/core/ai-usage/facets?field=userId&search=...`
-- `GET /api/admin/core/ai-usage/runs/{chat|background}/{uuid}`
+- `GET /api/admin/core/ai-usage/report` and `/facets`
+- `GET /api/admin/core/ai-usage/runs/{chat|background}/{callUuid}`
+- `GET|PUT /api/admin/core/ai-quotas`
+- `GET /api/admin/core/ai-quotas/models`, `/users`, `/balance`, `/report`
+- `PUT /api/admin/core/ai-quotas/models/{id}/pricing` with `{pricing,expected}`
+- `POST /api/admin/core/ai-quotas/reset`
+- `GET /api/admin/core/ai-quotas/background`
+- `POST /api/admin/core/ai-quotas/background/release`
 
-The report query supports `range` (`24h`, `7d`, `30d`, `90d`), `until` (ISO),
-`userId`, `modelProfileId`, `providerModel`, `appId`, `view`, `kind`, `status`,
-`task`, `errorCode`, `search`, `rating`, `reason`, `sort`, `page`, and `perPage`.
-Invalid values are rejected before querying; unknown API parameters are rejected.
-Facet search returns at most the requested page size; refine the search to find
-an identifier beyond the suggestion list.
+Report periods are `24h`, `7d`, `30d`, `90d`. Usage uses `AiUsageQuerySchema` from
+`@k2b/cloud/shared`, including `workflowId` and `workflowRunId`. Quota reports sort
+by `label`, `cost` or `lastUsed`; they show period totals and current balances.
+Server administration is exported from `@k2b/cloud/ai/admin` and requires the
+caller to establish the administrator boundary.
 
-The server-only `@k2b/cloud/ai/admin` export supplies
-`aiUsage.report(range, options)`, `aiUsage.detail(kind, id)`, and
-`aiUsage.facets(field, search, options)`. Applications using this internal admin
-surface must establish the administrator boundary before calling it. Report
-collections are paginated `{ items, page, perPage, total }` objects; aggregate
-rows share measurement coverage and feedback counts. The browser-safe
-`@k2b/cloud/shared` export provides `AiUsageQuerySchema`,
-`aiUsageSearchParams`, and `aiUsageHref` for the same URL contract.
+`getAiChatQuotas(accessSubject)` and authenticated `GET /api/ai/quotas` return
+only the caller's allowances, unit, and accessible unpriced or free model IDs. They omit
+grant identities and inaccessible models, take no target-user parameter, and use
+`no-store`. `AiChatQuotaSnapshot` is browser-safe.
 
-## Assistant limits
-
-Open **Admin → AI → Assistant limits** (`/admin/settings?tab=ai-quotas`).
-Enforcement is **off by default**. Existing installations continue without a
-quota. Direct chat usage is recorded even while enforcement is off; enabling
-limits uses the recorded usage in the current window. The runtime sweep removes
-at most 1,000 inactive raw calls per pass after 8,760 hours, the maximum supported
-quota window. Per-user history covers the retained ledger, not lifetime totals.
-Active leased calls are preserved. Reset request IDs remain durable so an old
-retry cannot apply a second reset.
-
-Each rule selects a chat model profile or **All chat models**, a reset interval
-in hours (1–8,760), and assignments to users, groups, service accounts, or all
-signed-in users. Each group member receives a personal allowance. The highest
-matching allowance applies; assignments are never added together. No matching
-assignment means zero allowance for that rule. An absent rule adds no limit.
-
-**Unlimited on All chat models overrides every model-specific quota.**
-Otherwise, both the all-model allowance and any specific model allowance apply.
-Unlimited on one model does not remove a finite all-model allowance. Model
-permissions remain a separate requirement, including for administrators.
-
-All-model usage combines direct chat calls across model profiles, so changing
-models does not refill that allowance. Input and output tokens count once;
-cache and reasoning subtotals are not added again. The feature limits usage,
-not money. Calls already in progress can exceed an allowance before their
-usage is reported.
-
-Only direct interactive Assistant model calls count, including API and CLI
-submissions, retries and queued messages. Separate image, audio, transcription,
-compaction, enrichment, scheduled and workflow calls do not count. A direct
-chat call to a model with image capabilities still counts its reported input
-and output tokens.
-
-The default **Users** view is a searchable, sortable account table. It includes
-existing direct-chat users and recorded service accounts; search can also find
-accounts without usage. Choose a consumption period (24 hours, 7, 30, or 90 days),
-model and current allowance status. Counts and charts use the whole filtered
-cohort, not just the current page of 25 accounts. The model chart shows the top
-20 models by recorded consumption. Switch either chart to its exact-value table
-or copy the values. Missing measurements are not zero consumption; estimates
-and unmeasured calls are shown separately.
-
-Consumption follows the selected historical period. **Current allowances** use
-each rule's own current reset window, even when a past consumption period is
-selected. The status reflects disabled enforcement, unlimited access, available
-or exhausted allowances, and unknown usage that blocks a finite allowance.
-Multiple model rules are summarized separately, never added into a single
-percentage. Selecting an account opens its current per-scope balances, grant
-sources and reset actions. Closing details preserves filters and pagination.
-The link to broader **Usage** includes background inference and can have different
-retention and measurement coverage; its totals are not quota balances.
-
-**Rules** shows one compact row per model scope. Use **Add rule** or **Edit rule**
-to choose a model, interval, and assignments in a dialog. **Apply to draft** changes
-only the local draft; **Save changes** persists the full configuration. Cancelling
-a dialog does not save, and leaving with pending changes asks before discarding
-them. A conflicting administrator edit requires reloading before saving.
-Detailed accounting begins with this feature;
-older chat history is not backfilled into quota consumption. Deleting a chat
-neither removes these measurements nor restores allowance.
-
-**Reset allowance** restores one account's allowance for one scope until its
-regular reset. Other scopes and historical usage are unchanged. The reset is
-recorded with its administrator and timestamp. Calls started before the reset
-remain in the old allowance even if their usage arrives afterward. Changing a
-rule's interval starts a new period after confirmation; changing assignments
-or token amounts does not reset consumption.
-
-Interrupted streams (Stop, timeout, shutdown, or provider errors) often omit
-final provider usage. When that happens, quota accounting records an explicitly
-labelled estimate from the request text, system prompt, tool schemas, and streamed
-text/thinking/tool arguments (roughly four characters per token). Binary file
-data is excluded; hidden reasoning and provider-specific image costs cannot be
-reconstructed. Estimates are approximate, not provider billing measurements,
-and count against the allowance without an unknown-usage lockout. Reported
-usage always takes precedence. A normal completed stream without valid usage,
-or an orphaned call after a process crash, remains unknown and blocks finite
-limits until reset or the next window. Existing unknown historical rows cannot
-be reconstructed and may still require an administrator reset. Disabled or unlimited quotas do not block chats for a usage
-booking failure. A known context-size rejection before generation counts zero
-so the normal compaction/retry path can continue.
-
-Quotas preserve blocked queued messages. The existing queue recovery checks
-again after a reset or window change; it does not change models automatically.
-The Assistant shows the remaining allowance beside its model selector. Open
-the indicator for all-model and selected-model balances, reset times, and
-unlimited access. The tighter effective allowance determines the indicator;
-unmeasured usage is shown separately. Disabled limits remain invisible.
-
-The page seeds this view on the server and refreshes it after chat activity,
-on focus, and every 30 seconds while visible. The popup also has a refresh
-action. Loading errors hide cached percentages and do not disable sending;
-the server remains authoritative and a rejected submission preserves the draft.
-
-`getAiChatQuotas(accessSubject)` from `@k2b/cloud/ai` and authenticated
-`GET /api/ai/quotas` return the caller's allowances. The browser-safe
-`AiChatQuotaSnapshot` type is exported from `@k2b/cloud/shared`. The view omits
-grant identities, historical usage, and specific model profiles the caller
-cannot use. The endpoint takes no target-user parameter and uses `no-store`.
-
-### Manage Assistant limits with the CLI
-
-Administrators can use `cld admin ai quotas` instead of the Admin page:
-
-```sh
-cld admin ai quotas config get --json > quotas.json
-cld admin ai quotas models --json
-cld admin ai quotas users --page 1 --json
-cld admin ai quotas balance --type user --id <user-uuid> --json
-cld admin ai quotas config set --config-file quotas.json --yes --json
-cld admin ai quotas reset --type user --id <user-uuid> --scope '*' \
-  --request-id <reset-operation-uuid> --yes --json
-```
-
-Edit the exported configuration before saving. `config set` replaces the whole
-configuration and requires the current `revision`; conflicts require a fresh
-read and deliberate reconciliation. `--stdin` accepts the same JSON document.
-Set `enabled: false` to disable enforcement without removing rules. Rules carry
-`scope`, reset `hours` and `anchor`, and permission principals with token `limit`
-(`null` means unlimited). The CLI uses the same validated Admin API and quota
-semantics as the GUI; it does not calculate grants locally. Changing `hours`
-retains the submitted `anchor`. Also update `anchor` when deliberately starting
-a new reset period, as the GUI does for interval changes.
-
-The users response includes pagination and identities with direct chat activity;
-`--search` also finds identities that have not used chat yet.
-Use `--type service_account` for a service account. Retain the reset operation's
-UUID and reuse it when retrying an uncertain response. A new reset requires a
-new UUID. Reset applies only to the selected identity and scope; historical
-usage remains available. All commands support JSON and JSONL output.
-
-The `authenticated` quota principal includes signed-in users and service accounts,
-consistent with Cloud access rules. Their usage is still accounted separately.
-The quota PostgreSQL regression suite runs in the dedicated **Assistant quotas**
-CI workflow against a disposable `cloud_ai_quota_verify_ci` database.
-
-
-### Admin quota reporting
-
-`GET /api/admin/core/ai-quotas/report` uses the same administrator authorization as
-quota configuration. Its query accepts `range`, `until`, `search`, `model`,
-`status`, `sort` (`label`, `tokens`, `lastUsed`), `direction` (`asc`, `desc`) and
-`page`. `view` is `users` by default or `rules`; the rules view needs no consumption
-report. `identity` and `identityType` select an optional account for the UI.
-The report returns period aggregates, a UTC timeline, up to 20 model groups,
-a paginated account table and current allowance summaries. It does not expose
-private chat content. `until` fixes the historical period end; `asOf` identifies
-when current allowances were evaluated. Refresh advances the period end.
-
-Filters, sorting, pagination, and account selection are stored in the Admin URL.
-Consumption remains visible when enforcement is disabled. Existing configuration,
-balance, and reset CLI commands continue to use the same quota policy and APIs.
+This alpha cut starts a fresh cost ledger and budget configuration. Previous
+credits and token limits are not converted or backfilled. Configure prices and
+cost allowances explicitly; the default remains unlimited.

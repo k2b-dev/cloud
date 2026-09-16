@@ -15,7 +15,7 @@ export function quotaFixture(patch: Partial<AiQuotaReport> = {}): AiQuotaReport 
     since: "2026-08-15T00:00:00Z",
     until: "2026-09-15T00:00:00Z",
     asOf: "2026-09-15T00:00:00Z",
-    overview: { accounts: 0, input: 0, output: 0, calls: 0, measured: 0, estimated: 0, unknown: 0 },
+    overview: { cost: 1, accounts: 0, input: 0, output: 0, calls: 0, measured: 0, estimated: 0, unknown: 0 },
     items: [],
     timeline: [],
     models: [],

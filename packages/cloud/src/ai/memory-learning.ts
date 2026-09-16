@@ -1,3 +1,4 @@
+import { AiBackgroundCostError } from "./inference-calls";
 import { sql } from "bun";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -217,13 +218,7 @@ export const buildMemoryLearningTranscript = (messages: AiStoredMessage[]): stri
   messages
     .flatMap((stored) => {
       const message = stored.message;
-      if (
-        stored.kind !== "message" ||
-        message.role !== "user" ||
-        stored.meta?.agentMessage ||
-        stored.meta?.scheduledTask
-      )
-        return [];
+      if (stored.kind !== "message" || message.role !== "user" || stored.meta?.agentMessage || stored.meta?.scheduledTask) return [];
       return message.content.flatMap((part) => {
         if (typeof part === "string") return part.trim() ? [part.trim()] : [];
         if (part.type !== "text") return [];
@@ -305,7 +300,15 @@ const estimatedTokens = (systemPrompt: string, taskInput: string): number =>
 
 const workflowEvidenceKey = (pattern: AiMemoryWorkflowPattern): string =>
   createHash("sha256")
-    .update(JSON.stringify([pattern.userId, pattern.capabilityId, pattern.resourceRef.type, pattern.resourceRef.id, ...[...pattern.turnIds].sort()]))
+    .update(
+      JSON.stringify([
+        pattern.userId,
+        pattern.capabilityId,
+        pattern.resourceRef.type,
+        pattern.resourceRef.id,
+        ...[...pattern.turnIds].sort(),
+      ]),
+    )
     .digest("hex");
 
 const toProposal = (change: z.infer<typeof AiMemoryLearningChangeSchema>): AiBackgroundMemoryProposal => ({
@@ -329,7 +332,8 @@ const applyChanges = async (
       !evidence.actions.some(
         (action) => action.resourceRef.type === change.resourceRef?.type && action.resourceRef.id === change.resourceRef.id,
       )
-    ) continue;
+    )
+      continue;
     const results = await aiMemories.applyBackgroundProposal({
       userId: evidence.candidate.userId,
       sourceConversationId: evidence.candidate.conversationId,
@@ -376,9 +380,7 @@ const workflowPatternInput = async (
   return {
     source: evidence[0] ?? null,
     mutableMemoryIds: new Set(
-      selected.memories
-        .filter((memory) => memory.source === "background" && memory.priority === "normal")
-        .map((memory) => memory.shortId),
+      selected.memories.filter((memory) => memory.source === "background" && memory.priority === "normal").map((memory) => memory.shortId),
     ),
     input: [
       `CAPABILITY: ${pattern.capabilityId}`,
@@ -395,7 +397,8 @@ const workflowPatternInput = async (
 const usageNumbers = (usage: RunAiStructuredResult<z.ZodType>["usage"], reserved: number) => {
   const inputTokens = usage?.input;
   const outputTokens = usage?.output;
-  const total = usage?.total ?? (inputTokens !== undefined || outputTokens !== undefined ? (inputTokens ?? 0) + (outputTokens ?? 0) : undefined);
+  const total =
+    usage?.total ?? (inputTokens !== undefined || outputTokens !== undefined ? (inputTokens ?? 0) + (outputTokens ?? 0) : undefined);
   return { inputTokens, outputTokens, accountedTokens: total ?? reserved };
 };
 
@@ -414,8 +417,7 @@ export const learnAiMemoriesFromPrivateChats = async (
   }
 
   const configuredBudget =
-    input.deps?.monthlyTokenBudget ??
-    Number(await coreSettings.get<number>(AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY));
+    input.deps?.monthlyTokenBudget ?? Number(await coreSettings.get<number>(AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY));
   const monthlyTokenBudget =
     Number.isFinite(configuredBudget) && configuredBudget > 0
       ? Math.floor(configuredBudget)
@@ -432,9 +434,7 @@ export const learnAiMemoriesFromPrivateChats = async (
   let defaultLocale: Promise<string> | undefined;
   const resolveLearningLocale = (locale?: string | null): Promise<string> => {
     if (locale) return Promise.resolve(normalizeLocale(locale));
-    defaultLocale ??= (input.deps?.readDefaultLocale ?? (() => coreSettings.get<string>("app.locale")))().then(
-      normalizeLocale,
-    );
+    defaultLocale ??= (input.deps?.readDefaultLocale ?? (() => coreSettings.get<string>("app.locale")))().then(normalizeLocale);
     return defaultLocale;
   };
 
@@ -514,6 +514,18 @@ export const learnAiMemoriesFromPrivateChats = async (
       if (status === "skipped") summary.skipped += 1;
       processedCandidates += 1;
     } catch (error) {
+      if (error instanceof AiBackgroundCostError) {
+        summary.skipped += 1;
+        if (runId)
+          await aiMemoryLearningRuns.finish({
+            runId,
+            status: "skipped",
+            durationMs: Date.now() - startedAt,
+            changes: [],
+            accountedTokens: 0,
+          });
+        return summary;
+      }
       summary.failed += 1;
       processedCandidates += 1;
       await markFailed(candidate).catch(() => undefined);
@@ -564,7 +576,11 @@ export const learnAiMemoriesFromPrivateChats = async (
       if (!runId) continue;
       const result = await structured({
         task: "memory-learn-workflow",
-        attribution: { userId: pattern.userId, conversationId: context.source.candidate.conversationId, turnId: context.source.candidate.turnId },
+        attribution: {
+          userId: pattern.userId,
+          conversationId: context.source.candidate.conversationId,
+          turnId: context.source.candidate.turnId,
+        },
         appId: "ai",
         systemPrompt: workflowPrompt,
         input: context.input,
@@ -578,15 +594,19 @@ export const learnAiMemoriesFromPrivateChats = async (
       if (result.output.workflow && (await learningEnabled(pattern.userId))) {
         const memoryIds = result.output.workflow.memoryIds;
         const action = memoryIds.length > 1 ? "merge" : memoryIds.length === 1 ? "replace" : "add";
-        changes = await applyChanges(context.source, [
-          {
-            action,
-            kind: "workflow",
-            content: result.output.workflow.content,
-            memoryIds,
-            resourceRef: pattern.resourceRef,
-          },
-        ], context.mutableMemoryIds);
+        changes = await applyChanges(
+          context.source,
+          [
+            {
+              action,
+              kind: "workflow",
+              content: result.output.workflow.content,
+              memoryIds,
+              resourceRef: pattern.resourceRef,
+            },
+          ],
+          context.mutableMemoryIds,
+        );
       }
       await markAiWorkflowPatternReviewed(pattern);
       await aiMemoryLearningRuns.finish({
@@ -600,6 +620,18 @@ export const learnAiMemoriesFromPrivateChats = async (
       summary.updated += changes.filter((change) => change.action === "updated" || change.action === "merged").length;
       if (changes.length === 0) summary.skipped += 1;
     } catch (error) {
+      if (error instanceof AiBackgroundCostError) {
+        summary.skipped += 1;
+        if (runId)
+          await aiMemoryLearningRuns.finish({
+            runId,
+            status: "skipped",
+            durationMs: Date.now() - startedAt,
+            changes: [],
+            accountedTokens: 0,
+          });
+        return summary;
+      }
       summary.failed += 1;
       if (runId) {
         await aiMemoryLearningRuns

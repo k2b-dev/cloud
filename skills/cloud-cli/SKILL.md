@@ -47,6 +47,6 @@ Read the app reference for the current task. Follow specialized links inside it 
 Administrators should additionally read the reference that matches the task:
 
 - [Accounts](references/accounts.md) for accounts, groups, requests, audit events, and service-account credentials.
-- [Administration](references/admin.md) for Assistant quota configuration and resets, health, diagnostics, logs, request telemetry, background jobs, workflow runs, notifications, announcements, webhooks, storage diagnostics, and metrics.
+- [Administration](references/admin.md) for AI model prices, reference-cost reports, Assistant budgets and resets, background emergency stops, health, diagnostics, logs, request telemetry, background jobs, workflow runs, notifications, announcements, webhooks, storage diagnostics, and metrics.
 - [OAuth](references/oauth.md) for OAuth client configuration.
 - [IPA hosts](references/ipa-hosts.md) for FreeIPA hosts, hostgroups, and host synchronization.

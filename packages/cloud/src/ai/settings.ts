@@ -1,3 +1,4 @@
+import { AiModelPricingSchema } from "../shared/ai-costs";
 import { z } from "zod";
 import { coreSettings } from "../services";
 import { getAiCredential, listAiCredentialProfileIds } from "./credentials";
@@ -94,11 +95,11 @@ const ModelProfileSchema = z
     maxOutputTokens: z.number().int().positive().optional(),
     maxLoadedTools: z.number().int().optional(),
     maxToolRounds: z.number().int().optional(),
-    creditsPerInputToken: z.number().nonnegative().optional(),
-    creditsPerOutputToken: z.number().nonnegative().optional(),
+    pricing: AiModelPricingSchema.optional(),
   })
   .superRefine((profile, ctx) => {
     if (profile.capabilities?.includes("transcription")) {
+      if (profile.pricing) ctx.addIssue({ code: "custom", path: ["pricing"], message: "Audio pricing is not supported." });
       if (profile.capabilities.some((capability) => capability !== "transcription")) {
         ctx.addIssue({ code: "custom", path: ["capabilities"], message: "Audio transcription cannot be combined with chat capabilities." });
       }

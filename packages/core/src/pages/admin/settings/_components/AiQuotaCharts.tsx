@@ -6,15 +6,12 @@ import { quotaMessages } from "./ai-quota-messages";
 export default function AiQuotaCharts(props: { report: AiQuotaReport; modelName: (id: string) => string }) {
   const locale = useLocale(),
     t = () => quotaMessages.resolve([locale()]).t;
-  const number = (n: number) => n.toLocaleString(locale());
+  const number = (n: number) => n.toLocaleString(locale(), { maximumSignificantDigits: 6 });
   const timeline = createMemo(() => {
     const rows = props.report.timeline
-      .filter((p) => p.measured > 0)
-      .flatMap((p) => [
-        { key: `${p.at}:input`, at: p.at, label: t().input, value: p.input },
-        { key: `${p.at}:output`, at: p.at, label: t().output, value: p.output },
-      ]);
-    const row = (series: number, index: number) => rows[index * 2 + series]!;
+      .filter((p) => p.cost !== null)
+      .map((p) => ({ key: p.at, at: p.at, label: t().cost, value: p.cost! }));
+    const row = (_series: number, index: number) => rows[index]!;
     return {
       rows,
       chart: prepareChartSnapshot(
@@ -23,10 +20,7 @@ export default function AiQuotaCharts(props: { report: AiQuotaReport; modelName:
           smooth: false,
           legend: true,
           maxGap: (props.report.query.range === "24h" ? 3600000 : 86400000) * 1.5,
-          series: [t().input, t().output].map((label, i) => ({
-            label,
-            data: rows.filter((_, j) => j % 2 === i).map((r) => ({ x: Date.parse(r.at), y: r.value })),
-          })),
+          series: [{ label: t().cost, data: rows.map((r) => ({ x: Date.parse(r.at), y: r.value })) }],
           xAxis: {
             ticks: 3,
             format: (at) =>
@@ -53,8 +47,8 @@ export default function AiQuotaCharts(props: { report: AiQuotaReport; modelName:
   });
   const models = createMemo(() => {
     const rows = props.report.models
-      .filter((m) => m.measured > 0)
-      .map((m) => ({ key: m.model, label: props.modelName(m.model), value: m.input + m.output }));
+      .filter((m) => m.cost !== null)
+      .map((m) => ({ key: m.model, label: props.modelName(m.model), value: m.cost! }));
     return {
       rows,
       chart: prepareChartSnapshot(
@@ -63,7 +57,7 @@ export default function AiQuotaCharts(props: { report: AiQuotaReport; modelName:
           key: ({ datum }) => rows[datum.index]!.key,
           tooltip: ({ datum }) => ({
             title: rows[datum.index]!.label,
-            rows: [{ label: t().tokens, value: number(rows[datum.index]!.value) }],
+            rows: [{ label: t().cost, value: number(rows[datum.index]!.value) }],
           }),
         },
       ),
@@ -80,7 +74,7 @@ export default function AiQuotaCharts(props: { report: AiQuotaReport; modelName:
         columns={[
           { id: "at", label: "UTC", value: (r) => new Date(r.at).toLocaleString(locale(), { timeZone: "UTC" }) },
           { id: "series", label: t().scope, value: (r) => r.label },
-          { id: "tokens", label: t().tokens, value: (r) => number(r.value), sortValue: (r) => r.value },
+          { id: "cost", label: t().cost, value: (r) => number(r.value), sortValue: (r) => r.value },
         ]}
       />
       <ChartExplorer
@@ -91,7 +85,7 @@ export default function AiQuotaCharts(props: { report: AiQuotaReport; modelName:
         data={models()}
         columns={[
           { id: "model", label: t().scope, value: (r) => r.label },
-          { id: "tokens", label: t().tokens, value: (r) => number(r.value), sortValue: (r) => r.value },
+          { id: "cost", label: t().cost, value: (r) => number(r.value), sortValue: (r) => r.value },
         ]}
       />
     </div>

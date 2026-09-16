@@ -1,25 +1,50 @@
+import { z } from "zod";
+import { AiModelPricingSchema } from "../shared/ai-costs";
+import { setAiModelPricing } from "../ai/model-pricing";
+import { backgroundCostState, releaseBackgroundCostStop, AiBackgroundCostError } from "../ai/inference-calls";
 import { Hono, type MiddlewareHandler } from "hono";
 import { aiQuotas, AiQuotaError } from "../ai/quotas";
 import { quotaReport, quotaAdminConfig } from "../ai/quota-report";
 import { AiQuotaReportQuerySchema } from "../shared/ai-quotas";
 import { AiQuotaConfigSchema, AiQuotaIdentitySchema, AiQuotaResetSchema, AiQuotaUsersQuerySchema } from "../shared/ai-quotas";
 import { type AuthContext, auth, v } from "../server";
-import { listAiModels } from "../ai/settings";
+import { readAiSettingsState } from "../ai/settings";
 const subject = (p: { type: "user" | "service_account"; id: string }) =>
   p.type === "user" ? { type: "user" as const, userId: p.id } : { type: "service_account" as const, serviceAccountId: p.id };
 export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin")) =>
   new Hono<AuthContext>()
     .use("*", authenticate)
     .onError((error, c) => {
-      if (error instanceof AiQuotaError) return c.json({ error: error.code, message: error.message }, 409);
+      if (error instanceof AiQuotaError || error instanceof AiBackgroundCostError)
+        return c.json({ error: error.code, message: error.message }, 409);
       throw error;
     })
     .get("/", async (c) => c.json(await quotaAdminConfig()))
-    .get("/models", async (c) => c.json({ models: (await listAiModels()).map((m) => ({ id: m.id, label: m.label })) }))
+    .get("/models", async (c) =>
+      c.json({
+        unit: (await aiQuotas.config()).unit ?? "EUR",
+        models: (await readAiSettingsState()).profiles.map((m) => ({
+          id: m.id,
+          label: m.label,
+          pricing: m.pricing,
+          capabilities: m.capabilities,
+        })),
+      }),
+    )
+    .put(
+      "/models/:id/pricing",
+      v("json", z.object({ pricing: AiModelPricingSchema.nullable(), expected: AiModelPricingSchema.nullable() }).strict()),
+      async (c) => {
+        const data = c.req.valid("json");
+        return c.json(await setAiModelPricing(c.req.param("id")!, data.pricing, data.expected, c.get("user")!.id));
+      },
+    )
+    .get("/background", async (c) => c.json(await backgroundCostState()))
+    .post("/background/release", async (c) => c.json(await releaseBackgroundCostStop(c.get("user")!.id)))
     .get("/report", v("query", AiQuotaReportQuerySchema), async (c) => c.json(await quotaReport(c.req.valid("query"))))
     .put("/", v("json", AiQuotaConfigSchema), async (c) => {
       const config = c.req.valid("json"),
-        models = await listAiModels(),
+        models = (await readAiSettingsState()).profiles.filter((model) => model.pricing && !model.capabilities.includes("transcription")),
         previous = await aiQuotas.config();
       if (
         config.rules.some(

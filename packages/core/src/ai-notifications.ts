@@ -1,8 +1,9 @@
+import { toPgTextArray } from "@k2b/cloud/services/postgres";
 import { i18n } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { type BoundNotificationMap, lazySync, notification } from "@k2b/cloud";
 import { AI_SHORT_ID_PATTERN } from "@k2b/cloud/ai";
-import { coreSettings, logger, notifications, trace } from "@k2b/cloud/services";
+import { coreSettings, getFreeIpaConfig, logger, notifications, trace } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 
@@ -16,12 +17,20 @@ const notificationMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      costWarning: "Background AI cost warning",
+      costStop: "Background AI stopped",
+      costBody: ({ cost, unit }: { cost: number; unit: string }) =>
+        `Reference costs over the last 24 hours: ${cost} ${unit}. Review Usage rules and the contributing workflows.`,
       responseReady: "Assistant response ready",
       responseFinished: "Your Assistant response has finished.",
       responseEmail: ({ target }: { target: string }) => `Your Assistant response has finished. Open it at ${target}`,
       taskAttention: ({ taskId }: { taskId: string }) => `Scheduled task ${taskId} needs attention`,
     },
     de: {
+      costWarning: "Kostenwarnung für Hintergrund-AI",
+      costStop: "Hintergrund-AI angehalten",
+      costBody: ({ cost, unit }) =>
+        `Referenzkosten der letzten 24 Stunden: ${cost} ${unit}. Prüfe die Usage-Regeln und die verursachenden Workflows.`,
       responseReady: "Antwort des Assistenten ist bereit",
       responseFinished: "Die Antwort des Assistenten ist fertig.",
       responseEmail: ({ target }) => `Die Antwort des Assistenten ist fertig. Öffne sie unter ${target}`,
@@ -32,6 +41,23 @@ const notificationMessages = i18n.define({
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
 
 export const AI_NOTIFICATIONS = {
+  backgroundCosts: notification({
+    recipient: "user",
+    label: "Background AI cost alerts",
+    description: "Warnings and emergency stops for background inference costs.",
+    presentation: presentation("Hintergrund-AI-Kosten", "Kostenwarnungen und Notbremsen für Hintergrund-AI."),
+    delivery: { recommended: ["browser"] },
+    data: z.object({ kind: z.enum(["warning", "stop"]), cost: z.number(), unit: z.string() }),
+    render: (data, { locale }) => ({
+      title: data.kind === "stop" ? text(locale).costStop : text(locale).costWarning,
+      body: text(locale).costBody(data),
+      targetHref: "/admin/settings?tab=ai-quotas&view=rules",
+    }),
+    email: (data, { locale }) => ({
+      subject: data.kind === "stop" ? text(locale).costStop : text(locale).costWarning,
+      content: text(locale).costBody(data),
+    }),
+  }),
   turnCompleted: notification({
     recipient: "user",
     label: "Assistant responses",
@@ -214,12 +240,32 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     return { scanned: candidates.length, sent, failed };
   };
 
+  const recoverCostAlerts = async (): Promise<AiNotificationRecoverySummary> => {
+    const groups = (await getFreeIpaConfig()).groupsAdmin;
+    const candidates = await sql<{ id: string; user_id: string; kind: "warning" | "stop"; cost: number; unit: string }[]>`
+      SELECT a.id,u.id AS user_id,a.kind,a.cost::float8 AS cost,a.unit FROM ai.cost_alerts a CROSS JOIN auth.users u
+      JOIN notifications.definitions d ON d.id=${definitions.backgroundCosts.id}
+      WHERE a.created_at>=d.first_seen_at AND (CASE WHEN u.provider='local' THEN u.admin ELSE EXISTS(
+        SELECT 1 FROM auth.ipa_user_effective_groups g WHERE g.user_id=u.id AND g.group_name=ANY(${toPgTextArray(groups)}::text[])) END)
+      AND NOT EXISTS(SELECT 1 FROM notifications.events e WHERE e.definition_id=d.id AND e.idempotency_key='cost:'||a.id::text||':'||u.id::text)
+      ORDER BY a.created_at,a.id,u.id LIMIT ${RECOVERY_BATCH_SIZE}`;
+    const locale = await coreSettings.get<string>("app.locale");
+    for (const item of candidates)
+      await notifications.send(definitions.backgroundCosts, {
+        recipient: { userId: item.user_id },
+        data: { kind: item.kind, cost: item.cost, unit: item.unit },
+        idempotencyKey: `cost:${item.id}:${item.user_id}`,
+        locale,
+      });
+    return { scanned: candidates.length, sent: candidates.length, failed: 0 };
+  };
+
   const recover = async (): Promise<AiNotificationRecoverySummary> => {
-    const [completions, tasks] = await Promise.all([recoverCompletions(), recoverTaskAttention()]);
+    const [completions, tasks, costs] = await Promise.all([recoverCompletions(), recoverTaskAttention(), recoverCostAlerts()]);
     return {
-      scanned: completions.scanned + tasks.scanned,
-      sent: completions.sent + tasks.sent,
-      failed: completions.failed + tasks.failed,
+      scanned: completions.scanned + tasks.scanned + costs.scanned,
+      sent: completions.sent + tasks.sent + costs.sent,
+      failed: completions.failed + tasks.failed + costs.failed,
     };
   };
 

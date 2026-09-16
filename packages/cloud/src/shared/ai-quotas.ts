@@ -1,5 +1,15 @@
 import { z } from "zod";
 import { PrincipalSchema } from "../contracts/shared";
+import { AiPriceSchema } from "./ai-costs";
+
+export const AiBackgroundBudgetSchema = z
+  .object({
+    enabled: z.boolean(),
+    warnAt: AiPriceSchema.nullable(),
+    stopAt: AiPriceSchema.positive(),
+  })
+  .strict()
+  .refine((value) => value.warnAt === null || value.warnAt < value.stopAt, "Warning must be below the stop amount.");
 
 export const AiQuotaRuleSchema = z
   .object({
@@ -12,7 +22,7 @@ export const AiQuotaRuleSchema = z
           .object({
             principal: PrincipalSchema.refine((p) => p.type !== "public", "Chat quotas require an identity."),
             displayName: z.string().max(300).optional(),
-            limit: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+            limit: AiPriceSchema.nullable(),
           })
           .strict(),
       )
@@ -25,6 +35,8 @@ export const AiQuotaConfigSchema = z
     enabled: z.boolean(),
     revision: z.number().int().nonnegative(),
     rules: z.array(AiQuotaRuleSchema).max(256),
+    unit: z.string().trim().min(1).max(16).optional(),
+    background: AiBackgroundBudgetSchema.optional(),
   })
   .strict()
   .refine((c) => new Set(c.rules.map((r) => r.scope)).size === c.rules.length, "Duplicate quota scope.");
@@ -40,9 +52,11 @@ export type AiQuotaBalance = {
   estimated?: number;
   resetsAt: string;
   sources: string[];
+  sourceDetails?: { principal: z.infer<typeof PrincipalSchema>; displayName: string }[];
   bypassed: boolean;
 };
 export type AiQuotaSnapshot = {
+  unit?: string;
   enabled: boolean;
   balances: AiQuotaBalance[];
   usage: { model: string; input: number; output: number; unknown: number }[];
@@ -57,7 +71,12 @@ export const AiQuotaUsersQuerySchema = z
   })
   .strict();
 
-export type AiChatQuotaSnapshot = { enabled: boolean; balances: Omit<AiQuotaBalance, "sources">[] };
+export type AiChatQuotaSnapshot = {
+  unit?: string;
+  unlimitedModels?: string[];
+  enabled: boolean;
+  balances: Omit<AiQuotaBalance, "sources" | "sourceDetails">[];
+};
 
 export const AiQuotaReportQuerySchema = z.object({
   view: z.enum(["users", "rules"]).default("users"),
@@ -66,7 +85,7 @@ export const AiQuotaReportQuerySchema = z.object({
   search: z.string().trim().max(200).default(""),
   model: z.string().max(128).default(""),
   status: z.enum(["all", "available", "exhausted", "unknown", "unlimited", "disabled"]).default("all"),
-  sort: z.enum(["label", "tokens", "lastUsed"]).default("lastUsed"),
+  sort: z.enum(["label", "cost", "lastUsed"]).default("lastUsed"),
   direction: z.enum(["asc", "desc"]).default("desc"),
   page: z.coerce.number().int().min(1).max(1000000).default(1),
   identity: z.uuid().optional(),
@@ -75,6 +94,7 @@ export const AiQuotaReportQuerySchema = z.object({
 export type AiQuotaReportQuery = z.infer<typeof AiQuotaReportQuerySchema>;
 export type AiQuotaStatus = Exclude<AiQuotaReportQuery["status"], "all">;
 export type AiQuotaReportRow = AiQuotaIdentity & {
+  cost: number | null;
   input: number;
   output: number;
   calls: number;
@@ -84,15 +104,25 @@ export type AiQuotaReportRow = AiQuotaIdentity & {
   status: AiQuotaStatus;
   scopes: number;
   exhausted: number;
+  balances: Pick<AiQuotaBalance, "scope" | "limit" | "used" | "unknown" | "bypassed">[];
 };
 export type AiQuotaReport = {
   query: AiQuotaReportQuery;
   since: string;
   until: string;
   asOf: string;
-  overview: { accounts: number; input: number; output: number; calls: number; measured: number; estimated: number; unknown: number };
-  timeline: { at: string; input: number; output: number; calls: number; measured: number; unknown: number }[];
-  models: { model: string; input: number; output: number; calls: number; measured: number; unknown: number }[];
+  overview: {
+    cost: number | null;
+    accounts: number;
+    input: number;
+    output: number;
+    calls: number;
+    measured: number;
+    estimated: number;
+    unknown: number;
+  };
+  timeline: { cost: number | null; at: string; input: number; output: number; calls: number; measured: number; unknown: number }[];
+  models: { cost: number | null; model: string; input: number; output: number; calls: number; measured: number; unknown: number }[];
   selected: AiQuotaIdentity | null;
   items: AiQuotaReportRow[];
   total: number;

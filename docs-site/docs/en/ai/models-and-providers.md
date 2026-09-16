@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-09-10
+updated: 2026-09-16
 ---
 
 # Models and providers
@@ -15,6 +15,33 @@ policy.
 
 A profile names the provider and model. It also records capabilities and the
 data boundary used for policy checks.
+
+## Configure a profile in administration
+
+Open **Settings → AI → Providers** and add or edit a profile. The compact dialog
+has four collapsible sections. Opening another section preserves your draft:
+
+- **Connection:** choose **Text / Chat** or **Audio transcription**, the provider,
+  display name and provider model identifier. Audio supports OpenAI and
+  OpenAI-compatible endpoints. The endpoint and API key sit side by side;
+  profile ID and logo are visible directly below. Field hints distinguish a
+  stored key, an unsaved key and a missing key. Leave an existing key field
+  empty to keep it, including when reopening an unsaved profile draft.
+  An empty endpoint uses the provider default unless a custom URL is required.
+- **Costs:** optionally enable reference prices for input and output per million
+  tokens. Prices use the installation's shared accounting unit. The example
+  shows the estimated cost of 10,000 input and 2,000 output tokens. Missing
+  prices mean unknown costs and unrestricted use: chat budgets and the
+  background cost brake do not cover that model. Explicit zero prices mean
+  free usage. Audio has no reference pricing or cost guard.
+- **Access:** choose who may use the model in Assistant and set its data
+  boundary. Model access and cost budgets remain separate settings.
+- **Advanced:** enable or disable the profile, choose its supported chat
+  capabilities and optionally set context or tool limits. **Image analysis**
+  is a Text / Chat capability, not a separate usage category.
+
+**Apply to draft** updates the settings form. Save that form to persist the
+configuration and permissions. Canceling the dialog discards its edits.
 
 ## Use a model policy
 
@@ -52,10 +79,11 @@ A locked policy needs `modelId`. A selectable policy may set
 | `contextWindow` | Optional context limit |
 | `temperature` | Optional profile default |
 | `maxOutputTokens` | Optional output limit |
+| `pricing` | Optional paired `inputPerMillion` / `outputPerMillion` reference prices |
 | `maxLoadedTools` | Deferred tool names retained per conversation; missing, `0`, or negative is unlimited, while a positive value keeps the newest names and evicts the oldest |
 | `maxToolRounds` | Tool-using model rounds allowed per chat turn; missing, `0`, or negative is unlimited, while a positive value reserves one additional tool-free model round for the final answer |
 
-Turn deadlines, cancellation, provider failures, and exhausted credits can still
+Turn deadlines, cancellation, provider failures, and exhausted cost budgets can still
 end a chat independently of the tool-round policy.
 
 Model responses sent to the browser omit credentials and private
@@ -160,9 +188,31 @@ memos or browser recordings.
 
 ## Direct-chat allowances
 
-Optional [Assistant limits](/en/docs/ai/usage-and-feedback#assistant-limits)
+Optional [Assistant limits](/en/docs/ai/usage-and-feedback#set-assistant-budgets)
 are configured separately from model access, and are disabled by default.
 A quota never grants access to a model. All-model **Unlimited** overrides
 model-specific quotas, while finite all-model and model-specific allowances
 both apply. Only direct interactive chat calls count; helper inference such
 as image inspection, transcription and compaction remains outside the quota.
+
+
+## Reference prices
+
+Each configured chat model profile can have optional `pricing`:
+`{ "inputPerMillion": 0.5, "outputPerMillion": 2 }`. Values use the installation's
+shared accounting unit (default `EUR`) per million input/output tokens. Supply
+both nonnegative prices, with up to six decimal places, or omit `pricing`.
+Explicit zero means free; an omitted price means unpriced and unlimited.
+Transcription profiles do not accept token pricing.
+
+The model editor and `cld admin ai models pricing set` update these prices.
+Credentials, model permission grants, and pricing remain separate. Each actual
+call snapshots its prices, so editing them never rewrites historical costs.
+No provider prices or exchange rates are fetched automatically. Configure only
+reference prices you want to use across the installation.
+
+A model-specific Assistant budget requires configured prices. Wildcard budgets
+and the optional background emergency stop also exclude unpriced models. The
+**Assistant limits → Rules** warning lists those models. See
+[Usage and feedback](/en/docs/ai/usage-and-feedback) for cost coverage, budgets,
+background stops and complete CLI/API operations.

@@ -56,7 +56,7 @@ export const aiUsageMessages = i18n.define({
       showUnassigned: "Show unassigned",
       periodHelp: "Period uses the start of each run. Feedback shows current ratings for chat turns started in this period. Snapshot:",
       comparisonHelp:
-        "Chat and background inference are counted once. Negative share is shown with rating count and response coverage. Duration is generation time for chat turns and elapsed time for background runs.",
+        "Chat and background inference are counted once. Negative share is shown with rating count and response coverage. Duration is elapsed time per actual provider attempt. Costs use configured reference prices; missing prices are not zero.",
       feedbackHelp:
         "Rating and reason filters affect this list. Totals above retain all ratings for the selected user/model cohort. Ratings may be edited or removed; they are not a rating history.",
       runsHelp:
@@ -74,7 +74,7 @@ export const aiUsageMessages = i18n.define({
       model: "Model",
       turns: "Turns",
       tokens: "Tokens",
-      credits: "Credits",
+      cost: "Costs",
       speed: "Speed",
       generation: "Generation",
       errors: "Errors",
@@ -105,6 +105,8 @@ export const aiUsageMessages = i18n.define({
       usageOverTimeDescription: "Chat and background inference runs and failures in the selected period.",
       noTurns: "No AI turns in this range.",
       tokenVolume: "Token volume",
+      costOverTime: "Reference costs over time",
+      costOverTimeDescription: "Known costs at the prices recorded for each call. Missing costs appear as gaps; totals may be incomplete.",
       tokenVolumeDescription: "Reported input and output tokens combined per time bucket.",
       noTokens: "No reported token usage in this range.",
       models: "Models",
@@ -119,7 +121,7 @@ export const aiUsageMessages = i18n.define({
         "Capability calls are recorded by the platform for every surface, not only the assistant. They live in Observability →",
       backgroundAi: "Background AI",
       backgroundDescription:
-        "Structured AI, workflow tasks, and chat summaries. Credits include only runs with reported prices; coverage shows how many runs have a price.",
+        "Structured AI, workflow tasks, and chat summaries. Costs include only runs with reported prices; coverage shows how many runs have a price.",
       noBackground: "No background AI runs in this range.",
       unresolved: "unresolved",
       launchedByApps: "Launched by applications",
@@ -195,7 +197,7 @@ export const aiUsageMessages = i18n.define({
       periodHelp:
         "Der Zeitraum bezieht sich auf den Start des Laufs. Feedback zeigt aktuelle Bewertungen zu Chat-Durchläufen, die in diesem Zeitraum gestartet wurden. Stand:",
       comparisonHelp:
-        "Chat- und Hintergrundinferenz werden einmal gezählt. Der Negativanteil wird mit Anzahl und Abdeckung der Bewertungen gezeigt. Dauer bedeutet bei Chats Generierungszeit, bei Hintergrundläufen verstrichene Zeit.",
+        "Chat- und Hintergrundinferenz werden einmal gezählt. Der Negativanteil wird mit Anzahl und Abdeckung der Bewertungen gezeigt. Die Dauer gilt pro tatsächlichem Provider-Aufruf. Kosten nutzen konfigurierte Referenzpreise; fehlende Preise sind nicht null.",
       feedbackHelp:
         "Bewertungs- und Grundfilter gelten für diese Liste. Die Kennzahlen behalten alle Bewertungen der gewählten Nutzer-/Modellauswahl bei. Bewertungen können geändert oder entfernt werden; es ist keine Bewertungshistorie.",
       runsHelp:
@@ -215,7 +217,7 @@ export const aiUsageMessages = i18n.define({
       model: "Modell",
       turns: "Durchläufe",
       tokens: "Tokens",
-      credits: "Credits",
+      cost: "Kosten",
       speed: "Geschwindigkeit",
       generation: "Generierung",
       errors: "Fehler",
@@ -246,6 +248,9 @@ export const aiUsageMessages = i18n.define({
       usageOverTimeDescription: "Chat- und Hintergrundinferenz sowie Fehler im gewählten Zeitraum.",
       noTurns: "Keine KI-Durchläufe in diesem Zeitraum.",
       tokenVolume: "Token-Volumen",
+      costOverTime: "Referenzkosten im Zeitverlauf",
+      costOverTimeDescription:
+        "Bekannte Kosten zu den Preisen des jeweiligen Aufrufs. Fehlende Kosten erscheinen als Lücken; Summen können unvollständig sein.",
       tokenVolumeDescription: "Gemeldete Eingabe- und Ausgabe-Tokens je Zeitabschnitt.",
       noTokens: "Keine gemeldete Token-Nutzung in diesem Zeitraum.",
       models: "Modelle",
@@ -260,7 +265,7 @@ export const aiUsageMessages = i18n.define({
         "Capability-Aufrufe zeichnet die Plattform für alle Oberflächen auf, nicht nur für den Assistenten. Sie stehen unter Observability →",
       backgroundAi: "KI im Hintergrund",
       backgroundDescription:
-        "Strukturierte KI, Workflow-Aufgaben und Chat-Zusammenfassungen. Credits umfassen nur Läufe mit gemeldeten Preisen; die Abdeckung zeigt deren Anteil.",
+        "Strukturierte KI, Workflow-Aufgaben und Chat-Zusammenfassungen. Costs umfassen nur Läufe mit gemeldeten Preisen; die Abdeckung zeigt deren Anteil.",
       noBackground: "Keine KI-Hintergrundläufe in diesem Zeitraum.",
       unresolved: "nicht aufgelöst",
       launchedByApps: "Von Apps gestartet",

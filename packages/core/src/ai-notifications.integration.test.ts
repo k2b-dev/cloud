@@ -86,20 +86,22 @@ suite("Core AI completion notifications", () => {
         WHERE definition_id = ${app.notifications.turnCompleted.id}
           AND recipient_user_id = ${userId}::uuid
       `;
-      expect(events).toEqual(expect.arrayContaining([
-        {
-          id: expect.any(String),
-          title: "Assistant response ready",
-          target_href: `/app/assistant?conversation=${direct.shortId}`,
-          idempotency_key: `turn:${directTurn.id}`,
-        },
-        {
-          id: expect.any(String),
-          title: "Assistant response ready",
-          target_href: `/app/assistant?conversation=${resource.shortId}`,
-          idempotency_key: `turn:${resourceTurn.id}`,
-        },
-      ]));
+      expect(events).toEqual(
+        expect.arrayContaining([
+          {
+            id: expect.any(String),
+            title: "Assistant response ready",
+            target_href: `/app/assistant?conversation=${direct.shortId}`,
+            idempotency_key: `turn:${directTurn.id}`,
+          },
+          {
+            id: expect.any(String),
+            title: "Assistant response ready",
+            target_href: `/app/assistant?conversation=${resource.shortId}`,
+            idempotency_key: `turn:${resourceTurn.id}`,
+          },
+        ]),
+      );
       expect(events).toHaveLength(2);
       const deliveries = await sql<{ channel: string; status: string; error_code: string | null; payload_encrypted: string | null }[]>`
         SELECT delivery.channel, delivery.status, delivery.error_code, delivery.payload_encrypted
@@ -166,6 +168,96 @@ suite("Core AI completion notifications", () => {
       ]);
     } finally {
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+});
+
+const costTestDb = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
+const costTestCache = new URL(process.env.VALKEY_URL ?? process.env.REDIS_URL ?? "redis://localhost:6379");
+const costSuite =
+  ["127.0.0.1", "localhost"].includes(costTestDb.hostname) &&
+  /^\/cloud_ai_pricing_verify_[a-z0-9_]+$/.test(costTestDb.pathname) &&
+  ["127.0.0.1", "localhost"].includes(costTestCache.hostname) &&
+  Boolean(costTestCache.port) &&
+  costTestCache.port !== "6379"
+    ? describe
+    : describe.skip;
+
+costSuite("background cost alert recovery", () => {
+  test("sends only to current local and IPA admins; partial delivery retries do not duplicate events", async () => {
+    const { spyOn } = await import("bun:test");
+    const cloud = await import("@k2b/cloud");
+    const deliveryRuntime = await import("@k2b/cloud/services/notifications/runtime");
+    const enqueue = spyOn(deliveryRuntime, "enqueueNotificationDeliveries").mockResolvedValue();
+    const enqueueOne = spyOn(deliveryRuntime, "enqueueNotificationDelivery").mockResolvedValue();
+    const { notifications, getFreeIpaConfig } = await import("@k2b/cloud/services");
+    let recover: ((context: { runId: string }) => Promise<void>) | undefined;
+    const scheduler = {
+      create: async (input: { process: (context: { runId: string }) => Promise<void> }) => {
+        recover = input.process;
+      },
+      process: async () => ({ stop: () => {}, drain: async () => {} }),
+    };
+    // Keep the existing recovery callback and real notification persistence, only isolate its scheduler transport.
+    const lazy = spyOn(cloud, "lazySync").mockReturnValue(() => scheduler);
+    const service = createAiNotificationService(app.notifications);
+    const prefix = `cost-notification-${crypto.randomUUID()}`;
+    const alerts = [crypto.randomUUID(), crypto.randomUUID()];
+    const users = await sql<{ id: string; uid: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name,admin)
+      VALUES(${`${prefix}-local-admin`},'local','user','Cost local admin',true),
+        (${`${prefix}-local-user`},'local','user','Cost local user',false),
+        (${`${prefix}-ipa-admin`},'ipa','user','Cost IPA admin',false),
+        (${`${prefix}-ipa-not-admin`},'ipa','user','Cost IPA member',false)
+      RETURNING id,uid`;
+    const localAdmin = users.find((user) => user.uid.endsWith("-local-admin"))!;
+    const ipaAdmin = users.find((user) => user.uid.endsWith("-ipa-admin"))!;
+    const adminGroup = (await getFreeIpaConfig()).groupsAdmin[0]!;
+    await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${ipaAdmin.id}::uuid,${adminGroup})`;
+    await sql`INSERT INTO ai.cost_alerts(id,kind,cost,unit) VALUES(${alerts[0]!}::uuid,'warning',2.5,'EUR'),(${alerts[1]!}::uuid,'stop',5,'EUR')`;
+    let sendFailure: ReturnType<typeof spyOn<typeof notifications, "send">> | undefined;
+    try {
+      await service.start();
+      if (!recover) throw new Error("Recovery scheduler callback was not registered.");
+      const send = notifications.send;
+      sendFailure = spyOn(notifications, "send")
+        .mockImplementationOnce(send)
+        .mockRejectedValueOnce(new Error("Injected recoverable notification failure"));
+      await expect(recover({ runId: crypto.randomUUID() })).rejects.toThrow("Injected recoverable notification failure");
+      sendFailure.mockRestore();
+      sendFailure = undefined;
+      await recover({ runId: crypto.randomUUID() });
+      await recover({ runId: crypto.randomUUID() });
+      const events = await sql<{ recipient_user_id: string; idempotency_key: string; title: string; target_href: string }[]>`
+        SELECT recipient_user_id,idempotency_key,title,target_href FROM notifications.events
+        WHERE definition_id=${app.notifications.backgroundCosts.id}
+          AND (idempotency_key LIKE ${`cost:${alerts[0]}:%`} OR idempotency_key LIKE ${`cost:${alerts[1]}:%`})`;
+      expect(events).toHaveLength(4);
+      expect(events.map((event) => event.recipient_user_id).sort()).toEqual(
+        [localAdmin.id, localAdmin.id, ipaAdmin.id, ipaAdmin.id].sort(),
+      );
+      expect(new Set(events.map((event) => event.idempotency_key)).size).toBe(4);
+      expect(events.every((event) => event.target_href === "/admin/settings?tab=ai-quotas&view=rules")).toBe(true);
+      expect(events.map((event) => event.title).sort()).toEqual(
+        ["Background AI cost warning", "Background AI cost warning", "Background AI stopped", "Background AI stopped"].sort(),
+      );
+      const deliveries = await sql<{ channel: string; status: string; error_code: string | null }[]>`
+        SELECT d.channel,d.status,d.error_code FROM notifications.deliveries d
+        JOIN notifications.events e ON e.id=d.event_id WHERE e.definition_id=${app.notifications.backgroundCosts.id}
+          AND (e.idempotency_key LIKE ${`cost:${alerts[0]}:%`} OR e.idempotency_key LIKE ${`cost:${alerts[1]}:%`})`;
+      expect(deliveries).toHaveLength(4);
+      expect(
+        deliveries.every(
+          (delivery) => delivery.channel === "browser" && delivery.status === "suppressed" && delivery.error_code === "no_endpoint",
+        ),
+      ).toBe(true);
+    } finally {
+      sendFailure?.mockRestore();
+      await service.stop();
+      lazy.mockRestore();
+      enqueue.mockRestore();
+      enqueueOne.mockRestore();
+      for (const user of users) await sql`DELETE FROM auth.users WHERE id=${user.id}::uuid`;
+      for (const id of alerts) await sql`DELETE FROM ai.cost_alerts WHERE id=${id}::uuid`;
     }
   });
 });

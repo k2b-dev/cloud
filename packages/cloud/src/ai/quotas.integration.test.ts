@@ -1,3 +1,6 @@
+import * as modelSettings from "./settings";
+import { beginAiCall, finishAiCall, backgroundCostState, releaseBackgroundCostStop } from "./inference-calls";
+import type { AiModelProfile } from "./types";
 import { drainQueuedMessages } from "./message-queue";
 import { aiConversations } from "./store";
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
@@ -23,9 +26,33 @@ const rule = (scope: string, limit: number | null): AiQuotaRule => ({
   grants: [{ principal: { type: "authenticated" }, limit }],
 });
 const save = async (rules: AiQuotaRule[], enabled = true) => aiQuotas.save({ ...(await aiQuotas.config()), rules, enabled }, user);
+const pricedModel = (id = "a"): AiModelProfile => ({
+  id,
+  label: id,
+  provider: "openai",
+  model: id,
+  capabilities: ["streaming"],
+  enabled: true,
+  dataBoundary: "hosted",
+  pricing: { inputPerMillion: 1_000_000, outputPerMillion: 1_000_000 },
+});
+const fixtureCalls = {
+  async begin(
+    who: { type: "user"; userId: string } | { type: "service_account"; serviceAccountId: string },
+    model: string,
+    turnId: string,
+  ) {
+    const id = crypto.randomUUID();
+    await sql`INSERT INTO ai.inference_calls(id,user_id,service_account_id,model_profile_id,provider_model,kind,task,turn_id,turn_attempt,pricing,lease_expires_at)
+      VALUES(${id}::uuid,${who.type === "user" ? who.userId : null}::uuid,${who.type === "service_account" ? who.serviceAccountId : null}::uuid,
+      ${model},${model},'chat','chat',${turnId}::uuid,(SELECT attempt FROM ai.turns WHERE id=${turnId}::uuid),'{"inputPerMillion":1000000,"outputPerMillion":1000000}',now()+interval '2 minutes')`;
+    return id;
+  },
+  finish: (id: string, usage?: { input: number; output: number; estimated?: boolean }) => finishAiCall(id, usage, "ok"),
+};
 const charge = async (model: string, input = 60, output = 40) => {
-  const id = await aiQuotas.begin(subject, model, turn);
-  await aiQuotas.finish(id, { input, output });
+  const id = await fixtureCalls.begin(subject, model, turn);
+  await fixtureCalls.finish(id, { input, output });
   return id;
 };
 suite("Assistant quota PostgreSQL boundaries", () => {
@@ -38,7 +65,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`CREATE TABLE auth.user_groups_v2(user_id UUID,group_id UUID)`;
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id UUID,child_group_id UUID)`;
     await sql`CREATE TABLE ai.turns(id UUID PRIMARY KEY,status TEXT,attempt INTEGER,lease_expires_at TIMESTAMPTZ,conversation_id UUID,run_config JSONB)`;
-    await sql`CREATE TABLE ai.conversations(id UUID PRIMARY KEY,created_by_user_id UUID,archived_at TIMESTAMPTZ)`;
+    await sql`CREATE TABLE ai.conversations(id UUID PRIMARY KEY,created_by_user_id UUID,launched_by_app_id TEXT,archived_at TIMESTAMPTZ)`;
     await sql`CREATE TABLE ai.queued_messages(id UUID PRIMARY KEY,conversation_id UUID,submission JSONB,status TEXT,error TEXT,quota_checked_at TIMESTAMPTZ,position BIGSERIAL)`;
     await sql`INSERT INTO auth.users VALUES(${user}::uuid,'one','One'),(${other}::uuid,'two','Two')`;
     await sql`INSERT INTO auth.service_accounts VALUES(${service}::uuid,'Service')`;
@@ -47,10 +74,20 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`INSERT INTO auth.group_groups_v2 VALUES(${group}::uuid,${child}::uuid)`;
     await sql`INSERT INTO ai.turns(id,status,attempt,lease_expires_at) VALUES(${turn}::uuid,'running',1,now()+interval '1 hour')`;
     await migrateAiQuotas();
+    spyOn(modelSettings, "readAiSettingsState").mockResolvedValue({
+      ok: true,
+      enabled: true,
+      defaultModelId: "a",
+      globalInstructions: "",
+      compactionInstructions: "",
+      maxToolResultChars: 1000,
+      firecrawlConfigured: false,
+      profiles: [pricedModel("a"), pricedModel("b")],
+    });
   });
   beforeEach(async () => {
-    await sql`TRUNCATE ai.quota_calls,ai.quota_resets,ai.quota_changes`;
-    await sql`UPDATE ai.quota_config SET enabled=false,revision=0,rules='[]'`;
+    await sql`TRUNCATE ai.cost_alerts,ai.inference_calls,ai.cost_resets,ai.cost_changes`;
+    await sql`UPDATE ai.cost_config SET enabled=false,revision=0,rules='[]',unit='EUR',background=NULL,background_stopped_at=NULL,background_warned=false`;
     await sql`UPDATE ai.turns SET attempt=1,status='running',lease_expires_at=now()+interval '1 hour'`;
   });
   test("report matches canonical nested grants, model constraints and wildcard bypass", async () => {
@@ -64,6 +101,10 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     expect(r.items[0]?.status).toBe("exhausted");
     expect(r.items[0]?.exhausted).toBe(1);
     expect(r.items[0]?.scopes).toBe(2);
+    expect(r.items[0]?.balances).toEqual(
+      snapshot.balances.map(({ scope, limit, used, unknown, bypassed }) => ({ scope, limit, used, unknown, bypassed })),
+    );
+    expect(snapshot.balances[0]?.sourceDetails).toEqual([{ principal: { type: "group", groupId: group }, displayName: "Parent" }]);
     expect(r.overview.input).toBe(60);
     expect(r.overview.output).toBe(40);
     expect(r.timeline[0]?.calls).toBe(1);
@@ -71,6 +112,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     const bypass = await quotaReport({ search: user, model: "a" });
     expect(bypass.items[0]?.status).toBe("unlimited");
     expect(bypass.items[0]?.exhausted).toBe(0);
+    expect(bypass.items[0]?.balances.find((b) => b.scope === "a")?.bypassed).toBe(true);
   });
   test("report separates reset balances, historical period and unknown accounting", async () => {
     await save([rule("a", 100)]);
@@ -78,8 +120,9 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await aiQuotas.reset(subject, "a", crypto.randomUUID(), user);
     let r = await quotaReport({ search: user });
     expect(r.items[0]?.status).toBe("available");
+    expect(r.items[0]?.balances[0]?.used).toBe(0);
     expect(r.overview.input + r.overview.output).toBe(100);
-    await aiQuotas.finish(await aiQuotas.begin(subject, "a", turn));
+    await fixtureCalls.finish(await fixtureCalls.begin(subject, "a", turn));
     r = await quotaReport({ search: user });
     expect(r.items[0]?.status).toBe("unknown");
     expect(r.overview.unknown).toBe(1);
@@ -99,7 +142,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     expect(limited.total).toBe(1);
     expect(limited.overview.calls).toBe(0);
     const svc = { type: "service_account" as const, serviceAccountId: service };
-    await aiQuotas.finish(await aiQuotas.begin(svc, "a", turn), { input: 5, output: 2, estimated: true });
+    await fixtureCalls.finish(await fixtureCalls.begin(svc, "a", turn), { input: 5, output: 2, estimated: true });
     const serviceReport = await quotaReport({ search: service, identity: service, identityType: "service_account" });
     expect(serviceReport.selected?.label).toBe("Service");
     expect(serviceReport.overview.estimated).toBe(1);
@@ -110,8 +153,8 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`INSERT INTO auth.users ${sql(users, "id", "uid", "display_name")}`;
     try {
       await save([rule("a", 15)]);
-      await sql`INSERT INTO ai.quota_calls ${sql(users.map((u, i) => ({ id: crypto.randomUUID(), user_id: u.id, model_profile_id: "a", input: i, output: 0 })))}`;
-      const first = await quotaReport({ search: "Report", sort: "tokens", direction: "desc" });
+      await sql`INSERT INTO ai.inference_calls ${sql(users.map((u, i) => ({ id: crypto.randomUUID(), user_id: u.id, model_profile_id: "a", input: i, output: 0, kind: "chat", task: "chat", provider_model: "a", lease_expires_at: new Date(), cost: i })))}`;
+      const first = await quotaReport({ search: "Report", sort: "cost", direction: "desc" });
       const second = await quotaReport({ ...first.query, page: 2 });
       expect(first.total).toBe(30);
       expect(first.items).toHaveLength(25);
@@ -146,7 +189,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
   });
   test("wildcard unlimited overrides zero model grants and unknown usage", async () => {
     await save([rule("*", null), rule("a", 0)]);
-    await aiQuotas.finish(await aiQuotas.begin(subject, "a", turn));
+    await fixtureCalls.finish(await fixtureCalls.begin(subject, "a", turn));
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(false);
   });
   test("specific unlimited does not override finite wildcard", async () => {
@@ -161,19 +204,19 @@ suite("Assistant quota PostgreSQL boundaries", () => {
   test("duplicate finalization cannot double book or erase usage", async () => {
     await save([rule("a", 200)]);
     const id = await charge("a");
-    await aiQuotas.finish(id, { input: 800, output: 900 });
-    await aiQuotas.finish(id);
+    await fixtureCalls.finish(id, { input: 800, output: 900 });
+    await fixtureCalls.finish(id);
     expect((await aiQuotas.snapshot(subject, "a")).balances[0]!.used).toBe(100);
   });
   test("manual reset leaves historical usage and ignores late old calls", async () => {
     await save([rule("*", 100), rule("a", 200)]);
-    const old = await aiQuotas.begin(subject, "a", turn);
+    const old = await fixtureCalls.begin(subject, "a", turn);
     await aiQuotas.reset(subject, "*", crypto.randomUUID(), user);
-    await aiQuotas.finish(old, { input: 60, output: 40 });
+    await fixtureCalls.finish(old, { input: 60, output: 40 });
     const b = (await aiQuotas.snapshot(subject, "a")).balances;
     expect(b.find((x) => x.scope === "*")!.used).toBe(0);
     expect(b.find((x) => x.scope === "a")!.used).toBe(100);
-    expect(Number((await sql`SELECT count(*) AS n FROM ai.quota_calls`)[0]!.n)).toBe(1);
+    expect(Number((await sql`SELECT count(*) AS n FROM ai.inference_calls`)[0]!.n)).toBe(1);
   });
   test("reset receipts cannot be reused for another identity", async () => {
     const id = crypto.randomUUID();
@@ -183,14 +226,14 @@ suite("Assistant quota PostgreSQL boundaries", () => {
   });
   test("unknown completed call blocks finite but not disabled quota", async () => {
     await save([rule("a", 200)]);
-    await aiQuotas.finish(await aiQuotas.begin(subject, "a", turn));
+    await fixtureCalls.finish(await fixtureCalls.begin(subject, "a", turn));
     await expect(aiQuotas.assertAllowed(subject, "a")).rejects.toThrow("could not be measured");
     await save([rule("a", 200)], false);
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(false);
   });
   test("reclaimed turn cannot disguise unknown usage of prior attempt", async () => {
     await save([rule("a", 200)]);
-    await aiQuotas.begin(subject, "a", turn);
+    await fixtureCalls.begin(subject, "a", turn);
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
     await sql`UPDATE ai.turns SET attempt=2`;
     await expect(aiQuotas.assertAllowed(subject, "a")).rejects.toThrow("could not be measured");
@@ -205,7 +248,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
   test("service accounts have separate personal usage", async () => {
     await save([rule("*", 100)]);
     const s = { type: "service_account" as const, serviceAccountId: service };
-    await aiQuotas.finish(await aiQuotas.begin(s, "a", turn), { input: 80, output: 20 });
+    await fixtureCalls.finish(await fixtureCalls.begin(s, "a", turn), { input: 80, output: 20 });
     await expect(aiQuotas.assertAllowed(s, "a")).rejects.toThrow();
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
   });
@@ -256,9 +299,9 @@ suite("Assistant quota PostgreSQL boundaries", () => {
 
   test("estimated interrupted usage counts but does not lock a finite quota", async () => {
     await save([rule("*", 1000)]);
-    const id = await aiQuotas.begin(subject, "a", turn);
-    await aiQuotas.finish(id, { input: 10, output: 5, estimated: true });
-    await aiQuotas.finish(id, undefined);
+    const id = await fixtureCalls.begin(subject, "a", turn);
+    await fixtureCalls.finish(id, { input: 10, output: 5, estimated: true });
+    await fixtureCalls.finish(id, undefined);
     expect((await aiQuotas.snapshot(subject)).balances[0]).toMatchObject({ used: 15, unknown: 0, estimated: 1 });
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(true);
     const users = await aiQuotas.users("One", 1);
@@ -268,22 +311,124 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     const recent = await charge("a"),
       old = await charge("a"),
       active = await charge("a");
-    await sql`UPDATE ai.quota_calls SET started_at=now()-interval '8761 hours',turn_id=NULL WHERE id=${old}::uuid`;
-    await sql`UPDATE ai.quota_calls SET started_at=now()-interval '8761 hours',finished_at=NULL WHERE id=${active}::uuid`;
+    await sql`UPDATE ai.inference_calls SET started_at=now()-interval '8761 hours',turn_id=NULL WHERE id=${old}::uuid`;
+    await sql`UPDATE ai.inference_calls SET started_at=now()-interval '8761 hours',finished_at=NULL WHERE id=${active}::uuid`;
     await aiQuotas.prune();
-    const remaining = (await sql<{ id: string }[]>`SELECT id FROM ai.quota_calls`).map((r) => r.id);
+    const remaining = (await sql<{ id: string }[]>`SELECT id FROM ai.inference_calls`).map((r) => r.id);
     expect(remaining).toContain(recent);
     expect(remaining).toContain(active);
     expect(remaining).not.toContain(old);
     await sql`UPDATE ai.turns SET status='aborted' WHERE id=${turn}::uuid`;
     await aiQuotas.prune();
-    expect((await sql`SELECT 1 FROM ai.quota_calls WHERE id=${active}::uuid`).length).toBe(0);
+    expect((await sql`SELECT 1 FROM ai.inference_calls WHERE id=${active}::uuid`).length).toBe(0);
   });
 
   test("retention deletes at most one bounded batch", async () => {
-    await sql`INSERT INTO ai.quota_calls(id,user_id,model_profile_id,started_at,finished_at,input,output)
-      SELECT gen_random_uuid(),${user}::uuid,'a',now()-interval '8761 hours',now(),1,1 FROM generate_series(1,1001)`;
+    await sql`INSERT INTO ai.inference_calls(id,user_id,model_profile_id,started_at,finished_at,input,output,kind,task,provider_model,lease_expires_at,cost)
+      SELECT gen_random_uuid(),${user}::uuid,'a',now()-interval '8761 hours',now(),1,1,'chat','chat','a',now(),2 FROM generate_series(1,1001)`;
     await aiQuotas.prune();
-    expect(Number((await sql`SELECT count(*) AS n FROM ai.quota_calls`)[0]!.n)).toBe(1);
+    expect(Number((await sql`SELECT count(*) AS n FROM ai.inference_calls`)[0]!.n)).toBe(1);
+  });
+  test("concurrent cost admissions reserve the same wildcard pool atomically", async () => {
+    await save([rule("*", 2)]);
+    const results = await Promise.allSettled(
+      [1, 2].map(() => beginAiCall(pricedModel(), { kind: "chat", task: "chat", subject, turnId: turn }, 1, 1)),
+    );
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const accepted = results.find((result) => result.status === "fulfilled");
+    if (accepted?.status !== "fulfilled") throw new Error("No admission");
+    await finishAiCall(accepted.value.id, { input: 1, output: 1 }, "ok");
+    expect((await aiQuotas.snapshot(subject)).balances[0]!.used).toBe(2);
+  });
+  test("decimal affordability does not lose a token to floating point", async () => {
+    await save([rule("*", 0.3)]);
+    const call = await beginAiCall(
+      { ...pricedModel(), pricing: { inputPerMillion: 100000, outputPerMillion: 100000 } },
+      { kind: "chat", task: "chat", subject, turnId: turn },
+      1,
+      10,
+    );
+    expect(call.maxOutputTokens).toBe(2);
+    await finishAiCall(call.id, { input: 1, output: 2 }, "ok");
+    expect((await aiQuotas.snapshot(subject)).balances[0]!.used).toBe(0.3);
+  });
+  test("price snapshots survive model price changes and duplicate finalization", async () => {
+    const model = pricedModel();
+    const call = await beginAiCall(model, { kind: "chat", task: "chat", subject, turnId: turn }, 1, 1);
+    model.pricing = { inputPerMillion: 0, outputPerMillion: 0 };
+    await finishAiCall(call.id, { input: 2, output: 3 }, "ok");
+    await finishAiCall(call.id, { input: 100, output: 100 }, "ok");
+    const [row] = await sql`SELECT cost::text FROM ai.inference_calls WHERE id=${call.id}::uuid`;
+    expect(Number(row.cost)).toBe(5);
+  });
+  test("unpriced calls bypass finite chat budgets and a latched background brake", async () => {
+    await save([rule("*", 0)]);
+    await aiQuotas.save({ ...(await aiQuotas.config()), background: { enabled: true, warnAt: null, stopAt: 1 } }, user);
+    await sql`UPDATE ai.cost_config SET background_stopped_at=now()`;
+    for (const kind of ["chat", "background"] as const) {
+      const call = await beginAiCall({ ...pricedModel(), pricing: undefined }, { kind, task: kind, subject, turnId: turn }, 100, 100);
+      await finishAiCall(call.id, { input: 100, output: 100 }, "ok");
+      const [row] = await sql`SELECT cost FROM ai.inference_calls WHERE id=${call.id}::uuid`;
+      expect(row.cost).toBeNull();
+    }
+  });
+  test("explicit free pricing records zero even when tokens are unknown", async () => {
+    await aiQuotas.save({ ...(await aiQuotas.config()), background: { enabled: true, warnAt: null, stopAt: 1 } }, user);
+    const call = await beginAiCall(
+      { ...pricedModel(), pricing: { inputPerMillion: 0, outputPerMillion: 0 } },
+      { kind: "background", task: "free" },
+      1,
+      1,
+    );
+    await finishAiCall(call.id, undefined, "ok");
+    expect(await backgroundCostState()).toMatchObject({ used: 0, unknown: 0, stoppedAt: null });
+  });
+  test("free models stay usable after a wildcard budget and background stop are exhausted", async () => {
+    await save([rule("*", 1)]);
+    await charge("a", 2, 0);
+    await sql`UPDATE ai.cost_config SET background='{"enabled":true,"warnAt":null,"stopAt":1}',background_stopped_at=now()`;
+    const free = { ...pricedModel(), pricing: { inputPerMillion: 0, outputPerMillion: 0 } };
+    for (const kind of ["chat", "background"] as const) {
+      const call = await beginAiCall(free, { kind, task: "free", subject }, 10);
+      expect(call.maxOutputTokens).toBeUndefined();
+      await sql`UPDATE ai.inference_calls SET lease_expires_at=now()-interval '1 minute' WHERE id=${call.id}::uuid`;
+      expect((await backgroundCostState()).unknown).toBe(0);
+      expect((await aiQuotas.snapshot(subject)).balances[0]?.unknown).toBe(0);
+      await finishAiCall(call.id, undefined, "ok");
+    }
+  });
+  test("no-budget admission preserves provider default output maximum", async () => {
+    const call = await beginAiCall(pricedModel(), { kind: "background", task: "unrestricted" }, 20, undefined, 200_000);
+    expect(call.maxOutputTokens).toBeUndefined();
+  });
+  test("background warning and stop are durable, deduplicated, and separate from chat budgets", async () => {
+    await save([rule("*", 100)]);
+    await aiQuotas.save({ ...(await aiQuotas.config()), background: { enabled: true, warnAt: 1, stopAt: 2 } }, user);
+    const call = await beginAiCall(pricedModel(), { kind: "background", task: "workflow-test", subject }, 1, 1);
+    await finishAiCall(call.id, { input: 1, output: 1 }, "ok");
+    await finishAiCall(call.id, { input: 1, output: 1 }, "ok");
+    expect((await aiQuotas.snapshot(subject)).balances[0]!.used).toBe(0);
+    expect((await backgroundCostState()).stoppedAt).not.toBeNull();
+    expect((await sql<{ kind: string }[]>`SELECT kind FROM ai.cost_alerts ORDER BY kind`).map((row) => row.kind)).toEqual([
+      "stop",
+      "warning",
+    ]);
+    await expect(beginAiCall(pricedModel(), { kind: "background", task: "blocked" }, 1, 1)).rejects.toThrow("Background AI");
+    await expect(releaseBackgroundCostStop(user)).rejects.toThrow("Background AI");
+    await aiQuotas.save({ ...(await aiQuotas.config()), background: { enabled: true, warnAt: 5, stopAt: 10 } }, user);
+    expect((await backgroundCostState()).stoppedAt).not.toBeNull();
+    await releaseBackgroundCostStop(user);
+    expect((await backgroundCostState()).stoppedAt).toBeNull();
+  });
+  test("background costs use a rolling window but a triggered brake stays latched", async () => {
+    await aiQuotas.save({ ...(await aiQuotas.config()), background: { enabled: true, warnAt: null, stopAt: 1 } }, user);
+    const call = await beginAiCall(pricedModel(), { kind: "background", task: "old" }, 0, 1);
+    await finishAiCall(call.id, { input: 0, output: 1 }, "ok");
+    await sql`UPDATE ai.inference_calls SET started_at=now()-interval '25 hours' WHERE id=${call.id}::uuid`;
+    expect(await backgroundCostState()).toMatchObject({ used: 0 });
+    await expect(beginAiCall(pricedModel(), { kind: "background", task: "still-blocked" }, 0, 1)).rejects.toThrow("Background AI");
+    await releaseBackgroundCostStop(user);
+    await expect(beginAiCall(pricedModel(), { kind: "background", task: "released" }, 0, 1)).resolves.toBeDefined();
   });
 });

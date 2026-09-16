@@ -53,8 +53,8 @@ export function AiChatActionsProvider(props: { actions?: AiChatActions; children
   return <AiChatActionContext.Provider value={props.actions ?? {}}>{props.children}</AiChatActionContext.Provider>;
 }
 
-const usageValue = (usage: Usage | null | undefined, key: "input" | "output" | "total" | "creditsUsed") => {
-  const value = (usage as Partial<Record<"input" | "output" | "total" | "creditsUsed", unknown>> | null | undefined)?.[key];
+const usageValue = (usage: Usage | null | undefined, key: "input" | "output" | "total") => {
+  const value = (usage as Partial<Record<"input" | "output" | "total", unknown>> | null | undefined)?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 };
 
@@ -70,7 +70,6 @@ const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
   const toolCalls = blocks.filter((block) => block.type === "tool_call");
   const aggregate = entry.loopAggregate;
   const usage = aggregate?.usage ?? entry.usage;
-  const credits = usageValue(usage, "creditsUsed");
   const timing = aggregate?.timing;
 
   const meta = [
@@ -100,7 +99,6 @@ const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
       input: usageValue(usage, "input"),
       output: usageValue(usage, "output"),
       total: usageValue(usage, "total"),
-      credits,
     },
     turns: aggregate?.assistantMessageCount ?? 1,
     toolCallCount: aggregate?.toolCallCount ?? toolCalls.length,
@@ -183,9 +181,6 @@ const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: string) =
                 sub={issueSummary}
                 accent={{ tone: "red", icon: "ti ti-alert-triangle" }}
               />
-            </Show>
-            <Show when={info.usage.credits !== null && info.usage.credits > 0}>
-              <StatCell label="Credits" value={info.usage.credits?.toLocaleString(locale, { maximumFractionDigits: 6 }) ?? "–"} />
             </Show>
           </StatGrid>
 

@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { nessi, type Provider } from "@k2b/nessi";
+import { z } from "zod";
 import { migrateCloudAi } from "./migrate";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 import { recordAiStructuredRun } from "./structured-runs";
+import { beginAiCall, finishAiCall, type AiCallContext } from "./inference-calls";
+import { inferenceProvider } from "./quota-provider";
+import type { AiModelProfile } from "./types";
 import { aiUsage } from "./usage";
 
-// This suite migrates and writes data. It must never use a shared developer database.
+// Requires the Core auth/workflow schema in a disposable database. Never use a shared dev database.
 const databaseUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
 const isolated =
   ["127.0.0.1", "localhost"].includes(databaseUrl.hostname) &&
@@ -14,357 +19,273 @@ const isolated =
 if (isolated) await migrateCloudAi();
 const suite = isolated ? describe : describe.skip;
 
-suite("AI usage integration", () => {
-  test("aggregates interactive, launch, feedback, switch, and background facts", async () => {
-    const suffix = crypto.randomUUID().slice(0, 8);
-    const uid = `ai-usage-${suffix}`;
-    const modelA = `usage-fast-${suffix}`;
-    const modelB = `usage-quality-${suffix}`;
-    const task = `usage-test-${suffix}`;
-    const [user] = await sql<{ id: string }[]>`
-      INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
-      VALUES (${uid}, 'local', 'user', ${uid}, ${`${uid}@example.test`}, 'Usage', 'Test') RETURNING id
-    `;
-    const conversationIds: string[] = [];
-    try {
-      const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, launchedByAppId: "mail" });
-      conversationIds.push(conversation.id);
-      const [firstTurn] = await sql<{ id: string }[]>`
-        INSERT INTO ai.turns (short_id, conversation_id, status, model_profile_id, run_config, completed_at)
-        VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'completed', ${modelA}, '{"kind":"chat"}'::jsonb, now()) RETURNING id
-      `;
-      const [secondTurn] = await sql<{ id: string }[]>`
-        INSERT INTO ai.turns (short_id, conversation_id, status, model_profile_id, run_config, completed_at)
-        VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'completed', ${modelB}, '{"kind":"chat"}'::jsonb, now()) RETURNING id
-      `;
-      await sql`
-        INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, model_profile_id, provider_model, usage, loop_id, loop_aggregate, loop_done_reason)
-        VALUES
-          (${createAiShortId()}, ${conversation.id}::uuid, 1, 'message', 'assistant', '{"role":"assistant","content":[{"type":"text","text":"One"}]}'::jsonb, ${modelA}, 'provider/fast', '{"input":100,"output":20,"total":120,"creditsUsed":0.12}'::jsonb, ${firstTurn!.id}, '{"usage":{"input":100,"output":20,"total":120,"creditsUsed":0.12},"timing":{"generationMs":500,"outputTokensPerSecond":40}}'::jsonb, 'stop'),
-          (${createAiShortId()}, ${conversation.id}::uuid, 2, 'message', 'assistant', '{"role":"assistant","content":[{"type":"text","text":"Two"}]}'::jsonb, ${modelB}, 'provider/quality', '{"input":200,"output":50,"total":250,"creditsUsed":0.5}'::jsonb, ${secondTurn!.id}, '{"usage":{"input":200,"output":50,"total":250,"creditsUsed":0.5},"timing":{"generationMs":1000,"outputTokensPerSecond":50}}'::jsonb, 'stop')
-      `;
-      const messages = await aiConversations.listMessages({ conversationId: conversation.id });
-      await aiConversations.setMessageFeedback({
-        conversationId: conversation.id,
-        messageShortId: messages.at(-1)!.shortId,
-        feedback: { rating: "down", reasons: ["incorrect"], comment: "Test feedback" },
-      });
-      await recordAiStructuredRun({
-        task,
-        appId: "core",
-        modelProfileId: modelB,
-        providerModel: "provider/quality",
-        status: "failed",
-        durationMs: 400,
-        usage: { input: 50, output: 10, total: 60 },
-        errorCode: "invalid_output",
-        error: "Test background failure",
-      });
-
-      const report = await aiUsage.report("24h");
-      expect(report.models.items.find((row) => row.id === modelB)).toMatchObject({ runs: 2, tokens: 310, negative: 1 });
-      expect(report.users.items.find((row) => row.id === user!.id)).toMatchObject({ runs: 2, tokens: 370, rated: 1 });
-      expect(report.tasks.items.find((row) => row.id === task)).toMatchObject({ runs: 1, failed: 1, tokens: 60 });
-      expect(report.apps.items.find((row) => row.id === "mail")?.runs).toBeGreaterThanOrEqual(1);
-      expect(report.feedback.items.find((row) => row.comment === "Test feedback")?.reasons).toEqual(["incorrect"]);
-      expect(report.overview.switchesAway).toBeGreaterThanOrEqual(1);
-    } finally {
-      await sql`DELETE FROM ai.structured_runs WHERE task = ${task}`;
-      for (const conversationId of conversationIds) await sql`DELETE FROM ai.conversations WHERE id = ${conversationId}::uuid`;
-      if (user) await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
-    }
-  });
-});
-
-suite("AI usage durable accounting", () => {
-  const fixture = async () => {
-    const uid = `usage-${crypto.randomUUID()}`;
-    const [user] = await sql<{ id: string }[]>`
-      INSERT INTO auth.users (uid, provider, profile, display_name)
-      VALUES (${uid}, 'local', 'user', ${uid}) RETURNING id
-    `;
-    const conversations: string[] = [];
-    const conversation = async () => {
-      const value = await aiConversations.createConversation({ ownerUserId: user!.id });
-      conversations.push(value.id);
-      return value;
-    };
-    return {
-      userId: user!.id,
-      conversation,
-      cleanup: async () => {
-        for (const id of conversations) await sql`DELETE FROM ai.conversations WHERE id = ${id}::uuid`;
-        await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
-      },
-    };
+const fixture = async () => {
+  const prefix = `usage-${crypto.randomUUID()}`;
+  const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name)
+    VALUES(${prefix},'local','user',${prefix}) RETURNING id`;
+  const model: AiModelProfile = {
+    id: prefix,
+    label: prefix,
+    provider: "openai",
+    model: "provider/usage",
+    enabled: true,
+    dataBoundary: "hosted",
+    capabilities: ["streaming"],
+    pricing: { inputPerMillion: 1000, outputPerMillion: 2000 },
   };
+  const conversations: string[] = [];
+  const workflows: string[] = [];
+  const conversation = async () => {
+    const value = await aiConversations.createConversation({ ownerUserId: user!.id, launchedByAppId: "usage-test" });
+    conversations.push(value.id);
+    return value;
+  };
+  const call = async (input: number | undefined, output: number | undefined, context: Partial<AiCallContext> = {}, profile = model) => {
+    const value = await beginAiCall(
+      profile,
+      { kind: "background", task: prefix, userId: user!.id, appId: "usage-test", ...context },
+      input ?? 0,
+      output,
+    );
+    await finishAiCall(value.id, input === undefined || output === undefined ? undefined : { input, output }, "ok");
+    return value.id;
+  };
+  const report = (options: Parameters<typeof aiUsage.report>[1] = {}) => aiUsage.report("24h", { modelProfileId: prefix, ...options });
+  return {
+    prefix,
+    userId: user!.id,
+    model,
+    conversation,
+    call,
+    report,
+    workflows,
+    cleanup: async () => {
+      await sql`DELETE FROM ai.inference_calls WHERE model_profile_id=${prefix}`;
+      await sql`DELETE FROM ai.structured_runs WHERE model_profile_id=${prefix}`;
+      for (const id of conversations) await sql`DELETE FROM ai.conversations WHERE id=${id}::uuid`;
+      for (const id of workflows) await sql`DELETE FROM workflows.workflow WHERE id=${id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
+    },
+  };
+};
 
-  test("keeps every provider response after retry and edit truncate the message history", async () => {
+suite("AI usage inference accounting", () => {
+  test("records each real structured repair call once, not the terminal aggregate or replayed result", async () => {
     const f = await fixture();
     try {
-      const conversation = await f.conversation();
-      const submit = (truncateFromSeq?: number) =>
-        aiConversations.submitChatTurn({
-          conversationId: conversation.id,
-          modelProfileId: "usage-retry-model",
-          runConfig: { kind: "chat", input: "Hello", toolSource: { kind: "none" } },
-          userMessage: { role: "user", content: [{ type: "text", text: "Hello" }] },
-          truncateFromSeq,
-        });
-      const first = await submit();
-      const firstStore = aiConversations.createSessionStore({
-        conversationId: conversation.id,
-        turnId: first.turn.id,
-        modelProfileId: "usage-retry-model",
+      let requests = 0;
+      const provider: Provider = {
+        name: "fixture",
+        family: "openai-compatible",
+        model: f.model.model,
+        capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: true, structuredOutput: true },
+        async complete() {
+          requests++;
+          const text = requests === 1 ? "not JSON" : '{"answer":42}';
+          const usage = { input: 100 * requests, output: 10 * requests, total: 110 * requests };
+          return { message: { role: "assistant", content: [{ type: "text", text }], usage }, usage, finishReason: "stop" };
+        },
+        async *stream() {
+          throw new Error("Structured repair must use complete()");
+        },
+      };
+      const result = await nessi.structured({
+        agentId: "usage-test",
+        input: "Return an answer",
+        output: z.object({ answer: z.number() }),
+        provider: inferenceProvider(provider, f.model, { kind: "background", task: f.prefix, userId: f.userId }),
       });
-      for (const total of [100, 200])
-        await firstStore.append({
-          role: "assistant",
-          content: [{ type: "text", text: "Response" }],
-          model: "provider/retry",
-          usage: { input: total - 10, output: 10, total, creditsUsed: total / 1000 },
-        });
-      await sql`UPDATE ai.turns SET status = 'completed', completed_at = now() WHERE id = ${first.turn.id}::uuid`;
-      const beforeRetry = (await aiUsage.report("24h")).users.items.find((row) => row.id === f.userId);
-      expect(beforeRetry?.tokens).toBe(300);
-      expect(beforeRetry?.credits).toBeCloseTo(0.3);
-      const fork = await f.conversation();
-      await aiConversations.copyMessages({ sourceConversationId: conversation.id, targetConversationId: fork.id, throughSeq: 3 });
-      // Forking copies context, but performs no inference and must not add usage.
-      expect((await aiUsage.report("24h")).users.items.find((row) => row.id === f.userId)?.tokens).toBe(300);
-      await sql`
-        UPDATE ai.messages SET loop_aggregate = '{"timing":{"generationMs":1200,"outputTokensPerSecond":25}}'::jsonb
-        WHERE conversation_id = ${conversation.id}::uuid AND seq = 3
-      `;
-      const retry = await submit(2);
-      const retryStore = aiConversations.createSessionStore({
-        conversationId: conversation.id,
-        turnId: retry.turn.id,
-        modelProfileId: "usage-retry-model",
+      expect(result.output).toEqual({ answer: 42 });
+      expect(requests).toBe(2);
+      expect(result.structuredMeta.attempts).toBe(2);
+      await recordAiStructuredRun({
+        task: f.prefix,
+        modelProfileId: f.prefix,
+        status: "ok",
+        durationMs: 1,
+        usage: result.usage,
+        attempts: 2,
+        attribution: { userId: f.userId },
       });
-      await retryStore.append({
-        role: "assistant",
-        content: [{ type: "text", text: "Retry" }],
-        usage: { input: 40, output: 10, total: 50, creditsUsed: 0.05 },
-      });
-      await aiConversations.truncateMessagesFrom({ conversationId: conversation.id, fromSeq: 1 });
-      expect(await aiConversations.listMessages({ conversationId: conversation.id })).toHaveLength(0);
-      const report = await aiUsage.report("24h");
-      expect(report.users.items.find((row) => row.id === f.userId)).toMatchObject({ runs: 2, tokens: 350 });
-      expect(report.users.items.find((row) => row.id === f.userId)?.credits).toBeCloseTo(0.35);
-      expect(report.models.items.filter((row) => row.id === "usage-retry-model").reduce((sum, row) => sum + (row.tokens ?? 0), 0)).toBe(
-        350,
-      );
-      expect(report.models.items.find((row) => row.providerModel === "provider/retry")?.avgDurationMs).toBe(1200);
-      // Re-running the migration must never re-add usage, or erase deleted history.
-      await migrateCloudAi();
-      expect((await aiUsage.report("24h")).users.items.find((row) => row.id === f.userId)?.tokens).toBe(350);
+      let report = await f.report();
+      expect(report.overview).toMatchObject({ runs: 2, tokens: 330, costCoverage: 1 });
+      expect(report.overview.cost).toBeCloseTo(0.36, 12);
+      // Replaying a stored workflow result or diagnostic write does not execute a provider.
+      await recordAiStructuredRun({ task: f.prefix, modelProfileId: f.prefix, status: "ok", durationMs: 1, usage: result.usage });
+      const rows = await sql<{ id: string }[]>`SELECT id FROM ai.inference_calls WHERE model_profile_id=${f.prefix}`;
+      await finishAiCall(rows[0]!.id, { input: 99999, output: 99999 }, "ok");
+      report = await f.report();
+      expect(report.overview).toMatchObject({ runs: 2, tokens: 330 });
+      expect(report.overview.cost).toBeCloseTo(0.36, 12);
+      expect(report.runs.items.every((row) => row.attempts === 1)).toBeTrue();
     } finally {
       await f.cleanup();
     }
   });
 
-  test("fills inactive UTC time buckets with zero usage", async () => {
-    for (const range of ["24h", "7d", "30d", "90d"] as const) {
-      const report = await aiUsage.report(range);
-      const step = range === "24h" ? 3_600_000 : 86_400_000;
-      expect(report.timeline.length).toBeGreaterThanOrEqual(range === "24h" ? 24 : Number.parseInt(range));
-      for (let index = 1; index < report.timeline.length; index++) {
-        expect(Date.parse(report.timeline[index]!.bucket) - Date.parse(report.timeline[index - 1]!.bucket)).toBe(step);
-      }
-      expect(report.timeline.some((point) => point.turns === 0 && point.tokens === 0 && point.failed === 0)).toBeTrue();
-    }
-  });
-
-  test("distinguishes known, unknown, and reported zero background credits", async () => {
-    const prefix = `coverage-${crypto.randomUUID()}`;
+  test("message copies, edits, chat deletion and repeat migration neither erase nor create charges", async () => {
+    const f = await fixture();
     try {
-      for (const [task, creditsUsed] of [
-        ["mixed", 0.5],
-        ["mixed", undefined],
-        ["zero", 0],
-        ["unknown", undefined],
-      ] as const) {
-        await recordAiStructuredRun({
-          task: `${prefix}-${task}`,
-          status: "ok",
-          durationMs: 10,
-          usage: { input: 8, output: 2, total: 10, ...(creditsUsed === undefined ? {} : { creditsUsed }) },
-        });
-      }
-      const report = await aiUsage.report("24h");
-      expect(report.tasks.items.find((row) => row.id === `${prefix}-mixed`)).toMatchObject({
-        runs: 2,
-        credits: 0.5,
-        creditsCoverage: 0.5,
+      const conversation = await f.conversation();
+      const turn = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: f.prefix,
+        runConfig: { kind: "chat", input: "Hello", toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: "Hello" }] },
       });
-      expect(report.tasks.items.find((row) => row.id === `${prefix}-zero`)).toMatchObject({ credits: 0, creditsCoverage: 1 });
-      expect(report.tasks.items.find((row) => row.id === `${prefix}-unknown`)).toMatchObject({ credits: null, creditsCoverage: 0 });
+      const store = aiConversations.createSessionStore({ conversationId: conversation.id, turnId: turn.turn.id, modelProfileId: f.prefix });
+      await store.append({
+        role: "assistant",
+        content: [{ type: "text", text: "Response" }],
+        usage: { input: 900, output: 100, total: 1000 },
+      });
+      const id = await f.call(100, 20, { kind: "chat", task: "chat", turnId: turn.turn.id, conversationId: conversation.id });
+      const fork = await f.conversation();
+      await aiConversations.copyMessages({ sourceConversationId: conversation.id, targetConversationId: fork.id, throughSeq: 2 });
+      expect((await f.report()).overview).toMatchObject({ runs: 1, tokens: 120 });
+      await aiConversations.truncateMessagesFrom({ conversationId: conversation.id, fromSeq: 1 });
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await migrateCloudAi();
+      expect((await f.report()).overview).toMatchObject({ runs: 1, tokens: 120 });
+      expect(await aiUsage.detail("chat", id)).toMatchObject({ id, conversationId: conversation.id, turnId: turn.turn.id, tokens: 120 });
+      expect((await f.report()).overview.cost).toBeCloseTo(0.14, 12);
     } finally {
-      await sql`DELETE FROM ai.structured_runs WHERE task LIKE ${`${prefix}-%`}`;
+      await f.cleanup();
     }
   });
 
-  test("paginates more than 100 background groups and clamps out-of-range pages", async () => {
-    const prefix = `pages-${crypto.randomUUID()}`;
+  test("counts feedback once per turn with multiple calls and never counts a background call as an assistant message", async () => {
+    const f = await fixture();
     try {
-      await sql`
-        INSERT INTO ai.structured_runs (task, app_id, model_profile_id, status, duration_ms)
-        SELECT ${prefix} || '-' || n, 'core', 'usage-pages', 'ok', 1 FROM generate_series(1, 105) AS n
-      `;
-      const first = await aiUsage.report("24h", { page: 1, perPage: 100 });
-      const second = await aiUsage.report("24h", { page: 2, perPage: 100 });
-      expect(first.tasks).toMatchObject({ page: 1, perPage: 100, total: 105 });
-      expect(first.tasks.items).toHaveLength(100);
-      expect(second.tasks.items).toHaveLength(5);
-      expect(new Set([...first.tasks.items, ...second.tasks.items].map((row) => row.id)).size).toBe(105);
-      const beyond = await aiUsage.report("24h", { page: 999, perPage: 100 });
-      expect(beyond.tasks.page).toBe(2);
-      expect(beyond.tasks.items).toEqual(second.tasks.items);
-    } finally {
-      await sql`DELETE FROM ai.structured_runs WHERE task LIKE ${`${prefix}-%`}`;
-    }
-  });
-
-  test("exposes every user and feedback row beyond the first page", async () => {
-    const prefix = `page-user-${crypto.randomUUID()}`;
-    try {
-      await sql`
-        INSERT INTO auth.users (uid, provider, profile, display_name)
-        SELECT ${prefix} || '-' || n, 'local', 'user', ${prefix} || '-' || n
-        FROM generate_series(1, 105) AS n
-      `;
-      const users = await sql<{ id: string; uid: string }[]>`SELECT id, uid FROM auth.users WHERE uid LIKE ${`${prefix}-%`}`;
-      for (const user of users) {
-        const conversation = await aiConversations.createConversation({ ownerUserId: user.id });
-        const [turn] = await sql<{ id: string }[]>`
-          INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-          VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'usage-pages', 'queued', '{"kind":"chat"}'::jsonb) RETURNING id
-        `;
-        await sql`
-          INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, loop_id, feedback_rating, feedback_updated_at)
-          VALUES (${createAiShortId()}, ${conversation.id}::uuid, 1, 'message', 'assistant', '{"role":"assistant","content":[]}'::jsonb, ${turn!.id}, 1, now())
-        `;
-      }
-      const first = await aiUsage.report("24h", { perPage: 100 });
-      const second = await aiUsage.report("24h", { page: 2, perPage: 100 });
-      const beyond = await aiUsage.report("24h", { page: 999, perPage: 100 });
-      for (const key of ["users", "feedback"] as const) {
-        expect(first[key]).toMatchObject({ page: 1, perPage: 100, total: 105 });
-        expect(first[key].items).toHaveLength(100);
-        expect(second[key].items).toHaveLength(5);
-        expect(beyond[key].page).toBe(2);
-        expect(beyond[key]).toEqual(second[key]);
-      }
-      expect(new Set([...first.users.items, ...second.users.items].map((row) => row.id)).size).toBe(105);
-      expect(new Set([...first.feedback.items, ...second.feedback.items].map((row) => row.id)).size).toBe(105);
-    } finally {
-      await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (SELECT id FROM auth.users WHERE uid LIKE ${`${prefix}-%`})`;
-      await sql`DELETE FROM auth.users WHERE uid LIKE ${`${prefix}-%`}`;
-    }
-  });
-});
-
-suite("AI usage exploration", () => {
-  test("combines filters, preserves feedback denominators, separates provider models and exposes attributed errors", async () => {
-    const prefix = `explore-${crypto.randomUUID()}`;
-    const ids: string[] = [];
-    const conversations: string[] = [];
-    try {
-      for (const name of ["A", "B"]) {
-        const [user] = await sql<
-          { id: string }[]
-        >`INSERT INTO auth.users(uid,provider,profile,display_name) VALUES(${`${prefix}-${name}`},'local','user',${name}) RETURNING id`;
-        ids.push(user!.id);
-        const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, launchedByAppId: "test-app" });
-        conversations.push(conversation.id);
-      }
-      const turn = async (user: number, provider: string, total: number, old = false) => {
-        const [value] = await sql<
-          { id: string }[]
-        >`INSERT INTO ai.turns(short_id,conversation_id,status,model_profile_id,run_config,created_at,usage,provider_model)
-          VALUES(${createAiShortId()},${conversations[user]}::uuid,'completed',${prefix},'{"kind":"chat"}',now()-${old ? 172800 : 60}*interval '1 second',${JSON.stringify({ input: total - 10, output: 10, total, creditsUsed: total / 1000 })}::jsonb,${provider}) RETURNING id`;
-        return value!.id;
-      };
-      const a = await turn(0, "provider/a", 100),
-        a2 = await turn(0, "provider/b", 50),
-        b = await turn(1, "provider/a", 200),
-        old = await turn(0, "provider/a", 900, true);
-      for (const [idx, id, rating] of [
-        [0, a, -1],
-        [0, a2, null],
-        [1, b, 1],
-        [0, old, -1],
-      ] as const) {
-        await sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message,loop_id,model_profile_id,feedback_rating,feedback_reasons,feedback_comment,feedback_updated_at)
-          VALUES(${createAiShortId()},${conversations[idx]}::uuid,${id === a ? 1 : id === a2 ? 2 : id === old ? 3 : 1},'message','assistant','{"role":"assistant","content":[]}',${id},${prefix},${rating},CASE WHEN ${rating}::int=-1 THEN ARRAY['incorrect'] ELSE '{}'::text[] END,${rating !== -1 ? null : id === old ? "old response" : "complete feedback"},CASE WHEN ${rating}::int IS NULL THEN NULL ELSE now() END)`;
-      }
-      const fullError = "Provider rejected this request. " + "context ".repeat(220);
-      await recordAiStructuredRun({
-        task: prefix,
-        appId: "test-app",
-        modelProfileId: prefix,
-        providerModel: "provider/a",
-        status: "failed",
-        durationMs: 30,
-        errorCode: "provider_rejected",
-        error: fullError,
-        usage: { input: 8, output: 2, total: 10, creditsUsed: 0.01 },
-        attribution: { conversationId: conversations[0], turnId: a },
-      });
-      await recordAiStructuredRun({
-        task: prefix,
-        appId: "test-app",
-        modelProfileId: prefix,
-        providerModel: "provider/a",
-        status: "failed",
-        durationMs: 40,
-        error: "legacy unassigned",
-      });
-      const report = await aiUsage.report("24h", {
-        userId: ids[0],
-        modelProfileId: prefix,
-        providerModel: "provider/a",
-        appId: "test-app",
-      });
-      expect(report.overview).toMatchObject({ runs: 2, tokens: 110, negative: 1, positive: 0, rated: 1, assistantMessages: 1 });
-      expect(report.unassignedBackgroundRuns).toBe(1);
+      const conversation = await f.conversation();
+      const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status,model_profile_id,run_config)
+        VALUES(${createAiShortId()},${conversation.id}::uuid,'completed',${f.prefix},'{"kind":"chat"}') RETURNING id`;
+      await sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message,loop_id,feedback_rating,feedback_reasons,feedback_comment,feedback_updated_at)
+        VALUES(${createAiShortId()},${conversation.id}::uuid,1,'message','assistant','{"role":"assistant","content":[]}',${turn!.id},-1,ARRAY['incorrect'],'Needs correction',now())`;
+      const ctx = { kind: "chat" as const, task: "chat", turnId: turn!.id, conversationId: conversation.id };
+      await f.call(100, 20, ctx);
+      await f.call(200, 30, ctx);
+      await f.call(50, 10, { ...ctx, kind: "background", task: "chat-compaction" });
+      const report = await f.report();
+      expect(report.overview).toMatchObject({ runs: 3, tokens: 410, assistantMessages: 1, negative: 1, rated: 1 });
+      expect(report.chat).toMatchObject({ runs: 2, assistantMessages: 1, negative: 1 });
+      expect(report.background).toMatchObject({ runs: 1, assistantMessages: 0, negative: 0, rated: 0 });
       expect(report.feedback.items).toHaveLength(1);
-      expect(report.feedback.items[0]?.comment).toBe("complete feedback");
-      const failure = report.runs.items.find((row) => row.kind === "background")!;
-      expect(failure).toMatchObject({
-        userId: ids[0],
-        conversationId: conversations[0],
-        turnId: a,
-        errorCode: "provider_rejected",
-        error: fullError,
-      });
-      expect(await aiUsage.detail("background", failure.id)).toEqual(failure);
-      const all = await aiUsage.report("24h", { modelProfileId: prefix, sort: "negativeRate" });
-      expect(all.models.items).toHaveLength(2);
-      expect(all.users.items[0]).toMatchObject({ id: ids[0], negative: 1, rated: 1, assistantMessages: 2 });
-      const positiveOnly = await aiUsage.report("24h", { modelProfileId: prefix, rating: "up" });
-      expect(positiveOnly.chat).toMatchObject({ positive: 1, negative: 1, rated: 2, assistantMessages: 3 });
-      expect(positiveOnly.feedback.items).toHaveLength(1);
-      const failures = await aiUsage.report("24h", {
-        modelProfileId: prefix,
-        kind: "background",
-        status: "failed",
-        errorCode: "provider_rejected",
-        search: "rejected",
-      });
-      expect(failures.runs.total).toBe(1);
-      const orphan = await aiUsage.report("24h", { modelProfileId: prefix, userId: "unassigned" });
-      expect(orphan.overview).toMatchObject({ runs: 1, tokens: null, credits: null, tokenCoverage: 0 });
-      const page1 = await aiUsage.report("24h", { modelProfileId: prefix, perPage: 1 });
-      const page2 = await aiUsage.report("24h", { ...page1.query, page: 2 });
-      expect(page2.until).toBe(page1.until);
-      expect(page2.runs.items[0]?.id).not.toBe(page1.runs.items[0]?.id);
-      expect((await aiUsage.facets("userId", ids[0]!, { range: "24h" })).map((row) => row.id)).toEqual([ids[0]!]);
+      expect(report.feedback.items[0]).toMatchObject({ comment: "Needs correction", reasons: ["incorrect"] });
+      expect((await f.report({ rating: "up" })).overview.rated).toBe(1);
+      expect((await f.report({ rating: "up" })).feedback.total).toBe(0);
     } finally {
-      await sql`DELETE FROM ai.structured_runs WHERE task=${prefix}`;
-      for (const id of conversations) await sql`DELETE FROM ai.conversations WHERE id=${id}::uuid`;
-      for (const id of ids) await sql`DELETE FROM auth.users WHERE id=${id}::uuid`;
+      await f.cleanup();
+    }
+  });
+
+  test("separates missing prices, missing tokens, estimates and known free calls without repricing history", async () => {
+    const f = await fixture();
+    try {
+      await f.call(100, 20, { task: "mixed" });
+      await f.call(100, 20, { task: "mixed" }, { ...f.model, pricing: undefined });
+      const unknown = await f.call(undefined, undefined, { task: "unknown" });
+      await f.call(undefined, undefined, { task: "free" }, { ...f.model, pricing: { inputPerMillion: 0, outputPerMillion: 0 } });
+      const estimate = await beginAiCall(f.model, { kind: "background", task: "estimate", userId: f.userId }, 10, 2);
+      await finishAiCall(estimate.id, { input: 10, output: 2, estimated: true }, "failed");
+      f.model.pricing = { inputPerMillion: 2000, outputPerMillion: 4000 };
+      await f.call(100, 20, { task: "mixed" });
+      const report = await f.report();
+      const mixed = report.tasks.items.find((row) => row.id === "mixed")!;
+      expect(mixed).toMatchObject({ runs: 3, tokens: 360, costCoverage: 2 / 3, tokenCoverage: 1 });
+      expect(mixed.cost).toBeCloseTo(0.42, 12);
+      expect(report.tasks.items.find((row) => row.id === "unknown")).toMatchObject({ cost: null, tokens: null, costCoverage: 0 });
+      expect(report.tasks.items.find((row) => row.id === "free")).toMatchObject({ cost: 0, costCoverage: 1, tokenCoverage: 0 });
+      expect(await aiUsage.detail("background", estimate.id)).toMatchObject({ estimated: true, status: "failed", tokens: 12, cost: 0.014 });
+      expect(await aiUsage.detail("background", unknown)).toMatchObject({ cost: null, tokens: null });
+      expect(report.overview.costCoverage).toBe(4 / 6);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  test("groups workflow costs by stable definition across renames and keeps trusted metadata after deletion", async () => {
+    const f = await fixture();
+    try {
+      const [workflow] = await sql<{ id: string }[]>`INSERT INTO workflows.workflow(app_id,scope_id,key,name,created_by_kind)
+        VALUES('usage-workflow-app',${f.prefix},'summarize','Original name','system') RETURNING id`;
+      f.workflows.push(workflow!.id);
+      const [version] = await sql<
+        { id: string }[]
+      >`INSERT INTO workflows.version(workflow_id,revision,source,source_hash,plan,language_id,language_version,manifest_hash,created_by_kind)
+        VALUES(${workflow!.id}::uuid,1,'source',${"a".repeat(64)},'{}','test',1,${"b".repeat(64)},'system') RETURNING id`;
+      const [run] = await sql<
+        { id: string }[]
+      >`INSERT INTO workflows.run(app_id,scope_id,workflow_id,workflow_version_id,mode,authorization_snapshot,idempotency_key,occurred_at)
+        VALUES('usage-workflow-app',${f.prefix},${workflow!.id}::uuid,${version!.id}::uuid,'execute','{}','usage-run',now()) RETURNING id`;
+      const first = await f.call(100, 20, { workflowRunId: run!.id, stepKey: "classify", appId: "caller-supplied-app" });
+      await sql`UPDATE workflows.workflow SET name='Renamed workflow' WHERE id=${workflow!.id}::uuid`;
+      const second = await f.call(200, 30, { workflowRunId: run!.id, stepKey: "extract", appId: "caller-supplied-app" });
+      const [snapshot] = await sql`SELECT workflow_version,step_key FROM ai.inference_calls WHERE id=${second}::uuid`;
+      expect(snapshot).toMatchObject({ workflow_version: 1, step_key: "extract" });
+      expect(await aiUsage.detail("background", first)).toMatchObject({
+        workflowId: workflow!.id,
+        workflowName: "Original name",
+        appId: "usage-workflow-app",
+      });
+      let report = await f.report({ workflowId: workflow!.id });
+      expect(report.workflows.total).toBe(1);
+      expect(report.workflows.items[0]).toMatchObject({ id: workflow!.id, label: "Renamed workflow", runs: 2, tokens: 350 });
+      expect(report.workflows.items[0]?.cost).toBeCloseTo(0.4, 12);
+      await sql`DELETE FROM workflows.workflow WHERE id=${workflow!.id}::uuid`;
+      report = await f.report({ workflowId: workflow!.id });
+      expect(report.overview).toMatchObject({ runs: 2, tokens: 350 });
+      expect(report.workflows.total).toBe(1);
+      expect(await aiUsage.detail("background", second)).toMatchObject({
+        workflowRunId: run!.id,
+        workflowId: workflow!.id,
+        workflowName: "Renamed workflow",
+      });
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  test("filters call details and fixes the page time boundary while paginating more than 100 groups", async () => {
+    const f = await fixture();
+    try {
+      await sql`INSERT INTO ai.inference_calls(id,user_id,model_profile_id,provider_model,kind,task,app_id,started_at,finished_at,lease_expires_at,input,output,pricing,cost,status)
+        SELECT gen_random_uuid(),${f.userId}::uuid,${f.prefix},'provider/pages','background',${f.prefix}||'-'||n,'usage-test',now()-interval '1 minute',now(),now(),8,2,'{"inputPerMillion":1000,"outputPerMillion":2000}',0.012,'ok' FROM generate_series(1,105) n`;
+      const first = await f.report({ perPage: 100 });
+      const second = await f.report({ ...first.query, page: 2 });
+      const beyond = await f.report({ ...first.query, page: 999 });
+      expect(first.tasks).toMatchObject({ page: 1, perPage: 100, total: 105 });
+      expect(second.tasks.items).toHaveLength(5);
+      expect(beyond.tasks).toEqual(second.tasks);
+      expect(second.until).toBe(first.until);
+      expect(new Set([...first.tasks.items, ...second.tasks.items].map((row) => row.id)).size).toBe(105);
+      const [failure] = await sql<{ id: string }[]>`UPDATE ai.inference_calls SET status='failed',error_code='provider_rejected'
+        WHERE model_profile_id=${f.prefix} AND task=${`${f.prefix}-1`} RETURNING id`;
+      const filtered = await f.report({ kind: "background", status: "failed", errorCode: "provider_rejected", search: "rejected" });
+      expect(filtered.runs.total).toBe(1);
+      expect(filtered.runs.items[0]?.id).toBe(failure!.id);
+      expect(await aiUsage.detail("background", failure!.id)).toEqual(filtered.runs.items[0]!);
+      expect((await aiUsage.facets("userId", f.userId, { range: "24h" })).map((row) => row.id)).toEqual([f.userId]);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  test("fills inactive UTC buckets with zero while preserving unknown cost in occupied buckets", async () => {
+    const f = await fixture();
+    try {
+      await f.call(100, 20, {}, { ...f.model, pricing: undefined });
+      for (const range of ["24h", "7d", "30d", "90d"] as const) {
+        const report = await aiUsage.report(range, { modelProfileId: f.prefix });
+        const step = range === "24h" ? 3_600_000 : 86_400_000;
+        expect(report.timeline.length).toBeGreaterThanOrEqual(range === "24h" ? 24 : Number.parseInt(range));
+        for (let index = 1; index < report.timeline.length; index++)
+          expect(Date.parse(report.timeline[index]!.bucket) - Date.parse(report.timeline[index - 1]!.bucket)).toBe(step);
+        expect(report.timeline.some((point) => point.turns === 0 && point.tokens === 0 && point.cost === 0)).toBeTrue();
+        expect(report.timeline.find((point) => point.turns === 1)).toMatchObject({ tokens: 120, cost: null });
+      }
+    } finally {
+      await f.cleanup();
     }
   });
 });

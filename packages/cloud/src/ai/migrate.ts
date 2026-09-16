@@ -3,7 +3,6 @@ import { migrateAiMessageQueue } from "./message-queue";
 import { sql } from "bun";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { withAiShortId } from "./short-id";
-import { migrateAiTurnUsage } from "./usage-migrate";
 
 const backfillAiShortIds = async (
   constraint: string,
@@ -255,7 +254,6 @@ export const migrateCloudAi = async (): Promise<void> => {
       input_tokens INTEGER CHECK (input_tokens >= 0),
       output_tokens INTEGER CHECK (output_tokens >= 0),
       total_tokens INTEGER CHECK (total_tokens >= 0),
-      credits_used DOUBLE PRECISION CHECK (credits_used >= 0),
       mode TEXT,
       repaired BOOLEAN,
       attempts INTEGER CHECK (attempts IS NULL OR attempts >= 1),
@@ -2186,7 +2184,6 @@ export const migrateCloudAi = async (): Promise<void> => {
   // A tool artifact may be reused only by its producing call and while unedited.
   await sql`ALTER TABLE ai.files ADD COLUMN IF NOT EXISTS producer_call_key TEXT`.simple();
 
-  await migrateAiTurnUsage();
   await migrateAiModelAccess();
   await migrateAiQuotas();
 

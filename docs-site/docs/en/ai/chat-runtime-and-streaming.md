@@ -492,7 +492,7 @@ Pinned chats always remain active, overriding explicit or automatic completion. 
 
 ## Optional Assistant quotas
 
-Direct interactive Assistant submissions check optional token allowances before
+Direct interactive Assistant submissions check optional cost allowances before
 consuming the draft or promoting a queued message. Each subsequent direct model
 round checks again. API rejection uses HTTP 429 with `quota_exhausted` or
 `quota_usage_unknown`; model access is still checked independently. A blocked
@@ -500,5 +500,5 @@ queue head retains its content and attachments for later dispatch. Already
 running provider calls may finish and exceed the allowance.
 
 The feature is disabled by default and does not limit generic application AI,
-workflow or background inference. See [Assistant limits](/en/docs/ai/usage-and-feedback#assistant-limits)
+workflow or background inference. See [Assistant limits](/en/docs/ai/usage-and-feedback#set-assistant-budgets)
 for accounting, wildcard precedence and reset behavior.

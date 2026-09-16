@@ -1,3 +1,4 @@
+import { AiBackgroundCostError } from "../../ai/inference-calls";
 import { StructuredOutputError } from "@k2b/nessi";
 import type { Job, Worker } from "@k2b/sync";
 import { z } from "zod";
@@ -96,7 +97,7 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
   const request = task.request;
   const common = {
     appId: task.appId,
-    attribution: { workflowRunId: task.runId, userId: task.usageUserId },
+    attribution: { workflowRunId: task.runId, stepKey: task.stepKey, userId: task.usageUserId },
     requestedModelId: task.modelProfileId,
     signal,
     temperature: 0,
@@ -159,12 +160,14 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
 };
 
 const retryableError = (error: unknown): boolean => {
+  if (error instanceof AiBackgroundCostError) return false;
   if (isAiSettingsError(error)) return false;
   if (error instanceof StructuredOutputError) return error.code === "loop_failed";
   return true;
 };
 
 const errorCode = (error: unknown): string => {
+  if (error instanceof AiBackgroundCostError) return error.code;
   if (isAiSettingsError(error)) return error.aiError.code.toUpperCase();
   if (error instanceof StructuredOutputError) return `WORKFLOW_AI_${error.code.toUpperCase()}`;
   return "WORKFLOW_AI_PROVIDER_ERROR";

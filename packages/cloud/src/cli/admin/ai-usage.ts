@@ -9,6 +9,8 @@ const filters = {
   userId: flag.string({ name: "user", description: "User UUID or unassigned" }),
   modelProfileId: flag.string({ name: "model", description: "Model profile ID" }),
   providerModel: flag.string({ name: "provider-model", description: "Actual provider model" }),
+  workflowId: flag.string({ name: "workflow", description: "Workflow definition UUID" }),
+  workflowRunId: flag.string({ name: "workflow-run", description: "Workflow run UUID" }),
   appId: flag.string({ name: "app", description: "Source application ID" }),
   kind: flag.enum(["chat", "background"] as const, { description: "Run kind (runs only)" }),
   status: flag.string({ description: "Run status, e.g. failed (runs only)" }),
@@ -17,7 +19,7 @@ const filters = {
   search: flag.string({ description: "Search task and error text (runs/facets only)" }),
   rating: flag.enum(["up", "down"] as const, { description: "Rating (feedback only)" }),
   reason: flag.enum(AI_USAGE_REASONS, { description: "Feedback reason (feedback only)" }),
-  sort: flag.enum(["runs", "tokens", "credits", "errors", "negative", "negativeRate"] as const, {
+  sort: flag.enum(["runs", "tokens", "cost", "errors", "negative", "negativeRate"] as const, {
     default: "runs",
     description: "Comparison sort order",
   }),
@@ -32,7 +34,7 @@ const params = (values: Record<string, string | number | undefined>) => {
   return q;
 };
 export const aiUsageCommands = [
-  ...(["report", "users", "models", "tasks", "apps", "launches", "feedback", "runs"] as const).map((section) =>
+  ...(["report", "users", "models", "tasks", "apps", "workflows", "launches", "feedback", "runs"] as const).map((section) =>
     command(`ai usage ${section}`, {
       summary:
         section === "report"
@@ -46,25 +48,39 @@ export const aiUsageCommands = [
           return printJsonOrTable(
             ctx,
             report,
-            [report.overview],
-            [{ key: "runs" }, { key: "tokens" }, { key: "credits" }, { key: "failed" }, { key: "positive" }, { key: "negative" }],
+            [{ ...report.overview, unit: report.unit }],
+            [
+              { key: "runs" },
+              { key: "tokens" },
+              { key: "cost" },
+              { key: "unit" },
+              { key: "failed" },
+              { key: "positive" },
+              { key: "negative" },
+            ],
           );
         const page = report[section];
         if (ctx.options.output === "jsonl") {
-          for (const item of page.items) ctx.jsonLine(item);
+          for (const item of page.items) ctx.jsonLine({ ...item, unit: report.unit });
           return;
         }
-        if (ctx.options.output === "json") return ctx.json({ ...page, query: report.query, since: report.since, until: report.until });
+        if (ctx.options.output === "json")
+          return ctx.json({ ...page, query: report.query, since: report.since, until: report.until, unit: report.unit });
         if (section === "runs")
-          ctx.table(report.runs.items, [
-            { key: "id" },
-            { key: "kind" },
-            { key: "task" },
-            { key: "status" },
-            { key: "userLabel" },
-            { key: "modelProfileId" },
-            { key: "error" },
-          ]);
+          ctx.table(
+            report.runs.items.map((row) => ({ ...row, unit: report.unit })),
+            [
+              { key: "id" },
+              { key: "kind" },
+              { key: "task" },
+              { key: "status" },
+              { key: "userLabel" },
+              { key: "modelProfileId" },
+              { key: "cost" },
+              { key: "unit" },
+              { key: "error" },
+            ],
+          );
         else if (section === "feedback")
           ctx.table(report.feedback.items, [
             { key: "id" },
@@ -75,17 +91,22 @@ export const aiUsageCommands = [
           ]);
         else if (section === "launches") ctx.table(report.launches.items, [{ key: "appId" }, { key: "chats" }, { key: "users" }]);
         else
-          ctx.table(report[section].items, [
-            { key: "id" },
-            { key: "label" },
-            { key: "providerModel" },
-            { key: "runs" },
-            { key: "tokens" },
-            { key: "failed" },
-            { key: "positive" },
-            { key: "negative" },
-            { key: "rated" },
-          ]);
+          ctx.table(
+            report[section].items.map((row) => ({ ...row, unit: report.unit })),
+            [
+              { key: "id" },
+              { key: "label" },
+              { key: "providerModel" },
+              { key: "runs" },
+              { key: "tokens" },
+              { key: "cost" },
+              { key: "unit" },
+              { key: "failed" },
+              { key: "positive" },
+              { key: "negative" },
+              { key: "rated" },
+            ],
+          );
         ctx.print(`Page ${page.page}; ${page.total} total. Snapshot until ${report.until}`);
       },
     }),

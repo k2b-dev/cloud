@@ -7,6 +7,7 @@ export type AiUsageAttribution = {
   conversationId?: string;
   turnId?: string;
   workflowRunId?: string;
+  stepKey?: string;
 };
 
 export type AiStructuredRunRecord = {
@@ -26,7 +27,7 @@ export type AiStructuredRunRecord = {
   error?: string;
 };
 
-const usageNumber = (usage: Usage | undefined, key: "input" | "output" | "total" | "creditsUsed") => {
+const usageNumber = (usage: Usage | undefined, key: "input" | "output" | "total") => {
   const value = (usage as Partial<Record<typeof key, unknown>> | undefined)?.[key];
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 };
@@ -36,13 +37,13 @@ export const recordAiStructuredRun = async (record: AiStructuredRunRecord): Prom
   await sql`
     INSERT INTO ai.structured_runs (
       task, app_id, model_profile_id, provider_model, status, duration_ms,
-      input_tokens, output_tokens, total_tokens, credits_used,
+      input_tokens, output_tokens, total_tokens,
       mode, repaired, attempts, error_code, error, user_id, conversation_id, turn_id, workflow_run_id, trace_id
     ) VALUES (
       ${record.task}, ${record.appId ?? null}, ${record.modelProfileId ?? null}, ${record.providerModel ?? null},
       ${record.status}, ${Math.max(0, Math.round(record.durationMs))},
       ${usageNumber(record.usage, "input")}, ${usageNumber(record.usage, "output")},
-      ${usageNumber(record.usage, "total")}, ${usageNumber(record.usage, "creditsUsed")},
+      ${usageNumber(record.usage, "total")},
       ${record.mode ?? null}, ${record.repaired ?? null}, ${record.attempts ?? null},
       ${record.errorCode ?? null}, ${record.error?.slice(0, 2_000) ?? null},
       COALESCE(${record.attribution?.userId ?? null}::uuid,

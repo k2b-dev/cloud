@@ -14,16 +14,15 @@ const [{ LocaleProvider }, { default: Panel }] = await Promise.all([import("@k2b
 test("quota users and measured charts render with SSR data", async () => {
   const { default: Admin } = await import("./AiQuotaAdmin.island.tsx");
   const report = quotaFixture({
-    overview: { accounts: 1, input: 20, output: 10, calls: 2, measured: 1, unknown: 1, estimated: 0 },
-    timeline: [{ at: "2026-09-15T00:00:00Z", input: 20, output: 10, calls: 2, measured: 1, unknown: 1 }],
-    models: [{ model: "a", input: 20, output: 10, calls: 2, measured: 1, unknown: 1 }],
+    overview: { cost: 1, accounts: 1, input: 20, output: 10, calls: 2, measured: 1, unknown: 1, estimated: 0 },
+    timeline: [{ cost: 1, at: "2026-09-15T00:00:00Z", input: 20, output: 10, calls: 2, measured: 1, unknown: 1 }],
+    models: [{ cost: 1, model: "a", input: 20, output: 10, calls: 2, measured: 1, unknown: 1 }],
   });
   const html = renderToString(() =>
     createComponent(Admin, {
       config: { enabled: false, revision: 0, rules: [] },
       models: [{ id: "a", label: "Model A" }],
       report,
-      balance: null,
     }),
   );
   expect(html).toContain("Current allowances");

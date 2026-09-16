@@ -1,6 +1,7 @@
+import { readAiSettingsState } from "@k2b/cloud/ai";
 import AiQuotaAdmin from "./_components/AiQuotaAdmin.island";
 import { quotaMessages } from "./_components/ai-quota-messages";
-import { aiQuotas, quotaReport, quotaAdminConfig } from "@k2b/cloud/ai/admin";
+import { quotaReport, quotaAdminConfig, aiQuotas } from "@k2b/cloud/ai/admin";
 import { listAiModels } from "@k2b/cloud/ai";
 import { SettingsPage } from "@k2b/ui";
 import {
@@ -227,6 +228,7 @@ export default ssr<AuthContext>(async (c) => {
   // Which profiles have a stored provider key. The keys themselves never leave
   // the server, so the form shows presence instead of a value.
   let aiCredentialProfileIds: string[] = [];
+  let aiAccountingUnit: string | undefined;
   let modelAccess: AiModelAccessMap = {};
   let aiProjectItems: AiProjectAdminListItem[] = [];
   let aiProjectSummary: AiProjectAdminSummary | null = null;
@@ -242,15 +244,8 @@ export default ssr<AuthContext>(async (c) => {
   const quotaData = quotaReportData
     ? {
         config: await quotaAdminConfig(),
-        models: (await listAiModels()).map((m) => ({ id: m.id, label: m.label })),
+        models: (await readAiSettingsState()).profiles.map((m) => ({ id: m.id, label: m.label, pricing: m.pricing })),
         report: quotaReportData,
-        balance: quotaReportData.selected
-          ? await aiQuotas.snapshot(
-              quotaReportData.selected.type === "user"
-                ? { type: "user", userId: quotaReportData.selected.id }
-                : { type: "service_account", serviceAccountId: quotaReportData.selected.id },
-            )
-          : null,
       }
     : null;
   let aiUsageReport: AiUsageReport | null = null;
@@ -263,7 +258,14 @@ export default ssr<AuthContext>(async (c) => {
     if (tab.id === "email-templates") entries = entries.filter((entry) => entry.kind === "template");
     if (tab.id === "ai-jobs") aiEnrichmentOverview = await aiConversations.getEnrichmentOverview();
     if (tab.id === "ai-providers") {
-      [aiCredentialProfileIds, modelAccess] = await Promise.all([listAiCredentialProfileIds(), aiModelAccess.listForAdmin()]);
+      const [credentials, access, costConfig] = await Promise.all([
+        listAiCredentialProfileIds(),
+        aiModelAccess.listForAdmin(),
+        aiQuotas.config(),
+      ]);
+      aiCredentialProfileIds = credentials;
+      modelAccess = access;
+      aiAccountingUnit = costConfig.unit;
     }
   } else if (tab.id === "legal") {
     entries = await buildEntries("legal", locale);
@@ -337,6 +339,7 @@ export default ssr<AuthContext>(async (c) => {
             backgroundTaskPrompts={tab.id === "ai-jobs" ? AI_BACKGROUND_TASK_PROMPTS : undefined}
             aiCredentialProfileIds={aiCredentialProfileIds}
             aiModelAccess={modelAccess}
+            aiAccountingUnit={aiAccountingUnit}
             aiSection={aiSection}
             showAiJobsLink={showAiJobsLink}
           />
@@ -368,9 +371,7 @@ export default ssr<AuthContext>(async (c) => {
           />
         ) : null}
 
-        {quotaData ? (
-          <AiQuotaAdmin config={quotaData.config} models={quotaData.models} report={quotaData.report} balance={quotaData.balance} />
-        ) : null}
+        {quotaData ? <AiQuotaAdmin config={quotaData.config} models={quotaData.models} report={quotaData.report} /> : null}
         {tab.id === "ai-usage" && aiUsageReport ? <AiUsageAdminPanel report={aiUsageReport} /> : null}
       </div>
     </AdminLayout>

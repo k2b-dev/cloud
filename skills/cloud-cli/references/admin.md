@@ -320,11 +320,11 @@ stay intact. Identity, grants, personal activation, and loaded turn snapshots ar
 preserved. Deleted linked Skills stay deleted; there is no automatic recreation,
 merge, or version history.
 
-## Assistant token quotas
+## AI prices, Assistant cost budgets, and background stop
 
 Use `cld admin ai quotas` for the same controls as **Admin → AI → Assistant limits**.
 All commands require a platform administrator. These limits apply only to direct
-Assistant chat input and output tokens. They exclude workflows, background AI,
+Assistant reference costs calculated from model input/output prices. They exclude workflows, background AI,
 and separate image or audio model calls. Enforcement is off by default.
 
 ```bash
@@ -361,10 +361,10 @@ Each rule has this shape (the exported configuration wraps rules in
 ```json
 {
   "scope": "*",
-  "hours": 168,
+  "hours": 24,
   "anchor": "2026-09-14T00:00:00Z",
   "grants": [
-    { "principal": { "type": "authenticated" }, "limit": 100000 },
+    { "principal": { "type": "authenticated" }, "limit": 10 },
     {
       "principal": { "type": "group", "groupId": "00000000-0000-4000-8000-000000000001" },
       "limit": null
@@ -379,7 +379,7 @@ or `*` for all direct chat models. `hours` is an integer from 1 to 8760;
 alone keeps that anchor and recalculates the periods from it. To begin a new
 period when changing the interval, also set `anchor` to the intended start time
 (the GUI uses the current time for this change). One rule per scope
-is allowed. Each grant has a nonnegative integer token `limit`, or `null` for
+is allowed. Each grant has a nonnegative cost `limit` (up to six decimal places), or `null` for
 unlimited. Supported principals are `authenticated`, `user` with `userId`,
 `group` with `groupId`, and `service_account` with `serviceAccountId`.
 An optional `displayName` labels the grant; it does not determine identity.
@@ -410,3 +410,58 @@ Interrupted-call token amounts can be estimates; balances expose the number of
 The `authenticated` principal also matches service accounts. Raw call history
 is retained for 8,760 hours (the maximum quota window), with bounded cleanup;
 usage history in balances is not a lifetime total. Reset IDs remain durable.
+
+
+Set reference prices before creating model-specific budgets:
+
+```bash
+cld admin ai models pricing get --json
+cld admin ai models pricing set --id MODEL_ID --pricing-file prices.json --yes --json
+```
+
+The file contains `{"inputPerMillion":0.5,"outputPerMillion":2}` or JSON `null`
+to remove pricing. Both prices are required, nonnegative, with up to six decimal
+places and a maximum of 1,000,000. Zero is explicitly free. Missing prices mean
+unpriced usage: these models bypass all cost budgets, including wildcard rules
+and the background stop. Audio pricing is not supported. The command reads
+current prices and submits an optimistic precondition; it does not touch
+credentials or grants. Re-read and reconcile on conflict.
+
+Configuration additionally includes `unit` (default `EUR`, maximum 16 characters)
+and optional `background: {"enabled":true,"warnAt":5,"stopAt":10}`. All model
+prices, budgets and reports use the same unit; fictional units are allowed.
+Changing the unit after priced usage is rejected. `warnAt` can be `null` or a
+nonnegative amount below positive `stopAt`. Both accept six decimal places.
+The background stop is off by default and independent of chat enforcement.
+
+```bash
+cld admin ai quotas background status --json
+cld admin ai quotas background release --yes --json
+```
+
+This is a global rolling 24-hour stop for priced background tasks and workflows.
+Warnings/stops notify platform administrators through Cloud notifications.
+Existing calls can finish. Once triggered, the stop latches until explicit
+release; it does not reset the next day. Release requires usage below the saved
+threshold and no unknown priced costs in the window, or disabled enforcement.
+Raise the threshold or disable it through `config set` before releasing when
+needed. The operator separately chooses which failed workflows to retry.
+
+Investigate costs without changing configuration:
+
+```bash
+cld admin ai usage report --range 7d --json
+cld admin ai usage workflows --range 30d --sort cost --json
+cld admin ai usage runs --workflow WORKFLOW_UUID --workflow-run RUN_UUID --json
+cld admin ai usage models --sort cost --json
+cld admin ai usage tasks --sort cost --json
+```
+
+Usage is one row per actual provider attempt, including repair/retry; copies and
+replays add no cost. Section JSON includes the unit and paginated items. Unknown
+costs are `null`, explicit free costs are zero, and coverage explains incomplete
+totals. Costs use price snapshots and reported tokens, not provider invoices.
+Cached-token discounts and separately billed modalities are not reconstructed.
+Raw tokens remain available for diagnosis. Historical data survives chat deletion.
+This alpha cut does not migrate old token quotas or credits; configure prices
+and cost limits explicitly, with unlimited usage as the default.

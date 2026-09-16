@@ -110,7 +110,7 @@ in a read-only dialog. Personalization shows both turn learning and workflow
 pattern learning; the user locale is supplied separately at runtime. The viewer
 excludes organization additions and conversation content.
 
-Administrators can open **AI → Usage** for token and credit usage, model
+Administrators can open **AI → Usage** for token usage and reference costs, model
 performance, user activity, quality feedback, and background failures over
 24-hour, 7-day, 30-day, or 90-day ranges.
 
@@ -274,3 +274,30 @@ the metadata-only AI usage ledger. Audio and transcripts are excluded, and
 unknown provider usage or costs remain unknown. See
 [Models and providers](/en/docs/ai/models-and-providers#configure-audio-transcription)
 for configuration and file limits.
+
+
+## Background costs and emergency stop
+
+Cloud records every actual provider attempt centrally, including structured
+output repair. Replay of a completed workflow step does not repeat inference;
+a real retry produces another cost record. Model price snapshots and token
+measurements determine reference costs. Applications must not calculate or
+record a second charge.
+
+Workflow AI forwards the run and step. Cloud resolves the definition ID, name,
+version, and application from the workflow store. Other internal operations use
+honest task names, such as compaction or enrichment, with available chat IDs.
+An `attribution.stepKey` can identify an existing step; metadata never grants
+permission. The usage report can group by workflow and link to its runs.
+
+Operators may enable a shared rolling 24-hour background cost stop on
+**Assistant limits → Rules**. A triggered stop rejects new priced background
+calls with `ai_background_cost_stop`; the workflow runtime treats this as a
+terminal failure rather than retrying automatically. Calls in progress finish
+and remain accounted. After reviewing costs, an administrator explicitly
+releases the stop and decides which workflows to retry. Unpriced models are
+exempt. This stop is independent of direct Assistant budgets.
+
+See [Usage and feedback](/en/docs/ai/usage-and-feedback) for the accounting limits,
+price configuration and CLI operations. Audio transcription remains unpriced
+because the current provider result contains no billable duration.

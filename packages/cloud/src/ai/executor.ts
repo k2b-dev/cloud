@@ -1,4 +1,4 @@
-import { assistantQuotaProvider } from "./quota-provider";
+import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { AiRunTimeout } from "./run-timeout";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type { CompactEvent, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
@@ -173,9 +173,13 @@ const indexConversationToolSource = async (input: {
   try {
     if (input.name.startsWith("code_")) {
       const resources = collectConversationResourceObservations(input.result);
-      if (resources.length) await indexConversationResources({
-        conversationId: input.conversationId, turnId: input.turnId, callId: input.callId, resources,
-      });
+      if (resources.length)
+        await indexConversationResources({
+          conversationId: input.conversationId,
+          turnId: input.turnId,
+          callId: input.callId,
+          resources,
+        });
     }
     let source: Parameters<typeof aiConversations.indexConversationSource>[0]["source"] | null = null;
     if (input.name === "web_search") {
@@ -793,7 +797,7 @@ export class AiTurnExecutor {
 
     const dynamicToolRuntimeContext = {
       turnId,
-      reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId,message),
+      reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
       attachedFilePaths: new Set(config.files?.attached.map((file) => file.path) ?? []),
       allowedDataBoundaries: material.modelPolicy?.allowedDataBoundaries,
       projectFiles,
@@ -919,7 +923,10 @@ export class AiTurnExecutor {
                       turnId,
                       authority: capabilityAuthority!,
                       mandate: config.mandate,
-                      actionApproval: entry.kind === "action" && !("approval" in entry.operation && entry.operation.approval === "none") ? "approved" : undefined,
+                      actionApproval:
+                        entry.kind === "action" && !("approval" in entry.operation && entry.operation.approval === "none")
+                          ? "approved"
+                          : undefined,
                       locale: promptLocale,
                       entry,
                       args,
@@ -973,7 +980,9 @@ export class AiTurnExecutor {
       globalInstructions: settings.globalInstructions,
       turnInstructions: [
         material.systemPrompt,
-        workingPlan ? `Current working plan (new todo_write results supersede this):\n${JSON.stringify({ todos: workingPlan.todos })}` : undefined,
+        workingPlan
+          ? `Current working plan (new todo_write results supersede this):\n${JSON.stringify({ todos: workingPlan.todos })}`
+          : undefined,
         ...(allowedTools === null
           ? []
           : [
@@ -1002,8 +1011,7 @@ export class AiTurnExecutor {
     const priorToolRounds = toolRoundState(loopMessages);
     const quotaSubject = accessSubjectForActor(material.actor);
     const toolRoundPolicy = applyToolRoundPolicy({
-      provider:
-        assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile.id, turnId),
+      provider: assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId),
       tools,
       maxToolRounds: resolved.profile.maxToolRounds,
       issuedToolRounds: priorToolRounds.issued,
@@ -1077,8 +1085,12 @@ export class AiTurnExecutor {
     // A provider/tool may notice the lost lease before the next heartbeat tick.
     // Resolve the durable cause too, so deadline expiry never looks like a user stop.
     const finalTurn = outcome.status !== "completed" ? await aiConversations.getTurn({ conversationId, turnId }) : null;
-    const timeout = abortController.signal.reason instanceof AiRunTimeout ? abortController.signal.reason
-      : finalTurn?.deadline && Date.parse(finalTurn.deadline) <= Date.now() && !finalTurn.cancelRequestedAt ? new AiRunTimeout(finalTurn.runBudgetMs ?? null) : null;
+    const timeout =
+      abortController.signal.reason instanceof AiRunTimeout
+        ? abortController.signal.reason
+        : finalTurn?.deadline && Date.parse(finalTurn.deadline) <= Date.now() && !finalTurn.cancelRequestedAt
+          ? new AiRunTimeout(finalTurn.runBudgetMs ?? null)
+          : null;
     if (timeout) {
       outcome.status = "failed";
       outcome.error = timeout.messageFor(promptLocale);
@@ -1172,9 +1184,16 @@ export class AiTurnExecutor {
               location: prepared.frontendModes.get(event.name) ?? "server",
             })
             .catch(() => undefined);
-          if (!prepared.frontendModes.has(event.name)) await aiToolAudit.noteToolStarted({conversationId,turnId,callId:event.callId,toolName}).catch(() => log.warn("AI tool audit write failed", {code:"tool_audit_start_failed",conversationId,turnId,callId:event.callId}));
+          if (!prepared.frontendModes.has(event.name))
+            await aiToolAudit
+              .noteToolStarted({ conversationId, turnId, callId: event.callId, toolName })
+              .catch(() =>
+                log.warn("AI tool audit write failed", { code: "tool_audit_start_failed", conversationId, turnId, callId: event.callId }),
+              );
         } else if (event.type === "tool_execution_end") {
-          await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: event.isError }).catch(() => log.warn("AI tool audit write failed", {code:"tool_audit_complete_failed",turnId,callId:event.callId}));
+          await aiToolAudit
+            .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
+            .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
           await indexConversationToolSource({
             conversationId,
@@ -1268,7 +1287,9 @@ export class AiTurnExecutor {
         result: { displayed: true },
         isError: false,
       } as OutboundEvent);
-      await aiToolAudit.noteToolCompleted({ turnId, callId: event.callId, isError: false }).catch(() => log.warn("AI tool audit write failed", {code:"tool_audit_complete_failed",turnId,callId:event.callId}));
+      await aiToolAudit
+        .noteToolCompleted({ turnId, callId: event.callId, isError: false })
+        .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
       return false;
     }
 
@@ -1406,7 +1427,13 @@ export class AiTurnExecutor {
       agentId: "cloud",
       loopId: turnId,
       store,
-      provider: resolved.provider,
+      provider: inferenceProvider(resolved.provider, resolved.profile, {
+        kind: "background",
+        task: "chat-compaction",
+        conversationId,
+        turnId,
+        appId: "core",
+      }),
       force: true,
       signal: abortController.signal,
       compact: createCloudCompactFn({
@@ -1590,9 +1617,9 @@ class StreamPipeline {
   }
 
   async reportToolProgress(callId: string, progress: string): Promise<void> {
-    const block = this.blocks.find(block => block.kind === "tool" && block.callId === callId);
+    const block = this.blocks.find((block) => block.kind === "tool" && block.callId === callId);
     if (!block || block.kind !== "tool" || block.progress === progress) return;
-    await this.emitOp({type:"block_set",block:{...block,progress}});
+    await this.emitOp({ type: "block_set", block: { ...block, progress } });
     await this.maybeSnapshot();
   }
 

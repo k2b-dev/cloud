@@ -45,7 +45,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
   const [draft, setDraft] = createSignal(q());
   const [comparison, setComparison] = createSignal<"users" | "models">("users");
   const n = (value: number | null) => formatNumber(value, { locale: locale(), decimals: 0 });
-  const credits = (value: number | null) => formatNumber(value, { locale: locale(), decimals: 4 });
+  const cost = (value: number | null) => (value === null ? "—" : value.toLocaleString(locale(), { maximumSignificantDigits: 6 }));
   const percent = (part: number, total: number) => (total ? formatPercent(part / total, { locale: locale() }) : "—");
   const date = (value: string) => formatDateTime(value, { locale: locale() });
   const duration = (value: number | null) => formatDurationMs(value, { locale: locale() });
@@ -129,7 +129,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       />
     </div>
   );
-  const details = (title: string, fields: { label: string; value: string | null | undefined }[]) =>
+  const details = (title: string, fields: { label: string; value: string | null | undefined; href?: string }[]) =>
     dialogCore.open<void>(
       (close) => (
         <PanelDialog>
@@ -140,7 +140,15 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
                 {(field) => (
                   <div class={field.label === t().error || field.label === t().comment ? "min-w-0 sm:col-span-2" : "min-w-0"}>
                     <dt class="text-xs text-dimmed">{field.label}</dt>
-                    <dd class="m-0 whitespace-pre-wrap break-words text-sm">{field.value}</dd>
+                    <dd class="m-0 whitespace-pre-wrap break-words text-sm">
+                      <Show when={field.href} fallback={field.value}>
+                        {(href) => (
+                          <ButtonLink variant="text" href={href()}>
+                            {field.value}
+                          </ButtonLink>
+                        )}
+                      </Show>
+                    </dd>
                   </div>
                 )}
               </For>
@@ -172,10 +180,17 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       { label: t().runId, value: row.id },
       { label: t().conversationId, value: row.conversationId },
       { label: t().turnId, value: row.turnId },
-      { label: t().workflowRunId, value: row.workflowRunId },
+      {
+        label: t().workflowRunId,
+        value: row.workflowRunId,
+        href: row.workflowRunId ? `/admin/observability/workflows?run=${encodeURIComponent(row.workflowRunId)}` : undefined,
+      },
       { label: t().traceId, value: row.traceId },
       { label: t().tokens, value: n(row.tokens) },
-      { label: t().credits, value: credits(row.credits) },
+      {
+        label: `${t().cost} (${report().unit})`,
+        value: `${cost(row.cost)}${row.estimated ? (locale().startsWith("de") ? " · geschätzt" : " · estimated") : ""}`,
+      },
       { label: t().averageDuration, value: duration(row.durationMs) },
       { label: t().attempts, value: row.attempts === null ? null : n(row.attempts) },
     ]);
@@ -205,9 +220,9 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         sub={`${formatPercent(value.tokenCoverage, { locale: locale() })} ${t().measured}`}
       />
       <StatCell
-        label={t().credits}
-        value={credits(value.credits)}
-        sub={`${formatPercent(value.creditsCoverage, { locale: locale() })} ${t().measured}`}
+        label={`${t().cost} (${report().unit})`}
+        value={cost(value.cost)}
+        sub={`${formatPercent(value.costCoverage, { locale: locale() })} ${t().measured}`}
       />
       <StatCell
         label={t().negativeFeedback}
@@ -216,12 +231,12 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       />
     </StatGrid>
   );
-  const groupTable = (dimension: "users" | "models" | "tasks" | "apps", title: string) => {
+  const groupTable = (dimension: "users" | "models" | "tasks" | "apps" | "workflows", title: string) => {
     const columns: DataTableColumn<AiUsageGroup>[] = [
       { id: "name", header: title, value: (row) => row.label ?? row.id ?? t().unassigned },
       { id: "runs", header: t().runs, sortable: true, value: (row) => row.runs, align: "right" },
       { id: "tokens", header: t().tokens, sortable: true, value: (row) => row.tokens, align: "right" },
-      { id: "credits", header: t().credits, sortable: true, value: (row) => row.credits, align: "right" },
+      { id: "cost", header: t().cost, sortable: true, value: (row) => row.cost, align: "right" },
       { id: "failed", header: t().errors, sortable: "errors", value: (row) => row.failed, align: "right" },
       { id: "feedback", header: t().feedback, sortable: "negative", value: (row) => row.negative, align: "right" },
     ];
@@ -253,9 +268,20 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               return (
                 <div>
                   <Show when={linkable(row)} fallback={row.label ?? row.id ?? t().unassigned}>
-                    <ButtonLink variant="text" size="sm" href={href(patch(row))}>
+                    <ButtonLink
+                      variant="text"
+                      size="sm"
+                      href={
+                        dimension === "workflows"
+                          ? `/admin/observability/workflows?workflow=${encodeURIComponent(row.id ?? "")}`
+                          : href(patch(row))
+                      }
+                    >
                       {row.label ?? row.id ?? t().unassigned}
                     </ButtonLink>
+                  </Show>
+                  <Show when={dimension === "workflows" && row.appId}>
+                    <div class="text-xs text-dimmed">{row.appId}</div>
                   </Show>
                   <Show when={row.providerModel}>
                     <div class="text-xs text-dimmed">{row.providerModel}</div>
@@ -271,10 +297,8 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               );
             if (col.id === "tokens")
               return <span title={`${formatPercent(row.tokenCoverage, { locale: locale() })} ${t().measured}`}>{n(row.tokens)}</span>;
-            if (col.id === "credits")
-              return (
-                <span title={`${formatPercent(row.creditsCoverage, { locale: locale() })} ${t().measured}`}>{credits(row.credits)}</span>
-              );
+            if (col.id === "cost")
+              return <span title={`${formatPercent(row.costCoverage, { locale: locale() })} ${t().measured}`}>{cost(row.cost)}</span>;
             if (col.id === "failed")
               return (
                 <Show when={linkable(row)} fallback={n(row.failed)}>
@@ -393,7 +417,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               [
                 { value: "runs", label: t().runs },
                 { value: "tokens", label: t().tokens },
-                { value: "credits", label: t().credits },
+                { value: "cost", label: t().cost },
                 { value: "errors", label: t().errors },
                 { value: "negative", label: t().negativeFeedback },
                 { value: "negativeRate", label: t().negativeRate },
@@ -477,9 +501,10 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
             )}
           </For>
         </div>
-        <AiUsageCharts timeline={report().timeline} range={q().range} />
+        <AiUsageCharts timeline={report().timeline} range={q().range} unit={report().unit} />
         <Disclosure summary={t().additionalStatistics}>
           {groupTable("apps", t().application)}
+          {groupTable("workflows", "Workflows")}
           <DataTable.Panel>
             <DataTable.Header title={t().launchedByApps} />
             <DataTable
