@@ -397,7 +397,7 @@ createEffect(() => {
     title: `Compose email to ${contact.name}`,
     description: "Opens Mail with this contact as the recipient.",
     icon: "ti ti-mail-plus",
-    shortcut: "mod+shift+m",
+    scope: "selection",
     action: {
       command: "mail.compose",
       input: { contact: { type: "contacts.contact", id: contact.id } },
@@ -411,6 +411,13 @@ the same permission-aware mutation as a visible button. Bind the target in the
 registration and remove the entry when the resource changes, disappears, or
 becomes unavailable. Avoid ambiguous labels such as “Edit” without a target.
 Use the application's normal locale catalog for these labels.
+
+Set `scope: "selection"` for actions on the currently selected object. Page-level
+actions, such as creating a note or searching a notebook, omit it (the default
+is `"page"`). Selection actions appear first in the palette and Layout Help.
+Within each scope, registration order is preserved: register the most useful
+actions first. This affects presentation only; it never resolves a shortcut
+conflict or grants permission. Remove selection actions when the object closes.
 
 Up to three context actions appear before typing, in both the global and
 app-scoped search. The Actions view exposes the full list. Actions are never
@@ -493,3 +500,28 @@ single-letter shortcuts.
 
 Editor formatting and component navigation, such as arrows within a Kanban
 board, stay with their component. They are not application commands.
+
+
+Use consistent meanings across applications:
+
+| Shortcut | Meaning |
+| --- | --- |
+| `mod+k` | Global search, owned by Cloud |
+| `mod+shift+k` | Search the current context |
+| `mod+alt+n` | Create in the current context |
+| `e` | Edit the selected object, when applicable |
+| `r` | Reply to the selected conversation |
+| `d` | Mark the selected object done or reopen it |
+| `m` | Assign the selected item to yourself |
+
+Choose one live owner for each shortcut. For example, Assistant gives
+`mod+shift+k` to **Search this chat** while a chat is open; **Search all chats**
+remains clickable and only owns the shortcut outside a chat. Do not register
+both and rely on mounting order to choose. Spaces uses `mod+alt+n` for a new
+event in calendar view and a new task in other views.
+
+Not every action needs a shortcut. Keep destructive operations and sending
+behind their existing confirmation or compose flow. Describe the target and
+outcome, such as “Reply to the sender of ‘Invoice’”, rather than repeating
+“Reply” as the description. Display only shortcuts that are actually active;
+do not hard-code an old key in button labels or accessibility attributes.

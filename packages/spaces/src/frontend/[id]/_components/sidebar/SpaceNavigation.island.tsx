@@ -3,7 +3,8 @@ import { createEffect, onCleanup } from "solid-js";
 import { createSpaceCommands } from "../../../space-commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { DateContext } from "@k2b/stdlib";
-import { createNavigation } from "@k2b/ui";
+import { spaceCommandMessages } from "../../../../commands";
+import { createNavigation, useLocale } from "@k2b/ui";
 import { useSpaceMessages } from "../../messages";
 import { createSpaceSearch } from "../search/SearchButton";
 import { createIcalCopy } from "./CopyICalButton";
@@ -14,6 +15,7 @@ import { createSpaceViews } from "./ViewLinks";
 
 export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: string; dateConfig?: DateContext }) {
   const t = useSpaceMessages();
+  const locale = useLocale();
   createSpaceCommands({ current: () => (props.ctx.canWrite ? props.ctx.space : undefined), dateConfig: props.dateConfig });
   const create = createItemController({
     get spaceId() {
@@ -39,9 +41,9 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
         registerContextAwareCommand({
           id: `spaces.${type}.compose`,
           title: type === "task" ? t.newTask : t.newEvent,
-          description: props.ctx.space.name,
+          description: spaceCommandMessages.resolve([locale()]).t.createDescription({ name: props.ctx.space.name }),
           icon: type === "task" ? "ti ti-checkbox" : "ti ti-calendar-event",
-          ...(type === (props.ctx.currentView === "calendar" ? "event" : "task") ? { shortcut: "c" } : {}),
+          ...(type === (props.ctx.currentView === "calendar" ? "event" : "task") ? { shortcut: "mod+alt+n" } : {}),
           action: { command: `spaces.${type}.compose`, input: { spaceId: props.ctx.space.id } },
         }),
       );

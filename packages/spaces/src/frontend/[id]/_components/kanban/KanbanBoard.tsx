@@ -1,3 +1,4 @@
+import { spaceCommandMessages } from "../../../../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import {
@@ -683,11 +684,13 @@ export default function KanbanBoard(props: Props) {
     const id = focusedItemId();
     const item = id ? findItemLocation(id)?.item : undefined;
     if (!item) return;
+    const copy = spaceCommandMessages.resolve([locale()]).t;
     onCleanup(
       registerContextAwareCommand({
+        scope: "selection",
         id: `spaces.${item.id}.assign`,
         title: t.assignFocusedItem,
-        description: item.title,
+        description: copy.assignDescription({ title: item.title }),
         icon: "ti ti-user-check",
         shortcut: "m",
         action: async () => {
@@ -698,9 +701,10 @@ export default function KanbanBoard(props: Props) {
     if (!item.completedAt)
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `spaces.${item.id}.complete`,
-          title: t.completeFocusedItem,
-          description: item.title,
+          title: copy.complete({ title: item.title }),
+          description: copy.completeDescription,
           icon: "ti ti-check",
           shortcut: "d",
           action: async () => {

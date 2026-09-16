@@ -722,3 +722,5 @@ Chat results open the conversation; message results reveal the matching part of
 the timeline, loading older history when needed. Cmd/Ctrl+Enter opens the same
 message link in a new tab. Chats remain private to their owner, including when
 they belong to a shared Project. Search results do not advertise a resource reader.
+
+Cmd/Ctrl+Shift+K searches the open chat, falling back to all chats outside a chat. Cmd/Ctrl+Alt+N creates a chat in the current project; D toggles done when the chat is idle and focus is outside an input. Search actions update the open palette in place. Actions for the selected object appear before page actions.

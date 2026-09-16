@@ -199,6 +199,7 @@ export default function MailConversationContext(props: {
     for (const kind of ["task", "event"] as const)
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `mail.${id}.${kind}`,
           title: kind === "task" ? t.sourceTask : t.sourceEvent,
           description: props.subject ? `“${props.subject}” · ${t.sourceDescription}` : t.sourceDescription,

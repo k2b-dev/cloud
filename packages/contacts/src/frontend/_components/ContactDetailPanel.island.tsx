@@ -150,6 +150,7 @@ export default function ContactDetailPanel(props: Props) {
     const name = resolveContactName(current, t().unnamedContact);
     onCleanup(
       registerContextAwareCommand({
+        scope: "selection",
         id: `contacts.${current.id}.compose`,
         title: t().composeToContact({ name }),
         description: t().composeToContactDescription,
@@ -296,9 +297,10 @@ export default function ContactDetailPanel(props: Props) {
     if (actions.canEdit())
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `contacts.${current.id}.edit`,
-          title: t().editAllFields,
-          description,
+          title: t().editContactCommand({ name: description }),
+          description: t().editContactDescription,
           icon: "ti ti-edit",
           shortcut: "e",
           action: () => actions.openEditDialog(current),
@@ -307,9 +309,10 @@ export default function ContactDetailPanel(props: Props) {
     if (actions.canMove())
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `contacts.${current.id}.move`,
           title: t().moveToAnotherBook,
-          description,
+          description: t().moveContactDescription({ name: description }),
           icon: "ti ti-folder",
           action: () => actions.moveToBook(current),
         }),

@@ -90,3 +90,5 @@ with a permission-checked recipient. Multiple addresses prompt a choice.
 Use **New contact** in Cloud search to open the contact form and choose a writable address book. Within an address book, it is used as the destination. The selected contact exposes editing, moving to another writable book, and composing an email when an address is available.
 
 Available keyboard shortcuts appear next to actions and in Layout Help.
+
+Cmd/Ctrl+Shift+K searches all accessible contacts. Cmd/Ctrl+Alt+N creates a contact in the current writable book, or asks for a book. E edits the selected contact outside input fields. Search actions update the open palette in place. Actions for the selected object appear before page actions.

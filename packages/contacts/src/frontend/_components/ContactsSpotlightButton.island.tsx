@@ -1,7 +1,7 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup } from "solid-js";
-import { createContactsSearch, spotlightMessages } from "./contact-spotlight";
+import { contactsSearchOptions, createContactsSearch, spotlightMessages } from "./contact-spotlight";
 export { spotlightMessages } from "./contact-spotlight";
 type Props = { variant?: SpotlightButtonVariant; registerCommand?: boolean };
 export default function ContactsSpotlightButton(props: Props) {
@@ -14,10 +14,10 @@ export default function ContactsSpotlightButton(props: Props) {
       registerContextAwareCommand({
         id: "contacts.search",
         title: t().searchContacts,
-        description: t().searchContacts,
+        description: t().searchDescription,
         icon: "ti ti-search",
         shortcut: "mod+shift+k",
-        action: openSearch,
+        action: { search: contactsSearchOptions(locale()) },
       }),
     );
   });

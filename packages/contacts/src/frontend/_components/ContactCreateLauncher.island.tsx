@@ -41,13 +41,13 @@ export default function ContactCreateLauncher(props: { writableBooks: WritableCo
   };
   createEffect(() => {
     if (!props.writableBooks.length) return;
+    const copy = detailMessages.resolve([locale()]).t;
+    const book = props.writableBooks.find((book) => book.id === props.defaultBookId);
     onCleanup(
       registerContextAwareCommand({
         id: "contacts.contact.compose",
         title: detailMessages.resolve([locale()]).t.newContact,
-        description:
-          props.writableBooks.find((book) => book.id === props.defaultBookId)?.name ??
-          detailMessages.resolve([locale()]).t.chooseContactBook,
+        description: book ? copy.newContactDescription({ name: book.name }) : copy.chooseBookDescription,
         icon: "ti ti-user-plus",
         shortcut: "mod+alt+n",
         action: { command: "contacts.contact.compose", input: props.defaultBookId ? { bookId: props.defaultBookId } : {} },

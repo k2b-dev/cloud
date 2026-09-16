@@ -175,3 +175,24 @@ test("logical letter shortcuts respect QWERTZ layout", () => {
     dom.cleanup();
   }
 });
+
+test("selection actions precede page actions regardless of mount order, without hiding shortcut conflicts", () => {
+  const dom = createDomTestHarness();
+  const page = registerContextAwareCommand(command("page-search", "ctrl+shift+k"));
+  const create = registerContextAwareCommand(command("page-create", "ctrl+alt+n"));
+  const selected = registerContextAwareCommand({ ...command("selected-search", "ctrl+shift+k"), scope: "selection" });
+  try {
+    const visible = contextCommandsWithShortcuts();
+    expect(visible.map((item) => item.id)).toEqual(["selected-search", "page-search", "page-create"]);
+    expect(visible[0]?.shortcut).toBeUndefined();
+    expect(visible[1]?.shortcut).toBeUndefined();
+    expect(visible[2]?.shortcut).toBe("ctrl+alt+n");
+    selected();
+    expect(contextCommandsWithShortcuts()[0]?.shortcut).toBe("ctrl+shift+k");
+  } finally {
+    selected();
+    create();
+    page();
+    dom.cleanup();
+  }
+});

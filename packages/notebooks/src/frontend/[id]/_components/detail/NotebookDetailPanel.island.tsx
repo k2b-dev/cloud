@@ -1,3 +1,4 @@
+import { notebookCommandMessages } from "../../../../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, fileIcons, type Paginated } from "@k2b/stdlib";
@@ -282,21 +283,24 @@ export default function NotebookDetailPanel(props: Props) {
   createEffect(() => {
     const id = noteId();
     if (!id) return;
-    const description = noteTitle() || t().untitled;
+    const title = noteTitle() || t().untitled;
+    const copy = notebookCommandMessages.resolve([locale()]).t;
     onCleanup(
       registerContextAwareCommand({
+        scope: "selection",
         id: `notebooks.${id}.markdown`,
         title: t().downloadNoteMarkdown,
-        description,
+        description: copy.markdownDescription({ title }),
         icon: "ti ti-markdown",
         action: downloadContent,
       }),
     );
     onCleanup(
       registerContextAwareCommand({
+        scope: "selection",
         id: `notebooks.${id}.pdf`,
         title: t().downloadNotePdf,
-        description,
+        description: copy.pdfDescription({ title }),
         icon: "ti ti-file-type-pdf",
         action: downloadPdf,
       }),
@@ -304,9 +308,10 @@ export default function NotebookDetailPanel(props: Props) {
     if (props.mode === "edit" && props.canWrite && !lockedAt() && !editWithAi.loading())
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `notebooks.${id}.ai`,
           title: t().editWithAi,
-          description,
+          description: copy.aiDescription({ title }),
           icon: "ti ti-sparkles",
           action: async () => {
             await editWithAi.mutate();

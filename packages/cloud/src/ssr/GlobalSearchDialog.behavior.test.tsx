@@ -391,3 +391,36 @@ test("search actions replace scope and command text in place, keep focus and nev
     dom.cleanup();
   }
 });
+
+test("empty palette favors the selected object and drops its actions when the object closes", async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async (input: RequestInfo | URL) =>
+    String(input).includes("/capabilities/v1/catalog") ? commandCatalogResponse() : catalogResponse(),
+    { preconnect: originalFetch.preconnect },
+  );
+  const { registerContextAwareCommand } = await import("../browser/command-bridge");
+  const page = ["Search notebook", "New note", "Open overview"].map((title) =>
+    registerContextAwareCommand({ id: title, title, description: "Page action", action: () => {} }),
+  );
+  const selection = registerContextAwareCommand({
+    id: "selected", title: "Edit selected note", description: "Current note", scope: "selection", shortcut: "e", action: () => {},
+  });
+  const { default: GlobalSearchDialog } = await import("./GlobalSearchDialog");
+  const dispose = render(() => <GlobalSearchDialog close={() => {}} />, dom.root);
+  try {
+    const rows = () => Array.from(dom.root.querySelectorAll('[role="option"]'));
+    await waitFor(() => rows().length === 3, "three suggested actions");
+    expect(rows()[0]?.textContent).toContain("Edit selected note");
+    expect(rows()[0]?.querySelector("kbd")?.textContent).toBe("E");
+    expect(rows().some((row) => row.textContent?.includes("Open overview"))).toBe(false);
+    selection();
+    await waitFor(() => rows()[0]?.textContent?.includes("Search notebook") ?? false, "page actions after selection closes");
+    expect(rows().some((row) => row.textContent?.includes("Edit selected note"))).toBe(false);
+  } finally {
+    dispose(); selection(); page.forEach((stop) => stop());
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});

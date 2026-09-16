@@ -8,6 +8,11 @@ export const detailMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      editContactCommand: ({ name }: { name: string }) => `Edit ${name}`,
+      editContactDescription: "Change this contact's details, email addresses and phone numbers.",
+      moveContactDescription: ({ name }: { name: string }) => `Choose another address book for ${name}.`,
+      newContactDescription: ({ name }: { name: string }) => `Create a contact in “${name}”.`,
+      chooseBookDescription: "Choose an address book and enter the new contact's details.",
       composeToContact: ({ name }: { name: string }) => `Compose email to ${name}`,
       composeToContactDescription: "Opens Mail with this contact as the recipient.",
       // Shared
@@ -193,6 +198,11 @@ export const detailMessages = i18n.define({
       directReports: ({ count }: { count: number }) => `${count} direct report${count === 1 ? "" : "s"}`,
     },
     de: {
+      editContactCommand: ({ name }) => `${name} bearbeiten`,
+      editContactDescription: "Kontaktdaten, E-Mail-Adressen und Telefonnummern ändern.",
+      moveContactDescription: ({ name }) => `Ein anderes Adressbuch für ${name} auswählen.`,
+      newContactDescription: ({ name }) => `Einen Kontakt in „${name}“ anlegen.`,
+      chooseBookDescription: "Ein Adressbuch auswählen und die Daten des neuen Kontakts eingeben.",
       composeToContact: ({ name }) => `E-Mail an ${name} verfassen`,
       composeToContactDescription: "Öffnet Mail mit diesem Kontakt als Empfänger.",
       // Shared

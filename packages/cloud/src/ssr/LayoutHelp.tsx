@@ -115,9 +115,7 @@ const Shortcuts = (props: { openSearchHelp: () => void }) => {
     onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
   });
   const entries = createMemo(() =>
-    commands()
-      .filter((command) => command.shortcut)
-      .sort((a, b) => a.title.localeCompare(b.title)),
+    commands().filter((command) => command.shortcut),
   );
   return (
     <div class="flex flex-col gap-3">

@@ -5,7 +5,7 @@ import { createNoteCommands } from "../../note-commands";
 import { inheritPresentationMode } from "../../../lib/presentation-url";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { notebookWorkspaceMessages } from "../messages";
-import { openNoteSearchPrompt } from "./search/openNoteSearchPrompt";
+import { notebookSearchOptions } from "./search/openNoteSearchPrompt";
 
 type Props = {
   notebookId: string;
@@ -19,7 +19,6 @@ export default function NotebookCommands(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   createNoteCommands(() => (props.canWrite ? props.notebookId : undefined));
-  const openSearch = () => openNoteSearchPrompt(props.notebookId, props.notebookName);
 
   onMount(() => {
     if (props.ownsSearchNavigation)
@@ -38,10 +37,10 @@ export default function NotebookCommands(props: Props) {
       registerContextAwareCommand({
         id: "notebooks.search",
         title: t().searchNotesCommand,
-        description: props.notebookName,
+        description: t().searchNotesCommandDescription({ name: props.notebookName }),
         icon: "ti ti-search",
         shortcut: "mod+shift+k",
-        action: openSearch,
+        action: { search: notebookSearchOptions(props.notebookId, props.notebookName) },
       }),
     );
     if (props.canWrite)
@@ -49,7 +48,7 @@ export default function NotebookCommands(props: Props) {
         registerContextAwareCommand({
           id: "notebooks.note.compose",
           title: t().newNoteCommand,
-          description: props.notebookName,
+          description: t().newNoteCommandDescription({ name: props.notebookName }),
           icon: "ti ti-note",
           shortcut: "mod+alt+n",
           action: { command: "notebooks.note.compose", input: { notebookId: props.notebookId } },

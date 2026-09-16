@@ -116,7 +116,7 @@ export default function CreateItemButton(props: Props) {
     return (
       <AppWorkspace.SidebarIconAction
         icon={pending() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"}
-        label={t.createItemWithShortcut({ label: label(), shortcut: "C" })}
+        label={label()}
         onClick={() => void createItem()}
         disabled={pending()}
       />
@@ -140,7 +140,7 @@ export default function CreateItemButton(props: Props) {
   }
 
   return (
-    <Button type="button" onClick={() => void createItem()} disabled={pending()} class="w-full" aria-keyshortcuts="C">
+    <Button type="button" onClick={() => void createItem()} disabled={pending()} class="w-full">
       {pending() ? (
         <i class="ti ti-loader-2 animate-spin" />
       ) : (

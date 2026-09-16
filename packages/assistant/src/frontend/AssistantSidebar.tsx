@@ -50,7 +50,7 @@ type AssistantSidebarProps = {
   live: AssistantLiveHub;
 };
 
-function AssistantSearchButton(props: { registerCommand?: boolean; variant?: "item" | "icon" }) {
+function AssistantSearchButton(props: { currentChat?: boolean; registerCommand?: boolean; variant?: "item" | "icon" }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const openSearch = () => openGlobalSearch(assistantSearchOptions(locale()));
@@ -59,7 +59,7 @@ function AssistantSearchButton(props: { registerCommand?: boolean; variant?: "it
     if (!props.registerCommand) return;
     onCleanup(registerContextAwareCommand({
       id: "assistant.search", title: t().searchChats, description: assistantCommandMessages.resolve([locale()]).t.searchChatsDescription,
-      icon: "ti ti-search", shortcut: "mod+shift+k", action: { search: assistantSearchOptions(locale()) },
+      icon: "ti ti-search", shortcut: props.currentChat ? undefined : "mod+shift+k", action: { search: assistantSearchOptions(locale()) },
     }));
   });
 
@@ -483,7 +483,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
               disabled={creatingConversation()}
               onClick={() => void props.onNewConversation?.()}
             />
-            <AssistantSearchButton variant="icon" registerCommand />
+            <AssistantSearchButton variant="icon" registerCommand currentChat={!!activeConversationId()} />
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarIconGrid columns={3} sidebarMode="collapsed">

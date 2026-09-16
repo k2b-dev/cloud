@@ -183,3 +183,5 @@ Calendar invitation, RSVP, and delivery workflows keep their existing behavior.
 Cloud search exposes reply, reply-all when applicable, and forwarding for the selected conversation. An open details panel also supplies assignment and a personal reminder. These actions open the existing composer or controls; they never send an email automatically.
 
 Available keyboard shortcuts appear next to actions and in Layout Help.
+
+Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Alt+N opens a new email from the current writable mailbox. R opens a reply to the selected conversation outside input fields; it never sends it. Search actions update the open palette in place. Actions for the selected object appear before page actions.

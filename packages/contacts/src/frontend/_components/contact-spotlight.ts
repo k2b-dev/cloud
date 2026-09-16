@@ -7,21 +7,26 @@ export const spotlightMessages = i18n.define({
   messages: {
     en: {
       contacts: "Contacts",
-      searchContacts: "Search contacts",
+      searchContacts: "Search all contacts",
+      searchDescription: "Find names, email addresses and phone numbers in your address books.",
       searchContactsButton: "Search Contacts",
       searchContactsWithShortcut: ({ shortcut }: { shortcut: string }) => `Search contacts (${shortcut})`,
     },
     de: {
       contacts: "Kontakte",
-      searchContacts: "Kontakte suchen",
+      searchContacts: "Alle Kontakte durchsuchen",
+      searchDescription: "Namen, E-Mail-Adressen und Telefonnummern in deinen Adressbüchern finden.",
       searchContactsButton: "Kontakte suchen",
       searchContactsWithShortcut: ({ shortcut }) => `Kontakte suchen (${shortcut})`,
     },
   },
 });
 
+export const contactsSearchOptions = (locale: string) => ({
+  scope: { appId: "contacts", label: spotlightMessages.resolve([locale]).t.contacts, icon: "ti ti-address-book" },
+});
+
 export function createContactsSearch() {
   const locale = useLocale();
-  return () =>
-    openGlobalSearch({ scope: { appId: "contacts", label: spotlightMessages.resolve([locale()]).t.contacts, icon: "ti ti-address-book" } });
+  return () => openGlobalSearch(contactsSearchOptions(locale()));
 }

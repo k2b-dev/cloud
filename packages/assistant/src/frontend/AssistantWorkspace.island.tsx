@@ -491,7 +491,7 @@ export default function AssistantWorkspace(props: Props) {
   });
   createEffect(() => {
     if (newConversation.loading()) return;
-    const project = activeProject();
+    const project = activeProject() ?? projects().find((project) => project.id === activeConversation()?.projectId);
     onCleanup(registerContextAwareCommand({ id: "assistant.chat.compose", title: t().newChat,
       description: project
         ? assistantCommandMessages.resolve([locale()]).t.newProjectChatDescription({ name: project.name })
@@ -1318,11 +1318,13 @@ export default function AssistantWorkspace(props: Props) {
     const copy = assistantCommandMessages.resolve([locale()]).t;
     onCleanup(registerContextAwareCommand({ id: `assistant.${conversation.id}.search`, title: t().searchThisChat,
       description: copy.searchChatDescription({ title: conversation.title }), icon: "ti ti-search",
+      scope: "selection", shortcut: "mod+shift+k",
       action: { search: assistantSearchOptions(locale(), conversation) },
     }));
     if (!["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus))
       onCleanup(registerContextAwareCommand({ id: `assistant.${conversation.id}.done`, title: conversation.isDone ? copy.reopen : copy.done,
-        description: conversation.title, icon: "ti ti-check", action: async () => updateConversation(await assistantApi.setConversationDone(conversation.id, !conversation.isDone)),
+        description: conversation.isDone ? copy.reopenDescription({ title: conversation.title }) : copy.doneDescription({ title: conversation.title }),
+        scope: "selection", shortcut: "d", icon: "ti ti-check", action: async () => updateConversation(await assistantApi.setConversationDone(conversation.id, !conversation.isDone)),
       }));
   });
 

@@ -1,7 +1,8 @@
+import { spaceCommandMessages } from "../../../../commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { createEffect, onCleanup } from "solid-js";
-import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant } from "@k2b/ui";
+import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { useSpaceMessages } from "../../messages";
 
 type Props = {
@@ -11,13 +12,16 @@ type Props = {
   registerCommand?: boolean;
 };
 
+const spaceSearchOptions = (props: Props) => ({
+  scope: { ref: { type: "spaces.space", id: props.spaceId }, label: props.spaceName, icon: "ti ti-layout-kanban" },
+});
 export function createSpaceSearch(props: Props) {
-  return () =>
-    openGlobalSearch({ scope: { ref: { type: "spaces.space", id: props.spaceId }, label: props.spaceName, icon: "ti ti-layout-kanban" } });
+  return () => openGlobalSearch(spaceSearchOptions(props));
 }
 
 export default function SearchButton(props: Props) {
   const t = useSpaceMessages();
+  const locale = useLocale();
   const openSearch = createSpaceSearch(props);
   createEffect(() => {
     if (props.registerCommand)
@@ -25,10 +29,10 @@ export default function SearchButton(props: Props) {
         registerContextAwareCommand({
           id: "spaces.search",
           title: t.searchItemsCommand,
-          description: props.spaceName,
+          description: spaceCommandMessages.resolve([locale()]).t.searchDescription({ name: props.spaceName }),
           icon: "ti ti-search",
           shortcut: "mod+shift+k",
-          action: openSearch,
+          action: { search: spaceSearchOptions(props) },
         }),
       );
   });

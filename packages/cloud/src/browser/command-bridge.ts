@@ -8,6 +8,8 @@ export type ContextAwareCommand = {
   title: string;
   description: string;
   icon?: string;
+  /** Selection actions appear before page actions. Defaults to page. */
+  scope?: "selection" | "page";
   /** One platform-aware key combination, for example mod+shift+k. */
   shortcut?: string;
   /** A linkable app Command, an in-place search, or a local UI interaction. */
@@ -95,7 +97,9 @@ export const collectContextAwareCommands = (): ContextAwareCommand[] => {
   const detail: CollectRequest = { commands: [] };
   window.dispatchEvent(new CustomEvent(COLLECT, { detail }));
   // Ambiguous IDs are not executable, regardless of island hydration order.
-  return detail.commands.filter((command) => detail.commands.filter((other) => other.id === command.id).length === 1);
+  return detail.commands
+    .filter((command) => detail.commands.filter((other) => other.id === command.id).length === 1)
+    .sort((a, b) => Number(b.scope === "selection") - Number(a.scope === "selection"));
 };
 
 export const requestContextCommandExecution = (command: ContextAwareCommand, run: () => Promise<void>): Promise<void> | undefined => {

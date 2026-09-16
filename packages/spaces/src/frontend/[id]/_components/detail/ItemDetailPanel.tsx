@@ -543,11 +543,27 @@ export default function ItemDetailPanel(props: Props) {
     const itemId = props.item.id;
     const title = props.item.title;
     const copy = spaceCommandMessages.resolve([locale()]).t;
+    if (!completionBlocked())
+      onCleanup(
+        registerContextAwareCommand({
+          scope: "selection",
+          id: `spaces.${itemId}.complete`,
+          title: isCompleted() ? t.reopen : copy.complete({ title }),
+          description: isCompleted() ? copy.reopenDescription : copy.completeDescription,
+          icon: "ti ti-checkbox",
+          shortcut: "d",
+          action: () => {
+            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked())
+              return completeMutation.mutate(!isCompleted());
+          },
+        }),
+      );
     onCleanup(
       registerContextAwareCommand({
+        scope: "selection",
         id: `spaces.${itemId}.edit`,
         title: copy.edit({ title }),
-        description: copy.currentItem,
+        description: copy.editDescription,
         icon: "ti ti-edit",
         shortcut: "e",
         action: () => {
@@ -558,9 +574,10 @@ export default function ItemDetailPanel(props: Props) {
     if (!props.item.assignees?.some((assignee) => assignee.id === props.currentUserId))
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `spaces.${itemId}.assign`,
           title: t.assignFocusedItem,
-          description: title,
+          description: copy.assignDescription({ title }),
           icon: "ti ti-user-check",
           shortcut: "m",
           action: async () => {
@@ -573,9 +590,10 @@ export default function ItemDetailPanel(props: Props) {
     if (!isEvent())
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `spaces.${itemId}.deadline`,
-          title: t.deadline,
-          description: title,
+          title: copy.deadlineTitle,
+          description: copy.deadlineDescription({ title }),
           icon: "ti ti-calendar",
           action: async () => {
             const result = await prompts.form({
@@ -583,20 +601,6 @@ export default function ItemDetailPanel(props: Props) {
               fields: { deadline: { type: "datetime", label: t.deadline, default: props.item.deadline ?? undefined } },
             });
             if (result && props.item.id === itemId && canEditItem()) await updateMutation.mutate({ deadline: result.deadline || null });
-          },
-        }),
-      );
-    if (!completionBlocked())
-      onCleanup(
-        registerContextAwareCommand({
-          id: `spaces.${itemId}.complete`,
-          title: isCompleted() ? t.reopen : copy.complete({ title }),
-          description: copy.currentItem,
-          icon: "ti ti-checkbox",
-          shortcut: "d",
-          action: () => {
-            if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked())
-              return completeMutation.mutate(!isCompleted());
           },
         }),
       );

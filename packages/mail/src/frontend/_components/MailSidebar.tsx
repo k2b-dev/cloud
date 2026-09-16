@@ -1,5 +1,7 @@
+import { mailCommandMessages } from "../../commands";
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { documentNavigate, type LinkNavigateEvent, refreshCurrentPath } from "@k2b/ssr/nav";
+import { navigateTo, documentNavigate, type LinkNavigateEvent, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   createNavigation,
@@ -12,7 +14,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConversationView } from "../../contracts";
 import { serializeMailSearchState } from "../../search-state";
@@ -82,6 +84,21 @@ export default function MailSidebar(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  createEffect(() => {
+    const copy = mailCommandMessages.resolve([locale()]).t;
+    onCleanup(registerContextAwareCommand({
+      id: "mail.search", title: copy.searchTitle, description: copy.searchDescription,
+      icon: "ti ti-search", shortcut: "mod+shift+k",
+      action: { search: { scope: { appId: "mail", label: copy.mail, icon: "ti ti-mail" } } },
+    }));
+    if (!props.canWrite) return;
+    const mailboxId = props.mailboxId;
+    onCleanup(registerContextAwareCommand({
+      id: "mail.compose", title: copy.composeTitle, description: copy.composeDescription({ name: props.mailboxName }),
+      icon: "ti ti-mail-plus", shortcut: "mod+alt+n",
+      action: () => navigateTo(`/app/mail/compose?mailbox=${mailboxId}&autostart=1`),
+    }));
+  });
   const followUpViewItems = createMemo<MailViewItem[]>(() => [
     { id: "needs_action", label: messages().needsAction, icon: "ti ti-message-reply" },
     { id: "waiting", label: messages().waitingForReply, icon: "ti ti-hourglass", description: messages().waitingDescription },

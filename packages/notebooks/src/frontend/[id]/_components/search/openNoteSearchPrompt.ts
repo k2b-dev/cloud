@@ -71,8 +71,11 @@ const runNotePrompt = async (notebookId: string, dressing: PromptDressing, local
 };
 
 /** Opens the shared search in one notebook. Link insertion remains a picker below. */
+export const notebookSearchOptions = (notebookId: string, notebookName: string) => ({
+  scope: { ref: { type: "notebooks.notebook", id: notebookId }, label: notebookName, icon: "ti ti-notebook" },
+});
 export const openNoteSearchPrompt = (notebookId: string, notebookName: string): void => {
-  openGlobalSearch({ scope: { ref: { type: "notebooks.notebook", id: notebookId }, label: notebookName, icon: "ti ti-notebook" } });
+  openGlobalSearch(notebookSearchOptions(notebookId, notebookName));
 };
 
 /** Picker variant used by the editor's "Insert note link" action — wording

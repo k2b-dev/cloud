@@ -204,3 +204,5 @@ Use **Actions** (or `>`) in the Cloud search to create a task or event. Inside a
 Space, the form uses that Space; elsewhere, choose a writable Space first.
 An open writable item contributes explicitly named edit and completion actions.
 Blocked or completed tasks do not offer completion.
+
+Cmd/Ctrl+Shift+K searches the current Space. Cmd/Ctrl+Alt+N opens a new task, or an event in calendar view. Outside inputs, E edits the selected item, M assigns it to you, and D marks it done or reopens it. Completion remains unavailable while blocked. Search actions update the open palette in place. Actions for the selected object appear before page actions.

@@ -9,6 +9,9 @@ export const notebookCommandMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      markdownDescription: ({ title }: { title: string }) => `Download “${title}” as an editable Markdown file.`,
+      pdfDescription: ({ title }: { title: string }) => `Choose PDF export settings for “${title}”.`,
+      aiDescription: ({ title }: { title: string }) => `Open Assistant with “${title}” as context for your changes.`,
       newNote: "New note",
       choose: "Choose a notebook",
       search: "Find a writable notebook…",
@@ -16,6 +19,9 @@ export const notebookCommandMessages = i18n.define({
       failed: "The note could not be created.",
     },
     de: {
+      markdownDescription: ({ title }) => `„${title}“ als bearbeitbare Markdown-Datei herunterladen.`,
+      pdfDescription: ({ title }) => `Den PDF-Export für „${title}“ vorbereiten.`,
+      aiDescription: ({ title }) => `Den Assistenten mit „${title}“ als Kontext für deine Änderungen öffnen.`,
       newNote: "Neue Notiz",
       choose: "Notizbuch auswählen",
       search: "Beschreibbares Notizbuch finden…",

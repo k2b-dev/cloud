@@ -43,10 +43,10 @@ if (!isServer)
       expect(actions).toHaveLength(2);
       for (const action of actions) {
         expect(typeof action.action).toBe("object");
-        if (typeof action.action !== "function") {
-          expect(action.action.options).toEqual({ returnTo });
-          expect(action.action.input).toEqual({ source: { type: "mail.conversation", id: "Conv01" } });
-        }
+        if (typeof action.action === "function" || !("command" in action.action)) throw new Error("Expected a linkable Command");
+        expect(action.scope).toBe("selection");
+        expect(action.action.options).toEqual({ returnTo });
+        expect(action.action.input).toEqual({ source: { type: "mail.conversation", id: "Conv01" } });
       }
       const buttons = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"));
       for (const label of ["Spaces task", "Spaces event"]) {

@@ -1,3 +1,4 @@
+import { mailCommandMessages } from "../../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
@@ -230,13 +231,14 @@ export default function MailDetailsPanel(props: {
   createEffect(() => {
     if (!props.active) return;
     const conversationId = props.conversationId;
-    const description = props.subject;
+    const copy = mailCommandMessages.resolve([locale()]).t;
     if (props.canWrite && !props.detailErrors.assignableUsers)
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `mail.${conversationId}.assign`,
-          title: t().assignee,
-          description,
+          title: copy.assignTitle,
+          description: copy.assignDescription({ subject: props.subject }),
           icon: "ti ti-user-check",
           action: async () => {
             const selected = await prompts.form({
@@ -258,9 +260,10 @@ export default function MailDetailsPanel(props: {
     if (!props.detailErrors.reminder)
       onCleanup(
         registerContextAwareCommand({
+          scope: "selection",
           id: `mail.${conversationId}.reminder`,
-          title: t().personalReminder,
-          description,
+          title: copy.reminderTitle,
+          description: copy.reminderDescription({ subject: props.subject }),
           icon: "ti ti-bell",
           action: async () => {
             const selected = await prompts.form({
