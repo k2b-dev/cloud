@@ -141,9 +141,9 @@ describe("record finalization Postgres integration", () => {
       const assertValues = (data: Record<string, unknown>) => {
         for (const [id, value] of Object.entries(expected)) expect(String(data[id])).toBe(value);
       };
-      const assertQuery = async () => {
+      const assertQuery = async (filter = "") => {
         const tableFields = await fields.listByTable(item.tableId);
-        const parsed = parseGridsQueryDsl(`from table {${item.tableShortId}}\nselect {${vat.shortId}}, {${fraction.shortId}}`);
+        const parsed = parseGridsQueryDsl(`from table {${item.tableShortId}}\nselect {${vat.shortId}}, {${fraction.shortId}}\n${filter}`);
         if (!parsed.ok) throw Error(JSON.stringify(parsed.diagnostics));
         const resolved = resolveDslQueryToQueryPlan(parsed.ast, {
           tables: [{ kind: "table", id: item.tableId, shortId: item.tableShortId, name: "Cases" }],
@@ -169,6 +169,7 @@ describe("record finalization Postgres integration", () => {
       if (!frozen) throw Error("missing frozen invoice");
       assertValues(frozen.data);
       await assertQuery();
+      await assertQuery("where record.finalizationState = 'finalized'");
       const [capture] = await sql<
         Array<{ types: Record<string, string> }>
       >`SELECT finalized_computed_types AS types FROM grids.records WHERE id = ${created.data.id}::uuid`;
@@ -208,9 +209,11 @@ describe("record finalization Postgres integration", () => {
         });
       };
       for (const selection of ["select Later", "aggregate sum(Later) as total"]) {
-        const result = await run(selection);
-        expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.error).toMatchObject({ code: "BAD_INPUT", status: 400 });
+        for (const filter of ["", "where record.finalizationState = 'finalized'"]) {
+          const result = await run(selection, filter);
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error).toMatchObject({ code: "BAD_INPUT", status: 400 });
+        }
       }
       for (const selection of ["aggregate sum(Later) as total", "group by Name\naggregate sum(Later) as total"]) {
         const selectedDraft = await run(selection, "where record.finalizationState = 'draft'");

@@ -22,11 +22,7 @@ type RowPlan = { columns: Map<string, FormulaSqlExpression>; json: unknown; erro
 const textTrimCharacters =
   " \t\n\v\f\r\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
 
-const normalizedSelect = (
-  column: ObjectListColumn,
-  source: unknown,
-  stageValue: (value: unknown) => unknown,
-): FormulaSqlCompileResult => {
+const normalizedSelect = (column: ObjectListColumn, source: unknown, stageValue: (value: unknown) => unknown): FormulaSqlCompileResult => {
   const parsed = SelectConfigSchema.safeParse(column.config);
   if (!parsed.success) return formulaSqlFail(`Invalid select configuration: ${column.name}`);
   const config = parsed.data;
@@ -124,9 +120,15 @@ export const compileObjectListRow = (
   const joins: unknown[] = [];
   const stage = (expression: FormulaSqlExpression, suffix: string): FormulaSqlExpression => {
     const alias = sql.unsafe(`${rowAlias}_${suffix}`);
-    joins.push(sql`CROSS JOIN LATERAL (SELECT ${expression.sql} AS value,
-      COALESCE(${expression.errorSql ?? sql`false`}, false) AS error OFFSET 0) ${alias}`);
-    return { ...expression, sql: sql`${alias}.value`, errorSql: sql`${alias}.error` };
+    const { rowSql, ...scalar } = expression;
+    joins.push(
+      rowSql !== undefined
+        ? sql`CROSS JOIN LATERAL (SELECT calculation.value, COALESCE(calculation.error, false) AS error
+          FROM (${rowSql}) calculation OFFSET 0) ${alias}`
+        : sql`CROSS JOIN LATERAL (SELECT ${expression.sql} AS value,
+      COALESCE(${expression.errorSql ?? sql`false`}, false) AS error OFFSET 0) ${alias}`,
+    );
+    return { ...scalar, sql: sql`${alias}.value`, errorSql: sql`${alias}.error` };
   };
   for (const column of config.fields) {
     if (column.formula) continue;
@@ -146,8 +148,10 @@ export const compileObjectListRow = (
       // choices. Materialize that set once instead of copying its aggregation
       // into every cardinality branch of every dependent list formula.
       const source = stage(expression, `source_${columns.size}`);
-      const checked = normalizedSelect(column, source.sql, (value) =>
-        stage({ sql: value, type: "unknown" }, `choices_${columns.size}`).sql,
+      const checked = normalizedSelect(
+        column,
+        source.sql,
+        (value) => stage({ sql: value, type: "unknown" }, `choices_${columns.size}`).sql,
       );
       if (!checked.ok) return checked;
       columns.set(column.id, stage({ ...checked.expression, select: column }, `input_${columns.size}`));
@@ -181,7 +185,11 @@ export const compileObjectListRow = (
     // scalar type before range checks consume the staged nullable result.
     const typed =
       expression.type === "unknown" && targetType !== "unknown"
-        ? { ...expression, sql: sql`(${expression.sql})::${sql.unsafe(targetType === "datetime" ? "timestamptz" : targetType)}` }
+        ? {
+            type: expression.type,
+            errorSql: expression.errorSql,
+            sql: sql`(${expression.sql})::${sql.unsafe(targetType === "datetime" ? "timestamptz" : targetType)}`,
+          }
         : expression;
     const normalized = normalizedCalculation(column, stage(typed, `raw_${index}`));
     if (!normalized.ok) return normalized;

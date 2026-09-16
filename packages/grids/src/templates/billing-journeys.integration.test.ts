@@ -258,7 +258,6 @@ journeyTest("invoice issuance recovers a renderer outage after finalization with
       if (!rendererAvailable) throw new Error("Billing test PDF renderer unavailable");
       return { pdf: new TextEncoder().encode(`%PDF-TEST\n${xml}`) };
     },
-    extractEmbedded: async (pdf) => ({ filename: "factur-x.xml", xml: new TextDecoder().decode(pdf).slice("%PDF-TEST\n".length) }),
   });
   const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
   try {
@@ -346,7 +345,6 @@ journeyTest(
   async () => {
     const profile = createGermanBillingProfile({
       render: async ({ xml }) => ({ pdf: new TextEncoder().encode(`%PDF-TEST\n${xml}`) }),
-      extractEmbedded: async (pdf) => ({ filename: "factur-x.xml", xml: new TextDecoder().decode(pdf).slice("%PDF-TEST\n".length) }),
     });
     const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
     try {
@@ -492,11 +490,10 @@ for (const scenario of [
   journeyTest(
     `billing actual invoice and ${roundingCase ? "complete residual" : "competing"} corrections respect ${scenario.name} capacity`,
     async () => {
-      // Keep real profile input checks, amounts, XML generation and XSD validation.
-      // Only the external PDF/A renderer/embedded-file extractor are replaced.
+      // Keep real profile input checks, amounts and XML generation.
+      // The renderer release test owns XSD and actual PDF attachment checks.
       const profile = createGermanBillingProfile({
         render: async ({ xml }) => ({ pdf: new TextEncoder().encode(`%PDF-TEST\n${xml}`) }),
-        extractEmbedded: async (pdf) => ({ filename: "factur-x.xml", xml: new TextDecoder().decode(pdf).slice("%PDF-TEST\n".length) }),
       });
       const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
       try {

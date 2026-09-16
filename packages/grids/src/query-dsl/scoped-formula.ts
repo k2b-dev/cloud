@@ -54,12 +54,16 @@ const compileScopedField = (
 ): Exclude<ReturnType<FormulaSqlFieldResolver>, null> => {
   if (field.type === "select") return { sql: sql`${sql.unsafe(scope.recordAlias)}.data->${field.id}`, type: "unknown", select: field };
   if (field.type === "object_list") {
+    const prepared = scope.computedFieldSql?.get(field.id);
+    if (prepared) return { ...prepared, objectListConfig: field.config };
     const compiled = compileObjectListProjection(field, scope.recordAlias, { dateConfig: options.dateConfig });
     return compiled.ok ? { ...compiled.expression, objectListConfig: field.config } : compiled.error;
   }
   if (field.type === "formula") {
     const expression = (field.config as { expression?: unknown }).expression;
     if (typeof expression !== "string" || expression.trim().length === 0) return `Formula field "${field.name}" has no expression`;
+    const prepared = scope.computedFieldSql?.get(field.id);
+    if (prepared) return prepared;
     const compiled = compileFormulaFieldToSql(field, {
       fields: scope.fields,
       recordAlias: scope.recordAlias,

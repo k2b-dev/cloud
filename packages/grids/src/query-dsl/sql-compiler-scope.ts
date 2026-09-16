@@ -2,13 +2,13 @@ import { sql } from "bun";
 import type { RecordQuery } from "../contracts";
 import { compileFilter, renderClause } from "../service/filter-compiler";
 import type { FormulaSqlFieldResolver } from "../service/formula-sql-compiler";
-import { compileRecordMetaFilter, recordMetaRequiresDeletedRows } from "../service/record-metadata";
+import { compileRecordMetaFilter, compileRecordScopeFilter, recordMetaRequiresDeletedRows } from "../service/record-metadata";
 import { compileSort } from "../service/sort-compiler";
 import type { Field } from "../service/types";
 import type { DslResolvedSqlQueryPlan } from "./resolver";
 import { createDslScopedFormulaFieldResolver } from "./scoped-formula";
 import { aliveFields } from "./sql-compiler-fields";
-import { dslRecordRelation, dslRecordTableCondition, dslRelationValuesInRecordData } from "./sql-compiler-source";
+import { dslRecordRelation, dslRelationValuesInRecordData } from "./sql-compiler-source";
 import type { DslSqlCompileOptions } from "./sql-compiler-types";
 
 export const scopedFormulaResolverForPlan = (
@@ -36,7 +36,7 @@ export const scopedFormulaResolverForPlan = (
 
 /** Soft-delete predicate on the base record alias `r`: live-only by default,
  * trash-only for `deleted only`, both for `include deleted`. Parent-table and
- * base liveness joins remain active in every mode. */
+ * base liveness checks remain active in every mode. */
 export const recordDeletedCondition = (plan: Pick<DslResolvedSqlQueryPlan, "query">): unknown =>
   plan.query.deletedOnly ? sql`r.deleted_at IS NOT NULL` : plan.query.includeDeleted ? sql`TRUE` : sql`r.deleted_at IS NULL`;
 
@@ -64,7 +64,7 @@ export const compileViewSourceRecordScope = (
   const orderBy = sort.result.orderBy;
   const limit = Math.min(Math.max(source.limit ?? 10_000, 1), 10_000);
   const conditions = [
-    dslRecordTableCondition(plan.tableId, options),
+    compileRecordScopeFilter(plan.tableId),
     queryDeletedCondition(source),
     renderClause(filter.clause, { relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" }),
     options.viewSourceSearchClause ?? sql`TRUE`,
@@ -76,8 +76,6 @@ export const compileViewSourceRecordScope = (
     condition: sql`r.id IN (
       SELECT r.id
       FROM ${dslRecordRelation(options)}
-      JOIN grids.tables t ON t.id = r.table_id AND t.id = ${plan.tableId}::uuid AND t.deleted_at IS NULL
-      JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
       WHERE ${where}
       ORDER BY ${orderBy}
       LIMIT ${limit}

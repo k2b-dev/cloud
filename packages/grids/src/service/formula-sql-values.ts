@@ -9,6 +9,8 @@ export type FormulaSqlExpression = {
   type: FormulaSqlType;
   /** True when evaluating this expression produced a formula error rather than a legitimate NULL. */
   errorSql?: unknown;
+  /** A self-contained SELECT of value and error, evaluated together at a query boundary. */
+  rowSql?: unknown;
   select?: FormulaSelect;
 };
 
@@ -19,10 +21,14 @@ export const isInvalidCalculationError = (error: unknown): boolean =>
 
 /** At a query boundary, errors must not become NULLs that aggregates silently omit.
  * Apply only after compiling the complete expression, so IFERROR can handle errors. */
-export const requireValidCalculationSql = (expression: FormulaSqlExpression): unknown =>
-  expression.errorSql === undefined
-    ? expression.sql
-    : sql`grids.require_valid_calculation(${expression.errorSql}, ${expression.type === "unknown" ? sql`(${expression.sql})::jsonb` : expression.sql})`;
+export const requireValidCalculationSql = (expression: FormulaSqlExpression): unknown => {
+  if (expression.errorSql === undefined) return expression.sql;
+  if (expression.rowSql !== undefined) {
+    const value = expression.type === "unknown" ? sql`calculation.value::jsonb` : sql`calculation.value`;
+    return sql`(SELECT grids.require_valid_calculation(calculation.error, ${value}) FROM (${expression.rowSql}) calculation)`;
+  }
+  return sql`grids.require_valid_calculation(${expression.errorSql}, ${expression.type === "unknown" ? sql`(${expression.sql})::jsonb` : expression.sql})`;
+};
 
 export const formulaSqlOk = (sqlFragment: unknown, type: FormulaSqlType, errorSql?: unknown): FormulaSqlCompileResult => {
   const valueSql = errorSql === undefined ? sqlFragment : sql`CASE WHEN ${errorSql} THEN NULL ELSE ${sqlFragment} END`;

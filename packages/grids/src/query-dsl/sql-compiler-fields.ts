@@ -90,6 +90,8 @@ export const fieldProjection = (
   },
 ): { ok: true; projection: unknown; sqlType?: FormulaSqlType } | { ok: false; error: string } => {
   if (field.type === "object_list") {
+    const prepared = options?.computedFieldSql?.get(field.id);
+    if (prepared) return { ok: true, projection: requireValidCalculationSql(prepared), sqlType: prepared.type };
     const compiled = compileObjectListProjection(field, recordAlias, {
       dateConfig: options?.timeZone ? { timeZone: options.timeZone } : undefined,
     });

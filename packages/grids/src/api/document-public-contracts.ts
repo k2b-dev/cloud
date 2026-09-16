@@ -37,7 +37,7 @@ const DocumentShapeSchema = z
     tags: z.array(z.string()),
     createdBy: z.string().uuid().nullable(),
     renderer: PublicDocumentRendererSchema,
-    validationStatus: z.enum(["valid", "warning"]).nullable(),
+    validationStatus: z.enum(["valid", "warning", "unchecked"]).nullable(),
     artifacts: z.array(PublicDocumentArtifactSchema).min(1).max(8),
     primaryArtifactKey: PublicDocumentArtifactSchema.shape.key,
     sourceRecordCount: z.number().int().nonnegative().nullable(),

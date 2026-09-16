@@ -15,7 +15,7 @@ Nutze Vorlagen für formatierte, teilbare Ausgaben; CSV-/JSON-Exporte für den D
 
 Workflows erzeugen auch ein PDF aus mehreren Datensätzen, freie CSV-/JSON-/XML-Dateien, DATEV-Buchungsstapel und SEPA-Überweisungsdateien. Alles sind Dokumente, nicht nur PDFs. Kopf- und Spaltenzuordnung stehen unter [Workflows](/app/grids/help/grids-workflows).
 
-Die Finanz-Serialisierer verwenden stdlib 0.25.0. Grids verwaltet Rechte, erfasste Daten, IDs, Schutz vor Doppelexporten und Bestätigung. stdlib übernimmt Formatberechnung und Serialisierung. E-Rechnungs- und SEPA-XML werden zusätzlich zur Laufzeit gegen das festgelegte XSD geprüft. Beim erzeugten PDF wird die tatsächlich eingebettete XML gelesen und mit dem strukturierten Artefakt verglichen. Ein erfolgreicher Serialisierer allein belegt die Einbettung nicht. Der gesamte Geschäftsprozess wird damit nicht zertifiziert.
+Die Finanz-Serialisierer verwenden stdlib 0.25.0. Grids verwaltet Rechte, erfasste Daten, IDs, Schutz vor Doppelexporten und Bestätigung. stdlib übernimmt Formatberechnung und Serialisierung. Bei E-Rechnungen prüft Grids die Eingaben, erzeugt die XML und ruft Gotenberg einmal für das PDF mit Anhang auf. Die erzeugte XML wird zur Laufzeit nicht erneut gegen das XSD geprüft und das PDF nicht wieder geöffnet. Der Ausgabestatus lautet **Nicht geprüft** (`unchecked`); der Bericht benennt die nicht ausgeführten Prüfungen. Release-Tests prüfen das festgelegte XSD und vergleichen den tatsächlichen PDF-Anhang mit dem strukturierten Artefakt. Bei SEPA-XML bleibt die XSD-Prüfung zur Laufzeit erhalten. Der gesamte Geschäftsprozess wird damit nicht zertifiziert.
 
 Agents finden mit `document.templates` Vorlagen, lesen mit `document.list` und `document.read` gespeicherte Dokumente und stellen mit `document.create` ein Dokument für einen ausgewählten Record aus. Dafür sind Schreibzugriff, ein Idempotenzschlüssel und eine einzelne ausdrückliche Bestätigung nötig. Die Ausstellung ist nicht rückgängig zu machen und erlaubt keine dauerhafte Pauschalfreigabe. Der Download-Link benötigt weiterhin deine Berechtigungen; er erstellt keinen öffentlichen Freigabelink und versendet das Dokument nicht.
 
@@ -29,7 +29,7 @@ Eine Vorlage wählt einen Renderer aus. Der HTML-Renderer wandelt Liquid-HTML un
 
 Die Validierung belegt nur die technischen Prüfungen, die der gewählte Renderer und seine Version benennen. Sie ist keine allgemeine steuerliche, buchhalterische, Signatur-, Aufbewahrungs- oder Rechtskonformitätsentscheidung. Rufe mit `cld grids documents renderers --json` die verfügbaren Renderer einschließlich ihres `inputSchema` ab. `cld grids document-templates reference --json` liefert die Schemas zum Erstellen und Ändern von Vorlagen. Sie beschreiben die Eingabestruktur; die Vorschau prüft zusätzlich die inhaltlichen Regeln des Renderers.
 
-`de.zugferd.en16931@1` rendert EUR-Ausgangsrechnungen mit deutschen Adressen, Standard-Umsatzsteuer und Überweisung. Es erzeugt PDF/A-3b mit eingebetteter und separater `factur-x.xml`, prüft Einbettung und festgelegtes CII-XSD und verwendet exakte Dezimalstrings mit kaufmännischer Rundung (ZUGFeRD 2.5 / Factur-X 1.09 EN 16931). Nicht unterstützt: Korrekturen, Ersatzbelege, Eingangsrechnungen, Steuerbefreiungen, Zu-/Abschläge, Vorauszahlungen, Skonto, Selbstabrechnung und Meldungen. Der Aussteller prüft die Eignung; Grids bestätigt keine Rechtskonformität.
+`de.zugferd.en16931@1` rendert EUR-Ausgangsrechnungen mit deutschen Adressen, Standard-Umsatzsteuer und Überweisung. Es erzeugt PDF/A-3b mit eingebetteter und separater `factur-x.xml`, verwendet exakte Dezimalstrings mit kaufmännischer Rundung (ZUGFeRD 2.5 / Factur-X 1.09 EN 16931). Nicht unterstützt: Korrekturen, Ersatzbelege, Eingangsrechnungen, Steuerbefreiungen, Zu-/Abschläge, Vorauszahlungen, Skonto, Selbstabrechnung und Meldungen. Der Aussteller prüft die Eignung; Grids bestätigt keine Rechtskonformität.
 
 Version 2 (`de.zugferd.en16931@2`) rendert zusätzlich Rechnungskorrekturen mit Nummer und Datum der ursprünglichen Rechnung sowie einem Grund und Selbstabrechnungen mit einer Vereinbarungsreferenz. Belegart und Leistungsdatum müssen ausdrücklich angegeben werden. Mengen und Beträge bleiben positiv; die Belegart bestimmt, ob es eine Rechnung oder Korrektur ist. Bei Selbstabrechnungen bleibt der Verkäufer der Leistungserbringer und der Käufer der ausstellende Leistungsempfänger. Die Zahlungsdaten benennen das gewünschte Empfängerkonto; es wird nicht aus der Belegart abgeleitet.
 
@@ -46,13 +46,13 @@ selected record
   -> fill record values into the GQL source
   -> run the GQL query
   -> render the selected HTML or E-Invoice input
-  -> create and validate the artifacts
+  -> create the artifacts
   -> save the Document and source snapshot
 ```
 
 Lege Filterung, Sortierung, Joins, Gruppierung und Summen in GQL ab. Beschränke Liquid auf Formulierung und Seitenlayout.
 
-Wähle bei einer E-Rechnungsvorlage den Renderer aus und ordne die Vorschaudaten unter **Renderer-Eingabe** zu. Der Editor erwartet ein JSON-Objekt. Nutze für jeden eingesetzten Wert den Filter `json`, zum Beispiel `"buyerReference": {{ record.id | json }}`, damit Anführungszeichen und andere Zeichen gültiges JSON bleiben. Die Vorschau führt Validierung und PDF-Erzeugung dieses Renderers aus, bevor die Vorlage aktiviert wird.
+Wähle bei einer E-Rechnungsvorlage den Renderer aus und ordne die Vorschaudaten unter **Renderer-Eingabe** zu. Der Editor erwartet ein JSON-Objekt. Nutze für jeden eingesetzten Wert den Filter `json`, zum Beispiel `"buyerReference": {{ record.id | json }}`, damit Anführungszeichen und andere Zeichen gültiges JSON bleiben. Die Vorschau prüft die Eingaben und erzeugt das PDF, bevor die Vorlage aktiviert wird; sie zertifiziert die Ausgabe nicht.
 
 ## Erste Vorlage erstellen {icon="file-description"}
 

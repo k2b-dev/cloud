@@ -10,6 +10,7 @@ import { normalizeRefKey } from "../ref-syntax";
 import { compileDocumentQueryExpression, DOCUMENT_QUERY_FUNCTIONS } from "./document-query-expression";
 import { scalarSqlTypeForField, storageOf } from "./field-storage";
 import { finalizedFieldSql } from "./finalized-field-sql";
+import { formulaNumericAggregate, formulaNumericOperation, withFormulaErrors } from "./formula-numeric-sql";
 import { compileFormulaFunction } from "./formula-sql-functions";
 import {
   type FormulaSqlCompileResult,
@@ -28,7 +29,6 @@ import {
   formulaSqlOrErrors,
   joinFormulaSql,
 } from "./formula-sql-values";
-import { numericAverageSql, numericDivideSql } from "./numeric-division-sql";
 import { compileObjectListValue } from "./object-list-sql";
 import type { Field } from "./types";
 
@@ -93,7 +93,7 @@ const stageExpression = (result: FormulaSqlCompileResult, context: CompileContex
   if (!result.ok) return result;
   if (++context.budget.stages > MAX_SQL_STAGES) return formulaSqlFail("Formula SQL plan exceeds 800 calculation stages");
   const alias = sql.unsafe(`${context.recordAlias}_formula_${context.steps.length}`);
-  const value = result.expression;
+  const { rowSql, ...value } = result.expression;
   const live = sql`${sql.unsafe(context.recordAlias)}.finalized_at IS NULL`;
   const condition =
     liveOnly && context.useFinalizedFormulaValues !== false
@@ -101,10 +101,14 @@ const stageExpression = (result: FormulaSqlCompileResult, context: CompileContex
         ? live
         : sql`(${context.condition} AND ${live})`
       : context.condition;
-  context.steps.push(sql`CROSS JOIN LATERAL (SELECT
+  context.steps.push(
+    rowSql !== undefined && condition === undefined
+      ? sql`CROSS JOIN LATERAL (${rowSql}) ${alias}`
+      : sql`CROSS JOIN LATERAL (SELECT
     ${condition === undefined ? value.sql : sql`CASE WHEN ${condition} THEN ${value.sql} END`} AS value,
     ${condition === undefined ? (value.errorSql ?? sql`false`) : sql`CASE WHEN ${condition} THEN ${value.errorSql ?? sql`false`} ELSE false END`} AS error
-    OFFSET 0) ${alias}`);
+    OFFSET 0) ${alias}`,
+  );
   return {
     ok: true,
     expression: { ...value, sql: sql`${alias}.value`, ...(value.errorSql === undefined ? {} : { errorSql: sql`${alias}.error` }) },
@@ -119,6 +123,7 @@ const finishPlan = (result: FormulaSqlCompileResult, context: CompileContext): F
     ok: true,
     expression: {
       ...result.expression,
+      rowSql: sql`${withNamed} SELECT ${result.expression.sql} AS value, ${result.expression.errorSql ?? sql`false`} AS error ${from} OFFSET 0`,
       sql: sql`(${withNamed} SELECT ${result.expression.sql} ${from})`,
       ...(result.expression.errorSql === undefined ? {} : { errorSql: sql`(${withNamed} SELECT ${result.expression.errorSql} ${from})` }),
     },
@@ -138,10 +143,18 @@ const namedExpression = (
   if (!result.ok) return result;
   if (++context.budget.stages > MAX_SQL_STAGES) return formulaSqlFail("Formula SQL plan exceeds 800 calculation stages");
   const name = sql.unsafe(`${context.recordAlias}_named_${context.named.length}`);
-  context.named.push(sql`${name} AS MATERIALIZED (
+  context.named.push(
+    result.expression.rowSql !== undefined
+      ? sql`${name} AS MATERIALIZED (
+    SELECT calculation.value, calculation.error
+    FROM (SELECT 1) AS named_seed ${joinFormulaSql(local.steps, sql` `)}
+    CROSS JOIN LATERAL (${result.expression.rowSql}) calculation
+  )`
+      : sql`${name} AS MATERIALIZED (
     SELECT ${result.expression.sql} AS value, ${result.expression.errorSql ?? sql`false`} AS error
     FROM (SELECT 1) AS named_seed ${joinFormulaSql(local.steps, sql` `)}
-  )`);
+  )`,
+  );
   const reference = formulaSqlOk(
     sql`(SELECT value FROM ${name})`,
     result.expression.type,
@@ -283,29 +296,23 @@ const compileArithmetic = (op: ArithmeticOperator, left: FormulaSqlExpression, r
       const rightText = formulaSqlAsNullableText(right);
       const leftNumeric = formulaSqlAsNumeric(left);
       const rightNumeric = formulaSqlAsNumeric(right);
+      const added = formulaNumericOperation("+", leftNumeric, rightNumeric);
       return formulaSqlOk(
         sql`CASE
           WHEN ${leftText} IS NULL OR ${rightText} IS NULL THEN NULL::text
           WHEN ${leftNumeric} IS NOT NULL AND ${rightNumeric} IS NOT NULL
-            THEN trim_scale(${leftNumeric} + ${rightNumeric})::text
+            THEN trim_scale(${added.sql})::text
           ELSE ${leftText} || ${rightText}
         END`,
         "text",
-        inheritedError,
+        formulaSqlOrErrors([inheritedError, added.errorSql]),
       );
     }
-    return formulaSqlOk(sql`(${formulaSqlAsNumeric(left)} + ${formulaSqlAsNumeric(right)})`, "numeric", inheritedError);
   }
-  if (op === "-") return formulaSqlOk(sql`(${formulaSqlAsNumeric(left)} - ${formulaSqlAsNumeric(right)})`, "numeric", inheritedError);
-  if (op === "*") return formulaSqlOk(sql`(${formulaSqlAsNumeric(left)} * ${formulaSqlAsNumeric(right)})`, "numeric", inheritedError);
-  const leftSql = formulaSqlAsNumeric(left);
-  const rightSql = formulaSqlAsNumeric(right);
-  const ownError = sql`(${leftSql} IS NOT NULL AND ${rightSql} = 0)`;
-  const errorSql = formulaSqlOrErrors([inheritedError, ownError]);
-  if (op === "/") {
-    return formulaSqlOk(numericDivideSql(leftSql, rightSql), "numeric", errorSql);
-  }
-  return formulaSqlOk(sql`MOD(${leftSql}, NULLIF(${rightSql}, 0))`, "numeric", errorSql);
+  return {
+    ok: true,
+    expression: withFormulaErrors(formulaNumericOperation(op, formulaSqlAsNumeric(left), formulaSqlAsNumeric(right)), inheritedError),
+  };
 };
 
 const compileBinaryOperator = (
@@ -363,7 +370,7 @@ const compileFieldExpression = (expression: Extract<Expr, { kind: "field" }>, co
   if (typeof custom === "string") return formulaSqlFail(custom);
   if (custom) {
     if (custom.type === "json") return formulaSqlFail(formulaSelectText(context.dateConfig?.locale).nonScalar);
-    return namedExpression(`scope:${expression.fieldId}`, context, () => formulaSqlOk(custom.sql, custom.type, custom.errorSql));
+    return namedExpression(`scope:${expression.fieldId}`, context, () => ({ ok: true, expression: custom }));
   }
   const field = fieldByRef(context.fieldsByRef, expression.fieldId);
   if (typeof field === "string") return formulaSqlFail(field);
@@ -503,9 +510,29 @@ const compileListReduction = (fn: ListFormulaFunctionName, args: Expr[], context
     const aggregate = sql.unsafe(fn.slice("LIST_".length));
     const rows = sql`jsonb_array_elements(${source}) AS list_value(data)`;
     const numericValue = sql`grids.canonical_numeric(list_value.data->>${column.id})`;
-    const aggregateValue = fn === "LIST_AVG" ? numericAverageSql(numericValue) : sql`${aggregate}(${numericValue})`;
+    if (fn === "LIST_SUM" || fn === "LIST_AVG") {
+      const safeSource = sql`CASE WHEN ${source} IS NULL OR ${source} = 'null'::jsonb THEN '[]'::jsonb ELSE ${source} END`;
+      const reduced = stageExpression(
+        {
+          ok: true,
+          expression: formulaNumericAggregate(
+            fn.slice("LIST_".length),
+            sql`ARRAY(SELECT ${numericValue} FROM jsonb_array_elements(${safeSource}) AS list_value(data))`,
+            fn === "LIST_SUM",
+          ),
+        },
+        context,
+      );
+      if (!reduced.ok) return reduced;
+      return formulaSqlOk(
+        sql`CASE WHEN ${source} IS NULL OR ${source} = 'null'::jsonb THEN NULL ELSE ${reduced.expression.sql} END`,
+        "numeric",
+        formulaSqlAnyError([value.expression, reduced.expression]),
+      );
+    }
+    const aggregateValue = sql`${aggregate}(${numericValue})`;
     const aggregated = sql`(SELECT ${aggregateValue} FROM ${rows})`;
-    reduction = fn === "LIST_SUM" ? sql`COALESCE(${aggregated}, 0::numeric)` : aggregated;
+    reduction = aggregated;
   }
   return formulaSqlOk(
     sql`CASE WHEN ${source} IS NULL OR ${source} = 'null'::jsonb THEN NULL ELSE ${reduction} END`,
@@ -562,6 +589,18 @@ const compileNode = (expression: Expr, context: CompileContext): FormulaSqlCompi
 
 const compileExpression = (expression: Expr, context: CompileContext): FormulaSqlCompileResult => {
   const result = compileNode(expression, context);
+  // Ordinary numeric arithmetic needs no evaluation barrier. Keep barriers inside
+  // named formulas and conditional branches, where PostgreSQL must not eagerly
+  // evaluate an unused operand during planning.
+  if (
+    result.ok &&
+    result.expression.type === "numeric" &&
+    result.expression.errorSql === undefined &&
+    context.depth === 0 &&
+    context.condition === undefined &&
+    ((expression.kind === "binop" && ["+", "-", "*"].includes(expression.op)) || (expression.kind === "unop" && expression.op === "-"))
+  )
+    return result;
   // A named CTE can be planned even when never read. Keep its leaf operands
   // behind the same OFFSET 0 barrier so custom plans cannot fold failing calls.
   if ((expression.kind === "literal" || expression.kind === "field") && context.depth > 0) return stageExpression(result, context, true);

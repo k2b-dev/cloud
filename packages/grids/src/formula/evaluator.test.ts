@@ -232,6 +232,34 @@ test("date functions use the configured timezone for instants", () => {
   expect(run("NOW()", {}, ctx)).toBe("2026-05-01T22:30:00.000Z");
   expect(run("DAY('2026-05-01T22:30:00.000Z')", {}, ctx)).toBe(2);
 });
+test("DATEADD rejects unsupported calendar results while retaining ordinary and boundary dates", () => {
+  for (const unit of ["years", "months", "days", "hours", "minutes"]) {
+    for (const amount of ["1000000000000", "-1000000000000", `1${"0".repeat(400)}`]) {
+      const source = `DATEADD('2026-09-16', '${amount}', '${unit}')`;
+      expect(renderResult(run(source))).toBe("#DATEADD_OUT_OF_RANGE");
+      expect(run(`IFERROR(${source}, 'fallback')`)).toBe("fallback");
+    }
+  }
+  for (const source of [
+    "DATEADD('1000-01-01', -1, 'days')",
+    "DATEADD('9999-12-31', 1, 'days')",
+    "DATEADD('0999-12-31', 1, 'days')",
+    "DATEADD('0001-01-01', 1, 'days')",
+    "DATEADD('0099-12-31', 1, 'days')",
+    "DATEADD('9999-12-31T23:00:00Z', 1, 'hours')",
+  ])
+    expect(renderResult(run(source))).toBe("#DATEADD_OUT_OF_RANGE");
+  expect(run("DATEADD('2026-09-16', 30, 'days')")).toBe("2026-10-16");
+  expect(run("DATEADD('2026-09-16', ' 2 ', 'days')")).toBe("2026-09-18");
+  expect(run("DATEADD('2026-09-16', '2e1', 'days')")).toBe("2026-10-06");
+  expect(renderResult(run("DATEADD('2026-09-16', '1e400', 'days')"))).toBe("#DATEADD_OUT_OF_RANGE");
+  expect(run("DATEADD('2026-09-16', -5, 'years')")).toBe("2021-09-16");
+  expect(run("DATEADD('1000-01-31', 1, 'months')")).toBe("1000-02-28");
+  expect(run("DATEADD('1000-01-01', 8999, 'years')")).toBe("9999-01-01");
+  expect(run("DATEADD('9999-12-31', -8999, 'years')")).toBe("1000-12-31");
+  expect(run("DATEADD('2026-09-16', null, 'days')")).toBeNull();
+});
+
 test("DATEADD days", () => {
   expect(run("DATEADD('2026-05-02', 7, 'days')")).toBe("2026-05-09");
 });

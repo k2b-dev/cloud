@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { FORMULA_LIMITS, parseFormula } from "../formula/parser";
 import { normalizedSqlParts } from "../sql-test-utils";
 import { compileFormulaPredicateAstToSql, compileFormulaSourceToSql } from "./formula-sql-compiler";
+import { requireValidCalculationSql } from "./formula-sql-values";
 import type { Field } from "./types";
 
 test("SQL compilation rejects expressions beyond the shared complexity budget", () => {
@@ -53,6 +54,46 @@ const fields = [
 ];
 
 describe("compileFormulaSourceToSql", () => {
+  test("total unary numeric expressions stay scalar SQL without planning stages", () => {
+    const result = compileFormulaSourceToSql("-Price", { fields });
+    if (!result.ok) throw new Error(result.error);
+    const query = normalizedSqlParts(sql`SELECT ${requireValidCalculationSql(result.expression)}`);
+    expect(query.text).not.toContain("LATERAL");
+    expect(query.text).not.toContain("formula_seed");
+    expect(result.expression.errorSql).toBeUndefined();
+  });
+
+  test("fallible arithmetic evaluates each numeric helper once per stage", () => {
+    const result = compileFormulaSourceToSql("Price * Quantity + 0.20", { fields });
+    if (!result.ok) throw new Error(result.error);
+    const query = normalizedSqlParts(sql`SELECT ${requireValidCalculationSql(result.expression)}`);
+    expect(query.text.match(/grids\.try_formula_numeric\(/g)).toHaveLength(2);
+  });
+
+  test("query boundaries share the value and error calculation plan", () => {
+    const result = compileFormulaSourceToSql("Price / Quantity", { fields });
+    if (!result.ok) throw new Error(result.error);
+    const paired = normalizedSqlParts(sql`SELECT ${requireValidCalculationSql(result.expression)}`);
+    const separate = normalizedSqlParts(sql`SELECT ${result.expression.sql}, ${result.expression.errorSql}`);
+    expect(paired.text.match(/AS formula_seed/g)).toHaveLength(1);
+    expect(separate.text.match(/AS formula_seed/g)).toHaveLength(2);
+    expect(paired.text.length).toBeLessThan(separate.text.length);
+  });
+
+  test("a prepared formula retains its paired plan when referenced by another formula", () => {
+    const prepared = compileFormulaSourceToSql("Price / Quantity", { fields });
+    if (!prepared.ok) throw new Error(prepared.error);
+    const result = compileFormulaSourceToSql("Subtotal + Subtotal", {
+      fields,
+      computedFieldSql: new Map([["subtotal_id", prepared.expression]]),
+    });
+    if (!result.ok) throw new Error(result.error);
+    const query = normalizedSqlParts(sql`SELECT ${requireValidCalculationSql(result.expression)}`);
+    // One outer plan and one prepared dependency, shared by both references.
+    expect(query.text.match(/AS formula_seed/g)).toHaveLength(2);
+    expect(query.text.match(/AS MATERIALIZED/g)).toHaveLength(1);
+  });
+
   test("shared branch dependencies compile through eight levels", () => {
     const branches = Array.from({ length: 8 }, (_, index) =>
       field({

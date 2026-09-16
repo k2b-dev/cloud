@@ -3,12 +3,15 @@ import { sql } from "bun";
 import { postgresTest } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
+import { dslQueryCalculationFieldIds } from "../query-dsl/plan-dependencies";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { compileDslQueryPlanToSql } from "../query-dsl/sql-compiler";
 import { compileBaseFieldColumn } from "../query-dsl/sql-compiler-fields";
 import { buildComputedFieldSqlMap } from "../service/computed-projections";
+import { lockDurableHistoryMutationBoundary } from "../service/durable-history";
 import { listByTable } from "../service/field-read";
 import { requireValidCalculationSql } from "../service/formula-sql-values";
+import { compileLocalCalculationStorage } from "../service/local-calculation-storage";
 import { finalize } from "../service/record-finalization";
 import { get } from "../service/record-read";
 import { instantiateDefinition } from "../service/templates";
@@ -61,18 +64,23 @@ postgresTest("billing full GQL projection reuses compiled roots and preserves li
       return field;
     };
     const positions = fieldFor("positions");
-    const compile = async () => {
+    const compile = async (selection = "") => {
       const current = await listByTable(row.table_id);
       const context = {
         tables: [{ id: row.table_id, shortId: row.table_short_id, name: "Bills", kind: "table" as const }],
         fieldsByTableId: { [row.table_id]: current },
       };
-      const parsed = parseGridsQueryDsl(`from table {${row.table_short_id}}\nwhere record.id = '${row.short_id}'\nlimit 1`);
+      const parsed = parseGridsQueryDsl(
+        `from table {${row.table_short_id}} as bill\n${selection}\nwhere record.id = '${row.short_id}'\nlimit 1`,
+      );
       if (!parsed.ok) throw new Error("Invalid projection source");
       const resolved = resolveDslQueryToQueryPlan(parsed.ast, context);
       if (!resolved.ok) throw new Error("Invalid projection plan");
       const computedFieldSql = await buildComputedFieldSqlMap(current, {
+        fieldsByTableId: context.fieldsByTableId,
+        fieldIds: dslQueryCalculationFieldIds(resolved.plan, context.fieldsByTableId),
         requireCapturedValues: true,
+        useStoredLocalValues: true,
         authorizedTableIds: new Set([row.table_id]),
       });
       // Compare each actual projection to the existing typed root, not a fragile
@@ -80,7 +88,7 @@ postgresTest("billing full GQL projection reuses compiled roots and preserves li
       for (const [index, field] of current.entries()) {
         if (field.type !== "formula") continue;
         const root = computedFieldSql.get(field.id);
-        if (!root) throw new Error(`Missing compiled root ${field.name}`);
+        if (!root) continue;
         const column = compileBaseFieldColumn({ field, fields: current, recordAlias: "r", index, tableId: row.table_id, computedFieldSql });
         if (!column.ok) throw new Error(column.error);
         expect(normalizedSqlParts(sql`SELECT ${column.projection}`)).toEqual(
@@ -89,8 +97,25 @@ postgresTest("billing full GQL projection reuses compiled roots and preserves li
       }
       const compiled = compileDslQueryPlanToSql(resolved.plan, { fieldsByTableId: context.fieldsByTableId, computedFieldSql });
       if (!compiled.ok) throw new Error(compiled.error);
-      expect(compiled.query.columns).toHaveLength(6);
+      expect(compiled.query.columns).toHaveLength(selection ? 1 : 6);
       return compiled.query;
+    };
+    const grossQuery = await compile(`select {${fieldFor("gross").shortId}}`);
+    const grossSql = normalizedSqlParts(grossQuery.sql);
+    // The stored total is one JSON lookup with historical/error guards. Reading
+    // it must never reconstruct positions or inline its transitive formulas.
+    expect(grossSql.text.length).toBeLessThan(10_000);
+    expect(grossSql.values.length).toBeLessThan(100);
+    expect(grossSql.text).not.toContain("jsonb_array_elements(");
+    expect(grossSql.text).toContain("current_local_calculations");
+    const refreshDraft = async () => {
+      await sql.begin(async (tx) => {
+        await lockDurableHistoryMutationBoundary(tx, row.table_id);
+        const current = await listByTable(row.table_id, false, tx);
+        const values = compileLocalCalculationStorage(current);
+        await tx`UPDATE grids.records r SET local_calculations = ${values}
+          WHERE r.id = ${row.id}::uuid AND r.finalized_at IS NULL`;
+      });
     };
     const readProjection = async () => {
       const query = await compile();
@@ -112,8 +137,10 @@ postgresTest("billing full GQL projection reuses compiled roots and preserves li
     await sql`UPDATE grids.records SET data = jsonb_set(data, ${`{${positions.id}}`}::text[],
       ${[{ Label1: "Invalid", Unit01: ["C62"], Qty001: "not-a-number", Price1: "1", Vat001: ["vat019"] }]}::jsonb)
       WHERE id = ${row.id}::uuid`;
+    await refreshDraft();
     await expect(readProjection()).rejects.toThrow("grids: invalid calculation");
     await sql`UPDATE grids.records SET data = ${record.data}::jsonb WHERE id = ${row.id}::uuid`;
+    await refreshDraft();
     const frozen = await finalize({ tableId: row.table_id, recordId: row.id, actorId: null, origin: "direct" });
     if (!frozen.ok) throw new Error(frozen.error.message);
     expect(await readProjection()).toEqual(live);

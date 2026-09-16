@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { RenderHtmlToPdfResult } from "@k2b/cloud/services";
-import { wakeWorkflowRunsWaitingOn, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
+import { notifyWorkflowWorker, wakeWorkflowRunsWaitingOn } from "@k2b/cloud/workflows/store";
 import { type DateContext, err, fail, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { sql as defaultSql, type SQL } from "bun";
 import { z } from "zod";
@@ -766,7 +766,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         output?: Record<string, unknown>;
         primaryArtifact: PrimaryDocumentArtifact;
         artifacts: DocumentArtifactDraft[];
-        validationStatus: "valid" | "warning" | null;
+        validationStatus: "valid" | "warning" | "unchecked" | null;
         validationReport: Record<string, unknown> | null;
       };
       if (frozen.template.renderer.kind === "profile") {

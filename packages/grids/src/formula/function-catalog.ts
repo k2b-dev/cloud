@@ -382,7 +382,7 @@ const FORMULA_FUNCTION_DEFINITIONS = [
   {
     name: "DATEADD",
     signature: "DATEADD(date, count, unit?)",
-    description: "Add time to a date; the unit defaults to days.",
+    description: "Add time within years 1000–9999; the unit defaults to days.",
     args: [
       { label: "date", type: "date" },
       { label: "count", type: "number" },

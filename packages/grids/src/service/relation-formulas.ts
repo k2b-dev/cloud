@@ -78,9 +78,15 @@ const orderFormulasByDeps = (
 export const enrichRecordsWithFormulas = <T extends Pick<GridRecord, "data" | "fieldErrors"> & { finalizedAt?: string | null }>(
   records: T[],
   fields: Field[],
-  options: FormulaRuntimeContext & { skipFormulaFieldIds?: ReadonlySet<string>; useFinalizedFormulaValues?: boolean } = {},
+  options: FormulaRuntimeContext & {
+    skipFormulaFieldIds?: ReadonlySet<string>;
+    skipObjectListFieldIds?: ReadonlySet<string>;
+    useFinalizedFormulaValues?: boolean;
+  } = {},
 ): T[] => {
-  const objectLists = fields.filter((field) => !field.deletedAt && field.type === "object_list");
+  const objectLists = fields.filter(
+    (field) => !field.deletedAt && field.type === "object_list" && !options.skipObjectListFieldIds?.has(field.id),
+  );
   for (const record of records) {
     if (record.finalizedAt) continue;
     for (const field of objectLists) {

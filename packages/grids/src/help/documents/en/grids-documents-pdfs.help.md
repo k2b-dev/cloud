@@ -13,7 +13,7 @@ Use templates for formatted, shareable output; CSV/JSON exports for data exchang
 
 Workflows can also create one PDF from several Records, free CSV/JSON/XML, DATEV booking batches, and SEPA transfer files. All are Documents, not just PDFs. See [workflow outputs](/app/grids/help/grids-workflows) for header/mapping configuration.
 
-The financial serializers use stdlib 0.25.0. Grids owns permissions, captured inputs, IDs, duplicate-export claims and confirmation; stdlib owns format calculation and serialization. E-Invoice XML and SEPA XML also receive the format's pinned XSD validation at runtime. The generated PDF's actual embedded XML is read and compared with the structured artifact; a successful serializer alone does not prove the PDF contains it. This does not certify the whole business process.
+The financial serializers use stdlib 0.25.0. Grids owns permissions, captured inputs, IDs, duplicate-export claims and confirmation; stdlib owns format calculation and serialization. E-Invoice issuance validates its inputs, serializes XML, and makes one Gotenberg call to create the PDF with its attachment. It does not revalidate generated XML against XSD or reopen the PDF at runtime. Its output status is **Not checked** (`unchecked`); the report names the checks that were not run. Release tests check the pinned XSD and compare the actual PDF attachment with the structured artifact. SEPA XML retains runtime XSD validation. This does not certify the whole business process.
 
 ## One immutable Document model {icon="shield-check"}
 
@@ -25,11 +25,11 @@ Creation-only `issuancePolicy: "oncePerFinalizedRecord"` reuses frozen input, nu
 
 **Retry generation** locks original inputs and captured data; no live preview. For `repeatable`, **Start a new attempt** uses current data for another Document; check **All documents** first. Once-only issuance still reuses the original. Writers can manage existing links without an enabled template.
 
-A template selects one renderer. The HTML renderer turns Liquid HTML and CSS into a PDF. An installed E-Invoice renderer maps the selected record through Liquid JSON, then creates and validates the PDF and structured artifact together. The renderer changes the artifacts a Document contains, not the Document model or the way it is generated, listed, inspected, or downloaded.
+A template selects one renderer. The HTML renderer turns Liquid HTML and CSS into a PDF. An installed E-Invoice renderer maps the selected record through Liquid JSON, then creates the PDF and structured artifact together. The renderer changes the artifacts a Document contains, not the Document model or the way it is generated, listed, inspected, or downloaded.
 
 Validation proves only the technical checks named by the selected renderer and version. It is not a general tax, accounting, signature, custody, or legal-compliance decision. Use `cld grids documents renderers --json` to inspect the renderers available on this installation, including each renderer's `inputSchema`. `cld grids document-templates reference --json` provides the template create/update schemas. These describe structural inputs; preview also checks the renderer's semantic rules.
 
-`de.zugferd.en16931@1` renders outgoing EUR invoices for German seller/buyer addresses, standard VAT and bank transfer. It creates PDF/A-3b with embedded and separate `factur-x.xml`, verifies embedding and pinned CII XSD, and targets ZUGFeRD 2.5 / Factur-X 1.09 EN 16931 with exact decimal strings and half-up rounding. Unsupported: corrections, incoming invoices, exemptions, allowances, charges, prepayments, discounts, self-billing and filings. The issuer must verify suitability; Grids does not certify legal compliance.
+`de.zugferd.en16931@1` renders outgoing EUR invoices for German seller/buyer addresses, standard VAT and bank transfer. It creates PDF/A-3b with embedded and separate `factur-x.xml`, targets ZUGFeRD 2.5 / Factur-X 1.09 EN 16931 with exact decimal strings and half-up rounding. Unsupported: corrections, incoming invoices, exemptions, allowances, charges, prepayments, discounts, self-billing and filings. The issuer must verify suitability; Grids does not certify legal compliance.
 
 Version 2 (`de.zugferd.en16931@2`) additionally renders credit notes with an original invoice number, date and reason, and self-billing with an agreement reference. It requires an explicit document kind and service date. Quantities and amounts stay positive; the document kind determines whether it is an invoice or a credit. For self-billing, the seller remains the supplier and the buyer remains the customer issuing the document. Payment details identify the intended receiving account; they are not inferred from the document kind.
 
@@ -46,13 +46,13 @@ selected record
   -> fill record values into the GQL source
   -> run the GQL query
   -> render the selected HTML or E-Invoice input
-  -> create and validate the artifacts
+  -> create the artifacts
   -> save the Document and source snapshot
 ```
 
 Keep filtering, sorting, joins, grouping, and totals in GQL. Keep Liquid focused on wording and page layout.
 
-For an E-Invoice template, choose its renderer and map the preview data in **Renderer input**. The editor expects one JSON object. Use the `json` filter for every inserted value, for example `"buyerReference": {{ record.id | json }}`, so quotes and other characters remain valid JSON. Previewing runs that renderer's validation and PDF generation before the template is enabled.
+For an E-Invoice template, choose its renderer and map the preview data in **Renderer input**. The editor expects one JSON object. Use the `json` filter for every inserted value, for example `"buyerReference": {{ record.id | json }}`, so quotes and other characters remain valid JSON. Previewing checks the renderer's input and generates the PDF before the template is enabled; it does not certify the output.
 
 ## Create your first template {icon="file-description"}
 

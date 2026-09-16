@@ -6,7 +6,7 @@ import { containsDocumentMetadata } from "../service/document-query-expression";
 import { compileFilter, renderClause } from "../service/filter-compiler";
 import type { FormulaSqlExpression } from "../service/formula-sql-compiler";
 import { compileDslKeyset, type DslKeysetColumn } from "../service/keyset-compiler";
-import { compileRecordMetaFilter } from "../service/record-metadata";
+import { compileRecordMetaFilter, compileRecordScopeFilter } from "../service/record-metadata";
 import type { Field } from "../service/types";
 import type { DslOutputColumn, DslResolvedRelationJoin, DslResolvedSqlQueryPlan, DslResolvedSqlSort } from "./resolver";
 import {
@@ -23,7 +23,7 @@ import {
 import { joinFragments } from "./sql-compiler-fragments";
 import { compileRelationJoin } from "./sql-compiler-joins";
 import { compileViewSourceRecordScope, recordDeletedCondition, scopedFormulaResolverForPlan } from "./sql-compiler-scope";
-import { dslRecordRelation, dslRecordTableCondition, dslRelationValuesInRecordData } from "./sql-compiler-source";
+import { dslRecordRelation, dslRelationValuesInRecordData } from "./sql-compiler-source";
 import {
   type DslSqlCompiledQuery,
   type DslSqlCompileOptions,
@@ -362,7 +362,7 @@ export const compileDslQueryPlanToSql = (
   selectFragments.push(sort.keyset.select);
 
   const conditions: unknown[] = [
-    dslRecordTableCondition(plan.tableId, options),
+    compileRecordScopeFilter(plan.tableId),
     recordDeletedCondition(plan),
     renderClause(filter.clause, { relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" }),
     compileRecordMetaFilter(plan.query.recordMeta ?? null),
@@ -394,8 +394,6 @@ export const compileDslQueryPlanToSql = (
     sql: sql`
       SELECT ${joinFragments(selectFragments, sql`, `)}
       FROM ${dslRecordRelation(options)}
-      JOIN grids.tables t ON t.id = r.table_id AND t.id = ${plan.tableId}::uuid AND t.deleted_at IS NULL
-      JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
       ${joinFragments(joinSql, sql` `)}
       WHERE ${where}
       ORDER BY ${sort.keyset.orderBy}

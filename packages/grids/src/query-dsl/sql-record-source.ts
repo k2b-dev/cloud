@@ -1,12 +1,13 @@
 import { sql } from "bun";
 import type { FilterTree } from "../contracts";
 import type { SqlClient } from "../service/audit";
-import { buildComputedFieldSqlMap, buildFormulaSqlProjections } from "../service/computed-projections";
+import { buildComputedFieldSqlMap } from "../service/computed-projections";
 import { getActive } from "../service/federated-tables";
 import { listByTables } from "../service/field-read";
 import { storageOf } from "../service/field-storage";
 import { listByTable as listFields } from "../service/fields";
 import { type CompiledClause, compileFilter, renderClause } from "../service/filter-compiler";
+import { type FormulaSqlExpression, requireValidCalculationSql } from "../service/formula-sql-values";
 import { get as getTable } from "../service/tables";
 import type { Field } from "../service/types";
 import type { DslWherePredicate } from "./resolver";
@@ -156,7 +157,7 @@ const sourceFieldJson = (
   field: Field,
   config: Record<string, unknown>,
   recordAlias: string,
-  computed: Map<string, { sql: unknown }>,
+  computed: Map<string, FormulaSqlExpression>,
 ): unknown => {
   const descriptor = storageOf(field);
   if (field.type === "select") return mappedSelectValue(field, config, recordAlias);
@@ -168,6 +169,8 @@ const sourceFieldJson = (
         AND link.from_field_id = ${field.id}::uuid
     )`;
   }
+  const prepared = computed.get(field.id);
+  if (prepared) return sql`to_jsonb(${requireValidCalculationSql(prepared)})`;
   if (descriptor.kind === "json" || descriptor.kind === "jsonbArray") {
     return sql`${sql.unsafe(recordAlias)}.data->${field.id}`;
   }
@@ -189,10 +192,11 @@ const branchForSource = async (params: {
   pushdown?: PushdownInput;
 }): Promise<{ relation: unknown }> => {
   const sourceFieldsById = new Map(params.sourceFields.map((field) => [field.id, field]));
-  const computed = await buildComputedFieldSqlMap(params.sourceFields, { recordAlias: "source_record", client: params.client });
-  for (const projection of buildFormulaSqlProjections(params.sourceFields, { recordAlias: "source_record" })) {
-    if (projection.expr) computed.set(projection.fieldId, { sql: projection.expr, type: "unknown" });
-  }
+  const computed = await buildComputedFieldSqlMap(params.sourceFields, {
+    recordAlias: "source_record",
+    client: params.client,
+    useStoredLocalValues: true,
+  });
   const pairs: unknown[] = [];
   const sourceFieldByTargetId = new Map<string, Field>();
 

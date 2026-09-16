@@ -5,6 +5,7 @@ import { compileFilter, renderClause } from "../service/filter-compiler";
 import { compileFormulaPredicateAstToSql, type FormulaSqlType } from "../service/formula-sql-compiler";
 import { compileGroupQuery, type GroupHavingRef } from "../service/group-compiler";
 import { compileDslKeyset, type DslKeysetColumn } from "../service/keyset-compiler";
+import { compileRecordScopeFilter } from "../service/record-metadata";
 import { assertSqlIdentifier } from "../service/sql-ident";
 import type { DslResolvedSqlAggregation, DslResolvedSqlGroupBy, DslResolvedSqlQueryPlan } from "./resolver";
 import { aliveFields, fieldById } from "./sql-compiler-fields";
@@ -23,7 +24,7 @@ import {
 } from "./sql-compiler-grouping";
 import { compileRelationJoin } from "./sql-compiler-joins";
 import { compileViewSourceRecordScope, recordDeletedCondition, scopedFormulaResolverForPlan } from "./sql-compiler-scope";
-import { dslRecordRelation, dslRecordTableCondition, dslRelationValuesInRecordData } from "./sql-compiler-source";
+import { dslRecordRelation, dslRelationValuesInRecordData } from "./sql-compiler-source";
 import { type DslSqlCompileOptions, type DslSqlGroupCompileResult, type DslSqlGroupOutputColumn, dslSqlOffset } from "./sql-compiler-types";
 import { compileWherePredicate } from "./sql-compiler-where";
 
@@ -193,7 +194,7 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
   if (keyset && !keyset.ok) return failGroup(keyset.error);
 
   const conditions: unknown[] = [
-    dslRecordTableCondition(plan.tableId, options),
+    compileRecordScopeFilter(plan.tableId),
     recordDeletedCondition(plan),
     renderClause(filter.clause, { relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" }),
   ];
@@ -225,8 +226,6 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
   const groupedSql = sql`
     SELECT ${joinFragments(selectParts, sql`, `)}
     FROM ${dslRecordRelation(options)}
-      JOIN grids.tables t ON t.id = r.table_id AND t.id = ${plan.tableId}::uuid AND t.deleted_at IS NULL
-    JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
     ${joinFragments(joinSql, sql` `)}
     WHERE ${where}
     ${groupByClause}

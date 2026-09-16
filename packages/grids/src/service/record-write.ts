@@ -7,6 +7,8 @@ import { getGridsCrudMessages } from "./crud-messages";
 import { captureRecordRevision, lockDurableHistoryMutationBoundary, prepareRecordMutation } from "./durable-history";
 import { listByTable as listFields, materializeFieldDefault } from "./fields";
 import { generatedIdRequiresRetry, generateIdValue, isGeneratedIdUniqueCollision } from "./generated-ids";
+import { calculateLocalRecordValues } from "./local-calculation-storage";
+import { planLocalCalculations } from "./local-calculations";
 import { assertMutationAllowed, type MutationOrigin } from "./mutation-policy";
 import { bindFieldNumberAllocations } from "./number-series";
 import { requireStoredTableWritable } from "./parent-checks";
@@ -184,7 +186,8 @@ const loadStoredRecordForUpdate = async (
   `;
   if (!row) return null;
 
-  const record = mapRecordRow(row);
+  // Mutation comparisons and merges must use user inputs, never calculated list cells.
+  const record = mapRecordRow({ ...row, local_calculations: null });
   const relationFieldIds = fields.filter((field) => field.type === "relation").map((field) => field.id);
   if (relationFieldIds.length === 0) return record;
 
@@ -260,6 +263,7 @@ export const createInTransaction = async (
 
     split = splitRelationsFromData(validated.data, fields);
     const recordData = split.data;
+    const localCalculations = await calculateLocalRecordValues(client, fields, recordData);
     const preflight = await preflightRelationTargets(split.relations, fieldsById, client, opts.viewer, opts.locale);
     if (!preflight.ok) return preflight;
 
@@ -278,12 +282,13 @@ export const createInTransaction = async (
         client,
         "idx_grids_records_short_id",
         (attempt, shortId) => attempt<DbRow[]>`
-          INSERT INTO grids.records (id, short_id, table_id, data, version, created_by, updated_by)
+          INSERT INTO grids.records (id, short_id, table_id, data, local_calculations, version, created_by, updated_by)
           VALUES (
             ${id}::uuid,
             ${shortId},
             ${tableId}::uuid,
             ${recordData}::jsonb,
+            ${localCalculations}::jsonb,
             1,
             ${actorId}::uuid,
             ${actorId}::uuid
@@ -350,11 +355,16 @@ export const createInTransaction = async (
   const changedFieldIds = Object.keys(validated.data);
   const outboxId = row.outbox_id as string;
 
-  const record = mapRecordRow(row);
+  const record = mapRecordRow(row, opts.locale);
   for (const [fieldId, toIds] of split.relations) {
     record.data[fieldId] = toIds;
   }
-  enrichRecordsWithFormulas([record], fields, { dateConfig: opts.dateConfig });
+  const localPlan = planLocalCalculations(fields);
+  enrichRecordsWithFormulas([record], fields, {
+    dateConfig: opts.dateConfig,
+    skipFormulaFieldIds: localPlan.formulaIds,
+    skipObjectListFieldIds: localPlan.objectListIds,
+  });
 
   return ok({ record, changedFieldIds, outboxId });
 };
@@ -510,9 +520,11 @@ export const updateInTransaction = async (
     actorId,
   };
 
+  const localCalculations = await calculateLocalRecordValues(client, fields, merged);
   const [row] = await client<DbRow[]>`
       UPDATE grids.records
       SET data = ${merged}::jsonb,
+          local_calculations = ${localCalculations}::jsonb,
           version = version + 1,
           updated_by = ${actorId}::uuid,
           updated_at = now()
@@ -546,9 +558,14 @@ export const updateInTransaction = async (
   if (Object.keys(diff).length > 0) {
     await logAudit({ tableId, recordId, userId: actorId, action: "updated", diff, context: auditContext.data }, client);
   }
-  const record = mapRecordRow(row);
+  const record = mapRecordRow(row, opts.locale);
   for (const [fieldId, toIds] of split.relations) record.data[fieldId] = toIds;
-  enrichRecordsWithFormulas([record], fields, { dateConfig: opts.dateConfig });
+  const localPlan = planLocalCalculations(fields);
+  enrichRecordsWithFormulas([record], fields, {
+    dateConfig: opts.dateConfig,
+    skipFormulaFieldIds: localPlan.formulaIds,
+    skipObjectListFieldIds: localPlan.objectListIds,
+  });
   return ok({ record, outboxId: row.outbox_id as string });
 };
 

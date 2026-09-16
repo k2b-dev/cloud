@@ -3,7 +3,14 @@ import { sql } from "bun";
 import { migrate } from "../migrate";
 import { canonicalizeDslQuery } from "./canonical";
 import { parseGridsQueryDsl } from "./parser";
-import { cleanupFixture, ctx, insertDslDbFixture, postgresTest, preview } from "./sql-compiler.integration-fixtures";
+import {
+  cleanupFixture,
+  ctx,
+  insertDslDbFixture,
+  postgresTest,
+  preview,
+  refreshFixtureCalculations,
+} from "./sql-compiler.integration-fixtures";
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
@@ -16,6 +23,7 @@ postgresTest("query export predicates and canonical calculations never round exa
     await sql`UPDATE grids.records SET data = data || ${{ [amount.id]: "9007199254740993.42" }}::jsonb WHERE id = ${fixture.orderAId}::uuid`;
     await sql`UPDATE grids.records SET data = data || ${{ [amount.id]: "9007199254740992.42" }}::jsonb WHERE id = ${fixture.orderBId}::uuid`;
     await sql`UPDATE grids.records SET data = data || ${{ [fixture.customerScoreId]: "9007199254740993.42" }}::jsonb WHERE id = ${fixture.customerAId}::uuid`;
+    await refreshFixtureCalculations(fixture);
     for (const source of [
       "from table Orders\nselect Amount as exported_amount\nwhere Amount = 9007199254740993.42",
       "from table Orders\nselect Amount as exported_amount\nwhere oneof(Amount, 9007199254740993.42)",

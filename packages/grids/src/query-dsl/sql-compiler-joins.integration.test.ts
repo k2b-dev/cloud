@@ -11,6 +11,7 @@ import {
   postgresTest,
   preview,
   previewPage,
+  refreshFixtureCalculations,
   uuid,
 } from "./sql-compiler.integration-fixtures";
 
@@ -32,6 +33,7 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
           VALUES (${item.id}::uuid, ${item.shortId}, ${item.tableId}::uuid, ${item.name}, ${item.type}, '{}'::jsonb, 100)`;
       }
       await sql`UPDATE grids.records SET data = data || ${{ [people.id]: [{ type: "group", id: person }] }}::jsonb WHERE id = ${fixture.customerAId}::uuid`;
+      await refreshFixtureCalculations(fixture);
       const source = `join table Customers as customer on Customer = customer.id\nwhere oneof(customer.People, '${person}')`;
       expect((await preview(fixture, source)).rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
       expect((await preview(fixture, `${source}\naggregate sum(Amount) as total`)).rows).toHaveLength(1);
@@ -65,6 +67,7 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
             VALUES (${fixture.orderCId}::uuid, ${fixture.customerLinkId}::uuid, ${id}::uuid, ${index})`;
         }
       });
+      await refreshFixtureCalculations(fixture);
       const source = `from table Orders\njoin table Customers as customer on Customer = customer.id\nselect customer.Name as name, customer.Score as score`;
       const filtered = await preview(fixture, `${source}\nwhere customer.Name = 'Needle'`);
       expect(filtered.rows).toHaveLength(1);

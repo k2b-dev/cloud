@@ -18,6 +18,7 @@ import { buildRelationLabelCacheForIds, type ExpansionViewer } from "../service/
 import { compileSearchClause } from "../service/search";
 import type { DocumentTemplateAppData } from "../service/template-context";
 import type { Field } from "../service/types";
+import { dslQueryCalculationFieldIds } from "./plan-dependencies";
 import { type DslResolvedSqlQueryPlan, isDslAggregateOnlyPlan } from "./resolver";
 import { type DslResultCursor, encodeDslResultCursor } from "./result-cursor";
 import { collectDslPlanTableIds } from "./source-plan";
@@ -747,10 +748,17 @@ export const previewDslQuery = async (
       );
     }
     const computedDateConfig = options.timeZone ? { timeZone: options.timeZone } : undefined;
+    const calculationFieldIds = dslQueryCalculationFieldIds(plan, options.fieldsByTableId);
     const computedFieldSql = await buildComputedFieldSqlMap(options.fieldsByTableId[plan.tableId] ?? [], {
+      fieldIds: calculationFieldIds,
       fieldsByTableId: options.fieldsByTableId,
       requireCapturedValues: true,
       useFinalizedFormulaValues: recordSource?.kind !== "federated",
+      useStoredLocalValues: recordSource?.kind !== "federated",
+      finalizedOnly:
+        !plan.derivedViewSource &&
+        plan.query.recordMeta?.finalizationStates?.length === 1 &&
+        plan.query.recordMeta.finalizationStates[0] === "finalized",
       dateConfig: computedDateConfig,
       client: options.client,
       authorizedTableIds: authorizedComputedTableIds,
@@ -758,9 +766,14 @@ export const previewDslQuery = async (
     const computedFieldSqlByJoinAlias = new Map<string, Awaited<ReturnType<typeof buildComputedFieldSqlMap>>>();
     for (const join of plan.summaryJoins ?? []) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        fieldIds: calculationFieldIds,
         fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
         useFinalizedFormulaValues: true,
+        useStoredLocalValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
+        finalizedOnly:
+          join.source.query.recordMeta?.finalizationStates?.length === 1 &&
+          join.source.query.recordMeta.finalizationStates[0] === "finalized",
         dateConfig: computedDateConfig,
         client: options.client,
         authorizedTableIds: authorizedComputedTableIds,
@@ -769,9 +782,11 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        fieldIds: calculationFieldIds,
         fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
+        useStoredLocalValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
         client: options.client,
         recordAlias: dslJoinRecordAlias(index),
@@ -781,9 +796,11 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        fieldIds: calculationFieldIds,
         fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
+        useStoredLocalValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
         client: options.client,
         recordAlias: dslDerivedJoinRecordAlias(index),
@@ -793,9 +810,11 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.relationJoins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        fieldIds: calculationFieldIds,
         fieldsByTableId: options.fieldsByTableId,
         requireCapturedValues: true,
         useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
+        useStoredLocalValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
         dateConfig: computedDateConfig,
         client: options.client,
         recordAlias: dslJoinRecordAlias(index),

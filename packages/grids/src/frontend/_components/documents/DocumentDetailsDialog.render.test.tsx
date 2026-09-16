@@ -150,3 +150,15 @@ test("workflow documents do not invent record and template navigation", () => {
   expect(html).toContain("Data captured");
   expect(html).toContain("Download PDF");
 });
+
+test("unchecked output is shown neutrally without claiming validity or a warning", () => {
+  const html = renderToString(() =>
+    createComponent(DocumentDetailsDialog, {
+      args: { document: { ...document, validationStatus: "unchecked" }, canWrite: false, onDownload: () => {} },
+      close: () => {},
+    }),
+  );
+  expect(html).toContain("Not checked");
+  expect(html).not.toContain(">Valid<");
+  expect(html).not.toContain(">Warning<");
+});

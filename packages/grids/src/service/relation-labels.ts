@@ -5,6 +5,7 @@ import type { SqlClient } from "./audit";
 import { buildFormulaSqlProjections } from "./computed-projections";
 import { listByTable as listFields } from "./fields";
 import { parseJsonbRow } from "./jsonb";
+import { storedLocalCalculationSqlMap } from "./local-calculation-storage";
 import { liveRecordParentJoinSql } from "./parent-checks";
 import { type ExpansionViewer, resolveReadableTableIds } from "./relation-access";
 import { enrichRecordsWithFormulas } from "./relation-formulas";
@@ -129,11 +130,12 @@ export const lookupRecords = async (params: {
   const fields = params.labelSnapshot?.fields ?? (await listFields(params.targetTableId));
   const presentable = params.labelSnapshot?.presentable ?? relationLabelFields(fields);
   const searchTargets = presentable.filter((field) => LABEL_TEXT_TYPES.has(field.type));
-  const presentableIds = new Set(presentable.map((field) => field.id));
-  const formulaSearchTargets = buildFormulaSqlProjections(fields).filter(
-    (projection) => presentableIds.has(projection.fieldId) && projection.expr,
-  );
+  const presentableIds = new Set(presentable.filter((field) => field.type === "formula").map((field) => field.id));
   const tableKind = params.labelSnapshot?.tableKind ?? (await getTable(params.targetTableId))?.kind;
+  const formulaSearchTargets = buildFormulaSqlProjections(fields, {
+    useFinalizedFormulaValues: tableKind !== "federated",
+    computedFieldSql: tableKind === "stored" ? storedLocalCalculationSqlMap(fields) : undefined,
+  }).filter((projection) => presentableIds.has(projection.fieldId) && projection.expr);
   const recordSource = params.labelSnapshot
     ? params.labelSnapshot.recordSource
     : tableKind === "federated"

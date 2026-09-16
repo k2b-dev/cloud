@@ -3,7 +3,14 @@ import { sql } from "bun";
 import { migrate } from "../migrate";
 import { compileFormulaSourceToSql } from "../service/formula-sql-compiler";
 import { createDslScopedFormulaFieldResolver } from "./scoped-formula";
-import { cleanupFixture, field, insertDslDbFixture, postgresTest, preview } from "./sql-compiler.integration-fixtures";
+import {
+  cleanupFixture,
+  field,
+  insertDslDbFixture,
+  postgresTest,
+  preview,
+  refreshFixtureCalculations,
+} from "./sql-compiler.integration-fixtures";
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
@@ -30,6 +37,7 @@ postgresTest("joined list reductions use typed calculated cells and preserve fro
       VALUES (${list.id}::uuid, ${list.shortId}, ${list.tableId}::uuid, ${list.name}, ${list.type}, ${list.config}::jsonb)`;
     await sql`UPDATE grids.records SET data = data || ${{ [list.id]: [{ Amount: "0.15", Total1: "9.99" }] }}::jsonb
       WHERE id = ${fixture.customerAId}::uuid`;
+    await refreshFixtureCalculations(fixture);
     const source = `from table ${fixture.orders.shortId}
       join table ${fixture.customers.shortId} as customer on CUSTLx = customer.id`;
     const query = `${source}
@@ -60,6 +68,7 @@ postgresTest("joined list reductions use typed calculated cells and preserve fro
     expect(stored.total).toBe("9.99");
     await sql`UPDATE grids.records SET data = data || ${{ [list.id]: [{ Amount: "invalid" }] }}::jsonb
       WHERE id = ${fixture.customerAId}::uuid`;
+    await refreshFixtureCalculations(fixture);
     const calculationError = "This value could not be calculated. Check the formula and its input values.";
     await expect(preview(fixture, query)).rejects.toThrow(calculationError);
     await expect(preview(fixture, `${source}\n select customer.ITEMS1\n where customer.NAME1x = 'Alice'`)).rejects.toThrow(

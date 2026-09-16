@@ -25,6 +25,7 @@ import { isInvalidCalculationError } from "./formula-sql-values";
 import { compileGroupQuery, type GroupAggregationSpec, type GroupBucket, type GroupHavingRef } from "./group-compiler";
 import { enrichRecordsWithHtmlTemplates, type HtmlTemplateRenderBudget } from "./html-template-fields";
 import { parseJsonbRow } from "./jsonb";
+import { storedLocalCalculationSqlMap } from "./local-calculation-storage";
 import { withLookupTargetMetadata } from "./lookup-display";
 import { cleanRecordMeta, compileRecordMetaFilter, listRecordActors, recordMetaRequiresDeletedRows } from "./record-metadata";
 import { applyFinalizedComputedAccess, mapRecordRow } from "./record-persistence";
@@ -154,12 +155,23 @@ export const list = async (params: {
   // subqueries over record_links. Single source of truth, single
   // round-trip.
   const authorizedTableIds = await readableComputedTargetTableIds(fields, params.viewer);
-  const computed = await buildComputedProjections(fields, { authorizedTableIds, dateConfig: params.dateConfig });
-  const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: params.dateConfig, authorizedTableIds });
+  const computed = await buildComputedProjections(fields, {
+    authorizedTableIds,
+    dateConfig: params.dateConfig,
+    useStoredLocalValues: true,
+  });
   const computedFieldSql = await buildComputedFieldSqlMap(fields, {
+    useStoredLocalValues: true,
     authorizedTableIds,
     dateConfig: params.dateConfig,
     requireCapturedValues: true,
+  });
+  // Display can expose missing historical captures as field errors. Query
+  // predicates and aggregates retain the strict map above.
+  const formulaSql = buildFormulaSqlProjections(fields, {
+    dateConfig: params.dateConfig,
+    authorizedTableIds,
+    computedFieldSql: storedLocalCalculationSqlMap(fields, { authorizedTableIds }),
   });
   // View computed columns evaluate in SQL when projectable (one semantics with
   // GQL preview + formula fields); the JS evaluator below only fills the rest.
@@ -220,7 +232,7 @@ export const list = async (params: {
   if (!queried.ok) return queried;
   const rows = queried.data;
   const hasMore = rows.length > limit;
-  const items = rows.slice(0, limit).map(mapRecordRow);
+  const items = rows.slice(0, limit).map((row) => mapRecordRow(row));
 
   // Hydrate relation fields from record_links so the UI sees the link
   // arrays. Lookup/rollup values are already in the row via the
@@ -249,6 +261,7 @@ export const list = async (params: {
   enrichRecordsWithFormulas(items, fieldsWithLookupMeta, {
     dateConfig: params.dateConfig,
     skipFormulaFieldIds: new Set(formulaSql.map((projection) => projection.fieldId)),
+    skipObjectListFieldIds: new Set(formulaSql.map((projection) => projection.fieldId)),
   });
   enrichRecordsWithComputedColumns(items, fields, params.computedColumns, {
     dateConfig: params.dateConfig,
@@ -360,6 +373,7 @@ export const group = async (params: {
   const needsDeletedRows = recordMetaRequiresDeletedRows(params.recordMeta ?? null);
   const authorizedTableIds = await readableComputedTargetTableIds(fields, params.viewer);
   const computedFieldSql = await buildComputedFieldSqlMap(fields, {
+    useStoredLocalValues: true,
     authorizedTableIds,
     dateConfig: params.dateConfig,
     requireCapturedValues: true,
@@ -464,6 +478,7 @@ export const aggregate = async (params: {
   const fields = params.fields ?? (await listFields(params.tableId));
   const authorizedTableIds = await readableComputedTargetTableIds(fields, params.viewer);
   const computedFieldSql = await buildComputedFieldSqlMap(fields, {
+    useStoredLocalValues: true,
     authorizedTableIds,
     dateConfig: params.dateConfig,
     requireCapturedValues: true,

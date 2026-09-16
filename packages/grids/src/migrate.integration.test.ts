@@ -46,6 +46,33 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
 
 describe("grids schema migration", () => {
   postgresTest(
+    "adds unchecked output status on existing schemas and stays idempotent",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const constraint = async () => {
+          const [row] = await database<Array<{ definition: string }>>`
+          SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+          WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'`;
+          return row!.definition;
+        };
+        const current = await constraint();
+        expect(current).toContain("'unchecked'::text");
+        const previous = current.replace(", 'unchecked'::text", "");
+        await database`ALTER TABLE grids.documents DROP CONSTRAINT documents_renderer_chk`.simple();
+        await database.unsafe(`ALTER TABLE grids.documents ADD CONSTRAINT documents_renderer_chk ${previous}`);
+        await migrate(database);
+        expect(await constraint()).toBe(current);
+        const snapshot = await schemaSnapshot(database);
+        await migrate(database);
+        expect(await schemaSnapshot(database)).toEqual(snapshot);
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
     "defines issuance policy on fresh schema and preserves templates on repeated startup",
     async () => {
       await withIsolatedDatabase(async (database) => {

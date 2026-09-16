@@ -1,6 +1,8 @@
-import { dates } from "@k2b/stdlib";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
-import { type FormulaFunction, type FormulaRuntimeContext, formulaNumber } from "./function-runtime";
+import { dates } from "@k2b/stdlib";
+import { DATEADD_RANGE, MAX_DATEADD_AMOUNT } from "./date-range";
+import type { FormulaFunction, FormulaRuntimeContext } from "./function-runtime";
+import { FormulaDecimal, toDecimalValue, toNumber } from "./numeric";
 import { formulaError } from "./types";
 
 const DATE_LIKE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?)?$/;
@@ -12,10 +14,24 @@ type FormulaDateValue = { instant: Date; parts: FormulaDateParts; hasTime: boole
 
 const formulaTimeZone = (context: FormulaRuntimeContext): string => normalizeTimeZone(context.dateConfig?.timeZone, "UTC");
 const pad2 = (value: number): string => String(value).padStart(2, "0");
-const dateFromParts = (parts: FormulaDateParts): Date =>
-  new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second));
+const dateFromParts = (parts: FormulaDateParts): Date => {
+  const date = new Date(0);
+  date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  date.setUTCHours(parts.hour, parts.minute, parts.second, 0);
+  return date;
+};
+
+const dateAddCount = (value: unknown): InstanceType<typeof FormulaDecimal> | null => {
+  if (typeof value === "object" && value !== null && "amount" in value) return dateAddCount(value.amount);
+  if (typeof value === "string" && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) {
+    return new FormulaDecimal(value.trim()).trunc();
+  }
+  const number = toNumber(value);
+  return toDecimalValue(number)?.decimal.trunc() ?? null;
+};
 
 const isValidParts = (parts: FormulaDateParts): boolean => {
+  if (parts.year < 1) return false;
   const date = dateFromParts(parts);
   return (
     !Number.isNaN(date.getTime()) &&
@@ -123,9 +139,12 @@ export const DATE_FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
   DAY: ([value], context) => parseDateLike(value, context)?.parts.day ?? null,
   DATEADD: ([dateArg, count, unit], context) => {
     const date = parseDateLike(dateArg, context);
-    const numericAmount = formulaNumber(count);
-    const amount = numericAmount === null ? null : Math.trunc(numericAmount);
-    if (date === null || amount === null) return null;
+    const wholeAmount = dateAddCount(count);
+    if (date === null || !wholeAmount) return null;
+    if (date.parts.year < DATEADD_RANGE.minYear || date.parts.year > DATEADD_RANGE.maxYear || wholeAmount.abs().gt(MAX_DATEADD_AMOUNT)) {
+      return formulaError("DATEADD_OUT_OF_RANGE");
+    }
+    const amount = wholeAmount.toNumber();
     const normalizedUnit = String(unit ?? "days").toLowerCase();
     let parts: FormulaDateParts;
     if (normalizedUnit === "months" || normalizedUnit === "month") parts = addClampedMonths(date.parts, amount);
@@ -145,9 +164,14 @@ export const DATE_FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
         second: next.getUTCSeconds(),
       };
     }
+    if (!Number.isInteger(parts.year) || parts.year < DATEADD_RANGE.minYear || parts.year > DATEADD_RANGE.maxYear) {
+      return formulaError("DATEADD_OUT_OF_RANGE");
+    }
     const timeUnit = normalizedUnit === "hours" || normalizedUnit === "hour" || normalizedUnit === "minutes" || normalizedUnit === "minute";
     if (!date.instantBacked && !date.hasTime && !timeUnit) return dateKey(dateFromParts(parts));
-    return dates.zonedDateTimeToInstant(partsInput(parts), formulaTimeZone(context), { disambiguation: "compatible" });
+    const instant = dates.zonedDateTimeToInstant(partsInput(parts), formulaTimeZone(context), { disambiguation: "compatible" });
+    const utcYear = new Date(instant).getUTCFullYear();
+    return utcYear >= DATEADD_RANGE.minYear && utcYear <= DATEADD_RANGE.maxYear ? instant : formulaError("DATEADD_OUT_OF_RANGE");
   },
   DATEDIFF: ([from, to, unit], context) => {
     const left = parseDateLike(from, context);
@@ -155,8 +179,8 @@ export const DATE_FORMULA_FUNCTIONS: Record<string, FormulaFunction> = {
     if (left === null || right === null) return null;
     const normalizedUnit = String(unit ?? "days").toLowerCase();
     if (normalizedUnit === "days" || normalizedUnit === "day") {
-      const leftDay = Date.UTC(left.parts.year, left.parts.month - 1, left.parts.day);
-      const rightDay = Date.UTC(right.parts.year, right.parts.month - 1, right.parts.day);
+      const leftDay = dateFromParts({ ...left.parts, hour: 0, minute: 0, second: 0 }).getTime();
+      const rightDay = dateFromParts({ ...right.parts, hour: 0, minute: 0, second: 0 }).getTime();
       return Math.floor((rightDay - leftDay) / (1000 * 60 * 60 * 24));
     }
     const milliseconds = right.instant.getTime() - left.instant.getTime();

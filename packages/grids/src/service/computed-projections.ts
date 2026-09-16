@@ -16,6 +16,7 @@ import {
   type FormulaSqlType,
   MAX_FORMULA_INLINE_DEPTH,
 } from "./formula-sql-compiler";
+import { storedLocalCalculationSqlMap } from "./local-calculation-storage";
 import { numericAverageSql } from "./numeric-division-sql";
 import { liveRecordParentJoinSql } from "./parent-checks";
 import { type ExpansionViewer, resolveReadableTableIds } from "./relation-access";
@@ -46,6 +47,8 @@ import type { Field, GridRecord } from "./types";
 type ComputedProjectionOutputType = "text" | "numeric" | "decimal" | "int" | "date" | "timestamptz" | "boolean" | "json";
 
 export type ComputedProjection = {
+  /** An invalid calculated list still exposes its source cells for editing. */
+  preserveSourceOnError?: boolean;
   errorSql?: unknown;
   /** The lookup/rollup field whose value this projection produces. */
   fieldId: string;
@@ -116,6 +119,7 @@ const outputTypeForFormula = (type: FormulaSqlType): ComputedProjection["outputT
   if (type === "date") return "date";
   if (type === "datetime") return "timestamptz";
   if (type === "boolean") return "boolean";
+  if (type === "json") return "json";
   return "text";
 };
 
@@ -197,6 +201,8 @@ const lookupOutputType = (field: Field): ComputedProjectionOutputType => {
 };
 
 type ComputedOptions = {
+  /** Stored rows use transactionally materialized local calculations. Virtual rows stay live. */
+  useStoredLocalValues?: boolean;
   /** Query/export evaluation must not turn absent historical captures into incomplete totals. */
   requireCapturedValues?: boolean;
   client?: SqlClient;
@@ -245,13 +251,20 @@ const targetValue = async (
   outputType: ComputedProjectionOutputType;
 } | null> => {
   const descriptor = storageOf(field);
+  if (field.type === "object_list" && options.useStoredLocalValues) {
+    const fields = options.fieldsByTableId?.[field.tableId] ?? (await listByTable(field.tableId, false, options.client));
+    const prepared = storedLocalCalculationSqlMap(fields, { ...options, recordAlias: alias }).get(field.id);
+    if (prepared) return { ...prepared, outputType: "json" };
+  }
   if (field.type === "formula") {
     const fields = options.fieldsByTableId?.[field.tableId] ?? (await listByTable(field.tableId, false, options.client));
     const computedFieldSql = await buildComputedFieldSqlMap(fields, {
       ...options,
       recordAlias: alias,
-      fieldIds: formulaComputedDependencies(field, fields),
+      fieldIds: new Set([field.id, ...formulaComputedDependencies(field, fields)]),
     });
+    const prepared = computedFieldSql.get(field.id);
+    if (prepared) return { ...prepared, outputType: outputTypeForFormula(prepared.type) };
     const compiled = compileFormulaFieldToSql(field, {
       fields,
       recordAlias: alias,
@@ -462,17 +475,23 @@ export const buildComputedProjections = async (fields: Field[], options: Compute
  */
 export const buildComputedFieldSqlMap = async (
   fields: Field[],
-  options: ComputedOptions & { useFinalizedFormulaValues?: boolean } = {},
+  options: ComputedOptions & { useFinalizedFormulaValues?: boolean; finalizedOnly?: boolean } = {},
 ): Promise<Map<string, FormulaSqlExpression>> => {
   const projections = await buildComputedProjections(fields, options);
   const expressions = new Map<string, FormulaSqlExpression>(
     projections.map((p) => [p.fieldId, { sql: p.expr, errorSql: p.errorSql, type: computedOutputToFormulaType(p.outputType) }]),
   );
-  const dependencies = new Map(expressions);
+  const stored = options.useStoredLocalValues ? storedLocalCalculationSqlMap(fields, options) : new Map<string, FormulaSqlExpression>();
+  for (const [fieldId, expression] of stored) {
+    if (!options.fieldIds || options.fieldIds.has(fieldId)) expressions.set(fieldId, expression);
+  }
+  const dependencies = new Map([...expressions, ...stored]);
   // Reuse the same captured-value authorization in projections, predicates and
   // aggregates. Combined rows explicitly opt out of their own frozen formulas.
   for (const field of fields) {
     if (field.deletedAt || field.type !== "formula") continue;
+    if (options.fieldIds && !options.fieldIds.has(field.id)) continue;
+    if (stored.has(field.id)) continue;
     const compiled = compileFormulaFieldToSql(field, {
       fields,
       recordAlias: options.recordAlias,
@@ -484,6 +503,28 @@ export const buildComputedFieldSqlMap = async (
       computedFieldSql: dependencies,
     });
     if (compiled.ok) expressions.set(field.id, compiled.expression);
+  }
+  // A finalized-only source never consumes live calculations. Keep the row guard:
+  // PostgreSQL may evaluate expressions before applying the source predicate.
+  if (options.finalizedOnly && options.useFinalizedFormulaValues !== false) {
+    for (const [fieldId, expression] of expressions) {
+      const recordAlias = options.recordAlias ?? "r";
+      expressions.set(
+        fieldId,
+        expression.type === "json" || fields.some((field) => field.id === fieldId && field.type === "object_list")
+          ? {
+              type: "json",
+              sql: sql`CASE WHEN ${sql.unsafe(assertSqlIdentifier(recordAlias))}.finalized_at IS NOT NULL THEN ${capturedCalculationJsonSql(fieldId, recordAlias, options.requireCapturedValues, options.authorizedTableIds)} END`,
+            }
+          : finalizedFieldSql(
+              fieldId,
+              { type: expression.type, sql: sql`NULL` },
+              recordAlias,
+              options.authorizedTableIds,
+              options.requireCapturedValues,
+            ),
+      );
+    }
   }
   return expressions;
 };
@@ -501,6 +542,7 @@ export const buildFormulaSqlProjections = (
     now?: Date;
     recordAlias?: string;
     useFinalizedFormulaValues?: boolean;
+    computedFieldSql?: Map<string, FormulaSqlExpression>;
     authorizedTableIds?: ReadonlySet<string>;
   } = {},
 ): ComputedProjection[] => {
@@ -508,23 +550,29 @@ export const buildFormulaSqlProjections = (
   const now = options.now ?? new Date();
   const recordAlias = assertSqlIdentifier(options.recordAlias ?? "r");
   for (const field of fields) {
-    if (field.deletedAt || field.type !== "formula") continue;
+    if (field.deletedAt) continue;
+    const prepared = options.computedFieldSql?.get(field.id);
+    if (field.type !== "formula" && !(field.type === "object_list" && prepared)) continue;
     const expression = (field.config as { expression?: unknown }).expression;
-    if (typeof expression !== "string" || expression.trim().length === 0) continue;
-    const compiled = compileFormulaFieldToSql(field, {
-      fields,
-      recordAlias,
-      dateConfig: options.dateConfig,
-      now,
-      useFinalizedFormulaValues: options.useFinalizedFormulaValues,
-      authorizedTableIds: options.authorizedTableIds,
-    });
+    if (!prepared && (typeof expression !== "string" || expression.trim().length === 0)) continue;
+    const compiled = prepared
+      ? { ok: true as const, expression: prepared }
+      : compileFormulaFieldToSql(field, {
+          fields,
+          computedFieldSql: options.computedFieldSql,
+          recordAlias,
+          dateConfig: options.dateConfig,
+          now,
+          useFinalizedFormulaValues: options.useFinalizedFormulaValues,
+          authorizedTableIds: options.authorizedTableIds,
+        });
     if (!compiled.ok) continue;
     const alias = formulaAlias(field.id);
     out.push({
       fieldId: field.id,
       alias,
-      outputType: outputTypeForFormula(compiled.expression.type),
+      outputType: field.type === "object_list" ? "json" : outputTypeForFormula(compiled.expression.type),
+      preserveSourceOnError: field.type === "object_list",
       expr: compiled.expression.sql,
       errorSql: compiled.expression.errorSql,
       fragment: sql`${compiled.expression.sql} AS ${sql.unsafe(alias)}`,
@@ -623,7 +671,7 @@ export const applyComputedProjections = (
     if (!rec) continue;
     for (const p of projections) {
       if (p.errorSql !== undefined && row[`e_${p.alias}`] === true) {
-        rec.data[p.fieldId] = null;
+        if (!p.preserveSourceOnError) rec.data[p.fieldId] = null;
         rec.fieldErrors ??= {};
         rec.fieldErrors[p.fieldId] = getGridsCrudMessages(locale).calculationFailed;
         continue;

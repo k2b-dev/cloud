@@ -15,7 +15,7 @@ type DocumentProfileResult = {
   /** Derived machine-readable values, stored with the issued artifacts. */
   output?: Record<string, unknown>;
   artifacts: DocumentArtifactDraft[];
-  validationStatus: "valid" | "warning";
+  validationStatus: "valid" | "warning" | "unchecked";
   validationReport: Record<string, unknown>;
 };
 

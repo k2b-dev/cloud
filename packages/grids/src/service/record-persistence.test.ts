@@ -55,6 +55,21 @@ describe("record persistence", () => {
     });
   });
 
+  test("keeps failed list inputs editable and ignores draft calculations for finalized records", () => {
+    const row = {
+      data: { items: [{ price: "2" }], amount: "7" },
+      local_calculations: { values: { items: null, total: null, valid: "2.5" }, errors: { items: true, total: true, valid: false } },
+      created_at: new Date("2026-01-01"),
+      updated_at: new Date("2026-01-01"),
+    };
+    const draft = mapRecordRow(row);
+    expect(draft.data).toEqual({ items: [{ price: "2" }], amount: "7", total: null, valid: "2.5" });
+    expect(Object.keys(draft.fieldErrors ?? {}).sort()).toEqual(["items", "total"]);
+    const frozen = mapRecordRow({ ...row, finalized_at: new Date("2026-01-02") });
+    expect(frozen.data).toEqual(row.data);
+    expect(frozen.fieldErrors).toBeUndefined();
+  });
+
   test("separates live relation values from JSONB data", () => {
     const result = splitRelationsFromData({ title: "Book", authors: ["a", 42, "b"], owner: "c", deletedRelation: ["d"] }, [
       field("title", "text"),

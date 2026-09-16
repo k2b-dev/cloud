@@ -225,7 +225,10 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
             {(status) => (
               <div class="flex items-center gap-2 text-sm">
                 <span>{t().validation}</span>
-                <StatusBadge tone={status() === "valid" ? "ok" : "warning"} label={status() === "valid" ? t().valid : t().warning} />
+                <StatusBadge
+                  tone={status() === "unchecked" ? "neutral" : status() === "valid" ? "ok" : "warning"}
+                  label={status() === "unchecked" ? t().unchecked : status() === "valid" ? t().valid : t().warning}
+                />
               </div>
             )}
           </Show>

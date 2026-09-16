@@ -37,7 +37,7 @@ export const persistIssuedDocument = async (
       output?: Record<string, unknown>;
       sha256: string;
       validatorVersion: string;
-      validationStatus: "valid" | "warning";
+      validationStatus: "valid" | "warning" | "unchecked";
       validationReport: Record<string, unknown>;
     } | null;
     primary: DocumentArtifactDraft;

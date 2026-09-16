@@ -97,7 +97,7 @@ const loadLatestRows = async (
     LIMIT 5
   `;
 
-  const items = rows.map(mapRecordRow);
+  const items = rows.map((row) => mapRecordRow(row));
   await hydrateRelationsFromLinks(items, fields, options.viewer);
   const recordsById = new Map(items.map((record) => [record.id, record]));
   applyComputedProjections(rows, recordsById, computed, options.dateConfig?.locale);

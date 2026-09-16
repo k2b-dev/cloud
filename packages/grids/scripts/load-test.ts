@@ -5,12 +5,14 @@ import { accounts, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud
 import { sql } from "bun";
 import { migrate } from "../src/migrate";
 import { gridsService } from "../src/service";
+import { lockDurableHistoryMutationBoundary } from "../src/service/durable-history";
 import {
   dropOrphanedFieldIndexes,
   ensureFieldIndex,
   fieldPerformanceIndexName,
   fieldReverseSortIndexName,
 } from "../src/service/field-indexes";
+import { refreshLocalCalculations } from "../src/service/local-calculation-storage";
 import {
   buildLoadReport,
   LOAD_FIXTURE_MARKER,
@@ -176,6 +178,10 @@ const seedRecords = async (manifest: LoadManifest, categoryIds: string[], locati
     `;
     process.stdout.write(`\rSeeded ${last.toLocaleString("en-US")}/${manifest.rows.toLocaleString("en-US")} records`);
   }
+  await sql.begin(async (tx) => {
+    await lockDurableHistoryMutationBoundary(tx, manifest.internal.tables.items);
+    await refreshLocalCalculations(tx, manifest.internal.tables.items);
+  });
   process.stdout.write("\n");
   await sql`ANALYZE grids.records`;
   await sql`ANALYZE grids.record_links`;

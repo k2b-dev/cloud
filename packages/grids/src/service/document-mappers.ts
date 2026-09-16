@@ -144,7 +144,10 @@ export const mapDocumentSummary = (row: DocumentDbRow, artifacts: DocumentArtifa
       typeof row.profile_id === "string" && typeof row.profile_version === "number"
         ? { id: row.profile_id, version: row.profile_version }
         : null,
-    validationStatus: row.validation_status === "valid" || row.validation_status === "warning" ? row.validation_status : null,
+    validationStatus:
+      row.validation_status === "valid" || row.validation_status === "warning" || row.validation_status === "unchecked"
+        ? row.validation_status
+        : null,
     createdBy: (row.created_by as string | null) ?? null,
     createdAt: (row.created_at as Date).toISOString(),
   };

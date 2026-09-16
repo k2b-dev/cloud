@@ -33,7 +33,6 @@ postgresTest(
     const checkpoint = (phase: string) => console.info(`[billing app] ${phase}: ${Math.round(performance.now() - startedAt)}ms`);
     const profile = createGermanBillingProfile({
       render: async ({ xml }) => ({ pdf: new TextEncoder().encode(`%PDF-TEST\n${xml}`) }),
-      extractEmbedded: async (pdf) => ({ filename: "factur-x.xml", xml: new TextDecoder().decode(pdf).slice("%PDF-TEST\n".length) }),
     });
     const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
     try {

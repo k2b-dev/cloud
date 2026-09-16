@@ -6,6 +6,7 @@ import type { SqlClient } from "./audit";
 import { runBoundedQuery } from "./bounded-query";
 import {
   applyComputedProjections,
+  buildComputedFieldSqlMap,
   buildComputedProjections,
   buildFormulaSqlProjections,
   type ComputedProjection,
@@ -116,10 +117,21 @@ const prepareFormulaLookupPlan = async (
     const targetFields = await listFields(targetTableId, false, client);
     const authorizedNestedTableIds = await readableComputedTargetTableIds(targetFields, viewer, authorizeComputedTable, client);
     const targetComputed = await buildComputedProjections(targetFields, {
+      useStoredLocalValues: true,
       client,
       authorizedTableIds: authorizedNestedTableIds,
     });
-    const targetFormulaSql = buildFormulaSqlProjections(targetFields, { dateConfig, authorizedTableIds: authorizedNestedTableIds });
+    const computedFieldSql = await buildComputedFieldSqlMap(targetFields, {
+      client,
+      dateConfig,
+      authorizedTableIds: authorizedNestedTableIds,
+      useStoredLocalValues: true,
+    });
+    const targetFormulaSql = buildFormulaSqlProjections(targetFields, {
+      dateConfig,
+      authorizedTableIds: authorizedNestedTableIds,
+      computedFieldSql,
+    });
     const targetProjections = [...targetComputed, ...targetFormulaSql];
     targets.set(targetTableId, {
       authorizedTableIds: authorizedNestedTableIds,
@@ -168,7 +180,7 @@ const enrichFormulaLookupsWithPlan = async (
         ? await runBoundedQuery<DbRow>(query, options.queryTimeoutMs ?? 5_000, options.signal, undefined, options.client)
         : await query;
     options.signal?.throwIfAborted();
-    const targetRecords = rows.map(mapRecordRow);
+    const targetRecords = rows.map((row) => mapRecordRow(row));
     await hydrateRelationsFromLinks(targetRecords, target.fields, plan.viewer, options);
     const recordsById = new Map(targetRecords.map((record) => [record.id, record]));
     applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, target.projections, options.dateConfig?.locale);
@@ -176,6 +188,7 @@ const enrichFormulaLookupsWithPlan = async (
     enrichRecordsWithFormulas(targetRecords, target.fields, {
       dateConfig: options.dateConfig,
       skipFormulaFieldIds: target.formulaFieldIds,
+      skipObjectListFieldIds: target.formulaFieldIds,
     });
     targetsByTable.set(tableId, recordsById);
   }
@@ -266,7 +279,7 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
         ? await runBoundedQuery<DbRow>(query, opts.queryTimeoutMs ?? 5_000, opts.signal, undefined, opts.client)
         : await query;
     opts.signal?.throwIfAborted();
-    const records = rows.map(mapRecordRow);
+    const records = rows.map((row) => mapRecordRow(row));
     const recordsById = new Map(records.map((record) => [record.id, record]));
     applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, formulaSql, opts.dateConfig?.locale);
     enrichRecordsWithFormulas(records, fieldsWithLookupMeta, {
@@ -297,11 +310,22 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
   const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, opts.viewer, opts.authorizeComputedTable, client);
   const buildLivePlan = async () => {
     const computed = await buildComputedProjections(fields, {
+      useStoredLocalValues: true,
       authorizedTableIds: authorizedTargetTableIds,
       client,
       dateConfig: opts.dateConfig,
     });
-    const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig, authorizedTableIds: authorizedTargetTableIds });
+    const computedFieldSql = await buildComputedFieldSqlMap(fields, {
+      client,
+      dateConfig: opts.dateConfig,
+      authorizedTableIds: authorizedTargetTableIds,
+      useStoredLocalValues: true,
+    });
+    const formulaSql = buildFormulaSqlProjections(fields, {
+      dateConfig: opts.dateConfig,
+      authorizedTableIds: authorizedTargetTableIds,
+      computedFieldSql,
+    });
     const projections = [...computed, ...formulaSql];
     const projectionFragments = projectionFragmentsFor(projections);
     const formulaFieldIds = new Set(formulaSql.map((projection) => projection.fieldId));
@@ -342,15 +366,16 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
     // between the two statements without combining different row versions.
     const initialRows = await readRows(recordIds, sql``);
     const draftIds = initialRows.flatMap((row) => (!row.finalized_at && typeof row.id === "string" ? [row.id] : []));
-    if (draftIds.length > 0 && !livePlan) livePlan = buildLivePlan().catch((error) => {
-      livePlan = undefined;
-      throw error;
-    });
+    if (draftIds.length > 0 && !livePlan)
+      livePlan = buildLivePlan().catch((error) => {
+        livePlan = undefined;
+        throw error;
+      });
     const plan = draftIds.length > 0 && livePlan ? await livePlan : null;
     const projectedRows = plan ? await readRows(draftIds, plan.projectionFragments) : [];
     const rows = [...initialRows.filter((row) => row.finalized_at), ...projectedRows];
     opts.signal?.throwIfAborted();
-    const records = rows.map(mapRecordRow);
+    const records = rows.map((row) => mapRecordRow(row));
     await hydrateRelationsFromLinks(records, fields, opts.viewer, {
       client,
       signal: opts.signal,
@@ -373,6 +398,7 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
       enrichRecordsWithFormulas(liveRecords, fieldsWithLookupMeta, {
         dateConfig: opts.dateConfig,
         skipFormulaFieldIds: plan.formulaFieldIds,
+        skipObjectListFieldIds: plan.formulaFieldIds,
       });
     await enrichRecordsWithHtmlTemplates(records, fieldsWithLookupMeta, {
       client,

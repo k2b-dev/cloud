@@ -1,9 +1,9 @@
 import { sql as defaultSql, type SQL } from "bun";
 
-// Current Grids schema only. Existing installations must be reset before adopting
-// this definition; startup never converts data or repairs historical schemas.
-// IF NOT EXISTS does not reconcile existing columns or constraints. Future
-// schema changes need explicit, idempotent steps here, not just edited CREATEs.
+// Current Grids schema plus explicit, one-way upgrades from the preceding schema.
+// IF NOT EXISTS does not reconcile existing columns or constraints. Schema
+// changes need idempotent steps here, not just edited CREATEs. Local calculations
+// are populated transactionally before this schema becomes available to readers.
 const defineSchema = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE SCHEMA IF NOT EXISTS grids
@@ -281,6 +281,48 @@ const defineSchema = async (sql: SQL): Promise<void> => {
      IMMUTABLE STRICT
     AS $function$
         BEGIN RETURN t::numeric; EXCEPTION WHEN others THEN RETURN NULL; END $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.try_formula_numeric(operation text, a numeric, b numeric)
+     RETURNS numeric LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+    AS $function$
+        BEGIN
+          IF a IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+            OR b IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) THEN RETURN NULL; END IF;
+          CASE operation
+            WHEN '+' THEN RETURN a + b;
+            WHEN '-' THEN RETURN a - b;
+            WHEN '*' THEN RETURN a * b;
+            WHEN '/' THEN RETURN trim_scale(a) / trim_scale(b);
+            WHEN '%' THEN RETURN mod(a, b);
+            WHEN 'round' THEN RETURN round(a, b::integer);
+            WHEN 'floor' THEN RETURN floor(a);
+            WHEN 'ceil' THEN RETURN ceil(a);
+            WHEN 'percent' THEN RETURN (trim_scale(a) / trim_scale(b)) * 100;
+            ELSE RAISE EXCEPTION 'Unknown formula numeric operation: %', operation;
+          END CASE;
+        EXCEPTION WHEN numeric_value_out_of_range OR division_by_zero THEN RETURN NULL;
+        END $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.try_formula_numeric_aggregate(operation text, items numeric[])
+     RETURNS numeric LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+    AS $function$
+        DECLARE result numeric;
+        BEGIN
+          IF items && ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric] THEN RETURN NULL; END IF;
+          CASE operation
+            WHEN 'SUM' THEN SELECT sum(value) INTO result FROM unnest(items) AS item(value);
+            WHEN 'AVG' THEN SELECT trim_scale(sum(value)) / NULLIF(count(value), 0) INTO result FROM unnest(items) AS item(value);
+            WHEN 'MEDIAN' THEN SELECT CASE WHEN count(value) % 2 = 1
+              THEN percentile_disc(0.5) WITHIN GROUP (ORDER BY value ASC)
+              ELSE (percentile_disc(0.5) WITHIN GROUP (ORDER BY value ASC) + percentile_disc(0.5) WITHIN GROUP (ORDER BY value DESC)) / 2 END
+              INTO result FROM unnest(items) AS item(value) WHERE value IS NOT NULL;
+            ELSE RAISE EXCEPTION 'Unknown formula numeric aggregate: %', operation;
+          END CASE;
+          RETURN result;
+        EXCEPTION WHEN numeric_value_out_of_range OR division_by_zero THEN RETURN NULL;
+        END $function$
   `.simple();
   await sql`
     CREATE OR REPLACE FUNCTION grids.try_numeric_power(base numeric, exponent numeric)
@@ -1380,6 +1422,7 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       short_id text NOT NULL,
       table_id uuid NOT NULL,
       data jsonb DEFAULT '{}'::jsonb NOT NULL,
+      local_calculations jsonb DEFAULT '{}'::jsonb NOT NULL,
       version integer DEFAULT 1 NOT NULL,
       deleted_at timestamp with time zone,
       created_by uuid,
@@ -1401,6 +1444,34 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       CONSTRAINT records_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
     )
   `.simple();
+  await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS local_calculations jsonb NOT NULL DEFAULT '{}'::jsonb`.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.current_local_calculations(value jsonb, expected_signature text, field_id text)
+    RETURNS jsonb LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $function$
+    BEGIN
+      IF value->>'signature' IS DISTINCT FROM expected_signature
+        OR NOT COALESCE((value->'values') ? field_id, false)
+        OR jsonb_typeof(value->'errors'->field_id) IS DISTINCT FROM 'boolean' THEN
+        RAISE EXCEPTION 'grids: stale local calculation';
+      END IF;
+      RETURN value;
+    END;
+    $function$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.invalidate_local_calculations()
+    RETURNS trigger LANGUAGE plpgsql AS $function$
+    BEGIN
+      IF NEW.finalized_at IS NULL AND NEW.local_calculations->>'inputs' IS DISTINCT FROM md5(NEW.data::text) THEN
+        NEW.local_calculations := '{}'::jsonb;
+      END IF;
+      RETURN NEW;
+    END;
+    $function$
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS record_local_calculations ON grids.records`.simple();
+  await sql`CREATE TRIGGER record_local_calculations BEFORE INSERT OR UPDATE OF data, local_calculations
+    ON grids.records FOR EACH ROW EXECUTE FUNCTION grids.invalidate_local_calculations()`.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_records_id_table ON grids.records USING btree (id, table_id)
   `.simple();
@@ -1674,7 +1745,7 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       CONSTRAINT documents_query_data_binding_fkey FOREIGN KEY (query_data_id, workflow_run_id) REFERENCES grids.workflow_query_data(id, run_id) ON DELETE RESTRICT,
       CONSTRAINT documents_query_source_chk CHECK (((query_data_id IS NULL) OR ((template_id IS NULL) AND (workflow_run_id IS NOT NULL)))),
       CONSTRAINT documents_render_data_object_chk CHECK ((jsonb_typeof(render_data) = 'object'::text)),
-      CONSTRAINT documents_renderer_chk CHECK ((((renderer_kind = 'html'::text) AND (profile_id IS NULL) AND (profile_version IS NULL) AND (profile_snapshot IS NULL) AND (snapshot_sha256 IS NULL) AND (validator_version IS NULL) AND (validation_status IS NULL) AND (validation_report IS NULL)) OR ((renderer_kind = 'profile'::text) AND (profile_id IS NOT NULL) AND (profile_version > 0) AND (jsonb_typeof(profile_snapshot) = 'object'::text) AND (snapshot_sha256 ~ '^[a-f0-9]{64}$'::text) AND (validator_version IS NOT NULL) AND (validation_status = ANY (ARRAY['valid'::text, 'warning'::text])) AND (jsonb_typeof(validation_report) = 'object'::text)))),
+      CONSTRAINT documents_renderer_chk CHECK ((((renderer_kind = 'html'::text) AND (profile_id IS NULL) AND (profile_version IS NULL) AND (profile_snapshot IS NULL) AND (snapshot_sha256 IS NULL) AND (validator_version IS NULL) AND (validation_status IS NULL) AND (validation_report IS NULL)) OR ((renderer_kind = 'profile'::text) AND (profile_id IS NOT NULL) AND (profile_version > 0) AND (jsonb_typeof(profile_snapshot) = 'object'::text) AND (snapshot_sha256 ~ '^[a-f0-9]{64}$'::text) AND (validator_version IS NOT NULL) AND (validation_status = ANY (ARRAY['valid'::text, 'warning'::text, 'unchecked'::text])) AND (jsonb_typeof(validation_report) = 'object'::text)))),
       CONSTRAINT documents_renderer_kind_chk CHECK ((renderer_kind = ANY (ARRAY['html'::text, 'profile'::text]))),
       CONSTRAINT documents_short_id_format_chk CHECK ((short_id ~ '^[A-Za-z0-9]{6}$'::text)),
       CONSTRAINT documents_snapshot_binding_fkey FOREIGN KEY (snapshot_id, base_id, table_id, record_id) REFERENCES grids.record_snapshots(id, base_id, table_id, record_id) ON DELETE RESTRICT,
@@ -1688,6 +1759,16 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       CONSTRAINT documents_workflow_pair_chk CHECK (((workflow_run_id IS NULL) = (workflow_step_key IS NULL)))
     )
   `.simple();
+  // Existing immutable evidence retains its original status and report.
+  await sql`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
+        AND position('unchecked' in pg_get_constraintdef(oid)) > 0) THEN
+      ALTER TABLE grids.documents DROP CONSTRAINT IF EXISTS documents_renderer_chk;
+      ALTER TABLE grids.documents ADD CONSTRAINT documents_renderer_chk CHECK ((((renderer_kind = 'html'::text) AND (profile_id IS NULL) AND (profile_version IS NULL) AND (profile_snapshot IS NULL) AND (snapshot_sha256 IS NULL) AND (validator_version IS NULL) AND (validation_status IS NULL) AND (validation_report IS NULL)) OR ((renderer_kind = 'profile'::text) AND (profile_id IS NOT NULL) AND (profile_version > 0) AND (jsonb_typeof(profile_snapshot) = 'object'::text) AND (snapshot_sha256 ~ '^[a-f0-9]{64}$'::text) AND (validator_version IS NOT NULL) AND (validation_status = ANY (ARRAY['valid'::text, 'warning'::text, 'unchecked'::text])) AND (jsonb_typeof(validation_report) = 'object'::text))));
+    END IF;
+  END $$`.simple();
+
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_documents_record ON grids.documents USING btree (table_id, record_id, created_at DESC)
   `.simple();
@@ -2015,7 +2096,16 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await assertWorkflowKernelReady(connection);
     await connection`BEGIN`.simple();
     transactionStarted = true;
+    // Writers acquire parent locks before touching records. Match that order
+    // before DDL takes an exclusive records lock, including during a restart.
+    const [existing] = await connection<Array<{ present: boolean }>>`SELECT to_regclass('grids.tables') IS NOT NULL AS present`;
+    if (existing?.present) await connection`SELECT id FROM grids.tables ORDER BY id FOR UPDATE`;
     await defineSchema(connection);
+    // One-way population of the current representation; reads never fall back
+    // to the old read-time calculation path for missing materializations.
+    const { refreshLocalCalculations } = await import("./service/local-calculation-storage");
+    const tables = await connection<Array<{ id: string }>>`SELECT id::text FROM grids.tables WHERE kind = 'stored' ORDER BY id FOR UPDATE`;
+    for (const table of tables) await refreshLocalCalculations(connection, table.id);
     await connection`COMMIT`.simple();
     transactionStarted = false;
   } catch (error) {

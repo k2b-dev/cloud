@@ -11,12 +11,14 @@ Erstelle ein **Formelfeld**, wenn das Ergebnis zu jedem Datensatz gehört. Füge
 
 ## Wo Formeln ausgeführt werden {icon="math-function"}
 
-- **Formelfelder** werden für Entwürfe neu berechnet. Die Finalisierung schreibt Werte und Typen fest; spätere Formeländerungen ändern diese Werte nicht.
+- **Formelfelder** werden für Entwürfe automatisch aktualisiert. Berechnungen, die nur von gespeicherten Werten desselben Datensatzes abhängen, werden bei jeder Änderung mitgespeichert und beim Lesen wiederverwendet. Formeländerungen aktualisieren auch bestehende Entwürfe. Die Finalisierung schreibt Werte und Typen fest; spätere Formeländerungen ändern diese Werte nicht.
 - **Berechnete Spalten** sind temporäre Abfrageausgaben und fügen der Tabelle kein Feld hinzu.
 - **GQL-Bedingungen** verwenden einen Ausdruck in `where` oder `having`.
 - **GQL-Ausgaben** verwenden `formula(expression) as alias`.
 
 **Objektlisten-Spalten** berechnen innerhalb einer Zeile: Aktiviere **Regeln und Berechnung** und verweise auf andere Spalten. Finalisierung friert Ergebnisse ein. Datensatzformeln nutzen `LIST_SUM(list, column)`, `LIST_AVG(list, column)`, `LIST_MIN(list, column)`, `LIST_MAX(list, column)` oder `LIST_COUNT(list)`. Spaltennamen in Anführungszeichen: `LIST_SUM(Items, 'Amount')`.
+
+Berechnungen mit verknüpften Datensätzen, der aktuellen Zeit oder der Zeitzone des Lesers werden beim Lesen ausgeführt. Du musst keinen Berechnungsmodus auswählen. Berechnungsfehler bleiben sichtbar; bei fehlerhaften Objektlisten bleiben die eingegebenen Zellen zur Korrektur erhalten.
 
 ## Ausdrucksregeln {icon="book-2"}
 
@@ -178,6 +180,8 @@ IFERROR(total / quantity, 0)
 
 `TODAY()` gibt das aktuelle Datum und `NOW()` das aktuelle Datum mit Uhrzeit zurück. Kalenderberechnungen mit Datum und Uhrzeit verwenden die Anzeigezeitzone der Anfrage. Wenn keine angegeben ist, verwendet Grids die Zeitzone der Cloud-Anwendung. Reine Datumswerte bleiben Kalenderdaten. `DATEADD` akzeptiert Tag(e), Stunde(n), Minute(n), Monat(e) und Jahr(e), verwendet standardmäßig Tage und erhält beim Addieren von Monaten oder Jahren gültige Monatsenddaten. `DATEDIFF` akzeptiert Tag(e), Stunde(n), Minute(n) und Sekunde(n), verwendet standardmäßig Tage und gibt `to - from`, abgerundet auf ganze Einheiten, zurück.
 
+`DATEADD` erlaubt Ausgangs- und Ergebnisdaten in den Jahren 1000–9999. Bei Datum mit Uhrzeit müssen sowohl der lokale Kalenderwert als auch der resultierende UTC-Zeitpunkt in diesem Bereich liegen. Größere Verschiebungen liefern `#DATEADD_OUT_OF_RANGE`, abfangbar mit `IFERROR`, statt die Datenbankabfrage abzubrechen. Nachkommastellen der Anzahl werden weiterhin Richtung null abgeschnitten.
+
 :::note Formelwerte
-Entwürfe berechnen beim Lesen; abgeschlossene Datensätze behalten eingefrorene Werte. Korrigiere die Quellfelder, nicht das angezeigte Ergebnis.
+Formelwerte in Entwürfen werden automatisch aktualisiert; abgeschlossene Datensätze behalten eingefrorene Werte. Korrigiere die Quellfelder, nicht das angezeigte Ergebnis.
 :::

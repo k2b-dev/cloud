@@ -119,7 +119,6 @@ describe("billing positions", () => {
           xml = value.xml;
           return { pdf: new TextEncoder().encode("%PDF-1.7 test") };
         },
-        extractEmbedded: async () => ({ filename: "factur-x.xml", xml }),
       });
       const rendered = await profile.issue(snapshot, { number: "TEST-1", issuedAt: new Date("2026-09-14T12:00:00Z") });
       const fixed = (value: string) => {
@@ -129,7 +128,7 @@ describe("billing positions", () => {
       expect(rendered.output?.netAmount).toBe(fixed(net));
       expect(rendered.output?.taxAmount).toBe(fixed(tax));
       expect(rendered.output?.grossAmount).toBe(fixed(gross));
-      expect(rendered.validationStatus).toBe("valid");
+      expect(rendered.validationStatus).toBe("unchecked");
       expect(xml).toContain(`<ram:GrandTotalAmount>${rendered.output?.grossAmount}</ram:GrandTotalAmount>`);
       if (name.startsWith("group")) expect(rendered.output?.taxAmount).toBe("0.01");
     });

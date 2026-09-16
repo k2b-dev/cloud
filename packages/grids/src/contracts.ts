@@ -1235,7 +1235,7 @@ const DocumentSchema = z.object({
   artifacts: z.array(DocumentArtifactSchema).min(1).max(8),
   primaryArtifactKey: DocumentArtifactSchema.shape.key,
   profile: z.object({ id: z.string(), version: z.number().int().positive() }).strict().nullable(),
-  validationStatus: z.enum(["valid", "warning"]).nullable(),
+  validationStatus: z.enum(["valid", "warning", "unchecked"]).nullable(),
   createdBy: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
 });

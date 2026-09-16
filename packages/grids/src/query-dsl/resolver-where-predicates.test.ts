@@ -404,8 +404,9 @@ describe("GQL where predicates — first-class per field type", () => {
     expect(view.ok).toBe(false);
 
     const sql = planSql(`where margin > 0`, context);
-    // The margin formula is inlined into the WHERE as a numeric comparison.
-    expect(sql).toContain("(r_formula_0.value)::numeric - (r_formula_1.value)::numeric");
+    // The margin formula is inlined with checked arithmetic before comparison.
+    expect(sql).toContain("grids.try_formula_numeric");
+    expect(sql).toContain("grids.require_valid_calculation");
     expect(sql).toContain("grids.canonical_numeric(r.data->>");
     expect(sql).toMatch(/::numeric > \(\$\d+ ::numeric\)/);
   });

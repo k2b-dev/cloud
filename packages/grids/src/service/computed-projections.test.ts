@@ -1,11 +1,14 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { normalizedSql } from "../sql-test-utils";
 import {
   applyComputedProjections,
   buildComputedColumnSqlProjections,
+  buildComputedFieldSqlMap,
   buildComputedProjections,
   buildFormulaSqlProjections,
 } from "./computed-projections";
 import * as fieldReads from "./field-read";
+import { enrichRecordsWithFormulas } from "./relation-formulas";
 import type { Field, GridRecord } from "./types";
 
 const field = (overrides: Partial<Field> & Pick<Field, "id" | "shortId" | "name" | "type">): Field => ({
@@ -211,5 +214,58 @@ describe("applyComputedProjections", () => {
       boolean_true: true,
       boolean_invalid: null,
     });
+  });
+});
+
+describe("materialized local read projections", () => {
+  const amount = field({ id: "amount_id", shortId: "Amount", name: "Amount", type: "number" });
+  const total = field({ id: "total_id", shortId: "Total1", name: "Total", type: "formula", config: { expression: "Amount * 2" } });
+
+  test("opts in only stored sources and reuses stored dependencies in dynamic roots", async () => {
+    const dynamic = field({
+      id: "dynamic_id",
+      shortId: "Dyn001",
+      name: "Dynamic",
+      type: "formula",
+      config: { expression: "IF(TODAY() = TODAY(), Total1, 0)" },
+    });
+    const fields = [amount, total, dynamic];
+    const stored = await buildComputedFieldSqlMap(fields, { useStoredLocalValues: true, fieldIds: new Set([dynamic.id]) });
+    expect([...stored.keys()]).toEqual([dynamic.id]);
+    expect(normalizedSql(stored.get(dynamic.id)!.sql)).toContain("current_local_calculations");
+    const virtual = await buildComputedFieldSqlMap(fields, { useFinalizedFormulaValues: false });
+    expect(normalizedSql(virtual.get(total.id)!.sql)).not.toContain("current_local_calculations");
+  });
+
+  test("uses prepared formula and list values with their error projections", async () => {
+    const list = field({
+      id: "list_id",
+      shortId: "List01",
+      name: "Positions",
+      type: "object_list",
+      config: {
+        fields: [
+          { id: "Amount", name: "Amount", type: "number", config: {} },
+          { id: "Double", name: "Double", type: "number", config: {}, formula: { expression: "Amount * 2" } },
+        ],
+      },
+    });
+    const fields = [amount, total, list];
+    const map = await buildComputedFieldSqlMap(fields, { useStoredLocalValues: true });
+    const projections = buildFormulaSqlProjections(fields, { computedFieldSql: map });
+    expect(projections).toHaveLength(2);
+    for (const projection of projections) {
+      expect(projection.expr).toBe(map.get(projection.fieldId)!.sql);
+      expect(projection.errorSql).toBe(map.get(projection.fieldId)!.errorSql);
+    }
+    expect(projections.find((item) => item.fieldId === list.id)!.outputType).toBe("json");
+    const record = { data: { [list.id]: [{ Amount: "3", Double: "6" }] }, fieldErrors: { [list.id]: "stored error" } };
+    const listProjection = projections.find((item) => item.fieldId === list.id)!;
+    applyComputedProjections([{ id: "record", [`e_${listProjection.alias}`]: true }], new Map([["record", record]]), [listProjection]);
+    const storedError = record.fieldErrors[list.id];
+    expect(storedError).not.toBe("stored error");
+    enrichRecordsWithFormulas([record], [list], { skipObjectListFieldIds: new Set([list.id]) });
+    expect(record.fieldErrors[list.id]).toBe(storedError);
+    expect(record.data[list.id]).toEqual([{ Amount: "3", Double: "6" }]);
   });
 });

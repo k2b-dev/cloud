@@ -1,6 +1,7 @@
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { sql } from "bun";
+import { DATEADD_RANGE } from "../formula/date-range";
 import {
   type FormulaFunctionName,
   formulaFunctionArity,
@@ -10,6 +11,7 @@ import {
 } from "../formula/function-catalog";
 import { FORMULA_ROUND_PLACES } from "../formula/numeric";
 import type { Expr } from "../formula/types";
+import { formulaNumericAggregate, formulaNumericOperation, withFormulaErrors } from "./formula-numeric-sql";
 import {
   type FormulaSqlCompileResult,
   type FormulaSqlExpression,
@@ -23,11 +25,8 @@ import {
   formulaSqlError,
   formulaSqlFail,
   formulaSqlOk,
-  formulaSqlOrErrors,
   joinFormulaSql,
 } from "./formula-sql-values";
-import { numericAverageSql, numericDivideSql } from "./numeric-division-sql";
-import { numericMedianSql } from "./numeric-median-sql";
 
 const DATE_UNITS = new Set(["day", "days", "month", "months", "year", "years", "hour", "hours", "minute", "minutes"]);
 const DIFF_UNITS = new Set(["day", "days", "hour", "hours", "minute", "minutes", "second", "seconds"]);
@@ -133,21 +132,17 @@ const intervalFor = (amount: unknown, unit: string): unknown => {
   return sql`${amount} * INTERVAL '1 minute'`;
 };
 
-const numericValues = (args: FormulaSqlExpression[], aggregate: "AVG" | "MIN" | "MAX" | "MEDIAN" | "SUM"): unknown => {
+// Text slicing saturates at the input length, as in the formula evaluator.
+// Clamp while still numeric: a large valid number must never overflow int casts.
+const boundedTextOffset = (text: unknown, amount: unknown): unknown => sql`LEAST(CHAR_LENGTH(${text}), GREATEST(FLOOR(${amount}), 0))::int`;
+
+const numericValues = (args: FormulaSqlExpression[], aggregate: "MIN" | "MAX"): unknown => {
   if (args.length === 0) return sql`NULL::numeric`;
   const rows = joinFormulaSql(
     args.map((arg) => sql`(${formulaSqlAsNumeric(arg)})`),
     sql`, `,
   );
-  if (aggregate === "MEDIAN") {
-    return sql`(
-      SELECT ${numericMedianSql(sql`v`)}
-      FROM (VALUES ${rows}) AS formula_values(v)
-      WHERE v IS NOT NULL
-    )`;
-  }
-  const fn =
-    aggregate === "AVG" ? numericAverageSql(sql`v`) : aggregate === "MIN" ? sql`MIN(v)` : aggregate === "MAX" ? sql`MAX(v)` : sql`SUM(v)`;
+  const fn = aggregate === "MIN" ? sql`MIN(v)` : sql`MAX(v)`;
   return sql`(SELECT ${fn} FROM (VALUES ${rows}) AS formula_values(v) WHERE v IS NOT NULL)`;
 };
 
@@ -162,11 +157,41 @@ const compileDateAdd = (
   const date = dateOperand(args[0]!, compiled[0]!, timeZone);
   if (!date) return dateOperandError("DATEADD");
   const amount = sql`TRUNC(${formulaSqlAsNumeric(compiled[1]!)})`;
-  const interval = intervalFor(amount, unit);
-  const nextLocal = sql`(${date.localTimestamp} + ${interval})`;
+  const min = sql`${DATEADD_RANGE.minDate}::date`;
+  const max = sql`${DATEADD_RANGE.maxDate}::date`;
+  const minTimestamp = sql`${min}::timestamp`;
+  const maxTimestamp = sql`(${max}::timestamp + INTERVAL '1 day' - INTERVAL '1 microsecond')`;
+  const year = sql`EXTRACT(YEAR FROM ${date.localDate})`;
+  const month = sql`EXTRACT(MONTH FROM ${date.localDate})`;
   const timeUnit = unit.startsWith("hour") || unit.startsWith("minute");
-  if (date.kind === "date" && !timeUnit) return formulaSqlOk(sql`(${nextLocal})::date`, "date");
-  return formulaSqlOk(sql`(${nextLocal} AT TIME ZONE ${timeZone})`, "datetime");
+  const divisor = unit.startsWith("hour") ? 3600 : 60;
+  // Validate the destination before interval arithmetic. Even a generic plan
+  // must never multiply an unbounded user value into a PostgreSQL interval.
+  const lower = unit.startsWith("year")
+    ? sql`(${DATEADD_RANGE.minYear} - ${year})`
+    : unit.startsWith("month")
+      ? sql`((${DATEADD_RANGE.minYear} - ${year}) * 12 + 1 - ${month})`
+      : timeUnit
+        ? sql`CEIL(EXTRACT(EPOCH FROM (${minTimestamp} - ${date.localTimestamp})) / ${divisor})`
+        : sql`(${min} - ${date.localDate})`;
+  const upper = unit.startsWith("year")
+    ? sql`(${DATEADD_RANGE.maxYear} - ${year})`
+    : unit.startsWith("month")
+      ? sql`((${DATEADD_RANGE.maxYear} - ${year}) * 12 + 12 - ${month})`
+      : timeUnit
+        ? sql`FLOOR(EXTRACT(EPOCH FROM (${maxTimestamp} - ${date.localTimestamp})) / ${divisor})`
+        : sql`(${max} - ${date.localDate})`;
+  const valid = sql`(${date.localDate} BETWEEN ${min} AND ${max} AND ${amount} BETWEEN ${lower} AND ${upper})`;
+  const interval = intervalFor(sql`CASE WHEN ${valid} THEN ${amount} ELSE 0 END`, unit);
+  const nextLocal = sql`(${date.localTimestamp} + ${interval})`;
+  const isDate = date.kind === "date" && !timeUnit;
+  const value = isDate ? sql`(${nextLocal})::date` : sql`(${nextLocal} AT TIME ZONE ${timeZone})`;
+  const resultValid = isDate
+    ? valid
+    : sql`(${valid} AND ${value} >= (${minTimestamp} AT TIME ZONE 'UTC')
+    AND ${value} <= (${maxTimestamp} AT TIME ZONE 'UTC'))`;
+  const error = sql`(${date.localTimestamp} IS NOT NULL AND ${amount} IS NOT NULL AND NOT ${resultValid})`;
+  return formulaSqlOk(sql`CASE WHEN ${resultValid} THEN ${value} ELSE NULL END`, isDate ? "date" : "datetime", error);
 };
 
 const compileDateDiff = (
@@ -197,14 +222,13 @@ const FORMULA_FUNCTION_COMPILERS = {
     const places = sql`COALESCE(TRUNC(${numericArg(1)}), 0)`;
     const valid = sql`${places} BETWEEN ${FORMULA_ROUND_PLACES.min} AND ${FORMULA_ROUND_PLACES.max}`;
     const safePlaces = sql`(CASE WHEN ${valid} THEN ${places} ELSE 0 END)::int`;
-    return formulaSqlOk(
-      sql`CASE WHEN ${valid} THEN ROUND(${value}, ${safePlaces}) ELSE NULL END`,
-      "numeric",
-      sql`(${value} IS NOT NULL AND NOT (${valid}))`,
-    );
+    return {
+      ok: true,
+      expression: withFormulaErrors(formulaNumericOperation("round", value, safePlaces), sql`(${value} IS NOT NULL AND NOT (${valid}))`),
+    };
   },
-  FLOOR: ({ numericArg }) => formulaSqlOk(sql`FLOOR(${numericArg(0)})`, "numeric"),
-  CEIL: ({ numericArg }) => formulaSqlOk(sql`CEIL(${numericArg(0)})`, "numeric"),
+  FLOOR: ({ numericArg }) => ({ ok: true, expression: formulaNumericOperation("floor", numericArg(0)) }),
+  CEIL: ({ numericArg }) => ({ ok: true, expression: formulaNumericOperation("ceil", numericArg(0)) }),
   SQRT: ({ numericArg }) => {
     const value = numericArg(0);
     return formulaSqlOk(sql`CASE WHEN ${value} < 0 THEN NULL ELSE SQRT(trim_scale(${value})) END`, "numeric", sql`(${value} < 0)`);
@@ -218,12 +242,24 @@ const FORMULA_FUNCTION_COMPILERS = {
   MOD: ({ numericArg }) => {
     const dividend = numericArg(0);
     const divisor = numericArg(1);
-    return formulaSqlOk(sql`MOD(${dividend}, NULLIF(${divisor}, 0))`, "numeric", sql`(${dividend} IS NOT NULL AND ${divisor} = 0)`);
+    return { ok: true, expression: formulaNumericOperation("%", dividend, divisor) };
   },
-  SUM: ({ compiled }) => formulaSqlOk(numericValues(compiled, "SUM"), "numeric"),
-  AVG: ({ compiled }) => formulaSqlOk(numericValues(compiled, "AVG"), "numeric"),
-  MEAN: ({ compiled }) => formulaSqlOk(numericValues(compiled, "AVG"), "numeric"),
-  MEDIAN: ({ compiled }) => formulaSqlOk(numericValues(compiled, "MEDIAN"), "numeric"),
+  SUM: ({ compiled }) => ({
+    ok: true,
+    expression: formulaNumericAggregate("SUM", sql`ARRAY[${joinFormulaSql(compiled.map(formulaSqlAsNumeric), sql`, `)}]::numeric[]`),
+  }),
+  AVG: ({ compiled }) => ({
+    ok: true,
+    expression: formulaNumericAggregate("AVG", sql`ARRAY[${joinFormulaSql(compiled.map(formulaSqlAsNumeric), sql`, `)}]::numeric[]`),
+  }),
+  MEAN: ({ compiled }) => ({
+    ok: true,
+    expression: formulaNumericAggregate("AVG", sql`ARRAY[${joinFormulaSql(compiled.map(formulaSqlAsNumeric), sql`, `)}]::numeric[]`),
+  }),
+  MEDIAN: ({ compiled }) => ({
+    ok: true,
+    expression: formulaNumericAggregate("MEDIAN", sql`ARRAY[${joinFormulaSql(compiled.map(formulaSqlAsNumeric), sql`, `)}]::numeric[]`),
+  }),
   MIN: ({ compiled }) => formulaSqlOk(numericValues(compiled, "MIN"), "numeric"),
   MAX: ({ compiled }) => formulaSqlOk(numericValues(compiled, "MAX"), "numeric"),
   COUNT: ({ compiled }) => {
@@ -236,7 +272,7 @@ const FORMULA_FUNCTION_COMPILERS = {
   PERCENT: ({ numericArg }) => {
     const part = numericArg(0);
     const total = numericArg(1);
-    return formulaSqlOk(sql`(${numericDivideSql(part, total)} * 100)`, "numeric", sql`(${part} IS NOT NULL AND ${total} = 0)`);
+    return { ok: true, expression: formulaNumericOperation("percent", part, total) };
   },
   CONCAT: ({ compiled }) =>
     formulaSqlOk(compiled.length === 0 ? sql`''::text` : sql`CONCAT(${joinFormulaSql(compiled.map(formulaSqlAsText), sql`, `)})`, "text"),
@@ -244,11 +280,11 @@ const FORMULA_FUNCTION_COMPILERS = {
   LOWER: ({ textArg }) => formulaSqlOk(sql`LOWER(${textArg(0)})`, "text"),
   UPPER: ({ textArg }) => formulaSqlOk(sql`UPPER(${textArg(0)})`, "text"),
   TRIM: ({ textArg }) => formulaSqlOk(sql`TRIM(${textArg(0)})`, "text"),
-  LEFT: ({ textArg, numericArg }) => formulaSqlOk(sql`LEFT(${textArg(0)}, GREATEST(FLOOR(${numericArg(1)})::int, 0))`, "text"),
-  RIGHT: ({ textArg, numericArg }) => formulaSqlOk(sql`RIGHT(${textArg(0)}, GREATEST(FLOOR(${numericArg(1)})::int, 0))`, "text"),
+  LEFT: ({ textArg, numericArg }) => formulaSqlOk(sql`LEFT(${textArg(0)}, ${boundedTextOffset(textArg(0), numericArg(1))})`, "text"),
+  RIGHT: ({ textArg, numericArg }) => formulaSqlOk(sql`RIGHT(${textArg(0)}, ${boundedTextOffset(textArg(0), numericArg(1))})`, "text"),
   SUBSTRING: ({ textArg, numericArg }) =>
     formulaSqlOk(
-      sql`SUBSTRING(${textArg(0)} FROM GREATEST(FLOOR(${numericArg(1)})::int, 0) + 1 FOR GREATEST(FLOOR(${numericArg(2)})::int, 0))`,
+      sql`SUBSTRING(${textArg(0)} FROM ${boundedTextOffset(textArg(0), numericArg(1))} + 1 FOR ${boundedTextOffset(textArg(0), numericArg(2))})`,
       "text",
     ),
   REPLACE: ({ textArg }) => formulaSqlOk(sql`REPLACE(${textArg(0)}, ${textArg(1)}, ${textArg(2)})`, "text"),
@@ -358,9 +394,5 @@ export const compileFormulaFunction = (
     boolArg: (index) => formulaSqlAsBoolean(arg(index)),
   });
   if (!result.ok || SHORT_CIRCUIT_FUNCTIONS.has(upper as FormulaFunctionName)) return result;
-  return formulaSqlOk(
-    result.expression.sql,
-    result.expression.type,
-    formulaSqlOrErrors([formulaSqlAnyError(compiled), result.expression.errorSql]),
-  );
+  return { ok: true, expression: withFormulaErrors(result.expression, formulaSqlAnyError(compiled)) };
 };

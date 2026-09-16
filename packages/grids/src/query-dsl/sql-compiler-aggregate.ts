@@ -12,8 +12,9 @@ import {
   formulaAggregateSqlType,
   viewAggregateSqlType,
 } from "./sql-compiler-grouping";
+import { compileRecordScopeFilter } from "../service/record-metadata";
 import { recordDeletedCondition, scopedFormulaResolverForPlan } from "./sql-compiler-scope";
-import { dslRecordRelation, dslRecordTableCondition, dslRelationValuesInRecordData } from "./sql-compiler-source";
+import { dslRecordRelation, dslRelationValuesInRecordData } from "./sql-compiler-source";
 import type { DslSqlAggregateCompileResult, DslSqlAggregateOutputColumn, DslSqlCompileOptions } from "./sql-compiler-types";
 
 const failAggregate = (error: string): DslSqlAggregateCompileResult => ({ ok: false, error });
@@ -89,7 +90,7 @@ export const compileDslAggregateQueryPlanToSql = (
     return sql`${column.key}::text, ${value}`;
   });
 
-  const where = sql`${dslRecordTableCondition(plan.tableId, options)}
+  const where = sql`${compileRecordScopeFilter(plan.tableId)}
     AND ${recordDeletedCondition(plan)}
     AND ${renderClause(filter.clause, { relationSource: dslRelationValuesInRecordData(options) ? "recordData" : "links" })}
     AND ${extraWhere.where ?? sql`TRUE`}
@@ -100,8 +101,6 @@ export const compileDslAggregateQueryPlanToSql = (
       sql: sql`
         SELECT jsonb_build_object(${joinFragments(jsonPairs, sql`, `)}) AS result
         FROM ${dslRecordRelation(options)}
-      JOIN grids.tables t ON t.id = r.table_id AND t.id = ${plan.tableId}::uuid AND t.deleted_at IS NULL
-        JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
         WHERE ${where}
       `,
       columns,

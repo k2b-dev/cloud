@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { lockDurableHistoryMutationBoundary } from "../service/durable-history";
+import { listByTable } from "../service/field-read";
+import { compileLocalCalculationStorage } from "../service/local-calculation-storage";
 import type { ExpansionViewer } from "../service/relations";
 import type { Field } from "../service/types";
 import { parseGridsQueryDsl } from "./parser";
@@ -65,6 +68,20 @@ export const field = (overrides: Partial<Field> & Pick<Field, "id" | "shortId" |
 
 export const cleanupFixture = async (baseId: string): Promise<void> => {
   await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+};
+
+/** Raw fixture writes explicitly perform the production materialization step.
+ * Never refresh in preview: reads must detect missing/stale derived state. */
+export const refreshFixtureCalculations = async (fixture: Pick<DslDbFixture, "orders" | "customers">): Promise<void> => {
+  await sql.begin(async (tx) => {
+    for (const table of [fixture.orders, fixture.customers]) {
+      await lockDurableHistoryMutationBoundary(tx, table.id);
+      const fields = await listByTable(table.id, false, tx);
+      const calculated = compileLocalCalculationStorage(fields);
+      await tx`UPDATE grids.records r SET local_calculations = ${calculated}
+        WHERE r.table_id = ${table.id}::uuid AND r.finalized_at IS NULL`;
+    }
+  });
 };
 
 export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
@@ -272,6 +289,7 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
       (${customerBId}::uuid, ${customerFavoriteOrderLinkId}::uuid, ${orderBId}::uuid, 0)
   `;
 
+  await refreshFixtureCalculations({ orders, customers });
   return {
     baseId,
     orders,

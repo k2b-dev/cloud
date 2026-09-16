@@ -24,6 +24,7 @@ import {
 import { requireValidCalculationSql } from "./formula-sql-values";
 import { compileDslKeyset, type DslKeysetType } from "./keyset-compiler";
 import { numericAverageSql } from "./numeric-division-sql";
+import { compileRecordScopeFilter } from "./record-metadata";
 import { assertSqlIdentifier } from "./sql-ident";
 import type { Field } from "./types";
 
@@ -477,9 +478,7 @@ const buildSelectList = (groups: ResolvedGroup[], aggExprs: Array<{ key: string;
 };
 
 const buildFromClause = (groups: ResolvedGroup[]): any => {
-  let from: any = sql`grids.records r
-    JOIN grids.tables _t ON _t.id = r.table_id AND _t.deleted_at IS NULL
-    JOIN grids.bases _b ON _b.id = _t.base_id AND _b.deleted_at IS NULL`;
+  let from: any = sql`grids.records r`;
 
   for (const g of groups) {
     if (g.relationJoinIndex === undefined) continue;
@@ -508,7 +507,7 @@ const buildWhereClause = (params: CompileGroupParams): { ok: true; where: any } 
   const filterCompiled = compileFilter(params.filter ?? null, params.fields, { timeZone: params.timeZone });
   if (!filterCompiled.ok) return { ok: false, error: `filter: ${filterCompiled.error}` };
 
-  const whereParts: any[] = [sql`r.table_id = ${params.tableId}::uuid`];
+  const whereParts: any[] = [compileRecordScopeFilter(params.tableId)];
   if (params.deletedOnly) whereParts.push(sql`r.deleted_at IS NOT NULL`);
   else if (!params.includeDeleted) whereParts.push(sql`r.deleted_at IS NULL`);
   whereParts.push(renderClause(filterCompiled.clause));

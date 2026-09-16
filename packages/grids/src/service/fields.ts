@@ -24,6 +24,7 @@ import { materializeFieldDefault, validateDefaultValue, validateFieldConfig, val
 import { assertFinalizedResultTypes, lockFinalizedSchema } from "./finalized-schema";
 import { bindAuthoredField } from "./formula-authoring";
 import { assertFormulaSchema } from "./formula-schema-validation";
+import { refreshLocalCalculations } from "./local-calculation-storage";
 import { emitTableMetadataEvent } from "./metadata-events";
 import { namedResourceConflict, writeNamedResource } from "./named-resource-conflict";
 import { numberSeriesFormatForField, provisionFieldNumberSeries, setNumberSeriesArchived, syncNumberSeriesFormat } from "./number-series";
@@ -295,6 +296,7 @@ const insertPreparedField = async (state: FieldCreateState, actorId: string | nu
     const inserted = mapFieldRow(created.data);
     const formulas = await assertFormulaSchema(tx, inserted.tableId, inserted.id, locale);
     if (!formulas.ok) throw formulas;
+    await refreshLocalCalculations(tx, inserted.tableId);
     if (inserted.type === "id") await provisionFieldNumberSeries(tx, inserted.id, inserted.config);
     await logAudit(
       {
@@ -494,6 +496,7 @@ const compensateUniqueConstraintDisable = async (
 ): Promise<Field | null> => {
   try {
     const restored = await sql.begin(async (tx) => {
+      await lockFinalizedSchema(tx, field.tableId);
       const restoredResult = await persistFieldUpdate(field.id, fieldUpdateState(existing), tx, locale);
       if (!restoredResult.ok) throw new Error(restoredResult.error.message);
       if (existing.type === "id") {
@@ -507,6 +510,17 @@ const compensateUniqueConstraintDisable = async (
       await logFieldUpdateDiff(field, fieldUpdateState(existing), actorId, tx);
       if (field.name !== existing.name) {
         await rewriteFieldNameReferences({ tableId: field.tableId, oldName: field.name, newName: existing.name }, tx);
+      }
+      const formulas = await assertFormulaSchema(tx, field.tableId, field.id, locale);
+      if (!formulas.ok) throw formulas;
+      const preserved = await assertFinalizedResultTypes(tx, field.tableId, locale);
+      if (!preserved.ok) throw preserved;
+      if (
+        field.name !== existing.name ||
+        field.required !== existing.required ||
+        JSON.stringify(field.config) !== JSON.stringify(existing.config)
+      ) {
+        await refreshLocalCalculations(tx, field.tableId);
       }
       return restoredResult.data;
     });
@@ -640,6 +654,14 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
 
         const preserved = await assertFinalizedResultTypes(tx, existing.tableId, locale);
         if (!preserved.ok) throw preserved;
+
+        if (
+          existing.name !== field.name ||
+          existing.required !== field.required ||
+          JSON.stringify(existing.config) !== JSON.stringify(field.config)
+        ) {
+          await refreshLocalCalculations(tx, field.tableId);
+        }
 
         return ok(field);
       })
@@ -809,6 +831,7 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
         rejectedSchema = preserved;
         throw preserved;
       }
+      await refreshLocalCalculations(tx, existing.tableId);
       await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" }, tx);
       return result;
     });
@@ -865,6 +888,7 @@ export const softDelete = async (id: string, actorId: string | null, locale?: st
       RETURNING id
     `;
     if (!deleted) throw err.notFound(messages.field);
+    await refreshLocalCalculations(tx, existing.tableId);
     if (existing.type === "id") await setNumberSeriesArchived(tx, { kind: "field", id }, true);
     await logAudit({ tableId: existing.tableId, userId: actorId, action: "deleted" }, tx);
     // Auto-cleanup: strip the soft-deleted field id from every form's

@@ -8,6 +8,7 @@ import { migrate } from "../migrate";
 import { normalizeRefKey } from "../ref-syntax";
 import { normalizedSqlParts } from "../sql-test-utils";
 import { compileFormulaSourceToSql, type FormulaSqlType } from "./formula-sql-compiler";
+import { requireValidCalculationSql } from "./formula-sql-values";
 import type { Field } from "./types";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
@@ -149,6 +150,104 @@ beforeAll(async () => {
 });
 
 describe("formula evaluator and PostgreSQL parity", () => {
+  postgresTest("eager local arithmetic reports numeric overflow and IFERROR handles it", async () => {
+    const amount = formulaField("numeric-overflow", "Amount", "number");
+    const largest = "9".repeat(131072);
+    const median = compileFormulaSourceToSql("MEDIAN(Amount)", { fields: [amount] });
+    if (!median.ok) throw new Error(median.error);
+    const [single] = await sql`SELECT (${requireValidCalculationSql(median.expression)})::text AS value
+      FROM (SELECT ${{ [amount.id]: largest }}::jsonb AS data OFFSET 0) r`;
+    expect(single?.value).toBe(largest);
+    for (const [source, value] of [
+      ["Amount + Amount", largest],
+      ["Amount - -Amount", largest],
+      ["Amount * 2", largest],
+      ["Amount / 0.1", largest],
+      ["SUM(Amount, Amount)", largest],
+      ["AVG(Amount, Amount)", largest],
+      ["MEDIAN(Amount, Amount)", largest],
+      ["PERCENT(Amount, 1)", largest],
+      ["ROUND(Amount, 0)", `${largest}.9`],
+      ["CEIL(Amount)", `${largest}.9`],
+      ["FLOOR(Amount)", `-${largest}.9`],
+    ] as const) {
+      const compiled = compileFormulaSourceToSql(source, { fields: [amount] });
+      if (!compiled.ok) throw new Error(compiled.error);
+      const [row] = await sql`SELECT calculation.* FROM (SELECT ${{ [amount.id]: value }}::jsonb AS data OFFSET 0) r
+        CROSS JOIN LATERAL (${compiled.expression.rowSql}) calculation`;
+      expect(row, source).toMatchObject({ value: null, error: true });
+      const recovered = compileFormulaSourceToSql(`IFERROR(${source}, 17)`, { fields: [amount] });
+      if (!recovered.ok) throw new Error(recovered.error);
+      const [handled] = await sql`SELECT ${requireValidCalculationSql(recovered.expression)} AS value
+        FROM (SELECT ${{ [amount.id]: value }}::jsonb AS data OFFSET 0) r`;
+      expect(Number(handled?.value), source).toBe(17);
+    }
+  });
+  postgresTest("text offsets saturate before integer conversion even when evaluated eagerly", async () => {
+    for (const value of ["999999999999", "-999999999999", "2147483647", "2147483648", "1.9", null]) {
+      const amount = formulaField("text-offset", "Amount", "number");
+      for (const source of [
+        "LEFT('abc', Amount)",
+        "RIGHT('abc', Amount)",
+        "SUBSTRING('abc', Amount, 2)",
+        "SUBSTRING('abc', 1, Amount)",
+        "SUBSTRING('abc', Amount, Amount)",
+      ])
+        await expectParity(source, { fields: [amount], values: { [amount.id]: value } });
+    }
+  });
+  postgresTest("query boundaries evaluate fallible formula value and error together once", async () => {
+    await sql.begin(async (tx) => {
+      await tx`CREATE TEMP SEQUENCE formula_evaluation_count`;
+      try {
+        const prepared = compileFormulaSourceToSql("Counter / 2", {
+          fields: [],
+          resolveField: () => ({ type: "numeric", sql: sql`nextval('formula_evaluation_count')::numeric` }),
+        });
+        if (!prepared.ok) throw new Error(prepared.error);
+        for (const source of ["Counter", "Counter + Counter"]) {
+          await tx`ALTER SEQUENCE formula_evaluation_count RESTART WITH 1`;
+          const compiled = compileFormulaSourceToSql(source, { fields: [], resolveField: () => prepared.expression });
+          if (!compiled.ok) throw new Error(compiled.error);
+          const [row] = await tx`SELECT ${requireValidCalculationSql(compiled.expression)} AS value`;
+          expect(Number(row?.value)).toBe(source === "Counter" ? 0.5 : 1);
+          const [count] = await tx`SELECT currval('formula_evaluation_count')::integer AS value`;
+          expect(count?.value).toBe(1);
+        }
+      } finally {
+        await tx`DROP SEQUENCE formula_evaluation_count`;
+      }
+    });
+  });
+
+  postgresTest("paired query boundaries preserve errors, exact decimals and lazy prepared branches", async () => {
+    for (const mode of ["force_custom_plan", "force_generic_plan"]) {
+      await sql.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL plan_cache_mode = ${mode}`);
+        const bad = compileFormulaSourceToSql("Bad", {
+          fields: [formulaField("prepared-bad", "Bad", "formula", { expression: "LEFT('x', 999999999999)" })],
+          useFinalizedFormulaValues: false,
+        });
+        if (!bad.ok) throw new Error(bad.error);
+        for (const [source, expected] of [
+          ["IF(true, 'ok', Bad)", "ok"],
+          ["IFERROR('ok', Bad)", "ok"],
+          ["IFEMPTY('ok', Bad)", "ok"],
+          ["IFERROR(1 / 0, 0.1 + 0.2)", "0.3"],
+          ["9007199254740993 + 0.1", "9007199254740993.1"],
+        ] as const) {
+          const compiled = compileFormulaSourceToSql(source, { fields: [], resolveField: () => bad.expression });
+          if (!compiled.ok) throw new Error(compiled.error);
+          const [row] = await tx`SELECT (${requireValidCalculationSql(compiled.expression)})::text AS value`;
+          expect(row?.value).toBe(expected);
+        }
+      });
+    }
+    const invalid = compileFormulaSourceToSql("1 / 0", { fields: [] });
+    if (!invalid.ok) throw new Error(invalid.error);
+    await expect(sql`SELECT ${requireValidCalculationSql(invalid.expression)}`.execute()).rejects.toThrow("grids: invalid calculation");
+  });
+
   postgresTest("row-dependent named branches stay lazy across repeated executions", async () => {
     const amount = formulaField("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Amount", "number");
     const bad = formulaField("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "Bad", "formula", { expression: "LEFT('x', Amount)" });
@@ -244,6 +343,59 @@ describe("formula evaluator and PostgreSQL parity", () => {
   const timestamp = formulaField("22222222-2222-4222-8222-222222222222", "Timestamp", "date", { includeTime: true });
   const amount = formulaField("33333333-3333-4333-8333-333333333333", "Amount", "number");
   const numericText = formulaField("44444444-4444-4444-8444-444444444444", "Numeric text", "text");
+
+  postgresTest("DATEADD bounds preserve calendar semantics and recoverable errors", async () => {
+    for (const unit of ["years", "months", "days", "hours", "minutes"]) {
+      for (const value of ["1000000000000", "-1000000000000", `1${"0".repeat(400)}`, null]) {
+        const source = `DATEADD('2026-09-16', Amount, '${unit}')`;
+        await expectParity(source, { fields: [amount], values: { [amount.id]: value } });
+        await expectParity(`IFERROR(${source}, null)`, { fields: [amount], values: { [amount.id]: value } });
+      }
+    }
+    for (const source of [
+      "DATEADD('1000-01-01', -1, 'days')",
+      "DATEADD('0001-01-01', 1, 'days')",
+      "DATEADD('0099-12-31', 1, 'days')",
+      "DATEADD('0001-01-01T12:00:00Z', 1, 'days')",
+      "DATEADD('0000-01-01', 1, 'days')",
+      "DATEADD('0099-02-30', 1, 'days')",
+      "DATEDIFF('0099-12-31', '0100-01-01', 'days')",
+      "DATEADD('2026-09-16', ' 2 ', 'days')",
+      "DATEADD('2026-09-16', '2e1', 'days')",
+      "IFERROR(DATEADD('2026-09-16', '1e400', 'days'), null)",
+      "DATEADD('9999-12-31', 1, 'days')",
+      "DATEADD('0999-12-31', 1, 'days')",
+      "DATEADD('9999-12-31T23:00:00Z', 1, 'hours')",
+      "DATEADD('1000-01-31', 1, 'months')",
+      "DATEADD('1000-01-01', 8999, 'years')",
+      "DATEADD('9999-12-31', -8999, 'years')",
+      "DATEADD('9999-12-31', 0, 'minutes')",
+      "DATEADD('1000-01-01', 0, 'hours')",
+      "DATEADD('2026-09-16', 30, 'days')",
+      "DATEADD('9999-12-31T22:00:00Z', 1, 'hours')",
+    ])
+      await expectParity(source);
+    for (const timeZone of ["Pacific/Kiritimati", "America/New_York"]) {
+      await expectParity("DATEADD('9999-12-31', 23, 'hours')", { dateConfig: { timeZone } });
+    }
+    for (const mode of ["force_custom_plan", "force_generic_plan"]) {
+      await sql.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL plan_cache_mode = ${mode}`);
+        for (const source of [
+          "IFERROR(DATEADD('2026-09-16', Amount, 'years'), null)",
+          "IF(false, DATEADD('2026-09-16', Amount, 'days'), null)",
+        ]) {
+          const compiled = compileFormulaSourceToSql(source, { fields: [amount] });
+          if (!compiled.ok) throw new Error(compiled.error);
+          for (const value of [`1${"0".repeat(400)}`, `-1${"0".repeat(400)}`]) {
+            const [row] = await tx`SELECT ${requireValidCalculationSql(compiled.expression)} AS value
+              FROM (SELECT ${{ [amount.id]: value }}::jsonb AS data) r`;
+            expect(row.value).toBeNull();
+          }
+        }
+      });
+    }
+  });
 
   postgresTest("extracts instant calendar parts in the configured timezone", async () => {
     await expectParity("DAY('2026-05-01T22:30:00.000Z')", { dateConfig: berlin });

@@ -218,7 +218,9 @@ For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact.
   Document also appears in All documents. Its number, validation evidence,
   exact bytes, and hashes are immutable. Renderer validation names technical
   checks; it is not a universal compliance decision. The invoice issuer is
-  responsible for the content and suitability for the intended use.
+  responsible for the content and suitability for the intended use. E-Invoice
+  output is marked `unchecked`: issuance validates inputs and makes one
+  Gotenberg call; XSD and actual PDF-attachment checks run in release tests.
 - Use automatically provisioned durable number series for sequential ID fields
   and numbered Documents. Allocations are atomic and never reused; technical
   gaps are possible, and formatting changes affect future values only.
@@ -233,6 +235,33 @@ For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact.
 
 Use formulas for derived values and workflows for multi-step effects that need
 inputs, permissions, revisions, and observable runs.
+
+Stored tables calculate deterministic record-local formulas and object-list
+columns when a record is written. Inputs, exact decimal results and calculation
+errors are saved in the same transaction. Reads, filters, sorting, and summaries
+reuse these values automatically; no formula tuning or cache setting is needed.
+Formula and relevant schema changes recalculate draft records, including those
+in the trash, before committing. Finalized records retain their captured values.
+
+Formulas involving related records, the current clock, request time zone or
+system fields remain live. Combined tables calculate their own formulas over
+their published sources. Inline GQL formulas reuse stored dependencies and
+calculate the remaining expression when queried. Calculation errors keep their
+usual behavior, including `IFERROR`; a failed object list keeps its editable
+inputs. Missing or stale stored calculations fail the read instead of returning
+old values or silently switching to live evaluation.
+
+For operators, startup populates existing draft calculations transactionally.
+This is a one-way schema upgrade: run the matching Grids code and schema together.
+Writers must use the Grids record service; direct SQL input changes invalidate
+stored calculations. Schema refreshes update derived state without changing user
+record versions or creating record-edit events.
+
+GQL also keeps a bounded, short-lived Valkey cache of resolved query plans.
+Current schema and bound request values determine the cache entry; permissions
+are checked on every request. Query results and SQL execution are not cached.
+Cache misses, corruption or an unavailable Valkey fall back to ordinary query
+preparation. Plan caching is an optimization, not a consistency requirement.
 
 Single-select formula conditions accept an exact option ID or an unambiguous
 case-insensitive label: `IF(Tax = 'ust-19', ROUND(Net / 100 * 19, 2), 0)`.
@@ -253,6 +282,8 @@ Formula parsing is bounded to 20,000 characters, 64 nesting levels and 1,024 exp
 `ROUND` truncates fractional places toward zero and accepts −131,072 through 16,383 places. These bounds follow PostgreSQL numeric's supported digit range. Both runtimes reject out-of-range places as a recoverable formula error before arithmetic or integer conversion.
 
 Numeric formula results can be JSON numbers or decimal strings. JavaScript evaluation preserves a decimal string when converting to a number would lose digits, including intermediate values. Consumers must use decimal arithmetic for further calculations rather than coercing these strings with `Number(...)`. Object-list `number` columns return decimal strings; configured decimal places preserve their scale. Non-finite math results are formula errors, not successful text values.
+
+`DATEADD` accepts input and result years 1000–9999, including the local calendar value and resulting UTC instant for datetimes. Shifts outside this range are rejected before SQL interval arithmetic and produce a recoverable formula error (`DATEADD_OUT_OF_RANGE` in previews). `IFERROR` can handle it. Whole-unit truncation, month-end clamping and timezone behavior are unchanged.
 
 An overflowing `POW` result also stays in the formula error channel in SQL. `IFERROR` can replace it without aborting the query; cancellation and database resource failures are not suppressed.
 Fractional `POW` exponents and integers outside the signed 32-bit range use 80 significant digits, capped at 1,000 fractional places, in both formula evaluation and SQL. Round monetary results explicitly.

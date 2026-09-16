@@ -1,7 +1,6 @@
 import { type RenderFacturXHtmlToPdfInput, renderFacturXHtmlToPdf } from "@k2b/cloud/services/pdf";
 import { unwrap } from "@k2b/stdlib";
 import { einvoice, type Invoice } from "@k2b/stdlib/finance";
-import { validateInvoiceXml } from "@k2b/stdlib/finance/validate";
 import Decimal from "decimal.js";
 import { isValidIBAN } from "ibantools";
 import { z } from "zod";
@@ -116,13 +115,10 @@ export const germanBillingSnapshotSchema = germanEInvoiceSnapshotSchema
 
 type GermanEInvoiceSnapshot = z.infer<typeof germanEInvoiceSnapshotSchema> | z.infer<typeof germanBillingSnapshotSchema>;
 type Render = (input: RenderFacturXHtmlToPdfInput) => Promise<{ pdf: Uint8Array }>;
-type Validate = (input: { xml: string }) => Promise<{ valid: boolean; errors: unknown[] }>;
-type ExtractEmbedded = (pdf: Uint8Array) => Promise<{ filename: string; xml: string }>;
 
 const escapeXml = (value: string) =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 const escapeHtml = escapeXml;
-const normalizedXml = (value: string) => value.trim().replace(/encoding="utf-8"/i, 'encoding="UTF-8"');
 const invoiceLines = (snapshot: GermanEInvoiceSnapshot): Invoice["lines"] =>
   snapshot.lines.map((line, index) => ({
     id: String(index + 1),
@@ -197,42 +193,20 @@ const buildHtml = (snapshot: GermanEInvoiceSnapshot, number: string) => {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}thead{display:table-header-group}tr{break-inside:avoid}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left;overflow-wrap:anywhere}.description{white-space:pre-wrap;margin-top:4px}.total{font-weight:700}.settlement{break-inside:avoid}.settlement td{white-space:nowrap}.settlement .payment{text-align:left;white-space:normal;overflow-wrap:anywhere}</style></head><body><h1>${title} ${escapeHtml(number)}</h1>${detail}${service}<p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${snapshot.invoiceDate} · Fällig: ${snapshot.dueDate}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody><tbody class="settlement"><tr><td colspan="4">Netto</td><td>${totals.net} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${totals.tax} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${totals.total} EUR</td></tr><tr><td class="payment" colspan="5">IBAN: ${snapshot.payment.iban}</td></tr></tbody></table></body></html>`;
 };
 
-export const createGermanEInvoiceProfile = (
-  dependencies: { render?: Render; validate?: Validate; extractEmbedded?: ExtractEmbedded } = {},
-): DocumentProfile<GermanEInvoiceSnapshot> => ({
+export const createGermanEInvoiceProfile = (dependencies: { render?: Render } = {}): DocumentProfile<GermanEInvoiceSnapshot> => ({
   id: "de.zugferd.en16931",
   version: 1,
   title: "German E-Invoice (ZUGFeRD EN 16931)",
   description:
     "Outgoing EUR invoices using ZUGFeRD 2.5 / Factur-X 1.09 EN 16931. Technical validation is not tax or legal approval. The issuer is responsible for invoice content and suitability for the intended use.",
   rendererVersion: "stdlib-0.25.0-gotenberg-8.36.0-factur-x",
-  validatorVersion: "stdlib-0.25.0-zugferd-2.5-en16931-xsd",
+  validatorVersion: "stdlib-0.25.0-input-rules",
   primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
   input: germanEInvoiceSnapshotSchema,
   formatNumber: ({ value, issuedAt }) => `RE-${issuedAt.getUTCFullYear()}-${String(value).padStart(6, "0")}`,
   issue: async (snapshot, context) => {
     const xml = buildGermanEInvoiceXml(snapshot, context);
-    const validation = await (
-      dependencies.validate ??
-      (async ({ xml: value }) => {
-        const result = await validateInvoiceXml(value, { format: "zugferd-2.5-en16931" });
-        return result.ok ? { valid: true, errors: [] } : { valid: false, errors: result.error.issues };
-      })
-    )({ xml });
-    if (!validation.valid) {
-      throw new Error(`Generated E-Invoice failed XSD validation: ${JSON.stringify(validation.errors).slice(0, 2_000)}`);
-    }
     const rendered = await (dependencies.render ?? renderFacturXHtmlToPdf)({ html: buildHtml(snapshot, context.number), xml });
-    const embedded = await (
-      dependencies.extractEmbedded ??
-      (async (pdf) => {
-        const parsed = unwrap(await einvoice.parsePdf(pdf));
-        return { filename: parsed.filename, xml: parsed.xml };
-      })
-    )(rendered.pdf);
-    if (embedded.filename.toLowerCase() !== "factur-x.xml" || normalizedXml(embedded.xml) !== normalizedXml(xml)) {
-      throw new Error("Rendered E-Invoice does not contain the generated Factur-X XML.");
-    }
     const safeNumber = context.number.replaceAll(/[^A-Za-z0-9._-]/g, "_");
     const totals = calculate(snapshot);
     return {
@@ -251,14 +225,14 @@ export const createGermanEInvoiceProfile = (
         { key: "pdf", filename: `${safeNumber}.pdf`, mediaType: "application/pdf", bytes: rendered.pdf },
         { key: "structured", filename: "factur-x.xml", mediaType: "application/xml", bytes: new TextEncoder().encode(xml) },
       ],
-      validationStatus: "valid",
+      validationStatus: "unchecked",
       validationReport: {
         standard: "EN 16931",
         syntax: "UN/CEFACT CII D22B",
         profile: "ZUGFeRD 2.5 / Factur-X 1.09 EN 16931",
         inputRules: "valid",
-        xsd: "valid",
-        embeddedXml: "verified",
+        xsd: "not_checked",
+        embeddedXml: "not_checked",
         rounding: "line and tax-group half-up to 2 decimal places",
       },
     };

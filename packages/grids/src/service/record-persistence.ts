@@ -38,21 +38,34 @@ export const applyFinalizedComputedAccess = (
   }
 };
 
-export const mapRecordRow = (row: DbRecordRow): GridRecord => ({
-  id: row.id as string,
-  shortId: row.short_id as string,
-  tableId: row.table_id as string,
-  data: parseJsonbRow<Record<string, unknown>>(row.data, {}),
-  version: row.version as number,
-  finalizedAt: row.finalized_at ? (row.finalized_at as Date).toISOString() : null,
-  finalizedBy: (row.finalized_by as string | null) ?? null,
-  finalRevisionId: (row.final_revision_id as string | null) ?? null,
-  deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
-  createdBy: (row.created_by as string | null) ?? null,
-  updatedBy: (row.updated_by as string | null) ?? null,
-  createdAt: (row.created_at as Date).toISOString(),
-  updatedAt: (row.updated_at as Date).toISOString(),
-});
+export const mapRecordRow = (row: DbRecordRow, locale?: string): GridRecord => {
+  const data = { ...parseJsonbRow<Record<string, unknown>>(row.data, {}) };
+  const fieldErrors: Record<string, string> = {};
+  if (!row.finalized_at) {
+    const calculations = parseJsonbRow<{ values?: Record<string, unknown>; errors?: Record<string, boolean> }>(row.local_calculations, {});
+    for (const [id, value] of Object.entries(calculations.values ?? {})) {
+      // Failed lists retain their editable source cells; formulas have no raw input.
+      data[id] = calculations.errors?.[id] ? (data[id] ?? null) : value;
+      if (calculations.errors?.[id]) fieldErrors[id] = getGridsCrudMessages(locale).calculationFailed;
+    }
+  }
+  return {
+    id: row.id as string,
+    shortId: row.short_id as string,
+    tableId: row.table_id as string,
+    data,
+    ...(Object.keys(fieldErrors).length ? { fieldErrors } : {}),
+    version: row.version as number,
+    finalizedAt: row.finalized_at ? (row.finalized_at as Date).toISOString() : null,
+    finalizedBy: (row.finalized_by as string | null) ?? null,
+    finalRevisionId: (row.final_revision_id as string | null) ?? null,
+    deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
+    createdBy: (row.created_by as string | null) ?? null,
+    updatedBy: (row.updated_by as string | null) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
+};
 
 export const splitRelationsFromData = (
   data: Record<string, unknown>,

@@ -233,7 +233,6 @@ postgresTest(
         renderedXml = xml;
         return { pdf: pdf("issued invoice totals") };
       },
-      extractEmbedded: async () => ({ filename: "factur-x.xml", xml: renderedXml }),
     });
     const template = await insertProfileTemplate(scope.tableId, {
       kind: "profile",
@@ -281,6 +280,9 @@ postgresTest(
     const issued = await service.issueDocument(input);
     if (!issued.ok) throw issued.error;
     const document = issued.data.document;
+    expect(document.validationStatus).toBe("unchecked");
+    const [stored] = await sql`SELECT validation_report FROM grids.documents WHERE id = ${document.id}::uuid`;
+    expect(stored?.validation_report).toMatchObject({ xsd: "not_checked", embeddedXml: "not_checked" });
     expect(renderedXml).toContain("<ram:GrandTotalAmount>0.02</ram:GrandTotalAmount>");
     const capture = () =>
       captureWorkflowDocumentSource(

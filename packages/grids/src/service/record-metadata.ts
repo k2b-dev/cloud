@@ -11,6 +11,14 @@ type RecordActor = {
 
 const nonEmpty = (ids: string[] | undefined): string[] => [...new Set((ids ?? []).filter(Boolean))];
 
+/** Check parent liveness once for the fixed table, without distorting record
+ * cardinality estimates through joins to sparse metadata tables. */
+export const compileRecordScopeFilter = (tableId: string): unknown => sql`r.table_id = ${tableId}::uuid AND EXISTS (
+  SELECT 1 FROM grids.tables scope_table
+  JOIN grids.bases scope_base ON scope_base.id = scope_table.base_id AND scope_base.deleted_at IS NULL
+  WHERE scope_table.id = ${tableId}::uuid AND scope_table.deleted_at IS NULL
+)`;
+
 export const cleanRecordMeta = (meta: RecordMetaQuery | null | undefined): RecordMetaQuery | undefined => {
   if (!meta) return undefined;
   const ids = nonEmpty(meta.ids);

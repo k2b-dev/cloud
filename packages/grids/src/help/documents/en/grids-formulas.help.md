@@ -11,12 +11,14 @@ Create a **Formula field** when the result belongs on every record. Add a **Comp
 
 ## Where formulas run {icon="math-function"}
 
-- **Formula fields** recalculate for Draft records. Finalization freezes their values and types; later formula edits do not change them.
+- **Formula fields** update automatically for Draft records. Calculations that depend only on stored values in that record are saved with each edit and reused when reading. Changing a formula updates existing drafts too. Finalization freezes values and types; later formula edits do not change them.
 - **Computed columns** are temporary query output and do not add a field to the table.
 - **GQL conditions** use an expression inside `where` or `having`.
 - **GQL output** uses `formula(expression) as alias`.
 
 **Object-list columns** calculate within one row: enable **Rules and calculation** and reference sibling columns. Finalization freezes results. Record formulas reduce lists with `LIST_SUM(list, column)`, `LIST_AVG(list, column)`, `LIST_MIN(list, column)`, `LIST_MAX(list, column)` or `LIST_COUNT(list)`. Quote column names, e.g. `LIST_SUM(Items, 'Amount')`.
+
+Formulas that depend on related records, the current time or the reader’s time zone are calculated when read. You do not need to select a calculation mode. A calculation error remains visible; failed object-list calculations keep the entered cells so you can correct them.
 
 ## Expression rules {icon="book-2"}
 
@@ -175,6 +177,8 @@ IFERROR(total / quantity, 0)
 
 `TODAY()` returns the current date and `NOW()` returns the current date and time. Date-time calendar operations use the request's display timezone; when none is supplied, Grids uses the Cloud application timezone. Date-only values remain calendar dates. `DATEADD` accepts day(s), hour(s), minute(s), month(s), and year(s); it defaults to days and keeps month-end dates valid when adding months or years. `DATEDIFF` accepts day(s), hour(s), minute(s), and second(s), defaults to days, and returns `to - from`, rounded down to whole units.
 
+`DATEADD` accepts inputs and results in years 1000–9999. For datetimes, both the local calendar value and the resulting UTC instant must remain in that range. Larger shifts return `#DATEADD_OUT_OF_RANGE`, which `IFERROR` can handle; they do not abort the database query. Fractional counts still truncate toward zero.
+
 :::note Formula values
-Draft formulas calculate when read; finalized records keep captured values. Correct the source fields, not the displayed result.
+Draft formula values update automatically; finalized records keep captured values. Correct the source fields, not the displayed result.
 :::

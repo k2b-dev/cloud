@@ -2,7 +2,6 @@ import { type AuthContext, getDateConfig, type PermissionLevel } from "@k2b/clou
 import type { DateContext } from "@k2b/stdlib";
 import type { Context } from "hono";
 import type { DslQueryPreviewBody, DslQueryPreviewDiagnostic, DslQueryPreviewResponse, DslQuerySurface, RecordQuery } from "../contracts";
-import { canonicalizeDslQuery } from "../query-dsl/canonical";
 import { bindDslQueryContext, type DslQueryContextInput } from "../query-dsl/parameters";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { dslPreviewDiagnosticForCompilerError, previewDslQuery } from "../query-dsl/preview";
@@ -13,7 +12,6 @@ import {
   type DslTableSource,
   type DslViewSource,
   projectDslPlanToRecordQuery,
-  resolveDslQueryToQueryPlan,
 } from "../query-dsl/resolver";
 import { type DslResultCursor, decodeDslResultCursor, gqlResultFingerprint } from "../query-dsl/result-cursor";
 import {
@@ -26,6 +24,7 @@ import type { DslQueryAst } from "../query-dsl/types";
 import { gridsService } from "../service";
 import { authoringText, isGermanAuthoringLocale } from "../service/authoring-messages";
 import type { FederatedRevisionScope } from "../service/federated-tables";
+import { gqlPreparation } from "../service/gql-preparation-cache";
 import { buildTrustedGqlResolverContext, hydrateDslViewQueries } from "../service/gql-resolver-context";
 import { publicDiagnosticMessage } from "../service/public-diagnostics";
 import { validateRecordQueryForFields } from "../service/query-validation";
@@ -324,7 +323,7 @@ export const canonicalGqlSourceForContext = async (
     bound.ast,
   );
   const ast = sourceAst(bound.ast, body.currentSource, ctx);
-  const canonical = canonicalizeDslQuery(ast, ctx);
+  const canonical = await gqlPreparation.canonicalize(ast, ctx);
   if (!canonical.ok)
     return { ok: false, diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, runtime.dateConfig.locale, "gql.resolution") };
   return { ok: true, source: canonical.source, tableId: canonical.plan.tableId, plan: canonical.plan };
@@ -428,7 +427,7 @@ const executeQueryUnadmitted = async (
         : null;
     const canonical =
       typeof body.query === "string"
-        ? canonicalizeDslQuery(ast, ctx)
+        ? await gqlPreparation.canonicalize(ast, ctx)
         : !structuredSource || !ctx.authorizedTableIds.has(structuredSource.id)
           ? { ok: false as const, diagnostics: [{ message: apiMessagesForLocale(runtime.dateConfig.locale).querySourceMismatch }] }
           : validation && !validation.ok
@@ -595,7 +594,7 @@ const executeSavedViewSourceUnadmitted = async (
       ast: bound.ast,
       purpose: "saved-view-render",
     });
-    const resolved = resolveDslQueryToQueryPlan(bound.ast, context);
+    const resolved = await gqlPreparation.resolve(bound.ast, context);
     if (!resolved.ok) {
       const response = {
         ok: false as const,
@@ -692,7 +691,7 @@ export const compileGqlViewWrite = async (
   const currentSource: DslCurrentSource = { kind: "table", tableId: params.tableId };
   const ctx = await buildPermissionedGqlResolverContext(c, params.baseId, params.tableId, currentSource, parsed.ast);
   const ast = sourceAst(parsed.ast, currentSource, ctx);
-  const canonical = canonicalizeDslQuery(ast, ctx);
+  const canonical = await gqlPreparation.canonicalize(ast, ctx);
   if (!canonical.ok)
     return { ok: false, diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, getDateConfig(c).locale, "gql.resolution") };
   if (canonical.plan.tableId !== params.tableId) {
@@ -724,7 +723,7 @@ export const compileGqlToRecordQuery = async (
   const currentSource: DslCurrentSource = { kind: "table", tableId: params.tableId };
   const ctx = await buildPermissionedGqlResolverContext(c, params.baseId, params.tableId, currentSource, bound.ast);
   const ast = sourceAst(bound.ast, currentSource, ctx);
-  const canonical = canonicalizeDslQuery(ast, ctx);
+  const canonical = await gqlPreparation.canonicalize(ast, ctx);
   if (!canonical.ok)
     return { ok: false, diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, getDateConfig(c).locale, "gql.resolution") };
   if (canonical.plan.tableId !== params.tableId) {

@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
+import { normalizedSql } from "../sql-test-utils";
 import { canonicalizeDslQuery } from "./canonical";
 import { resolveDslQueryToQueryPlan, resolveDslQueryToRecordQuery } from "./resolver";
 import { amountFieldId, ctx, customerLinkFieldId, customers, orders, parseOk } from "./resolver-fixtures";
+import { compileDslQueryPlanToSql } from "./sql-compiler";
 
 const view = {
   kind: "view" as const,
@@ -17,6 +19,21 @@ left join view Totals as paid on paid."Customer link" = customer.id
 select name, paid.total, formula(score - IF(ISBLANK(paid.total), 0, paid.total)) as remaining
 where paid.total > 0
 sort remaining desc`;
+
+test("summary plans keep metadata liveness independent from record cardinality", () => {
+  const resolved = resolveDslQueryToQueryPlan(parseOk(source), context);
+  if (!resolved.ok) throw new Error(JSON.stringify(resolved.diagnostics));
+  const compiled = compileDslQueryPlanToSql(resolved.plan, { fieldsByTableId: context.fieldsByTableId });
+  if (!compiled.ok) throw new Error(compiled.error);
+  const text = normalizedSql(compiled.query.sql);
+  // Both the parent record query and the child grouping check their fixed table
+  // once. Joining either record stream through metadata can collapse estimates
+  // and select quadratic nested loops when a small Base catalog has no stats.
+  expect(text.match(/EXISTS \(\s*SELECT 1 FROM grids\.tables scope_table/g)).toHaveLength(2);
+  expect(text).not.toMatch(/JOIN grids\.tables \w+ ON \w+\.id = r\.table_id/);
+  expect(text).toContain("scope_base.deleted_at IS NULL");
+  expect(text).toContain("scope_table.deleted_at IS NULL");
+});
 
 test("summary joins without a source alias round-trip through canonical GQL", () => {
   const ast = parseOk(source.replace("Customers as customer", "Customers").replace("customer.id", "id"));

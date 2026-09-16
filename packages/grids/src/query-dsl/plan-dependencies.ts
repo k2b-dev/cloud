@@ -1,5 +1,5 @@
 import { collectFieldRefs, parseFormula } from "../formula/parser";
-import { normalizeRefKey } from "../ref-syntax";
+import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import type { Field } from "../service/types";
 import type { DslResolvedSqlQueryPlan } from "./resolver";
 import { isImplicitlySelectableField, relationTargetIsReadable } from "./sql-compiler-fields";
@@ -86,4 +86,37 @@ export const dslQueryReferencedFieldIds = (
     }
   }
   return ids;
+};
+
+/** Runtime preparation also needs author-written formula refs in predicates and
+ * computed columns. Keep this separate from published query fingerprints. Names
+ * are matched conservatively across scopes: homonyms may prepare extra fields,
+ * but cannot remove a dependency from a joined or nested source. */
+export const dslQueryCalculationFieldIds = (plan: DslResolvedSqlQueryPlan, fieldsByTableId: Record<string, Field[]>): Set<string> => {
+  const refs = new Set<string>();
+  const addRef = (ref: string) => {
+    refs.add(normalizeRefKey(ref));
+    const qualified = parseQualifiedIdentifierRef(ref);
+    if (qualified) refs.add(normalizeRefKey(qualified.ref));
+  };
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+    } else if (value && typeof value === "object") {
+      for (const [key, item] of Object.entries(value)) {
+        if (key === "fieldId" && typeof item === "string") addRef(item);
+        if (key === "expression" && typeof item === "string") {
+          const parsed = parseFormula(item, { scopedRefs: true });
+          if (parsed.ok) for (const ref of collectFieldRefs(parsed.ast)) addRef(ref);
+        }
+        visit(item);
+      }
+    }
+  };
+  visit(plan);
+  const referenced = Object.values(fieldsByTableId)
+    .flat()
+    .filter((field) => !field.deletedAt && [field.id, field.shortId, field.name].some((key) => refs.has(normalizeRefKey(key))))
+    .map((field) => field.id);
+  return dslQueryReferencedFieldIds(plan, fieldsByTableId, referenced);
 };

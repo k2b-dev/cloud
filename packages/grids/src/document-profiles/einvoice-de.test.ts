@@ -1,5 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { renderFacturXHtmlToPdfWithConfig } from "@k2b/cloud/services/pdf";
+import { unwrap } from "@k2b/stdlib";
+import { einvoice } from "@k2b/stdlib/finance";
+import { validateInvoiceXml } from "@k2b/stdlib/finance/validate";
 import { PDFDocument } from "pdf-lib";
 import {
   buildGermanEInvoiceXml,
@@ -60,14 +63,15 @@ livePdfTest(
       const start = performance.now();
       const issued = await profile.issue(input, context);
       const totalMs = performance.now() - start;
-      expect(issued.validationStatus).toBe("valid");
-      expect(issued.validationReport).toMatchObject({ xsd: "valid", embeddedXml: "verified" });
+      await verifyOutput(issued.artifacts);
+      expect(issued.validationStatus).toBe("unchecked");
+      expect(issued.validationReport).toMatchObject({ xsd: "not_checked", embeddedXml: "not_checked" });
       expect(issued.output).toMatchObject({ netAmount: "120.00", grossAmount: "140.40" });
       const pdf = issued.artifacts.find((artifact) => artifact.key === "pdf")!;
       expect(new TextDecoder().decode(pdf.bytes.subarray(0, 5))).toBe("%PDF-");
       expect((await PDFDocument.load(pdf.bytes)).getPageCount()).toBeGreaterThan(0);
       console.log(
-        `E-Invoice ${billing.kind}: total ${totalMs.toFixed(0)} ms; Gotenberg ${renderMs.toFixed(0)} ms; serializer/XSD/attachment check ${(totalMs - renderMs).toFixed(0)} ms`,
+        `E-Invoice ${billing.kind}: total ${totalMs.toFixed(0)} ms; Gotenberg ${renderMs.toFixed(0)} ms; serialization and HTML ${(totalMs - renderMs).toFixed(0)} ms`,
       );
     }
   },
@@ -95,11 +99,10 @@ describe("German E-Invoice profile", () => {
           html = value.html;
           return { pdf: new TextEncoder().encode("%PDF-1.7 fixture") };
         },
-        extractEmbedded: async () => ({ filename: "factur-x.xml", xml }),
       });
       expect(profile.version).toBe(2);
       const issued = await profile.issue(input, context);
-      expect(issued.validationStatus).toBe("valid");
+      expect(issued.validationStatus).toBe("unchecked");
       expect(issued.output).toEqual({
         currency: "EUR",
         netAmount: "120.00",
@@ -110,6 +113,7 @@ describe("German E-Invoice profile", () => {
           { taxRate: "7.00", netAmount: "20.00", taxAmount: "1.40" },
         ],
       });
+      expect((await validateInvoiceXml(xml, { format: "zugferd-2.5-en16931" })).ok).toBe(true);
       expect(xml).toContain(`<ram:TypeCode>${code}</ram:TypeCode>`);
       expect(xml).toContain("20260815");
       expect(xml).toContain("<ram:GrandTotalAmount>140.40</ram:GrandTotalAmount>");
@@ -157,9 +161,9 @@ describe("German E-Invoice profile", () => {
     const xml = buildGermanEInvoiceXml(snapshot, context);
     const profile = createGermanEInvoiceProfile({
       render: async () => ({ pdf: new TextEncoder().encode("%PDF-1.7 fixture") }),
-      extractEmbedded: async () => ({ filename: "factur-x.xml", xml }),
     });
-    await expect(profile.issue(snapshot, context)).resolves.toMatchObject({ validationStatus: "valid" });
+    await expect(profile.issue(snapshot, context)).resolves.toMatchObject({ validationStatus: "unchecked" });
+    expect((await validateInvoiceXml(xml, { format: "zugferd-2.5-en16931" })).ok).toBe(true);
     expect(xml).toContain("<ram:LineTotalAmount>100.00</ram:LineTotalAmount>");
     expect(xml).toContain('<ram:TaxTotalAmount currencyID="EUR">20.40</ram:TaxTotalAmount>');
     expect(xml).toContain("<ram:GrandTotalAmount>140.40</ram:GrandTotalAmount>");
@@ -170,18 +174,22 @@ describe("German E-Invoice profile", () => {
     expect(rounded).toContain("<ram:LineTotalAmount>0.01</ram:LineTotalAmount>");
   });
 
-  test("renders the PDF and XML from the same frozen model and marks only technical validity", async () => {
+  test("renders PDF and XML from the same frozen model without claiming output validation", async () => {
     let receivedXml = "";
     const profile = createGermanEInvoiceProfile({
       render: async (input) => {
         receivedXml = input.xml;
         return { pdf: new TextEncoder().encode("%PDF-1.7 fixture") };
       },
-      extractEmbedded: async () => ({ filename: "factur-x.xml", xml: receivedXml.replace('encoding="UTF-8"', 'encoding="utf-8"') }),
     });
     const result = await profile.issue(snapshot, context);
     expect(new TextDecoder().decode(result.artifacts[1]?.bytes)).toBe(receivedXml);
-    expect(result.validationReport).toMatchObject({ inputRules: "valid", xsd: "valid", embeddedXml: "verified", standard: "EN 16931" });
+    expect(result.validationReport).toMatchObject({
+      inputRules: "valid",
+      xsd: "not_checked",
+      embeddedXml: "not_checked",
+      standard: "EN 16931",
+    });
   });
 
   test("uses the same half-up line totals in XML and PDF, including repeated half cents", async () => {
@@ -202,7 +210,6 @@ describe("German E-Invoice profile", () => {
         html = value.html;
         return { pdf: new TextEncoder().encode("%PDF-1.7 fixture") };
       },
-      extractEmbedded: async () => ({ filename: "factur-x.xml", xml }),
     });
     await profile.issue(input, context);
     expect(xml.match(/<ram:LineTotalAmount>1.01<\/ram:LineTotalAmount>/g)).toHaveLength(3);
@@ -226,16 +233,16 @@ describe("German E-Invoice profile", () => {
     expect(germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, lines: [{ ...snapshot.lines[0], taxRate: "0.00" }] }).success).toBe(false);
   });
 
-  test("rejects a PDF whose embedded XML is not the generated invoice", async () => {
-    const profile = createGermanEInvoiceProfile({
-      render: async () => ({ pdf: new TextEncoder().encode("%PDF-1.7 fixture") }),
-      extractEmbedded: async () => ({ filename: "factur-x.xml", xml: "<different/>" }),
+  test("renders once and propagates renderer failures", async () => {
+    const render = mock(async () => {
+      throw new Error("renderer unavailable");
     });
-    await expect(profile.issue(snapshot, context)).rejects.toThrow("does not contain the generated Factur-X XML");
+    await expect(createGermanEInvoiceProfile({ render }).issue(snapshot, context)).rejects.toThrow("renderer unavailable");
+    expect(render).toHaveBeenCalledTimes(1);
   });
 });
 
-test("issuance verifies a real PDF attachment through the stdlib reader", async () => {
+test("release verification checks a real PDF attachment through the stdlib reader", async () => {
   const profile = createGermanEInvoiceProfile({
     render: async ({ xml }) => {
       const pdf = await PDFDocument.create();
@@ -245,7 +252,38 @@ test("issuance verifies a real PDF attachment through the stdlib reader", async 
     },
   });
   const result = await profile.issue(snapshot, context);
-  expect(result.validationStatus).toBe("valid");
+  expect(result.validationStatus).toBe("unchecked");
+  await verifyOutput(result.artifacts);
   expect(result.output?.grossAmount).toBe("140.40");
-  expect(result.validationReport).toMatchObject({ xsd: "valid", embeddedXml: "verified" });
+  expect(result.validationReport).toMatchObject({ xsd: "not_checked", embeddedXml: "not_checked" });
+});
+
+// Release checks deliberately live outside issuance. They validate what the
+// renderer actually returned, including its attachment, rather than a mock claim.
+async function verifyOutput(artifacts: { key: string; bytes: Uint8Array }[]) {
+  const pdf = artifacts.find((artifact) => artifact.key === "pdf")!;
+  const xml = new TextDecoder().decode(artifacts.find((artifact) => artifact.key === "structured")!.bytes);
+  expect((await validateInvoiceXml(xml, { format: "zugferd-2.5-en16931" })).ok).toBe(true);
+  const embedded = unwrap(await einvoice.parsePdf(pdf.bytes));
+  expect(embedded.filename.toLowerCase()).toBe("factur-x.xml");
+  const normalized = (value: string) => value.trim().replace(/encoding="utf-8"/i, 'encoding="UTF-8"');
+  expect(normalized(embedded.xml)).toBe(normalized(xml));
+}
+
+test("release verification rejects a mismatched PDF attachment", async () => {
+  const profile = createGermanEInvoiceProfile({
+    render: async () => {
+      const pdf = await PDFDocument.create();
+      pdf.addPage();
+      await pdf.attach(
+        new TextEncoder().encode(buildGermanEInvoiceXml(snapshot, { ...context, number: "WRONG-INVOICE" })),
+        "factur-x.xml",
+        { mimeType: "application/xml" },
+      );
+      return { pdf: await pdf.save() };
+    },
+  });
+  const issued = await profile.issue(snapshot, context);
+  expect(issued.validationStatus).toBe("unchecked");
+  await expect(verifyOutput(issued.artifacts)).rejects.toThrow();
 });
