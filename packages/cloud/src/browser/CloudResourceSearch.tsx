@@ -370,7 +370,12 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             onSelect={updateCaret}
             onKeyUp={updateCaret}
             onKeyDown={handleKeyDown}
-            placeholder={tags().length ? "" : (props.placeholder ?? (props.selectionMode ? t().pickerPlaceholder : t().searchPlaceholder))}
+            placeholder={
+              tags().length
+                ? ""
+                : (props.placeholder ??
+                  (props.selectionMode ? t().pickerPlaceholder : scope() ? t().scopedSearchPlaceholder : t().searchPlaceholder))
+            }
             autocomplete="off"
             autocapitalize="off"
             spellcheck={false}
