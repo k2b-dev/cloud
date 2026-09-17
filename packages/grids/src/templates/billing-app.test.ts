@@ -64,9 +64,18 @@ for (const locale of ["en", "de"]) {
         section: { title: expect.any(String), description: expect.any(String), collapsible: true },
       }),
     );
-    expect(input("setup")).toContainEqual(
-      expect.objectContaining({ fieldId: { $ref: "field", key: "settings.iban" }, section: { title: expect.any(String) } }),
-    );
+    expect(input("setup")).toBeUndefined();
+    expect(template.tables.some((table) => table.key === "settings")).toBe(false);
+    expect(JSON.stringify(template.forms)).not.toContain('"key":"bills.original_company"');
+    const originalCompany = template.tables
+      .find((table) => table.key === "bills")!
+      .fields.find((field) => field.key === "original_company")!;
+    expect(originalCompany).toMatchObject({ type: "json", hideInTable: true });
+    for (const key of ["new_correction", "issue_correction"]) {
+      const workflow = template.workflows!.find((workflow) => workflow.key === key)!;
+      expect(workflow.source).toContain(`${JSON.stringify(originalCompany.name)}: "\${{ originalDocument.business }}"`);
+    }
+    expect(JSON.stringify(template)).not.toContain('"key":"bills.settings"');
     const lines = billingLineConfig(locale);
     expect(lines.fields.find((field) => field.id === "Detail")).toMatchObject({ detailsOnly: true, required: false });
     expect(JSON.stringify(input("edit_payment"))).not.toContain("payments.bill");
@@ -86,7 +95,7 @@ for (const locale of ["en", "de"]) {
     }
   });
 
-  test(`billing ${locale} app has a conditional setup entry and valid authored queries`, () => {
+  test(`billing ${locale} app uses central company settings and valid authored queries`, () => {
     const template = createBillingTemplate(locale);
     // Only the issued Document allocates a business number. Draft identity is
     // a random reference, never a second independent invoice sequence.
@@ -187,14 +196,14 @@ for (const locale of ["en", "de"]) {
       );
     expect(documentActions).toHaveLength(3);
     for (const action of documentActions) expect(action).toMatchObject({ variant: "primary", background: { documentBlockId: "identity" } });
-    expect(app.pages).toHaveLength(11);
-    expect(app.pages.filter((page) => page.navigation?.visible).map((page) => page.id)).toEqual([
-      "invoices",
-      "balances",
-      "partners",
-      "settings",
+    expect(app.pages).toHaveLength(9);
+    expect(app.pages.filter((page) => page.navigation?.visible).map((page) => page.id)).toEqual(["invoices", "balances", "partners"]);
+    expect(app.sidebar?.actions).toHaveLength(2);
+    expect(app.sidebar?.actions.map((action) => action.kind)).toEqual(["form", "form"]);
+    expect(app.sidebar?.actions.map((action) => (action.kind === "form" ? action.formId : null))).toEqual([
+      ref("form:new_invoice"),
+      ref("form:new_self_billing"),
     ]);
-    expect(app.sidebar?.actions).toHaveLength(1);
     expect(app.pages.some((page) => page.id === "bill-details" || page.id === "payment-edit")).toBe(false);
     const blocksFor = (id: string) =>
       app.pages.find((page) => page.id === id)!.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
@@ -285,11 +294,8 @@ for (const locale of ["en", "de"]) {
         { id: "refund" },
       ],
     });
-    const settings = app.pages.find((page) => page.id === "settings")!;
-    expect(settings.navigation).toMatchObject({ visible: true, recordId: ref("record:settings") });
-    expect(blocksFor("settings").some((block) => block.type === "records")).toBe(false);
-    expect(blocksFor("settings").some((block) => block.id === "identity")).toBe(false);
-    expect(blocksFor("invoices").find((block) => block.id === "start-help")?.availableWhen?.query).toContain(" = false");
+    expect(app.pages.some((page) => page.id === "settings" || page.id === "self-billing-new")).toBe(false);
+    expect(blocksFor("invoices").find((block) => block.id === "start-help")?.availableWhen).toBeUndefined();
     // Saving refreshes the same workspace so editing stays available and all
     // headings, saved values and computed totals reflect the committed version.
     for (const page of app.pages) {

@@ -1,3 +1,4 @@
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -14,7 +15,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { AccessEntry } from "@k2b/cloud/contracts";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicBase } from "../../../api/public-dto";
@@ -30,13 +30,18 @@ const normalizeDocumentDefaults = (defaults: DocumentDefaults = {}): DocumentDef
   legalName: defaults.legalName ?? "",
   senderLine: defaults.senderLine ?? "",
   address: defaults.address ?? "",
+  postalCode: defaults.postalCode ?? "",
+  city: defaults.city ?? "",
+  countryCode: defaults.countryCode ?? "",
   department: defaults.department ?? "",
   contactEmail: defaults.contactEmail ?? "",
   phone: defaults.phone ?? "",
   url: defaults.url ?? "",
   taxId: defaults.taxId ?? "",
+  vatId: defaults.vatId ?? "",
   registration: defaults.registration ?? "",
   bankName: defaults.bankName ?? "",
+  accountName: defaults.accountName ?? "",
   iban: defaults.iban ?? "",
   bic: defaults.bic ?? "",
   paymentTerms: defaults.paymentTerms ?? "",
@@ -45,7 +50,7 @@ const normalizeDocumentDefaults = (defaults: DocumentDefaults = {}): DocumentDef
 
 const cleanDocumentDefaults = (draft: DocumentDefaultsDraft): DocumentDefaults => {
   const entries = Object.entries(draft)
-    .map(([key, value]) => [key, value.trim()] as const)
+    .map(([key, value]) => [key, key === "address" ? value : value.trim()] as const)
     .filter(([, value]) => value.length > 0);
   return Object.fromEntries(entries) as DocumentDefaults;
 };
@@ -130,6 +135,7 @@ export function DocumentDefaultsForm(props: {
           <div class="lg:col-span-2">
             <TextInput
               label={t().address}
+              description={t().addressDescription}
               icon="ti ti-map-pin"
               value={value("address")}
               onValueChange={(v) => patch({ address: v })}
@@ -138,6 +144,21 @@ export function DocumentDefaultsForm(props: {
               disabled={mutation.loading()}
             />
           </div>
+          <TextInput
+            label={t().postalCode}
+            value={value("postalCode")}
+            onValueChange={(v) => patch({ postalCode: v })}
+            disabled={mutation.loading()}
+          />
+          <TextInput label={t().city} value={value("city")} onValueChange={(v) => patch({ city: v })} disabled={mutation.loading()} />
+          <TextInput
+            label={t().countryCode}
+            description={t().countryCodeDescription}
+            value={value("countryCode")}
+            maxLength={2}
+            onValueChange={(v) => patch({ countryCode: v.toUpperCase() })}
+            disabled={mutation.loading()}
+          />
         </div>
       </SettingsGroup>
 
@@ -178,11 +199,18 @@ export function DocumentDefaultsForm(props: {
             onValueChange={(v) => patch({ taxId: v })}
             disabled={mutation.loading()}
           />
+          <TextInput label={t().vatId} value={value("vatId")} onValueChange={(v) => patch({ vatId: v })} disabled={mutation.loading()} />
           <TextInput
             label={t().registration}
             icon="ti ti-certificate"
             value={value("registration")}
             onValueChange={(v) => patch({ registration: v })}
+            disabled={mutation.loading()}
+          />
+          <TextInput
+            label={t().accountName}
+            value={value("accountName")}
+            onValueChange={(v) => patch({ accountName: v })}
             disabled={mutation.loading()}
           />
           <TextInput

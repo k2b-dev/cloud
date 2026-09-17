@@ -3,6 +3,7 @@ import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import type { MiddlewareHandler } from "hono";
 import { gridsService } from "../service";
+import * as publicResources from "../service/public-resources";
 import { createBasesApi } from "./bases";
 
 const user: User = {
@@ -161,19 +162,68 @@ describe("Grids bases API", () => {
       };
     });
 
+    const documentDefaults = {
+      legalName: "Example GmbH",
+      address: "  Main Street 1\nBuilding B ",
+      postalCode: "89073",
+      city: "Ulm",
+      countryCode: "DE",
+      taxId: "12/345/67890",
+      vatId: "DE123456789",
+      accountName: "Example GmbH",
+    };
     const response = await createBasesApi({ requireAuthenticated }).request("/", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Invoices", documentDefaults: { legalName: "Example GmbH" } }),
+      body: JSON.stringify({ name: "Invoices", documentDefaults }),
     });
 
     expect(response.status).toBe(201);
     expect(createInput).toEqual({
       name: "Invoices",
       description: null,
-      documentDefaults: { legalName: "Example GmbH" },
+      documentDefaults,
     });
-    expect(await response.json()).toMatchObject({ documentDefaults: { legalName: "Example GmbH" } });
+    expect(await response.json()).toMatchObject({ documentDefaults });
+  });
+
+  test("updating structured document defaults still requires Base admin grants", async () => {
+    const baseId = "44444444-4444-4444-8444-444444444444";
+    spyOn(publicResources, "resolvePublicId").mockResolvedValue(baseId);
+    spyOn(gridsService.permission, "loadBaseGrantsForSubject").mockResolvedValue([]);
+    const permission = spyOn(gridsService.permission, "resolve").mockReturnValue("write");
+    const documentDefaults = {
+      legalName: "Example GmbH",
+      address: " Street 1\n",
+      postalCode: "89073",
+      city: "Ulm",
+      countryCode: "DE",
+      vatId: "DE123456789",
+      accountName: "Example GmbH",
+    };
+    const update = spyOn(gridsService.base, "update").mockResolvedValue({
+      ok: true,
+      data: {
+        id: baseId,
+        shortId: "BASE01",
+        name: "Invoices",
+        description: null,
+        documentDefaults,
+        createdBy: user.id,
+        deletedAt: null,
+        createdAt: "2026-09-20T00:00:00.000Z",
+        updatedAt: "2026-09-20T00:00:00.000Z",
+      },
+    });
+    const app = createBasesApi({ requireAuthenticated });
+    const request = { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ documentDefaults }) };
+    expect((await app.request("/BASE01", request)).status).toBe(403);
+    expect(update).not.toHaveBeenCalled();
+    permission.mockReturnValue("admin");
+    const response = await app.request("/BASE01", request);
+    expect(response.status).toBe(200);
+    expect(update.mock.calls[0]?.slice(0, 3)).toEqual([baseId, { documentDefaults }, user.id]);
+    expect(await response.json()).toMatchObject({ documentDefaults });
   });
 
   test("rejects the removed documentProfile Base field", async () => {

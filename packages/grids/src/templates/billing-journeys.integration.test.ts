@@ -7,12 +7,14 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createWorkflowRun } from "@k2b/cloud/workflows/store";
 import { extractXml } from "@stackforge-eu/factur-x";
 import { sql } from "bun";
+import type { DocumentDefaults } from "../contracts";
 import { createGermanBillingProfile, germanBillingProfile } from "../document-profiles/einvoice-de";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
+import { update as updateBase } from "../service/bases";
 import { getDocument, getDocumentArtifact, getDocumentPdf } from "../service/documents";
 import { buildTrustedGqlResolverContext } from "../service/gql-resolver-context";
 import { finalize } from "../service/record-finalization";
@@ -147,7 +149,13 @@ const fixture = async () => {
     const [view] = await sql`SELECT source FROM grids.views WHERE base_id = ${baseId}::uuid AND name = ${name}`;
     return queryRows(view.source);
   };
-  return { baseId, table, invoke, appRows, balanceRows };
+  let business: DocumentDefaults = {};
+  const configureBusiness = async (values: DocumentDefaults) => {
+    business = { ...business, ...values };
+    const result = await updateBase(baseId, { documentDefaults: business }, actorId);
+    if (!result.ok) throw new Error(result.error.message);
+  };
+  return { baseId, table, invoke, appRows, balanceRows, configureBusiness };
 };
 
 const ref = (tableId: string, recordId: string): WorkflowJsonValue => ({ kind: "record", tableId, recordId });
@@ -175,15 +183,21 @@ realPdfJourneyTest("billing workflows persist real invoice, correction and self-
   const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
   try {
     const f = await fixture();
-    const settings = await f.table("settings");
     const parties = await f.table("parties");
     const bills = await f.table("bills");
-    const [issuer] = await sql`SELECT id::text FROM grids.records WHERE table_id = ${settings.id}::uuid`;
     const company = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
-    await settings.edit(issuer.id, { ...company, name: "Journey issuer", vat_id: "DE123456789", ready: true });
+    await f.configureBusiness({
+      legalName: "Journey issuer",
+      vatId: "DE123456789",
+      address: company.street,
+      postalCode: company.postal_code,
+      city: company.city,
+      countryCode: "DE",
+      iban: company.iban,
+      accountName: company.account_name,
+    });
     const partner = await parties.add({ ...company, name: "Journey partner", vat_id: "DE987654321" });
     const values = {
-      settings: [issuer.id],
       party: [partner.id],
       invoice_date: "2026-09-15",
       service_date: "2026-09-01",
@@ -269,23 +283,22 @@ journeyTest("invoice issuance recovers a renderer outage after finalization with
   const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
   try {
     const f = await fixture();
-    const settings = await f.table("settings");
     const parties = await f.table("parties");
     const bills = await f.table("bills");
-    const [issuer] = await sql`SELECT id::text FROM grids.records WHERE table_id = ${settings.id}::uuid`;
     const address = { street: "Test 1", postal_code: "89073", city: "Ulm" };
-    await settings.edit(issuer.id, {
-      ...address,
-      name: "Frozen issuer",
-      vat_id: "DE123456789",
-      ready: true,
+    await f.configureBusiness({
+      legalName: "Frozen issuer",
+      vatId: "DE123456789",
+      address: address.street,
+      postalCode: address.postal_code,
+      city: address.city,
+      countryCode: "DE",
       iban: "DE89370400440532013000",
-      account_name: "Frozen issuer account",
+      accountName: "Frozen issuer account",
     });
     const buyer = await parties.add({ ...address, name: "Frozen buyer", vat_id: "DE987654321" });
     const invoice = await bills.add({
       kind: ["invoice"],
-      settings: [issuer.id],
       party: [buyer.id],
       invoice_date: "2026-09-14",
       service_date: "2026-09-01",
@@ -315,7 +328,7 @@ journeyTest("invoice issuance recovers a renderer outage after finalization with
     expect(firstContext.number).not.toBe("PREVIEW");
     expect(firstContext.number.length).toBeGreaterThan(0);
     await parties.edit(buyer.id, { name: "Changed after outage" });
-    await settings.edit(issuer.id, { name: "Changed after outage" });
+    await f.configureBusiness({ legalName: "Changed after outage" });
     rendererAvailable = true;
     // The same user action must recover a finalized bill, not require a
     // different draft, a manual status change, or another allocated number.
@@ -356,12 +369,19 @@ journeyTest(
     const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
     try {
       const f = await fixture();
-      const settings = await f.table("settings");
       const parties = await f.table("parties");
       const bills = await f.table("bills");
-      const [issuer] = await sql`SELECT id::text FROM grids.records WHERE table_id = ${settings.id}::uuid`;
       const company = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
-      await settings.edit(issuer.id, { ...company, name: "Buyer issuing settlement", vat_id: "DE123456789", ready: true });
+      await f.configureBusiness({
+        legalName: "Buyer issuing settlement",
+        vatId: "DE123456789",
+        address: company.street,
+        postalCode: company.postal_code,
+        city: company.city,
+        countryCode: "DE",
+        iban: company.iban,
+        accountName: company.account_name,
+      });
       const supplier = await parties.add({
         ...company,
         name: "Commission supplier",
@@ -377,7 +397,6 @@ journeyTest(
       }));
       const values = {
         kind: ["selfBilling"],
-        settings: [issuer.id],
         party: [supplier.id],
         invoice_date: "2026-09-14",
         service_date: "2026-09-01",
@@ -506,12 +525,19 @@ for (const scenario of [
       const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
       try {
         const f = await fixture();
-        const settings = await f.table("settings");
         const parties = await f.table("parties");
         const bills = await f.table("bills");
-        const [issuer] = await sql`SELECT id::text FROM grids.records WHERE table_id = ${settings.id}::uuid`;
         const company = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
-        await settings.edit(issuer.id, { ...company, name: "Issuer", vat_id: "DE123456789", ready: true });
+        await f.configureBusiness({
+          legalName: "Issuer",
+          vatId: "DE123456789",
+          address: company.street,
+          postalCode: company.postal_code,
+          city: company.city,
+          countryCode: "DE",
+          iban: company.iban,
+          accountName: company.account_name,
+        });
         // Outgoing invoices do not need the buyer's bank account.
         const buyer = await parties.add({
           ...company,
@@ -522,7 +548,6 @@ for (const scenario of [
         });
         const invoice = await bills.add({
           kind: ["invoice"],
-          settings: [issuer.id],
           party: [buyer.id],
           invoice_date: "2026-09-14",
           service_date: "2026-09-01",
@@ -540,7 +565,7 @@ for (const scenario of [
         expect(render).toHaveBeenCalledTimes(1);
         if (!roundingCase) {
           await parties.edit(buyer.id, { name: "Renamed buyer" });
-          await settings.edit(issuer.id, { name: "Renamed issuer" });
+          await f.configureBusiness({ legalName: "Renamed issuer" });
         }
         for (let index = 0; index < (roundingCase ? 1 : 2); index++) succeeded(await f.invoke("Prepare correction", { bill: invoiceRef }));
         const credits = await sql<
@@ -550,6 +575,7 @@ for (const scenario of [
         for (const credit of credits) {
           const before = await get(bills.id, credit.id);
           expect(before?.data[bills.ids.original_number!]).toBe(originals[0].number);
+          expect(before?.data[bills.ids.original_company!]).toMatchObject({ legalName: "Issuer", countryCode: "DE" });
           expect(before?.data[bills.ids.invoice_date!]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
           expect(before?.data[bills.ids.invoice_date!]).not.toBe("2026-01-15");
           expect(before?.data[bills.ids.due_date!] ?? null).toBeNull();
@@ -559,6 +585,7 @@ for (const scenario of [
             invoice_date: "2026-09-15",
             due_date: "2026-09-15",
             reason: "Partial refund",
+            original_company: { legalName: "Forged draft issuer", countryCode: "FR" },
           });
         }
         if (!roundingCase) {

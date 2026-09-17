@@ -353,7 +353,7 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
             },
           },
           description:
-            "Validate profile inputs after changes, before commit. Failure rolls back changes. Does not render or issue a document.",
+            "Validate profile inputs after changes, before commit. Failure rolls back changes. Finalized oncePerFinalizedRecord targets reserve their number and frozen inputs for later generation. Does not render a PDF.",
         },
       },
     },

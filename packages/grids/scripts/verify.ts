@@ -138,6 +138,7 @@ if (process.argv.includes("--bootstrap")) {
       "src/frontend/_components/forms/FormInputValidation.behavior.test.tsx",
       "src/frontend/_components/dialogs/DocumentTemplatesManagerDialog.behavior.test.tsx",
       "src/frontend/_components/settings/settings-creation.behavior.test.tsx",
+      "src/frontend/_components/settings/DocumentDefaultsForm.behavior.test.tsx",
       "src/frontend/_components/records/RecordDialogs.behavior.test.tsx",
       "src/frontend/_components/workflows/WorkflowLauncherManager.behavior.test.tsx",
       "src/frontend/_components/workflows/WorkflowRunDetailPanel.behavior.test.tsx",

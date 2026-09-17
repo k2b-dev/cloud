@@ -120,9 +120,9 @@ describe("Grids workflow binder", () => {
       data: { columns: [{ key: value, type: text }], rows: [{ value: "\${{ issued.number }}" }] }
       output: { kind: json }
 `;
-    for (const field of ["number", "shortId", "primaryArtifactKey"])
+    for (const field of ["number", "shortId", "primaryArtifactKey", "business.legalName", "business.countryCode"])
       expect((await compileAndBindGridsWorkflowSource(source.replace("issued.number", `issued.${field}`), catalog())).ok).toBe(true);
-    for (const field of ["documentNumber", "snapshotId", "workflowRunId"])
+    for (const field of ["documentNumber", "snapshotId", "workflowRunId", "business.unrecognized"])
       expect((await compileAndBindGridsWorkflowSource(source.replace("issued.number", `issued.${field}`), catalog())).ok).toBe(false);
   });
   test("binds typed inline data and rejects dynamic column definitions and unknown inputs", async () => {

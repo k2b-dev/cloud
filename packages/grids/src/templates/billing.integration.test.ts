@@ -8,6 +8,7 @@ import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { getBaseNavigation } from "../service/base-navigation";
+import { update as updateBase } from "../service/bases";
 import { listByTable } from "../service/fields";
 import { type FormSubmission, submitForm } from "../service/form-submission";
 import { get as getForm } from "../service/forms";
@@ -20,7 +21,10 @@ import { deleteTestWorkflowScope, publishTestWorkflowVersion } from "../service/
 import { createBillingTemplate } from "./billing";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (process.env.GRIDS_DB_TEST !== "1") return;
+  const [db] = await sql`SELECT current_database() AS name`;
+  if (!db.name.startsWith("grids_verify_")) throw new Error("Billing integration requires an isolated grids_verify_ database");
+  await migrate();
 });
 
 for (const locale of ["en", "de"]) {
@@ -38,16 +42,15 @@ for (const locale of ["en", "de"]) {
         const baseId = result.data.id;
         try {
           const tables = await sql`SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid`;
-          expect(tables).toHaveLength(4);
+          expect(tables).toHaveLength(3);
           const [records] =
             await sql`SELECT count(*)::int AS count FROM grids.records WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid)`;
-          // Required issuer setup plus one partner and two draft bills; no
-          // commission collection records are needed for direct positions.
-          expect(records.count).toBe(withSampleData ? 4 : 1);
+          // Only one partner and two editable draft bills; company data belongs to the Base.
+          expect(records.count).toBe(withSampleData ? 3 : 0);
           const apps = await sql`SELECT id, published_definition FROM grids.custom_apps
             WHERE base_id = ${baseId}::uuid AND published_definition IS NOT NULL`;
           expect(apps).toHaveLength(1);
-          expect(apps[0].published_definition.pages).toHaveLength(11);
+          expect(apps[0].published_definition.pages).toHaveLength(9);
           const workflows = await sql`SELECT w.id FROM grids.workflow_profile p
             JOIN workflows.workflow w ON w.id = p.id
             WHERE p.base_id = ${baseId}::uuid AND w.active_version_id IS NOT NULL`;
@@ -60,17 +63,17 @@ for (const locale of ["en", "de"]) {
           const [finalized] = await sql`SELECT count(*)::int AS count FROM grids.records
         WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid) AND finalized_at IS NOT NULL`;
           expect(finalized.count).toBe(0);
-          for (const key of ["settings", "bills"]) {
+          for (const key of ["bills"]) {
             const spec = definition.tables.find((entry) => entry.key === key)!;
             const [installedTable] = await sql`SELECT id::text FROM grids.tables WHERE base_id = ${baseId}::uuid AND name = ${spec.name}`;
-            const expectedField = spec.fields.find((entry) => entry.key === (key === "settings" ? "ready" : "gross"))!;
+            const expectedField = spec.fields.find((entry) => entry.key === "gross")!;
             const [installedField] =
               await sql`SELECT id::text FROM grids.fields WHERE table_id = ${installedTable.id}::uuid AND name = ${expectedField.name}`;
             const seeded = await sql`SELECT id::text FROM grids.records WHERE table_id = ${installedTable.id}::uuid`;
-            expect(seeded).toHaveLength(key === "settings" ? 1 : withSampleData ? 2 : 0);
+            expect(seeded).toHaveLength(withSampleData ? 2 : 0);
             for (const seed of seeded) {
               const current = await get(installedTable.id, seed.id);
-              expect(current?.data[installedField.id]).toBe(key === "settings" ? false : "22.6");
+              expect(current?.data[installedField.id]).toBe("22.6");
             }
             if (key === "bills" && withSampleData) {
               const detailsSpec = definition.forms!.find((entry) => entry.key === "edit_draft")!;
@@ -235,23 +238,24 @@ for (const valid of [false, true]) {
             values: (data: Record<string, unknown>) => Object.fromEntries(Object.entries(data).map(([key, value]) => [ids[key]!, value])),
           };
         };
-        const settings = await resolve("settings");
         const parties = await resolve("parties");
         const bills = await resolve("bills");
-        const [issuer] = await sql`SELECT id::text FROM grids.records WHERE table_id = ${settings.id}::uuid`;
         const common = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
-        const setup = await update(
-          settings.id,
-          issuer.id,
-          settings.values({
-            ...common,
-            name: "Original issuer",
-            vat_id: "DE123456789",
-            ready: true,
-            iban: valid ? common.iban : "INVALID",
-          }),
+        const setup = await updateBase(
+          baseId,
+          {
+            documentDefaults: {
+              legalName: "Original issuer",
+              vatId: "DE123456789",
+              address: common.street,
+              postalCode: common.postal_code,
+              city: common.city,
+              countryCode: "DE",
+              iban: valid ? common.iban : "INVALID",
+              accountName: common.account_name,
+            },
+          },
           actorId,
-          "workflow",
         );
         if (!setup.ok) throw new Error(setup.error.message);
         const partner = await create(
@@ -265,7 +269,6 @@ for (const valid of [false, true]) {
           bills.id,
           bills.values({
             kind: ["invoice"],
-            settings: [issuer.id],
             party: [partner.data.id],
             invoice_date: "2026-09-14",
             service_date: "2026-09-01",
@@ -346,20 +349,13 @@ for (const valid of [false, true]) {
         expect(docs).toHaveLength(0);
         checkpoint("verified");
       } finally {
-        await deleteTestWorkflowScope(baseId);
-        await sql`UPDATE grids.records SET finalized_at = NULL, finalized_by = NULL, final_revision_id = NULL WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid)`;
-        await sql`DELETE FROM grids.record_revisions WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid)`;
-        await sql`DELETE FROM grids.table_finalization_activations WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid)`;
-        await sql`DELETE FROM grids.durable_history_activations WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid)`;
-        await sql`DELETE FROM grids.table_schema_revisions WHERE table_id IN (SELECT id FROM grids.tables WHERE base_id = ${baseId}::uuid)`;
-        await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
-        await sql`DELETE FROM auth.access WHERE user_id = ${actorId}::uuid`;
-        await sql`DELETE FROM auth.users WHERE id = ${actorId}::uuid`;
-        checkpoint("cleaned");
+        // The atomic boundary reserves immutable issuance evidence, even before
+        // rendering a PDF. The isolated database harness owns its teardown.
+        checkpoint("fixture retained for isolated database teardown");
       }
     },
     // This includes installing a Base, running the authored workflow, checking
-    // frozen/live lookups and cleaning up. Use the existing full-journey budget.
+    // frozen/live lookups. Use the existing full-journey budget.
     180_000,
   );
 }

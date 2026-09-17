@@ -51,6 +51,9 @@ as an Object list; payments have their own table.
 It uses EUR and German business partners with distinct German VAT IDs,
 with 7% or 19% VAT. Check this scope before using it for your business.
 
+Both **New invoice** and **New self-billing** open a form dialog from the
+sidebar. Saving opens the new draft.
+
 In the Billing App, new invoices and self-billing drafts suggest today's
 document date. Check it before saving; choose the service and due dates yourself.
 Editing a draft preserves its saved dates. Optional notes are at the end of
@@ -66,9 +69,10 @@ including in the embedded business-partner form.
 positions and totals; preview and issuance run only there,
 never alongside unsaved inputs. **Record payment** also opens a separate form.
 
-1. Complete **Your company**, including the receiving bank account, and confirm
-   that the issuer details have been checked. Example records are drafts,
-   not usable company or bank details.
+1. Ask a Base admin to complete **Settings → Documents**: legal company name,
+   address, postal code, city, country code, VAT ID, IBAN and account name.
+   Billing uses these shared Base defaults; it has no separate company table
+   or company page. Example records contain no usable issuer details.
 2. Create an invoice draft, choose or create the business partner, and enter
    positions. Review the calculated totals before issuing.
 3. Choose **Issue invoice**, **Issue self-billing**, or **Issue credit note**.
@@ -77,7 +81,9 @@ never alongside unsaved inputs. **Record payment** also opens a separate form.
    finished documents together. Reloading preserves their status. **Open document**
    appears only when the stored file exists. Finalization alone is not completion.
    If rendering fails after finalization, use **Continue creation** on the same
-   bill. It retains the original document number. A workflow requiring administrator
+   bill. It retains the original document number, company details and template
+   captured at finalization, even if the Base settings change before the PDF is ready.
+   A workflow requiring administrator
    attention cannot be restarted from this button.
 4. Record actual payments separately, review the saved entry, then choose
    **Confirm payment**. Unconfirmed payments remain visible but do not affect
@@ -99,7 +105,9 @@ positions for a partial credit. The workflow checks the remaining net and VAT
 at each rate, including whether the residual amount stays exactly correctable
 after rounding. An incompatible split stays a draft; adjust its positions or
 correct the complete remaining amount. Refunds require the recipient's bank
-details. The document retains the original issuer and recipient facts.
+details. The document and its draft preview retain the original issuer and
+recipient facts. The correction workflow copies the issuer from the original
+stored Document, so a later change to the Base company settings does not alter it.
 
 For self-billing, choose the partner, supply the agreement reference and enter
 positions directly in the bill's Object list. Review the saved totals and
@@ -431,7 +439,7 @@ single record, including formulas over joined summary views. Text, grouped
 results, unbounded projections, and implicit whole-record selections are rejected
 when publishing.
 
-For a singleton such as company settings, set `navigation.recordId` to its
+For a singleton domain record, set `navigation.recordId` to its
 public record ID. The sidebar opens the record page directly. Publishing
 validates that the record exists in the page's table; ordinary runtime access
 checks still apply. Start pages remain unparameterized.

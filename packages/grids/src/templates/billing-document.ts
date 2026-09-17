@@ -3,7 +3,7 @@ import { field, formula, table } from "./types";
 
 /** Stable aliases decouple the mapping from localized field display names. */
 export const billingDocumentSource = () => {
-  const partyAliases = ["settings", "party"].flatMap((prefix) =>
+  const partyAliases = ["party"].flatMap((prefix) =>
     ["name", "vat_id", "street", "postal_code", "city", "iban", "account_name"].map((key) => `${prefix}_${key}`),
   );
   const aliases = [
@@ -14,6 +14,7 @@ export const billingDocumentSource = () => {
     "buyer_reference",
     "positions",
     "original_number",
+    "original_company",
     "original_date",
     "reason",
     "agreement",
@@ -34,10 +35,15 @@ export const billingDocumentSource = () => {
   );
 };
 
-const party = (variable: "seller" | "buyer") => `{
-  "name": {{ bill[${variable}_name] | json }}, "vatId": {{ bill[${variable}_vat] | json }},
-  "address": { "line1": {{ bill[${variable}_street] | json }}, "city": {{ bill[${variable}_city] | json }},
-    "postalCode": {{ bill[${variable}_postal] | json }}, "countryCode": "DE" }
+const party = (prefix: "billing_party" | "billing_original_party") => `{
+  "name": {{ bill.${prefix}_name | json }}, "vatId": {{ bill.${prefix}_vat_id | json }},
+  "address": { "line1": {{ bill.${prefix}_street | json }}, "city": {{ bill.${prefix}_city | json }},
+    "postalCode": {{ bill.${prefix}_postal_code | json }}, "countryCode": "DE" }
+}`;
+const company = `{
+  "name": {{ company.legalName | json }}, "vatId": {{ company.vatId | json }},
+  "address": { "line1": {{ company.address | json }}, "city": {{ company.city | json }},
+    "postalCode": {{ company.postalCode | json }}, "countryCode": {{ company.countryCode | json }} }
 }`;
 
 export const billingDocumentRenderer: DocumentTemplateRenderer = {
@@ -45,23 +51,17 @@ export const billingDocumentRenderer: DocumentTemplateRenderer = {
   id: "de.zugferd.en16931",
   version: 2,
   inputTemplate: `{% assign bill = rows | first %}
-{% if bill.billing_kind contains 'selfBilling' %}{% assign seller = 'billing_party' %}{% assign buyer = 'billing_settings' %}
-{% elsif bill.billing_kind contains 'creditNote' %}{% assign seller = 'billing_original_settings' %}{% assign buyer = 'billing_original_party' %}
-{% else %}{% assign seller = 'billing_settings' %}{% assign buyer = 'billing_party' %}{% endif %}
-{% assign seller_name = seller | append: '_name' %}{% assign seller_vat = seller | append: '_vat_id' %}
-{% assign seller_street = seller | append: '_street' %}{% assign seller_city = seller | append: '_city' %}{% assign seller_postal = seller | append: '_postal_code' %}
-{% assign buyer_name = buyer | append: '_name' %}{% assign buyer_vat = buyer | append: '_vat_id' %}
-{% assign buyer_street = buyer | append: '_street' %}{% assign buyer_city = buyer | append: '_city' %}{% assign buyer_postal = buyer | append: '_postal_code' %}
-{% if bill.billing_kind contains 'creditNote' %}{% assign payee = 'billing_party' %}{% else %}{% assign payee = seller %}{% endif %}
-{% assign bank = payee | append: '_iban' %}{% assign holder = payee | append: '_account_name' %}
+{% if bill.billing_kind contains 'creditNote' %}{% assign company = bill.billing_original_company %}{% else %}{% assign company = business %}{% endif %}
 {
   "currency": "EUR",
   "invoiceDate": {{ bill.billing_invoice_date | slice: 0, 10 | json }},
   "serviceDate": {{ bill.billing_service_date | slice: 0, 10 | json }},
   "dueDate": {{ bill.billing_due_date | slice: 0, 10 | json }},
   "buyerReference": {{ bill.billing_buyer_reference | json }},
-  "seller": ${party("seller")}, "buyer": ${party("buyer")},
-  "payment": { "iban": {{ bill[bank] | json }}, "accountName": {{ bill[holder] | json }} },
+  "seller": {% if bill.billing_kind contains 'selfBilling' %}${party("billing_party")}{% else %}${company}{% endif %},
+  "buyer": {% if bill.billing_kind contains 'selfBilling' %}${company}{% elsif bill.billing_kind contains 'creditNote' %}${party("billing_original_party")}{% else %}${party("billing_party")}{% endif %},
+  "payment": {% if bill.billing_kind contains 'invoice' %}{ "iban": {{ company.iban | json }}, "accountName": {{ company.accountName | json }} }
+    {% else %}{ "iban": {{ bill.billing_party_iban | json }}, "accountName": {{ bill.billing_party_account_name | json }} }{% endif %},
   "billing": {% if bill.billing_kind contains 'creditNote' %}{ "kind": "creditNote", "original": {
     "number": {{ bill.billing_original_number | json }}, "invoiceDate": {{ bill.billing_original_date | slice: 0, 10 | json }} }, "reason": {{ bill.billing_reason | json }} }
     {% elsif bill.billing_kind contains 'selfBilling' %}{ "kind": "selfBilling", "agreementReference": {{ bill.billing_agreement | json }} }

@@ -1,6 +1,6 @@
 import { coreSettings } from "@k2b/cloud/services";
 import { CLOUD_LOGO_SVG } from "@k2b/cloud/shared";
-import type { DocumentDefaults } from "../contracts";
+import { type DocumentDefaults, DocumentDefaultsSchema } from "../contracts";
 import { get as getBase } from "./bases";
 
 export type DocumentTemplateAppData = {
@@ -16,18 +16,38 @@ export type DocumentTemplateBusinessData = {
   legalName: string;
   senderLine: string;
   address: string;
+  postalCode: string | null;
+  city: string | null;
+  countryCode: string | null;
   department: string | null;
   contactEmail: string | null;
   phone: string | null;
   url: string | null;
   taxId: string | null;
+  vatId: string | null;
   registration: string | null;
   bankName: string | null;
+  accountName: string | null;
   iban: string | null;
   bic: string | null;
   paymentTerms: string | null;
   footerText: string | null;
 };
+
+export const DOCUMENT_BUSINESS_KEYS = DocumentDefaultsSchema.removeDefault().keyof().options;
+
+/** Project the immutable issued-document context, never current Base defaults. */
+export function documentBusinessSnapshot(renderData: Record<string, unknown>): Record<string, string | null> | null {
+  const business = renderData.business;
+  if (!business || typeof business !== "object" || Array.isArray(business)) return null;
+  const values = new Map<string, unknown>(Object.entries(business));
+  return Object.fromEntries(
+    DOCUMENT_BUSINESS_KEYS.map((key) => {
+      const value = values.get(key);
+      return [key, typeof value === "string" ? value : null] as const;
+    }),
+  );
+}
 
 const stringValue = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 const nullableStringValue = (value: unknown): string | null => stringValue(value) || null;
@@ -89,29 +109,48 @@ export const buildTemplateAppData = async (settings?: unknown): Promise<Document
 
 const documentDefaultValue = (defaults: DocumentDefaults, key: keyof DocumentDefaults): string => stringValue(defaults[key]);
 
+export const templateBusinessDataFromDefaults = (
+  defaults: DocumentDefaults,
+  appData: DocumentTemplateAppData = defaultTemplateAppData(),
+): DocumentTemplateBusinessData => {
+  const legalName = documentDefaultValue(defaults, "legalName");
+  const address = defaults.address ?? "";
+  const postalCode = nullableStringValue(defaults.postalCode);
+  const city = nullableStringValue(defaults.city);
+  const countryCode = nullableStringValue(defaults.countryCode);
+  const senderLine =
+    documentDefaultValue(defaults, "senderLine") ||
+    [legalName, address.trim().replace(/\n/g, " | "), [postalCode, city].filter(Boolean).join(" "), countryCode]
+      .filter(Boolean)
+      .join(" | ");
+  return {
+    legalName,
+    senderLine,
+    address,
+    postalCode,
+    city,
+    countryCode,
+    department: nullableStringValue(defaults.department),
+    contactEmail: nullableStringValue(defaults.contactEmail) ?? appData.contactEmail,
+    phone: nullableStringValue(defaults.phone),
+    url: nullableStringValue(defaults.url) ?? (appData.url || null),
+    taxId: nullableStringValue(defaults.taxId),
+    vatId: nullableStringValue(defaults.vatId),
+    registration: nullableStringValue(defaults.registration),
+    bankName: nullableStringValue(defaults.bankName),
+    accountName: nullableStringValue(defaults.accountName),
+    iban: nullableStringValue(defaults.iban),
+    bic: nullableStringValue(defaults.bic),
+    paymentTerms: nullableStringValue(defaults.paymentTerms),
+    footerText: nullableStringValue(defaults.footerText),
+  };
+};
+
 export const buildTemplateBusinessData = async (
   baseId: string,
   appData: DocumentTemplateAppData = defaultTemplateAppData(),
   client?: import("./audit").SqlClient,
 ): Promise<DocumentTemplateBusinessData> => {
   const defaults = (await getBase(baseId, { client }))?.documentDefaults ?? {};
-  const legalName = documentDefaultValue(defaults, "legalName") || appData.name;
-  const address = documentDefaultValue(defaults, "address");
-  const senderLine = documentDefaultValue(defaults, "senderLine") || [legalName, address.replace(/\n/g, " | ")].filter(Boolean).join(" | ");
-  return {
-    legalName,
-    senderLine,
-    address,
-    department: nullableStringValue(defaults.department),
-    contactEmail: nullableStringValue(defaults.contactEmail) ?? appData.contactEmail,
-    phone: nullableStringValue(defaults.phone),
-    url: nullableStringValue(defaults.url) ?? (appData.url || null),
-    taxId: nullableStringValue(defaults.taxId),
-    registration: nullableStringValue(defaults.registration),
-    bankName: nullableStringValue(defaults.bankName),
-    iban: nullableStringValue(defaults.iban),
-    bic: nullableStringValue(defaults.bic),
-    paymentTerms: nullableStringValue(defaults.paymentTerms),
-    footerText: nullableStringValue(defaults.footerText),
-  };
+  return templateBusinessDataFromDefaults(defaults, appData);
 };

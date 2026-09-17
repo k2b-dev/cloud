@@ -21,6 +21,7 @@ import {
 import { normalizeWorkflowSchedule } from "@k2b/cloud/workflows/runtime";
 import type { Result } from "@k2b/stdlib";
 import { datev, sepa } from "@k2b/stdlib/finance";
+import { DocumentDefaultsSchema } from "../contracts";
 import type { DslQueryContextInput } from "../query-dsl/parameters";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { FinancialDocumentOutputSchema } from "../service/document-financial-output";
@@ -81,6 +82,15 @@ const gridsValueDescriptors: Record<string, WorkflowValuePathDescriptor> = {
       tableId: textValue,
       recordId: textValue,
       number: textValue,
+      business: {
+        kind: "object",
+        type: "grids.documentBusiness",
+        properties: Object.fromEntries(
+          DocumentDefaultsSchema.removeDefault()
+            .keyof()
+            .options.map((key) => [key, textValue]),
+        ),
+      },
       primaryArtifactKey: textValue,
       filename: textValue,
       tags: { kind: "array", type: "core.array", items: textValue },

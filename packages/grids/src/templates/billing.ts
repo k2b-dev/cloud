@@ -6,7 +6,7 @@ import { billingFieldHelp } from "./billing-field-help";
 import { billingAmountFields } from "./billing-lines";
 import { billingSamples } from "./billing-samples";
 import { billingWorkflows } from "./billing-workflows";
-import { field, type GridTemplate, record, type TemplateField, table } from "./types";
+import { field, type GridTemplate, type TemplateField, table } from "./types";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -20,7 +20,6 @@ const messages = i18n.define({
       addressSection: "Billing address",
       bankSection: "Bank account",
       bankHelp: "Needed for refunds and commission payouts.",
-      reviewSection: "Ready to issue",
       paymentSection: "Payment details",
       savePayment: "Save payment for confirmation",
       newPartner: "New business partner",
@@ -51,7 +50,6 @@ const messages = i18n.define({
       balances: "Open payments",
       paymentTotals: "Payments per bill",
       correctionTotals: "Corrections per invoice",
-      settings: "My company",
       name: "Name",
       vatId: "VAT ID",
       street: "Street and number",
@@ -70,6 +68,7 @@ const messages = i18n.define({
       dueDate: "Due date",
       buyerReference: "Buyer reference",
       original: "Original invoice",
+      originalCompany: "Original company details",
       reason: "Correction reason",
       agreement: "Self-billing agreement",
       newSelfBilling: "New self-billing draft",
@@ -82,12 +81,7 @@ const messages = i18n.define({
       note: "Notes",
       amount: "Amount (EUR)",
       date: "Payment date",
-      ready: "Issuer details checked",
-      setup: "Your company",
-      setupAction: "Complete issuer details",
-      startHelp: "Complete My company before issuing your first invoice. You can already create and save drafts.",
-      setupHelp:
-        "These details appear on newly issued invoices. Check your company and bank details, then confirm below that they are ready to use.",
+      startHelp: "Company and bank details are shared by all documents. A Base admin manages them under Base settings → Documents.",
       draft: "Save draft",
       saved: "Draft saved. Review it before issuing.",
       newInvoice: "New invoice",
@@ -120,7 +114,6 @@ const messages = i18n.define({
       partnerHelp:
         "Keep company details current. Issued documents retain their original details. Add the partner's bank account before a refund or self-billing.",
       refundBankError: "Add the recipient's refund IBAN and account holder under Business partners before issuing the credit note.",
-      seller: "Your company",
       buyer: "Business partner",
       issueInvoiceAction: "Issue invoice",
       issueSelfBillingAction: "Issue self-billing",
@@ -132,7 +125,6 @@ const messages = i18n.define({
       issueConfirm: "Issue this invoice and freeze its data?",
       issueError:
         "Check issuer setup and the selected business partner. If the invoice was just issued, run this action again to retrieve it.",
-      setupKey: "Setup key",
       creationAccepted: "Document creation requested. You can keep working; its status and PDF will appear here and under Invoices.",
       drafts: "Drafts",
       issued: "Issued documents",
@@ -158,7 +150,6 @@ const messages = i18n.define({
       addressSection: "Rechnungsadresse",
       bankSection: "Bankverbindung",
       bankHelp: "Für Erstattungen und Provisionsauszahlungen erforderlich.",
-      reviewSection: "Bereit zum Ausstellen",
       paymentSection: "Zahlungsangaben",
       savePayment: "Zahlung zur Bestätigung speichern",
       newPartner: "Neuer Geschäftspartner",
@@ -189,7 +180,6 @@ const messages = i18n.define({
       balances: "Offene Zahlungen",
       paymentTotals: "Zahlungen je Abrechnung",
       correctionTotals: "Korrekturen je Rechnung",
-      settings: "Mein Unternehmen",
       name: "Name",
       vatId: "USt-IdNr.",
       street: "Straße und Hausnummer",
@@ -208,6 +198,7 @@ const messages = i18n.define({
       dueDate: "Fällig am",
       buyerReference: "Kundenreferenz",
       original: "Ursprüngliche Rechnung",
+      originalCompany: "Ursprüngliche Unternehmensangaben",
       reason: "Korrekturgrund",
       agreement: "Gutschriftvereinbarung",
       newSelfBilling: "Neue Provisionsgutschrift",
@@ -220,12 +211,7 @@ const messages = i18n.define({
       note: "Notizen",
       amount: "Betrag (EUR)",
       date: "Zahlungsdatum",
-      ready: "Ausstellerangaben geprüft",
-      setup: "Dein Unternehmen",
-      setupAction: "Ausstellerdaten vervollständigen",
-      startHelp: "Vervollständige Mein Unternehmen vor der ersten Ausstellung. Rechnungsentwürfe kannst du bereits anlegen und speichern.",
-      setupHelp:
-        "Diese Angaben erscheinen auf neu ausgestellten Rechnungen. Prüfe deine Unternehmens- und Bankdaten und bestätige unten, dass sie verwendet werden können.",
+      startHelp: "Unternehmens- und Bankdaten gelten für alle Belege. Base-Admins pflegen sie unter Base-Einstellungen → Dokumente.",
       draft: "Entwurf speichern",
       saved: "Entwurf gespeichert. Prüfe ihn vor dem Ausstellen.",
       newInvoice: "Neue Rechnung",
@@ -260,7 +246,6 @@ const messages = i18n.define({
         "Pflege hier die Unternehmensangaben. Ausgestellte Dokumente behalten ihre ursprünglichen Angaben. Ergänze vor Rückzahlungen oder Provisionsgutschriften das Bankkonto des Geschäftspartners.",
       refundBankError:
         "Ergänze unter Geschäftspartner die Erstattungs-IBAN und den Kontoinhaber des Empfängers, bevor du die Korrektur ausstellst.",
-      seller: "Dein Unternehmen",
       buyer: "Geschäftspartner",
       issueInvoiceAction: "Rechnung ausstellen",
       issueSelfBillingAction: "Provisionsgutschrift ausstellen",
@@ -272,7 +257,6 @@ const messages = i18n.define({
       issueConfirm: "Rechnung ausstellen und ihre Daten festschreiben?",
       issueError:
         "Prüfe Ausstellerangaben und Geschäftspartner. Wurde die Rechnung gerade ausgestellt, führe die Aktion erneut aus, um sie abzurufen.",
-      setupKey: "Einrichtungsschlüssel",
       creationAccepted: "Belegerstellung beauftragt. Du kannst weiterarbeiten; Status und PDF erscheinen hier und unter Rechnungen.",
       drafts: "Entwürfe",
       issued: "Ausgestellte Belege",
@@ -338,12 +322,10 @@ export function createBillingTemplate(locale?: string): GridTemplate {
       if (key === "invoice_date") return { title: t.datesSection };
       if (key === "notes") return { title: t.additionalSection, collapsible: true };
     }
-    if (tableKey === "parties" || tableKey === "settings") {
+    if (tableKey === "parties") {
       if (key === "name") return { title: t.companySection };
       if (key === "street") return { title: t.addressSection };
-      if (key === "iban")
-        return { title: t.bankSection, ...(tableKey === "parties" ? { description: t.bankHelp, collapsible: true } : {}) };
-      if (key === "ready") return { title: t.reviewSection };
+      if (key === "iban") return { title: t.bankSection, description: t.bankHelp, collapsible: true };
     }
     if (tableKey === "payments" && key === "date") return { title: t.paymentSection };
     return undefined;
@@ -385,16 +367,6 @@ export function createBillingTemplate(locale?: string): GridTemplate {
     baseName: t.title,
     baseDescription: t.description,
     tables: [
-      {
-        key: "settings",
-        name: t.settings,
-        description: t.setupHelp,
-        fields: [
-          ...partyFields(),
-          { key: "ready", name: t.ready, type: "boolean", defaultValue: false },
-          { key: "key", name: t.setupKey, type: "text", required: true, uniqueConstraint: true, hideInTable: true, defaultValue: "issuer" },
-        ],
-      },
       { key: "parties", name: t.parties, fields: partyFields() },
       {
         key: "bills",
@@ -424,7 +396,6 @@ export function createBillingTemplate(locale?: string): GridTemplate {
             },
           },
           relation("party", t.party, "parties", true),
-          relation("settings", t.settings, "settings", true),
           { key: "invoice_date", name: t.invoiceDate, type: "date", required: true, defaultValue: { kind: "now" } },
           { key: "service_date", name: t.serviceDate, type: "date", required: true },
           // A prepared correction needs a newly chosen deadline. Forms and the
@@ -434,11 +405,11 @@ export function createBillingTemplate(locale?: string): GridTemplate {
           ...amountFields,
           relation("original", t.original, "bills"),
           text("reason", t.reason, false, { maxLength: 500 }),
+          { key: "original_company", name: t.originalCompany, type: "json", hideInTable: true },
           text("original_number", `${t.original}: ${t.reference}`, false, { maxLength: 100 }),
           { key: "original_date", name: `${t.original}: ${t.invoiceDate}`, type: "date" },
           text("agreement", t.agreement, false, { maxLength: 200 }),
           { key: "notes", name: t.note, type: "longtext" },
-          ...snapshots("settings", "settings", t.seller),
           ...snapshots("party", "parties", t.buyer),
         ],
       },
@@ -468,7 +439,7 @@ export function createBillingTemplate(locale?: string): GridTemplate {
         ],
       },
     ],
-    records: [{ key: "settings", table: "settings", required: true, values: { name: t.setup, ready: false } }, ...billingSamples(t)],
+    records: billingSamples(t),
     navigationGroups: [
       {
         name: t.title,
@@ -487,9 +458,8 @@ export function createBillingTemplate(locale?: string): GridTemplate {
         ],
       },
       {
-        name: t.settings,
+        name: t.parties,
         entries: [
-          { type: "table", key: "settings" },
           { type: "table", key: "parties" },
           { type: "table", key: "payments" },
         ],
@@ -521,7 +491,6 @@ export function createBillingTemplate(locale?: string): GridTemplate {
               true,
             ),
             { kind: "form_value", fieldId: field("bills.kind"), value: ["selfBilling"] },
-            { kind: "form_value", fieldId: field("bills.settings"), value: [record("settings")] },
           ],
           computedFields: ["net", "tax", "gross"].map((key) => ({ fieldId: field(`bills.${key}`), width: "compact" })),
           submitLabel: t.draft,
@@ -558,21 +527,11 @@ export function createBillingTemplate(locale?: string): GridTemplate {
         },
       },
       {
-        key: "setup",
-        table: "settings",
-        name: t.settings,
-        config: { fields: inputs("settings", [...partyFields().map((entry) => entry.key), "ready"]) },
-      },
-      {
         key: "new_invoice",
         table: "bills",
         name: t.newInvoice,
         config: {
-          fields: [
-            ...inputs("bills", billInputs, true, true),
-            { kind: "form_value", fieldId: field("bills.kind"), value: ["invoice"] },
-            { kind: "form_value", fieldId: field("bills.settings"), value: [record("settings")] },
-          ],
+          fields: [...inputs("bills", billInputs, true, true), { kind: "form_value", fieldId: field("bills.kind"), value: ["invoice"] }],
           computedFields: ["net", "tax", "gross"].map((key) => ({ fieldId: field(`bills.${key}`), width: "compact" })),
           submitLabel: t.draft,
           successMessage: t.saved,
@@ -693,6 +652,7 @@ export function createBillingTemplate(locale?: string): GridTemplate {
     formula: "calculator",
     object_list: "list-details",
     id: "hash",
+    json: "braces",
   };
   return {
     ...definition,

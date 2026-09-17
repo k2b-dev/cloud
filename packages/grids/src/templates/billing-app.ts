@@ -1,6 +1,6 @@
 import type { BillingText } from "./billing";
 import { billingBalanceSource } from "./billing-balances";
-import { documentTemplate, field, fieldKey, form, formula, type GridTemplate, launcher, record, table } from "./types";
+import { documentTemplate, field, fieldKey, form, formula, type GridTemplate, launcher, table } from "./types";
 
 /** A document keeps one workspace from editable draft to issued document. */
 export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps"]> => {
@@ -35,21 +35,6 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
       " != 'creditNote'\nlimit 1",
     ),
   };
-  const billSetupWhen = {
-    query: formula(
-      "from table ",
-      table("bills"),
-      " as bill\njoin table ",
-      table("settings"),
-      " as company on ",
-      field("bills.settings"),
-      " = company.id\nselect ",
-      field("bills.reference"),
-      "\nwhere record.id = @params.bill_id and record.finalizationState = 'draft' and company.",
-      field("settings.ready"),
-      " = false\nlimit 1",
-    ),
-  };
   const paymentWhen = (state: "draft" | "finalized") => ({
     query: formula(
       "from table ",
@@ -59,17 +44,6 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
       `\nwhere record.id = @params.payment_id and record.finalizationState = '${state}'\nlimit 1`,
     ),
   });
-  const setupWhen = {
-    query: formula(
-      "from table ",
-      table("settings"),
-      "\nselect ",
-      field("settings.ready"),
-      "\nwhere ",
-      field("settings.ready"),
-      " = false\nlimit 1",
-    ),
-  };
   const paymentActions = <Source extends "ROW" | "RECORD">(source: Source) => [
     {
       id: "confirm",
@@ -203,6 +177,16 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
               fixedValues: {},
               onSuccessNavigate: resultNavigation,
             },
+            {
+              id: "self-billing",
+              kind: "form",
+              label: t.newSelfBilling,
+              icon: "receipt",
+              tone: "default",
+              formId: form("new_self_billing"),
+              fixedValues: {},
+              onSuccessNavigate: resultNavigation,
+            },
           ],
         },
         pages: [
@@ -219,7 +203,7 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                     id: "main",
                     span: 12,
                     blocks: [
-                      { id: "start-help", type: "markdown", markdown: t.startHelp, availableWhen: setupWhen },
+                      { id: "start-help", type: "markdown", markdown: t.startHelp },
                       ...[false, true].map((issued) => ({
                         id: issued ? "bills" : "drafts",
                         type: "records" as const,
@@ -252,22 +236,6 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           params: { bill_id: { source: "ROW" as const, path: "id" as const } },
                         },
                       })),
-                      {
-                        id: "other-document",
-                        type: "actions",
-                        actions: [
-                          {
-                            id: "self-billing",
-                            kind: "navigate",
-                            label: t.newSelfBilling,
-                            icon: "receipt",
-                            variant: "secondary",
-                            pageId: "self-billing-new",
-                            history: "push",
-                            params: {},
-                          },
-                        ],
-                      },
                     ],
                   },
                 ],
@@ -289,7 +257,7 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                     span: 12,
                     blocks: [
                       identity,
-                      { id: "setup-help", type: "markdown", markdown: t.startHelp, availableWhen: billSetupWhen },
+                      { id: "setup-help", type: "markdown", markdown: t.startHelp, availableWhen: billWhen("draft") },
                       {
                         id: "correction-help",
                         type: "markdown",
@@ -743,67 +711,6 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                         ],
                         editableFieldIds: [],
                         availableWhen: paymentWhen("finalized"),
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            id: "self-billing-new",
-            title: t.newSelfBilling,
-            navigation: { visible: false },
-            parameters: {},
-            rows: [
-              {
-                id: "settlement",
-                columns: [
-                  {
-                    id: "main",
-                    span: 12,
-                    blocks: [
-                      { id: "help", type: "markdown", markdown: t.settlementHelp },
-                      {
-                        id: "form",
-                        type: "form",
-                        formId: form("new_self_billing"),
-                        mode: "create",
-                        fixedValues: {},
-                        onSuccessNavigate: resultNavigation,
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            id: "settings",
-            title: t.settings,
-            navigation: { visible: true, icon: "building", recordId: record("settings") },
-            parameters: { settings_id: { type: "record", tableId: table("settings"), required: true } },
-            record: { tableId: table("settings"), id: { source: "PARAMS", path: "settings_id" } },
-            rows: [
-              {
-                id: "setup",
-                columns: [
-                  {
-                    id: "main",
-                    span: 12,
-                    blocks: [
-                      { id: "help", type: "markdown", markdown: t.setupHelp },
-                      {
-                        id: "form",
-                        type: "form",
-                        formId: form("setup"),
-                        mode: "edit",
-                        fixedValues: {},
-                        onSuccessNavigate: {
-                          kind: "navigate",
-                          pageId: "settings",
-                          params: { settings_id: { source: "PARAMS", path: "settings_id" } },
-                        },
                       },
                     ],
                   },

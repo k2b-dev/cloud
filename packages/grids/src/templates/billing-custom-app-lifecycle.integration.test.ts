@@ -9,9 +9,10 @@ import { createGermanBillingProfile, germanBillingProfile } from "../document-pr
 import { postgresTest, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { grantAccess } from "../service/access";
+import { update as updateBase } from "../service/bases";
 import { executePublishedCustomAppQuery } from "../service/custom-app-runtime-query";
 import { get as getApp } from "../service/custom-apps";
-import { create, get, update } from "../service/records";
+import { create, get } from "../service/records";
 import { instantiateDefinition } from "../service/templates";
 import { canExecuteRun, canExecuteWorkflow } from "../service/workflow-action-scope";
 import { invokeCustomAppLauncher } from "../service/workflow-launcher-invocations";
@@ -83,25 +84,31 @@ postgresTest(
           Object.fromEntries(Object.entries(input).map(([key, value]) => [ids[key]!, value]));
         return { id: row.id as string, values };
       };
-      const settings = await table("settings");
       const parties = await table("parties");
       const bills = await table("bills");
       const payments = await table("payments");
       const company = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
-      const [issuer] = await sql`SELECT id::text FROM grids.records WHERE table_id = ${settings.id}::uuid`;
-      const setup = await update(
-        settings.id,
-        issuer.id,
-        settings.values({ ...company, name: "Issuer", vat_id: "DE123456789", ready: true }),
+      const setup = await updateBase(
+        baseId,
+        {
+          documentDefaults: {
+            legalName: "Issuer",
+            vatId: "DE123456789",
+            address: company.street,
+            postalCode: company.postal_code,
+            city: company.city,
+            countryCode: "DE",
+            iban: company.iban,
+            accountName: company.account_name,
+          },
+        },
         null,
-        "workflow",
       );
       if (!setup.ok) throw new Error(setup.error.message);
       const partner = await create(parties.id, parties.values({ ...company, name: "Buyer", vat_id: "DE987654321" }), null, "workflow");
       if (!partner.ok) throw new Error(partner.error.message);
       const draftData = bills.values({
         kind: ["invoice"],
-        settings: [issuer.id],
         party: [partner.data.id],
         invoice_date: "2026-09-15",
         service_date: "2026-09-01",

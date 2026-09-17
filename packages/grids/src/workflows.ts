@@ -60,6 +60,7 @@ import {
   updateInTransaction as updateRecordInTransaction,
 } from "./service/record-write";
 import { get as getTable } from "./service/tables";
+import { documentBusinessSnapshot } from "./service/template-context";
 import {
   actionError,
   actorId,
@@ -643,6 +644,7 @@ const workflowDocumentOutput = (document: Document) => {
     recordId: summary.recordId,
     templateId: summary.templateId,
     number: summary.documentNumber,
+    business: documentBusinessSnapshot(document.renderData),
     filename: summary.filename,
     createdAt: summary.createdAt,
     tags: summary.tags,
@@ -1366,7 +1368,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           updated.push({ kind: "record", tableId: record.tableId, recordId: result.record.id });
         }
 
-        for (const target of documentTargets) await validateWorkflowDocument(tx, scope, target, dates, effectAccess);
+        for (const target of documentTargets) await validateWorkflowDocument(tx, scope, target, dates, effectAccess, ctx.stepKey);
         return { state: "succeeded", output: { created, updated } as unknown as WorkflowJsonValue };
       }),
 

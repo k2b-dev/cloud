@@ -85,28 +85,16 @@ export const billingWorkflows = (t: BillingText, locale?: string): NonNullable<G
         `  - atomicRecords:
       locks:
         - inputs.bill
-        - inputs.bill.${t.settings}
         - inputs.bill.${t.party}
       checks:
         - query:
             source: |
-              from table ${q(t.settings)}
-              select ${q(t.setupKey)}
-              where record.id = @params.settings and ${q(t.setupKey)} = 'issuer' and ${q(t.ready)} = true
-              limit 1
-            parameters:
-              settings: {type: record, value: "\${{ inputs.bill.${t.settings} }}"}
-          assert: notEmpty
-          message: ${q(t.issueError)}
-        - query:
-            source: |
               from table ${q(t.bills)}
               select ${q(t.reference)}
-              where record.id = @params.bill and record.finalizationState = 'draft' and ${q(t.kind)} = 'invoice' and ${q(t.settings)} = @params.settings and ${q(t.party)} = @params.party
+              where record.id = @params.bill and record.finalizationState = 'draft' and ${q(t.kind)} = 'invoice' and ${q(t.party)} = @params.party
               limit 1
             parameters:
               bill: {type: record, value: "\${{ inputs.bill }}"}
-              settings: {type: record, value: "\${{ inputs.bill.${t.settings} }}"}
               party: {type: record, value: "\${{ inputs.bill.${t.party} }}"}
           assert: notEmpty
           message: ${q(t.issueError)}
@@ -138,7 +126,7 @@ export const billingWorkflows = (t: BillingText, locale?: string): NonNullable<G
       originalField: ${q(t.original)}
       copyFields: [${name("positions")}, ${q(t.serviceDate)}, ${q(t.buyerReference)}, ${q(t.note)}]
       values:
-        ${q(t.settings)}: "\${{ inputs.bill.${t.settings}.recordId }}"
+        ${q(t.originalCompany)}: "\${{ originalDocument.business }}"
         ${q(t.party)}: "\${{ inputs.bill.${t.party}.recordId }}"
         ${q(`${t.original}: ${t.reference}`)}: "\${{ originalDocument.number }}"
         ${q(`${t.original}: ${t.invoiceDate}`)}: "\${{ inputs.bill.${t.invoiceDate} }}"
@@ -163,28 +151,17 @@ export const billingWorkflows = (t: BillingText, locale?: string): NonNullable<G
       record: original
       saveAs: originalDocument
   - atomicRecords:
-      locks: [inputs.bill, original, "inputs.bill.${t.settings}", "inputs.bill.${t.party}"]
+      locks: [inputs.bill, original, "inputs.bill.${t.party}"]
       checks:
-        - query:
-            source: |
-              from table ${q(t.settings)}
-              select ${q(t.setupKey)}
-              where record.id = @params.settings and ${q(t.setupKey)} = 'issuer' and ${q(t.ready)} = true
-              limit 1
-            parameters:
-              settings: {type: record, value: "\${{ inputs.bill.${t.settings} }}"}
-          assert: notEmpty
-          message: ${q(t.issueError)}
         - query:
             source: |
               from table ${q(t.bills)}
               select ${q(t.reference)}
-              where record.id = @params.bill and record.finalizationState = 'draft' and ${q(t.kind)} = 'creditNote' and ${q(t.original)} = @params.original and ${q(t.settings)} = @params.settings and ${q(t.party)} = @params.party
+              where record.id = @params.bill and record.finalizationState = 'draft' and ${q(t.kind)} = 'creditNote' and ${q(t.original)} = @params.original and ${q(t.party)} = @params.party
               limit 1
             parameters:
               bill: {type: record, value: "\${{ inputs.bill }}"}
               original: {type: record, value: "\${{ original }}"}
-              settings: {type: record, value: "\${{ inputs.bill.${t.settings} }}"}
               party: {type: record, value: "\${{ inputs.bill.${t.party} }}"}
           assert: notEmpty
           message: ${q(t.correctionError)}
@@ -192,11 +169,10 @@ export const billingWorkflows = (t: BillingText, locale?: string): NonNullable<G
             source: |
               from table ${q(t.bills)}
               select ${q(t.reference)}
-              where record.id = @params.original and record.finalizationState = 'finalized' and ${q(t.kind)} = 'invoice' and ${q(t.settings)} = @params.settings and ${q(t.party)} = @params.party
+              where record.id = @params.original and record.finalizationState = 'finalized' and ${q(t.kind)} = 'invoice' and ${q(t.party)} = @params.party
               limit 1
             parameters:
               original: {type: record, value: "\${{ original }}"}
-              settings: {type: record, value: "\${{ inputs.bill.${t.settings} }}"}
               party: {type: record, value: "\${{ inputs.bill.${t.party} }}"}
           assert: notEmpty
           message: ${q(t.correctionError)}
@@ -215,6 +191,7 @@ ${budgetChecks}\
         - updateRecord:
             record: inputs.bill
             set:
+              ${q(t.originalCompany)}: "\${{ originalDocument.business }}"
               ${q(`${t.original}: ${t.reference}`)}: "\${{ originalDocument.number }}"
               ${q(`${t.original}: ${t.invoiceDate}`)}: "\${{ original.${t.invoiceDate} }}"
         - finalizeRecord: {record: inputs.bill}

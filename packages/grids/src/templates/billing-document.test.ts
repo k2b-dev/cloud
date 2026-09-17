@@ -4,18 +4,22 @@ import { germanBillingSnapshotSchema } from "../document-profiles/einvoice-de";
 import { renderDocumentProfileInput } from "../service/document-rendering";
 import { billingDocumentRenderer } from "./billing-document";
 
+const business = {
+  legalName: 'Company "A"',
+  vatId: "DE123456789",
+  address: "Test 1",
+  postalCode: "89073",
+  city: "Ulm",
+  countryCode: "DE",
+  iban: "DE89370400440532013000",
+  accountName: "Company A",
+};
 const row = {
   invoice_date: "2026-09-14",
   service_date: "2026-09-01",
   due_date: "2026-09-28",
   buyer_reference: "Order 42",
-  settings_name: 'Company "A"',
-  settings_vat_id: "DE123456789",
-  settings_street: "Test 1",
-  settings_postal_code: "89073",
-  settings_city: "Ulm",
-  settings_iban: "DE89370400440532013000",
-  settings_account_name: "Company A",
+  original_company: business,
   party_name: "Company B",
   party_vat_id: "DE987654321",
   party_street: "Test 2",
@@ -35,7 +39,7 @@ const mappedRow = (value: Record<string, unknown>) =>
   Object.fromEntries(
     Object.entries(value).flatMap(([key, value]) => [
       [`billing_${key}`, value],
-      ...(key.startsWith("settings_") || key.startsWith("party_") ? [[`billing_original_${key}`, value]] : []),
+      ...(key.startsWith("party_") ? [[`billing_original_${key}`, value]] : []),
     ]),
   );
 
@@ -45,6 +49,7 @@ for (const kind of ["invoice", "creditNote", "selfBilling"] as const) {
       const result = await renderDocumentProfileInput(
         { renderer: billingDocumentRenderer },
         {
+          business,
           rows: [
             mappedRow({
               ...row,
@@ -63,10 +68,10 @@ for (const kind of ["invoice", "creditNote", "selfBilling"] as const) {
       expect(input.invoiceDate).toBe(row.invoice_date);
       expect(input.serviceDate).toBe(row.service_date);
       expect(input.dueDate).toBe(row.due_date);
-      expect(input.seller.name).toBe(kind === "selfBilling" ? row.party_name : row.settings_name);
-      expect(input.buyer.name).toBe(kind === "selfBilling" ? row.settings_name : row.party_name);
+      expect(input.seller.name).toBe(kind === "selfBilling" ? row.party_name : business.legalName);
+      expect(input.buyer.name).toBe(kind === "selfBilling" ? business.legalName : row.party_name);
       if (input.billing.kind === "selfBilling") expect(input.billing.agreementReference).toBe(row.agreement);
-      expect(input.payment.accountName).toBe(kind === "invoice" ? row.settings_account_name : row.party_account_name);
+      expect(input.payment.accountName).toBe(kind === "invoice" ? business.accountName : row.party_account_name);
       expect(input.lines[0]).toEqual({
         name: row.positions[0]!.Label1,
         unitCode: UnitCode.UNIT,
@@ -83,12 +88,12 @@ test("credit note keeps original identities and its own refund account", async (
   const result = await renderDocumentProfileInput(
     { renderer: billingDocumentRenderer },
     {
+      business: { ...business, legalName: "Renamed issuer" },
       rows: [
         {
           ...mappedRow({ ...row, kind: ["creditNote"] }),
-          billing_original_settings_name: "Original issuer",
+          billing_original_company: { ...business, legalName: "Original issuer" },
           billing_original_party_name: "Original recipient",
-          billing_settings_name: "Renamed issuer",
           billing_party_name: "Renamed recipient",
           billing_party_account_name: "Refund account",
         },
@@ -102,10 +107,12 @@ test("credit note keeps original identities and its own refund account", async (
   expect(input.payment.accountName).toBe("Refund account");
 });
 
-test("billing mapping does not replace missing setup with plausible example values", async () => {
-  const result = await renderDocumentProfileInput(
-    { renderer: billingDocumentRenderer },
-    { rows: [mappedRow({ ...row, kind: ["invoice"], settings_iban: null })] },
-  );
-  expect(result.ok && germanBillingSnapshotSchema.safeParse(result.data).success).toBe(false);
-});
+for (const missing of ["iban", "countryCode"] as const) {
+  test(`billing mapping does not invent missing business ${missing}`, async () => {
+    const result = await renderDocumentProfileInput(
+      { renderer: billingDocumentRenderer },
+      { business: { ...business, [missing]: null }, rows: [mappedRow({ ...row, kind: ["invoice"] })] },
+    );
+    expect(result.ok && germanBillingSnapshotSchema.safeParse(result.data).success).toBe(false);
+  });
+}

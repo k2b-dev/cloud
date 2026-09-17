@@ -1155,6 +1155,11 @@ function HtmlTemplateConstraints(props: {
     { name: "app.url", kind: "url" },
     { name: "business.legalName", kind: "string" },
     { name: "business.address", kind: "string" },
+    { name: "business.postalCode", kind: "string" },
+    { name: "business.city", kind: "string" },
+    { name: "business.countryCode", kind: "string" },
+    { name: "business.vatId", kind: "string" },
+    { name: "business.accountName", kind: "string" },
     { name: "date.iso", kind: "string" },
     { name: "date.yyyyMMdd", kind: "string" },
   ];

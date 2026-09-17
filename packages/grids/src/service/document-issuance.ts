@@ -503,10 +503,14 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     return authorizeSnapshot(snapshot, authorize, locale, client);
   };
 
-  const issueDocument = async (
+  /** Reserve on the caller's transaction without rendering. A failed result must
+   * abort that transaction, including finalization and number allocation. The
+   * first reservation owns all metadata; later issuance resumes it unchanged. */
+  const reserveDocumentInTransaction = async (
+    tx: SQL,
     input: IssueDocumentInput,
     requestIdentity?: RecordDocumentRequest,
-  ): Promise<Result<{ document: Document; artifacts: DocumentArtifact[]; replayed: boolean }>> => {
+  ): Promise<Result<IssuanceRow>> => {
     const t = documentServiceText(input.dateConfig?.locale);
     const idempotency = validateIdempotencyKey(input.idempotencyKey, input.dateConfig?.locale);
     if (!idempotency.ok) return idempotency;
@@ -525,43 +529,52 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     const requestHash = requestHashFor(input);
     if (!requestHash.ok) return requestHash;
     try {
-      const receipt = await db.begin(async (tx) => {
-        if (input.canReadTable) await authorizeSnapshot(input.snapshot, input.canReadTable, input.dateConfig?.locale, tx);
-        const operation = await operationIdentity(
-          {
-            baseId: input.snapshot.baseId,
-            tableId: input.snapshot.tableId,
-            recordId: input.snapshot.recordId,
-            templateId: input.template.id,
-            idempotencyKey: input.idempotencyKey,
-            dateConfig: input.dateConfig,
-          },
-          tx,
-        );
-        const operationKeyHash = operation.hash;
+      if (input.canReadTable) await authorizeSnapshot(input.snapshot, input.canReadTable, input.dateConfig?.locale, tx);
+      const operation = await operationIdentity(
+        {
+          baseId: input.snapshot.baseId,
+          tableId: input.snapshot.tableId,
+          recordId: input.snapshot.recordId,
+          templateId: input.template.id,
+          idempotencyKey: input.idempotencyKey,
+          dateConfig: input.dateConfig,
+        },
+        tx,
+      );
+      const operationKeyHash = operation.hash;
+      if (operation.once) {
+        if (!input.canReadTable || !(await input.canReadTable({ baseId: input.snapshot.baseId, tableId: input.snapshot.tableId }, tx)))
+          throw err.forbidden(t.workflowQueryAccessDenied);
+        // Atomic finalization already holds parents and the record before it
+        // reserves. Use that same order before taking the issuance mutex, or a
+        // concurrent issuer can hold the mutex while waiting for our record.
+        // These are coordination locks only: template/revision validation stays
+        // below receipt replay so retries can use their original frozen input.
+        await tx`SELECT id FROM grids.bases WHERE id = ${input.snapshot.baseId}::uuid FOR SHARE`;
+        await tx`SELECT id FROM grids.tables WHERE id = ${input.snapshot.tableId}::uuid FOR SHARE`;
+        await tx`SELECT id FROM grids.records WHERE table_id = ${input.snapshot.tableId}::uuid
+          AND id = ${input.snapshot.recordId}::uuid FOR SHARE`;
+      }
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${input.snapshot.baseId}:${operationKeyHash}`}, 0))`;
+      const [existing] = await tx<IssuanceRow[]>`
+        SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+        FROM grids.document_issuances
+        WHERE base_id = ${input.snapshot.baseId}::uuid AND operation_key_hash = ${operationKeyHash}
+      `;
+      if (existing) {
         if (operation.once) {
-          if (!input.canReadTable || !(await input.canReadTable({ baseId: input.snapshot.baseId, tableId: input.snapshot.tableId }, tx)))
-            throw err.forbidden(t.workflowQueryAccessDenied);
-        }
-        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${input.snapshot.baseId}:${operationKeyHash}`}, 0))`;
-        const [existing] = await tx<IssuanceRow[]>`
-          SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
-          FROM grids.document_issuances
-          WHERE base_id = ${input.snapshot.baseId}::uuid AND operation_key_hash = ${operationKeyHash}
-        `;
-        if (existing) {
-          if (operation.once) {
-            await authorizeReceipt(existing, input.canReadTable, input.dateConfig?.locale, tx);
-          } else if (
-            existing.request_identity_hash
-              ? !requestIdentity || existing.request_identity_hash !== recordRequestIdentityHash(requestIdentity)
-              : existing.request_hash !== requestHash.data
-          )
-            throw err.conflict(t.idempotencyConflict);
-          return existing;
-        }
-        if (operation.once) await authorizeSnapshot(input.snapshot, input.canReadTable, input.dateConfig?.locale, tx);
-        return insertWithShortIdForDb(tx, "document_issuances_document_short_id_key", async (attempt, documentShortId) => {
+          await authorizeReceipt(existing, input.canReadTable, input.dateConfig?.locale, tx);
+        } else if (
+          existing.request_identity_hash
+            ? !requestIdentity || existing.request_identity_hash !== recordRequestIdentityHash(requestIdentity)
+            : existing.request_hash !== requestHash.data
+        )
+          throw err.conflict(t.idempotencyConflict);
+        return ok(existing);
+      }
+      if (operation.once) await authorizeSnapshot(input.snapshot, input.canReadTable, input.dateConfig?.locale, tx);
+      return ok(
+        await insertWithShortIdForDb(tx, "document_issuances_document_short_id_key", async (attempt, documentShortId) => {
           const [binding] = await attempt<
             Array<{
               renderer_kind: "html" | "profile";
@@ -586,19 +599,19 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
               record_updated_at: Date;
             }>
           >`
-          SELECT template.renderer_kind, template.profile_id, template.profile_version, template.profile_input_template,
-                 template.short_id, template.name, template.description, template.source,
-                 template.html, template.header_html, template.footer_html, template.page_css,
-                 template.number_template, template.filename_template, template.enabled, template.updated_at,
-                 record.id::text AS record_id, record.short_id AS record_short_id,
-                 record.version AS record_version, record.updated_at AS record_updated_at
-          FROM grids.document_templates template
-          JOIN grids.tables table_ ON table_.id = template.table_id AND table_.base_id = ${input.snapshot.baseId}::uuid
-          JOIN grids.records record ON record.table_id = table_.id AND record.id = ${input.snapshot.recordId}::uuid
-          WHERE template.id = ${input.template.id}::uuid AND table_.id = ${input.snapshot.tableId}::uuid
-            AND template.deleted_at IS NULL AND table_.deleted_at IS NULL AND record.deleted_at IS NULL
-          FOR SHARE OF template, table_, record
-          `;
+        SELECT template.renderer_kind, template.profile_id, template.profile_version, template.profile_input_template,
+               template.short_id, template.name, template.description, template.source,
+               template.html, template.header_html, template.footer_html, template.page_css,
+               template.number_template, template.filename_template, template.enabled, template.updated_at,
+               record.id::text AS record_id, record.short_id AS record_short_id,
+               record.version AS record_version, record.updated_at AS record_updated_at
+        FROM grids.document_templates template
+        JOIN grids.tables table_ ON table_.id = template.table_id AND table_.base_id = ${input.snapshot.baseId}::uuid
+        JOIN grids.records record ON record.table_id = table_.id AND record.id = ${input.snapshot.recordId}::uuid
+        WHERE template.id = ${input.template.id}::uuid AND table_.id = ${input.snapshot.tableId}::uuid
+          AND template.deleted_at IS NULL AND table_.deleted_at IS NULL AND record.deleted_at IS NULL
+        FOR SHARE OF template, table_, record
+        `;
           if (!binding) throw err.badInput(t.liveBindingRequired);
           const renderRecord = input.renderData.record as Record<string, unknown>;
           const bindingRenderer =
@@ -699,21 +712,21 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             frozenRenderData = built.data.data;
           } else {
             await attempt`
-            INSERT INTO grids.document_profile_counters (base_id, profile_id)
-            VALUES (${input.snapshot.baseId}::uuid, ${profile!.id}) ON CONFLICT DO NOTHING
-          `;
+          INSERT INTO grids.document_profile_counters (base_id, profile_id)
+          VALUES (${input.snapshot.baseId}::uuid, ${profile!.id}) ON CONFLICT DO NOTHING
+        `;
             const [counter] = await attempt<Array<{ next_value: number | string | bigint }>>`
-            SELECT next_value FROM grids.document_profile_counters
-            WHERE base_id = ${input.snapshot.baseId}::uuid AND profile_id = ${profile!.id}
-            FOR UPDATE
-          `;
+          SELECT next_value FROM grids.document_profile_counters
+          WHERE base_id = ${input.snapshot.baseId}::uuid AND profile_id = ${profile!.id}
+          FOR UPDATE
+        `;
             const value = Number(counter?.next_value);
             if (!Number.isSafeInteger(value) || value < 1) throw err.internal(t.seriesExhausted);
             documentNumber = profile!.formatNumber({ value, issuedAt });
             await attempt`
-            UPDATE grids.document_profile_counters SET next_value = ${value + 1}
-            WHERE base_id = ${input.snapshot.baseId}::uuid AND profile_id = ${profile!.id}
-          `;
+          UPDATE grids.document_profile_counters SET next_value = ${value + 1}
+          WHERE base_id = ${input.snapshot.baseId}::uuid AND profile_id = ${profile!.id}
+        `;
             const built = await buildDocumentRenderData({
               template: input.template,
               renderData: input.renderData,
@@ -748,13 +761,31 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             profileInput,
           };
           const [created] = await attempt<IssuanceRow[]>`
-          INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, request_identity_hash, document_short_id, frozen_request)
-          VALUES (${input.snapshot.baseId}::uuid, ${operationKeyHash}, ${requestHash.data}, ${requestIdentity ? recordRequestIdentityHash(requestIdentity) : null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
-          RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
-        `;
+        INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, request_identity_hash, document_short_id, frozen_request)
+        VALUES (${input.snapshot.baseId}::uuid, ${operationKeyHash}, ${requestHash.data}, ${requestIdentity ? recordRequestIdentityHash(requestIdentity) : null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
+        RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+      `;
           if (!created) throw err.internal(t.receiptCreateFailed);
           return created;
-        });
+        }),
+      );
+    } catch (error) {
+      const known = serviceError(error);
+      if (known) return fail(known);
+      throw error;
+    }
+  };
+
+  const issueDocument = async (
+    input: IssueDocumentInput,
+    requestIdentity?: RecordDocumentRequest,
+  ): Promise<Result<{ document: Document; artifacts: DocumentArtifact[]; replayed: boolean }>> => {
+    const t = documentServiceText(input.dateConfig?.locale);
+    try {
+      const receipt = await db.begin(async (tx) => {
+        const reserved = await reserveDocumentInTransaction(tx, input, requestIdentity);
+        if (!reserved.ok) throw reserved.error;
+        return reserved.data;
       });
 
       if (receipt.document_id) {
@@ -1394,6 +1425,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     profiles: summaries,
     preview,
     issueDocument,
+    reserveDocumentInTransaction,
     issueRecordDocument,
     issueQueryDocument,
     inspectQueryDocumentConfirmation,

@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { documentProfiles, profileKey, profileRegistry } from "../document-profiles";
 import type { SqlClient } from "./audit";
+import { documentIssuanceService } from "./document-issuance";
 import { type DocumentDbRow, mapDocumentTemplate } from "./document-mappers";
 import { documentServiceText } from "./document-messages";
 import { validateDocumentProfileInput } from "./document-profile-validation";
@@ -8,17 +9,25 @@ import { buildLiveRenderData, renderDocumentProfileInput } from "./document-rend
 import { captureRecordSnapshotDraft } from "./document-snapshots";
 import { get as getTable } from "./tables";
 import { buildTemplateAppData } from "./template-context";
-import { actionError, actorId, type GridsWorkflowActionScope, requireOk, type WorkflowEffectAccess } from "./workflow-action-scope";
+import {
+  actionError,
+  actorId,
+  documentActorForScope,
+  type GridsWorkflowActionScope,
+  requireOk,
+  type WorkflowEffectAccess,
+} from "./workflow-action-scope";
 
 const profiles = profileRegistry(documentProfiles);
 
-/** Called after atomic changes, on their transaction. No PDF rendering or issuance. */
+/** Validate after atomic changes, reserving finalized documents on the same transaction. No PDF rendering. */
 export async function validateWorkflowDocument(
   client: SqlClient,
   scope: GridsWorkflowActionScope,
   target: { templateId: string; tableId: string; recordId: string },
   dates: DateContext,
   effectAccess: WorkflowEffectAccess,
+  stepKey: string,
 ) {
   const t = documentServiceText(dates.locale);
   await effectAccess.requireTable(target.tableId);
@@ -39,8 +48,8 @@ export async function validateWorkflowDocument(
     serviceAccountId: scope.principal.serviceAccountId,
   };
   const app = await buildTemplateAppData();
-  // Match record issuance's graph authorization and snapshot context. No snapshot
-  // is persisted. Scanner metadata created during rendering uses this same tx.
+  // Match record issuance's graph authorization and snapshot context. Scanner
+  // metadata and the finalized document reservation use this same transaction.
   const { snapshot, record } = requireOk(
     await captureRecordSnapshotDraft({
       client,
@@ -57,6 +66,28 @@ export async function validateWorkflowDocument(
   const rendered = requireOk(
     await buildLiveRenderData({ client, app, template, table, record, dateConfig: dates, createdAt: new Date(record.updatedAt) }),
   );
+  if (record.finalizedAt && template.issuancePolicy === "oncePerFinalizedRecord") {
+    // Freeze business settings, template, input and number together with the
+    // finalized record. A later worker only renders this durable reservation.
+    const reserved = await documentIssuanceService.reserveDocumentInTransaction(client, {
+      template,
+      snapshot,
+      renderData: { ...rendered.data, snapshot },
+      actor: documentActorForScope(scope),
+      idempotencyKey: `${scope.runId}:${template.id}:${record.id}`,
+      workflowRunId: scope.runId,
+      // One atomic step may reserve several documents. Each retains its own
+      // stable provenance under the document workflow-step uniqueness contract.
+      workflowStepKey: `${stepKey}:document:${template.id}:${record.id}`,
+      dateConfig: dates,
+      canReadTable: ({ tableId }) => effectAccess.canReadTable(tableId),
+    });
+    // Reservation diagnostics come from the same safe profile mapper; expose
+    // invalid input consistently whether it is checked or reserved.
+    if (!reserved.ok && reserved.error.code === "BAD_INPUT") throw actionError("DOCUMENT_INPUT_INVALID", reserved.error.message);
+    requireOk(reserved);
+    return;
+  }
   const input = requireOk(await renderDocumentProfileInput(template, { ...rendered.data, snapshot }, dates.locale));
   const validated = validateDocumentProfileInput(profile, input, dates.locale);
   // This message is produced by our safe, localized diagnostic mapper, never

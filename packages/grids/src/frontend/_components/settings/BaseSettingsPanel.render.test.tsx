@@ -151,6 +151,10 @@ describe("Grids Base settings composition", () => {
     );
 
     expect(html).toContain("Business identity");
+    for (const label of ["Street and address lines", "Postal code", "City", "Country code", "VAT ID", "Account holder"]) {
+      expect(html).toContain(label);
+    }
+    expect(html).toContain("Enter postal code, city and country separately");
     expect(html).toContain("Contact");
     expect(html).toContain("Billing and footer");
     expect(html.match(/<footer class="k2b-settings__footer">/g)).toHaveLength(1);

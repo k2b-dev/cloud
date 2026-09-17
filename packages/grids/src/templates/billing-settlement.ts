@@ -8,7 +8,6 @@ export const billingSettlementWorkflow = (t: BillingText): NonNullable<GridTempl
   const parameters = `
               bill: {type: record, value: "\${{ inputs.bill }}"}
               party: {type: record, value: "\${{ inputs.bill.${t.party} }}"}
-              settings: {type: record, value: "\${{ inputs.bill.${t.settings} }}"}
               agreement: {type: text, value: "\${{ inputs.bill.${t.agreement} }}"}`;
   const check = (source: string, assertion: "empty" | "notEmpty" = "notEmpty", message = t.settlementError) => `        - query:
             source: |
@@ -29,15 +28,11 @@ limit 1`,
       "notEmpty",
       t.settlementBankError,
     ),
-    check(`from table ${q(t.settings)}
-select ${q(t.setupKey)}
-where record.id = @params.settings and ${q(t.setupKey)} = 'issuer' and ${q(t.ready)} = true
-limit 1`),
     // Parameters are resolved before locks. Reject changed identities, agreement
     // rather than finalizing a different draft under stale locks.
     check(`from table ${q(t.bills)}
 select ${q(t.reference)}
-where record.id = @params.bill and record.finalizationState = 'draft' and ${q(t.kind)} = 'selfBilling' and ${q(t.party)} = @params.party and ${q(t.settings)} = @params.settings and ${q(t.agreement)} = @params.agreement
+where record.id = @params.bill and record.finalizationState = 'draft' and ${q(t.kind)} = 'selfBilling' and ${q(t.party)} = @params.party and ${q(t.agreement)} = @params.agreement
 limit 1`),
   ].join("");
   return {
@@ -51,7 +46,7 @@ limit 1`),
     then:
       - fail: {message: ${q(t.settlementAgreementError)}}
   - atomicRecords:
-      locks: [inputs.bill, ${q(`inputs.bill.${t.settings}`)}, ${q(`inputs.bill.${t.party}`)}]
+      locks: [inputs.bill, ${q(`inputs.bill.${t.party}`)}]
       checks:
 ${checks}      changes:
         - finalizeRecord: {record: inputs.bill}

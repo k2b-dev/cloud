@@ -334,6 +334,8 @@ The starter labels the action **Correction** or **Cancellation**; its run option
 
 `finalizeRecord` uses the table's generic Finalization contract: it validates the complete record, assigns final IDs, stores the final Durable History version, and permanently locks the record atomically. Retrying the same workflow step is safe. `updateRecord` and `createRecord` field keys accept exact field names or public IDs. If a table requires change context, `updateRecord.audit` must answer the applicable questions by their question UUID. `generateDocument.template` and `sendEmail.template` accept an enabled template exact name or public ID. Ambiguous and inaccessible references are rejected during validation.
 
+The `generateDocument` result includes `business`, the stored company context of a record Document. For example, `${{ issued.business.legalName }}` reads the original issuer name; `${{ issued.business }}` can be copied to a JSON snapshot field for a correction. It never reads current Base settings. Query-generated Documents have `business: null`.
+
 `deleteRecord` trashes one non-finalized Record, never destroys it. Permission, mutation-policy and required `audit` checks apply; `saveAs` returns its reference. Not supported inside `atomicRecords.changes`.
 
 **Four-eyes Finalization** cannot be bypassed by `finalizeRecord`: request it from the Record; a different current approver-group member approves. Direct mode instead permits writers to finalize through Workflows, API, CLI and Record actions.
@@ -342,7 +344,7 @@ The starter labels the action **Correction** or **Cancellation**; its run option
 
 `atomicRecords` commits bounded Grids changes together. Email, HTTP, document generation, other workflows and control flow belong in separate steps.
 
-`validateDocuments: [{template, record}]` checks profile inputs after changes, before commit; failure rolls back finalization. HTML fails with `DOCUMENT_PROFILE_REQUIRED`. No rendering/issuance occurs, but an idempotent scan code may be created. Dry run checks targets, not changed values. Use record data, not a new document number; generate later.
+`validateDocuments: [{template, record}]` checks profile inputs after changes, before commit; failure rolls back finalization. HTML fails with `DOCUMENT_PROFILE_REQUIRED`. For finalized records with `oncePerFinalizedRecord`, it also reserves the document number and freezes the template, snapshot and render context (including `business`) in that transaction. A later `generateDocument` renders this reserved input; retries preserve it even after Base settings change. A committed reservation consumes its number even if generation never runs. The reservation fixes the filename and tags too; later generation options do not replace them. Other targets are validated without reservation. No PDF is rendered here. Dry run checks targets, not changed values.
 
 :::reference
 - **locks:** Record or record-list references, such as `inputs.item` or `inputs.items`, acquired in stable order before checks. Duplicates count once; explicit locks, change targets and `validateDocuments` targets together may include at most 100 distinct records. Empty lists add no locks. Every competing workflow must lock the same coordination record for the same business decision.

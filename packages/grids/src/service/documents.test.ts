@@ -15,6 +15,7 @@ import {
   validateLiquidTemplate,
   validateTemplateWrite,
 } from "./documents";
+import { DOCUMENT_BUSINESS_KEYS, templateBusinessDataFromDefaults } from "./template-context";
 
 describe("document rendering", () => {
   test("renders typed object-list rows and exact totals without flattening or numeric coercion", async () => {
@@ -101,6 +102,8 @@ describe("document rendering", () => {
 
     expect(buildTemplateInputContext(record, table, app).app).toEqual(app);
     expect(buildRenderData({ record, table, columns: [], rows: [], app }).app).toEqual(app);
+    expect(buildTemplateInputContext(record, table, app).business).toMatchObject({ legalName: "", senderLine: "" });
+    expect(buildRenderData({ record, table, columns: [], rows: [], app }).business).toMatchObject({ legalName: "", senderLine: "" });
   });
 
   test("builds public document links from configured app urls", () => {
@@ -138,7 +141,7 @@ describe("document rendering", () => {
       timezone: "Europe/Berlin",
       logoDataUri: "data:image/svg+xml,abc",
     };
-    const business = {
+    const business = templateBusinessDataFromDefaults({
       legalName: "Operations GmbH",
       senderLine: "Operations GmbH | Berlin",
       address: "Main Street 1\n10117 Berlin",
@@ -153,8 +156,9 @@ describe("document rendering", () => {
       bic: "EXAMPLEXXX",
       paymentTerms: "14 days net",
       footerText: "Operations GmbH | HRB 123",
-    };
+    });
 
+    expect(Object.keys(business).sort()).toEqual([...DOCUMENT_BUSINESS_KEYS].sort());
     expect(buildTemplateInputContext(record, table, app, business).business).toEqual(business);
     expect(buildRenderData({ record, table, columns: [], rows: [], app, business }).business).toEqual(business);
   });
@@ -307,7 +311,7 @@ describe("document rendering", () => {
       sizeBytes: 42,
       url: "data:image/png;base64,abc",
     };
-    const business = {
+    const business = templateBusinessDataFromDefaults({
       legalName: "Operations GmbH",
       senderLine: "Operations GmbH | Berlin",
       address: "Main Street 1\n10117 Berlin",
@@ -322,7 +326,7 @@ describe("document rendering", () => {
       bic: "EXAMPLEXXX",
       paymentTerms: "14 days net",
       footerText: "Operations GmbH",
-    };
+    });
     const filledData = buildRenderData({
       record,
       table,
@@ -368,6 +372,7 @@ describe("document rendering", () => {
     const result = await renderLiquidText(invoice.renderer.header, {
       app,
       business: {
+        ...templateBusinessDataFromDefaults({}),
         legalName: "Operations GmbH",
         senderLine: "Operations GmbH | Main Street 1 | 10117 Berlin",
         address: "Main Street 1\n10117 Berlin",
@@ -403,6 +408,7 @@ describe("document rendering", () => {
       {
         app: { name: "Example Cloud" },
         business: {
+          ...templateBusinessDataFromDefaults({}),
           legalName: "Example Books GmbH",
           senderLine: "Example Books GmbH",
           address: "Book Street 1\n10117 Berlin",

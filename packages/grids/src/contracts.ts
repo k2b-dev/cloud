@@ -16,13 +16,23 @@ export const DocumentDefaultsSchema = z
     legalName: z.string().max(200).optional(),
     senderLine: z.string().max(500).optional(),
     address: z.string().max(1_000).optional(),
+    postalCode: z.string().max(20).optional(),
+    city: z.string().max(200).optional(),
+    countryCode: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2}$/)
+      .optional(),
     department: z.string().max(200).optional(),
     contactEmail: z.string().max(320).optional(),
     phone: z.string().max(100).optional(),
     url: z.string().max(500).optional(),
     taxId: z.string().max(100).optional(),
+    vatId: z.string().max(100).optional(),
     registration: z.string().max(300).optional(),
     bankName: z.string().max(200).optional(),
+    accountName: z.string().max(200).optional(),
     iban: z.string().max(100).optional(),
     bic: z.string().max(100).optional(),
     paymentTerms: z.string().max(500).optional(),

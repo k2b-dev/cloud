@@ -36,6 +36,7 @@ import {
   type DocumentTemplateAppData,
   type DocumentTemplateBusinessData,
   defaultTemplateAppData,
+  templateBusinessDataFromDefaults,
 } from "./template-context";
 import type { Field, GridRecord, Table } from "./types";
 
@@ -218,22 +219,7 @@ export const buildTemplateInputContext = (
   record: DocumentTemplateRecordContext,
   table: DocumentTemplateTableContext,
   appData: DocumentTemplateAppData = defaultTemplateAppData(),
-  businessData: DocumentTemplateBusinessData = {
-    legalName: appData.name,
-    senderLine: appData.name,
-    address: "",
-    department: null,
-    contactEmail: appData.contactEmail,
-    phone: null,
-    url: appData.url || null,
-    taxId: null,
-    registration: null,
-    bankName: null,
-    iban: null,
-    bic: null,
-    paymentTerms: null,
-    footerText: null,
-  },
+  businessData: DocumentTemplateBusinessData = templateBusinessDataFromDefaults({}, appData),
   template: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">> | null = null,
   createdAt: Date = new Date(),
   dateConfig?: DateContext,
@@ -292,24 +278,7 @@ export const buildRenderData = (params: {
   images: params.images ?? [],
   primaryImage: params.primaryImage ?? params.images?.[0] ?? null,
   app: params.app ?? defaultTemplateAppData(),
-  business:
-    params.business ??
-    ({
-      legalName: (params.app ?? defaultTemplateAppData()).name,
-      senderLine: (params.app ?? defaultTemplateAppData()).name,
-      address: "",
-      department: null,
-      contactEmail: (params.app ?? defaultTemplateAppData()).contactEmail,
-      phone: null,
-      url: (params.app ?? defaultTemplateAppData()).url || null,
-      taxId: null,
-      registration: null,
-      bankName: null,
-      iban: null,
-      bic: null,
-      paymentTerms: null,
-      footerText: null,
-    } satisfies DocumentTemplateBusinessData),
+  business: params.business ?? templateBusinessDataFromDefaults({}, params.app),
   document: {
     id: params.document?.id ?? "draft",
     number: params.documentNumber ?? null,

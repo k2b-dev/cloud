@@ -22,6 +22,8 @@ const overviewSource = (tableId: string) => `from table {${tableId}}\nlimit 100`
 
 const primaryValue = `{% if rows.size > 0 and columns.size > 0 %}{% assign first = rows[0] %}{% assign firstColumn = columns[0] %}{{ first[firstColumn.key] | default: table.name }}{% else %}{{ table.name }}{% endif %}`;
 
+const businessAddress = `{{ business.address | default: "" }}{% if business.postalCode != blank or business.city != blank %}{% if business.address != blank %}<br>{% endif %}{{ business.postalCode | default: "" }}{% if business.postalCode != blank and business.city != blank %} {% endif %}{{ business.city | default: "" }}{% endif %}{% if business.countryCode != blank %}{% if business.address != blank or business.postalCode != blank or business.city != blank %}<br>{% endif %}{{ business.countryCode }}{% endif %}`;
+
 const businessHeader = `<style>
   html, body { margin: 0; }
   body { font-family: Inter, Arial, sans-serif; color: #334155; font-size: 8pt; }
@@ -38,7 +40,7 @@ const businessHeader = `<style>
     <img class="cloud-logo" src="{{ app.logoDataUri }}" alt="">
     <div>
       <div class="brand">{{ business.legalName | default: app.name }}</div>
-      <div class="line">{{ business.address | default: business.senderLine | default: app.url }}</div>
+      <div class="line">{% if business.address != blank or business.postalCode != blank or business.city != blank or business.countryCode != blank %}${businessAddress}{% else %}{{ business.senderLine | default: app.url }}{% endif %}</div>
     </div>
   </div>
   <div class="meta">
@@ -192,7 +194,7 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
     </div>
     <aside class="letter-contact">
       <p class="strong">{{ business.legalName | default: app.name }}</p>
-      <p class="preline">{{ business.address | default: "" }}</p>
+      <p class="preline">${businessAddress}</p>
       <p class="small muted">{% if business.contactEmail %}{{ business.contactEmail }}<br>{% endif %}{% if business.phone %}{{ business.phone }}<br>{% endif %}{% if business.url %}{{ business.url }}{% endif %}</p>
     </aside>
   </section>
@@ -341,7 +343,7 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
     <div class="box">
       <div class="document-kicker">Lender</div>
       <p class="strong">{{ business.legalName | default: app.name }}</p>
-      <p class="preline">{{ business.address | default: "" }}</p>
+      <p class="preline">${businessAddress}</p>
       <p class="small muted">Represented by authorized staff.</p>
     </div>
     <div class="box">
@@ -572,7 +574,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     </div>
   </section>
   <section class="grid-2 avoid-break">
-    <div class="address box"><div class="document-kicker">Ship from</div><p class="strong">{{ business.legalName | default: app.name }}</p><p class="preline">{{ business.address | default: "" }}</p></div>
+    <div class="address box"><div class="document-kicker">Ship from</div><p class="strong">{{ business.legalName | default: app.name }}</p><p class="preline">${businessAddress}</p></div>
     <div class="address box"><div class="document-kicker">Ship to</div><p class="strong">Recipient</p><p>Delivery address<br>Contact person</p></div>
   </section>
   <h2>Delivered items</h2>
@@ -613,7 +615,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     </div>
   </section>
   <section class="grid-2 avoid-break">
-    <div class="address box"><div class="document-kicker">Supplier</div><p class="strong">{{ business.legalName | default: app.name }}</p><p class="preline">{{ business.address | default: "" }}</p></div>
+    <div class="address box"><div class="document-kicker">Supplier</div><p class="strong">{{ business.legalName | default: app.name }}</p><p class="preline">${businessAddress}</p></div>
     <div class="address box"><div class="document-kicker">Customer</div><p class="strong">Customer Company</p><p>Customer address<br>Procurement contact</p></div>
   </section>
   <h2>Offer positions</h2>
@@ -982,7 +984,7 @@ const GERMAN_DOCUMENT_COPY: ReadonlyArray<readonly [string, string]> = [
   ["Procurement contact", "Einkaufskontakt"],
   ["Customer", "Kunde"],
   ["Offer positions", "Angebotspositionen"],
-  ["Terms", "Bedingungen"],
+  [">Terms<", ">Bedingungen<"],
   [
     "Prices are net prices unless stated otherwise. Delivery, payment, and availability are subject to written confirmation.",
     "Sofern nicht anders angegeben, verstehen sich alle Preise netto. Lieferung, Zahlung und Verfügbarkeit bedürfen der schriftlichen Bestätigung.",

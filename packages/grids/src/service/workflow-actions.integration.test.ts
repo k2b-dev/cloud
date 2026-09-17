@@ -2618,6 +2618,137 @@ steps:
     });
   }
 
+  for (const rollback of [false, true]) {
+    postgresTest(
+      `atomic finalized document reservation ${rollback ? "rolls back with a later failed validation" : "freezes business before deferred generation"}`,
+      async () => {
+        const fixture = createFixture();
+        try {
+          await insertFixture(fixture);
+          const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+          if (!history.ok) throw history.error;
+          const enabled = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+          if (!enabled.ok) throw enabled.error;
+          const profileInput =
+            '{"columns":[{"key":"issuer","label":{{ document.number | json }},"type":"text","sqlType":"text"}],"rows":[{"issuer":{{ business.legalName | json }}}]}';
+          await sql`UPDATE grids.bases SET document_defaults = ${{ legalName: "Original Company" }}::jsonb
+          WHERE id = ${fixture.baseId}::uuid`;
+          await sql`UPDATE grids.document_templates SET source = ${"from table Tasks\nselect Name\nlimit 1"},
+          issuance_policy = 'oncePerFinalizedRecord', renderer_kind = 'profile', html = NULL,
+          number_template = NULL, filename_template = NULL, profile_id = ${jsonDocumentProfile.id},
+          profile_version = ${jsonDocumentProfile.version}, profile_input_template = ${profileInput}
+          WHERE id = ${fixture.documentTemplateId}::uuid`;
+          await sql`INSERT INTO grids.document_templates (
+            id, short_id, table_id, name, source, issuance_policy, renderer_kind,
+            profile_id, profile_version, profile_input_template, enabled, position
+          ) VALUES (${uuid()}::uuid, ${shortId("D")}, ${fixture.tableId}::uuid, ${rollback ? "Invalid sheet" : "Extra sheet"},
+            ${"from table Tasks\nselect Name\nlimit 1"}, 'oncePerFinalizedRecord', 'profile',
+            ${jsonDocumentProfile.id}, ${jsonDocumentProfile.version}, ${rollback ? "{}" : profileInput}, true, 1)`;
+          const compile = async (steps: string) => {
+            const catalog = await loadWorkflowCatalog(fixture.baseId);
+            const compiled = await compileAndBindGridsWorkflowSource(
+              `inputs:\n  record: {type: record, table: Tasks}\nsteps:\n${steps}`,
+              catalog,
+              workflowQueryBinder(fixture.baseId, catalog),
+            );
+            if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+            return compiled.plan;
+          };
+          const inputs = { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } };
+          const runId = await queueRun(fixture, {
+            plan: await compile(`  - atomicRecords:
+      locks: [inputs.record]
+      checks:
+        - table: Tasks
+          where: [{field: Status, op: equals, value: Open}]
+          assert: notEmpty
+      changes:
+        - finalizeRecord: {record: inputs.record}
+      validateDocuments:
+        - {template: Task sheet, record: inputs.record}
+        - {template: ${rollback ? "Invalid sheet" : "Extra sheet"}, record: inputs.record}`),
+            inputs,
+          });
+          const state = await drive(runId);
+          if (state !== (rollback ? "failed" : "succeeded")) throw new Error(JSON.stringify(await stepRuns(runId)));
+          const [record] = await sql`SELECT finalized_at, version FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+          expect(Boolean(record.finalized_at)).toBe(!rollback);
+          expect(record.version).toBe(rollback ? 1 : 2);
+          expect(await sql`SELECT id FROM grids.documents WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(0);
+          const reservations = await sql<
+            Array<{
+              id: string;
+              frozen_request: {
+                renderData: { business: { legalName: string } };
+                profileInput: unknown;
+                documentNumber: string;
+                workflowStepKey: string;
+              };
+            }>
+          >`
+          SELECT id::text, frozen_request FROM grids.document_issuances WHERE base_id = ${fixture.baseId}::uuid
+          ORDER BY frozen_request->>'documentNumber'`;
+          expect(reservations).toHaveLength(rollback ? 0 : 2);
+          const counters = await sql`SELECT next_value FROM grids.document_profile_counters WHERE base_id = ${fixture.baseId}::uuid`;
+          if (rollback) {
+            expect(counters).toHaveLength(0);
+            expect((await runRow(runId)).error?.code).toBe("DOCUMENT_INPUT_INVALID");
+            return;
+          }
+          expect(Number(counters[0]?.next_value)).toBe(3);
+          expect(new Set(reservations.map((entry) => entry.frozen_request.workflowStepKey)).size).toBe(2);
+          const reservation = reservations[0];
+          if (!reservation) throw new Error("Missing reservation");
+          expect(reservation.frozen_request.renderData.business.legalName).toBe("Original Company");
+          expect(reservation.frozen_request.profileInput).toMatchObject({
+            columns: [{ label: reservation.frozen_request.documentNumber }],
+            rows: [{ issuer: "Original Company" }],
+          });
+
+          // The worker has not reached generateDocument. Both current sources now
+          // differ, but the finalization transaction already captured their values.
+          await sql`UPDATE grids.bases SET document_defaults = ${{ legalName: "Changed Company" }}::jsonb
+          WHERE id = ${fixture.baseId}::uuid`;
+          await sql`UPDATE grids.document_templates SET profile_input_template = ${profileInput.replace("business.legalName", "'Changed template'")},
+          updated_at = now() WHERE id = ${fixture.documentTemplateId}::uuid`;
+          const generated = await queueRun(fixture, {
+            plan: await compile(
+              "  - generateDocument: {template: Task sheet, record: inputs.record}\n  - generateDocument: {template: Extra sheet, record: inputs.record}\n",
+            ),
+            inputs,
+          });
+          expect(await drive(generated)).toBe("succeeded");
+          await reopenForReplay(generated);
+          expect(await drive(generated)).toBe("succeeded");
+          const documents = await sql<
+            Array<{
+              workflow_run_id: string;
+              workflow_step_key: string;
+              document_number: string;
+              profile_snapshot: unknown;
+              render_data: { business: { legalName: string } };
+            }>
+          >`
+          SELECT workflow_run_id::text, workflow_step_key, document_number, profile_snapshot, render_data
+          FROM grids.documents WHERE base_id = ${fixture.baseId}::uuid ORDER BY document_number`;
+          expect(documents).toHaveLength(2);
+          expect(documents[0]).toMatchObject({
+            workflow_run_id: runId,
+            workflow_step_key: reservation.frozen_request.workflowStepKey,
+            document_number: reservation.frozen_request.documentNumber,
+            profile_snapshot: { rows: [{ issuer: "Original Company" }] },
+            render_data: { business: { legalName: "Original Company" } },
+          });
+          expect(await sql`SELECT id FROM grids.document_issuances WHERE base_id = ${fixture.baseId}::uuid`).toHaveLength(2);
+          const [counter] = await sql`SELECT next_value FROM grids.document_profile_counters WHERE base_id = ${fixture.baseId}::uuid`;
+          expect(Number(counter?.next_value)).toBe(3);
+        } finally {
+          await cleanupFixture(fixture);
+        }
+      },
+    );
+  }
+
   postgresTest("an App atomic effect may invalidate its own availability before document validation", async () => {
     const fixture = createFixture();
     try {
