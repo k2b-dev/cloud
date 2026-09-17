@@ -1,6 +1,6 @@
 import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { assistantSearchOptions, assistantProjectsSearchOptions } from "./assistant-search";
+import { assistantSearchOptions, assistantProjectSearchOptions, assistantProjectsSearchOptions } from "./assistant-search";
 import { assistantCommandMessages } from "../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
@@ -52,24 +52,28 @@ type AssistantSidebarProps = {
   live: AssistantLiveHub;
 };
 
-function AssistantSearchButton(props: { currentChat?: boolean; registerCommand?: boolean; variant?: "item" | "icon" }) {
+function AssistantSearchButton(props: { project?: AiProject; currentChat?: boolean; registerCommand?: boolean; variant?: "item" | "icon" }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
-  const openSearch = () => openGlobalSearch(assistantSearchOptions(locale()));
+  const options = () => props.project ? assistantProjectSearchOptions(props.project) : assistantSearchOptions(locale());
+  const title = () => props.project ? assistantCommandMessages.resolve([locale()]).t.searchProject : t().searchChats;
+  const openSearch = () => openGlobalSearch(options());
 
   createEffect(() => {
     if (!props.registerCommand) return;
     onCleanup(registerContextAwareCommand({
-      id: "assistant.search", title: t().searchChats, description: assistantCommandMessages.resolve([locale()]).t.searchChatsDescription,
-      icon: "ti ti-search", shortcut: props.currentChat ? undefined : "mod+shift+k", action: { search: assistantSearchOptions(locale()) },
+      id: "assistant.search", title: title(), description: props.project
+        ? assistantCommandMessages.resolve([locale()]).t.searchProjectDescription({ name: props.project.name })
+        : assistantCommandMessages.resolve([locale()]).t.searchChatsDescription,
+      icon: "ti ti-search", shortcut: props.currentChat ? undefined : "mod+shift+k", action: { search: options() },
     }));
   });
 
   return props.variant === "icon" ? (
-    <AppWorkspace.SidebarIconAction icon="ti ti-search" onClick={openSearch} label={t().searchChats} />
+    <AppWorkspace.SidebarIconAction icon="ti ti-search" onClick={openSearch} label={title()} />
   ) : (
-    <AppWorkspace.SidebarItem icon="ti ti-search" onClick={openSearch} title={t().searchChats}>
-      {t().searchChats}
+    <AppWorkspace.SidebarItem icon="ti ti-search" onClick={openSearch} title={title()}>
+      {title()}
     </AppWorkspace.SidebarItem>
   );
 }
@@ -314,7 +318,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     action: () => openConversationFromCommand(conversation),
   }));
 
-  const openSearch = () => openGlobalSearch(assistantSearchOptions(locale()));
+  const searchProject = () => props.projects?.find((project) => project.id === activeProjectId());
+  const openSearch = () => {
+    const project = searchProject();
+    openGlobalSearch(project ? assistantProjectSearchOptions(project) : assistantSearchOptions(locale()));
+  };
   const [savingIds, setSavingIds] = createSignal<ReadonlySet<string>>(new Set());
   const chatItem = (conversation: AiConversation): NavigationItem => {
     const busy = ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
@@ -491,7 +499,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
               disabled={creatingConversation()}
               onClick={() => void props.onNewConversation?.()}
             />
-            <AssistantSearchButton variant="icon" registerCommand currentChat={!!activeConversationId()} />
+            <AssistantSearchButton project={searchProject()} variant="icon" registerCommand currentChat={!!activeConversationId()} />
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="collapsed">
@@ -501,7 +509,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
               disabled={creatingConversation()}
               onClick={() => void props.onNewConversation?.()}
             />
-            <AssistantSearchButton variant="icon" />
+            <AssistantSearchButton project={searchProject()} variant="icon" />
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">

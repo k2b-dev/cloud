@@ -1,6 +1,7 @@
 import { type AuthContext, middleware, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { app, ssr } from "./config";
+import { catalogCapabilities } from "./capabilities";
 import pageRoutes from "./frontend";
 
 const router = new Hono<AuthContext>()
@@ -10,4 +11,4 @@ const router = new Hono<AuthContext>()
 
 router.get("/app/capabilities/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
-export default await app.start({ fetch: router.fetch });
+export default await app.start({ fetch: router.fetch, capabilities: catalogCapabilities });

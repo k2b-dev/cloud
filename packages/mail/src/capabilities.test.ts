@@ -1890,6 +1890,64 @@ describe("mail capabilities", () => {
     }
   });
 
+  test("mailbox-scoped search authorizes the requested mailbox without global discovery", async () => {
+    const list = spyOn(mailboxes, "listMailboxes").mockResolvedValue({ ok: true, data: [] });
+    const get = spyOn(mailboxes, "getMailbox").mockResolvedValue({
+      ok: false,
+      error: { code: "FORBIDDEN", message: "No access", status: 403 },
+    });
+    const query = spyOn(search, "searchMessages");
+    const result = await mailCapabilities.queries.search.run(
+      { query: "invoice", tags: [], limit: 10, scope: { type: "mail.mailbox", id: mailboxId } },
+      context,
+    );
+    expect(result.ok).toBe(false);
+    expect(get.mock.calls[0]?.[1]).toBe(internalMailboxId);
+    expect(list).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(
+      (
+        await mailCapabilities.queries.search.run(
+          { query: "", tags: [], limit: 10, scope: { type: "mail.mailbox", id: "missing" } },
+          context,
+        )
+      ).ok,
+    ).toBe(false);
+    expect(mailCapabilities.queries.search.universalSearch.scopeTypes).toEqual(["mailbox"]);
+  });
+
+  test("mailbox-scoped search reaches a mailbox outside the global discovery list", async () => {
+    const list = spyOn(mailboxes, "listMailboxes").mockResolvedValue({ ok: true, data: [] });
+    spyOn(mailboxes, "getMailbox").mockResolvedValue({
+      ok: true,
+      data: {
+        id: internalMailboxId,
+        name: "Support",
+        description: null,
+        health: "active",
+        healthReason: null,
+        syncEnabled: true,
+        searchBackend: "postgres",
+        automaticReplyManagementPermission: "admin",
+        composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
+        createdAt: "2026-09-16T10:00:00Z",
+        updatedAt: "2026-09-16T10:00:00Z",
+      },
+    });
+    const query = spyOn(search, "searchMessages").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null, backend: "native" } });
+    const result = await mailCapabilities.queries.search.run(
+      { query: "invoice", tags: [], limit: 7, scope: { type: "mail.mailbox", id: mailboxId } },
+      context,
+    );
+    expect(result).toMatchObject({ ok: true, data: { data: [] } });
+    expect(list).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0]?.[0]).toMatchObject({
+      mailboxId: internalMailboxId,
+      request: { limit: 7, expression: { query: "invoice" } },
+    });
+  });
+
   test("propagates Mail search discovery failures instead of returning empty success", async () => {
     spyOn(mailboxes, "listMailboxes").mockResolvedValue({
       ok: false,

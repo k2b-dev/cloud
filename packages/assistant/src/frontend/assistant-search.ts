@@ -1,6 +1,6 @@
 import { artifactMessages } from "../artifacts/messages";
 import type { GlobalSearchOptions } from "@k2b/cloud/browser/search";
-import type { AiConversation } from "@k2b/cloud/ai";
+import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { assistantCommandMessages } from "../commands";
 import { assistantMessages } from "./messages";
 
@@ -11,7 +11,12 @@ export const assistantSearchOptions = (locale: string, chat?: Pick<AiConversatio
     : { appId: "assistant", tag: "chat", label: assistantCommandMessages.resolve([locale]).t.chats, icon: "ti ti-messages" },
 });
 
-/** Find accessible projects by name and description. */
+export const assistantProjectSearchOptions = (project: Pick<AiProject, "id" | "name" | "icon">): GlobalSearchOptions => ({
+  query: "",
+  scope: { ref: { type: "assistant.project", id: project.id }, label: project.name, icon: project.icon || "ti ti-folders" },
+});
+
+/** Find projects themselves; the singular helper searches chats inside one project. */
 export const assistantProjectsSearchOptions = (locale: string): GlobalSearchOptions => ({
   query: "",
   scope: { appId: "assistant", tag: "assistant-project", label: assistantMessages.resolve([locale]).t.projects, icon: "ti ti-folders" },

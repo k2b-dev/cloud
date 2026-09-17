@@ -15,6 +15,11 @@ The application searches its own data and returns only resources the current
 access subject may read. Cloud discovers live providers, fans out the query,
 and merges their results.
 
+Signing and provider requests share one eight-second execution budget. Cold
+signer preparation uses that same budget; there is no shorter signing timeout.
+A failed or timed-out authority check returns an unavailable error, never an
+unauthorized search.
+
 Read [App capabilities](/en/docs/platform/capabilities) first for the shared
 Type, Query, schema, result, registry, and authorization rules.
 
@@ -556,7 +561,27 @@ outcome, such as “Reply to the sender of ‘Invoice’”, rather than repeati
 “Reply” as the description. Display only shortcuts that are actually active;
 do not hard-code an old key in button labels or accessibility attributes.
 
-## Test application search and context actions
+## Built-in application search contexts
+
+Application search buttons reuse the global dialog. Removing the context chip
+restores the global search without reopening the dialog.
+
+| Entry point | Search context | Results |
+| --- | --- | --- |
+| Assistant project | `assistant.project` with the public project ID | Your chats in the selected project, matched by title and message content |
+| Mail mailbox | `mail.mailbox` with the public mailbox ID | Messages and attachments in that mailbox |
+| Accounts | Accounts app context | Groups; administrators can also find users and service accounts |
+| Capabilities | Capabilities app context | Apps, Queries and Actions in the inspector |
+
+Project and mailbox scopes are hidden contexts, not additional discoverable
+tags. Providers authorize the resource before searching and apply its scope
+before the result limit. An unavailable context fails instead of searching
+all resources. Accounts uses Core's existing entity access rules. The
+Capabilities provider caches public catalog presentation for 30 seconds per
+supported locale; it never caches execution permissions. Its low-priority
+results open the inspector and do not invoke an operation or duplicate Commands.
+
+### Test application search and context actions
 
 Use `@k2b/cloud/browser/testing` in browser-environment tests after mounting an
 application island:

@@ -79,6 +79,8 @@ The sidebar shows one chat list with pinned chats first, marked by a colored pin
 
 **Projects**, between Studio and Personalize in the footer, opens the same preview popup as chat rows: hover or click it to choose a Project, create one with **+**, or open global search with the **Search Projects** button. The search shows one **Projects** context chip and matches accessible Project names and descriptions. Removing that chip returns to global search.
 
+The main sidebar search button has a different purpose: while a Project is open, it searches your own chats within that Project using a removable Project context.
+
 On mobile, expand **Projects** to reach the same destinations and actions. Project chats remain in the main chat list with the Project name on each card. **Done** includes the **All chats** entry.
 
 Choose **Mark chat done** on a sidebar row when its work is finished. Stop a

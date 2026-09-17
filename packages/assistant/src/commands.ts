@@ -7,6 +7,9 @@ export const assistantCommandMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      project: "Project",
+      searchProject: "Search chats in this project",
+      searchProjectDescription: ({ name }: { name: string }) => `Find titles and messages in your chats in “${name}”.`,
       chats: "Chats",
       chat: "Chat",
       message: "Message",
@@ -25,6 +28,9 @@ export const assistantCommandMessages = i18n.define({
       failed: "The chat could not be created.",
     },
     de: {
+      project: "Projekt",
+      searchProject: "Chats in diesem Projekt durchsuchen",
+      searchProjectDescription: ({ name }) => `Titel und Nachrichten deiner Chats in „${name}“ finden.`,
       chats: "Chats",
       chat: "Chat",
       message: "Nachricht",

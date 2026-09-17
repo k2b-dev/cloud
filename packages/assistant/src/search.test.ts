@@ -43,6 +43,7 @@ const message: AiStoredMessage = {
   meta: null,
   createdAt: "2026-09-16T00:00:00Z",
 };
+const projects = { getByShortId: async () => null };
 const input = { query: "launch", tags: [], limit: 1 };
 const context = { accessSubject: { type: "user" as const, userId: "owner" }, locale: "de" };
 const calls: unknown[] = [];
@@ -62,7 +63,7 @@ const store: Pick<AiConversationService, "listConversations" | "getConversationB
 };
 test("app-wide search delegates content matching to the owner-scoped service and returns public chat links", async () => {
   calls.length = 0;
-  const result = await searchAssistant(input, context, store);
+  const result = await searchAssistant(input, context, store, projects);
   expect(calls).toEqual([{ ownerUserId: "owner", search: "launch", limit: 1 }]);
   expect(result.ok).toBe(true);
   if (!result.ok) return;
@@ -72,7 +73,7 @@ test("app-wide search delegates content matching to the owner-scoped service and
 });
 test("scoped search authorizes the chat before querying messages and bounds views with deep links", async () => {
   calls.length = 0;
-  const result = await searchAssistant({ ...input, scope: { type: "assistant.chat", id: "Chat01" } }, context, store);
+  const result = await searchAssistant({ ...input, scope: { type: "assistant.chat", id: "Chat01" } }, context, store, projects);
   expect(calls).toEqual([
     { shortId: "Chat01", ownerUserId: "owner" },
     { conversationId: "internal-chat", query: "launch", limit: 1 },
@@ -94,16 +95,29 @@ test("inaccessible scopes and non-user subjects cannot fall back to unscoped sea
       await searchAssistant(
         { ...input, scope: { type: "assistant.chat", id: "Chat01" } },
         { ...context, accessSubject: { type: "user", userId: "other" } },
-        store,
+        store, projects,
       )
     ).ok,
   ).toBe(false);
   expect(calls).toEqual([{ shortId: "Chat01", ownerUserId: "other" }]);
   calls.length = 0;
-  expect((await searchAssistant({ ...input, scope: { type: "notebooks.notebook", id: "Chat01" } }, context, store)).ok).toBe(false);
+  expect((await searchAssistant({ ...input, scope: { type: "notebooks.notebook", id: "Chat01" } }, context, store, projects)).ok).toBe(false);
   expect(calls).toEqual([]);
   expect(
-    (await searchAssistant(input, { ...context, accessSubject: { type: "service_account", serviceAccountId: "service" } }, store)).ok,
+    (await searchAssistant(input, { ...context, accessSubject: { type: "service_account", serviceAccountId: "service" } }, store, projects)).ok,
   ).toBe(false);
+  expect(calls).toEqual([]);
+});
+
+test("project search authorizes the project and filters owned chats before limiting", async () => {
+  calls.length = 0;
+  const project = { id: "project-internal", shortId: "Proj01", name: "Work", description: "", icon: "ti ti-folders", instructions: "", defaultModelProfileId: null, permission: "read" as const, revision: 1, createdAt: "", updatedAt: "" };
+  const result = await searchAssistant({ ...input, scope: { type: "assistant.project", id: "Proj01" } }, context, store, {
+    getByShortId: async (id, subject) => { expect(id).toBe("Proj01"); expect(subject).toEqual(context.accessSubject); return project; },
+  });
+  expect(result.ok).toBe(true);
+  expect(calls).toEqual([{ ownerUserId: "owner", search: "launch", limit: 1, projectId: "project-internal" }]);
+  calls.length = 0;
+  expect((await searchAssistant({ ...input, scope: { type: "assistant.project", id: "missing" } }, context, store, projects)).ok).toBe(false);
   expect(calls).toEqual([]);
 });

@@ -15,7 +15,7 @@ import {
   parseCapabilityTableState,
 } from "../workspace-data";
 import CapabilitiesWorkspace from "./CapabilitiesWorkspace.island";
-import CapabilitySearchButton, { type CapabilitySearchEntry } from "./CapabilitySearchButton.island";
+import CapabilitySearchButton from "./CapabilitySearchButton.island";
 import { capabilityUiMessages } from "./messages";
 
 const columns = (t: ReturnType<typeof capabilityUiMessages.resolve>["t"]): DataTableColumn<CapabilityOperationRow>[] => [
@@ -46,29 +46,9 @@ const capabilityRowHref = (appId: string, row: CapabilityOperationRow, state: Ca
     page: state.page,
   });
 
-const capabilitySearchEntries = (
-  apps: readonly CapabilityAppSummary[],
-  selectedAppId: string,
-  operations: readonly CapabilityOperationRow[],
-): CapabilitySearchEntry[] => [
-  ...apps.map((app) => ({
-    href: capabilityHref({ appId: app.id }),
-    label: app.name,
-    description: app.description,
-    icon: app.icon || "ti ti-apps",
-  })),
-  ...operations.map((operation) => ({
-    href: capabilityHref({ appId: selectedAppId, kind: operation.kind, capabilityId: operation.localId }),
-    label: operation.title,
-    description: `${operation.kind === "query" ? "Query" : "Action"} · ${operation.description}`,
-    icon: operation.kind === "query" ? "ti ti-search" : "ti ti-bolt",
-  })),
-];
-
 function CapabilitiesSidebar(props: {
   apps: readonly CapabilityAppSummary[];
   selectedAppId: string;
-  searchEntries: CapabilitySearchEntry[];
   labels: ReturnType<typeof capabilityUiMessages.resolve>["t"];
 }) {
   const renderApp = (app: CapabilityAppSummary) => (
@@ -86,7 +66,6 @@ function CapabilitiesSidebar(props: {
   return (
     <>
       <CapabilitiesNavigation
-        entries={props.searchEntries}
         items={props.apps.map((app) => ({
           id: app.id,
           label: app.name,
@@ -99,7 +78,7 @@ function CapabilitiesSidebar(props: {
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="capabilities-apps-sidebar">
             <AppWorkspace.SidebarSection>
-              <CapabilitySearchButton entries={props.searchEntries} variant="sidebar" registerCommand />
+              <CapabilitySearchButton variant="sidebar" registerCommand />
             </AppWorkspace.SidebarSection>
             <AppWorkspace.SidebarSection title={props.labels.apps}>
               <For each={props.apps}>{renderApp}</For>
@@ -242,7 +221,6 @@ export default ssr<AuthContext>(async (c) => {
     c.header("Cache-Control", "private, no-store");
   }
 
-  const searchEntries = capabilitySearchEntries(workspace.apps, loaded.app.id, operations);
   const pageTitle = selection?.operation.title ?? loaded.app.name;
   c.get("page").title = pageTitle;
 
@@ -263,7 +241,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <div class="k2b-ui min-h-0 min-w-0 flex-1 overflow-hidden" style={{ background: "transparent" }}>
         <AppWorkspace mobileSurface="flush">
-          <CapabilitiesSidebar apps={workspace.apps} selectedAppId={loaded.app.id} searchEntries={searchEntries} labels={t} />
+          <CapabilitiesSidebar apps={workspace.apps} selectedAppId={loaded.app.id} labels={t} />
 
           <AppWorkspace.Content>
             <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>

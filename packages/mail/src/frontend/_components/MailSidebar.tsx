@@ -86,18 +86,30 @@ export default function MailSidebar(props: {
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   createEffect(() => {
     const copy = mailCommandMessages.resolve([locale()]).t;
-    onCleanup(registerContextAwareCommand({
-      id: "mail.search", title: copy.searchTitle, description: copy.searchDescription,
-      icon: "ti ti-search", shortcut: "mod+shift+k",
-      action: { search: { scope: { appId: "mail", label: copy.mail, icon: "ti ti-mail" } } },
-    }));
+    onCleanup(
+      registerContextAwareCommand({
+        id: "mail.search",
+        title: copy.searchTitle,
+        description: copy.searchDescription({ name: props.mailboxName }),
+        icon: "ti ti-search",
+        shortcut: "mod+shift+k",
+        action: {
+          search: { scope: { ref: { type: "mail.mailbox", id: props.mailboxId }, label: props.mailboxName, icon: "ti ti-inbox" } },
+        },
+      }),
+    );
     if (!props.canWrite) return;
     const mailboxId = props.mailboxId;
-    onCleanup(registerContextAwareCommand({
-      id: "mail.compose", title: copy.composeTitle, description: copy.composeDescription({ name: props.mailboxName }),
-      icon: "ti ti-mail-plus", shortcut: "mod+alt+n",
-      action: () => navigateTo(`/app/mail/compose?mailbox=${mailboxId}&autostart=1`),
-    }));
+    onCleanup(
+      registerContextAwareCommand({
+        id: "mail.compose",
+        title: copy.composeTitle,
+        description: copy.composeDescription({ name: props.mailboxName }),
+        icon: "ti ti-mail-plus",
+        shortcut: "mod+alt+n",
+        action: () => navigateTo(`/app/mail/compose?mailbox=${mailboxId}&autostart=1`),
+      }),
+    );
   });
   const followUpViewItems = createMemo<MailViewItem[]>(() => [
     { id: "needs_action", label: messages().needsAction, icon: "ti ti-message-reply" },

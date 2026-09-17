@@ -446,7 +446,7 @@ try {
       console.log(JSON.stringify(display));
       if (phase === "end-to-end" && providerCount === 30) {
         // Correctness probe, not a latency sample: a real conflicting key lock
-        // must fail closed at the unchanged signing deadline and then recover.
+        // must fail closed at the shared search deadline and then recover.
         await warmCaches();
         const signer = await identity.prepareIdentitySigner("invocation");
         const locker = new SQL(source, { max: 1 });
@@ -465,7 +465,8 @@ try {
           const start = performance.now();
           const response = await fetch(new URL("/search?q=needle", coreServer.url), {
             headers: { cookie: `session_token=${credential}` },
-            signal: AbortSignal.timeout(8_000),
+            // Allow the eight-second server budget plus transport overhead.
+            signal: AbortSignal.timeout(16_000),
           });
           await response.arrayBuffer();
           guardFailureProbe = { status: response.status, elapsedMs: performance.now() - start, targetCalls, signerFailure };

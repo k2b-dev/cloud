@@ -30,7 +30,6 @@ const SearchProviderResultSchema = capabilityResultSchema(UniversalSearchDataSch
 const GLOBAL_RESULT_LIMIT = 30;
 const PROVIDER_CONCURRENCY = 8;
 const PROVIDER_TIMEOUT_MS = 8_000;
-const SIGNING_TIMEOUT_MS = 500;
 
 type HttpSearchProvider = {
   appId: string;
@@ -254,7 +253,6 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // The same request-wide budget covers signing and provider I/O.
       const providerDeadline = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
       const fanoutSignal = AbortSignal.any([c.req.raw.signal, providerDeadline]);
-      const signingSignal = AbortSignal.any([fanoutSignal, AbortSignal.timeout(SIGNING_TIMEOUT_MS)]);
       // Guard the whole issuance batch once, then reuse the prepared signer for
       // every target. This is one Postgres check per outer search request, not
       // one check per provider.
@@ -280,17 +278,17 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
                         signer,
                         issuer: signer.issuer,
                       }),
-                    signingSignal,
+                    fanoutSignal,
                   ),
                 ),
-              { signal: signingSignal, timeoutMs: SIGNING_TIMEOUT_MS },
+              { signal: fanoutSignal, timeoutMs: PROVIDER_TIMEOUT_MS },
             ),
-            signingSignal,
+            fanoutSignal,
           );
         }
       } catch {
         log.warn("Search invocation authority unavailable", {
-          reason: signingSignal.aborted ? "signing_deadline" : "signing_guard_failed",
+          reason: fanoutSignal.aborted ? "signing_deadline" : "signing_guard_failed",
         });
         return c.json(
           { code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: "Search invocation authority is currently unavailable" },

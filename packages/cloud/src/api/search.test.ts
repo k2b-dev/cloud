@@ -682,8 +682,7 @@ describe("global capability search", () => {
         const response = await routes.request("/search?q=needle");
         const body = (await response.json()) as { count: number; items: Array<{ appId: string }> };
         expect(response.status).toBe(200);
-        expect(timeout).toHaveBeenCalledTimes(2);
-        expect(timeout).toHaveBeenCalledWith(500);
+        expect(timeout).toHaveBeenCalledTimes(1);
         expect(timeout).toHaveBeenCalledWith(8_000);
         expect(started).toHaveLength(providers.length);
         expect(started.find((entry) => entry.appId === "search-08")?.alreadyAborted).toBeTrue();
@@ -693,6 +692,23 @@ describe("global capability search", () => {
         timeout.mockRestore();
       }
     }
+  });
+
+  test("allows cold signer preparation within the shared request budget", async () => {
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [provider(1)],
+      withActiveSigner: async (purpose, callback, options) => {
+        // Refresh and the active-key transaction can together exceed 500 ms.
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        return withActiveSigner(purpose, callback, options);
+      },
+      signInvocation: async (params) => fakeInvocation(params),
+      fetch: async () => Response.json({ data: [] }),
+    });
+    const response = await routes.request("/search?q=needle");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ count: 0 });
   });
 
   test("bounds a stuck signer and does not start queued signing after the common deadline", async () => {
@@ -720,8 +736,7 @@ describe("global capability search", () => {
       try {
         const response = await routes.request("/search?q=needle");
         expect(response.status).toBe(503);
-        expect(timeout).toHaveBeenCalledTimes(2);
-        expect(timeout).toHaveBeenCalledWith(500);
+        expect(timeout).toHaveBeenCalledTimes(1);
         expect(timeout).toHaveBeenCalledWith(8_000);
         expect(signed).toBe(8);
         expect(fetched).toBe(0);
@@ -758,7 +773,7 @@ describe("global capability search", () => {
       try {
         const response = await routes.request("/search?q=needle");
         expect(response.status).toBe(503);
-        expect(timeout).toHaveBeenCalledTimes(2);
+        expect(timeout).toHaveBeenCalledTimes(1);
         expect(signed).toBe(0);
         expect(fetched).toBe(0);
         expect(await response.json()).toMatchObject({ code: "APP_UNAVAILABLE" });

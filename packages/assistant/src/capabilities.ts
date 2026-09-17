@@ -46,9 +46,12 @@ export const assistantCapabilities = defineCapabilities({
       openWorld: false,
       universalSearch: {
         tags: [{ tag: "chat", title: "Chats", description: "Search Assistant chat titles and messages.", aliases: ["chats", "assistant"] }],
-        scopeTypes: ["chat"],
+        scopeTypes: ["chat", "project"],
       },
-      run: async (input, context) => searchAssistant(input, context, (await import("@k2b/cloud/ai")).aiConversations),
+      run: async (input, context) => {
+        const { aiConversations, aiProjects } = await import("@k2b/cloud/ai");
+        return searchAssistant(input, context, aiConversations, aiProjects);
+      },
     },
   },
   commands: {

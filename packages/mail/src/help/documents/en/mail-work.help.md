@@ -171,3 +171,7 @@ Choose the destination from the same mailbox by sender or subject, then review t
 Splitting in the Web UI selects one message. That message and its linked comments move to a new, unassigned conversation; drafts, tags, references, reminders, and other comments stay with the source. The source keeps its assignee and work state. At least one message must remain there.
 
 There is no automatic undo. You can adjust the grouping again with the same actions, but this does not restore previous assignments, reminders, or other collaboration state. Changes are recorded in conversation activity. If another person changes either conversation before you confirm, Mail rejects the outdated change; reload and review it again.
+
+## Search this mailbox
+
+Use **Cmd/Ctrl+Shift+K** in a mailbox to search its messages and attachments. The mailbox name appears as a removable chip. Remove it to search the whole Cloud.

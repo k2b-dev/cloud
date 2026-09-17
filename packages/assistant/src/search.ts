@@ -19,11 +19,17 @@ export const searchAssistant = async (
   input: UniversalSearchInput,
   context: Pick<CapabilityExecutionContext, "accessSubject" | "locale">,
   store: SearchStore,
+  projects: Pick<typeof aiProjects, "getByShortId">,
 ) => {
   const t = assistantCommandMessages.resolve([context.locale]).t;
   if (context.accessSubject.type !== "user") return fail(err.forbidden(t.userRequired));
   const ownerUserId = context.accessSubject.userId;
-  if (input.scope) {
+  let projectId: string | undefined;
+  if (input.scope?.type === "assistant.project") {
+    const project = await projects.getByShortId(input.scope.id, context.accessSubject);
+    if (!project) return fail(err.notFound(t.project));
+    projectId = project.id;
+  } else if (input.scope) {
     if (input.scope.type !== "assistant.chat") return fail(err.badInput(t.invalidSearchScope));
     const chat = await store.getConversationByShortId({ shortId: input.scope.id, ownerUserId });
     if (!chat || chat.createdByUserId !== ownerUserId) return fail(err.notFound(t.chat));
@@ -39,7 +45,7 @@ export const searchAssistant = async (
     }));
     return ok({ data });
   }
-  const chats = await store.listConversations({ ownerUserId, search: input.query, limit: input.limit });
+  const chats = await store.listConversations({ ownerUserId, search: input.query, limit: input.limit, ...(projectId ? { projectId } : {}) });
   const data: CloudResourceView[] = chats.map((chat) => ({
     ref: { type: "assistant.chat", id: chat.shortId },
     title: chat.title.slice(0, 500),

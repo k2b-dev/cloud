@@ -718,10 +718,18 @@ const mapSubscription = (item: MailSubscriptionSummary) => ({
 
 const runSearch = async (input: UniversalSearchInput, capabilityContext: CapabilityExecutionContext) => {
   const t = mailCapabilityMessages(capabilityContext.locale);
-  if (!input.query.trim()) return ok({ data: [] });
+  if (!input.scope && !input.query.trim()) return ok({ data: [] });
   const context = requestContext(capabilityContext);
-  const mailboxResult = await mailboxes.listMailboxes(context, 20);
+  const mailboxResult = await (async () => {
+    if (!input.scope) return mailboxes.listMailboxes(context, 20);
+    if (input.scope.type !== "mail.mailbox") return fail(err.badInput("Unsupported mail search context"));
+    const scope = await resolveMailboxScope(input.scope.id);
+    if (!scope.ok) return scope;
+    const mailbox = await mailboxes.getMailbox(context, scope.data.id);
+    return mailbox.ok ? ok([mailbox.data]) : mailbox;
+  })();
   if (!mailboxResult.ok) return mailboxResult;
+  if (!input.query.trim()) return ok({ data: [] });
   const pages: Array<{ mailbox: (typeof mailboxResult.data)[number]; page: Awaited<ReturnType<typeof search.searchMessages>> }> = [];
   for (let offset = 0; offset < mailboxResult.data.length; offset += 4) {
     pages.push(
@@ -866,6 +874,7 @@ const queryDefinitions = {
     data: UniversalSearchDataSchema,
     openWorld: true,
     universalSearch: {
+      scopeTypes: ["mailbox"],
       tags: [{ tag: "mail", title: "Mail", description: "Search recent accessible mailboxes for messages.", aliases: ["message"] }],
     },
     run: runSearch,

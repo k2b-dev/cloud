@@ -94,7 +94,6 @@ export default function AccountsNavSidebar(props: Props) {
   return (
     <>
       <AccountsNavigation
-        isAdmin={props.isAdmin}
         items={[
           ...generalItems().map((item) => ({ ...item, id: item.href })),
           ...(props.isAdmin

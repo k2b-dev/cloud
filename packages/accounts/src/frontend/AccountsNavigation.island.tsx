@@ -3,9 +3,9 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { createAccountsSearch } from "./accounts-search";
 import { useAccountsMessages } from "./messages";
 
-export default function AccountsNavigation(props: { items: readonly NavigationItem[]; isAdmin: boolean }) {
+export default function AccountsNavigation(props: { items: readonly NavigationItem[] }) {
   const messages = useAccountsMessages();
-  const search = createAccountsSearch(props);
+  const search = createAccountsSearch();
   const navigation = createNavigation({
     items: () => [{ id: "search", label: messages().searchAccounts, icon: "ti ti-search", action: "search" }, ...props.items],
     onAction: (action) => {

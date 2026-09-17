@@ -4,6 +4,7 @@ import apiRoutes from "./api";
 import { adminQueueWidgetHandler } from "./api/widgets";
 import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
+import { accountsCapabilities } from "./capabilities";
 import { accountsHelp } from "./help";
 
 const service = {};
@@ -17,6 +18,7 @@ router.get("/app/accounts/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   fetch: router.fetch,
+  capabilities: accountsCapabilities,
   help: accountsHelp,
   openapi: apiRoutes,
   widgets: { "admin-queue": adminQueueWidgetHandler },

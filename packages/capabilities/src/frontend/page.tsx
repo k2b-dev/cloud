@@ -6,18 +6,12 @@ import { For, Show } from "solid-js";
 import { loadCapabilityApps } from "../catalog";
 import { ssr } from "../config";
 import { capabilityHref } from "../routes";
-import CapabilitySearchButton, { type CapabilitySearchEntry } from "./CapabilitySearchButton.island";
+import CapabilitySearchButton from "./CapabilitySearchButton.island";
 import { capabilityUiMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = capabilityUiMessages.resolve([getLocale(c)]);
   const catalog = await loadCapabilityApps(new URL(c.req.url), getLocale(c));
-  const searchEntries: CapabilitySearchEntry[] = catalog.apps.map((app) => ({
-    href: capabilityHref({ appId: app.id }),
-    label: app.name,
-    description: app.description,
-    icon: app.icon || "ti ti-apps",
-  }));
   c.get("page").title = t.capabilities;
 
   return () => (
@@ -27,7 +21,7 @@ export default ssr<AuthContext>(async (c) => {
           <AppOverview.Main
             title={t.apps}
             description={t.appsOnPage({ count: catalog.apps.length })}
-            toolbar={<CapabilitySearchButton entries={searchEntries} registerCommand />}
+            toolbar={<CapabilitySearchButton registerCommand />}
           >
             <Show
               when={catalog.apps.length > 0}

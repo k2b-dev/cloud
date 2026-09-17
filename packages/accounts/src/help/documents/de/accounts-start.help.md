@@ -29,3 +29,7 @@ Accounts zeigt deinen eigenen Kontokontext und bündelt die Verwaltung von Perso
 :::info FreeIPA-Grenze
 FreeIPA-gestützte Personen und Gruppen werden bei aktiviertem FreeIPA über den Accounts-Dienst geschrieben. Lokale Konten und Gruppen bleiben in der Cloud-Datenbank.
 :::
+
+## Konto oder Gruppe finden
+
+Der Suchbutton und **Cmd/Ctrl+Shift+K** öffnen die Cloud-Suche mit einem Konten-Chip. Du findest lesbare Gruppen; Administratoren zusätzlich Nutzer und Service Accounts. Ein Treffer öffnet die bestehende Verwaltungsseite. Entferne den Chip, um andere Apps zu durchsuchen.
