@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
@@ -7,6 +7,10 @@ import { defineCapabilities } from "../contracts/capabilities";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import type { AiConversation } from "./types";
+
+import * as categoryPolicy from "../services/account-category-policy";
+
+afterEach(() => mock.restore());
 
 const user = (id: string) => ({
   id,
@@ -82,6 +86,7 @@ const app = () => {
 
 describe("AI capability authority", () => {
   test("refreshes the conversation owner and rejects mismatched or non-user actors", async () => {
+    const allowed = spyOn(categoryPolicy, "isAccountCategoryAllowed").mockResolvedValue(true);
     const current = user("11111111-1111-4111-8111-111111111111");
     const store = { getConversation: async () => conversation(current.id) };
     const resolved = await resolveAiCapabilityActor({
@@ -91,6 +96,11 @@ describe("AI capability authority", () => {
       getUser: async () => current,
     });
     expect(resolved).toEqual({ actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } });
+    expect(allowed).toHaveBeenCalledWith(current);
+    allowed.mockResolvedValueOnce(false);
+    await expect(resolveAiCapabilityActor({
+      conversationId: "conversation-1", persistedActor: { kind: "user", user: current }, store, getUser: async () => current,
+    })).rejects.toThrow("category is disabled");
 
     await expect(
       resolveAiCapabilityActor({

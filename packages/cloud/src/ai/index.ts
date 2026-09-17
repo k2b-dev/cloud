@@ -242,7 +242,7 @@ export {
   validateAiSkillName,
   validateAiSkillReferences,
 } from "./skill-format";
-export { seedCloudAiSkills } from "./skill-seeds";
+export { seedCloudAiSkills } from "./skills";
 export {
   type AiLoadedSkillSnapshot,
   type AiSkill,

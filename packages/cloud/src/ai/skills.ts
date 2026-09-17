@@ -1053,3 +1053,7 @@ export const aiSkills = {
     return file ? { ...stat, bytes: new TextEncoder().encode(file.content) } : null;
   },
 };
+
+export const seedCloudAiSkills = async (): Promise<void> => {
+  for (const seed of getBuiltinAiSkillTemplates()) await aiSkills.seedOnce(seed);
+};

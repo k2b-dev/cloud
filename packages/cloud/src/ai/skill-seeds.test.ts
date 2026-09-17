@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { validateAiSkillDescription, validateAiSkillInstructions, validateAiSkillReferences } from "./skill-format";
-import { getBuiltinAiSkillTemplate, seedCloudAiSkills } from "./skill-seeds";
-import { aiSkills } from "./skills";
+import { getBuiltinAiSkillTemplate } from "./skill-seeds";
+import { aiSkills, seedCloudAiSkills } from "./skills";
 
 afterEach(() => mock.restore());
 
@@ -14,7 +14,7 @@ describe("Cloud AI Skill seeds", () => {
     expect(seedOnce).toHaveBeenCalledTimes(10);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 39 });
+    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 40 });
     expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
     expect(inputs.find(candidate => candidate.name === "assistant-data-analysis")).toMatchObject({ key: "assistant:data-analysis", version: 5 });
     expect(codeMode?.instructions).toContain("todo_write");

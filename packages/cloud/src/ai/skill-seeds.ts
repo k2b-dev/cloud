@@ -440,8 +440,3 @@ export const getBuiltinAiSkillTemplate = (name: string) => {
   const { key, ...template } = seed;
   return { ...template, templateId: key };
 };
-
-export const seedCloudAiSkills = async (): Promise<void> => {
-  const { aiSkills } = await import("./skills");
-  for (const seed of BUILTIN_CLOUD_AI_SKILLS) await aiSkills.seedOnce(seed);
-};
