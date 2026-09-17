@@ -86,8 +86,20 @@ full accounts can override their home path and shell after confirmation. This
 does not change UID/GID, move directories or update target computers. Verify
 that the selected shell exists on those computers before deploying a client.
 
-An existing local group without a GID can receive one from its group detail
-view. This grants no sudo permission. A group referenced as a primary group
+In Accounts, choose **Create as POSIX group** when creating a local group.
+The option is off by default and requires enabled local Linux identities.
+Cloud creates the group and assigns its GID together: if assignment fails,
+no group is created. Leave the option off for a logical group without a GID.
+
+An existing local group without a GID can receive one using **Convert to POSIX**
+in its group actions. Both creation and conversion use the reserved Cloud range
+and require an administrator. Local POSIX names must contain 1–32 lowercase
+ASCII letters, digits, underscores or hyphens, starting with a letter or
+underscore. Accounts normalizes names before validation. Conflicting names or
+an exhausted range must be resolved before retrying.
+
+Assigned GIDs are permanent; there is no conversion back to a logical group.
+Assignment grants no sudo permission and creates no files. A group referenced as a primary group
 cannot be deleted while that identity exists.
 
 Disabling local assignment stops automatic assignment and backfill, retains existing identities and allows their
@@ -142,8 +154,16 @@ Both `--home` and `--shell` are required for an update. User and group arguments
 accept IDs or exact references; ambiguous references require an ID. Preparation
 is safe to repeat for an already assigned identity. There is no implicit bulk
 backfill. Local group assignment uses the reserved Cloud range; FreeIPA groups
-are managed through FreeIPA. Local `groups create` does
-not assign a GID; prepare the group separately.
+are managed through FreeIPA. Local `groups create` creates a logical group by default. To create one with a
+GID in a single operation, use:
+
+```bash
+cld accounts groups create team --provider local --posix
+```
+
+The existing `make-posix` command enables POSIX for a group created earlier.
+Both operations require enabled local Linux identities for local groups.
+FreeIPA continues to manage its groups independently.
 
 All these commands support `--json` and `--jsonl`. Keep your CLI version aligned
 with your Cloud installation.

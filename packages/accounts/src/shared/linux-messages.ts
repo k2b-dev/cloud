@@ -29,10 +29,8 @@ export const linuxAccountMessages = i18n.define({
       confirmPaths:
         "Save these home and shell values? Existing directories are not moved. Check that the paths are suitable for your computers.",
       pathsHint: "Changes affect this identity only. Directories are not created or moved; the shell must exist on the target computers.",
-      prepareGroup: "Assign Linux group ID",
-      groupDescription: "Assign a stable GID to this group. This does not grant sudo or computer login.",
-      groupConfirm: "Assign a permanent Linux group ID from the configured range? Members and permissions stay unchanged.",
       error: "The action could not be completed. Refresh the page and check the Linux setup before retrying.",
+      invalid_configuration: "The Linux identity configuration is invalid. Review it in Administration.",
       invalid_name: "The name must use lowercase Linux-compatible characters and be at most 32 characters long.",
       group_conflict: "A group already uses this name. Resolve the name conflict before assigning the identity.",
       ipa_inventory_unavailable:
@@ -72,12 +70,9 @@ export const linuxAccountMessages = i18n.define({
         "Diese Home- und Shell-Werte speichern? Bestehende Verzeichnisse werden nicht verschoben. Prüfe, ob die Pfade für deine Rechner geeignet sind.",
       pathsHint:
         "Änderungen gelten nur für diese Identität. Verzeichnisse werden nicht angelegt oder verschoben; die Shell muss auf den Zielrechnern vorhanden sein.",
-      prepareGroup: "Linux-Gruppen-ID vergeben",
-      groupDescription: "Dieser Gruppe eine stabile GID zuweisen. Dies gewährt weder sudo noch Rechnerzugang.",
-      groupConfirm:
-        "Eine dauerhafte Linux-Gruppen-ID aus dem eingestellten Bereich vergeben? Mitglieder und Berechtigungen bleiben unverändert.",
       error:
         "Die Aktion konnte nicht abgeschlossen werden. Aktualisiere die Seite und prüfe die Linux-Einrichtung vor einem erneuten Versuch.",
+      invalid_configuration: "Die Linux-Konfiguration ist ungültig. Prüfe sie in der Administration.",
       invalid_name: "Der Name muss Linux-kompatible Kleinbuchstaben verwenden und darf höchstens 32 Zeichen lang sein.",
       group_conflict: "Eine Gruppe verwendet diesen Namen bereits. Behebe den Namenskonflikt vor der Vergabe.",
       ipa_inventory_unavailable:

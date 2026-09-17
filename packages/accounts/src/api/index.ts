@@ -20,11 +20,22 @@ const localizeApiError = async (c: Context, next: () => Promise<void>) => {
   if (!body || typeof body !== "object" || !("message" in body) || typeof body.message !== "string") return;
   const headers = new Headers(c.res.headers);
   headers.delete("content-length");
-  c.res = new Response(JSON.stringify({ ...body, message: accountsApiErrorMessage(c.res.status, getLocale(c), body.message) }), {
-    status: c.res.status,
-    statusText: c.res.statusText,
-    headers,
-  });
+  c.res = new Response(
+    JSON.stringify({
+      ...body,
+      message: accountsApiErrorMessage(
+        c.res.status,
+        getLocale(c),
+        body.message,
+        "code" in body && typeof body.code === "string" ? body.code : undefined,
+      ),
+    }),
+    {
+      status: c.res.status,
+      statusText: c.res.statusText,
+      headers,
+    },
+  );
 };
 
 /** Accounts API — users, groups, account requests, and dashboard widget. */

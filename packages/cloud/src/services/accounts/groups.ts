@@ -4,9 +4,11 @@ import { freeipa } from "../../server/services";
 import { getServiceIpaSession } from "../ipa/service-account";
 import { toPgUuidArray } from "../postgres";
 import { providers } from "../providers";
+import type { AccountsActor } from "./authz";
 import { buildBaseGroup } from "./base-group";
 import { buildManagedGroupScopeCondition, buildMemberGroupScopeCondition } from "./group-sql";
 import * as localGroups from "./local-groups";
+import { posix } from "./posix";
 
 type DbRow = Record<string, unknown>;
 
@@ -146,13 +148,14 @@ export const getManagedGroups = async (params: { id: string; provider?: UserProv
 };
 
 export const create = async (params: {
+  actor: AccountsActor;
   provider: UserProvider;
   name: string;
   description?: string;
   posix?: boolean;
 }): Promise<MutationResult<BaseGroup>> => {
   if (params.provider === "local") {
-    if (params.posix) return { ok: false, error: "Local groups do not support POSIX mode", status: 400 };
+    if (params.posix) return { ok: true, data: await posix.createGroup({ id: params.actor.userId, roles: params.actor.roles }, params) };
     return localGroups.create({ name: params.name, description: params.description });
   }
   const serviceSession = await getServiceIpaSession();
@@ -188,9 +191,17 @@ export const remove = async (params: { id: string; provider?: UserProvider }): P
   });
 };
 
-export const makePosix = async (params: { id: string; provider?: UserProvider }): Promise<MutationResult<{ gidnumber: number | null }>> => {
-  const provider = params.provider ?? (await getGroup(params.id))?.provider;
-  if (provider === "local") return { ok: false, error: "Local groups do not support POSIX mode", status: 400 };
+export const makePosix = async (params: {
+  actor: AccountsActor;
+  id: string;
+  provider?: UserProvider;
+}): Promise<MutationResult<{ gidnumber: number | null }>> => {
+  const provider = (await getGroup(params.id))?.provider;
+  if (!provider) return { ok: false, error: "Group not found", status: 404 };
+  if (provider === "local") {
+    const result = await posix.provisionGroup({ id: params.actor.userId, roles: params.actor.roles }, params.id);
+    return { ok: true, data: { gidnumber: result.gidNumber } };
+  }
   const serviceSession = await getServiceIpaSession();
   if (!serviceSession.ok) return serviceSession;
   return providers.ipa.groups.makePosix({

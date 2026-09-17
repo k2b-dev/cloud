@@ -1,10 +1,10 @@
-import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { accountsAppService as accountsService, coreSettings } from "@k2b/cloud/services";
+import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
 import { getDefaultGroupScope, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
 
@@ -19,6 +19,7 @@ export default ssr<AuthContext>(async (c) => {
   const sessionUser = expectUserBackedActor(c);
   const isAdmin = isAdminUser(sessionUser);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
+  const linuxEnabled = isAdmin && (await linuxIdentities.configuration(sessionUser)).enabled;
   const perPage = 100;
   const defaultScope = getDefaultGroupScope(sessionUser);
   const listState = parseGroupsListState(
@@ -77,7 +78,7 @@ export default ssr<AuthContext>(async (c) => {
             <GroupsScopeFilter state={listState} defaultScope={defaultScope} />
             {isAdmin ? (
               <div class="ml-auto shrink-0">
-                <NewGroup freeIpaEnabled={freeIpaEnabled} />
+                <NewGroup freeIpaEnabled={freeIpaEnabled} linuxEnabled={linuxEnabled} />
               </div>
             ) : null}
           </div>

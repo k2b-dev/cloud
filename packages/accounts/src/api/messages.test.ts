@@ -23,3 +23,9 @@ test("explains email conflicts without changing unrelated conflict messages", ()
   );
   expect(accountsApiErrorMessage(409, "de", "Unrelated conflict")).toBe("Die Accounts-Änderung steht im Konflikt mit dem aktuellen Stand");
 });
+
+test("explains POSIX failures in the request locale without exposing raw codes", () => {
+  expect(accountsApiErrorMessage(409, "en", "setup_disabled", "setup_disabled")).toContain("disabled");
+  expect(accountsApiErrorMessage(409, "de", "range_exhausted", "range_exhausted")).toContain("keine IDs mehr frei");
+  expect(accountsApiErrorMessage(409, "de", "group_conflict", "group_conflict")).toContain("Namenskonflikt");
+});

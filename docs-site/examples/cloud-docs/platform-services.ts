@@ -1,7 +1,7 @@
 import { defineApp, notification } from "@k2b/cloud";
 import type { WidgetResponse } from "@k2b/cloud/contracts";
 import type { AppContext } from "@k2b/cloud/server";
-import { audit, logger, notifications, renderHtmlToPdf, renderMarkdownToPdf, trace } from "@k2b/cloud/services";
+import { audit, linuxIdentities, logger, notifications, renderHtmlToPdf, renderMarkdownToPdf, trace } from "@k2b/cloud/services";
 import { extractDocumentMarkdown } from "@k2b/cloud/services/document-extraction";
 import { z } from "zod";
 
@@ -114,3 +114,7 @@ export const renderMarkdownReport = async (markdown: string): Promise<Uint8Array
 
 export const readAuthorizedDocument = async (bytes: Uint8Array, filename: string): Promise<string> =>
   (await extractDocumentMarkdown({ bytes, filename })).markdown;
+
+// Administrator integrations use the same allocator as Accounts group creation.
+export const createLocalPosixGroup = (actor: { id: string; roles: readonly string[] }, name: string) =>
+  linuxIdentities.createGroup(actor, { name });

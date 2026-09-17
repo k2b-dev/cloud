@@ -50,3 +50,9 @@ du nicht löschen.
 :::info Audit-Verlauf
 Konto- und Zugriffsänderungen werden im Audit-Protokoll erfasst. Nutze bei der Untersuchung von API-Schlüssel-Aktivität den Dienstkonto-Filter.
 :::
+
+## POSIX-Gruppen
+
+Wähle beim Anlegen einer lokalen Gruppe **Als POSIX-Gruppe erstellen**, um eine feste GID zu vergeben. Die Option ist standardmäßig aus und setzt aktivierte lokale Linux-Identitäten in der Administration voraus. Ohne diese Option bleibt die Gruppe eine logische Gruppe. Schlägt die Vergabe fehl, wird keine Gruppe erstellt.
+
+Bei einer bestehenden Gruppe wählst du **In POSIX-Gruppe umwandeln** im Aktionsmenü. Nur Administratoren dürfen eine GID vergeben. Die Vergabe lässt sich nicht rückgängig machen. FreeIPA verwaltet seine Gruppen unabhängig davon. Beide Aktionen legen keine Dateien an.

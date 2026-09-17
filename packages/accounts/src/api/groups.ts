@@ -1,6 +1,6 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { accountsAppService as accountsService } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -26,6 +26,7 @@ const GroupsListResponseSchema = z.object({
 });
 type BaseGroupResponse = z.infer<typeof BaseGroupSchema>;
 type MessageResponse = z.infer<typeof MessageResponseSchema>;
+const GroupPosixResponseSchema = MessageResponseSchema.extend({ gidNumber: z.number().nullable() });
 const GroupIdParamSchema = z.object({ id: z.uuid() });
 
 const requireGroupMutationContext = async (c: Context<AuthContext>, groupId: string) => {
@@ -214,7 +215,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Groups"],
       summary: "Create group",
-      description: "Create a new FreeIPA group. Name is normalized to lowercase with hyphens.",
+      description:
+        "Create a local or FreeIPA group. Local POSIX creation requires enabled Linux identities and assigns its GID atomically.",
       ...requiresAdmin,
       responses: {
         201: jsonResponse(BaseGroupSchema, "Group created successfully"),
@@ -311,10 +313,11 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Groups"],
       summary: "Convert group to POSIX",
-      description: "Convert a FreeIPA group to a POSIX group (assigns a GID). This cannot be undone.",
+      description:
+        "Assign a stable GID to a local or FreeIPA group. Local assignment requires enabled Linux identities. This cannot be undone.",
       ...requiresAdmin,
       responses: {
-        200: jsonResponse(MessageResponseSchema, "Group converted to POSIX"),
+        200: jsonResponse(GroupPosixResponseSchema, "Group converted to POSIX"),
         400: jsonResponse(ErrorResponseSchema, "Failed to convert group"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
@@ -333,7 +336,7 @@ const app = new Hono<AuthContext>()
           provider: group.provider,
         });
         if (!result.ok) return result;
-        return ok({ message: accountsApiMessages(getLocale(c)).groupConverted });
+        return ok({ message: accountsApiMessages(getLocale(c)).groupConverted, gidNumber: result.data.gidnumber });
       });
     },
   );

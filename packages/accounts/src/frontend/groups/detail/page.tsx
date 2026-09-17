@@ -1,9 +1,9 @@
-import { ButtonLink, NoticeCard, Tag } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
 import { canManageGroup, getDefaultGroupScope, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
+import { ButtonLink, NoticeCard, Tag } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { z } from "zod";
 import { createPagination } from "@/contracts";
@@ -25,7 +25,6 @@ import {
 import ManagersTab from "./ManagersTab";
 import MemberOfTab from "./MemberOfTab";
 import MembersTab from "./MembersTab";
-import PrepareLinuxGroup from "./PrepareLinuxGroup.island";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = accountsMessages.resolve([getLocale(c)]);
@@ -268,7 +267,8 @@ export default ssr<AuthContext>(async (c) => {
                 id={group.id}
                 name={group.name}
                 provider={group.provider}
-                isPosix={!!group.gidnumber}
+                isPosix={group.gidnumber !== null}
+                linuxEnabled={linuxEnabled}
                 description={group.description}
                 listHref={groupsListHref}
               />
@@ -276,7 +276,6 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           <AccountsFactGrid facts={facts} viewTransitionName="accounts-group-facts" />
-          {isAdmin && linuxEnabled && group.provider === "local" && group.gidnumber === null && <PrepareLinuxGroup id={group.id} />}
 
           {canManageMutations && !isAdmin && <p class="text-xs text-dimmed">{t.canManageHere}</p>}
           {!canMutateGroup && <NoticeCard tone="warning">{t.ipaDisabledMutations}</NoticeCard>}

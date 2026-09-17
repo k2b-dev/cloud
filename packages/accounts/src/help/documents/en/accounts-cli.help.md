@@ -34,3 +34,5 @@ Global configuration and paginated preview live under `cld admin linux`.
 Use `config get --json` to export it and
 `config set --config-file ./linux.json --range-reserved --yes` to apply an enabled
 configuration. Preparation does not enable computer login, sudo or shared storage.
+
+Create a local group with a GID in one operation using `cld accounts groups create team --provider local --posix`. Without `--posix`, it remains a logical group. Local POSIX creation and conversion require enabled local Linux identities; failures do not leave a partially created group.

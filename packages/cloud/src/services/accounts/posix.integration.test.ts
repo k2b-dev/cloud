@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { SQL } from "bun";
-import { createPosixService, createPosixRuntime, PosixError } from "./posix";
-import { providers } from "../providers";
-import { mirrorIpaPosix } from "../ipa/posix";
-import { set } from "../settings";
-import { migratePosix } from "../../../../core/src/migrate/core/posix";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
+import { migratePosix } from "../../../../core/src/migrate/core/posix";
+import { mirrorIpaPosix } from "../ipa/posix";
+import { providers } from "../providers";
+import { set } from "../settings";
+import { accountsAppService } from "./app";
+import * as localGroups from "./local-groups";
+import { createPosixRuntime, createPosixService, PosixError } from "./posix";
 
 const url = process.env.CLOUD_POSIX_TEST_DATABASE_URL;
 const localUsers = providers.local.users;
@@ -32,6 +34,7 @@ suite("isolated Linux identity migration and provisioning", () => {
     await db`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS mail TEXT, ADD COLUMN IF NOT EXISTS given_name TEXT, ADD COLUMN IF NOT EXISTS sn TEXT, ADD COLUMN IF NOT EXISTS admin BOOLEAN DEFAULT false, ADD COLUMN IF NOT EXISTS account_expires TIMESTAMPTZ`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.user_ipa_data(user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, uid_number INTEGER)`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.groups(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), cn TEXT UNIQUE NOT NULL, name TEXT NOT NULL, provider TEXT NOT NULL, gid_number INTEGER, UNIQUE(provider,name))`.simple();
+    await db`ALTER TABLE auth.groups ADD COLUMN IF NOT EXISTS description TEXT, ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE, group_id UUID REFERENCES auth.groups(id) ON DELETE CASCADE, PRIMARY KEY(user_id,group_id))`.simple();
     await db`CREATE TABLE IF NOT EXISTS settings.entries(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`.simple();
     await migratePosix(db);
@@ -280,6 +283,101 @@ suite("isolated Linux identity migration and provisioning", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.actor_user_id).toBe(admin.id);
   });
+  test("creates POSIX groups atomically and shares allocation with existing-group preparation", async () => {
+    const plain = await localGroups.create({ name: "existing" }, db);
+    if (!plain.ok) throw new Error(plain.error);
+    const [created, prepared] = await Promise.all([
+      service.createGroup(admin, { name: "research", description: "Research team" }),
+      service.provisionGroup(admin, plain.data.id),
+    ]);
+    expect(created).toMatchObject({ provider: "local", name: "research", description: "Research team" });
+    expect(new Set([created.gidnumber, prepared.gidNumber]).size).toBe(2);
+    expect(await service.provisionGroup(admin, created.id)).toEqual({ gidNumber: created.gidnumber });
+    expect(await db`SELECT * FROM auth.posix_allocations WHERE kind = 'gid'`).toHaveLength(2);
+    expect(await db`SELECT * FROM audit.events WHERE action = 'accounts.linux.provision_group'`).toHaveLength(2);
+  });
+
+  test("logical groups remain available with disabled Linux setup; POSIX creation rolls back", async () => {
+    await set("linux.identity_config", JSON.stringify({ ...config, enabled: false }), db);
+    const plain = await localGroups.create({ name: "logical-group" }, db);
+    expect(plain).toMatchObject({ ok: true, data: { gidnumber: null } });
+    await expect(service.createGroup(admin, { name: "research" })).rejects.toThrow("setup_disabled");
+    expect(await db`SELECT * FROM auth.groups WHERE name = 'research'`).toHaveLength(0);
+    expect(await db`SELECT * FROM auth.posix_allocations`).toHaveLength(0);
+  });
+
+  test("invalid POSIX names and cross-provider name conflicts leave no new group or allocation", async () => {
+    for (const name of ["3team", "a".repeat(33), "bad.name"]) {
+      await expect(service.createGroup(admin, { name })).rejects.toThrow("invalid_name");
+    }
+    await db`INSERT INTO auth.groups(cn,name,provider) VALUES ('research','research','ipa')`;
+    await expect(service.createGroup(admin, { name: "research" })).rejects.toThrow("group_conflict");
+    expect(await db`SELECT * FROM auth.groups WHERE provider = 'local'`).toHaveLength(0);
+    expect(await db`SELECT * FROM auth.posix_allocations`).toHaveLength(0);
+  });
+
+  test("exhausted ranges and audit failures roll back POSIX group creation", async () => {
+    await set("linux.identity_config", JSON.stringify({ ...config, rangeEnd: config.rangeStart }), db);
+    await service.createGroup(admin, { name: "first" });
+    await expect(service.createGroup(admin, { name: "second" })).rejects.toThrow("range_exhausted");
+    expect(await db`SELECT * FROM auth.groups`).toHaveLength(1);
+    expect(await db`SELECT * FROM auth.posix_allocations`).toHaveLength(1);
+    await set("linux.identity_config", JSON.stringify(config), db);
+    await db`ALTER TABLE audit.events ADD CONSTRAINT reject_group_test CHECK (action <> 'accounts.linux.provision_group') NOT VALID`.simple();
+    try {
+      await expect(service.createGroup(admin, { name: "audit-failure" })).rejects.toThrow();
+      expect(await db`SELECT * FROM auth.groups WHERE name = 'audit-failure'`).toHaveLength(0);
+      expect(await db`SELECT * FROM auth.posix_allocations`).toHaveLength(1);
+    } finally {
+      await db`ALTER TABLE audit.events DROP CONSTRAINT reject_group_test`.simple();
+    }
+  });
+
+  test("POSIX group writes require administrators and retry without allocating twice", async () => {
+    const regular = { ...admin, roles: ["user"] };
+    await expect(service.createGroup(regular, { name: "staff" })).rejects.toThrow("admin_required");
+    await expect(service.provisionGroup(regular, crypto.randomUUID())).rejects.toThrow("admin_required");
+    const created = await service.createGroup(admin, { name: "staff" });
+    await expect(service.createGroup(admin, { name: "staff" })).rejects.toThrow("group_conflict");
+    const results = await Promise.all([service.provisionGroup(admin, created.id), service.provisionGroup(admin, created.id)]);
+    expect(results).toEqual([{ gidNumber: created.gidnumber }, { gidNumber: created.gidnumber }]);
+    expect(await db`SELECT * FROM auth.posix_allocations`).toHaveLength(1);
+    expect(await db`SELECT * FROM audit.events WHERE action = 'accounts.linux.provision_group'`).toHaveLength(1);
+  });
+
+  test("unavailable IPA inventory blocks POSIX creation without persisting a group", async () => {
+    const offline = createPosixService(db, async () => {
+      throw new PosixError("ipa_inventory_unavailable");
+    });
+    await expect(offline.createGroup(admin, { name: "staff" })).rejects.toThrow("ipa_inventory_unavailable");
+    expect(await db`SELECT * FROM auth.groups`).toHaveLength(0);
+  });
+
+  test("the Accounts service creates and prepares local groups through the POSIX owner", async () => {
+    const actor = { userId: admin.id, uid: "admin", roles: admin.roles };
+    expect(
+      await accountsAppService.group.create({ actor: { ...actor, roles: ["user"] }, provider: "local", name: "denied", posix: true }),
+    ).toMatchObject({ ok: false, error: { status: 403 } });
+    const created = await accountsAppService.group.create({ actor, provider: "local", name: "team", posix: true });
+    expect(created).toMatchObject({ ok: true, data: { provider: "local", gidnumber: 200000 } });
+    if (!created.ok) throw new Error(created.error.message);
+    expect(await accountsAppService.group.makePosix({ actor, id: created.data.id, provider: "ipa" })).toEqual({
+      ok: true,
+      data: { gidnumber: 200000 },
+    });
+    await set("linux.identity_config", JSON.stringify({ ...config, enabled: false }), db);
+    expect(await accountsAppService.group.create({ actor, provider: "local", name: "disabled", posix: true })).toMatchObject({
+      ok: false,
+      error: { code: "setup_disabled", status: 409 },
+    });
+    expect(await accountsAppService.group.makePosix({ actor, id: created.data.id })).toMatchObject({
+      ok: false,
+      error: { code: "setup_disabled", status: 409 },
+    });
+    expect(await db`SELECT * FROM auth.groups WHERE name = 'disabled'`).toHaveLength(0);
+    expect((await db`SELECT gid_number FROM auth.groups WHERE id = ${created.data.id}::uuid`)[0]!.gid_number).toBe(200000);
+  });
+
   test("configuration validates directory ranges before committing", async () => {
     expect(await service.configure(admin, { ...config, homeTemplate: "/srv/{username}" })).toMatchObject({
       homeTemplate: "/srv/{username}",

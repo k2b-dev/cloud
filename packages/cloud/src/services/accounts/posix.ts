@@ -2,18 +2,19 @@ import { sql } from "bun";
 import {
   DEFAULT_LINUX_IDENTITY_CONFIGURATION,
   isPosixName,
-  LinuxIdentityConfigurationSchema,
   type LinuxIdentityConfiguration,
+  LinuxIdentityConfigurationSchema,
   type PosixIdentity,
   PosixOverridesSchema,
 } from "../../contracts/posix";
+import type { MutationResult } from "../../contracts/shared";
 import { freeipa } from "../../server/services";
+import { type AuditActor, audit } from "../audit";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { readCompleteIpaList } from "../ipa/sync-planning";
-import { decryptValue } from "../settings/crypto";
 import * as settings from "../settings";
-import { audit, type AuditActor } from "../audit";
-import type { MutationResult } from "../../contracts/shared";
+import { decryptValue } from "../settings/crypto";
+import { create as createLocalGroup } from "./local-groups";
 
 const CONFIG_KEY = "linux.identity_config";
 export const POSIX_PAGE_SIZE = 50;
@@ -274,6 +275,34 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
     }
   };
 
+  const assignGroup = async (tx: typeof sql, actor: Actor, id: string, ranges: IpaIdRange[]) => {
+    const config = await readConfig(tx);
+    if (!config.enabled) throw new PosixError("setup_disabled");
+    const [group] = await tx<
+      { id: string; name: string; provider: string; gid_number: number | null }[]
+    >`SELECT id, name, provider, gid_number FROM auth.groups WHERE id = ${id}::uuid`;
+    if (!group) throw new PosixError("group_not_found", 404);
+    if (group.provider !== "local") throw new PosixError("identity_not_locally_managed");
+    if (group.gid_number !== null) return { gidNumber: group.gid_number };
+    if (!isPosixName(group.name)) throw new PosixError("invalid_name");
+    const [conflict] = await tx`SELECT 1 FROM auth.groups WHERE id <> ${id}::uuid AND lower(name) = lower(${group.name}) LIMIT 1`;
+    if (conflict) throw new PosixError("group_conflict");
+    await checkRange(tx, config, ranges);
+    const gidNumber = await allocate(tx, "gid", id, config);
+    await tx`UPDATE auth.groups SET gid_number = ${gidNumber} WHERE id = ${id}::uuid`;
+    await audit.record(
+      {
+        action: "accounts.linux.provision_group",
+        outcome: "allowed",
+        actor: { userId: actor.id, roles: actor.roles },
+        target: { type: "group", id },
+        metadata: { gidNumber },
+      },
+      tx,
+    );
+    return { gidNumber };
+  };
+
   const service = {
     async configuration(actor: Actor) {
       requireAdmin(actor);
@@ -347,36 +376,23 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
         return { ...candidate(row), identity: { ...candidate(row).identity!, ...parsed.data } };
       });
     },
+    async createGroup(actor: Actor, input: { name: string; description?: string }) {
+      requireAdmin(actor);
+      const ranges = await readRanges();
+      return db.begin(async (tx) => {
+        await lock(tx);
+        const created = await createLocalGroup(input, tx);
+        if (!created.ok) throw new PosixError("group_conflict");
+        const { gidNumber } = await assignGroup(tx, actor, created.data.id, ranges);
+        return { ...created.data, gidnumber: gidNumber };
+      });
+    },
     async provisionGroup(actor: Actor, id: string) {
       requireAdmin(actor);
       const ranges = await readRanges();
       return db.begin(async (tx) => {
         await lock(tx);
-        const config = await readConfig(tx);
-        if (!config.enabled) throw new PosixError("setup_disabled");
-        const [group] = await tx<
-          { id: string; name: string; provider: string; gid_number: number | null }[]
-        >`SELECT id, name, provider, gid_number FROM auth.groups WHERE id = ${id}::uuid`;
-        if (!group) throw new PosixError("group_not_found", 404);
-        if (group.provider !== "local") throw new PosixError("identity_not_locally_managed");
-        if (group.gid_number !== null) return { gidNumber: group.gid_number };
-        if (!isPosixName(group.name)) throw new PosixError("invalid_name");
-        const [conflict] = await tx`SELECT 1 FROM auth.groups WHERE id <> ${id}::uuid AND lower(name) = lower(${group.name}) LIMIT 1`;
-        if (conflict) throw new PosixError("group_conflict");
-        await checkRange(tx, config, ranges);
-        const gidNumber = await allocate(tx, "gid", id, config);
-        await tx`UPDATE auth.groups SET gid_number = ${gidNumber} WHERE id = ${id}::uuid`;
-        await audit.record(
-          {
-            action: "accounts.linux.provision_group",
-            outcome: "allowed",
-            actor: { userId: actor.id, roles: actor.roles },
-            target: { type: "group", id },
-            metadata: { gidNumber },
-          },
-          tx,
-        );
-        return { gidNumber };
+        return assignGroup(tx, actor, id, ranges);
       });
     },
   };

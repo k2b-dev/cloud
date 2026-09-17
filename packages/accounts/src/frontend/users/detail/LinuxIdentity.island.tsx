@@ -1,11 +1,11 @@
-import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, NoticeCard, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { PosixOverridesSchema } from "@k2b/cloud/contracts";
 import type { linuxIdentities } from "@k2b/cloud/services";
+import { mutation, query } from "@k2b/stdlib/solid";
+import { Button, ButtonLink, NoticeCard, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
+import { accountLinuxError, linuxAccountMessages } from "@/shared/linux-messages";
 import { showAccountActionNotice } from "../../action-notice";
-import { accountLinuxError, linuxAccountMessages } from "../../linux-messages";
 import { useAccountsMessages } from "../../messages";
 
 type Snapshot = Awaited<ReturnType<typeof linuxIdentities.get>>;

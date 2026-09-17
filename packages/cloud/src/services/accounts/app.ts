@@ -37,6 +37,7 @@ import { listDuplicateEmails } from "./duplicate-emails";
 import * as entities from "./entities";
 import * as groups from "./groups";
 import type { AccountsNotificationSender } from "./notification-sender";
+import { PosixError } from "./posix";
 import { accountRequestsEnabled } from "./request-policy";
 import * as users from "./users";
 
@@ -139,6 +140,15 @@ const toServiceError = (status: MutationErrorStatus, message: string): ServiceEr
 const fromMutationResult = <T>(result: MutationResult<T>): Result<T> => {
   if (result.ok) return ok(result.data);
   return fail(toServiceError(result.status, result.error));
+};
+
+const fromGroupMutation = async <T>(operation: () => Promise<MutationResult<T>>): Promise<Result<T>> => {
+  try {
+    return fromMutationResult(await operation());
+  } catch (error) {
+    if (error instanceof PosixError) return fail({ code: error.code, message: error.message, status: error.status });
+    throw error;
+  }
 };
 
 const mapAccountRequestRow = (row: DbRow): AccountRequest => ({
@@ -1119,7 +1129,7 @@ export const accountsAppService = {
         target: { type: "group", label: config.name, provider: config.provider },
       });
       if (adminError) return adminError;
-      const result = fromMutationResult(await groups.create(config));
+      const result = await fromGroupMutation(() => groups.create(config));
       return recordCompletedMutation({
         action: "accounts.group.create",
         actor: auditActor(config.actor),
@@ -1164,7 +1174,7 @@ export const accountsAppService = {
         target,
       });
       if (adminError) return adminError;
-      const result = fromMutationResult(await groups.makePosix(config));
+      const result = await fromGroupMutation(() => groups.makePosix(config));
       return recordCompletedMutation({
         action: "accounts.group.make_posix",
         actor: auditActor(config.actor),

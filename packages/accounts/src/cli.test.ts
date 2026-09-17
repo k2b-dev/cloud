@@ -111,16 +111,26 @@ describe("accounts CLI", () => {
     expect(lines).toHaveLength(0);
   });
 
-  test("routes group POSIX preparation by provider without changing the IPA path", async () => {
+  test("uses the same group POSIX operation for both providers", async () => {
     for (const provider of ["local", "ipa"]) {
       const { ctx, calls } = createContext(["groups", "make-posix", "team"], { yes: true }, [
         jsonResponse({ groups: [{ ...group({}), provider }], pagination }),
         jsonResponse({ gidNumber: 200000, message: "Prepared" }),
       ]);
       await accountsCli.run(ctx);
-      expect(calls[1]?.path).toBe(provider === "local" ? "/api/admin/core/linux-identities/groups/g1" : "/api/accounts/groups/g1/posix");
-      expect(calls[1]?.init?.method).toBe(provider === "local" ? "POST" : "PUT");
+      expect(calls[1]?.path).toBe("/api/accounts/groups/g1/posix");
+      expect(calls[1]?.init?.method).toBe("PUT");
     }
+  });
+
+  test("creates a local POSIX group in one request", async () => {
+    const { ctx, calls } = createContext(["groups", "create", "staff"], { provider: "local", posix: true }, [
+      jsonResponse({ ...group({ name: "staff" }), provider: "local", gidnumber: 200000 }),
+    ]);
+    await accountsCli.run(ctx);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.path).toBe("/api/accounts/groups");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toMatchObject({ provider: "local", name: "staff", posix: true });
   });
 
   test("lists users through the accounts API with filters", async () => {

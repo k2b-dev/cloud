@@ -1,3 +1,4 @@
+import { isPosixName } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import {
@@ -27,13 +28,15 @@ const normalizeName = (value: string) =>
 type CreateGroupPayload = { provider: ProviderChoice; name: string; description?: string; posix?: boolean };
 type CreateGroupResult = { group: BaseGroup };
 
-export function CreateGroupDialog(props: { freeIpaEnabled: boolean; close: (result?: CreateGroupResult) => void }) {
+export function CreateGroupDialog(props: { freeIpaEnabled: boolean; linuxEnabled: boolean; close: (result?: CreateGroupResult) => void }) {
   const messages = useAccountsMessages();
   const formId = createUniqueId();
   const [provider, setProvider] = createSignal<ProviderChoice>(props.freeIpaEnabled ? "ipa" : "local");
   const [name, setName] = createSignal("");
   const [description, setDescription] = createSignal("");
-  const [posix, setPosix] = createSignal(true);
+  const [localPosix, setLocalPosix] = createSignal(false);
+  const [ipaPosix, setIpaPosix] = createSignal(true);
+  const posix = () => (provider() === "ipa" ? ipaPosix() : props.linuxEnabled && localPosix());
   const [dirty, setDirty] = createSignal(false);
   const [closing, setClosing] = createSignal(false);
   const [error, setError] = createSignal<string>();
@@ -66,11 +69,15 @@ export function CreateGroupDialog(props: { freeIpaEnabled: boolean; close: (resu
       setError(messages().groupNameInvalid);
       return;
     }
+    if (provider() === "local" && posix() && !isPosixName(normalized)) {
+      setError(messages().localPosixNameInvalid);
+      return;
+    }
     void createMutation.mutate({
       provider: provider(),
       name: normalized,
       description: description().trim() || undefined,
-      posix: provider() === "ipa" ? posix() : undefined,
+      posix: posix(),
     });
   };
   return (
@@ -135,18 +142,20 @@ export function CreateGroupDialog(props: { freeIpaEnabled: boolean; close: (resu
             multiline
             disabled={createMutation.loading()}
           />
-          <Show when={provider() === "ipa"}>
-            <Checkbox
-              label={messages().createPosixGroup}
-              description={messages().posixGroupDescription}
-              value={posix}
-              onValueChange={(value) => {
-                setPosix(value);
-                setDirty(true);
-              }}
-              disabled={createMutation.loading()}
-            />
-          </Show>
+          <Checkbox
+            label={messages().createPosixGroup}
+            description={
+              provider() === "local" && !props.linuxEnabled ? messages().localPosixUnavailable : messages().posixGroupDescription
+            }
+            value={posix}
+            onValueChange={(value) => {
+              if (provider() === "local") setLocalPosix(value);
+              else setIpaPosix(value);
+              setError(undefined);
+              setDirty(true);
+            }}
+            disabled={createMutation.loading() || (provider() === "local" && !props.linuxEnabled)}
+          />
           <Show when={createMutation.error()}>
             {(error) => (
               <NoticeCard tone="danger" role="alert">
@@ -168,7 +177,7 @@ export function CreateGroupDialog(props: { freeIpaEnabled: boolean; close: (resu
   );
 }
 
-export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
+export default function NewGroup(props: { freeIpaEnabled?: boolean; linuxEnabled: boolean }) {
   const messages = useAccountsMessages();
   const [opening, setOpening] = createSignal(false);
   const showResult = async (result: CreateGroupResult) => {
@@ -184,7 +193,7 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
     setOpening(true);
     try {
       const result = await dialogCore.open<CreateGroupResult>(
-        (close) => <CreateGroupDialog freeIpaEnabled={props.freeIpaEnabled ?? true} close={close} />,
+        (close) => <CreateGroupDialog freeIpaEnabled={props.freeIpaEnabled ?? true} linuxEnabled={props.linuxEnabled} close={close} />,
         { ...panelDialogOptions, cancelBehavior: "ignore", initialFocus: (dialog) => dialog.querySelector("input") },
       );
       if (result) await showResult(result);

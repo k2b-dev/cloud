@@ -49,3 +49,27 @@ existing settings store. Use the dedicated administration API rather than
 editing that JSON setting directly. Allocation and the current configuration
 are checked inside each database transaction. No partial account or group
 allocation is published when a check fails.
+
+## Create and prepare POSIX groups
+
+The Accounts group API supports both local and FreeIPA groups:
+
+- `POST /api/accounts/groups` accepts `{ provider, name, description?, posix? }`.
+  `posix` defaults to `false`. With `provider: "local"` and `posix: true`,
+  group creation and GID assignment commit together.
+- `PUT /api/accounts/groups/:id/posix` assigns a GID through the group's stored
+  provider and returns `{ message, gidNumber }`. Repeating local assignment retains the GID.
+
+Both operations require administrator access. Local POSIX writes also require
+an enabled Linux identity configuration and a valid, available reserved range.
+Failures leave no partial local group or allocation. Existing groups and GIDs
+remain when assignment is disabled.
+
+For supported administrator integrations, `linuxIdentities.createGroup(actor,
+{ name, description? })` creates a local POSIX group and returns its `BaseGroup`
+including `gidnumber`. It shares allocation and validation with
+`linuxIdentities.provisionGroup(actor, id)`. The existing Core group endpoint
+remains available for assigning a GID to an existing local group.
+
+See [Assign Linux identities](/en/docs/operations/linux-identities) for setup,
+name requirements and CLI examples.

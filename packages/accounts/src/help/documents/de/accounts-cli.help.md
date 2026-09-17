@@ -36,3 +36,5 @@ Exportiere die Konfiguration mit `config get --json`. Eine aktivierte
 Konfiguration übernimmst du mit
 `config set --config-file ./linux.json --range-reserved --yes`.
 Die Vorbereitung aktiviert weder Computeranmeldung noch sudo oder gemeinsamen Speicher.
+
+Mit `cld accounts groups create team --provider local --posix` erstellst du eine lokale Gruppe mit GID in einem Vorgang. Ohne `--posix` bleibt sie eine logische Gruppe. Lokale POSIX-Erstellung und Umwandlung setzen aktivierte lokale Linux-Identitäten voraus; bei Fehlern bleibt keine teilweise erstellte Gruppe zurück.

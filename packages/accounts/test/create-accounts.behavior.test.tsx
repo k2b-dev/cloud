@@ -140,7 +140,10 @@ describe("Accounts creation forms", () => {
   test("group creation rejects empty normalized names, previews normalization and retains values after errors", async () => {
     const dom = createDomTestHarness();
     const { CreateGroupDialog } = await import("../src/frontend/groups/NewGroup.island");
-    const dispose = render(() => createComponent(CreateGroupDialog, { freeIpaEnabled: false, close: () => {} }), dom.root);
+    const dispose = render(
+      () => createComponent(CreateGroupDialog, { freeIpaEnabled: false, linuxEnabled: false, close: () => {} }),
+      dom.root,
+    );
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -155,11 +158,66 @@ describe("Accounts creation forms", () => {
     submit(dom.document);
     await flush();
     expect(requests[0]!.payload).toMatchObject({ provider: "local", name: "research-team" });
-    expect(requests[0]!.payload.posix).toBeUndefined();
+    expect(requests[0]!.payload.posix).toBe(false);
     requests[0]!.resolve(Response.json({ message: "Group already exists" }, { status: 409 }));
     await flush();
     expect(dom.document.querySelector<HTMLInputElement>("input")!.value).toBe("Research Team");
     expect(dom.document.querySelector('[role="alert"]')!.textContent).toContain("Group already exists");
+  });
+
+  test("local POSIX creation is opt-in and validates names before a single request", async () => {
+    const dom = createDomTestHarness();
+    const { CreateGroupDialog } = await import("../src/frontend/groups/NewGroup.island");
+    const dispose = render(
+      () => createComponent(CreateGroupDialog, { freeIpaEnabled: false, linuxEnabled: true, close: () => {} }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    const posix = dom.document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(posix.checked).toBe(false);
+    posix.click();
+    input(dom.document, 'input[type="text"]', "3team");
+    submit(dom.document);
+    await flush();
+    expect(requests).toHaveLength(0);
+    expect(dom.document.querySelector('[aria-invalid="true"]')).not.toBeNull();
+    input(dom.document, 'input[type="text"]', "research-team");
+    submit(dom.document);
+    submit(dom.document);
+    await flush();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.payload).toMatchObject({ provider: "local", name: "research-team", posix: true });
+  });
+
+  test("provider switches preserve each POSIX choice; disabled setup never submits local POSIX", async () => {
+    for (const linuxEnabled of [false, true]) {
+      const dom = createDomTestHarness();
+      const { CreateGroupDialog } = await import("../src/frontend/groups/NewGroup.island");
+      const dispose = render(() => createComponent(CreateGroupDialog, { freeIpaEnabled: true, linuxEnabled, close: () => {} }), dom.root);
+      cleanup = () => {
+        dispose();
+        dom.cleanup();
+      };
+      const checkbox = () => dom.document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      expect(checkbox().checked).toBe(true);
+      button(dom.document, "FreeIPA").click();
+      await flush();
+      button(dom.document, "Local").click();
+      await flush();
+      expect(checkbox().checked).toBe(false);
+      expect(checkbox().disabled).toBe(!linuxEnabled);
+      if (linuxEnabled) checkbox().click();
+      else expect(dom.document.body.textContent).toContain("Enable local Linux identities");
+      input(dom.document, 'input[type="text"]', "staff");
+      submit(dom.document);
+      await flush();
+      expect(requests.at(-1)!.payload).toMatchObject({ provider: "local", posix: linuxEnabled });
+      cleanup();
+    }
+    cleanup = () => {};
   });
 
   test("cancelling an edited form requires discard confirmation and keeps fields when declined", async () => {

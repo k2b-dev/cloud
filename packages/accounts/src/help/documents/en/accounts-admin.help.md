@@ -48,3 +48,9 @@ disappear from the list; you cannot delete your own account.
 :::info Audit trail
 Account and access changes are recorded in Audit Log. Use the service-account filter when investigating API-key activity.
 :::
+
+## POSIX groups
+
+When creating a local group, select **Create as POSIX group** to assign a stable GID. The option is off by default and requires local Linux identities to be enabled in Administration. Without it, the group remains a logical group. If assignment fails, no group is created.
+
+For an existing group, choose **Convert to POSIX** in its actions. Only administrators can assign a GID, and the assignment cannot be undone. FreeIPA manages its groups independently. No files are created by either action.

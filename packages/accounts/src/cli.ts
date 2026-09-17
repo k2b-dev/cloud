@@ -2,8 +2,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import {
   arg,
   type CloudCliContext,
-  command,
   cliText,
+  command,
   confirmFlag,
   defineCliCommands,
   flag,
@@ -947,13 +947,6 @@ export default defineCliCommands({
       async run({ ctx, args, flags }) {
         if (!flags.yes) throw new Error("Refusing to convert a group to POSIX without --yes.");
         const group = await resolveGroupRef(ctx, args.group);
-        if (group.provider === "local") {
-          const result = await ctx.readJson(
-            await ctx.fetch(`/api/admin/core/linux-identities/groups/${encode(group.id)}`, { method: "POST" }),
-          );
-          if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
-          return;
-        }
         const result = await apiJson<MessageResponse>(ctx, "PUT", `/groups/${encode(group.id)}/posix`);
         printMessage(ctx, result, "Group converted to POSIX.");
       },

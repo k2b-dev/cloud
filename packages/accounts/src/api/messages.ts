@@ -1,4 +1,5 @@
 import { i18n } from "@k2b/stdlib";
+import { linuxAccountMessages } from "../shared/linux-messages";
 
 const catalog = i18n.define({
   baseLocale: "en",
@@ -51,7 +52,9 @@ const catalog = i18n.define({
 export const accountsApiMessages = (locale?: string | null) => catalog.resolve(locale ? [locale] : []).t;
 export const checkAccountsApiMessages = () => catalog.check();
 
-export const accountsApiErrorMessage = (status: number, locale?: string | null, baseMessage?: string): string => {
+export const accountsApiErrorMessage = (status: number, locale?: string | null, baseMessage?: string, code?: string): string => {
+  const linuxMessage = Object.entries(linuxAccountMessages.resolve(locale ? [locale] : []).t).find(([key]) => key === code)?.[1];
+  if (typeof linuxMessage === "string") return linuxMessage;
   const resolved = catalog.resolve(locale ? [locale] : []);
   if (resolved.locale === "en" && baseMessage) return baseMessage;
   const { t } = resolved;

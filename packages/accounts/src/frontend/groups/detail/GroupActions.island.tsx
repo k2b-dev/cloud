@@ -1,6 +1,7 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Dropdown, prompts, toast } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import { ErrorResponseSchema } from "@/contracts";
 import { showAccountActionNotice } from "../../action-notice";
@@ -11,6 +12,7 @@ type GroupActionsProps = {
   name: string;
   provider: "ipa" | "local";
   isPosix: boolean;
+  linuxEnabled: boolean;
   description: string | null;
   listHref: string;
 };
@@ -74,21 +76,34 @@ export default function GroupActions(props: GroupActionsProps) {
     }
   };
 
+  const posixMutation = mutations.create<void, void>({
+    mutation: async () => {
+      const res = await apiClient.groups[":id"].posix.$put({ param: { id: props.id } });
+      if (!res.ok) {
+        const data = ErrorResponseSchema.safeParse(await res.json());
+        throw new Error(data.success ? data.data.message : messages().posixFailed);
+      }
+    },
+    onSuccess: async () => {
+      await showAccountActionNotice({ action: "group.posix", id: props.id, name: props.name, provider: props.provider }, messages());
+      refreshCurrentPath();
+    },
+    onError: (error) => prompts.error(error.message),
+  });
+  const [confirmingPosix, setConfirmingPosix] = createSignal(false);
   const handleMakePosix = async () => {
-    const confirmed = await prompts.confirm(messages().posixConfirm({ name: props.name }), {
-      title: messages().makePosix,
-      icon: "ti ti-transform",
-      confirmText: messages().convert,
-      cancelText: messages().cancel,
-    });
-    if (confirmed) {
-      const res = await apiClient.groups[":id"].posix.$put({
-        param: { id: props.id },
+    if (confirmingPosix() || posixMutation.loading() || (props.provider === "local" && !props.linuxEnabled)) return;
+    setConfirmingPosix(true);
+    try {
+      const confirmed = await prompts.confirm(messages().posixConfirm({ name: props.name }), {
+        title: messages().makePosix,
+        icon: "ti ti-transform",
+        confirmText: messages().convert,
+        cancelText: messages().cancel,
       });
-      if (res.ok) {
-        await showAccountActionNotice({ action: "group.posix", id: props.id, name: props.name, provider: props.provider }, messages());
-        refreshCurrentPath();
-      } else prompts.error(messages().posixFailed);
+      if (confirmed) await posixMutation.mutate();
+    } finally {
+      setConfirmingPosix(false);
     }
   };
 
@@ -108,6 +123,7 @@ export default function GroupActions(props: GroupActionsProps) {
 
   return (
     <Dropdown.Root
+      disabled={confirmingPosix() || posixMutation.loading()}
       position="bottom-left"
       width="12rem"
       items={[
@@ -118,6 +134,8 @@ export default function GroupActions(props: GroupActionsProps) {
                   {
                     icon: "ti ti-transform",
                     label: messages().makePosix,
+                    disabled: props.provider === "local" && !props.linuxEnabled,
+                    description: props.provider === "local" && !props.linuxEnabled ? messages().localPosixUnavailable : undefined,
                     action: handleMakePosix,
                   },
                 ]

@@ -77,10 +77,10 @@ export const get = async (params: { id: string }): Promise<BaseGroup | null> => 
   return row ? toBaseGroup(row) : null;
 };
 
-export const create = async (params: { name: string; description?: string }): Promise<MutationResult<BaseGroup>> => {
+export const create = async (params: { name: string; description?: string }, db: typeof sql = sql): Promise<MutationResult<BaseGroup>> => {
   const storedCn = `local:${params.name}`;
   try {
-    const rows = await sql<DbRow[]>`
+    const rows = await db<DbRow[]>`
       INSERT INTO auth.groups (id, cn, provider, name, description, synced_at)
       VALUES (gen_random_uuid(), ${storedCn}, 'local', ${params.name}, ${params.description ?? null}, now())
       RETURNING id, provider, name, description, gid_number
