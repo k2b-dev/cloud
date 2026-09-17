@@ -39,6 +39,8 @@ Open **Assistant settings > Skills** to create, import, edit, export, or share r
 
 You can also ask Assistant to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current permissions. Like any shared Skill, it can be disabled for yourself; administrators can grant access, edit it, or delete it.
 
+Skills and Projects require sign-in. Share them with users, groups, service accounts, or all signed-in identities; public access is not supported.
+
 ### Create a Skill that loads at the right time
 
 :::steps

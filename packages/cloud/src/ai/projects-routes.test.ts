@@ -66,28 +66,29 @@ afterEach(() => {
 });
 
 describe("AI Project reference routes", () => {
-  test("allows anonymous mutations through an explicit public write grant", async () => {
-    spyOn(aiProjects, "getByShortId").mockResolvedValue({ id: projectId, shortId: projectShortId, permission: "write" } as never);
-    spyOn(aiProjects, "createKnowledge").mockResolvedValue({
-      id: "33333333-3333-4333-8333-333333333333",
-      shortId: "kNo234",
-      projectId,
-      title: "Public",
-      content: "Shared",
-      createdAt: "2026-08-11T10:00:00.000Z",
-      updatedAt: "2026-08-11T10:00:00.000Z",
-    });
-    const routes = __buildAiProjectsRoutesForTest({ limit: pass, authenticate: pass });
-
-    const response = await routes.request(`/${projectShortId}/knowledge`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+  test("rejects anonymous reads and mutations before checking project access", async () => {
+    const get = spyOn(aiProjects, "getByShortId");
+    const list = spyOn(aiProjects, "list");
+    const routes = __buildAiProjectsRoutesForTest({ limit: pass });
+    for (const path of ["/", `/${projectShortId}`, `/${projectShortId}/knowledge`, `/${projectShortId}/files`, `/${projectShortId}/files/FiL234`, `/${projectShortId}/references`]) {
+      expect((await routes.request(path)).status).toBe(401);
+    }
+    expect((await routes.request(`/${projectShortId}/knowledge`, {
+      method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ title: "Public", content: "Shared" }),
-    });
+    })).status).toBe(401);
+    expect(get).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+  });
 
-    expect(response.status).toBe(201);
-    expect(aiProjects.getByShortId).toHaveBeenCalledWith(projectShortId, null, "write");
-    expect(aiProjects.createKnowledge).toHaveBeenCalledWith(projectId, null, { title: "Public", content: "Shared" });
+  test("rejects public project grants before invoking the service", async () => {
+    const grant = spyOn(aiProjects, "grantAccess");
+    const routes = __buildAiProjectsRoutesForTest({ limit: pass, authenticate });
+    expect((await routes.request(`/${projectShortId}/access`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ principal: { type: "public" }, permission: "read" }),
+    })).status).toBe(400);
+    expect(grant).not.toHaveBeenCalled();
   });
 
   test("checks Project write access before consulting the capability registry", async () => {

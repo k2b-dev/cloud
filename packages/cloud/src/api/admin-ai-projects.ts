@@ -1,7 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { AiProjectLastAdminError, aiProjects } from "../ai/projects";
-import { PrincipalSchema } from "../contracts/shared";
+import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, respond, v } from "../server";
 
 const ListProjectsSchema = z
@@ -11,7 +11,7 @@ const ListProjectsSchema = z
     perPage: z.coerce.number().int().min(1).max(500).default(100),
   })
   .strict();
-const ProjectAccessSchema = z.object({ principal: PrincipalSchema, permission: z.enum(["read", "write", "admin"]) }).strict();
+const ProjectAccessSchema = z.object({ principal: AuthenticatedPrincipalSchema, permission: z.enum(["read", "write", "admin"]) }).strict();
 const ProjectAccessUpdateSchema = z.object({ permission: z.enum(["read", "write", "admin"]) }).strict();
 
 const notFound = (c: Parameters<typeof respond>[0], noun: string) => respond(c, fail(err.notFound(noun)));

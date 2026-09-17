@@ -1614,6 +1614,15 @@ export const migrateCloudAi = async (): Promise<void> => {
   }
   await sql`ALTER TABLE ai.project_access ALTER COLUMN short_id SET NOT NULL`.simple();
 
+  // Skills and Projects are shared only with authenticated identities.
+  // Preserve each existing grant and permission level while closing anonymous access.
+  await sql`
+    UPDATE auth.access SET authenticated_only = true
+    WHERE user_id IS NULL AND group_id IS NULL AND service_account_id IS NULL
+      AND authenticated_only = false
+      AND id IN (SELECT access_id FROM ai.skill_access UNION SELECT access_id FROM ai.project_access)
+  `;
+
   await sql`
     CREATE TABLE IF NOT EXISTS ai.project_knowledge (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

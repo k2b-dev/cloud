@@ -172,19 +172,28 @@ describe("AI Skill routes", () => {
     expect(aiSkills.setEnabled).toHaveBeenCalledWith(skillId, subject, false);
   });
 
-  test("lists readable skills for anonymous public grants without allowing creation", async () => {
-    spyOn(aiSkills, "list").mockResolvedValue([]);
-    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate: pass });
-    expect((await routes.request("/")).status).toBe(200);
-    expect(aiSkills.list).toHaveBeenCalledWith(null);
-    expect(
-      (
-        await routes.request("/", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: "test", description: "Test.", instructions: "Test." }),
-        })
-      ).status,
-    ).toBe(403);
+  test("rejects anonymous Skill reads and creation before invoking the service", async () => {
+    const list = spyOn(aiSkills, "list");
+    const get = spyOn(aiSkills, "getByShortId");
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass });
+    for (const path of ["/", "/?q=test", `/${skillShortId}`, "/templates/skill-creator"]) {
+      expect((await routes.request(path)).status).toBe(401);
+    }
+    expect((await routes.request("/", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "test", description: "Test.", instructions: "Test." }),
+    })).status).toBe(401);
+    expect(list).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  test("rejects public Skill grants before invoking the service", async () => {
+    const grant = spyOn(aiSkills, "grantAccess");
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
+    expect((await routes.request(`/${skillShortId}/access`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ principal: { type: "public" }, permission: "read" }),
+    })).status).toBe(400);
+    expect(grant).not.toHaveBeenCalled();
   });
 });

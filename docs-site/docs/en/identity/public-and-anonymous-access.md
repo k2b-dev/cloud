@@ -90,6 +90,11 @@ Both conditions must pass:
 
 The service remains the source of truth for the resource.
 
+For resources that require sign-in, use `AuthenticatedPrincipalSchema` from
+`@k2b/cloud/contracts` in grant inputs. It accepts users, groups, service
+accounts, and all authenticated identities, but excludes public grants.
+Skills and Projects use this contract and reject anonymous service access.
+
 ## Use a share token when access is link-specific
 
 A public principal makes the resource available to everyone who can discover

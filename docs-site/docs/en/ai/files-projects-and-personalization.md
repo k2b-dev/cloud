@@ -19,6 +19,12 @@ These features have separate ownership and lifetimes.
 | Skills | Shared through Cloud permissions | Reusable agent instructions with optional Markdown references |
 | Personalization | One user | Small durable facts, preferences, and workflow defaults |
 
+Projects and Skills require an authenticated identity on every access path,
+including their HTTP APIs. Share them with users, groups, service accounts, or
+all authenticated identities. Public grants are not supported. Existing public
+grants are converted to authenticated grants at startup, preserving their
+permission levels. Sharing Project context does not share its users' private chats.
+
 ## Use readable resource IDs
 
 AI resources use six-character, case-sensitive readable IDs. Chat,

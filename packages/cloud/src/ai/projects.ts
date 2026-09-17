@@ -1,3 +1,4 @@
+import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { aiFileContentVersion, AiFileWriteError, AiFileVersionConflict } from "./file-content-version";
 import { type SQL, type SQLQuery, sql } from "bun";
 import type { CloudResourceRef } from "../contracts/capabilities";
@@ -169,7 +170,7 @@ const principalForSubject = (subject: AccessSubject): Principal =>
     : { type: "service_account", serviceAccountId: subject.serviceAccountId };
 
 const accessMatch = (subject: AccessSubject | null): SQLQuery =>
-  buildAccessPrincipalCondition({
+  subject === null ? sql`FALSE` : buildAccessPrincipalCondition({
     subject,
     columns: {
       userId: sql`access.user_id`,
@@ -300,6 +301,7 @@ const createProjectAccess = async (
   input: { principal: Principal; permission: AiProjectPermission },
   db: SQL,
 ): Promise<AiProjectAccess> => {
+  AuthenticatedPrincipalSchema.parse(input.principal);
   const created = await createAccess(input, db);
   if (!created.ok) throw new Error(created.error.message);
   let shortId = "";

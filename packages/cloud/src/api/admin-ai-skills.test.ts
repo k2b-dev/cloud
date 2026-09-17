@@ -27,6 +27,17 @@ const skill = {
 afterEach(() => mock.restore());
 
 describe("admin AI Skill routes", () => {
+  test("rejects public grants on the platform-admin recovery route", async () => {
+    const grant = spyOn(aiSkills.admin, "grantAccess");
+    const routes = createAdminAiSkillsRoutes(pass);
+    const response = await routes.request("/AbC234/access", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ principal: { type: "public" }, permission: "admin" }),
+    });
+    expect(response.status).toBe(400);
+    expect(grant).not.toHaveBeenCalled();
+  });
+
   test("requires a platform administrator by default", async () => {
     const response = await createAdminAiSkillsRoutes().request("/");
 

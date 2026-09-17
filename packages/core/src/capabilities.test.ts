@@ -179,6 +179,9 @@ describe("Core AI capabilities", () => {
     expect(await operation.run(input, context)).toMatchObject({ ok: true, data: { data: { changed: true } } });
     expect(update).toHaveBeenCalledWith(skill.id, "AbC234", context.accessSubject, "read", input.expectedAccessRevision);
     expect(operation.input.safeParse({ ...input, confirmed: true }).success).toBe(false);
+    const { accessId: _accessId, ...newGrant } = input;
+    expect(operation.input.safeParse({ ...newGrant, principal: { type: "public" } }).success).toBe(false);
+    expect(operation.input.safeParse({ ...newGrant, principal: { type: "authenticated" } }).success).toBe(true);
   });
   test("publishes closed-world AI capabilities under the core.ai namespace", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);

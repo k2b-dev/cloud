@@ -35,6 +35,7 @@ import {
   defineCapabilities,
   UniversalSearchDataSchema,
   PrincipalSchema,
+  AuthenticatedPrincipalSchema,
 } from "@k2b/cloud/contracts";
 import { type AuditActor, audit, accountsAppService } from "@k2b/cloud/services";
 import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
@@ -435,7 +436,7 @@ const SkillDeleteInputSchema = z.object({ skillId: SkillIdSchema }).strict();
 const SkillAccessChangeInput = z.object({
   skillId: SkillIdSchema,
   expectedAccessRevision: z.string().regex(/^[a-f0-9]{64}$/).describe("Exact revision from ai.skill.access.read; re-read and review after a conflict."),
-  principal: PrincipalSchema.optional().describe("Recipient for a NEW grant, discovered with entities.search. Supply principal OR accessId."),
+  principal: AuthenticatedPrincipalSchema.optional().describe("Recipient for a NEW grant: user, group, service account, or all authenticated identities. Public access is not supported. Supply principal OR accessId."),
   accessId: z.string().regex(AI_SHORT_ID_PATTERN).optional().describe("Existing grant ID returned by ai.skill.access.read. Supply accessId OR principal."),
   permission: z.enum(["read", "write", "admin"]).nullable().describe("New permission; null removes an existing accessId. A new principal needs a permission."),
 }).strict().refine(input => Number(input.principal !== undefined) + Number(input.accessId !== undefined) === 1

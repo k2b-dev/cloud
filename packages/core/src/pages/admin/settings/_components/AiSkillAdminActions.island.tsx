@@ -1,3 +1,4 @@
+import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import { PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AiSkillAccess } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
@@ -63,7 +64,7 @@ const PermissionDialogBody = (props: Props) => {
               grantAccess={async (principal, permission) => {
                 const response = await coreClient.admin.core["ai-skills"][":skillId"].access.$post({
                   param: { skillId: props.skillId },
-                  json: { principal, permission },
+                  json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission },
                 });
                 if (!response.ok) throw new Error(await readError(response, t().grantSkillAccessFailed));
                 return (await response.json()).access;

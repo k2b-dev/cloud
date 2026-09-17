@@ -206,7 +206,7 @@ describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
     }
   });
 
-  test("resolves nested-group, service-account, authenticated, and public grants", async () => {
+  test("resolves authenticated principals and rejects public grants", async () => {
     const creatorId = await insertUser("matrix-creator");
     const nestedUserId = await insertUser("matrix-nested");
     const outsideUserId = await insertUser("matrix-outside");
@@ -253,13 +253,11 @@ describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
       expect((await aiProjects.get(project.id, outsideUser))?.permission).toBe("read");
       expect(await aiProjects.get(project.id, null)).toBeNull();
 
-      await aiProjects.grantAccess(project.id, creator, { principal: { type: "public" }, permission: "admin" });
-      expect((await aiProjects.get(project.id, null))?.permission).toBe("admin");
-      expect((await aiProjects.list(null)).map((entry) => entry.id)).toContain(project.id);
-      expect(await aiProjects.createKnowledge(project.id, null, { title: "Public", content: "Public write." })).not.toBeNull();
-      expect(
-        await aiProjects.grantAccess(project.id, null, { principal: { type: "public" }, permission: "read" }),
-      ).not.toBeNull();
+      await expect(aiProjects.grantAccess(project.id, creator, { principal: { type: "public" }, permission: "admin" })).rejects.toThrow();
+      await expect(aiProjects.admin.grantAccess(project.id, { principal: { type: "public" }, permission: "read" })).rejects.toThrow();
+      expect(await aiProjects.get(project.id, null)).toBeNull();
+      expect(await aiProjects.list(null)).toEqual([]);
+      expect(await aiProjects.createKnowledge(project.id, null, { title: "Public", content: "Public write." })).toBeNull();
     } finally {
       if (projectId) await aiProjects.delete(projectId, creator);
       await sql`DELETE FROM auth.users WHERE id IN (${creatorId}::uuid, ${nestedUserId}::uuid, ${outsideUserId}::uuid)`;

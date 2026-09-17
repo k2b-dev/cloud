@@ -1,6 +1,6 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
-import { PrincipalSchema } from "../contracts/shared";
+import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "../server";
 import {
   AI_SKILL_DESCRIPTION_MAX_CHARS,
@@ -38,7 +38,7 @@ const SkillFieldsSchema = z.object({
 });
 
 const UpdateSkillSchema = SkillFieldsSchema.extend({ expectedRevision: z.number().int().positive() });
-const SkillAccessSchema = z.object({ principal: PrincipalSchema, permission: z.enum(["read", "write", "admin"]) });
+const SkillAccessSchema = z.object({ principal: AuthenticatedPrincipalSchema, permission: z.enum(["read", "write", "admin"]) });
 const SkillAccessUpdateSchema = z.object({ permission: z.enum(["read", "write", "admin"]) });
 const SkillEnabledSchema = z.object({ enabled: z.boolean() });
 
@@ -56,7 +56,7 @@ type AiSkillsRouteDependencies = {
 const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
   new Hono<AuthContext>()
     .use(dependencies.limit ?? rateLimit())
-    .use("*", dependencies.authenticate ?? auth.requireRole("*"))
+    .use("*", dependencies.authenticate ?? auth.requireRole("authenticated"))
     .get("/", v("query", z.object({ q: z.string().trim().max(200).optional() })), async (c) => {
       const subject = c.get("accessSubject") ?? null;
       const { q } = c.req.valid("query");

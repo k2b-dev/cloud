@@ -312,6 +312,10 @@ cld assistant projects access grant "Release notes" <group-id> --type group --pe
 cld assistant chats create --project <project-id>
 ```
 
+Skills and Projects require authentication, including direct API requests.
+Public grants are rejected; share with users, groups, service accounts, or all
+authenticated identities instead. Project sharing does not share private chats.
+
 Project names and short IDs are accepted by management commands. Access grants use `read`, `write`, or `admin`; the Project owner is always an administrator.
 
 Run `cld assistant <group> help` or `cld assistant <group> <command> --help` for the complete accepted flags.

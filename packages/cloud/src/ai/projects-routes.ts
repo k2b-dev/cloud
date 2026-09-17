@@ -2,7 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { getCapability } from "../_internal/registry";
 import { CloudResourceRefSchema, cloudResourceRefAppId, resolveCapabilityResourceReader } from "../contracts/capabilities";
-import { PrincipalSchema } from "../contracts/shared";
+import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "../server";
 import { decodeAiFileContent } from "./files-store";
 import {
@@ -28,7 +28,7 @@ const ProjectFieldsSchema = z.object({
 });
 
 const UpdateProjectSchema = ProjectFieldsSchema.partial().refine((input) => Object.keys(input).length > 0, "No changes supplied.");
-const ProjectAccessSchema = z.object({ principal: PrincipalSchema, permission: z.enum(["read", "write", "admin"]) });
+const ProjectAccessSchema = z.object({ principal: AuthenticatedPrincipalSchema, permission: z.enum(["read", "write", "admin"]) });
 const ProjectAccessUpdateSchema = z.object({ permission: z.enum(["read", "write", "admin"]) });
 const KnowledgeSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -70,7 +70,7 @@ type AiProjectsRouteDependencies = {
 const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =>
   new Hono<AuthContext>()
     .use(dependencies.limit ?? rateLimit())
-    .use("*", dependencies.authenticate ?? auth.requireRole("*"))
+    .use("*", dependencies.authenticate ?? auth.requireRole("authenticated"))
     .get("/", async (c) =>
       respond(c, ok({ projects: (await aiProjects.list(c.get("accessSubject") ?? null)).map(publicProject) })),
     )

@@ -1,3 +1,4 @@
+import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import type { AssistantSidebarPreview } from "../sidebar-preview";
 import type {
   AiConversation,
@@ -115,7 +116,7 @@ export const assistantApi = {
     principal: AiSkillAccess["principal"],
     permission: AiSkillAccess["permission"],
   ): Promise<AiSkillAccess> => {
-    const response = await skillsClient[":skillId"].access.$post({ param: { skillId }, json: { principal, permission } });
+    const response = await skillsClient[":skillId"].access.$post({ param: { skillId }, json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission } });
     if (!response.ok) throw new Error(await readError(response, "Failed to share skill"));
     return (await response.json()).access;
   },

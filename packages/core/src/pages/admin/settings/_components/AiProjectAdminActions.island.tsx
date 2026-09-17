@@ -1,3 +1,4 @@
+import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
@@ -61,7 +62,7 @@ const PermissionDialogBody = (props: Props) => {
               grantAccess={async (principal, permission) => {
                 const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$post({
                   param: { projectId: props.projectId },
-                  json: { principal, permission },
+                  json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission },
                 });
                 if (!response.ok) throw new Error(await readError(response, t().grantProjectAccessFailed));
                 return (await response.json()).access;

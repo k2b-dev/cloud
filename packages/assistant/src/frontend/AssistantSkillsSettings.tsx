@@ -74,7 +74,7 @@ const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
         <PermissionEditor
           initialEntries={entries}
           canEdit
-          allowPublic
+          allowPublic={false}
           allowServiceAccounts
           grantAccess={(principal, permission) => assistantApi.grantSkillAccess(skill.id, principal, permission)}
           updateAccess={(accessId, permission) => assistantApi.updateSkillAccess(skill.id, accessId, permission)}

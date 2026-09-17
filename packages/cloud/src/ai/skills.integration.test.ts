@@ -1,3 +1,4 @@
+import { aiProjects } from "./projects";
 import { describe, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { migrateCloudAi } from "./migrate";
@@ -32,6 +33,47 @@ const insertUser = async (label: string): Promise<string> => {
 };
 
 describe.skipIf(!databaseReady)("aiSkills (integration)", () => {
+  test("blocks anonymous legacy grants and converts only Skill/Project grants to authenticated access", async () => {
+    const userId = await insertUser("authenticated-only");
+    const owner = { type: "user" as const, userId };
+    const skill = await aiSkills.create({ subject: owner, name: `auth-only-${crypto.randomUUID()}`, description: "Private skill.", instructions: "Private instructions." });
+    const project = await aiProjects.create({ subject: owner, name: "Authenticated project" });
+    const grants = await sql<{ id: string }[]>`INSERT INTO auth.access (permission, authenticated_only) VALUES ('read', false), ('write', false), ('read', false) RETURNING id`;
+    try {
+      await sql`INSERT INTO ai.skill_access(skill_id, access_id, short_id) VALUES (${skill.id}::uuid, ${grants[0]!.id}::uuid, 'Aut234')`;
+      await sql`INSERT INTO ai.project_access(project_id, access_id, short_id) VALUES (${project.id}::uuid, ${grants[1]!.id}::uuid, 'Aut234')`;
+      await aiProjects.createKnowledge(project.id, owner, { title: "Private", content: "Private knowledge" });
+      await aiProjects.writeFile(project.id, owner, { path: "private.txt", mediaType: "text/plain", bytes: new TextEncoder().encode("Private file") });
+      expect(await aiSkills.get(skill.id, null)).toBeNull();
+      expect(await aiSkills.list(null)).toEqual([]);
+      expect((await aiSkills.search(null, "private")).skills).toEqual([]);
+      expect(await aiProjects.get(project.id, null)).toBeNull();
+      expect(await aiProjects.list(null)).toEqual([]);
+      expect(await aiProjects.listKnowledge(project.id, null)).toEqual([]);
+      expect(await aiProjects.listFiles(project.id, null)).toEqual([]);
+      expect(await aiProjects.readFileByPath(project.id, "private.txt", null)).toBeNull();
+      expect(await aiProjects.createKnowledge(project.id, null, { title: "Bad", content: "Anonymous" })).toBeNull();
+      await expect(aiSkills.grantAccess(skill.id, owner, { principal: { type: "public" }, permission: "read" })).rejects.toThrow();
+      await expect(aiSkills.admin.grantAccess(skill.id, { principal: { type: "public" }, permission: "read" })).rejects.toThrow();
+      for (let run = 0; run < 2; run++) {
+        await migrateCloudAi();
+        const rows = await sql<{ id: string; authenticated_only: boolean; permission: string }[]>`SELECT id, authenticated_only, permission FROM auth.access WHERE id IN (${grants[0]!.id}::uuid, ${grants[1]!.id}::uuid, ${grants[2]!.id}::uuid)`;
+        expect(rows.find(row => row.id === grants[0]!.id)).toMatchObject({ authenticated_only: true, permission: "read" });
+        expect(rows.find(row => row.id === grants[1]!.id)).toMatchObject({ authenticated_only: true, permission: "write" });
+        expect(rows.find(row => row.id === grants[2]!.id)).toMatchObject({ authenticated_only: false, permission: "read" });
+      }
+      expect((await aiSkills.listAccess(skill.id, owner))?.find(entry => entry.shortId === 'Aut234')?.principal).toEqual({ type: "authenticated" });
+      expect((await aiProjects.listAccess(project.id, owner))?.find(entry => entry.shortId === 'Aut234')?.principal).toEqual({ type: "authenticated" });
+      expect(await aiSkills.get(skill.id, null)).toBeNull();
+      expect(await aiProjects.get(project.id, null)).toBeNull();
+    } finally {
+      await aiSkills.admin.delete(skill.id);
+      await aiProjects.admin.delete(project.id);
+      await sql`DELETE FROM auth.access WHERE id = ${grants[2]!.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("search ranks names and descriptions, tolerates typos, and checks access before limiting", async () => {
     const userId = await insertUser("search"), otherId = await insertUser("search-other");
     const owner = { type: "user" as const, userId }, other = { type: "user" as const, userId: otherId };

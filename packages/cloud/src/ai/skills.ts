@@ -1,3 +1,4 @@
+import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { createHash } from "node:crypto";
 import { accessRevision } from "../server/services/access-revision";
 import { type SQL, type SQLQuery, sql } from "bun";
@@ -185,7 +186,7 @@ const principalForSubject = (subject: AccessSubject): Principal =>
     : { type: "service_account", serviceAccountId: subject.serviceAccountId };
 
 const accessMatch = (subject: AccessSubject | null): SQLQuery =>
-  buildAccessPrincipalCondition({
+  subject === null ? sql`FALSE` : buildAccessPrincipalCondition({
     subject,
     columns: {
       userId: sql`access.user_id`,
@@ -303,6 +304,7 @@ const createSkillAccess = async (
   input: { principal: Principal; permission: AiSkillPermission },
   db: SQL,
 ): Promise<AiSkillAccess> => {
+  AuthenticatedPrincipalSchema.parse(input.principal);
   const created = await createAccess(input, db);
   if (!created.ok) throw new Error(created.error.message);
   let shortId = "";
