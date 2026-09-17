@@ -70,6 +70,12 @@ export const createAdminAiSkillsRoutes = (authenticate: MiddlewareHandler<AuthCo
         }
       },
     )
+    .get("/:skillId/projects", async c => {
+      const skill = await aiSkills.admin.getByShortId(c.req.param("skillId")!);
+      if (!skill) return notFound(c, "Skill");
+      const projects = await aiSkills.admin.linkedProjects(skill.id,c.get("accessSubject") ?? null);
+      return respond(c,ok({ projects:projects.map(project=>({id:project.shortId,name:project.name})) }));
+    })
     .get("/:skillId/access", async (c) => {
       const skill = await aiSkills.admin.getByShortId(c.req.param("skillId")!);
       return skill ? respond(c, ok({ access: await aiSkills.admin.listAccess(skill.id) })) : notFound(c, "Skill");

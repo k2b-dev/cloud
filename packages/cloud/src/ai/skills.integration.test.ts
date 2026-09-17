@@ -74,6 +74,64 @@ describe.skipIf(!databaseReady)("aiSkills (integration)", () => {
     }
   });
 
+  test("Project links grant read/use and survive their creator losing access", async () => {
+    const ownerId=await insertUser("project-owner"),memberId=await insertUser("project-member"),successorId=await insertUser("successor");
+    const owner={type:"user" as const,userId:ownerId},member={type:"user" as const,userId:memberId},successor={type:"user" as const,userId:successorId};
+    const skill=await aiSkills.create({subject:owner,name:`project-skill-${crypto.randomUUID()}`,description:"A reconciliation workflow.",instructions:"Reconcile statements."});
+    const project=await aiProjects.create({subject:owner,name:"Linked skills"});
+    const conversation=await aiConversations.createConversation({ownerUserId:memberId});
+    const [turn]=await sql<{id:string}[]>`INSERT INTO ai.turns(short_id,conversation_id,status) VALUES(${`skill-${crypto.randomUUID()}`},${conversation.id}::uuid,'queued') RETURNING id`;
+    try {
+      await aiProjects.grantAccess(project.id,owner,{principal:{type:"user",userId:memberId},permission:"read"});
+      expect(await aiSkills.linkProject(skill.id,project.id,true,member)).toBe(false);
+      expect((await aiSkills.projectSkills(project.id,owner,{available:true,query:"reconciliation"}))?.items.map(item=>item.id)).toContain(skill.id);
+      expect(await aiSkills.projectSkills(project.id,member,{available:true})).toBeNull();
+      expect(await aiSkills.linkProject(skill.id,project.id,true,owner)).toBe(true);
+      expect((await aiSkills.projectSkills(project.id,owner,{available:true}))?.items).toEqual([]);
+      expect((await aiSkills.projectSkills(project.id,member))?.items).toMatchObject([{id:skill.id,permission:"read"}]);
+      expect((await aiSkills.get(skill.id,member))?.permission).toBe("read");
+      expect(await aiSkills.get(skill.id,member,"write")).toBeNull();
+      expect(await aiSkills.listAccess(skill.id,member)).toBeNull();
+      expect((await aiSkills.search(member,"reconciliation")).skills.map(item=>item.id)).toContain(skill.id);
+      expect(await aiSkills.get(skill.id,null)).toBeNull();
+      expect(await aiSkills.loadForTurn(turn!.id,skill.name,member)).toMatchObject({instructions:"Reconcile statements."});
+      expect(await aiSkills.listTurnFiles(turn!.id,member)).toHaveLength(1);
+      await aiSkills.setEnabled(skill.id,member,false);
+      expect((await aiSkills.search(member,"reconciliation")).skills).toEqual([]);
+      expect(await aiSkills.readTurnFile(turn!.id,`${skill.name}/SKILL.md`,member)).toBeNull();
+      await aiSkills.setEnabled(skill.id,member,true);
+      expect(await aiSkills.readTurnFile(turn!.id,`${skill.name}/SKILL.md`,member)).not.toBeNull();
+      // A link has no dependency on its creator's later grants or membership.
+      await aiSkills.grantAccess(skill.id,owner,{principal:{type:"user",userId:successorId},permission:"admin"});
+      const ownSkillGrant=(await aiSkills.listAccess(skill.id,owner))!.find(entry=>entry.principal.type === "user" && entry.principal.userId === ownerId)!;
+      await aiSkills.revokeAccess(skill.id,ownSkillGrant.id,successor);
+      expect((await aiSkills.get(skill.id,member))?.permission).toBe("read");
+      expect(await aiSkills.linkedProjects(skill.id,successor)).toEqual([{projectId:project.id,shortId:null,name:null}]);
+      await aiProjects.grantAccess(project.id,owner,{principal:{type:"user",userId:successorId},permission:"admin"});
+      const ownProjectGrant=(await aiProjects.listAccess(project.id,owner))!.find(entry=>entry.principal.type === "user" && entry.principal.userId === ownerId)!;
+      await aiProjects.revokeAccess(project.id,ownProjectGrant.id,successor);
+      expect(await aiSkills.get(skill.id,owner)).toBeNull();
+      expect((await aiSkills.get(skill.id,member))?.permission).toBe("read");
+      const memberGrant=(await aiProjects.listAccess(project.id,successor))!.find(entry=>entry.principal.type === "user" && entry.principal.userId === memberId)!;
+      await aiProjects.revokeAccess(project.id,memberGrant.id,successor);
+      expect(await aiSkills.get(skill.id,member)).toBeNull();
+      expect(await aiSkills.listTurnFiles(turn!.id,member)).toEqual([]);
+      expect(await aiSkills.readTurnFile(turn!.id,`${skill.name}/SKILL.md`,member)).toBeNull();
+      await aiProjects.grantAccess(project.id,successor,{principal:{type:"user",userId:memberId},permission:"read"});
+      await aiSkills.linkProject(skill.id,project.id,false,successor);
+      expect(await aiSkills.get(skill.id,member)).toBeNull();
+      await aiSkills.grantAccess(skill.id,successor,{principal:{type:"user",userId:memberId},permission:"read"});
+      await aiSkills.linkProject(skill.id,project.id,true,successor);
+      await aiSkills.linkProject(skill.id,project.id,false,successor);
+      expect((await aiSkills.get(skill.id,member))?.permission).toBe("read");
+    } finally {
+      await aiSkills.admin.delete(skill.id);
+      await aiProjects.admin.delete(project.id);
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid,${memberId}::uuid,${successorId}::uuid)`;
+    }
+  });
+
   test("search ranks names and descriptions, tolerates typos, and checks access before limiting", async () => {
     const userId = await insertUser("search"), otherId = await insertUser("search-other");
     const owner = { type: "user" as const, userId }, other = { type: "user" as const, userId: otherId };

@@ -4,6 +4,9 @@ export const settingsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      skillProjectAccessTitle: "Access through projects",
+      skillProjectAccessHelp: "Members of these projects can read and use this Skill. Editing permissions stay unchanged.",
+      skillProjectUnavailable: "Project without access to its details",
       documentation: "Documentation",
       documentationNewTab: "Documentation (English, opens in a new tab)",
       registration: "Registration & requests",
@@ -222,6 +225,9 @@ export const settingsMessages = i18n.define({
       templatePreview: ({ label }: { label: string }) => `${label} preview`,
     },
     de: {
+      skillProjectAccessTitle: "Zugriff über Projekte",
+      skillProjectAccessHelp: "Mitglieder dieser Projekte können diesen Skill lesen und nutzen. Bearbeitungsrechte bleiben unverändert.",
+      skillProjectUnavailable: "Projekt ohne Zugriff auf Details",
       documentation: "Dokumentation",
       documentationNewTab: "Dokumentation (Englisch, öffnet in einem neuen Tab)",
       registration: "Registrierung & Anfragen",

@@ -561,6 +561,14 @@ turns use that Project's instructions and files. Project results disappear once
 the chat belongs to a Project. A stale selection cannot replace an existing
 assignment, and assignment waits until active and queued work has finished.
 
+Projects can explicitly link Skills. Current members inherit read/use access,
+so linked Skills appear in their normal catalog and search results. Content
+loads only when needed, and personal disabled-Skill preferences still apply.
+Links require Manage on both resources when created; they persist if the creator
+later loses those rights. Revoking membership or removing a link removes inherited
+access, including mounted Skill files, while direct grants remain. Project links
+never grant Skill editing or access to Apps mentioned by a Skill.
+
 An explicitly attached Skill is loaded on the server for that turn, using the
 same permission checks and pinned revision as `load_skill`. Reference files are
 still read on demand. A restricted tool scope or revoked Skill produces an

@@ -1689,6 +1689,15 @@ export const migrateCloudAi = async (): Promise<void> => {
       UNIQUE (project_id, resource_type, resource_id)
     )
   `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.project_skills (
+      project_id UUID NOT NULL REFERENCES ai.projects(id) ON DELETE CASCADE,
+      skill_id UUID NOT NULL REFERENCES ai.skills(id) ON DELETE CASCADE,
+      PRIMARY KEY (project_id, skill_id)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_ai_project_skills_skill ON ai.project_skills(skill_id)`.simple();
+
   await sql`ALTER TABLE ai.project_resource_refs ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_project_resource_refs_short_id ON ai.project_resource_refs(project_id, short_id)`.simple();
   await backfillAiShortIds(
@@ -1982,6 +1991,11 @@ export const migrateCloudAi = async (): Promise<void> => {
       RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
     END
     $$ LANGUAGE plpgsql
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_live_project_skills_changed ON ai.project_skills`.simple();
+  await sql`
+    CREATE TRIGGER ai_live_project_skills_changed AFTER INSERT OR DELETE ON ai.project_skills
+    FOR EACH ROW EXECUTE FUNCTION ai.live_project_child_changed('project-detail,project-context')
   `.simple();
   await sql`DROP TRIGGER IF EXISTS ai_live_project_knowledge_changed ON ai.project_knowledge`.simple();
   await sql`

@@ -1,3 +1,4 @@
+import { aiProjects } from "./projects";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
@@ -62,6 +63,28 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
       const { q } = c.req.valid("query");
       const skills = q === undefined ? await aiSkills.list(subject) : (await aiSkills.search(subject, q)).skills;
       return respond(c, ok({ skills: skills.map(publicSummary) }));
+    })
+    .get("/project-links/:projectId", v("query", z.object({ q: z.string().max(200).default(""), page: z.coerce.number().int().min(1).max(100000).default(1), available: z.enum(["true","false"]).default("false") })), async c => {
+      const subject = c.get("accessSubject") ?? null, query = c.req.valid("query");
+      const project = await aiProjects.getByShortId(c.req.param("projectId")!, subject, query.available === "true" ? "admin" : "read");
+      const result = project ? await aiSkills.projectSkills(project.id, subject, { query:query.q, page:query.page, available:query.available === "true" }) : null;
+      return result ? respond(c, ok({ ...result, items:result.items.map(publicSummary) })) : respond(c, fail(err.notFound("Project")));
+    })
+    .get("/:skillId/projects", async c => {
+      const subject = c.get("accessSubject") ?? null;
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, subject, "admin");
+      const projects = skill ? await aiSkills.linkedProjects(skill.id, subject) : null;
+      return projects ? respond(c, ok({ projects:projects.map(project => ({ id:project.shortId, name:project.name })) })) : respond(c, fail(err.notFound("Skill")));
+    })
+    .put("/:skillId/projects/:projectId", v("json", z.object({ linked:z.boolean() }).strict()), async c => {
+      const subject = c.get("accessSubject") ?? null;
+      const [skill,project] = await Promise.all([
+        aiSkills.getByShortId(c.req.param("skillId")!,subject,"admin"),
+        aiProjects.getByShortId(c.req.param("projectId")!,subject,"admin"),
+      ]);
+      const linked = c.req.valid("json").linked;
+      return skill && project && await aiSkills.linkProject(skill.id,project.id,linked,subject)
+        ? respond(c,ok({linked})) : respond(c,fail(err.notFound("Skill or Project")));
     })
     .get("/templates/:name", dependencies.authenticate ?? auth.requireRole("authenticated"), (c) => {
       if (!c.get("accessSubject")) return respond(c, fail(err.forbidden("Skill templates require an authenticated access subject.")));

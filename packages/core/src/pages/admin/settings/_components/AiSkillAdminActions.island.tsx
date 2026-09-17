@@ -4,8 +4,8 @@ import type { AiSkillAccess } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, InlineGuidance, Placeholder, prompts, Select, toast, useLocale } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { Button, Dropdown, InlineGuidance, NoticeCard, Placeholder, prompts, Select, toast, useLocale } from "@k2b/ui";
+import { createSignal, For, Show } from "solid-js";
 import { settingsMessages } from "./messages";
 
 type Props = {
@@ -35,9 +35,23 @@ const PermissionDialogBody = (props: Props) => {
     },
   });
 
+  const projects = query.create({
+    source: () => props.skillId,
+    load: async (skillId, { abortSignal }) => {
+      const response = await coreClient.admin.core["ai-skills"][":skillId"].projects.$get({param:{skillId}},{init:{signal:abortSignal}});
+      if (!response.ok) throw new Error(await readError(response,t().loadSkillPermissionsFailed));
+      return (await response.json()).projects;
+    },
+  });
+
   return (
     <div class="flex w-full max-w-full flex-col gap-2">
       <p class="text-xs text-dimmed">{t().manageSkillAccess}</p>
+      <Show when={projects.loading()}><InlineGuidance loading>{t().loadingSkillAccess}</InlineGuidance></Show>
+      <Show when={projects.error()}><InlineGuidance tone="danger">{t().loadSkillAccessFailed}<Button size="sm" variant="ghost" onClick={()=>void projects.refresh()}>{t().retry}</Button></InlineGuidance></Show>
+      <Show when={projects.data()?.length}><NoticeCard tone="info" title={t().skillProjectAccessTitle} detail={t().skillProjectAccessHelp}>
+        <ul class="flex flex-col gap-1"><For each={projects.data()}>{project=><li class="flex items-center gap-2 text-sm"><i class="ti ti-folders" aria-hidden="true" />{project.name ?? t().skillProjectUnavailable}</li>}</For></ul>
+      </NoticeCard></Show>
       <Show when={!entries.loading()} fallback={<Placeholder state="loading" title={t().loadingSkillAccess} />}>
         <Show
           when={entries.data()}

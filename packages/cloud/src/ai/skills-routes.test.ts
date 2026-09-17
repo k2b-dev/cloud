@@ -1,3 +1,4 @@
+import { aiProjects } from "./projects";
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import type { AuthContext } from "../server";
@@ -38,6 +39,27 @@ const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
 afterEach(() => mock.restore());
 
 describe("AI Skill routes", () => {
+  test("project links check both managers and return public IDs from paginated search", async () => {
+    const projectId = "33333333-3333-4333-8333-333333333333";
+    const project = spyOn(aiProjects,"getByShortId").mockResolvedValue({id:projectId,shortId:"proj12",name:"Finance",permission:"admin",description:"",icon:"",instructions:"",defaultModelProfileId:null,revision:1,createdAt:"",updatedAt:""});
+    spyOn(aiSkills,"getByShortId").mockResolvedValue(skill());
+    const list = spyOn(aiSkills,"projectSkills").mockResolvedValue({items:[skill()],page:2,hasNext:true});
+    const link = spyOn(aiSkills,"linkProject").mockResolvedValue(true);
+    const routes = __buildAiSkillsRoutesForTest({limit:pass,authenticate});
+    const response = await routes.request("/project-links/proj12?q=finance&available=true&page=2");
+    expect(response.status).toBe(200);
+    expect(project).toHaveBeenCalledWith("proj12",subject,"admin");
+    expect(list).toHaveBeenCalledWith(projectId,subject,{query:"finance",available:true,page:2});
+    expect(await response.json()).toMatchObject({items:[{id:skillShortId}],page:2,hasNext:true});
+    const request = () => routes.request(`/${skillShortId}/projects/proj12`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({linked:true})});
+    expect((await request()).status).toBe(200);
+    expect(link).toHaveBeenCalledWith(skillId,projectId,true,subject);
+    project.mockResolvedValue(null);link.mockClear();
+    expect((await request()).status).toBe(404);
+    expect(link).not.toHaveBeenCalled();
+    expect((await routes.request("/project-links/proj12?page=0")).status).toBe(400);
+  });
+
   test("search query uses the shared enabled Skill search and rejects oversized queries", async () => {
     const search = spyOn(aiSkills, "search").mockResolvedValue({ skills: [skill()], more: false });
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
