@@ -306,7 +306,7 @@ export default ssr<AuthContext>(async (c) => {
                     <ButtonLink variant="secondary" size="sm" href={`/admin/grids/${base.shortId}/record-event-failures`}>
                       {t.eventFailures}
                     </ButtonLink>
-                    <AdminGridsActions baseId={base.id} baseName={base.name} />
+                    <AdminGridsActions baseId={base.shortId} baseName={base.name} />
                   </div>
                 );
               return "";
