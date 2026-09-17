@@ -33,7 +33,7 @@ const providers: ReadonlyArray<{
   {
     appId: "grids",
     definitions: gridsCapabilities,
-    types: ["base", "record", "table", "view"],
+    types: ["base", "document", "record", "table", "view", "workflow-run"],
     searches: ["base.search"],
   },
   {
@@ -77,7 +77,7 @@ const frozenManifests = new Map<string, CapabilityManifest>(
     providers.map(async ({ appId }) => [
       appId,
       CapabilityManifestSchema.parse(
-        await Bun.file(new URL(`./fixtures/capabilities/v1/${appId}.json`, import.meta.url)).json(),
+        await Bun.file(new URL(`./fixtures/capabilities/v2/${appId}.json`, import.meta.url)).json(),
       ),
     ] as const),
   ),
@@ -97,18 +97,18 @@ const consumers = [
   ["Spaces to Mail server integration", "packages/spaces/src/service/mail-integration.ts"],
 ] as const;
 
-describe("Capability v1 provider conformance", () => {
+describe("Capability v2 provider conformance", () => {
   for (const provider of providers) {
     test(`${provider.appId} compiles the frozen manifest and focused searches`, () => {
       const manifest = compileCapabilityManifest(provider.appId, provider.definitions);
       const previous = frozenManifests.get(provider.appId);
       if (!previous) throw new Error(`Missing frozen manifest for ${provider.appId}`);
       assertCapabilityManifestEvolution(previous, manifest);
-      expect(manifest.protocolVersion).toBe(1);
+      expect(manifest.protocolVersion).toBe(2);
       expect(manifest.types.map((type) => type.localId)).toEqual(provider.types);
       expect(manifest.queries.filter((query) => query.universalSearch).map((query) => query.localId)).toEqual(provider.searches);
-      expect(new Set([...manifest.types, ...manifest.queries, ...manifest.actions].map((entry) => entry.localId)).size).toBe(
-        manifest.types.length + manifest.queries.length + manifest.actions.length,
+      expect(new Set([...manifest.types, ...manifest.queries, ...manifest.actions, ...manifest.commands].map((entry) => entry.localId)).size).toBe(
+        manifest.types.length + manifest.queries.length + manifest.actions.length + manifest.commands.length,
       );
       for (const action of manifest.actions) {
         if (action.destructive || action.openWorld) {
@@ -130,7 +130,11 @@ describe("Capability v1 provider conformance", () => {
       "contacts.contact.delete",
       "contacts.contact.move",
       "contacts.note.create",
+      "grids.document.create",
+      "grids.record.create",
       "grids.record.upsert-external",
+      "grids.view.create",
+      "grids.workflow.record-action",
       "mail.conversation.comment.create",
       "mail.conversation.comment.delete",
       "mail.conversation.mark",
@@ -164,7 +168,7 @@ describe("Capability v1 provider conformance", () => {
   });
 });
 
-describe("Capability v1 Assistant discovery", () => {
+describe("Capability v2 Assistant discovery", () => {
   const catalog = buildAiCapabilityCatalog(
     providers.map(({ appId, definitions }) => ({
       appId,
@@ -181,14 +185,15 @@ describe("Capability v1 Assistant discovery", () => {
     ["find contact by name", "contacts", "contacts.contact.search"],
     ["list address books", "contacts", "contacts.book.list"],
     ["create a contact", "contacts", "contacts.contact.create"],
-    ["read message plain text", undefined, "mail.message.read"],
+    ["read message plain text", undefined, "mail.message.read-content"],
     ["mark email unread", "mail", "mail.conversation.mark"],
     ["send draft email", "mail", "mail.draft.send"],
     ["search messages", "mail", "mail.search"],
     ["inspect grid schema fields", "grids", "grids.gql.context"],
     ["execute gql", "grids", "grids.gql.execute"],
     ["create a grid record", "grids", "grids.record.create"],
-    ["browse note tree", "notebooks", "notebooks.note.tree"],
+    ["list note tree", "notebooks", "notebooks.note.tree"],
+    ["browse child notes", "notebooks", "notebooks.note.children"],
     ["read note markdown", "notebooks", "notebooks.note.read"],
     ["find backlinks to note", "notebooks", "notebooks.note.links"],
     ["edit note content", "notebooks", "notebooks.note.edit"],
@@ -212,7 +217,7 @@ describe("Capability v1 Assistant discovery", () => {
   });
 });
 
-describe("Capability v1 consumer conformance matrix", () => {
+describe("Capability v2 consumer conformance matrix", () => {
   for (const [surface, evidence] of consumers) {
     test(`${surface} has focused live-checkout coverage`, async () => {
       expect(await Bun.file(new URL(`../${evidence}`, import.meta.url)).exists(), evidence).toBe(true);

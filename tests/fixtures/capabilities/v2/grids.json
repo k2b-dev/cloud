@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "appId": "grids",
   "manifestHash": "b55336f4d84e66bdb91e7689af7e3d421c8fe2fb019925093bcb0ab39c9dc216",
   "types": [
@@ -3111,5 +3111,6 @@
       "approval": "rememberable",
       "review": true
     }
-  ]
+  ],
+  "commands": []
 }

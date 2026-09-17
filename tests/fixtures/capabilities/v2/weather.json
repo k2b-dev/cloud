@@ -1,7 +1,7 @@
 {
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "appId": "weather",
-  "manifestHash": "f3ad1f0d3847640f0ba6285327f0cfb1792cfb20765658e7f835e185a4a912ba",
+  "manifestHash": "05d55a63f70920eb5d8b23dcce38b72a640b6aaae4aec246cfe97e606a9378e2",
   "types": [
     {
       "localId": "location",
@@ -294,7 +294,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
         "required": [
@@ -315,7 +315,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "4cda8c8c645bf5d25dc18c05205b278b0f4ec8368769babb19cf969d55bb216d",
+      "schemaHash": "81ba58538d0c777a25e333597d98d0d73ca851bdfffa829ce55f8286ac18ca74",
       "openWorld": true
     },
     {
@@ -532,7 +532,7 @@
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               }
             },
             "required": [
@@ -562,7 +562,7 @@
                 "timestamp": {
                   "type": "string",
                   "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 },
                 "temperature": {
                   "type": "number",
@@ -707,7 +707,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "422debb48982918ee9f96b6f39beb554390e4689ac579ef5912cc9dfb16fefaa",
+      "schemaHash": "49f506c927720c2ca7edea3e82e7d2f64beab61c44ade850323eae748d191f6a",
       "openWorld": true
     },
     {
@@ -973,6 +973,30 @@
             },
             "description": "Canonical search facets supported by this query."
           },
+          "scope": {
+            "description": "Optional resource containing the search results; must be an explicitly supported scope type.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 180,
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "description": "Namespaced resource type declared by the owning app."
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Stable app-owned resource identifier."
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": false
+          },
           "limit": {
             "type": "integer",
             "minimum": 1,
@@ -1114,7 +1138,7 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "20c45cac7f9ead6abd77794026e5191fa675eec39bcf2ced9ca950d513a4a326",
+      "schemaHash": "5b78e710d3729f50c18b549cedce82e88fbd22757c37d87a0e245682c8d1608e",
       "openWorld": false,
       "universalSearch": {
         "tags": [
@@ -1308,5 +1332,6 @@
       "idempotency": "required",
       "review": true
     }
-  ]
+  ],
+  "commands": []
 }

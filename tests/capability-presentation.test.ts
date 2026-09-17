@@ -72,8 +72,8 @@ const missingPresentation = (appId: string, definitions: CapabilityDefinitions):
 };
 
 describe("built-in Capability presentation", () => {
-  test("ships complete German registry and input-schema presentation", () => {
-    expect(builtIns.flatMap(([appId, definitions]) => missingPresentation(appId, definitions))).toEqual([]);
+  test.each(builtIns)("%s ships complete German registry and input-schema presentation", (appId, definitions) => {
+    expect(missingPresentation(appId, definitions)).toEqual([]);
   });
 
   test("resolves declared German contact field descriptions through language ancestors", () => {
