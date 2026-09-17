@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-09-10
+updated: 2026-09-17
 ---
 
 # Deployment requirements
@@ -204,6 +204,80 @@ sets and preflight, [Scaling and shutdown](/en/docs/operations/scaling-and-shutd
 for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshooting)
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
+
+## Coordinate an existing installation's identity upgrade
+
+Use one maintenance window for the gateway, Core, OAuth, applications, and
+background workers. Replacing images alone is insufficient when the old
+installation lacks NATS or the identity secrets below. Record the actual image
+digests and source revisions; an approximate installation date does not identify
+which migrations apply. The identity checks do not replace the separate Sync,
+Notebook, or application-schema upgrade checks.
+
+### Prepare before stopping services
+
+1. Pull a complete immutable release image set and retain the previous image
+   digests and deployment configuration for recovery. Include independently
+   deployed apps and workers in the inventory; old processes must not keep
+   writing after the migration.
+2. Preserve the existing `APP_SECRET`, database, and saved public `app.url`.
+   If Core identity keys already exist, preserve their current KEK. If this is
+   the installation's first Core identity release, provision an independent
+   `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` for Core; Core creates its signing keys
+   during startup. Do not replace a KEK protecting existing rows with a newly
+   generated value.
+3. When running OAuth, supply the same independent
+   `CLOUD_OAUTH_BROKER_SECRET` to Core and OAuth. OAuth needs no app-credential
+   provisioning. Supply private Core/OAuth origins as described in
+   [Runtime configuration](/en/docs/operations/runtime-configuration), and check
+   NATS, database, cache, private-network, and clock prerequisites above.
+4. Quiesce user writes and new background work while old workers finish accepted
+   work. Close Notebook editing connections and prove that their final updates
+   reached durable snapshots before stopping the old snapshot workers. For an
+   existing NATS installation, use the applicable
+   [snapshot cutover check](/en/docs/operations/notebooks-snapshot-cutover).
+   That NATS check does not inspect Redis-backed Sync v5 history; a v5 upgrade
+   needs snapshot coverage established against the old release first.
+5. Stop all old application processes after their drain checks pass. Take a
+   consistent recovery backup of Postgres, the applicable broker state, file
+   storage, and the independent deployment secrets. Verify the restore path
+   before allowing new migrations to run. Keep ingress restricted.
+
+### Start the new release and verify it
+
+1. Check persistent infrastructure, then start updated Core alone. Wait for
+   migrations, key initialization, and its private `/_cloud/ready` endpoint.
+   Confirm that the private session and invocation JWKS endpoints respond.
+2. Start updated OAuth and the other selected apps, then the gateway. OAuth
+   checks Core's authority before its migrations. Check every service's private
+   readiness and its registered public route; gateway health alone is not enough.
+   The supplied Compose orders OAuth after Core, but does not impose that order
+   on every other application.
+3. Sign in again with the installation's normal account method. Check logout
+   and re-login, an authorized app page, global search, a dashboard widget, and
+   a Notebook edit that survives reconnect and reload. If OAuth is used, test an
+   existing client's authorization and refresh flow through the real HTTPS
+   ingress. Old browser sessions and old OAuth access/ID tokens are rejected;
+   client registrations, client secrets, and refresh grants are retained.
+4. Check startup logs and the
+   [JSON metadata repairs](/en/docs/operations/repair-jsonb-containers). Those
+   repairs run on startup; no blanket manual repair or database reset is needed.
+   Apply each app's separate schema requirements before enabling it. Provision
+   Mail's workload credential only if its background integrations are used;
+   scheduled AI tasks without a mandate require owner recreation. Neither is
+   an OAuth startup prerequisite.
+5. For the supplied platform Compose, run the read-only
+   [fleet check](/en/docs/operations/build-and-deploy#deploy-the-service) against
+   the new release. Review each app's Sync resources and failures, then reopen
+   normal traffic. Keep backups and retired broker resources through acceptance.
+
+If a startup or functional check fails, keep traffic restricted and inspect the
+owning service. Do not restart old binaries against the migrated database or
+flush shared Valkey/NATS state. Restore the coordinated pre-upgrade data,
+secrets, and old image set if rollback is necessary. See the
+[identity cutover contract](/en/docs/reference/deprecations-and-migrations#jwt-only-sessions-and-internal-invocations)
+for token compatibility and [Identity key operations](/en/docs/operations/identity-key-operations)
+for key recovery.
 
 ## Upgrade from Sync v5
 

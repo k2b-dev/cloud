@@ -202,6 +202,10 @@ of waves. See [Dashboard widgets](/en/docs/platform/dashboard-widgets).
 
 ## JWT-only sessions and internal invocations
 
+Use the [coordinated upgrade checklist](/en/docs/operations/deployment-requirements#coordinate-an-existing-installations-identity-upgrade)
+for preparation, startup order, verification, and rollback. The contract below
+defines what changes for sessions and OAuth clients.
+
 This is a coordinated hard cut, not a rolling compatibility release. All
 Cloud users must sign in again. Existing OAuth clients, refresh grants, API
 credentials, and background mandates retain their separate lifecycles.
