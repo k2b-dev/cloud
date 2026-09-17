@@ -1,3 +1,4 @@
+import { runnerApi } from "./artifacts/runner-api";
 import { assistantCapabilities } from "./capabilities";
 import { agentHost } from "./artifacts/agent-host";
 import { httpService } from "./artifacts/http-service";
@@ -23,6 +24,7 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
   .route("/_internal/assistant/tools", codeToolRoutes)
+  .route("/api/assistant/runner", runnerApi)
   .route("/api/assistant", apiRoutes)
   .route("/app/assistant", pageRoutes)
   .route("/admin/assistant",adminPages);

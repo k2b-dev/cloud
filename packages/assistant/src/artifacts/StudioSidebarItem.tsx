@@ -30,7 +30,7 @@ function StudioCatalog(props: { open: boolean; close: () => void; activeAppId?: 
       <Show when={!apps.error} fallback={<Placeholder state="error" title={t().loadFailed} action={<Button onClick={() => void refetch()}>{t().retry}</Button>} />}>
         <For each={apps()?.items} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().emptyApps}</p>}>
           {(app) => <AppWorkspace.SidebarItem icon={app.icon || "ti ti-app-window"}
-            href={`/app/assistant/apps/${app.id}`} onClick={props.close} active={app.id === props.activeAppId}>
+            href={`/app/assistant/apps/${app.id}${app.permission === "admin" ? "" : "/run"}`} onClick={props.close} active={app.id === props.activeAppId}>
             <AppWorkspace.SidebarItemLabel marquee={false}>{app.title}</AppWorkspace.SidebarItemLabel>
           </AppWorkspace.SidebarItem>}
         </For>

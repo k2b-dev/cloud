@@ -383,3 +383,12 @@ searched through Accounts after two characters. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
 Public and service-account selection require `allowPublic` and
 `allowServiceAccounts` respectively. This picker grants no access itself.
+
+### Restrict editor levels by principal
+
+`PermissionEditor` from `@k2b/cloud/access/ui` accepts either an `allowedLevels`
+array or a function `(principal: Principal) => AllowedLevel[]`. The function is
+used for both new grants and existing rows. For example, return `["read"]` for
+public recipients and `["read", "admin"]` for users and groups. A single allowed
+level renders as a fixed badge. Enforce the same restriction in the resource's
+service; the editor does not authorize requests.

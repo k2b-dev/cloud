@@ -102,11 +102,12 @@ export const CODE_SOURCE_TOOLS = {
     review: true,
     input: Id.extend({
       expectedAccessRevision: z.string().regex(/^[a-f0-9]{64}$/).describe("Exact accessRevision returned by code_access_read."),
-      principal: PrincipalSchema.refine(principal => principal.type !== "public" && principal.type !== "service_account", "Studio Apps support user, group or authenticated grants.").optional().describe("New user or group from core.entities.search, or authenticated. Studio does not support public or service_account grants. Supply principal OR accessId."),
+      principal: PrincipalSchema.refine(principal => principal.type !== "service_account", "Studio Apps support user, group, authenticated or public grants.").optional().describe("New user or group from core.entities.search, authenticated, or public (read/run only, no server data). Service accounts are unsupported. Supply principal OR accessId."),
       accessId: z.uuid().optional().describe("Existing grant ID from code_access_read; supply accessId OR principal."),
       permission: z.enum(["read", "admin"]).nullable().describe("read means Use, admin means Manage; null removes an existing accessId."),
     }).refine(input => Number(input.principal !== undefined) + Number(input.accessId !== undefined) === 1
-      && (input.principal === undefined || input.permission !== null), "Supply principal with permission OR accessId with permission (null removes)"),
+      && (input.principal === undefined || input.permission !== null), "Supply principal with permission OR accessId with permission (null removes)")
+      .refine(input => input.principal?.type !== "public" || input.permission === "read", "Public Apps only support read/run access"),
   },
   code_actions: {
     description: "Discover a visible App's currently published actions and their complete input/output JSON Schemas without running code. Returns publishedVersion for code_action. Requires Use; no draft source or management tools are loaded.",

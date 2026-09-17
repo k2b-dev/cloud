@@ -172,8 +172,12 @@ export const assistantCodeCommands=[
   command("code project-link",{summary:"Link or unlink an App; requires App and Project administration",args:{id:resource,project:arg.required()},flags:{remove:flag.boolean()},async run({ctx,args,flags}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/projects/"+encodeURIComponent(args.project)),jsonRequest("PUT",{linked:!flags.remove})));
   }}),
+  command("code url",{summary:"Get the standalone published App URL (public only with a public read grant)",args:{id:resource},async run({ctx,args}){
+    const app=await readAssistantApi<{id:string}>(ctx,path(args.id));
+    printValue(ctx,{href:`/app/assistant/apps/${app.id}/run`});
+  }}),
   command("code access",{summary:"Read resource grants",args:{id:resource},async run({ctx,args}){printValue(ctx,await readAssistantApi(ctx,path(args.id,"/access")));}}),
-  command("code grant",{summary:"Add a canonical user/group grant: {principal,permission}",args:{id:resource},flags:{input:inputFlag()},async run({ctx,args,flags}){
+  command("code grant",{summary:"Grant user/group/authenticated access or public read-only execution: {principal,permission}",args:{id:resource},flags:{input:inputFlag()},async run({ctx,args,flags}){
     printValue(ctx,await readAssistantApi(ctx,path(args.id,"/access"),jsonRequest("POST",await jsonInput(flags.input))));
   }}),
   command("code change-grant",{summary:"Change or remove a grant: {permission:read|admin|null}",args:{id:resource,access:arg.required()},flags:{input:inputFlag()},async run({ctx,args,flags}){

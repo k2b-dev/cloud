@@ -42,9 +42,10 @@ const Grant = z.object({
     z.object({ type: z.literal("user"), userId: z.uuid() }),
     z.object({ type: z.literal("group"), groupId: z.uuid() }),
     z.object({ type: z.literal("authenticated") }),
+    z.object({ type: z.literal("public") }),
   ]),
   permission: Level,
-}).strict();
+}).strict().refine(value => value.principal.type !== "public" || value.permission === "read", "Public access only supports read");
 
 export const createArtifactServiceRoutes = (caller: (context: Context<AuthContext>) => CapabilityCaller = capabilityCaller) => new Hono<AuthContext>()
   .use("*", (c,next) => (c.req.path.endsWith("/storage/file") || c.req.path.endsWith("/runtime/pdf")) ? next() : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))

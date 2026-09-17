@@ -67,3 +67,20 @@ Behandle erzeugte Tatsachen, Berechnungen, externe Aktionen und Änderungen an w
 - Versuche es erneut, wenn die Anfrage sinnvoll war, aber die Ausführung fehlgeschlagen ist oder nur ein unvollständiges Ergebnis geliefert hat.
 - Prüfe das ausgewählte Modell und den Status am Eingabefeld, wenn keine Antwort beginnt.
 - Teile eine große Anfrage in ein kleines erstes Ergebnis und eine Folgeanfrage auf, statt einen überladenen Prompt zu wiederholen.
+
+## Studio-App öffnen oder teilen
+
+App-Nutzer öffnen die eigenständige Ansicht ohne Assistant-Sidebar. App-Verwalter
+wählen im Aktionsmenü **App öffnen** oder **App-Link kopieren**. Der Link startet
+immer die zuletzt veröffentlichte Version. Private Apps benötigen weiterhin eine
+Anmeldung und eine App-Berechtigung.
+
+Unter **Zugriff verwalten** erlaubt Öffentlich ausschließlich Ausführen, niemals
+Verwalten. Die Warnung erklärt: Öffentliche Besucher haben keinen Zugriff auf
+Datenbanken, Server-Dateien/KV, Zugangsdaten oder geschützte Cloud-Aktionen.
+Lokale Berechnungen, Dateiauswahl und Downloads funktionieren. Apps mit
+Serverfunktionen sollten gegebenenfalls privat bleiben. Veröffentlichter Code
+und eingebettete Daten werden öffentlich. Entferne Öffentlich oder ziehe die
+Veröffentlichung zurück, um neue Aufrufe zu verhindern. Cloud-Administratoren
+können den App-Link als URL-Verknüpfung zur Navigation hinzufügen. Das vergibt
+keine App-Berechtigung.

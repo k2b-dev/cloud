@@ -22,7 +22,9 @@ Choose a fitting icon with `code_create` or change working metadata with
 The normal cycle is create, edit, test, publish, use, edit, test, publish.
 Personal applications can be published without granting anybody access.
 There is no preview mode: users start applications. Use-level users only receive
-the latest publication. Admins can run older published versions from Studio.
+the latest publication. Admins can run older published versions from Studio management.
+The standalone `/app/assistant/apps/ID/run` URL always uses the latest publication.
+App managers reach it with **Open app**; users without Manage open it by default.
 
 `code_versions` lists numbered publications with notes, authors, and dates;
 `code_history` is the separate automatic source-save history. For rollback, read

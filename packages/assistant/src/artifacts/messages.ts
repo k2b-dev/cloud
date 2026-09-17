@@ -1,6 +1,14 @@
 import { i18n } from "@k2b/stdlib";
 export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
   en: {
+    PUBLIC_READ_ONLY: "Public access only allows running the published app. Manage cannot be public.",
+    openApp: "Open app", copyAppLink: "Copy app link",
+    publicAccessTitle: "Public access is restricted",
+    publicAccessHelp: "Visitors can run the published app without signing in. Public access does not include the database, server files or KV, secrets, server HTTP/PDF services or protected Cloud actions. Apps that need these features may not work fully. Published code and embedded data are public. Manage access is never public.",
+    publicServerUnavailable: "This feature needs an explicit app permission. Public access cannot use server data.",
+    runnerUnavailable: "This app is no longer available. Reload to check access.",
+    runnerAccessChanged: "App access changed. Restart the app to continue with the current permissions.",
+
     analysisSnapshot:"Snapshot", analysisLive:"Loaded from source", analysisPartial:"Partial data", analysisFixture:"Example data", analysisLoading:"Loading; previous data remains visible", analysisRefresh:"Refresh", analysisCompare:"Compare with this data step", analysisClearComparison:"Clear comparison",
     HTTP_DENIED:"This HTTP request is not authorized.", HTTP_CONFLICT:"The secret or request changed. Refresh before continuing.", HTTP_LIMIT:"HTTP or secret storage exceeds its budget.", HTTP_UNKNOWN:"The HTTP request may have been sent. Inspect the external service before deliberately retrying; nothing was replayed.", HTTP_SECRET:"The secret is missing or does not allow this HTTPS origin, header and prefix.", HTTP_FAILED:"The external HTTP request failed.",
     personalSecrets:"Personal secrets", secretHelp:"These secrets belong only to you in this chat or app. Values are stored encrypted and never shown again. Only the configured HTTPS origin receives the value. Requests still ask for confirmation; external services may return sensitive data.",
@@ -58,6 +66,14 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     REQUEST_FAILED: "The artifact request failed. Please try again.",
   },
   de: {
+    PUBLIC_READ_ONLY: "Öffentlicher Zugriff erlaubt nur das Ausführen der veröffentlichten App. Verwalten kann nicht öffentlich sein.",
+    openApp: "App öffnen", copyAppLink: "App-Link kopieren",
+    publicAccessTitle: "Öffentlicher Zugriff ist eingeschränkt",
+    publicAccessHelp: "Besucher können die veröffentlichte App ohne Anmeldung ausführen. Öffentlicher Zugriff umfasst keine Datenbank, Server-Dateien oder KV, Zugangsdaten, HTTP-/PDF-Serverdienste oder geschützten Cloud-Aktionen. Apps, die diese Funktionen benötigen, sind möglicherweise nur eingeschränkt nutzbar. Veröffentlichter Code und darin enthaltene Daten sind öffentlich. Verwalten ist niemals öffentlich möglich.",
+    publicServerUnavailable: "Diese Funktion benötigt eine ausdrückliche App-Berechtigung. Öffentlicher Zugriff erlaubt keine Serverdaten.",
+    runnerUnavailable: "Diese App ist nicht mehr verfügbar. Lade die Seite neu, um den Zugriff zu prüfen.",
+    runnerAccessChanged: "Der App-Zugriff hat sich geändert. Starte die App neu, um sie mit den aktuellen Berechtigungen fortzusetzen.",
+
     analysisSnapshot:"Datenstand", analysisLive:"Aus Quelle geladen", analysisPartial:"Unvollständige Daten", analysisFixture:"Beispieldaten", analysisLoading:"Wird geladen; bisherige Daten bleiben sichtbar", analysisRefresh:"Aktualisieren", analysisCompare:"Mit diesem Datenstand vergleichen", analysisClearComparison:"Vergleich entfernen",
     HTTP_DENIED:"Dieser HTTP-Aufruf ist nicht freigegeben.", HTTP_CONFLICT:"Das Secret oder der Request wurde geändert. Bitte zuerst aktualisieren.", HTTP_LIMIT:"Das Limit für HTTP oder Secrets wurde erreicht.", HTTP_UNKNOWN:"Der HTTP-Aufruf wurde möglicherweise gesendet. Prüfe den externen Dienst vor einem bewussten neuen Versuch; es wurde nichts wiederholt.", HTTP_SECRET:"Das Secret fehlt oder erlaubt dieses HTTPS-Ziel, diesen Header und dieses Präfix nicht.", HTTP_FAILED:"Der externe HTTP-Aufruf ist fehlgeschlagen.",
     personalSecrets:"Persönliche Secrets", secretHelp:"Diese Secrets gehören nur dir in diesem Chat oder dieser App. Werte werden verschlüsselt gespeichert und nie wieder angezeigt. Nur das konfigurierte HTTPS-Ziel erhält den Wert. Requests erfordern weiterhin eine Bestätigung; externe Dienste können vertrauliche Daten zurückgeben.",

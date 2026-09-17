@@ -15,9 +15,9 @@ export default ssr<AuthContext>(async c => {
   const id = CodeResourceId.safeParse(c.req.param("id"));
   if (!id.success) return ssr.error(c, 404);
   try {
-    const [sidebar, app] = await Promise.all([
-      loadAssistantSidebarSnapshot(user.id), artifacts.get(id.data, identity),
-    ]);
+    const app = await artifacts.get(id.data, identity);
+    if (app.permission !== "admin" && !c.req.path.endsWith("/edit") && !c.req.path.endsWith("/database")) return c.redirect(`/app/assistant/apps/${app.id}/run`);
+    const sidebar = await loadAssistantSidebarSnapshot(user.id);
     const view=c.req.path.endsWith("/edit")?"edit":c.req.path.endsWith("/database")?"database":"app";
     if(view!=="app"&&app?.permission!=="admin")return ssr.error(c,403);
     const databaseStatus=view==="database"&&app?await artifactDatabase.status(app.id,identity,c.req.raw.signal):undefined;

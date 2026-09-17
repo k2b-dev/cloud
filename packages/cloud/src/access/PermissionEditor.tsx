@@ -57,8 +57,8 @@ type PermissionEditorProps = {
    *  write "Use", views call read "View"). When undefined, all three
    *  are offered with default labels. New entries are granted
    *  `allowedLevels[0]` on pick — the user upgrades via the row pill
-   *  afterwards. */
-  allowedLevels?: AllowedLevel[];
+   *  afterwards. A function may restrict levels by principal (for example public read-only). */
+  allowedLevels?: AllowedLevel[] | ((principal: Principal) => AllowedLevel[]);
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -147,12 +147,11 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const canEdit = () => props.canEdit !== false;
   const allowPublic = () => props.allowPublic === true;
   const allowAuthenticated = () => props.allowAuthenticated !== false;
-  const allowed = () => resolveAllowedLevels(props.allowedLevels, t());
-  const isSinglePicker = () => allowed().length === 1;
+  const allowed = (principal: Principal) => resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, t());
 
   // Defensive dev-warning: an empty allowedLevels array makes the editor
   // unable to grant anything.
-  if (props.allowedLevels && props.allowedLevels.length === 0) {
+  if (Array.isArray(props.allowedLevels) && props.allowedLevels.length === 0) {
     if (typeof console !== "undefined") {
       console.warn(
         "[PermissionEditor] `allowedLevels=[]` — the editor cannot grant any permission. Pass at least one level or omit the prop for the default View / Edit / Manage set.",
@@ -210,8 +209,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
               entry={entry}
               canEdit={canEdit()}
               disabled={busy()}
-              allowed={allowed()}
-              singlePicker={isSinglePicker()}
+              allowed={allowed(entry.principal)}
+              singlePicker={allowed(entry.principal).length === 1}
               onUpdatePermission={(permission) => {
                 if (!busy()) void updateMut.mutate({ accessId: entry.id, permission });
               }}
@@ -232,7 +231,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       <Show when={canEdit()}>
         <PrincipalPicker existing={entries().map(e=>e.principal)} allowPublic={allowPublic()} allowAuthenticated={allowAuthenticated()} allowServiceAccounts={props.allowServiceAccounts}
           disabled={busy()} onSelect={(principal,display)=>{
-            const permission=allowed()[0]?.level;
+            const permission=allowed(principal)[0]?.level;
             if(permission&&!busy())grantMut.mutate({principal,permission,display});
           }}/>
 

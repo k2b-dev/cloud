@@ -342,10 +342,13 @@ The direct CLI code command retains its own isolated local execution host.
 
 ### Assistant apps and browser work
 
-The Assistant **Studio** navigation sits above Personalize and opens a full-width
-gallery. Each tile has a large icon, publication badge, and direct Start action. Tile menus provide editing, publication, access, and copying;
-permissions use the Cloud editor in a dialog. Standalone URLs show the runner
-without an intermediate management page. Artifacts are independent of chats. Cloud `auth.access` grants are linked
+The Assistant **Studio** navigation opens its app catalog on hover or click;
+its search button opens global search filtered to Studio apps. Use-level users
+enter the standalone runner; managers enter Studio management. Management actions
+include editing, publication, and access. The runner retains personal actions for copying an app,
+managing secrets and clearing browser-local data. Public-only visitors can manage
+only their browser-local data. Permissions use the Cloud editor in a dialog.
+Artifacts are independent of chats. Cloud `auth.access` grants are linked
 through `assistant.artifact_access`: `read` is presented as **Use**, `admin` as
 **Manage**. Existing artifact `write` grants migrate to `admin`. Person, nested
 group, and authenticated-user grants use the shared Cloud principal resolver.
@@ -409,6 +412,36 @@ and offers an explicit restart. Starting or restarting fetches current code;
 agent test runs are separate from the user’s app. Status errors display the
 description supplied by the app and clear it when the app returns to ready.
 
+
+### Standalone apps and public links
+
+Studio opens the standalone runner for users with **Use** access. App managers
+enter the management view and select **Open app** from its action menu. The
+runner offers **Manage** to those managers. This distinction uses app permissions,
+not the global Cloud administrator role.
+
+**Copy app link** copies `/app/assistant/apps/ID/run`. This URL always runs the
+latest publication, even for managers. It loads no Assistant sidebar, chat list,
+chat updates, code editor or database console. Private apps require sign-in and
+app access. Public visitors see the app without the Cloud navigation shell.
+
+To share publicly, publish the app and add **Public** in **Manage access**.
+Only **Use** is available; public **Manage** is rejected through every interface.
+The dialog explains the limits: public visitors can compute locally, select
+files, download results and use browser-local storage. Public access never grants
+the app database, server files/KV, personal secrets, server HTTP/PDF or protected
+Cloud actions. Signed-in visitors still need a separate explicit app grant for
+server features. Existing apps that require these features may not work publicly.
+Published code and embedded data are visible to visitors; keep secrets out of source.
+
+Remove the public entry or unpublish the app to prevent new loads. Code already
+downloaded cannot be recalled. Drafts, history and management remain private.
+
+Cloud administrators can add this URL as a **Link** in the navigation settings,
+with a title, icon and audience. The shortcut's audience controls visibility,
+not permission to run the app. CLI users can obtain the path with
+`cld assistant code url ID` and use the existing grant/change-grant commands.
+
 ### Studio publication versions
 
 Sharing and publication are independent. Publishing a personal application never
@@ -424,7 +457,7 @@ revision and a new latest publication in one transaction. Its automatic note is
 "Restore version X". Historical publications and user data remain intact. Source save revisions and publication
 numbers are separate. Expected working revisions prevent stale publish/restore.
 
-Administrators can select a historical publication in the runner's **Versions**
+Administrators can select a historical publication in Studio management's **Versions**
 dialog and start it for themselves without changing the version other users get.
 Starting a different version restarts that local session. **Restore**
 atomically appends a new latest publication and updates the working source, with

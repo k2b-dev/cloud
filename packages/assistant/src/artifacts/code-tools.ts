@@ -136,19 +136,20 @@ export const artifactCodeHandlers = {
   }),
   code_access_read: ({ id }, context) => result(context, async () => {
     const grants = await artifacts.access(id, context);
-    return { data: { id, accessRevision: accessRevision(grants), levels: ["read", "admin"], principalTypes: ["user", "group", "authenticated"], grants } };
+    return { data: { id, accessRevision: accessRevision(grants), levels: ["read", "admin"], principalTypes: ["user", "group", "authenticated", "public"], publicLevels: ["read"], runnerHref: `/app/assistant/apps/${id}/run`, grants } };
   }),
   code_access_change: (input, context) => result<unknown>(context, async () => {
     const grants = await artifacts.access(input.id, context);
     if (accessRevision(grants) !== input.expectedAccessRevision) throw new ArtifactError("CONFLICT");
     const previous = input.accessId ? grants.find(grant => grant.id === input.accessId) : undefined;
     if (input.accessId && !previous) throw new ArtifactError("NOT_FOUND");
+    const principal = previous?.principal ?? input.principal;
+    if (!principal) throw new ArtifactError("INVALID_INPUT");
+    if (principal.type === "public" && input.permission !== null && input.permission !== "read") throw new ArtifactError("PUBLIC_READ_ONLY");
     if (context.review) {
       const resource = await artifacts.get(input.id, context);
-      const principal = previous?.principal ?? input.principal;
-      if (!principal) throw new ArtifactError("INVALID_INPUT");
       const [recipient] = await resolveDisplayNames([{ principal }]);
-      return { data: { message: `Change access to App “${resource.title}” (${input.id}).\nRecipient: ${recipient!.displayName} — ${JSON.stringify(principal)}\nBefore: ${previous?.permission ?? "No grant"}\nAfter: ${input.permission ?? "Remove grant"}\nThis does not change access to any Skill.` } };
+      return { data: { message: `Change access to App “${resource.title}” (${input.id}).\nRecipient: ${recipient!.displayName} — ${JSON.stringify(principal)}\nBefore: ${previous?.permission ?? "No grant"}\nAfter: ${input.permission ?? "Remove grant"}\nThis does not change access to any Skill.${principal.type === "public" ? " Public access runs only the published App without database, server files/KV, secrets or protected Cloud actions. Public Manage is forbidden." : ""}` } };
     }
     if (input.principal && input.permission) await artifacts.grant(input.id, input.principal, input.permission, context, input.expectedAccessRevision);
     else if (input.accessId) await artifacts.changeGrant(input.id, input.accessId, input.permission, context, input.expectedAccessRevision);

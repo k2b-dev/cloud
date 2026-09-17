@@ -67,6 +67,51 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
   });
   afterAll(async () => { await sql.close(); });
 
+  test("public runner exposes only the publication and never grants server or management access", async () => {
+    const resource = await artifacts.create({title:"Published name",source},owner);
+    const publicGrant = await artifacts.grant(resource.id,{type:"public"},"read",owner);
+    expect(publicGrant?.principal.type).toBe("public");
+    await expect(artifacts.runner(resource.id,{})).rejects.toMatchObject({code:"NOT_FOUND"});
+    await artifacts.publish(resource.id,1,owner,"Initial release");
+    await artifacts.metadata(resource.id,{title:"Secret draft name"},owner);
+    await artifacts.writeFile(resource.id,"main.js","export default () => 'unpublished secret'",owner);
+    const anonymous = await artifacts.runner(resource.id,{});
+    expect(anonymous).toMatchObject({title:"Published name",sourceRevision:1,serverAccess:false,canManage:false});
+    expect(JSON.stringify(anonymous)).not.toContain("unpublished secret");
+    expect(await artifacts.runner(resource.id,stranger)).toMatchObject({serverAccess:false,canManage:false});
+    expect(await artifacts.runner(resource.id,owner)).toMatchObject({title:"Published name",sourceRevision:1,serverAccess:true,canManage:true});
+    await expect(artifacts.get(resource.id,stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifacts.storage(resource.id,{area:"kv",operation:"read",key:"secret"},stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifactDatabase.status(resource.id,stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+    await expect(artifacts.grant(resource.id,{type:"public"},"admin",owner)).rejects.toMatchObject({code:"PUBLIC_READ_ONLY"});
+    await expect(artifacts.changeGrant(resource.id,publicGrant!.id,"admin",owner)).rejects.toMatchObject({code:"PUBLIC_READ_ONLY"});
+    const grants = await artifacts.access(resource.id,owner);
+    expect(await artifactCodeHandlers.code_access_change({id:resource.id,accessId:publicGrant!.id,permission:"admin",expectedAccessRevision:accessRevision(grants)},
+      {...owner,locale:"en",signal:new AbortController().signal,review:true})).toMatchObject({ok:false,error:{code:"PUBLIC_READ_ONLY"}});
+    await artifacts.grant(resource.id,{type:"user",userId:reader.user.id},"read",owner);
+    expect(await artifacts.runner(resource.id,reader)).toMatchObject({serverAccess:true,canManage:false});
+    const {createRunnerRoutes} = await import("./runner-api");
+    const api = createRunnerRoutes();
+    const meta = await api.request(`/${resource.id}`);
+    expect(meta.status).toBe(200);
+    expect(await meta.json()).toMatchObject({serverAccess:false,title:"Published name"});
+    const compiled = await api.request(`/${resource.id}/compiled?revision=2`);
+    expect(compiled.status).toBe(200);
+    const output = await compiled.json();
+    expect(output.metadata.sourceRevision).toBe(1);
+    expect(output.code).not.toContain("unpublished secret");
+    expect(output.metadata.source).toBeUndefined();
+    expect((await api.request(`/${resource.id}/storage`,{method:"POST"})).status).toBe(404);
+    expect((await api.request(`/${resource.id}/access`)).status).toBe(404);
+    await artifacts.unpublish(resource.id,owner);
+    expect((await api.request(`/${resource.id}`)).status).toBe(404);
+    await artifacts.publish(resource.id,(await artifacts.get(resource.id,owner)).revision,owner,"Second publication");
+    await artifacts.changeGrant(resource.id,publicGrant!.id,null,owner);
+    expect((await api.request(`/${resource.id}/compiled`)).status).toBe(404);
+    expect(await artifacts.runner(resource.id,reader)).toMatchObject({serverAccess:true});
+    await artifacts.remove(resource.id,owner);
+  });
+
   test("published actions are discoverable with Use, validate inputs and reject stale releases", async () => {
     const action = { name: "double", title: "Double", description: "Double a number", entry: "double.ts",
       inputSchema: { type: "number" }, outputSchema: { type: "number" } };

@@ -1,6 +1,7 @@
 import { openSecretsDialog } from "./SecretsDialog";
 import { Button, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { StudioPermissions } from "./StudioPermissions";
+import { runnerHref } from "./runner-contracts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { createResource, createSignal, For, Show, type Accessor } from "solid-js";
 import type { AiProject } from "@k2b/cloud/ai";
@@ -30,18 +31,9 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
       <Show when={!item.publishedRevision}><NoticeCard tone="warning" title={t().unpublishedAccess} detail={t().unpublishedAccessHelp} /></Show>
       <Show when={!access.loading} fallback={<Placeholder state="loading" title={t().loading} />}>
       <Show when={!access.error && access()} keyed fallback={<Placeholder state="error" title={t().loadFailed} />}>
-        {entries => <PermissionEditor initialEntries={entries} canEdit allowPublic={false} allowServiceAccounts={false}
-          allowedLevels={[{ level: "read", label: t().use }, { level: "admin", label: t().manage }]}
-          grantAccess={async (principal, level) => {
-            if (principal.type === "public" || principal.type === "service_account" || level === "write") throw new Error(t().INVALID_INPUT);
-            const grant = await artifactClient.grant(item.id, principal, level);
-            if (!grant) throw new Error(t().REQUEST_FAILED); return grant;
-          }}
-          updateAccess={async (accessId, level) => {
-            if (level === "write") throw new Error(t().INVALID_INPUT);
-            await artifactClient.changeGrant(item.id, accessId, level);
-          }}
-          revokeAccess={async accessId => { await artifactClient.changeGrant(item.id, accessId, null); }} />}
+        {entries => <StudioPermissions entries={entries}
+          grant={(principal, level) => artifactClient.grant(item.id, principal, level)}
+          change={(id, level) => artifactClient.changeGrant(item.id, id, level)} />}
       </Show>
     </Show></div>, { title: `${t().share} · ${item.title}`, size: "medium" });
     setSharing(undefined);
@@ -107,6 +99,10 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
     },{title:t().projects,size:"medium"});
   });
   const menu = (item: ArtifactSummary) => [
+    ...(item.publishedRevision ? [
+      { label: t().openApp, icon: "ti ti-external-link", action: () => navigateTo(runnerHref(item.id)) },
+      { label: t().copyAppLink, icon: "ti ti-link", action: () => action(() => navigator.clipboard.writeText(new URL(runnerHref(item.id), location.origin).href)) },
+    ] : []),
     ...(props.app?.() && props.view && props.view!=="app" ? [{label:a().app,icon:"ti ti-app-window",action:()=>open(item.id)}] : []),
     ...(item.permission === "admin" ? [
       {label:t().remove,icon:"ti ti-trash",action:async()=>{

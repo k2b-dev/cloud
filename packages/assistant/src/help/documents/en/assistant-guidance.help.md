@@ -67,3 +67,17 @@ Treat generated facts, calculations, external actions, and changes to important 
 - Retry when the request was sound but the run failed or produced an incomplete response.
 - Check the selected model and the status shown by the composer when no response starts.
 - Split a large request into a small first result and a follow-up instead of repeating an overloaded prompt.
+
+## Open or share a Studio app
+
+App users open the standalone view without the Assistant sidebar. App managers
+can select **Open app** or **Copy app link** from the action menu. The link always
+runs the latest published version. Private apps still require sign-in and access.
+
+In **Manage access**, Public allows execution only, never administration. The
+warning explains that public visitors cannot use databases, server files/KV,
+secrets or protected Cloud actions. Local calculations, file selection and
+downloads work. Server-dependent apps may need to remain private. Published code
+and embedded data become public. Remove Public or unpublish to stop new loads.
+Cloud administrators can add the app link to the navigation as a URL shortcut;
+this does not grant access.

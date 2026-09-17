@@ -16,7 +16,7 @@ import { validateArtifact } from "./runtime/compile";
 
 export type ArtifactIdentity = { actor: AuthContext["Variables"]["actor"]; accessSubject: AccessSubject; conversationId?: string; administrative?: boolean };
 export class ArtifactError extends Error {
-  constructor(readonly code: "NOT_FOUND" | "ACCESS_DENIED" | "CONFLICT" | "STORAGE_FULL" | "INVALID_INPUT" | "LAST_MANAGER" | "TOO_MANY_REQUESTS") {
+  constructor(readonly code: "NOT_FOUND" | "ACCESS_DENIED" | "CONFLICT" | "STORAGE_FULL" | "INVALID_INPUT" | "LAST_MANAGER" | "TOO_MANY_REQUESTS" | "PUBLIC_READ_ONLY") {
     super(code);
   }
 }
@@ -38,10 +38,12 @@ export function user(identity: ArtifactIdentity) {
 }
 function predicate(identity: ArtifactIdentity) {
   user(identity);
-  return buildAccessPrincipalCondition({ subject: identity.accessSubject, columns: {
+  const match = buildAccessPrincipalCondition({ subject: identity.accessSubject, columns: {
     userId: sql`a.user_id`, groupId: sql`a.group_id`, serviceAccountId: sql`a.service_account_id`,
     authenticatedOnly: sql`a.authenticated_only`,
   } });
+  // Public grants allow the isolated runner only, never server-backed operations.
+  return sql`(${match}) AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL OR a.authenticated_only)`;
 }
 async function projectContext(identity: ArtifactIdentity) {
   if (!identity.conversationId) return undefined;
@@ -135,6 +137,28 @@ async function managementState(db: SQL, row: ArtifactRow) {
 }
 
 export const artifacts = {
+  /** The runner always receives the current publication, even for an App administrator. */
+  async runner(id: string, identity: { actor?: ArtifactIdentity["actor"]; accessSubject?: AccessSubject }) {
+    CodeResourceId.parse(id);
+    return sql.begin(async db => {
+      let authorized: Awaited<ReturnType<typeof requireArtifact>> | undefined;
+      if (identity.actor && userFromActor(identity.actor) && identity.accessSubject?.type === "user") {
+        try { authorized = await requireArtifact(db, id, { actor: identity.actor, accessSubject: identity.accessSubject }, "read"); }
+        catch (error) { if (!(error instanceof ArtifactError) || error.code !== "ACCESS_DENIED") throw error; }
+      }
+      const [row] = authorized ? [authorized.row] : await db<ArtifactRow[]>`
+        SELECT artifact.* FROM assistant.artifacts artifact
+        WHERE short_id=${id} AND EXISTS (
+          SELECT 1 FROM assistant.artifact_access link JOIN auth.access a ON a.id=link.access_id
+          WHERE link.artifact_id=artifact.id AND a.permission='read'
+            AND a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND NOT a.authenticated_only
+        ) FOR UPDATE`;
+      if (!row || row.published_revision === null) throw new ArtifactError("NOT_FOUND");
+      // Read metadata comes from the publication; never leak unpublished names or source.
+      const bundle = await revision(db, row, "read", row.published_revision);
+      return { ...bundle, serverAccess: !!authorized, canManage: authorized?.permission === "admin" };
+    });
+  },
   async managementState(id: string, identity: ArtifactIdentity) {
     return sql.begin(async db => managementState(db, (await requireArtifact(db, id, identity, "admin")).row));
   },
@@ -291,7 +315,8 @@ export const artifacts = {
   },
   async grant(id: string, principal: Principal, level: "read" | "admin", identity: ArtifactIdentity, expectedAccessRevision?: string) {
     z.enum(["read", "admin"]).parse(level);
-    if (principal.type === "public" || principal.type === "service_account") throw new ArtifactError("INVALID_INPUT");
+    if (principal.type === "public" && level !== "read") throw new ArtifactError("PUBLIC_READ_ONLY");
+    if (principal.type === "service_account") throw new ArtifactError("INVALID_INPUT");
     return sql.begin(async (db) => {
       id = (await requireArtifact(db, id,identity,"admin")).row.id;
       await checkAccessRevision(db, id, expectedAccessRevision);
@@ -307,9 +332,11 @@ export const artifacts = {
     return sql.begin(async (db) => {
       id = (await requireArtifact(db, id,identity,"admin")).row.id;
       await checkAccessRevision(db, id, expectedAccessRevision);
-      const [grant] = await db<{ permission: PermissionLevel }[]>`SELECT a.permission FROM auth.access a
+      const [grant] = await db<{ permission: PermissionLevel; public: boolean }[]>`SELECT a.permission,
+        (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND NOT a.authenticated_only) AS public FROM auth.access a
         JOIN assistant.artifact_access link ON link.access_id=a.id WHERE link.artifact_id=${id}::uuid AND a.id=${accessId}::uuid`;
       if (!grant) throw new ArtifactError("NOT_FOUND");
+      if (grant.public && level !== null && level !== "read") throw new ArtifactError("PUBLIC_READ_ONLY");
       if (grant.permission === "admin" && level !== "admin") {
         const [count] = await db<{ n: number }[]>`SELECT count(*)::int AS n FROM auth.access a
           JOIN assistant.artifact_access link ON link.access_id=a.id WHERE link.artifact_id=${id}::uuid AND a.permission='admin'`;

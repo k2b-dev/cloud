@@ -1,7 +1,5 @@
-import { browserHttpHost } from "./SecretsDialog";
-import { runHttp } from "./http-host";
-import { approveInModal } from "./CapabilityApproval";
-import { runCapability } from "./runtime/capabilities";
+import { runnerClient } from "./runner-client";
+import type { RunnerMetadata } from "./runner-contracts";
 import { Button, InlineGuidance, Paper, StatusBadge, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -28,15 +26,28 @@ export function pickFiles(multiple: boolean, folder: boolean, accept: string, si
   });
 }
 
-export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; published?: boolean; version?: number; sourceRevision?:number; test?:boolean; pickerInputs?:File[]; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
+export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetadata; onRunnerMetadata?: (metadata: RunnerMetadata) => void; refreshKey?: string; published?: boolean; version?: number; sourceRevision?:number; test?:boolean; pickerInputs?:File[]; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
-  const [metadata, { mutate }] = createResource(() => props.artifactId, id => artifactClient.get(id, props.published, props.version));
-  createEffect(() => { if (metadata()) props.onTitle?.(metadata()!.title); });
+  const loadMetadata = async () => props.runner ? runnerClient.get(props.artifactId) : artifactClient.get(props.artifactId, props.published, props.version);
+  const [metadata, { mutate }] = createResource(() => props.runner ? false : props.artifactId, loadMetadata, { initialValue: props.runner });
+  createEffect(() => {
+    const bundle = metadata();
+    if (!bundle) return;
+    props.onTitle?.(bundle.title);
+    if ("serverAccess" in bundle) props.onRunnerMetadata?.(bundle);
+  });
   // Background checks must never replace a running app with an error boundary.
   let refreshing = false;
-  const refresh = () => { if (refreshing) return; refreshing = true; void artifactClient.get(props.artifactId, props.published, props.version).then(bundle => {
-    if (bundle.sourceRevision > (metadata()?.sourceRevision ?? 0)) mutate(bundle);
-  }).catch(() => {}).finally(() => { refreshing = false; }); };
+  const [activeServerAccess, setActiveServerAccess] = createSignal(props.runner?.serverAccess ?? true);
+  const refresh = () => { if (refreshing) return; refreshing = true; const token = generation; void loadMetadata().then(bundle => {
+    if (token !== generation) return;
+    if (props.runner && "serverAccess" in bundle && bundle.serverAccess !== activeServerAccess()) {
+      void stop(); mutate(bundle); setError(t().runnerAccessChanged); return;
+    }
+    if (props.runner || bundle.sourceRevision > (metadata()?.sourceRevision ?? 0)) mutate(bundle);
+  }).catch((failure: unknown) => {
+    if (token === generation && props.runner && failure instanceof Error && "status" in failure && (failure.status === 403 || failure.status === 404)) { void stop(); setError(t().runnerUnavailable); }
+  }).finally(() => { refreshing = false; }); };
   createEffect(on(() => props.refreshKey, refresh, { defer: true }));
   onMount(() => {
     const changed = () => refresh();
@@ -69,7 +80,9 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
   }));
   const stop = async () => { generation++; setLoading(false); const previous=session; session = undefined; await previous?.stop(); };
   onCleanup(() => {void stop();});
-  onMount(() => {onCleanup(registerLocalRun(props.userId,props.artifactId,stop));});
+  onMount(() => createEffect(() => {
+    onCleanup(registerLocalRun(activeServerAccess() ? props.userId : "public-visitor", props.artifactId, stop));
+  }));
   let autoStarted = false;
   createEffect(() => { if (props.autoStart && !autoStarted) { autoStarted = true; void start(); } });
   async function start() {
@@ -79,25 +92,32 @@ export function ArtifactPanel(props: { artifactId: string; refreshKey?: string; 
     if(token!==generation)return;
     setLoading(true); setError("");
     try {
-      const bundle = await artifactClient.get(props.artifactId, props.published, props.version);
+      const loaded = props.runner ? await runnerClient.compiled(props.artifactId) : undefined;
+      const bundle = loaded?.metadata ?? await artifactClient.get(props.artifactId, props.published, props.version);
       if (token !== generation) return;
       const runRevision=props.sourceRevision ?? bundle.sourceRevision;
-      const compiled = await artifactClient.compiled(props.artifactId, runRevision);
+      const compiled = loaded ?? await artifactClient.compiled(props.artifactId, runRevision);
       if (token !== generation) return;
       if (!("runtime" in compiled)) throw new Error(t().REQUEST_FAILED);
       mutate(bundle);
       setRevision(runRevision);
-      const storage = new ArtifactStorage(props.userId, props.artifactId);
+      const serverAccess = loaded ? loaded.metadata.serverAccess : true;
+      if (props.runner && serverAccess && props.userId === "public-visitor") throw new Error(t().runnerUnavailable);
+      setActiveServerAccess(serverAccess);
+      const server = serverAccess ? (await import("./runtime/browser-server")).browserServerOptions(props.artifactId) : {};
+      if (token !== generation) return;
+      const storage = new ArtifactStorage(serverAccess ? props.userId : "public-visitor", props.artifactId);
       session = createArtifactSession(container, compiled, {
         mode: props.test ? "test" : "user", changed: setState, pickerInputs:props.pickerInputs,
         modal: (request, signal) => openArtifactModal(request, signal, locale()),
-        capability:(name,input,signal)=>runCapability(name,input,{artifactId:props.artifactId},approveInModal,signal),
-        pdf: (request,signal) => artifactClient.pdf(request,{resourceId:props.artifactId},signal),
-        database: (request,signal) => artifactClient.database(props.artifactId,request,undefined,signal),
+        ...server,
         storage: (method, args) => {
           if (method !== "storage") return storage.call(method,args);
           const request = RuntimeStorage.parse(args[0]);
-          if (request.scope === "shared") return sharedStorage(props.artifactId,request);
+          if (request.scope === "shared") {
+            if (!serverAccess) throw new Error(t().publicServerUnavailable);
+            return sharedStorage(props.artifactId,request);
+          }
           const local = localStorageCall(request); return storage.call(local.method,local.args);
         },
         pick: pickFiles,

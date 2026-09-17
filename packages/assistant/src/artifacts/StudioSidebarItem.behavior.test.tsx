@@ -31,12 +31,12 @@ test("Studio loads on open, paginates, retries failures and launches scoped sear
     dom.root.querySelector<HTMLButtonElement>('.k2b-app-workspace__sidebar-item-main')!.click();
     await Bun.sleep(0);
     expect(requests).toEqual([1]);
-    expect(panel.querySelector('a[href="/app/assistant/apps/App001"]')?.getAttribute("aria-current")).toBe("page");
+    expect(panel.querySelector('a[href="/app/assistant/apps/App001/run"]')?.getAttribute("aria-current")).toBe("page");
     const button = (label: string) => Array.from(panel.querySelectorAll<HTMLButtonElement>('button')).find(node => node.textContent?.trim() === label)!;
     button("Next").click();
     await Bun.sleep(0);
     expect(requests).toEqual([1, 2]);
-    expect(panel.querySelector('a[href="/app/assistant/apps/App002"]')).not.toBeNull();
+    expect(panel.querySelector('a[href="/app/assistant/apps/App002/run"]')).not.toBeNull();
     expect(button("Next").disabled).toBe(true);
     failure = true;
     button("Back").click();

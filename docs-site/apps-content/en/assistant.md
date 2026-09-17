@@ -32,6 +32,40 @@ does not send a message. Saving code updates the working draft. **Publish** make
 that tested version available to users; later edits do not change it. Running apps
 keep their inputs and offer a restart when a newer publication becomes available.
 
+
+### Standalone apps and public links
+
+Studio opens the standalone runner for users with **Use** access. App managers
+enter the management view and select **Open app** from its action menu. The
+runner offers **Manage** to those managers. This distinction uses app permissions,
+not the global Cloud administrator role.
+
+The runner's action menu keeps **Create your own copy**, **Secrets** and
+**Local data** available to authorized users. Public-only visitors can manage
+their browser-local data, without access to personal secrets or server features.
+
+**Copy app link** copies `/app/assistant/apps/ID/run`. This URL always runs the
+latest publication, even for managers. It loads no Assistant sidebar, chat list,
+chat updates, code editor or database console. Private apps require sign-in and
+app access. Anonymous visitors see the app without the Cloud navigation shell.
+
+To share publicly, publish the app and add **Public** in **Manage access**.
+Only **Use** is available; public **Manage** is rejected through every interface.
+The dialog explains the limits: public visitors can compute locally, select
+files, download results and use browser-local storage. Public access never grants
+the app database, server files/KV, personal secrets, server HTTP/PDF or protected
+Cloud actions. Signed-in visitors still need a separate explicit app grant for
+server features. Existing apps that require these features may not work publicly.
+Published code and embedded data are visible to visitors; keep secrets out of source.
+
+Remove the public entry or unpublish the app to prevent new loads. Code already
+downloaded cannot be recalled. Drafts, history and management remain private.
+
+Cloud administrators can add this URL as a **Link** in the navigation settings,
+with a title, icon and audience. The shortcut's audience controls visibility,
+not permission to run the app. CLI users can obtain the path with
+`cld assistant code url ID` and use the existing grant/change-grant commands.
+
 **Create your own copy** copies published source into a private draft. Chats,
 access grants, and browser data are not copied. All administrators of one app edit
 the same working draft, so coordinate simultaneous changes to the same file.
@@ -245,7 +279,7 @@ through the permission-aware `core.entities.search` capability and reads current
 App grants with `code_access_read`. `code_access_change` presents the exact
 recipient and before/after permission for fresh confirmation. App levels are
 Use (`read`) and Manage (`admin`); supported recipients are users, groups, and
-all authenticated users. Public and service-account App grants are unsupported.
+all authenticated users. Public grants support only isolated execution of the published App. Service-account App grants are unsupported.
 Concurrent changes invalidate the reviewed grant revision; the last manager
 cannot be removed.
 
@@ -268,7 +302,7 @@ revision and a new latest publication in one transaction. Its automatic note is
 "Restore version X". Historical publications and user data remain intact. Source save revisions and publication
 numbers are separate. Expected working revisions prevent stale publish/restore.
 
-Administrators can select a historical publication in the runner's **Versions**
+Administrators can select a historical publication in Studio management's **Versions**
 dialog and start it for themselves without changing the version other users get.
 Starting a different version restarts that local session. **Restore**
 atomically appends a new latest publication and updates the working source, with

@@ -371,7 +371,8 @@ Assistant's `code_access_read` and `code_access_change` tools use the same App
 permission service as Studio and the existing code-access CLI commands. Agent
 changes require a freshly reviewed `accessRevision`; they cannot be pre-approved
 with a model-supplied flag. App Use is `read`, Manage is `admin`. App recipients
-are users, groups, or authenticated users, not public or service accounts.
+are users, groups, authenticated users, or public. Public only accepts `read`;
+public `admin` and service-account grants are rejected.
 
 For Skills, discover `core.ai.skill.access.read` and
 `core.ai.skill.access.change` through the CLI capability catalog and use the
@@ -410,3 +411,35 @@ and its rows irreversibly; it is not available as a JavaScript database method.
 Use an explicit user instruction for the named table. A full database reset is
 not a substitute. Known file collisions return `CONFLICT`, byte rejections
 `STORAGE_FULL`, and source validation failures `COMPILE_FAILED` with diagnostics.
+
+### Standalone and public Studio apps
+
+`cld assistant code url ID` returns the relative standalone `href`:
+`/app/assistant/apps/ID/run`. Resolve it against the selected Cloud instance.
+This URL runs the latest publication without the Assistant sidebar. Managers
+keep the Studio management view as their default entry; Use-level users enter
+the runner directly. Private links require sign-in and app access.
+
+Publish with `cld assistant code publish ID`, then share explicitly if requested:
+
+```bash
+cld assistant code grant ID --input '{"principal":{"type":"public"},"permission":"read"}'
+cld assistant code access ID
+```
+
+Remove the public entry using its returned access ID:
+
+```bash
+cld assistant code change-grant ID ACCESS_ID --input '{"permission":null}'
+```
+
+Public execution supports local computation, selected files, downloads and
+browser-local storage. It never grants app database, server files/KV, secrets,
+server HTTP/PDF or protected Cloud actions. Signed-in visitors need a separate
+explicit app grant for these features. Warn before sharing an app that requires
+them. Published code and embedded data become public, never its draft or history.
+Unpublishing also prevents public loads. Already downloaded code cannot be recalled.
+Operator `studio-admin grant` and `change-grant` enforce the same rules.
+
+Cloud administrators can use this runner URL as a Link shortcut in the existing
+navigation settings. Shortcut visibility and app access remain separate.

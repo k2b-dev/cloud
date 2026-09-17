@@ -1,5 +1,5 @@
 import { Button, DataTable, NoticeCard, Placeholder, TextInput, prompts, toast, useLocale } from "@k2b/ui";
-import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { StudioPermissions } from "./StudioPermissions";
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { createSignal, For, Show } from "solid-js";
 import type { artifactAdmin } from "./admin";
@@ -45,14 +45,9 @@ export default function Admin(props:{initial:Awaited<ReturnType<typeof artifactA
   });
   const permissions=(id:string)=>act(async()=>{
     const entries=await artifactClient.admin.access(id);
-    await prompts.dialog<void>(()=><PermissionEditor initialEntries={entries} canEdit allowPublic={false} allowServiceAccounts={false}
-      allowedLevels={[{level:"read",label:t().use},{level:"admin",label:t().manage}]}
-      grantAccess={async(principal,level)=>{
-        if(principal.type==="public"||principal.type==="service_account"||level==="write")throw new Error(t().INVALID_INPUT);
-        const grant=await artifactClient.admin.grant(id,principal,level);if(!grant)throw new Error(t().REQUEST_FAILED);return grant;
-      }}
-      updateAccess={async(accessId,level)=>{if(level==="write")throw new Error(t().INVALID_INPUT);await artifactClient.admin.change(id,accessId,level);}}
-      revokeAccess={async accessId=>{await artifactClient.admin.change(id,accessId,null);}}
+    await prompts.dialog<void>(()=><StudioPermissions entries={entries}
+      grant={(principal,level)=>artifactClient.admin.grant(id,principal,level)}
+      change={(accessId,level)=>artifactClient.admin.change(id,accessId,level)}
     />,{title:t().share,size:"medium"});
   });
   const page=(number:number)=>navigateTo(`/admin/assistant?page=${number}&search=${encodeURIComponent(search())}`);

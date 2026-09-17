@@ -72,7 +72,7 @@ export const artifactClient = {
     configure: async (input:{url:string;token?:string}) => {const response=await client.admin.database.settings.$put({json:input});await checked(response);return response.json();},
     test: async(input:{url:string;token?:string}) => {const response=await client.admin.database.test.$post({json:input});await checked(response);return response.json();},
     access: async (id:string) => {const response=await client.admin.resources[":id"].access.$get({param:{id}});await checked(response);return response.json();},
-    grant: async (id:string,principal:{type:"user";userId:string}|{type:"group";groupId:string}|{type:"authenticated"},permission:"read"|"admin") => {
+    grant: async (id:string,principal:{type:"user";userId:string}|{type:"group";groupId:string}|{type:"authenticated"}|{type:"public"},permission:"read"|"admin") => {
       const response=await client.admin.resources[":id"].access.$post({param:{id},json:{principal,permission}});await checked(response);return response.json();
     },
     change: async (id:string,accessId:string,permission:"read"|"admin"|null) => {
@@ -133,7 +133,7 @@ export const artifactClient = {
     const response = await client[":id"].access.$get({ param: { id } });
     await checked(response); return response.json();
   },
-  grant: async (id: string, principal: { type: "user"; userId: string } | { type: "group"; groupId: string } | { type: "authenticated" }, permission: "read" | "admin") => {
+  grant: async (id: string, principal: { type: "user"; userId: string } | { type: "group"; groupId: string } | { type: "authenticated" } | { type: "public" }, permission: "read" | "admin") => {
     const response = await client[":id"].access.$post({ param: { id }, json: { principal, permission } });
     await checked(response); return response.json();
   },
