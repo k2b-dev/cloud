@@ -304,3 +304,17 @@ plain text; undo/redo restores both text and reference identity.
 Pass the task list through `accessory`. Suggestions use that same location and
 restore the task list without changing its open state. Set `draftKey` when
 switching conversations so undo cannot bring content from another chat back.
+
+When changing a controlled draft outside the composer, use
+`reconcileChatMentions(before, after, mentions)` from `@k2b/ui` to update its
+reference ranges alongside the text. Edits before a reference shift its offsets;
+edits overlapping a reference remove its identity. The helper treats the changed
+span between the shared prefix and suffix as one replacement.
+
+```ts
+import { reconcileChatMentions, type ChatMention } from "@k2b/ui";
+
+function replaceDraft(before: string, after: string, mentions: readonly ChatMention[]) {
+  return { text: after, mentions: reconcileChatMentions(before, after, mentions) };
+}
+```

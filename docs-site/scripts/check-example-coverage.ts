@@ -37,11 +37,11 @@ export const recipeFixtures: RecipeFixture[] = [
   },
   {
     page: "platform/capabilities.md",
-    fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts"],
+    fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts", "browser-navigation.ts"],
   },
   {
     page: "platform/search.md",
-    fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts"],
+    fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts", "browser-navigation.ts"],
   },
   {
     page: "automation/author-and-publish-workflows.md",

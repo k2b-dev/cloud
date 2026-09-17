@@ -322,6 +322,7 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",
   findNavigationItem: "Documented lookup for the latest enabled Navigation item.",
   ChartSnapshotView: "Documented prepared-chart surface composed by ChartExplorer.",
   ChartFilterControls: "Documented filter surface composed by ChartExplorerControls.",
