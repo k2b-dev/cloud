@@ -585,7 +585,8 @@ out of a completed section. Completion is a host action, separate from progress.
 For a row whose only action is opening its preview, set `preview.trigger="row"`
 and omit `href` and `onClick`. Hover and focus still open the same preview;
 clicking the row or its trailing chevron keeps it open. The chevron appears on
-hover or keyboard focus and remains visible on touch devices. Existing previews
+hover or keyboard focus and remains visible on touch devices. Keyboard focus on
+the row or chevron outlines the complete row. Existing previews
 keep their separate info button and independent row navigation by default.
 A content callback receives `close` so selecting a destination can dismiss the
 preview before navigating or opening another dialog:
