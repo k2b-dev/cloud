@@ -75,12 +75,14 @@ const request = async (phase: string, path: string, init: RequestInit) => {
       );
     }
     const durationMs = performance.now() - start;
-    (timings[phase] ??= []).push(durationMs);
+    timings[phase] ??= [];
+    timings[phase].push(durationMs);
     if (durationMs >= 5000)
       console.info(
         JSON.stringify({ phase: "slow-request", requestPhase: phase, status: response.status, durationMs, at: new Date().toISOString() }),
       );
-    const phaseStatuses = (statuses[phase] ??= {});
+    statuses[phase] ??= {};
+    const phaseStatuses = statuses[phase];
     phaseStatuses[response.status] = (phaseStatuses[response.status] ?? 0) + 1;
     return { status: response.status, body };
   } finally {
