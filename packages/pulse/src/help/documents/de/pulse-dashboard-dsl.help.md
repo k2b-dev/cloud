@@ -219,7 +219,7 @@ Nutze `warn when value > 80` oder `critical when value = false`, um Metrik-Widge
 - Eine Zeile unterstützt bis zu 12 Zellen. `span` muss eine ganze Zahl von 1 bis 12 sein.
 - Ein Widget unterstützt bis zu acht visuelle Bedingungen.
 
-## Validierung und fehlende Daten
+## Validierung und fehlende Daten {icon="alert-circle"}
 
 Pulse speichert den DSL-Quelltext und das Aktualisierungsintervall und kompiliert daraus ein Darstellungsmodell. Alte Layouts, als String gespeicherte Konfigurationen, ungültige Werte und zu große Dokumente werden abgelehnt. Vorschau, Server-Rendering und Browser-Aktualisierung lösen Controls identisch auf.
 

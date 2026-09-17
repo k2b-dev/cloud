@@ -229,7 +229,7 @@ Query text is limited to 2,000 characters. Metric queries stop when more than 25
 
 A sample without a predecessor produces `null`, and empty buckets remain missing. Across a longer gap, the next pair reports average growth across that gap; Pulse cannot infer when individual increments happened. Values are not extrapolated to bucket boundaries and are not PromQL estimates. Percentiles (`p50` through `p99`) describe gauge samples only; histogram and summary quantiles are unsupported.
 
-## Exact periods and website identities
+## Exact periods and website identities {icon="calendar"}
 
 Use `from` and `to` together with UTC or offset timestamps. Do not combine them
 with `since`. The start is inclusive and the end exclusive. Relative queries also

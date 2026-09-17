@@ -133,6 +133,6 @@ Das Erstellen eines Wiederherstellungsentwurfs sendet niemals sofort. Prüfe Abs
 
 Mail speichert eingehende Berichte in der Aktivität der Unterhaltung. Ein Zustellbericht beschreibt, was ein Mailserver gemeldet hat. Ein Lesestatus beschreibt, was ein E-Mail-Programm gemeldet hat. Beides beweist nicht, dass eine Person die Nachricht gelesen, verstanden oder bearbeitet hat.
 
-## Termin über die Cloud-Suche anhängen
+## Termin über die Cloud-Suche anhängen {icon="calendar-event"}
 
 Wähle beim Bearbeiten **Kalendereinladung an diesen Entwurf anhängen** in der Cloud-Suche. Mail speichert den Entwurf und öffnet dieselbe Terminauswahl wie der Button im Composer. Empfänger, Text und Anhänge bleiben in diesem Entwurf. Behebe Speicherfehler oder eine Bearbeitungssperre zuerst. Gesendet wird weiterhin separat.

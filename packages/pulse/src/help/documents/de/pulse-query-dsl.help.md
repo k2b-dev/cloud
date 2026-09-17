@@ -229,7 +229,7 @@ Abfragetext ist auf 2.000 Zeichen begrenzt. Metrikabfragen brechen ab, wenn mehr
 
 Ohne Vorgänger entsteht `null`; leere Zeitfenster bleiben leer. Nach einer längeren Lücke beschreibt das nächste Wertepaar den mittleren Anstieg über diese Lücke. Wann einzelne Inkremente stattfanden, ist unbekannt. Pulse extrapoliert nicht auf Zeitfenstergrenzen und verwendet keine PromQL-Schätzung. Perzentile (`p50` bis `p99`) beschreiben ausschließlich Gauge-Messwerte; Histogramm- und Summary-Quantile werden nicht unterstützt.
 
-## Exakte Zeiträume und Website-Identitäten
+## Exakte Zeiträume und Website-Identitäten {icon="calendar"}
 
 `from` und `to` benötigen UTC-Zeitstempel oder einen expliziten Offset. Beide
 Grenzen gehören zusammen und dürfen nicht mit `since` kombiniert werden. Der

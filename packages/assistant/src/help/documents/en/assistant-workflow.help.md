@@ -88,7 +88,7 @@ Dictation errors stay in a notification until you close it. Choose **Retry**
 to repeat the failed step. Closing the notification does not discard the
 recording: its control still offers **Retry** and **Discard**.
 
-## Select slash commands and context
+## Select slash commands and context {icon="command"}
 
 Type `/` at a word boundary anywhere in the composer. Search by name or narrow
 the results with `/skill`, `/app`, `/file`, or `/project`. Arrow keys and Enter
@@ -103,7 +103,7 @@ You can permanently assign a Project once to a chat without a Project. Its
 instructions and files apply to future responses, and Project suggestions then
 disappear. Active and queued messages must finish before assignment.
 
-## Search chats
+## Search chats {icon="search"}
 
 **Search all chats** opens the global search for titles and message content in your
 Assistant chats. **Search this chat** limits it to messages in the open chat. The

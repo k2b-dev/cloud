@@ -219,7 +219,7 @@ Use `warn when value > 80` or `critical when value = false` to mark metric widge
 - A row supports up to 12 cells. `span` must be an integer from 1 to 12.
 - One widget supports up to eight visual conditions.
 
-## Validation and unavailable data
+## Validation and unavailable data {icon="alert-circle"}
 
 Pulse stores the DSL source and refresh setting. It compiles one render model from that source; old layouts, string-encoded configuration, invalid values, and oversized documents are rejected rather than repaired. The same controls resolve in previews, server rendering, and browser refreshes.
 

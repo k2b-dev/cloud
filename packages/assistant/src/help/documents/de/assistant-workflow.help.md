@@ -87,7 +87,7 @@ Fehlerhinweise bleiben als Benachrichtigung sichtbar, bis du sie schließt.
 verwirft die Aufnahme nicht: Am Icon bleiben „Erneut versuchen“ und „Verwerfen“
 erreichbar.
 
-## Slash-Befehle und Kontext auswählen
+## Slash-Befehle und Kontext auswählen {icon="command"}
 
 Tippe `/` an einer Wortgrenze im Eingabefeld, auch mitten im Text. Suche nach
 einem Namen oder grenze mit `/skill`, `/app`, `/file` oder `/project` ein.
@@ -105,7 +105,7 @@ Danach gelten seine Anweisungen und Dateien für neue Antworten; Projekt-Treffer
 verschwinden aus dem Slash-Menü. Laufende oder wartende Nachrichten müssen
 vorher abgeschlossen sein.
 
-## Chats durchsuchen
+## Chats durchsuchen {icon="search"}
 
 **Alle Chats durchsuchen** öffnet die globale Suche für Titel und Nachrichteninhalte
 deiner Assistant-Chats. **Diesen Chat durchsuchen** begrenzt sie auf Nachrichten im

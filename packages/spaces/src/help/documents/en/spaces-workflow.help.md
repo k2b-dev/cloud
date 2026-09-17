@@ -52,6 +52,6 @@ release the claim before completing the task from another session or moving it
 through a wormhole. An administrator can recover an abandoned claim through the
 CLI. Ordinary collaborative edits remain available while a task is claimed.
 
-## Prepare invitations from Cloud search
+## Prepare invitations from Cloud search {icon="calendar-event"}
 
 Open an event to see **Prepare invitation** in Cloud search. If an invitation already exists, you can prepare its update or cancellation. Choose the sending mailbox and recipients, then continue in Mail to review and send the draft. The action is available only with event editing access and an eligible mailbox.

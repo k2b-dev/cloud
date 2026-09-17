@@ -30,6 +30,6 @@ Accounts shows your own account context and gives admins one place to manage use
 FreeIPA-backed users and groups are written through the Accounts service when FreeIPA is enabled. Local accounts and local groups stay in the Cloud database.
 :::
 
-## Find an account or group
+## Find an account or group {icon="search"}
 
 The search button and **Cmd/Ctrl+Shift+K** open Cloud search with an Accounts chip. Search readable groups; administrators can also find users and service accounts. Select a result to open its existing administration page. Remove the chip to search other apps.

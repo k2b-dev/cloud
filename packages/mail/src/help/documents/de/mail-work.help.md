@@ -172,7 +172,7 @@ Beim Aufteilen in der Weboberfläche wählst du eine einzelne Nachricht. Sie und
 
 Es gibt kein automatisches Rückgängigmachen. Du kannst die Gruppierung mit denselben Aktionen erneut korrigieren. Frühere Zuständigkeiten, Erinnerungen oder andere Zusammenarbeitsdaten werden dadurch jedoch nicht wiederhergestellt. Die Änderungen erscheinen im Aktivitätsverlauf der Unterhaltung. Ändert eine andere Person vor deiner Bestätigung eine der betroffenen Unterhaltungen, lehnt Mail die veraltete Änderung ab. Lade die Ansicht neu und prüfe sie erneut.
 
-## Dieses Postfach durchsuchen
+## Dieses Postfach durchsuchen {icon="search"}
 
 Mit **Cmd/Ctrl+Shift+K** suchst du in den Nachrichten und Anhängen des geöffneten Postfachs. Entferne den Chip mit dem Postfachnamen, um die gesamte Cloud zu durchsuchen.
 
