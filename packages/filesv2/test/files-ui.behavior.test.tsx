@@ -29,7 +29,16 @@ const flush = async () => {
 const configuration: PublicConfiguration = {
   url: "http://filegate:4000",
   tokenConfigured: true,
-  cloud: { enabled: false, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+  cloud: {
+    autoCreate: false,
+    autoArchive: true,
+    enabled: false,
+    root: "cloud",
+    prefix: "",
+    homes: "users",
+    groups: "groups",
+    archive: "archive",
+  },
   freeipa: { enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
 };
 const directory: DirectoryResult = {
@@ -66,9 +75,17 @@ describe("Files v2 interactions", () => {
 
   test("configuration never preloads a token and keeps user input after an API failure", async () => {
     const dom = createDomTestHarness();
-    const { default: Settings } = await import("../src/frontend/Settings.island");
+    const { default: Settings } = await import("../src/frontend/Settings");
     const dispose = render(
-      () => createComponent(Settings, { configuration, availability: { localLinuxEnabled: false, freeipaEnabled: true } }),
+      () =>
+        createComponent(Settings, {
+          configuration,
+          availability: { localLinuxEnabled: false, freeipaEnabled: true },
+          onSaved: async () => {
+            refreshes++;
+          },
+          onDirtyChange: () => {},
+        }),
       dom.root,
     );
     cleanup = () => {
@@ -81,22 +98,27 @@ describe("Files v2 interactions", () => {
     expect(dom.root.textContent).toContain("Cloud files require local Linux identities");
     const form = dom.root.querySelector("form")!;
     const submit = () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    const url = dom.root.querySelector<HTMLInputElement>('input[name="filegate-url"]')!;
+    url.value = "http://filegate:4001";
+    url.dispatchEvent(new Event("input", { bubbles: true }));
     submit();
     submit();
     await flush();
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.input).toEqual({ json: { url: configuration.url, cloud: configuration.cloud, freeipa: configuration.freeipa } });
+    expect(requests[0]!.input).toEqual({
+      json: { url: "http://filegate:4001", cloud: configuration.cloud, freeipa: configuration.freeipa },
+    });
     requests[0]!.resolve(Response.json({ code: "unavailable", message: "Filegate is unavailable." }, { status: 503 }));
     await flush();
     expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain("Filegate is unavailable");
-    expect(dom.document.querySelector<HTMLInputElement>('input[name="filegate-url"]')!.value).toBe(configuration.url);
+    expect(dom.document.querySelector<HTMLInputElement>('input[name="filegate-url"]')!.value).toBe("http://filegate:4001");
     secret.value = "replacement-test-token";
     secret.dispatchEvent(new Event("input", { bubbles: true }));
     submit();
     await flush();
     expect(requests).toHaveLength(2);
     expect(requests[1]!.input).toEqual({
-      json: { url: configuration.url, cloud: configuration.cloud, freeipa: configuration.freeipa, token: "replacement-test-token" },
+      json: { url: "http://filegate:4001", cloud: configuration.cloud, freeipa: configuration.freeipa, token: "replacement-test-token" },
     });
     requests[1]!.resolve(Response.json({}));
     await flush();

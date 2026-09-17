@@ -1,6 +1,7 @@
 import type { RequestActor } from "@k2b/cloud/server";
-import { accountIdentities } from "@k2b/cloud/services";
+import { type AccountIdentityGroup, type AccountIdentityPage, type AccountIdentityUser, accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type Node, type RootClient, type RootInfo } from "@k2b/filegate";
+import { z } from "zod";
 import type {
   AdminResult,
   Area,
@@ -11,11 +12,15 @@ import type {
   ConfigurationInput,
   DirectoryResult,
   DownloadLease,
+  InventoryEntry,
+  InventoryState,
   RootSummary,
 } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
+import { operations } from "../data/operations";
 import { readConfiguration, writeConfiguration } from "./configuration";
 import { FilesError } from "./errors";
+import { createDirectoryLifecycle } from "./lifecycle";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
 import { permits, type UnixIdentity } from "./posix";
 
@@ -27,6 +32,24 @@ type Identity = { id: string; name: string; uid: number | null; gid: number | nu
 type Candidate = NewBinding & { name: string };
 type Inspection = { summary: BaseSummary; candidate: Candidate; binding: Binding | null };
 const PAGE_SIZE = 50;
+const filesystemCursor = z.tuple([
+  z.string().max(4096).nullable(),
+  z
+    .number()
+    .int()
+    .min(0)
+    .max(PAGE_SIZE - 1),
+]);
+function readFilesystemCursor(value: string): [string | null, number] {
+  if (value === "fs:") return [null, 0];
+  try {
+    return filesystemCursor.parse(JSON.parse(Buffer.from(value.slice(3), "base64url").toString()));
+  } catch {
+    throw new FilesError("invalid_cursor");
+  }
+}
+const writeFilesystemCursor = (after: string | null, offset = 0) =>
+  `fs:${Buffer.from(JSON.stringify([after, offset])).toString("base64url")}`;
 const areaProvider = (area: Area) => (area === "cloud" ? ("local" as const) : ("ipa" as const));
 const rootSummary = (info: RootInfo): RootSummary => ({
   name: info.name,
@@ -79,6 +102,7 @@ export function createFilesService(
       }),
   },
 ) {
+  const { provisionCandidate, ...lifecycle } = createDirectoryLifecycle(deps);
   async function allGroups(actor: RequestActor): Promise<Group[]> {
     const result: Group[] = [];
     const deadline = Date.now() + 10_000;
@@ -123,7 +147,11 @@ export function createFilesService(
       binding,
     });
     let existing = await deps.bindings.find(item);
+    if (!existing.length && (await operations.retiredPath(item.root, item.path))) return result("retired", "retired");
     if (existing.some((binding) => !sameBinding(binding, item))) return result("conflict", "binding_conflict");
+    if (existing.some((binding) => ["retired", "archived", "deleted"].includes(binding.lifecycle)))
+      return result("retired", "retired", existing[0] ?? null);
+    if (await operations.pending(item.root, item.path)) return result("unknown", "operation_pending", existing[0] ?? null);
     let node: Node;
     try {
       node = await root.stat(item.path);
@@ -199,7 +227,11 @@ export function createFilesService(
     if (issue) throw new FilesError(issue, 403);
     const root = deps.connect(state.config).root(item.root);
     const info = await root.info();
-    const inspection = await inspect(root, item, info);
+    let inspection = await inspect(root, item, info);
+    if (inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
+      await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
+      inspection = await inspect(root, item, info);
+    }
     if (inspection.summary.status !== "existing") throw new FilesError(inspection.summary.reason ?? "forbidden", 403);
     const relative = userPath(path);
     const target = joinPath(item.path, relative);
@@ -214,6 +246,7 @@ export function createFilesService(
     return deps.identities.self(actor);
   }
   return {
+    ...lifecycle,
     async bases(actor: RequestActor): Promise<BasesResult> {
       const state = await context(actor);
       const output: BasesResult = { items: [], issues: [] };
@@ -227,7 +260,11 @@ export function createFilesService(
           const root = deps.connect(state.config).root(state.config[area].root);
           const info = await root.info();
           for (const item of state.candidates.filter((item) => item.area === area)) {
-            const entry = await inspect(root, item, info);
+            let entry = await inspect(root, item, info);
+            if (entry.summary.status === "missing" && area === "cloud" && state.config.cloud.autoCreate) {
+              await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
+              entry = await inspect(root, item, info);
+            }
             if (entry.summary.status === "existing" && area === "freeipa") {
               try {
                 await checkUnix(root, item.path, state.unix, 5);
@@ -289,7 +326,10 @@ export function createFilesService(
       }
       await deps.writeConfiguration(input);
     },
-    async admin(actor: RequestActor, input: { area: Area; kind: BaseKind; after?: string }): Promise<AdminResult> {
+    async admin(
+      actor: RequestActor,
+      input: { area: Area; kind: BaseKind; after?: string; q?: string; status?: InventoryState; includeEntries?: "true" | "false" },
+    ): Promise<AdminResult> {
       const self = await requireAdmin(actor);
       const config = await deps.readConfiguration();
       const { token: _token, ...configuration } = config;
@@ -308,109 +348,197 @@ export function createFilesService(
         output.issue = "unavailable";
         return output;
       }
-      const after = input.after;
-      if (!after?.startsWith("fs:")) {
-        const page =
-          input.kind === "users"
-            ? await deps.identities.inventory(actor, { kind: "users", provider: areaProvider(input.area), after })
-            : await deps.identities.inventory(actor, { kind: "groups", provider: areaProvider(input.area), after });
-        for (const identity of page.items) {
-          if (("gidNumber" in identity && identity.gidNumber === null) || ("profile" in identity && identity.profile !== "user")) continue;
-          const item = candidate(
-            config,
-            input.area,
-            input.kind,
-            "username" in identity
-              ? {
-                  id: identity.id,
-                  name: identity.username,
-                  uid: input.area === "freeipa" ? (identity.posix?.uidNumber ?? null) : null,
-                  gid: input.area === "freeipa" ? (identity.posix?.primaryGidNumber ?? null) : null,
-                }
-              : { id: identity.id, name: identity.name, uid: null, gid: identity.gidNumber },
-          );
-          try {
-            const inspected = await inspect(root, item, info);
-            output.items.push({
-              area: input.area,
-              kind: input.kind,
-              identityId: item.identity_id,
-              name: item.name,
-              path: item.path,
-              status: inspected.summary.status,
-              reason: inspected.summary.reason,
-              canAdopt: input.area === "cloud" && inspected.summary.status === "unassigned",
-            });
-          } catch {
-            output.items.push({
-              area: input.area,
-              kind: input.kind,
-              identityId: item.identity_id,
-              name: item.name,
-              path: item.path,
-              status: "unknown",
-              reason: "unavailable",
-              canAdopt: false,
-            });
-          }
+      if (input.includeEntries === "false") return output;
+      // Leave response time within the HTTP idle window even when FreeIPA is slow.
+      const deadline = Date.now() + 5_000;
+      const signal = AbortSignal.timeout(5_000);
+      const matchesSearch = (name: string, path: string) =>
+        !input.q || `${name} ${path}`.toLocaleLowerCase().includes(input.q.toLocaleLowerCase());
+      const include = (item: InventoryEntry) => {
+        if (input.status && item.status !== input.status) return;
+        if (!matchesSearch(item.name, item.path)) return;
+        output.items.push(item);
+      };
+      const entry = async (name: string, identityId: string | null, knownCandidate: Candidate | null): Promise<InventoryEntry> => {
+        const path = joinPath(
+          config[input.area].prefix,
+          input.kind === "users" ? config[input.area].homes : config[input.area].groups,
+          name,
+        );
+        const binding = await deps.bindings.path(root.name, path);
+        const proof = await deps.identities.reconcile(actor, {
+          kind: input.kind,
+          provider: areaProvider(input.area),
+          name,
+          identityId: binding?.identity_id,
+          signal,
+        });
+        const node = await root.stat(path).catch((error) => {
+          if (error instanceof FilegateError && error.status === 404) return null;
+          throw error;
+        });
+        let status: InventoryState = node ? "unassigned" : "missing";
+        let reason: string | null = null;
+        if (proof.state === "unknown") {
+          status = "unknown";
+          reason = "identity_unknown";
+        } else if (proof.state === "absent") {
+          status = node ? "orphaned" : "missing";
+          reason = "identity_missing";
+        } else if (binding && proof.identity.id !== null && binding.identity_id !== proof.identity.id) {
+          status = "conflict";
+          reason = "binding_conflict";
+        } else if (!proof.eligible) {
+          status = input.area === "freeipa" ? "unknown" : node ? "orphaned" : "missing";
+          reason = "identity_ineligible";
+        } else if (node && !node.directory) {
+          status = "conflict";
+          reason = "not_directory";
+        } else if (
+          node &&
+          input.area === "freeipa" &&
+          (node.gid !== proof.identity.gidNumber || (input.kind === "users" && node.uid !== proof.identity.uidNumber))
+        ) {
+          status = "conflict";
+          reason = "ownership_mismatch";
+        } else if (knownCandidate) {
+          const checked = await inspect(root, knownCandidate, info);
+          status = checked.summary.status;
+          reason = checked.summary.reason;
+        } else if (node && proof.state === "present") {
+          status = "existing";
+          reason = null;
         }
-        output.next = page.nextCursor ?? "fs:";
-        return output;
-      }
-      const parent = joinPath(config[input.area].prefix, input.kind === "users" ? config[input.area].homes : config[input.area].groups);
-      try {
-        const page = await root.list(parent, { limit: PAGE_SIZE, after: after.slice(3) || undefined });
-        for (const node of page.items) {
-          const binding = await deps.bindings.path(config[input.area].root, node.path);
-          const name = node.path.split("/").at(-1)!;
-          const known =
+        if (binding && status !== "conflict" && ["retired", "archived", "deleted"].includes(binding.lifecycle)) {
+          status = "retired";
+          reason = "retired";
+        }
+        if (!binding && status !== "conflict" && (await operations.retiredPath(root.name, path))) {
+          status = "retired";
+          reason = "retired";
+        }
+        const pending = await operations.pendingWithin(root.name, path);
+        if (pending) {
+          status = "unknown";
+          reason = "operation_pending";
+        }
+        const safe = !pending && proof.state !== "unknown" && status !== "conflict";
+        const adopt = input.area === "cloud" && status === "unassigned" && identityId !== null;
+        return {
+          area: input.area,
+          kind: input.kind,
+          identityId,
+          name,
+          path,
+          status,
+          reason,
+          baseId: binding?.id ?? null,
+          operationId: pending?.id ?? null,
+          uid: node?.uid ?? null,
+          gid: node?.gid ?? null,
+          actions: {
+            create: status === "missing" && identityId !== null && proof.state === "present" && proof.eligible,
+            adopt,
+            archive: Boolean(node?.directory && safe && binding?.lifecycle !== "archived" && binding?.lifecycle !== "deleted"),
+            browse: Boolean(node?.directory),
+            delete: Boolean(node && safe),
+            retire: binding !== null && binding.lifecycle === "active" && safe,
+          },
+        };
+      };
+      // Fill a filtered page across both sources within the scan budget.
+      // The cursor records every consumed row,
+      // including filtered rows, so empty partial scans still make progress.
+      let cursor: string | null | undefined = input.after;
+      while (cursor !== null && output.items.length < PAGE_SIZE && Date.now() < deadline) {
+        if (!cursor?.startsWith("fs:")) {
+          const page: AccountIdentityPage<AccountIdentityUser | AccountIdentityGroup> =
             input.kind === "users"
-              ? await deps.identities.inventory(actor, { kind: "users", provider: areaProvider(input.area), name })
-              : await deps.identities.inventory(actor, { kind: "groups", provider: areaProvider(input.area), name });
-          if (known.items.length) {
-            const current = known.items[0]!;
-            if (("gidNumber" in current && current.gidNumber === null) || ("profile" in current && current.profile !== "user")) {
-              output.items.push({
+              ? await deps.identities.inventory(actor, { kind: "users", provider: areaProvider(input.area), after: cursor })
+              : await deps.identities.inventory(actor, { kind: "groups", provider: areaProvider(input.area), after: cursor });
+          if (page.items.length === 0) cursor = page.nextCursor ?? "fs:";
+          for (const [index, identity] of page.items.entries()) {
+            if (Date.now() >= deadline || output.items.length >= PAGE_SIZE) break;
+            cursor = index === page.items.length - 1 ? (page.nextCursor ?? "fs:") : identity.id;
+            if (("gidNumber" in identity && identity.gidNumber === null) || ("profile" in identity && identity.profile !== "user"))
+              continue;
+            const item = candidate(
+              config,
+              input.area,
+              input.kind,
+              "username" in identity
+                ? {
+                    id: identity.id,
+                    name: identity.username,
+                    uid: input.area === "freeipa" ? (identity.posix?.uidNumber ?? null) : null,
+                    gid: input.area === "freeipa" ? (identity.posix?.primaryGidNumber ?? null) : null,
+                  }
+                : { id: identity.id, name: identity.name, uid: null, gid: identity.gidNumber },
+            );
+            if (!matchesSearch(item.name, item.path)) continue;
+            try {
+              include(await entry(item.name, item.identity_id, item));
+            } catch {
+              include({
                 area: input.area,
                 kind: input.kind,
-                identityId: current.id,
-                name,
-                path: node.path,
-                status: "conflict",
-                reason: "identity_ineligible",
-                canAdopt: false,
+                identityId: item.identity_id,
+                name: item.name,
+                path: item.path,
+                status: "unknown",
+                reason: "unavailable",
+                baseId: null,
+                operationId: null,
+                uid: null,
+                gid: null,
+                actions: { create: false, adopt: false, archive: false, browse: false, delete: false, retire: false },
               });
             }
-            continue;
           }
-          if (binding) {
-            output.items.push({
-              area: input.area,
-              kind: input.kind,
-              identityId: binding.identity_id,
-              name,
-              path: node.path,
-              status: input.area === "freeipa" ? "unknown" : "unassigned",
-              reason: "identity_missing",
-              canAdopt: false,
-            });
-            continue;
-          }
-          output.items.push({
-            area: input.area,
-            kind: input.kind,
-            identityId: null,
-            name: node.path.split("/").at(-1)!,
-            path: node.path,
-            status: input.area === "freeipa" ? "unknown" : "unassigned",
-            reason: "identity_unknown",
-            canAdopt: false,
-          });
+          continue;
         }
-        output.next = page.next ? `fs:${page.next}` : null;
-      } catch (error) {
-        if (!(error instanceof FilegateError && error.status === 404)) output.issue = "unavailable";
+        const [after, offset] = readFilesystemCursor(cursor);
+        const parent = joinPath(config[input.area].prefix, input.kind === "users" ? config[input.area].homes : config[input.area].groups);
+        try {
+          const page = await root.list(parent, { limit: PAGE_SIZE, after: after ?? undefined });
+          if (page.items.length <= offset) cursor = page.next ? writeFilesystemCursor(page.next) : null;
+          for (let index = offset; index < page.items.length; index++) {
+            if (Date.now() >= deadline || output.items.length >= PAGE_SIZE) break;
+            const node = page.items[index]!;
+            if (!node.path.startsWith(`${parent}/`) || node.path.slice(parent.length + 1).includes("/"))
+              throw new FilesError("unavailable", 503);
+            const name = node.path.slice(parent.length + 1);
+            const nextCursor =
+              index === page.items.length - 1
+                ? page.next
+                  ? writeFilesystemCursor(page.next)
+                  : null
+                : writeFilesystemCursor(after, index + 1);
+            if (!matchesSearch(name, node.path)) {
+              cursor = nextCursor;
+              continue;
+            }
+            const known =
+              input.kind === "users"
+                ? await deps.identities.inventory(actor, { kind: "users", provider: areaProvider(input.area), name })
+                : await deps.identities.inventory(actor, { kind: "groups", provider: areaProvider(input.area), name });
+            const identity = known.items[0];
+            // Eligible Cloud identities were already inspected in the first phase.
+            if (
+              !identity ||
+              !(("profile" in identity && identity.profile === "user") || ("gidNumber" in identity && identity.gidNumber !== null))
+            )
+              include(await entry(name, identity?.id ?? null, null));
+            cursor = nextCursor;
+          }
+        } catch (error) {
+          if (error instanceof FilegateError && error.status === 404) cursor = null;
+          else output.issue = "unavailable";
+          break;
+        }
       }
+      if (cursor === undefined) throw new FilesError("unavailable", 503);
+      output.next = cursor;
       return output;
     },
     async adopt(actor: RequestActor, input: { area: Area; kind: BaseKind; identityId: string }) {

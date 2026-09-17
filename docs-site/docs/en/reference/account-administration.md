@@ -70,6 +70,51 @@ proof that an upstream account or group was deleted. Filesystem consumers must
 inspect the filesystem separately; these reads do not track directory existence
 or require directories to have been created through Cloud.
 
+### Reconcile an identity before administrative cleanup
+
+`accountIdentities.reconcile(actor, { kind, provider, name, identityId?, signal? })`
+requires a current administrator and performs an exact identity lookup.
+The optional `identityId` protects local bindings against renames or provider
+changes. The result is one of:
+
+- `{ state: "present", identity: { id, name, uidNumber, gidNumber }, eligible }`.
+  Local `id` is the stable Cloud ID. An upstream FreeIPA identity has `id: null`
+  because it may never have been synchronized into Cloud.
+- `{ state: "absent" }` when the authoritative provider reports absence.
+- `{ state: "unknown", reason }` when lookup is disabled, unavailable, invalid,
+  or a local stable identity has changed its name or provider.
+
+Local lookups read the database directly. A local full user is eligible even
+when expired or its account category is disabled; those states are not deletion.
+A local group is eligible when it has a positive GID. A different identity
+reusing the recorded name returns its new ID, which consumers must treat as a
+binding conflict.
+
+FreeIPA uses exact `user_show` or `group_show` requests without Cloud sync group
+filters. `user_show` includes preserved users; a missing user is also checked
+with `stageuser_show`. Only structured upstream `NotFound` replies establish
+absence. Permission failures, incomplete responses, outages and missing mirror
+records never establish absence. An existing FreeIPA entry remains present even
+when POSIX fields are missing; `eligible: false` must not be treated as deletion.
+FreeIPA service credentials must have directory-wide visibility for these reads.
+Directory permissions that deliberately hide entries cannot be detected from a
+not-found reply. Reconciliation is a current observation, not a lock or a grant
+to delete files; recheck it immediately before the administrative operation.
+Pass an optional `AbortSignal` to bound an interactive scan or cancel it with
+the request. The signal covers the upstream session and exact lookups, combined
+with FreeIPA's existing 30-second timeout. Cancellation returns
+`{ state: "unknown", reason: "provider_unavailable" }`, never absence.
+
+Trusted application jobs can call
+`accountIdentities.localLifecycle({ kind, identityId, name })` without creating
+a request actor. This server-only read returns
+`{ localLinuxEnabled, identity }`, where `identity` uses the same result above.
+It supports only local identities and does not authorize an HTTP caller or
+filesystem mutation. The job owns its administrative policy and must stop when
+local Linux identities are disabled, the result is unknown, or identity IDs
+conflict. It must not use account expiry or disabled login categories as reasons
+to archive a directory.
+
 ### Administer Linux attributes
 
 The platform service `linuxIdentities`, exported from

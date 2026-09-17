@@ -3,7 +3,16 @@ import { relativePath, userPath, validateConfiguration } from "./paths";
 
 const configuration = {
   url: "http://filegate:4000",
-  cloud: { enabled: true, root: "cloud", prefix: "space", homes: "users", groups: "groups", archive: "archive" },
+  cloud: {
+    autoCreate: false,
+    autoArchive: true,
+    enabled: true,
+    root: "cloud",
+    prefix: "space",
+    homes: "users",
+    groups: "groups",
+    archive: "archive",
+  },
   freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "homes", groups: "groups", archive: "archive" },
 };
 describe("Files path boundaries", () => {

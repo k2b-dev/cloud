@@ -12,6 +12,7 @@ import {
   readCliInput,
 } from "@k2b/cloud/cli";
 import type { ApiType } from "./api";
+import { adminLifecycleCommands } from "./cli-admin";
 import { downloadFile } from "./cli-download";
 import {
   type AdminResult,
@@ -20,6 +21,8 @@ import {
   ConfigurationInputSchema,
   type DirectoryResult,
   type DownloadLease,
+  type InventoryState,
+  InventoryStateSchema,
 } from "./contracts";
 
 function filesCommands(locale?: string) {
@@ -40,7 +43,17 @@ function filesCommands(locale?: string) {
   const next = (ctx: CloudCliContext, cursor: string | null) => {
     if (cursor && ctx.options.output === "text") ctx.error(`${t({ en: "Next page: --after", de: "Nächste Seite: --after" })} ${cursor}`);
   };
-  const admin = (ctx: CloudCliContext, query: { area?: "cloud" | "freeipa"; kind?: "users" | "groups"; after?: string } = {}) =>
+  const admin = (
+    ctx: CloudCliContext,
+    query: {
+      area?: "cloud" | "freeipa";
+      kind?: "users" | "groups";
+      after?: string;
+      q?: string;
+      status?: InventoryState;
+      includeEntries?: "false";
+    } = {},
+  ) =>
     api(ctx)
       .admin.$get({ query })
       .then((response) => ctx.readJson<AdminResult>(response));
@@ -51,6 +64,14 @@ function filesCommands(locale?: string) {
       bases: t({ en: "Inspect accessible homes and group directories", de: "Zugängliche Nutzer- und Gruppenablagen anzeigen" }),
       admin: t({ en: "Inspect and configure storage as an administrator", de: "Ablagen als Administrator prüfen und konfigurieren" }),
       "admin configuration": t({ en: "Read or replace the storage configuration", de: "Ablagenkonfiguration lesen oder ersetzen" }),
+      "admin directories": t({
+        en: "Create, archive, retire or delete directories",
+        de: "Verzeichnisse erstellen, archivieren, stilllegen oder löschen",
+      }),
+      "admin archives": t({ en: "Inspect, restore or delete archives", de: "Archive prüfen, wiederherstellen oder löschen" }),
+      "admin files": t({ en: "Browse and manage files as administrator", de: "Dateien als Administrator durchsuchen und verwalten" }),
+      "admin root": t({ en: "Refresh statistics and rebuild the root index", de: "Statistiken aktualisieren und Root-Index neu aufbauen" }),
+      "admin operations": t({ en: "Resume pending directory operations", de: "Ausstehende Verzeichnisaktionen fortsetzen" }),
     },
     commands: [
       command("bases list", {
@@ -122,9 +143,23 @@ function filesCommands(locale?: string) {
       }),
       command("admin inventory", {
         summary: t({ en: "Inspect filesystem inventory and root statistics", de: "Dateisystembestand und Root-Statistiken prüfen" }),
-        flags: { area, kind, after },
+        flags: {
+          area,
+          kind,
+          after,
+          search: flag.string({ description: t({ en: "Filter names on the server", de: "Namen auf dem Server filtern" }) }),
+          status: flag.enum(InventoryStateSchema.options, {
+            description: t({ en: "Filter inventory status", de: "Bestandsstatus filtern" }),
+          }),
+        },
         async run({ ctx, flags }) {
-          const result = await admin(ctx, flags);
+          const result = await admin(ctx, {
+            area: flags.area,
+            kind: flags.kind,
+            after: flags.after,
+            q: flags.search,
+            status: flags.status,
+          });
           warn(ctx, result.issue);
           printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
             { key: "identityId", label: "ID" },
@@ -132,7 +167,17 @@ function filesCommands(locale?: string) {
             { key: "path", label: t({ en: "Path", de: "Pfad" }) },
             { key: "status", label: "Status" },
             { key: "reason", label: t({ en: "Reason", de: "Grund" }) },
-            { key: "canAdopt", label: t({ en: "Can assign", de: "Zuordenbar" }) },
+            { key: "uid", label: "UID" },
+            { key: "gid", label: "GID" },
+            {
+              key: "actions",
+              label: t({ en: "Actions", de: "Aktionen" }),
+              value: (entry) =>
+                Object.entries(entry.actions)
+                  .filter(([, enabled]) => enabled)
+                  .map(([action]) => action)
+                  .join(", "),
+            },
           ]);
           if (ctx.options.output === "text") {
             const unknown = t({ en: "unknown", de: "unbekannt" });
@@ -146,7 +191,7 @@ function filesCommands(locale?: string) {
       command("admin configuration get", {
         summary: t({ en: "Read configuration without the backend token", de: "Konfiguration ohne Backend-Token lesen" }),
         async run({ ctx }) {
-          const result = await admin(ctx);
+          const result = await admin(ctx, { includeEntries: "false" });
           if (!printStructured(ctx, result.configuration)) ctx.print(JSON.stringify(result.configuration, null, 2));
         },
       }),
@@ -207,6 +252,7 @@ function filesCommands(locale?: string) {
           if (!printStructured(ctx, result)) ctx.print(t({ en: "Directory assigned.", de: "Verzeichnis zugeordnet." }));
         },
       }),
+      ...adminLifecycleCommands(locale),
     ],
   });
 }

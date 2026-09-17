@@ -176,4 +176,63 @@ suite("public account identity reads against isolated Postgres", () => {
     await setting("freeipa.groups.admin", ["different-admins"]);
     await expect(service.inventory(actor, { kind: "groups", provider: "ipa" })).rejects.toMatchObject({ code: "admin_required" });
   });
+  test("reconciliation requires current admin authority and bypasses the Cloud mirror for IPA", async () => {
+    let calls = 0;
+    const authoritative = createAccountIdentityService(db, async ({ name }) => {
+      calls++;
+      return { state: "present", identity: { id: null, name, uidNumber: 20001, gidNumber: 20002 }, eligible: true };
+    });
+    const admin = await user("admin", "local", true);
+    const member = await user("member");
+    await expect(authoritative.reconcile(member, { kind: "users", provider: "ipa", name: "outside-sync" })).rejects.toMatchObject({
+      code: "admin_required",
+    });
+    expect(calls).toBe(0);
+    expect(await authoritative.reconcile(admin, { kind: "users", provider: "ipa", name: "outside-sync" })).toMatchObject({
+      state: "present",
+      identity: { id: null, name: "outside-sync" },
+    });
+    expect(calls).toBe(1);
+    await setting("freeipa.enable", false);
+    expect(await authoritative.reconcile(admin, { kind: "users", provider: "ipa", name: "outside-sync" })).toEqual({
+      state: "unknown",
+      reason: "provider_disabled",
+    });
+    expect(calls).toBe(1);
+  });
+  test("local lifecycle keeps expired and disabled-category users present; global disable does not imply absence", async () => {
+    const actor = await user("retained");
+    const input = { kind: "users" as const, identityId: actor.user.id, name: "retained" };
+    await db`UPDATE auth.users SET account_expires=now()-interval '1 day'`;
+    await setting("user.category.login.enabled", false);
+    expect(await service.localLifecycle(input)).toMatchObject({
+      localLinuxEnabled: true,
+      identity: { state: "present", eligible: true, identity: { id: actor.user.id } },
+    });
+    await setting("linux.identity_config", JSON.stringify({ ...config, enabled: false }));
+    expect(await service.localLifecycle(input)).toMatchObject({ localLinuxEnabled: false, identity: { state: "present", eligible: true } });
+  });
+  test("local lifecycle differentiates rename/provider changes, deleted ID, name reuse, and non-POSIX groups", async () => {
+    const actor = await user("original");
+    const input = { kind: "users" as const, identityId: actor.user.id, name: "original" };
+    await db`UPDATE auth.users SET uid='renamed' WHERE id=${actor.user.id}::uuid`;
+    expect((await service.localLifecycle(input)).identity).toEqual({ state: "unknown", reason: "identity_conflict" });
+    await db`UPDATE auth.users SET uid='original',provider='ipa' WHERE id=${actor.user.id}::uuid`;
+    expect((await service.localLifecycle(input)).identity).toEqual({ state: "unknown", reason: "identity_conflict" });
+    await db`DELETE FROM auth.users WHERE id=${actor.user.id}::uuid`;
+    expect((await service.localLifecycle(input)).identity).toEqual({ state: "absent" });
+    const reused = await user("original");
+    expect((await service.localLifecycle(input)).identity).toMatchObject({ state: "present", identity: { id: reused.user.id } });
+    const id = await group("logical", "local", 200003);
+    expect((await service.localLifecycle({ kind: "groups", identityId: id, name: "logical" })).identity).toMatchObject({
+      state: "present",
+      eligible: true,
+    });
+    await db`UPDATE auth.groups SET gid_number=NULL WHERE id=${id}::uuid`;
+    expect((await service.localLifecycle({ kind: "groups", identityId: id, name: "logical" })).identity).toMatchObject({
+      state: "present",
+      eligible: false,
+      identity: { id, gidNumber: null },
+    });
+  });
 });

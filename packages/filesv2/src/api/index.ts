@@ -16,12 +16,22 @@ import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
+  AdminBrowseSchema,
+  AdminDeleteSchema,
+  AdminLocatorSchema,
   AdminQuerySchema,
   AdoptInputSchema,
+  ArchiveInputSchema,
+  ArchiveQuerySchema,
   BrowseQuerySchema,
   ConfigurationInputSchema,
+  ConfirmPathSchema,
+  DeleteDirectorySchema,
+  DirectoryIdentitySchema,
+  DirectoryTargetSchema,
   DownloadInputSchema,
   ErrorSchema,
+  RootActionSchema,
 } from "../contracts";
 import { FilesError, filesService } from "../service";
 import { errorMessage } from "./messages";
@@ -31,8 +41,14 @@ const api = new Hono<AuthContext>()
   .use("*", auth.requireRole("user"))
   .onError((error, c) => {
     const known = error instanceof FilesError || error instanceof AccountIdentityError;
-    const code = known ? error.code : error instanceof FilegateError && error.status === 404 ? "not_found" : "unavailable";
-    const status = known ? error.status : code === "not_found" ? 404 : 503;
+    const code = known
+      ? error.code
+      : error instanceof FilegateError && error.status === 404
+        ? "not_found"
+        : error instanceof FilegateError && error.status === 409
+          ? "path_conflict"
+          : "unavailable";
+    const status = known ? error.status : code === "not_found" ? 404 : code === "path_conflict" ? 409 : 503;
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
   .get("/bases", middleware.openapi({ summary: "List accessible file bases", ...requiresAuth }), async (c) =>
@@ -80,6 +96,86 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Bind an existing directory to its current identity", ...requiresAdmin }),
     v("json", AdoptInputSchema),
     async (c) => respond(c, ok(await filesService.adopt(c.get("actor"), c.req.valid("json")))),
+  )
+  .post(
+    "/admin/directories/create",
+    middleware.openapi({ summary: "Create a missing identity directory", ...requiresAdmin }),
+    v("json", DirectoryIdentitySchema),
+    async (c) => respond(c, ok(await filesService.provision(c.get("actor"), c.req.valid("json")))),
+  )
+  .post(
+    "/admin/directories/archive",
+    middleware.openapi({ summary: "Archive a directory without overwriting", ...requiresAdmin }),
+    v("json", ArchiveInputSchema),
+    async (c) => respond(c, ok(await filesService.archive(c.get("actor"), c.req.valid("json")))),
+  )
+  .post(
+    "/admin/directories/retire",
+    middleware.openapi({ summary: "Retire a directory binding", ...requiresAdmin }),
+    v("json", DirectoryTargetSchema),
+    async (c) => respond(c, ok(await filesService.retire(c.get("actor"), c.req.valid("json")))),
+  )
+  .post(
+    "/admin/directories/delete",
+    middleware.openapi({ summary: "Permanently delete an explicitly confirmed directory", ...requiresAdmin }),
+    v("json", DeleteDirectorySchema),
+    async (c) => respond(c, ok(await filesService.deleteDirectory(c.get("actor"), c.req.valid("json")))),
+  )
+  .get(
+    "/admin/archives",
+    middleware.openapi({ summary: "List archived directories", ...requiresAdmin }),
+    v("query", ArchiveQuerySchema),
+    async (c) => respond(c, ok(await filesService.archives(c.get("actor"), c.req.valid("query")))),
+  )
+  .post(
+    "/admin/archives/:id/restore",
+    middleware.openapi({ summary: "Restore an archive to its original path", ...requiresAdmin }),
+    v("param", z.object({ id: z.string().uuid() })),
+    v("json", ConfirmPathSchema),
+    async (c) => respond(c, ok(await filesService.restore(c.get("actor"), c.req.valid("param").id, c.req.valid("json")))),
+  )
+  .delete(
+    "/admin/archives/:id",
+    middleware.openapi({ summary: "Permanently delete a confirmed archive", ...requiresAdmin }),
+    v("param", z.object({ id: z.string().uuid() })),
+    v("json", ConfirmPathSchema),
+    async (c) => respond(c, ok(await filesService.deleteArchive(c.get("actor"), c.req.valid("param").id, c.req.valid("json")))),
+  )
+  .get(
+    "/admin/entries",
+    middleware.openapi({ summary: "Browse managed directories including trash and archives", ...requiresAdmin }),
+    v("query", AdminBrowseSchema),
+    async (c) => respond(c, ok(await filesService.adminList(c.get("actor"), c.req.valid("query")))),
+  )
+  .post(
+    "/admin/download",
+    middleware.openapi({ summary: "Issue an administrative single-file lease", ...requiresAdmin }),
+    v("json", AdminLocatorSchema),
+    async (c) => respond(c, ok(await filesService.adminDownload(c.get("actor"), c.req.valid("json")))),
+  )
+  .delete(
+    "/admin/entries",
+    middleware.openapi({ summary: "Permanently delete a confirmed file or folder", ...requiresAdmin }),
+    v("json", AdminDeleteSchema),
+    async (c) => respond(c, ok(await filesService.adminDelete(c.get("actor"), c.req.valid("json")))),
+  )
+  .post(
+    "/admin/root/refresh",
+    middleware.openapi({ summary: "Refresh statistics for the entire Filegate root", ...requiresAdmin }),
+    v("json", RootActionSchema),
+    async (c) => respond(c, ok(await filesService.refreshRoot(c.get("actor"), c.req.valid("json").area))),
+  )
+  .post(
+    "/admin/root/rebuild",
+    middleware.openapi({ summary: "Rebuild the entire Filegate root index", ...requiresAdmin }),
+    v("json", RootActionSchema),
+    async (c) => respond(c, ok(await filesService.rebuildRoot(c.get("actor"), c.req.valid("json").area))),
+  )
+  .post(
+    "/admin/operations/:id/retry",
+    middleware.openapi({ summary: "Retry a pending directory operation after fresh checks", ...requiresAdmin }),
+    v("param", z.object({ id: z.string().uuid() })),
+    async (c) => respond(c, ok(await filesService.retry(c.get("actor"), c.req.valid("param").id))),
   );
 export default api;
 export type ApiType = typeof api;

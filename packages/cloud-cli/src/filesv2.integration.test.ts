@@ -82,7 +82,7 @@ async function serveTransfer(listener: RequestListener) {
 const area = { enabled: true, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" };
 const configuration = {
   url: "https://files.example.test",
-  cloud: area,
+  cloud: { ...area, autoCreate: false, autoArchive: true },
   freeipa: { ...area, enabled: false, root: "freeipa" },
   tokenConfigured: true,
 };
@@ -105,7 +105,10 @@ const inventoryItem = {
   area: "cloud",
   status: "unknown",
   reason: "identity_unavailable",
-  canAdopt: false,
+  baseId: null,
+  uid: null,
+  gid: null,
+  actions: { create: false, adopt: false, archive: false, browse: false, delete: false, retire: false },
 };
 const inventory = {
   configuration,
@@ -190,6 +193,7 @@ describe("Filesv2 CLI integration", () => {
     const config = await run(["--json", "filesv2", "admin", "configuration", "get"], options);
     expect(config.exitCode, config.stderr).toBe(0);
     expect(JSON.parse(config.stdout)).toEqual(configuration);
+    expect(requests.at(-1)?.url.searchParams.get("includeEntries")).toBe("false");
     const text = await run(["filesv2", "admin", "inventory"], options);
     expect(text.stdout).toContain("unbekannt");
     expect(text.stderr).toContain(inventory.next);
@@ -214,7 +218,7 @@ describe("Filesv2 CLI integration", () => {
     expect(JSON.parse(saved.stdout)).toEqual({ saved: true });
     expect(saved.stdout + saved.stderr).not.toContain(secret);
     expect(payloads[0]).toEqual({ ...input, token: secret });
-    for (const value of [input, { ...input, token: "" }]) {
+    for (const value of [input, { ...input, token: "" }, { ...input, cloud: { ...input.cloud, autoCreate: true, autoArchive: false } }]) {
       const result = await run(["--jsonl", "filesv2", "admin", "configuration", "set", "--stdin"], {
         server: server.url.href,
         stdin: JSON.stringify(value),
@@ -457,4 +461,319 @@ describe("Filesv2 CLI integration", () => {
       await new Promise<void>((done) => filegate.close(() => done()));
     }
   }, 15_000);
+
+  test("filters authoritative inventory and preserves archive metadata and pagination", async () => {
+    const archive = {
+      id: identityId,
+      area: "freeipa",
+      kind: "groups",
+      name: "old group",
+      originalPath: "prefix/groups/old group",
+      path: "prefix/archive/old-group-1",
+      state: "archived",
+      createdAt: "2026-09-18T12:00:00Z",
+      canRestore: true,
+      canDelete: true,
+    };
+    const archivePage = { items: [archive], next: identityId };
+    const orphan = {
+      ...inventoryItem,
+      status: "orphaned",
+      reason: "identity_missing",
+      actions: { ...inventoryItem.actions, archive: true, browse: true, delete: true },
+    };
+    const requests: URL[] = [];
+    const server = serve((request) => {
+      const url = new URL(request.url);
+      requests.push(url);
+      expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+      expect(request.headers.get("accept-language")).toBe("de");
+      return Response.json(url.pathname.endsWith("/archives") ? archivePage : { ...inventory, items: [orphan], issue: null });
+    });
+    const options = { server: server.url.href, locale: "de" };
+    const filtered = await run(
+      [
+        "--json",
+        "filesv2",
+        "admin",
+        "inventory",
+        "--area",
+        "freeipa",
+        "--kind",
+        "groups",
+        "--status",
+        "orphaned",
+        "--search",
+        "old & +",
+        "--after",
+        inventory.next,
+      ],
+      options,
+    );
+    expect(filtered.exitCode, filtered.stderr).toBe(0);
+    expect(JSON.parse(filtered.stdout)).toEqual({ ...inventory, items: [orphan], issue: null });
+    expect(requests[0]?.searchParams.get("q")).toBe("old & +");
+    expect(requests[0]?.searchParams.get("status")).toBe("orphaned");
+    expect(requests[0]?.searchParams.get("after")).toBe(inventory.next);
+    const archives = await run(
+      ["--json", "filesv2", "admin", "archives", "list", "--area", "freeipa", "--search", "old & +", "--after", identityId],
+      options,
+    );
+    expect(archives.exitCode, archives.stderr).toBe(0);
+    expect(JSON.parse(archives.stdout)).toEqual(archivePage);
+    expect(requests.at(-1)?.searchParams.get("area")).toBe("freeipa");
+    expect(requests.at(-1)?.searchParams.get("q")).toBe("old & +");
+    expect(requests.at(-1)?.searchParams.get("after")).toBe(identityId);
+    const lines = await run(["--jsonl", "filesv2", "admin", "archives", "list", "--area", "freeipa"], options);
+    expect(lines.exitCode, lines.stderr).toBe(0);
+    expect(
+      lines.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+    ).toEqual([archive]);
+  }, 15_000);
+
+  test("sends lifecycle operations only with confirmation and retains pending states", async () => {
+    const writes: Array<{ path: string; method: string; body: unknown }> = [];
+    const operation = { id: "operation-1", state: "pending", path: "prefix/groups/alumni" };
+    const server = serve(async (request) => {
+      writes.push({ path: new URL(request.url).pathname, method: request.method, body: await request.json() });
+      expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+      return Response.json(new URL(request.url).pathname.includes("/root/") ? inventory.root : operation);
+    });
+    const options = { server: server.url.href };
+    for (const args of [
+      ["directories", "create", identityId],
+      ["directories", "create", "not-a-uuid", "--yes"],
+      ["directories", "archive", "alumni"],
+      ["directories", "retire", "alumni"],
+      ["directories", "delete", "alumni", "--yes"],
+      ["archives", "restore", identityId, "--yes"],
+      ["archives", "delete", identityId, "--confirm-path", "prefix/archive/alumni"],
+      ["root", "rebuild"],
+    ]) {
+      const rejected = await run(["filesv2", "admin", ...args], options);
+      expect(rejected.exitCode).not.toBe(0);
+      expect(writes).toHaveLength(0);
+    }
+    const operations = [
+      {
+        args: ["directories", "create", identityId, "--area", "freeipa", "--kind", "groups", "--yes"],
+        path: "/directories/create",
+        method: "POST",
+        body: { area: "freeipa", kind: "groups", identityId },
+      },
+      {
+        args: ["directories", "archive", "alumni", "--kind", "groups", "--archive-path", "archiv/2026", "--yes"],
+        path: "/directories/archive",
+        method: "POST",
+        body: { area: "cloud", kind: "groups", name: "alumni", archivePath: "archiv/2026" },
+      },
+      {
+        args: ["directories", "retire", "alumni", "--kind", "groups", "--yes"],
+        path: "/directories/retire",
+        method: "POST",
+        body: { area: "cloud", kind: "groups", name: "alumni" },
+      },
+      {
+        args: ["directories", "delete", "alumni", "--kind", "groups", "--confirm-path", "prefix/groups/alumni", "--yes"],
+        path: "/directories/delete",
+        method: "POST",
+        body: { area: "cloud", kind: "groups", name: "alumni", confirmPath: "prefix/groups/alumni" },
+      },
+      {
+        args: ["archives", "restore", identityId, "--confirm-path", "prefix/groups/alumni", "--yes"],
+        path: `/archives/${identityId}/restore`,
+        method: "POST",
+        body: { confirmPath: "prefix/groups/alumni" },
+      },
+      {
+        args: ["archives", "delete", identityId, "--confirm-path", "prefix/archive/alumni", "--yes"],
+        path: `/archives/${identityId}`,
+        method: "DELETE",
+        body: { confirmPath: "prefix/archive/alumni" },
+      },
+      { args: ["root", "refresh", "--area", "freeipa"], path: "/root/refresh", method: "POST", body: { area: "freeipa" } },
+      { args: ["root", "rebuild", "--area", "freeipa", "--yes"], path: "/root/rebuild", method: "POST", body: { area: "freeipa" } },
+    ];
+    for (const expected of operations) {
+      const result = await run(["--json", "filesv2", "admin", ...expected.args], options);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(expected.path.startsWith("/root/") ? inventory.root : operation);
+      expect(writes.at(-1)).toEqual({ path: `/api/filesv2/admin${expected.path}`, method: expected.method, body: expected.body });
+    }
+  }, 35_000);
+
+  test("browses active and archived admin files and downloads directly with safe metadata", async () => {
+    const dir = await directory();
+    const requests: Array<{ method: string; url: URL; body: unknown }> = [];
+    const transferHeaders: Headers[] = [];
+    const filegate = serve((request) => {
+      transferHeaders.push(request.headers);
+      return new Response("archived bytes");
+    });
+    const page = {
+      area: "freeipa",
+      kind: "groups",
+      name: "alumni",
+      archiveId: identityId,
+      basePath: "prefix/archive/alumni",
+      path: "trash",
+      items: [{ ...entry, path: "trash/résumé.txt" }],
+      next: inventory.next,
+    };
+    const cloud = serve(async (request) => {
+      const url = new URL(request.url);
+      const body = request.method === "GET" ? null : await request.json();
+      requests.push({ method: request.method, url, body });
+      expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+      return Response.json(
+        url.pathname.endsWith("/download")
+          ? { url: `${filegate.url}?lease=${leaseSecret}`, method: "GET", expires: "2030-01-01T00:00:00Z" }
+          : page,
+      );
+    });
+    const options = { server: cloud.url.href };
+    for (const source of [
+      ["--name", "alumni", "--kind", "groups"],
+      ["--archive-id", identityId],
+    ]) {
+      const result = await run(
+        ["--json", "filesv2", "admin", "files", "list", "--area", "freeipa", ...source, "--path", "trash", "--after", inventory.next],
+        options,
+      );
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(page);
+      expect(requests.at(-1)?.url.searchParams.get("path")).toBe("trash");
+      expect(requests.at(-1)?.url.searchParams.get("after")).toBe(inventory.next);
+    }
+    expect(requests[0]?.url.searchParams.get("name")).toBe("alumni");
+    expect(requests[0]?.url.searchParams.get("archiveId")).toBeNull();
+    expect(requests[1]?.url.searchParams.get("archiveId")).toBe(identityId);
+    expect(requests[1]?.url.searchParams.get("name")).toBeNull();
+    const lines = await run(["--jsonl", "filesv2", "admin", "files", "list", "--area", "freeipa", "--archive-id", identityId], options);
+    expect(
+      lines.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+    ).toEqual(page.items);
+    const out = join(dir, "archive-file");
+    const downloaded = await run(
+      [
+        "--json",
+        "filesv2",
+        "admin",
+        "files",
+        "download",
+        "trash/résumé.txt",
+        "--area",
+        "freeipa",
+        "--archive-id",
+        identityId,
+        "--out",
+        out,
+      ],
+      options,
+    );
+    expect(downloaded.exitCode, downloaded.stderr).toBe(0);
+    expect(JSON.parse(downloaded.stdout)).toEqual({ path: out, bytes: 14 });
+    expect(await readFile(out, "utf8")).toBe("archived bytes");
+    expect(requests.at(-1)?.body).toEqual({ area: "freeipa", archiveId: identityId, path: "trash/résumé.txt" });
+    expect(downloaded.stdout + downloaded.stderr).not.toContain(leaseSecret);
+    expect(transferHeaders).toHaveLength(1);
+    expect(transferHeaders[0]?.get("authorization")).toBeNull();
+    expect(transferHeaders[0]?.get("cookie")).toBeNull();
+  }, 20_000);
+
+  test("requires one admin file locator and exact-path confirmation before permanent deletion", async () => {
+    const requests: Array<{ method: string; path: string; body: unknown }> = [];
+    const server = serve(async (request) => {
+      const body = await request.json();
+      requests.push({ method: request.method, path: new URL(request.url).pathname, body });
+      return Response.json({ code: "admin_required", message: "Administrator access required" }, { status: 403 });
+    });
+    const options = { server: server.url.href };
+    for (const args of [
+      ["list"],
+      ["list", "--name", "alumni", "--archive-id", identityId],
+      ["delete", "trash/file.txt", "--name", "alumni", "--yes"],
+      ["delete", "trash/file.txt", "--name", "alumni", "--confirm-path", "prefix/groups/alumni/trash/file.txt"],
+    ]) {
+      const result = await run(["filesv2", "admin", "files", ...args], options);
+      expect(result.exitCode).not.toBe(0);
+      expect(requests).toHaveLength(0);
+    }
+    const result = await run(
+      [
+        "--json",
+        "filesv2",
+        "admin",
+        "files",
+        "delete",
+        "trash/file.txt",
+        "--area",
+        "freeipa",
+        "--kind",
+        "groups",
+        "--name",
+        "alumni",
+        "--confirm-path",
+        "prefix/groups/alumni/trash/file.txt",
+        "--yes",
+      ],
+      options,
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Administrator access required");
+    expect(requests).toEqual([
+      {
+        method: "DELETE",
+        path: "/api/filesv2/admin/entries",
+        body: {
+          area: "freeipa",
+          kind: "groups",
+          name: "alumni",
+          path: "trash/file.txt",
+          confirmPath: "prefix/groups/alumni/trash/file.txt",
+        },
+      },
+    ]);
+  }, 20_000);
+
+  test("retries pending operations only with a valid confirmed UUID and preserves server preconditions", async () => {
+    const requests: Array<{ path: string; method: string; body: string }> = [];
+    let status = 200;
+    const operation = { id: identityId, state: "pending", path: "prefix/groups/alumni" };
+    const server = serve(async (request) => {
+      requests.push({ path: new URL(request.url).pathname, method: request.method, body: await request.text() });
+      expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+      expect(request.headers.get("accept-language")).toBe("de");
+      return status === 200
+        ? Response.json(operation)
+        : Response.json({ code: "identity_changed", message: "Identity changed; operation remains pending" }, { status });
+    });
+    const options = { server: server.url.href, locale: "de" };
+    for (const args of [[identityId], ["not-a-uuid", "--yes"]]) {
+      const rejected = await run(["filesv2", "admin", "operations", "retry", ...args], options);
+      expect(rejected.exitCode).not.toBe(0);
+      expect(requests).toHaveLength(0);
+    }
+    const retry = await run(["--json", "filesv2", "admin", "operations", "retry", identityId, "--yes"], options);
+    expect(retry.exitCode, retry.stderr).toBe(0);
+    expect(JSON.parse(retry.stdout)).toEqual(operation);
+    expect(requests).toEqual([{ path: `/api/filesv2/admin/operations/${identityId}/retry`, method: "POST", body: "" }]);
+    status = 409;
+    const refused = await run(["--json", "filesv2", "admin", "operations", "retry", identityId, "--yes"], options);
+    expect(refused.exitCode).not.toBe(0);
+    expect(refused.stdout).toBe("");
+    expect(refused.stderr).toContain("Identity changed; operation remains pending");
+    expect(requests).toHaveLength(2);
+    const help = await run(["filesv2", "admin", "operations", "retry", "--help"], { locale: "de" });
+    expect(help.exitCode, help.stderr).toBe(0);
+    expect(help.stdout).toContain("erneuter Prüfung");
+    expect(help.stdout).toContain("--yes");
+  }, 20_000);
 });

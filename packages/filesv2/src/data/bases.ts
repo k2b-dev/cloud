@@ -2,6 +2,7 @@ import { sql } from "bun";
 import type { Area, BaseKind } from "../contracts";
 export type Binding = {
   id: string;
+  lifecycle: "active" | "provisioning" | "retired" | "archived" | "deleted";
   area: Area;
   kind: BaseKind;
   identity_id: string;
@@ -11,12 +12,12 @@ export type Binding = {
   uid_number: number | null;
   gid_number: number | null;
 };
-export type NewBinding = Omit<Binding, "id">;
+export type NewBinding = Omit<Binding, "id" | "lifecycle">;
 export const bindings = {
   async find(candidate: NewBinding): Promise<Binding[]> {
     return sql<
       Binding[]
-    >`SELECT id,area,kind,identity_id,identity_name,root,path,uid_number::double precision AS uid_number,gid_number::double precision AS gid_number FROM filesv2.bases WHERE (root=${candidate.root} AND path=${candidate.path})
+    >`SELECT id,lifecycle,area,kind,identity_id,identity_name,root,path,uid_number::double precision AS uid_number,gid_number::double precision AS gid_number FROM filesv2.bases WHERE (root=${candidate.root} AND path=${candidate.path})
       OR (area=${candidate.area} AND kind=${candidate.kind} AND identity_id=${candidate.identity_id})`;
   },
   async claim(candidate: NewBinding): Promise<Binding[]> {
@@ -28,7 +29,7 @@ export const bindings = {
   async path(root: string, path: string): Promise<Binding | null> {
     const rows = await sql<
       Binding[]
-    >`SELECT id,area,kind,identity_id,identity_name,root,path,uid_number::double precision AS uid_number,gid_number::double precision AS gid_number FROM filesv2.bases WHERE root=${root} AND path=${path}`;
+    >`SELECT id,lifecycle,area,kind,identity_id,identity_name,root,path,uid_number::double precision AS uid_number,gid_number::double precision AS gid_number FROM filesv2.bases WHERE root=${root} AND path=${path}`;
     return rows[0] ?? null;
   },
 };

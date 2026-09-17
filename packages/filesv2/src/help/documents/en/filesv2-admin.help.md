@@ -1,41 +1,58 @@
 ---
 id: filesv2-admin
-title: Configure and inspect storage
+title: Manage storage and directories
 icon: ti ti-settings
-description: Connect Filegate, configure storage areas and inspect directory assignments.
+description: Connect Filegate, inspect directories, and manage their archive and lifecycle.
 order: 200
 ---
 
-Administrators configure Files v2 under **File administration**.
+Open **File administration** to manage Files v2. Its four views separate storage information, current directories, archived directories, and settings. Filters, folders, and pages remain in the address, including when you use Back or Forward.
 
-## Connect storage
+## Connect storage in Settings
 
-Enter the Filegate **Backend URL** and **Backend token**. The address must be reachable by the application. Filegate supplies the public addresses used for direct browser downloads. An existing token is never shown; leave the token field blank to keep it.
+Enter the Filegate **Backend URL** and **Backend token**. The application must be able to reach the address. Filegate supplies the public addresses for direct browser downloads. An existing token is never shown; leave its field blank to keep it. Use **Save configuration** to save your edits, or **Discard** to restore the saved values. Leaving with unsaved edits asks for confirmation.
 
-Configure Cloud and FreeIPA independently. Each area has a Filegate root and an optional relative base prefix. Home, group, and archive directories are relative to that prefix. Choose separate directory paths so the areas and reserved directories do not overlap.
+Enable Cloud and FreeIPA independently and select their Filegate roots. **Advanced paths** contains the optional base prefix and the home, group, and archive paths relative to that prefix. Keep these paths separate so the areas and reserved directories do not overlap.
 
-Cloud files require local Linux identities. FreeIPA files require FreeIPA to be enabled. Save the configuration before inspecting the selected area's inventory.
+Cloud storage requires enabled local Linux identities. Only eligible user accounts and POSIX groups have directories. **Create local directories automatically** is off by default. Automatic archiving is on by default and can be disabled separately; it archives managed directories of deleted local accounts or groups, and groups with POSIX disabled. Files remain recoverable. An unknown identity state never counts as deletion. FreeIPA has no automatic creation or archiving: choose its directory actions explicitly.
 
-The root's index and version-history settings come from Filegate. Files v2 does not provide separate switches. Root statistics cover the entire root, even when the area uses a prefix. Unknown counts and sizes are displayed as unknown.
+## Read the Overview
 
-## Inspect the filesystem
+The overview shows capacity, available space, active uploads, counts, and sizes for the selected root. Unknown values stay unknown. Statistics cover the whole root, including paths outside an area's prefix.
 
-Select **Cloud** or **FreeIPA**, then **Users** or **Groups**. **Refresh** checks the current filesystem, including directories an administrator created manually on the server.
+Index and version-history settings come from Filegate. **Refresh statistics** requests an updated root summary. **Rebuild index** requires confirmation because it affects the whole root.
+
+## Inspect Directories
+
+Select the area and **Users** or **Groups**. Search by name or filter by state. **Refresh** reads the current filesystem, including directories created manually on the server. Use **Next page** to continue the inventory.
 
 - **Present:** the directory is available for its identified account.
 - **Missing:** the expected directory is absent.
-- **Unassigned:** a directory is not connected to an eligible account.
-- **Conflict:** the existing directory or assignment needs review.
+- **Unassigned:** an existing directory has no confirmed assignment.
+- **Orphaned:** the identity is confirmed absent or no longer eligible.
+- **Retired:** the directory was explicitly taken out of active use.
+- **Conflict:** the path, identity, or Unix ownership needs review.
 - **Unknown:** the application could not establish the current state.
 
-Do not interpret an unknown state as proof that an account or directory was deleted. Check identity availability and the file-server connection first.
+Open a directory name to inspect its files and folders. **Trash** opens the directory's top-level trash folder. Files can be downloaded directly from Filegate after a fresh access check. An absent trash folder is reported as missing.
 
-Where **Assign directory** is available, verify the account and path before confirming. Assignment keeps the existing files in place. A directory without a matching eligible identity cannot be assigned through this action.
+Each row offers only currently available actions:
 
-## Administer from the terminal
+- **Details** shows the path, source, identity numbers, and state.
+- **Create directory** creates a missing eligible home or group directory. FreeIPA uses its UID, GID, and required permissions.
+- **Assign directory** associates a matching existing directory without moving its files.
+- **Archive** moves a directory out of active use. Enter an archive path relative to the area's base prefix; the saved archive path is suggested.
+- **Retire directory** disables active use and prevents automatic recreation while leaving its files in place.
+- **Permanently delete** requires typing the exact displayed path. It cannot be undone.
 
-`cld filesv2 admin inventory --area freeipa --kind groups --json` reads the same inventory and root statistics. Use `cloud` or `freeipa` for the area and `users` or `groups` for the kind. Pass the returned `next` cursor as `--after` to continue.
+A result of **In progress** means completion has not yet been confirmed. Refresh the inventory and use **Retry operation** where offered. Retrying checks the current identity, permissions, and filesystem again. A conflict requires review before another attempt.
 
-Read configuration with `cld filesv2 admin configuration get --json`. Submit a complete edited configuration with `cld filesv2 admin configuration set --input-file ./filesv2.json` or `--stdin`. An omitted or empty `token` keeps the saved secret. The read response never contains that secret.
+## Restore or remove an Archive
 
-After verifying the inventory entry, use `cld filesv2 admin adopt <identity-uuid> --area cloud --kind users --yes` to assign its existing directory. These commands require the same administrator permissions as the UI. They do not create, archive, or delete directories.
+The archive view shows original paths and archive dates. Open an archived directory to inspect its contents. **Restore** moves it back to its original path after confirmation; that destination must be available. Permanent deletion of an archive or an individual file requires its exact path. These destructive actions exist only in the administrator interface.
+
+## Use the terminal
+
+`cld filesv2 admin inventory --area freeipa --kind groups --json` reads the same inventory. Pass a returned `next` cursor with `--after`. Read configuration with `cld filesv2 admin configuration get --json`; write a complete edited configuration with `cld filesv2 admin configuration set --input-file ./filesv2.json` or `--stdin`. An omitted or empty `token` preserves the secret.
+
+Use `cld filesv2 help` for the directory, archive, and inspection commands. CLI actions require the same administrative permissions and confirmations as their interface counterparts.

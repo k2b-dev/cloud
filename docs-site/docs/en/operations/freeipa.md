@@ -60,12 +60,22 @@ Cloud uses JSON-RPC for:
 | Area | Required operations |
 | --- | --- |
 | Users | add, modify, delete, find, show |
-| Groups | add, modify, delete, find |
+| Groups | add, modify, delete, find, show |
 | Membership | add and remove members |
 | Member managers | add and remove member managers |
 | Hosts | modify, delete, find |
 | Host groups | add, modify, delete, find, add members, remove members |
 | Connectivity | ping |
+
+For administrative directory reconciliation, also allow `stageuser_show` and
+give the service account read visibility across all relevant users and groups,
+including preserved and staged users and entries excluded from Cloud sync.
+Cloud checks exact upstream identities before labeling a directory orphaned.
+An unavailable or denied lookup stays unknown. Directory permissions that hide
+entries can return a not-found result, so a restricted view cannot establish
+safe absence. This visibility requirement cannot be verified by `ping` alone.
+FreeIPA directory cleanup remains an explicit administrator action; see the
+[identity reconciliation contract](/en/docs/reference/account-administration).
 
 Cloud does not create hosts.
 

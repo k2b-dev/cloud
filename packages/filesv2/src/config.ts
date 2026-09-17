@@ -11,7 +11,7 @@ export const app = defineApp({
   adminHref: "/admin/filesv2",
   nav: { href: "/app/filesv2", match: "/app/filesv2", section: "primary", requiresAuth: true, requiresRoles: ["user"] },
   openapi: "/api/filesv2/openapi.json",
-  routes: ["/api/filesv2", "/app/filesv2", "/admin/filesv2"],
+  routes: ["/api/filesv2", "/app/filesv2", "/admin/filesv2", "/public/filesv2"],
   settings: {
     "filesv2.configuration": {
       kind: "secret",

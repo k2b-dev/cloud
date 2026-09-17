@@ -7,6 +7,7 @@ import { isAccountCategoryAllowed } from "../account-category-policy";
 import { toPgTextArray } from "../postgres";
 import { decryptValue } from "../settings/crypto";
 import { buildMemberGroupScopeCondition } from "./group-sql";
+import { type AccountIdentityReconciliation, readUpstreamIdentity } from "./identity-reconciliation";
 
 export type AccountIdentityUser = {
   id: string;
@@ -64,7 +65,7 @@ const cursor = (after?: string): string | null => {
 };
 
 /** Server-side identity reads. Authentication and application resource authorization remain caller-owned. */
-export const createAccountIdentityService = (db: typeof sql = sql) => {
+export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdentity = readUpstreamIdentity) => {
   const setting = async (key: string, fallback: unknown): Promise<unknown> => {
     const [row] = await db<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key}`;
     return row ? decryptValue(row.value) : fallback;
@@ -159,7 +160,73 @@ export const createAccountIdentityService = (db: typeof sql = sql) => {
       AND (${id}::uuid IS NULL OR g.id = ${id}::uuid) AND (${name}::text IS NULL OR g.name = ${name})`),
     );
   }
+  const readLocalIdentity = async (input: {
+    kind: "users" | "groups";
+    name: string;
+    identityId?: string;
+  }): Promise<AccountIdentityReconciliation> => {
+    if (input.kind === "users") {
+      const rows = await userRows(sql`(u.provider = 'local' AND u.uid = ${input.name}) OR u.id = ${input.identityId ?? null}::uuid`);
+      const expected = rows.find((row) => row.id === input.identityId);
+      if (expected && (expected.provider !== "local" || expected.uid !== input.name))
+        return { state: "unknown", reason: "identity_conflict" };
+      const matches = rows.filter((row) => row.provider === "local" && row.uid === input.name);
+      if (!matches.length) return { state: "absent" };
+      if (matches.length !== 1) return { state: "unknown", reason: "invalid_response" };
+      const current = projectUser(matches[0]!);
+      return {
+        state: "present",
+        identity: {
+          id: current.id,
+          name: current.username,
+          uidNumber: current.posix?.uidNumber ?? null,
+          gidNumber: current.posix?.primaryGidNumber ?? null,
+        },
+        eligible: current.profile === "user",
+      };
+    }
+    const rows = await groupRows(sql`(g.provider = 'local' AND g.name = ${input.name}) OR g.id = ${input.identityId ?? null}::uuid`);
+    const expected = rows.find((row) => row.id === input.identityId);
+    if (expected && (expected.provider !== "local" || expected.name !== input.name))
+      return { state: "unknown", reason: "identity_conflict" };
+    const matches = rows.filter((row) => row.provider === "local" && row.name === input.name);
+    if (!matches.length) return { state: "absent" };
+    if (matches.length !== 1) return { state: "unknown", reason: "invalid_response" };
+    const current = matches[0]!;
+    return {
+      state: "present",
+      identity: { id: current.id, name: current.name, uidNumber: null, gidNumber: current.gidNumber },
+      eligible: current.gidNumber !== null,
+    };
+  };
+  const validateLookup = (input: { kind: "users" | "groups"; name: string }) => {
+    if ((input.kind !== "users" && input.kind !== "groups") || typeof input.name !== "string" || !input.name || input.name.includes("\0"))
+      throw new AccountIdentityError("invalid_identity_lookup", 400);
+  };
   return {
+    async reconcile(
+      actor: RequestActor,
+      input: { kind: "users" | "groups"; provider: UserProvider; name: string; identityId?: string; signal?: AbortSignal },
+    ): Promise<AccountIdentityReconciliation> {
+      const { state } = await requireAdmin(actor);
+      validateLookup(input);
+      if (input.provider !== "local" && input.provider !== "ipa") throw new AccountIdentityError("invalid_identity_lookup", 400);
+      if (input.identityId !== undefined) cursor(input.identityId);
+      if (input.signal?.aborted) return { state: "unknown", reason: "provider_unavailable" };
+      if (input.provider === "ipa") {
+        if (!state.freeipaEnabled) return { state: "unknown", reason: "provider_disabled" };
+        return upstreamIdentity(input);
+      }
+      const result = await readLocalIdentity(input);
+      return input.signal?.aborted ? { state: "unknown", reason: "provider_unavailable" } : result;
+    },
+    /** Trusted application jobs only; this read does not authorize an HTTP caller or a filesystem mutation. */
+    async localLifecycle(input: { kind: "users" | "groups"; identityId: string; name: string }) {
+      validateLookup(input);
+      cursor(input.identityId);
+      const { localLinuxEnabled } = await availability();
+      return { localLinuxEnabled, identity: await readLocalIdentity(input) };
+    },
     async self(actor: RequestActor) {
       const { row, state } = await requireUser(actor);
       return { user: projectUser(row), availability: state };

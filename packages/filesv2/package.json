@@ -12,7 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
     "test": "bun test --isolate ./src && bun run test:ssr && bun run test:dom",
     "test:ssr": "bun test --isolate --preload ./test/solid-ssr-preload.ts ./test/files-ui.render.test.tsx",
-    "test:dom": "bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts ./test/files-ui.behavior.test.tsx ./test/workspace-navigation.behavior.test.tsx"
+    "test:dom": "bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts ./test/files-ui.behavior.test.tsx ./test/workspace-navigation.behavior.test.tsx ./test/admin-workspace.behavior.test.tsx"
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",

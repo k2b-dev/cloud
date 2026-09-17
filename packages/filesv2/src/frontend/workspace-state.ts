@@ -18,9 +18,9 @@ type Transition = {
 };
 
 /** The query owns snapshots; this coordinator only owns uncommitted navigation. */
-export function createWorkspaceState(options: {
-  initial: WorkspaceSnapshot;
-  load: (source: string, signal: AbortSignal) => Promise<WorkspaceSnapshot>;
+export function createWorkspaceState<T extends { source: string }>(options: {
+  initial: T;
+  load: (source: string, signal: AbortSignal) => Promise<T>;
 }) {
   const [source, setSource] = createSignal(options.initial.source);
   const [enabled, setEnabled] = createSignal(true);

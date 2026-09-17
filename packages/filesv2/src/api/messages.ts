@@ -1,4 +1,45 @@
 const messages: Record<string, [string, string]> = {
+  index_disabled: [
+    "The index is disabled in this Filegate root configuration.",
+    "Der Index ist in der Konfiguration dieses Filegate-Roots deaktiviert.",
+  ],
+  operation_busy: [
+    "Another operation is running on this root. Try again shortly.",
+    "Für diesen Root läuft bereits eine Aktion. Bitte gleich erneut versuchen.",
+  ],
+  operation_pending: [
+    "A pending operation must be retried before this directory can be changed.",
+    "Zuerst den ausstehenden Vorgang für dieses Verzeichnis erneut ausführen.",
+  ],
+  source_changed: [
+    "The directory changed after the operation started. Check its current contents before retrying.",
+    "Das Verzeichnis hat sich seit Beginn des Vorgangs geändert. Vor einem neuen Versuch den Bestand prüfen.",
+  ],
+  configuration_changed: [
+    "The operation belongs to a different storage configuration. Restore that configuration before retrying.",
+    "Der Vorgang gehört zu einer anderen Ablagenkonfiguration. Vor einem neuen Versuch diese Konfiguration wiederherstellen.",
+  ],
+  confirmation_mismatch: [
+    "Enter the complete displayed path to confirm permanent deletion or restoration.",
+    "Zur Bestätigung den vollständigen angezeigten Pfad eingeben.",
+  ],
+  archive_not_private: [
+    "The archive container is not exclusively accessible to the Filegate service. Check ownership and permissions.",
+    "Der Archivcontainer ist nicht ausschließlich für den Filegate-Dienst zugänglich. Eigentümer und Rechte prüfen.",
+  ],
+  path_conflict: [
+    "The target path already exists. Existing contents were not replaced.",
+    "Der Zielpfad existiert bereits. Vorhandene Inhalte wurden nicht ersetzt.",
+  ],
+  retired: [
+    "This directory is retired or archived. Restore it explicitly before reusing it.",
+    "Dieses Verzeichnis ist stillgelegt oder archiviert. Vor erneuter Nutzung ausdrücklich wiederherstellen.",
+  ],
+  identity_unknown: [
+    "The authoritative identity could not be verified. Check the identity provider before retrying.",
+    "Die maßgebliche Identität konnte nicht geprüft werden. Vor einem neuen Versuch den Identitätsanbieter prüfen.",
+  ],
+
   local_linux_disabled: [
     "Enable local Linux identities before enabling Cloud files.",
     "Aktiviere lokale Linux-Identitäten, bevor du Cloud-Dateien aktivierst.",
@@ -37,7 +78,7 @@ const messages: Record<string, [string, string]> = {
 };
 export function errorMessage(code: string, locale: string): string {
   return (messages[code] ?? [
-    "Storage is currently unavailable. Try again or contact your administrator.",
-    "Die Ablage ist derzeit nicht verfügbar. Bitte erneut versuchen oder die Administration kontaktieren.",
+    "Storage is currently unavailable. Try again after checking the connection.",
+    "Die Ablage ist derzeit nicht verfügbar. Bitte Verbindung prüfen und erneut versuchen.",
   ])[locale.startsWith("de") ? 1 : 0]!;
 }

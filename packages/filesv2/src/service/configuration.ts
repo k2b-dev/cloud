@@ -8,7 +8,16 @@ const StoredSchema = ConfigurationSchema.extend({ token: z.string().max(4096) })
 const defaults = {
   url: "",
   token: "",
-  cloud: { enabled: false, root: "cloud", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+  cloud: {
+    autoCreate: false,
+    autoArchive: true,
+    enabled: false,
+    root: "cloud",
+    prefix: "",
+    homes: "users",
+    groups: "groups",
+    archive: "archive",
+  },
   freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
 };
 export async function readConfiguration(): Promise<PublicConfiguration & { token: string }> {

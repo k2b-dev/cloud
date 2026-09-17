@@ -14,7 +14,7 @@ export const AreaConfigurationSchema = z.object({
 });
 export const ConfigurationSchema = z.object({
   url: z.string().url().or(z.literal("")),
-  cloud: AreaConfigurationSchema,
+  cloud: AreaConfigurationSchema.extend({ autoCreate: z.boolean().default(false), autoArchive: z.boolean().default(true) }),
   freeipa: AreaConfigurationSchema,
 });
 export const ConfigurationInputSchema = ConfigurationSchema.extend({ token: z.string().max(4096).optional() });
@@ -22,7 +22,7 @@ export type Configuration = z.infer<typeof ConfigurationSchema>;
 export type ConfigurationInput = z.infer<typeof ConfigurationInputSchema>;
 export type PublicConfiguration = Configuration & { tokenConfigured: boolean };
 export type Availability = { localLinuxEnabled: boolean; freeipaEnabled: boolean };
-export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned", "conflict", "unknown"]);
+export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned", "conflict", "unknown", "orphaned", "retired"]);
 export type InventoryState = z.infer<typeof InventoryStateSchema>;
 export type BaseSummary = {
   id: string;
@@ -59,7 +59,11 @@ export type InventoryEntry = {
   area: Area;
   status: InventoryState;
   reason: string | null;
-  canAdopt: boolean;
+  baseId: string | null;
+  operationId: string | null;
+  uid: number | null;
+  gid: number | null;
+  actions: DirectoryActions;
 };
 export type AdminResult = {
   configuration: PublicConfiguration;
@@ -74,7 +78,57 @@ export const DownloadInputSchema = z.object({ path: z.string().min(1).max(4096) 
 export const AdminQuerySchema = z.object({
   area: AreaSchema.default("cloud"),
   kind: KindSchema.default("users"),
+  includeEntries: z.enum(["true", "false"]).default("true"),
   after: z.string().max(8192).optional(),
+  q: z.string().max(200).optional(),
+  status: InventoryStateSchema.optional(),
 });
 export const AdoptInputSchema = z.object({ area: AreaSchema, kind: KindSchema, identityId: z.string().uuid() });
 export const ErrorSchema = z.object({ code: z.string(), message: z.string() });
+
+export type DirectoryActions = { create: boolean; adopt: boolean; archive: boolean; browse: boolean; delete: boolean; retire: boolean };
+export const DirectoryIdentitySchema = z.object({ area: AreaSchema, kind: KindSchema, identityId: z.string().uuid() });
+export const DirectoryTargetSchema = z.object({ area: AreaSchema, kind: KindSchema, name: z.string().min(1).max(255) });
+export const ArchiveInputSchema = DirectoryTargetSchema.extend({ archivePath: z.string().min(1).max(1024).optional() });
+export const DeleteDirectorySchema = DirectoryTargetSchema.extend({ confirmPath: z.string().min(1).max(4096) });
+export const ConfirmPathSchema = z.object({ confirmPath: z.string().min(1).max(4096) });
+export const ArchiveQuerySchema = z.object({ area: AreaSchema, after: z.string().uuid().optional(), q: z.string().max(200).optional() });
+export const AdminLocatorSchema = z.object({
+  area: AreaSchema,
+  kind: KindSchema.optional(),
+  name: z.string().min(1).max(255).optional(),
+  archiveId: z.string().uuid().optional(),
+  path: z.string().max(4096).default(""),
+});
+export const AdminBrowseSchema = AdminLocatorSchema.extend({ after: z.string().max(4096).optional() });
+export const AdminDeleteSchema = AdminLocatorSchema.extend({ confirmPath: z.string().min(1).max(4096) });
+export const RootActionSchema = z.object({ area: AreaSchema });
+export type DirectoryTarget = z.infer<typeof DirectoryTargetSchema>;
+export type AdminLocator = z.infer<typeof AdminLocatorSchema>;
+export type AdminBrowseResult = {
+  area: Area;
+  kind: BaseKind;
+  name: string;
+  archiveId: string | null;
+  basePath: string;
+  path: string;
+  items: FileEntry[];
+  next: string | null;
+};
+export type OperationResult = { id: string; state: "complete" | "pending"; path: string };
+export type ArchiveEntry = {
+  id: string;
+  area: Area;
+  kind: BaseKind;
+  name: string;
+  originalPath: string;
+  path: string;
+  state: "pending" | "archived" | "restored" | "deleted";
+  createdAt: string;
+  operationId: string | null;
+  canRetry: boolean;
+  canRestore: boolean;
+  canDelete: boolean;
+};
+export type ArchivePage = { items: ArchiveEntry[]; next: string | null };
+export type MaintenanceResult = { processed: number; archived: number; pending: number };
