@@ -10,13 +10,23 @@ updated: 2026-09-11
 
 # Assistant
 
-The **Studio** navigation opens a server-rendered, full-width gallery of apps you can access.
-The initial cards and page navigation use server data without a browser loading step. Launch
-a published app without opening a chat. Apps use Cloud person and group grants:
+The **Studio** navigation opens a compact app list on hover or click, just like
+**Projects**. It loads accessible apps when opened and includes page controls and
+a **Search apps** button. Search opens global search with one **Studio** context chip and an empty
+search field, matching app titles and descriptions. Apps are created by Assistant, so there is no creation
+button. On mobile, tap **Studio** to open the same list in a dialog. Both surfaces
+show scroll-edge fades when more apps are available above or below.
+
+There is no separate Studio overview page. Old `/app/assistant/apps` links, the
+Studio breadcrumb, and deleting the currently open app return to Assistant with
+the app-list dialog open. Closing the dialog leaves you in Assistant.
+Select an app to open it directly, without opening a chat. Apps use Cloud person and group grants:
 **Use** allows running and copying the published version; **Manage** also allows
 editing, publishing, and changing access. Administrators can see unpublished drafts.
 
-The tile menu provides **Edit**, **Manage access**, and **Publish** for administrators.
+The app detail action menu provides **Edit with Assistant**, **Manage access**,
+and **Publish** for administrators. It retains the same actions as app cards
+inside chat context, including copying, deleting, Project links, and advanced tools.
 **Edit** opens a new chat with the app attached, ready for your instructions. It
 does not send a message. Saving code updates the working draft. **Publish** makes
 that tested version available to users; later edits do not change it. Running apps
@@ -63,7 +73,13 @@ proposed actions before relying on them.
 
 ## Keep active chats in view
 
-Chats automatically move to **Done** after seven days without use. Sending a message, starting a run, or explicitly reopening a chat counts as use. Opening or reading a chat only marks it as read; it does not reset the activity timestamp. Background metadata changes do not count as use. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. Projects, pinned chats, Chats and **Done** share one sidebar scroll area. Projects are navigation links; their active chats appear in the main chat list with the Project name on each card. **Done** includes the **All chats** entry.
+Chats automatically move to **Done** after seven days without use. Sending a message, starting a run, or explicitly reopening a chat counts as use. Opening or reading a chat only marks it as read; it does not reset the activity timestamp. Background metadata changes do not count as use. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again.
+
+The sidebar shows one chat list with pinned chats first, marked by a colored pin instead of the chat or Project icon. **Done** remains a separate collapsible section.
+
+**Projects**, between Studio and Personalize in the footer, opens the same preview popup as chat rows: hover or click it to choose a Project, create one with **+**, or open global search with the **Search Projects** button. The search shows one **Projects** context chip and matches accessible Project names and descriptions. Removing that chip returns to global search.
+
+On mobile, expand **Projects** to reach the same destinations and actions. Project chats remain in the main chat list with the Project name on each card. **Done** includes the **All chats** entry.
 
 Choose **Mark chat done** on a sidebar row when its work is finished. Stop a
 running response first. Done chats move into the collapsed **Done** section;
@@ -258,7 +274,7 @@ an automatic "Restore version X" note. It preserves history and user data.
 The compact Versions dialog sits in the bottom console toolbar. Before the first
 publication, it offers a Publish action.
 `code_update` changes working title, description, or Tabler icon. The code-mode
-skill includes a short icon list. The compact Studio cards expose publication
+skill includes a short icon list. App cards inside chat context expose publication
 status and put their action menu at the top right. Each app has a stable, subtle
 color gradient, with its title and description beside its icon.
 
@@ -269,7 +285,7 @@ apps are visible and usable only by administrators, even when Use access is gran
 ### Studio advanced tools
 
 Open an app's action menu and choose **Advanced**. The same menu is available
-on the Studio card and in the running app. **Edit with Assistant** starts an
+on app cards inside chat context and in the app detail, manual editor, and SQL console. **Edit with Assistant** starts an
 editing chat. Resource managers can also choose **Edit manually** or **SQL
 console**. These views keep the Assistant navigation. Switch views through the app action
 menu; no separate editor navigation replaces your chats.

@@ -29,15 +29,14 @@ render(
       userId="test"
       conversations={[]} doneCount={0}
       projects={[]}
-      initialList={{ items: [item], page: 1, hasNext: false }}
-      initialApp={location.pathname === "/gallery" ? undefined : { ...item, source, sourceRevision: 1 }}
+      initialApp={{ ...item, source, sourceRevision: 1 }}
       view={view}
       databaseStatus={{ configured: true, connected: true, overview: null, unavailable: null, generation: null, dataRevision: null }}
     />
   ),
   document.getElementById("root")!,
 );
-if (location.pathname === "/gallery") {
+if (location.pathname === "/reader") {
   void new ArtifactStorage("test", id).call("store.set", ["local-fixture", 42]);
   void new ArtifactStorage("someone-else", id).call("store.set", ["private-fixture", 99]);
 }

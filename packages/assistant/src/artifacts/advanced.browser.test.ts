@@ -166,8 +166,8 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
     await page.getByText("This database has no tables yet.", {exact:true}).waitFor();
     await page.getByRole("tab", {name:"SQL", exact:true}).click();
     expect(await page.getByRole("textbox", {name:"query.sql"}).inputValue()).toBe("SELECT amount FROM ledger LIMIT 100");
-    await page.goto(server.url + "gallery?reader");
-    await page.getByRole("button", { name: "Actions · Advanced fixture" }).click();
+    await page.goto(server.url + "reader?reader");
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
     expect(await page.getByRole("menuitem", { name: "Edit manually" }).count()).toBe(0);
     await page.getByRole("menuitem", { name: "Local data", exact: true }).click();
     await page.getByRole("tab", { name: "Key/value data", exact: true }).click();

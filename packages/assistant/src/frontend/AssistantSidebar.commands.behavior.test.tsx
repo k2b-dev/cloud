@@ -8,7 +8,7 @@ if (!isServer) {
     const dom = createDomTestHarness();
     const { default: AssistantSidebar } = await import("./AssistantSidebar");
     const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
-    const { contextCommandsWithShortcuts } = await import("../../../cloud/src/browser/command-shortcuts");
+    const { contextCommandsWithShortcuts } = await import("@k2b/cloud/browser/testing");
     const [chat, setChat] = createSignal<string | null>(null);
     const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
     const dispose = render(() => <AssistantSidebar conversations={() => []} activeConversationId={chat} live={live} />, dom.root);

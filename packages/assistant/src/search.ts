@@ -1,4 +1,5 @@
-import type { AiConversationService, AiStoredMessage } from "@k2b/cloud/ai";
+import type { artifacts } from "./artifacts/service";
+import type { AiConversationService, AiStoredMessage, aiProjects } from "@k2b/cloud/ai";
 import type { CapabilityExecutionContext, CloudResourceView, UniversalSearchInput } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
 import { assistantCommandMessages } from "./commands";
@@ -46,6 +47,53 @@ export const searchAssistant = async (
     icon: "ti ti-messages",
     priority: 7,
     links: [{ rel: "open", href: `/app/assistant?conversation=${encodeURIComponent(chat.shortId)}` }],
+  }));
+  return ok({ data });
+};
+
+/** Reuse the authorized project catalog; filter before applying the result limit. */
+export const searchAssistantProjects = async (
+  input: UniversalSearchInput,
+  context: Pick<CapabilityExecutionContext, "accessSubject" | "locale">,
+  projects: Pick<typeof aiProjects, "list">,
+) => {
+  if (input.scope) return fail(err.badInput(assistantCommandMessages.resolve([context.locale]).t.invalidSearchScope));
+  const terms = input.query.toLocaleLowerCase(context.locale).trim().split(/\s+/u).filter(Boolean);
+  const visible = await projects.list(context.accessSubject);
+  const data: CloudResourceView[] = visible
+    .filter((project) => {
+      const text = `${project.name} ${project.description}`.toLocaleLowerCase(context.locale);
+      return terms.every((term) => text.includes(term));
+    })
+    .slice(0, input.limit)
+    .map((project) => ({
+      ref: { type: "assistant.project", id: project.shortId },
+      title: project.name.slice(0, 500),
+      preview: project.description.slice(0, 2000),
+      icon: project.icon || "ti ti-folders",
+      priority: 7,
+      links: [{ rel: "open", href: `/app/assistant?project=${encodeURIComponent(project.shortId)}` }],
+    }));
+  return ok({ data });
+};
+
+/** Studio search uses the same permission-aware published/draft projection as its catalog. */
+export const searchAssistantApps = async (
+  input: UniversalSearchInput,
+  context: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale">,
+  store: Pick<typeof artifacts, "list">,
+) => {
+  const t = assistantCommandMessages.resolve([context.locale]).t;
+  if (input.scope) return fail(err.badInput(t.invalidSearchScope));
+  if (context.accessSubject.type !== "user") return fail(err.forbidden(t.userRequired));
+  const page = await store.list(context, 1, input.query, input.limit);
+  const data: CloudResourceView[] = page.items.map((app) => ({
+    ref: { type: "assistant.app", id: app.id },
+    title: app.title.slice(0, 500),
+    preview: (app.description || "").slice(0, 2000),
+    icon: app.icon || "ti ti-app-window",
+    priority: 7,
+    links: [{ rel: "open", href: `/app/assistant/apps/${encodeURIComponent(app.id)}` }],
   }));
   return ok({ data });
 };

@@ -9,7 +9,7 @@ import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
 import { advancedMessages } from "./advanced-messages";
 import { openDataDialog, openDatabaseDialog } from "./DataDialogs";
-export function createArtifactActions(props: { userId: string; projects: AiProject[]; refresh: () => Promise<unknown>; app?: Accessor<ArtifactBundle | undefined>; editorDirty?: Accessor<boolean>; setApp?: (app: ArtifactBundle) => void; setSelectedVersion?: (version: number | undefined) => void; view?: "app" | "edit" | "database" }) {
+export function createArtifactActions(props: { userId: string; projects: AiProject[]; refresh?: () => Promise<unknown>; app?: Accessor<ArtifactBundle | undefined>; editorDirty?: Accessor<boolean>; setApp?: (app: ArtifactBundle) => void; setSelectedVersion?: (version: number | undefined) => void; view?: "app" | "edit" | "database" }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t, a = () => advancedMessages.resolve([locale()]).t;
   const [sharing, setSharing] = createSignal<ArtifactSummary>();
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
@@ -17,7 +17,7 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
   async function action(run: () => Promise<unknown>) {
     if (busy()) return;
     setBusy(true); setError("");
-    try { await run(); await props.refresh(); }
+    try { await run(); await props.refresh?.(); }
     catch (e) { setError(e instanceof Error ? e.message : t().REQUEST_FAILED); }
     finally { setBusy(false); }
   }
@@ -45,7 +45,7 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
       </Show>
     </Show></div>, { title: `${t().share} · ${item.title}`, size: "medium" });
     setSharing(undefined);
-    await props.refresh();
+    await props.refresh?.();
   };
   const publish = async (item: ArtifactSummary) => {
     if(props.app?.()?.id===item.id&&props.editorDirty?.()){await prompts.alert(a().saveBeforePublish,{title:t().publish});return;}
@@ -112,7 +112,7 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
       {label:t().remove,icon:"ti ti-trash",action:async()=>{
         if(await prompts.confirm(t().removeConfirm,{title:t().remove,variant:"danger"})) await action(async()=>{
           await artifactClient.remove(item.id);
-          if(props.app?.()?.id===item.id)navigateTo("/app/assistant/apps");
+          if(props.app?.()?.id===item.id)navigateTo("/app/assistant?studio=1");
         });
       }},
       { label: a().assistantEdit, icon: "ti ti-edit", action: () => edit(item.id) },
@@ -121,7 +121,10 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
       { label: item.publishedRevision ? t().publishUpdate : t().publish, icon: "ti ti-upload",
         disabled: item.publishedRevision === item.revision,
         action: () => publish(item) },
-      ...(item.publishedRevision ? [{ label: t().unpublish, icon: "ti ti-eye-off", action: () => action(() => artifactClient.unpublish(item.id)) }] : []),
+      ...(item.publishedRevision ? [{ label: t().unpublish, icon: "ti ti-eye-off", action: () => action(async () => {
+        await artifactClient.unpublish(item.id);
+        if (props.app?.()?.id === item.id) { props.setApp?.(await artifactClient.get(item.id)); props.setSelectedVersion?.(undefined); }
+      }) }] : []),
     ] : []),
     ...(item.publishedRevision ? [{ label: t().fork, icon: "ti ti-copy", action: () => action(async () => {
       const copy = await artifactClient.fork(item.id);

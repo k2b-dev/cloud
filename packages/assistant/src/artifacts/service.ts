@@ -177,9 +177,10 @@ export const artifacts = {
         (count(a.id)>0 OR (EXISTS(SELECT 1 FROM assistant.artifact_projects project
           WHERE project.artifact_id=artifact.id AND project.project_id=${projectId ?? null}::uuid))))`;
   },
-  async list(identity: ArtifactIdentity, page = 1, search = "") {
+  async list(identity: ArtifactIdentity, page = 1, search = "", pageSize = 30) {
     z.number().int().min(1).max(100000).parse(page);
-    z.string().max(120).parse(search);
+    z.string().max(500).parse(search);
+    z.number().int().min(1).max(100).parse(pageSize);
     const match = predicate(identity), projectId = await projectContext(identity);
     const rows = await sql<(ArtifactRow & { permission: PermissionLevel })[]>`SELECT p.*, (SELECT origin.short_id FROM assistant.artifacts origin WHERE origin.id=p.forked_from_id) AS forked_from_short_id,
       CASE max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 ELSE 1 END)
@@ -191,8 +192,8 @@ export const artifacts = {
           WHERE project.artifact_id=p.id AND project.project_id=${projectId ?? null}::uuid)))))
       AND strpos(lower(CASE WHEN bool_or(a.permission='admin') THEN p.title || ' ' || p.description
         ELSE coalesce(p.published_title,'') || ' ' || coalesce(p.published_description,'') END),lower(${search}))>0
-      ORDER BY p.updated_at DESC,p.id LIMIT 31 OFFSET ${(page - 1) * 30}`;
-    return { items: rows.slice(0,30).map((row) => summarize(row,row.permission)), hasNext: rows.length > 30, page };
+      ORDER BY p.updated_at DESC,p.id LIMIT ${pageSize + 1} OFFSET ${(page - 1) * pageSize}`;
+    return { items: rows.slice(0,pageSize).map((row) => summarize(row,row.permission)), hasNext: rows.length > pageSize, page };
   },
   async get(id: string, identity: ArtifactIdentity, sourceRevision?: number, published = false, version?: number): Promise<ArtifactBundle> {
     if (sourceRevision !== undefined) z.number().int().positive().parse(sourceRevision);

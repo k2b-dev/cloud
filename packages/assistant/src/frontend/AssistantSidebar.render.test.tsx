@@ -75,13 +75,15 @@ describe("Assistant sidebar", () => {
         projects: [project], activeConversationId: () => "retained",
         activeProjectId: project.id, activeView, live,
       }));
-      const selectedLinks = html.match(/<(?:a|button)\b[^>]*class="[^"]*\bis-active\b[^"]*"[^>]*>[\s\S]*?<\/(?:a|button)>/g) ?? [];
-      expect(selectedLinks.length).toBeGreaterThan(0);
-      for (const selected of selectedLinks) expect(selected).toContain(activeView === "apps" ? '/app/assistant/apps' : project.name);
+      const selectedRows = html.match(/<(?:a|button|div)\b[^>]*class="[^"]*\bis-active\b[^"]*"[^>]*>/g) ?? [];
+      expect(selectedRows.length).toBeGreaterThan(0);
+      const selectedTitle = activeView === "apps" ? "Studio" : "Projects";
+      expect(selectedRows.some(row => row.includes(`title="${selectedTitle}"`))).toBe(true);
+      expect(selectedRows.some(row => row.includes("conversation=retained"))).toBe(false);
     }
   });
 
-  test("lists projects as rows and includes their chats in the shared chat list", () => {
+  test("puts projects in footer previews and lists pinned chats first without section headings", () => {
     const [conversations] = createSignal([
       { ...conversation("chatpinned", "Pinned chat", null), pinnedAt: "2026-08-12T10:00:00.000Z" },
       { ...conversation("chatprojectpinned", "Pinned project chat", project.id), pinnedAt: "2026-08-12T09:00:00.000Z" },
@@ -92,13 +94,13 @@ describe("Assistant sidebar", () => {
 
     expect(html).not.toContain('aria-expanded="true"');
     expect(html).toContain("Project chat");
-    expect(html).toContain(">Pinned</");
+    expect(html).not.toContain(">Pinned</");
     expect(html).toContain("Pinned chat");
     expect(html).not.toContain('title="Pinned chat"');
     expect(html).not.toContain('title="Pinned project chat"');
     expect(html).toContain("Chat settings");
     expect(html).toContain("Mark chat done");
-    expect(html).toContain(">Chats</");
+    expect(html).not.toContain(">Chats</");
     expect(html).toContain("General chat 15");
     expect(html).toContain("General chat 17");
     expect(html).not.toContain(">See all<");
@@ -146,7 +148,7 @@ describe("Assistant sidebar", () => {
 
     expect(idle.match(/New Chat|New chat/g)?.length).toBe(pending.match(/New Chat|New chat/g)?.length);
     expect(pending).toContain("ti ti-plus");
-    expect(pending).toContain("ti ti-folder-plus");
+    expect(pending).toContain("ti ti-folders");
     expect(pending).not.toContain("ti ti-message-plus");
     expect(idle).not.toMatch(/k2b-app-workspace__sidebar-icon-action is-active[^>]+aria-label="New chat"/);
     expect(pending).not.toContain("Creating Chat");

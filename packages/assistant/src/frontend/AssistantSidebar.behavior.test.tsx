@@ -83,3 +83,54 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     dom.cleanup();
   }
 });
+
+test("footer project popup and mobile group share search and creation; pinned chats lead a heading-free list", async () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
+  const { default: AssistantSidebar } = await import("./AssistantSidebar");
+  const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
+  const { registerGlobalSearchHost } = await import("@k2b/cloud/browser/testing");
+  const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
+  const project = { id: "Proj01", shortId: "Proj01", name: "Work", description: "", icon: "ti ti-folders", instructions: "", defaultModelProfileId: null, permission: "read" as const, revision: 1, createdAt: "", updatedAt: "" };
+  let created = 0;
+  const searches: unknown[] = [];
+  const release = registerGlobalSearchHost((options) => searches.push(options));
+  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const dispose = render(() => <AssistantSidebar projects={[project]} live={live}
+    onCreateProject={() => { created++; }}
+    conversations={() => [conversation("normal", "Normal", null), { ...conversation("pinned", "Pinned work", project.id), pinnedAt: "2026-09-16T00:00:00Z" }]}
+  />, dom.root);
+  try {
+    const body = dom.root.querySelector<HTMLElement>('.k2b-app-workspace__sidebar-body[data-sidebar-mode="expanded"]')!;
+    const cards = Array.from(body.querySelectorAll<HTMLElement>('[data-variant="card"]'));
+    expect(cards.map((card) => card.querySelector('.k2b-app-workspace__sidebar-item-label-text')?.textContent)).toEqual(["Pinned work", "Normal"]);
+    expect(cards[0]!.querySelector('.k2b-app-workspace__sidebar-item-context-label .ti-pin.text-accent')).not.toBeNull();
+    expect(cards[0]!.querySelector('.k2b-app-workspace__sidebar-item-context-label')?.textContent).toContain("Work");
+    expect(cards[0]!.querySelector('.k2b-app-workspace__sidebar-item-context-meta .ti-pin')).toBeNull();
+    expect(Array.from(body.querySelectorAll('h2')).map((heading) => heading.textContent)).not.toContain("Chats");
+    const footer = dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
+    const panel = footer.querySelector<HTMLElement>('[role="dialog"][aria-label="Projects"]')!;
+    let closes = 0;
+    panel.hidePopover = () => { closes++; };
+    panel.querySelector<HTMLButtonElement>('[aria-label="Search Projects…"]')!.click();
+    expect(searches).toEqual([{ query: "", scope: { appId: "assistant", tag: "assistant-project", label: "Projects", icon: "ti ti-folders" } }]);
+    panel.querySelector<HTMLButtonElement>('[aria-label="Create Project"]')!.click();
+    expect(created).toBe(1);
+    expect(closes).toBe(2);
+    const mobile = readWorkspaceNavigation()!.navigation;
+    const ids = mobile.items().map((item) => item.id);
+    expect(ids.slice(2, 4)).toEqual(["chat:pinned", "chat:normal"]);
+    expect(ids.slice(-3)).toEqual(["apps", "projects", "preferences"]);
+    expect(ids).not.toContain("pinned");
+    expect(ids).not.toContain("chats");
+    expect(mobile.items().find((item) => item.id === "projects")?.defaultExpanded).toBe(false);
+    const studio = mobile.items().find((item) => item.id === "apps");
+    expect(studio?.action).toBe("apps");
+    expect(studio?.href).toBeUndefined();
+    expect(studio?.children).toBeUndefined();
+    await mobile.activate("search-projects");
+    await mobile.activate("new-project");
+    expect(searches).toHaveLength(2);
+    expect(created).toBe(2);
+  } finally { release(); dispose(); dom.cleanup(); }
+});

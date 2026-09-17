@@ -1,6 +1,5 @@
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { z } from "zod";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
@@ -13,18 +12,18 @@ import { ArtifactPath } from "./contracts";
 export default ssr<AuthContext>(async c => {
   const user = expectUserBackedActor(c), identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
   const t = artifactMessages.resolve([getLocale(c)]).t;
-  if (c.req.param("id") && !CodeResourceId.safeParse(c.req.param("id")).success) return ssr.error(c, 404);
+  const id = CodeResourceId.safeParse(c.req.param("id"));
+  if (!id.success) return ssr.error(c, 404);
   try {
-    const [sidebar, list, app] = await Promise.all([
-      loadAssistantSidebarSnapshot(user.id), artifacts.list(identity, z.coerce.number().int().min(1).max(100000).catch(1).parse(c.req.query("page") ?? 1)),
-      c.req.param("id") ? artifacts.get(c.req.param("id")!, identity) : undefined,
+    const [sidebar, app] = await Promise.all([
+      loadAssistantSidebarSnapshot(user.id), artifacts.get(id.data, identity),
     ]);
     const view=c.req.path.endsWith("/edit")?"edit":c.req.path.endsWith("/database")?"database":"app";
     if(view!=="app"&&app?.permission!=="admin")return ssr.error(c,403);
     const databaseStatus=view==="database"&&app?await artifactDatabase.status(app.id,identity,c.req.raw.signal):undefined;
     const selectedFile=ArtifactPath.safeParse(c.req.query("file"));
-    return () => <Layout c={c} fullPage title={[{ title: t.apps, href: "/app/assistant/apps" }, ...(app ? [{ title: app.title }] : [])]}>
-      <Apps userId={user.id} conversations={sidebar.conversations} doneCount={sidebar.doneCount} projects={sidebar.projects} initialList={list} initialApp={app}
+    return () => <Layout c={c} fullPage title={[{ title: t.apps, href: "/app/assistant?studio=1" }, { title: app.title }]}>
+      <Apps userId={user.id} conversations={sidebar.conversations} doneCount={sidebar.doneCount} projects={sidebar.projects} initialApp={app}
         view={view} databaseStatus={databaseStatus} selectedFile={selectedFile.success?selectedFile.data:undefined}/>
     </Layout>;
   } catch (e) {

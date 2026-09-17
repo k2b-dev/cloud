@@ -1,5 +1,6 @@
+import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { assistantSearchOptions } from "./assistant-search";
+import { assistantSearchOptions, assistantProjectsSearchOptions } from "./assistant-search";
 import { assistantCommandMessages } from "../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
@@ -20,7 +21,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import { type Accessor, createSignal, For, createEffect, onCleanup, Show } from "solid-js";
+import { type Accessor, createSignal, For, createEffect, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
@@ -37,6 +38,7 @@ type AssistantSidebarProps = {
   doneCount?: number;
   activeConversationId?: Accessor<string | null>;
   activeView?: "chat" | "all" | "apps";
+  activeAppId?: string;
   projects?: AiProject[];
   activeProjectId?: string | null;
   creatingConversation?: Accessor<boolean>;
@@ -121,16 +123,15 @@ function ConversationSidebarItem(props: {
       context={
         !props.conversation.isDone ? (
           <span>
-            <i class={props.project?.icon || "ti ti-message"} aria-hidden="true" /> {props.project?.name ?? text("Chat")}
+            <Show when={props.conversation.pinnedAt} fallback={<i class={props.project?.icon || "ti ti-message"} aria-hidden="true" />}>
+              <i class="ti ti-pin text-accent" role="img" aria-label={assistantMessages.resolve([locale()]).t.pinnedLabel} />
+            </Show> {props.project?.name ?? text("Chat")}
           </span>
         ) : undefined
       }
       contextMeta={
         !props.conversation.isDone ? (
           <span class="inline-flex items-center gap-1.5">
-            <Show when={props.conversation.pinnedAt}>
-              <i class="ti ti-pin-filled" role="img" aria-label={assistantMessages.resolve([locale()]).t.pinnedLabel} />
-            </Show>
             <Format.RelativeTime value={props.conversation.lastUsedAt} />
           </span>
         ) : undefined
@@ -191,7 +192,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       .filter((conversation) => conversation.pinnedAt)
       .toSorted((left, right) => Date.parse(right.pinnedAt!) - Date.parse(left.pinnedAt!));
   const unpinnedConversations = () => activeConversations().filter((conversation) => !conversation.pinnedAt);
-  const generalConversations = unpinnedConversations;
+  const chatConversations = () => [...pinnedConversations(), ...unpinnedConversations()];
   const openProject = async (project: AiProject) => {
     if (activeProjectId() === project.id) return;
     const href = assistantProjectHref("/app/assistant", project.id);
@@ -206,32 +207,45 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       navigateTo(href);
     }
   };
-  const ProjectItems = () => (
-    <For each={props.projects ?? []}>
-      {(project) => (
-        <AppWorkspace.SidebarItem
-          icon={project.icon || "ti ti-folder"}
-          active={activeProjectId() === project.id}
-          onClick={() => void openProject(project)}
-        >
-          <AppWorkspace.SidebarItemLabel marquee={false}>{project.name}</AppWorkspace.SidebarItemLabel>
-        </AppWorkspace.SidebarItem>
-      )}
-    </For>
-  );
-  const ProjectsSection = () => (
-    <AppWorkspace.SidebarSection
+  const openProjectSearch = () => openGlobalSearch(assistantProjectsSearchOptions(locale()));
+  const ProjectsItem = () => (
+    <AppWorkspace.SidebarItem
+      icon="ti ti-folders"
       title={t().projects}
-      actions={
-        <IconButton size="xs" label={t().createProject} onClick={() => void props.onCreateProject?.()}>
-          <i class="ti ti-folder-plus" aria-hidden="true" />
-        </IconButton>
-      }
+      active={Boolean(activeProjectId())}
+      preview={{
+        label: t().projects,
+        trigger: "row",
+        content: (close) => (
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <strong>{t().projects}</strong>
+              <div class="flex items-center gap-1">
+                <IconButton size="xs" label={t().searchProjects} onClick={() => { close(); openProjectSearch(); }}>
+                  <i class="ti ti-search" aria-hidden="true" />
+                </IconButton>
+                <IconButton size="xs" label={t().createProject} onClick={() => { close(); void props.onCreateProject?.(); }}>
+                  <i class="ti ti-plus" aria-hidden="true" />
+                </IconButton>
+              </div>
+            </div>
+            <For each={props.projects ?? []} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noProjects}</p>}>
+              {(project) => (
+                <AppWorkspace.SidebarItem
+                  icon={project.icon || "ti ti-folder"}
+                  active={activeProjectId() === project.id}
+                  onClick={() => { close(); void openProject(project); }}
+                >
+                  <AppWorkspace.SidebarItemLabel marquee={false}>{project.name}</AppWorkspace.SidebarItemLabel>
+                </AppWorkspace.SidebarItem>
+              )}
+            </For>
+          </div>
+        ),
+      }}
     >
-      <Show when={(props.projects?.length ?? 0) > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noProjects}</p>}>
-        <ProjectItems />
-      </Show>
-    </AppWorkspace.SidebarSection>
+      {t().projects}
+    </AppWorkspace.SidebarItem>
   );
 
   const openConversationFromCommand = async (conversation: AiConversation) => {
@@ -254,24 +268,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     if (result.action === "save") props.onConversationUpdated?.(result.conversation);
     else props.onConversationArchived?.(result.conversation);
   };
-  const PinnedSection = () => (
-    <Show when={pinnedConversations().length > 0}>
-      <AppWorkspace.SidebarSection title={t().pinned}>
-        <For each={pinnedConversations()}>
-          {(conversation) => (
-            <ConversationSidebarItem
-              conversation={conversation}
-              active={conversation.id === activeConversationId()}
-              open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
-              edit={(item) => void openEditor(item)}
-              project={props.projects?.find((project) => project.id === conversation.projectId)}
-              update={(item) => props.onConversationUpdated?.(item)}
-            />
-          )}
-        </For>
-      </AppWorkspace.SidebarSection>
-    </Show>
-  );
   const openAllChats = (done = false) =>
     void openAssistantAllChatsDialog(
       async (conversation) => {
@@ -312,28 +308,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       <AppWorkspace.SidebarItem onClick={() => openAllChats()}>{t().allChats}</AppWorkspace.SidebarItem>
     </AppWorkspace.SidebarSection>
   );
-  const collapsedChatMenu = () => [
-    ...(pinnedConversations().length > 0
-      ? [
-          {
-            sectionLabel: t().pinned,
-            items: pinnedConversations().map((conversation) => ({
-              label: conversation.title,
-              action: () => openConversationFromCommand(conversation),
-            })),
-          },
-        ]
-      : []),
-    {
-      sectionLabel: t().chats,
-      items: [
-        ...generalConversations().map((conversation) => ({
-          label: conversation.title,
-          action: () => openConversationFromCommand(conversation),
-        })),
-      ],
-    },
-  ];
+  const collapsedChatMenu = () => chatConversations().map((conversation) => ({
+    label: conversation.title,
+    icon: conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message",
+    action: () => openConversationFromCommand(conversation),
+  }));
 
   const openSearch = () => openGlobalSearch(assistantSearchOptions(locale()));
   const [savingIds, setSavingIds] = createSignal<ReadonlySet<string>>(new Set());
@@ -342,7 +321,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     return {
       id: `chat:${conversation.id}`,
       label: conversation.title,
-      icon: conversation.pinnedAt ? "ti ti-pin" : "ti ti-message",
+      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message",
       href: assistantConversationHref("/app/assistant", conversation.id),
       action: `chat:${conversation.id}`,
       active: activeConversationId() === conversation.id,
@@ -367,14 +346,36 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       ],
     };
   };
+  const studioLifetime = new AbortController();
+  onCleanup(() => studioLifetime.abort());
+  let studioOpen = false;
+  const openStudio = async () => {
+    if (studioOpen) return;
+    studioOpen = true;
+    try { await openStudioDialog({ activeAppId: props.activeAppId, signal: studioLifetime.signal }); }
+    finally { studioOpen = false; }
+  };
+  onMount(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("studio") !== "1") return;
+    url.searchParams.delete("studio");
+    window.history.replaceState(window.history.state, "", url);
+    void openStudio();
+  });
   const mobileNavigation = createNavigation({
     items: () => [
       { id: "new", action: "new", label: t().newChat, icon: "ti ti-plus", disabled: creatingConversation() },
       { id: "search", action: "search", label: t().searchChats, icon: "ti ti-search" },
-      { id: "new-project", action: "new-project", label: t().newProject, icon: "ti ti-folder-plus" },
+      ...chatConversations().map(chatItem),
+      {
+        id: "done-chats",
+        label: text("Done"),
+        badge: props.doneCount ?? doneConversations().length,
+        children: [...doneConversations().map(chatItem), { id: "all", action: "all", label: t().allChats }],
+      },
       {
         id: "apps",
-        href: "/app/assistant/apps",
+        action: "apps",
         label: artifactMessages.resolve([locale()]).t.apps,
         icon: "ti ti-app-window",
         active: activeView() === "apps",
@@ -382,22 +383,21 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       {
         id: "projects",
         label: t().projects,
-        children: (props.projects ?? []).map((project) => ({
-          id: `project:${project.id}`,
-          action: `project:${project.id}`,
-          href: assistantProjectHref("/app/assistant", project.id),
-          label: project.name,
-          icon: project.icon || "ti ti-folder",
-          active: activeProjectId() === project.id,
-        })),
-      },
-      ...(pinnedConversations().length ? [{ id: "pinned", label: t().pinned, children: pinnedConversations().map(chatItem) }] : []),
-      { id: "chats", label: t().chats, children: generalConversations().map(chatItem) },
-      {
-        id: "done-chats",
-        label: text("Done"),
-        badge: props.doneCount ?? doneConversations().length,
-        children: [...doneConversations().map(chatItem), { id: "all", action: "all", label: t().allChats }],
+        defaultExpanded: false,
+        icon: "ti ti-folders",
+        active: Boolean(activeProjectId()),
+        children: [
+          { id: "search-projects", action: "search-projects", label: t().searchProjects, icon: "ti ti-search" },
+          { id: "new-project", action: "new-project", label: t().newProject, icon: "ti ti-plus" },
+          ...(props.projects ?? []).map((project) => ({
+            id: `project:${project.id}`,
+            action: `project:${project.id}`,
+            href: assistantProjectHref("/app/assistant", project.id),
+            label: project.name,
+            icon: project.icon || "ti ti-folder",
+            active: activeProjectId() === project.id,
+          })),
+        ],
       },
       { id: "preferences", action: "preferences", label: t().personalize, icon: "ti ti-user-cog" },
     ],
@@ -408,6 +408,14 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       }
       if (action === "new-project") {
         await props.onCreateProject?.();
+        return;
+      }
+      if (action === "apps") {
+        void openStudio();
+        return;
+      }
+      if (action === "search-projects") {
+        openProjectSearch();
         return;
       }
       if (action === "search") {
@@ -486,7 +494,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <AssistantSearchButton variant="icon" registerCommand currentChat={!!activeConversationId()} />
           </AppWorkspace.SidebarIconGrid>
 
-          <AppWorkspace.SidebarIconGrid columns={3} sidebarMode="collapsed">
+          <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="collapsed">
             <AppWorkspace.SidebarIconAction
               icon="ti ti-plus"
               label={t().newChat}
@@ -494,11 +502,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
               onClick={() => void props.onNewConversation?.()}
             />
             <AssistantSearchButton variant="icon" />
-            <AppWorkspace.SidebarIconAction
-              icon="ti ti-folder-plus"
-              label={t().createProject}
-              onClick={() => void props.onCreateProject?.()}
-            />
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">
@@ -515,11 +518,9 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
-            <ProjectsSection />
-            <PinnedSection />
-            <AppWorkspace.SidebarSection title={t().chats}>
-              <Show when={generalConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
-                <For each={generalConversations()}>
+            <AppWorkspace.SidebarSection>
+              <Show when={chatConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
+                <For each={chatConversations()}>
                   {(conversation) => (
                     <ConversationSidebarItem
                       conversation={conversation}
@@ -536,32 +537,17 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <DoneSection />
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
-            <AppWorkspace.SidebarItem
-              sidebarMode="expanded"
-              icon="ti ti-app-window"
-              href="/app/assistant/apps"
-              active={activeView() === "apps"}
-            >
-              {artifactMessages.resolve([locale()]).t.apps}
-            </AppWorkspace.SidebarItem>
+            <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
+            <ProjectsItem />
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}
             </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
           <AppWorkspace.SidebarFooter sidebarMode="collapsed">
-            <AppWorkspace.SidebarIconGrid>
-              <AppWorkspace.SidebarIconAction icon="ti ti-check" label={text("Done")} onClick={() => openAllChats(true)} />
-              <AppWorkspace.SidebarIconAction
-                icon="ti ti-app-window"
-                label={artifactMessages.resolve([locale()]).t.apps}
-                onClick={() => navigateTo("/app/assistant/apps")}
-              />
-              <AppWorkspace.SidebarIconAction
-                icon="ti ti-user-cog"
-                label={t().personalize}
-                onClick={() => void openAssistantPrefsModal()}
-              />
-            </AppWorkspace.SidebarIconGrid>
+            <AppWorkspace.SidebarItem icon="ti ti-check" title={text("Done")} onClick={() => openAllChats(true)}>{text("Done")}</AppWorkspace.SidebarItem>
+            <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
+            <ProjectsItem />
+            <AppWorkspace.SidebarItem icon="ti ti-user-cog" title={t().personalize} onClick={() => void openAssistantPrefsModal()}>{t().personalize}</AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
