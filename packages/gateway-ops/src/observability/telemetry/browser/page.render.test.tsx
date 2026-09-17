@@ -2,12 +2,11 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as cloud from "@k2b/cloud";
+import type { AuthContext } from "@k2b/cloud/server";
+import { coreSettings, logging, type WebVitalsOverview } from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
-
-import type { AuthContext } from "@k2b/cloud/server";
-import * as cloud from "@k2b/cloud";
-import { coreSettings, logging, type WebVitalsOverview } from "@k2b/cloud/services";
 
 const root = mkdtempSync(join(tmpdir(), "browser-vitals-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
@@ -50,7 +49,7 @@ test("Browser SSR distinguishes retained, empty and failed reads and localizes t
     read.mockResolvedValue({
       ...empty,
       summary: [{ name: "CLS", count: 1, p75: 0 }],
-      series: [{ name: "CLS", count: 1, p75: 0, bucket: Date.UTC(2026, 8, 14) }],
+      series: [{ name: "CLS", count: 1, p75: 0, bucket: Date.now() - 60 * 60 * 1000 }],
     });
     const retained = await (await server.request("/?view=browser")).text();
     expect(retained).toContain("Previously recorded measurements remain visible");

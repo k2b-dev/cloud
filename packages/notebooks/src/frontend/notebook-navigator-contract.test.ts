@@ -13,7 +13,7 @@ describe("Notebooks navigator hydration contract", () => {
   test("inherits the cookie-backed workspace layout rendered by Cloud", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "[id]/page.tsx")).text();
 
-    expect(source).toContain('<AppWorkspace class="flex-1 min-h-0">');
+    expect(source).toMatch(/<AppWorkspace\b[^>]*class="flex-1 min-h-0"/);
     expect(source).not.toContain("initialWorkspaceLayout");
     expect(source).not.toContain("layoutState={() =>");
   });
@@ -68,7 +68,15 @@ describe("Notebooks navigator hydration contract", () => {
     expect(source).toContain("actions={");
     expect(source).toContain("iconOnly");
     expect(source).toContain('icon="ti ti-arrows-sort"');
-    expect(source.match(/aria-label=\{t\(\)\.sortNotes\}/g)).toHaveLength(2);
+    expect(source).toContain("aria-label={t().sortNotes}");
+    expect(source).toContain("<WorkspaceNavigationProvider navigation={mobileNavigation}");
+    expect(source).toContain('id: "sort"');
+    expect(source).toContain("label: t().sortNotes");
+    expect(source).toContain("children: treeSortOptions().map");
+    expect(source).toContain("action: `sort:${option.value}`");
+    expect(source).toContain("active: treeSort() === option.value");
+    expect(source).toContain('if (action.startsWith("sort:"))');
+    expect(source).toContain("if (option) changeTreeSort(option.value)");
     expect(source).toContain("writeSettings(notebook().id, { treeSort: value })");
   });
 });

@@ -3,6 +3,7 @@ import type { CloudRuntime, PermissionLevel, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
+import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
 import type { PresentationMode } from "../../lib/presentation-mode";
 import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
@@ -123,6 +124,7 @@ async function load(mode?: string, path?: string) {
 describe("notebook page presentation authorization", () => {
   test("Book notes render inside the normal Cloud workspace shell", async () => {
     fixtures("read");
+    track(stubRailSnapshot());
     await import("./_components/detail/ssr-test-plugin");
     const { default: handler } = await import("./page");
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();

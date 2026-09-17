@@ -74,8 +74,32 @@ describe("Contact book settings", () => {
   test("exposes modal settings actions in desktop and mobile navigation", () => {
     const html = renderToString(() => <ContactsSidebar books={[book]} active={book.id} adminBookIds={[book.id]} />);
 
-    expect(html.match(/aria-label="Open settings for Suppliers"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Open settings for Suppliers"/g)).toHaveLength(1);
+    const navigationJson = html.match(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s)?.[1];
+    expect(navigationJson).toBeDefined();
+    const navigation = JSON.parse(navigationJson!);
+    expect(navigation.items).toContainEqual(
+      expect.objectContaining({
+        id: book.id,
+        active: true,
+        href: `/app/contacts/${book.id}`,
+        actions: [
+          expect.objectContaining({
+            action: `settings:${book.id}`,
+            label: "Open settings for Suppliers",
+          }),
+        ],
+      }),
+    );
     expect(html).not.toContain("/app/contacts/book-1/settings");
+  });
+
+  test("omits settings actions from both navigations without book administration", () => {
+    const html = renderToString(() => <ContactsSidebar books={[book]} active={book.id} adminBookIds={[]} />);
+
+    expect(html).not.toContain("Open settings for Suppliers");
+    expect(html).not.toContain(`settings:${book.id}`);
+    expect(html).toContain(`/app/contacts/${book.id}`);
   });
 
   test("uses the workspace icon action geometry for collapsed search", () => {
