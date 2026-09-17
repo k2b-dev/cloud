@@ -448,6 +448,8 @@ export default function RecordsTable(props: {
                     />
                   ) : resultColumn?.type === "date" || resultColumn?.sqlType === "date" ? (
                     formatCell(value, "date", undefined, { kind: "date", format: "short" }, props.dateConfig, locale())
+                  ) : resultColumn?.type === "number" || resultColumn?.sqlType === "numeric" ? (
+                    formatCell(value, "number", undefined, undefined, props.dateConfig, locale()) || "—"
                   ) : (
                     displayValue(value)
                   );

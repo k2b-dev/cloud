@@ -4,6 +4,7 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      number: "Assigned automatically when the business partner is created. Stable customer reference within this Base.",
       name: "Legal company name used on billing documents.",
       vat_id: "German VAT ID: DE followed by nine digits. Required before issuing.",
       street: "Street and building number for the billing address.",
@@ -40,6 +41,7 @@ const messages = i18n.define({
       snapshot: "Linked party detail: live in a draft and frozen with the finalized billing record.",
     },
     de: {
+      number: "Wird beim Anlegen des Geschäftspartners automatisch vergeben. Feste Kundennummer innerhalb dieser Base.",
       name: "Rechtlicher Unternehmensname für die Abrechnungsdokumente.",
       vat_id: "Deutsche USt-IdNr.: DE und neun Ziffern. Vor dem Ausstellen erforderlich.",
       street: "Straße und Hausnummer der Rechnungsadresse.",

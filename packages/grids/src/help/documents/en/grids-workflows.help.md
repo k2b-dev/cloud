@@ -236,7 +236,7 @@ Run options are configured separately from the workflow source. One workflow can
 | `finalizeRecord` | `record` | None | Validates Write access and predicts one permanent finalization |
 | `deleteRecord` | `record` | `audit`, `saveAs` | Checks permission and predicts moving a non-finalized Record to trash, not destroying it |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers keyed by audit-question UUID | Validates and predicts the record update |
-| `createRecord` | `table`, non-empty `values` | `saveAs` | Validates and predicts the new record |
+| `createRecord` | `table`, non-empty `values` | `copyFrom`, `copyFields`, `saveAs` | Validates and predicts the new record |
 | `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Check `message`; update `ifVersion`/`audit`; 1–50 `validateDocuments` | Evaluates checks and predicts changes without locking or writing |
 | `generateDocument` | `template` + `record`, or `data` + `output` | `filename`, up to 20 `tags`, `associatedData`, `saveAs` | Validates access and values; does not generate |
 | `createDocumentLink` | `document` output reference | `expiresIn` (`1d`, `7d`, `30d`, `90d`; default `30d`), `comment`, `saveAs` | Validates the document and access; does not create a link |
@@ -329,6 +329,8 @@ and approval logic. Grids rechecks current permissions before creation.
 `closeRecord` follows the Table's mode: Direct finalizes; Four-eyes requests another eligible person's approval. Optional expected mode and policy revision pin a review. **Close selected Records** reviews up to 100 exact Records; its protected profile retains confirmed IDs instead of refreshing a View or query. Changed policy or changed/incomplete Records stop later steps and leave affected Records editable. The run shows completed steps and failures.
 
 `createCorrectionDraft` links a new Draft to its finalized original and sets its type. `copyFields` copies up to 100 stored fields, including empty values and object-list inputs, but not unique fields, IDs, Files, Relations or calculations. Optional `values` supplies up to 100 explicit inputs, including required Relations; it overrides copies, never type/original. Relations need public IDs (`inputs.original.Customer.recordId`). `saveAs` names the result. Validation, permissions and current formulas apply. Replay returns the same Draft.
+
+`createRecord` can copy selected inputs from an existing record in the same table: supply `copyFrom: inputs.original` with `copyFields: [Positions]`. Select up to 100 stored value fields. IDs, unique fields, files, relations and calculated fields cannot be copied. Object-list inputs are copied and their formulas recalculated. Explicit `values` override copies and retain normal write validation. The source remains unchanged; replaying the same workflow step returns the same new record. This option belongs to the standalone action, not entries inside `atomicRecords`.
 
 The starter labels the action **Correction** or **Cancellation**; its run option must match. The selected single-select value stores that meaning. Both create linked Drafts for a person to complete, without reversing amounts, taxes or bookings or generating Documents.
 

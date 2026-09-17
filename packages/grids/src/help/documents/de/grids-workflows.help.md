@@ -237,7 +237,7 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 | `finalizeRecord` | `record` | Keine | Validiert Schreibzugriff und sagt eine dauerhafte Finalisierung vorher |
 | `deleteRecord` | `record` | `audit`, `saveAs` | Prüft Berechtigungen und sagt das Verschieben eines nicht festgeschriebenen Datensatzes in den Papierkorb vorher, keine Vernichtung |
 | `updateRecord` | `record`, nicht leeres `set` | Nach UUID der Audit-Frage indizierte `audit`-Antworten | Validiert die Datensatzaktualisierung und sagt sie vorher |
-| `createRecord` | `table`, nicht leere `values` | `saveAs` | Validiert den neuen Datensatz und sagt ihn vorher |
+| `createRecord` | `table`, nicht leere `values` | `copyFrom`, `copyFields`, `saveAs` | Validiert den neuen Datensatz und sagt ihn vorher |
 | `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Prüfungs-`message`; Update-`ifVersion`/`audit`; 1–50 `validateDocuments` | Prüft und sagt Änderungen ohne Sperren oder Schreiben vorher |
 | `generateDocument` | `template` + `record` oder `data` + `output` | `filename`, bis zu 20 `tags`, `associatedData`, `saveAs` | Validiert Zugriff und Werte; generiert nichts |
 | `createDocumentLink` | Ausgabereferenz `document` | `expiresIn` (`1d`, `7d`, `30d`, `90d`; Standard `30d`), `comment`, `saveAs` | Validiert Dokument und Zugriff; erstellt keinen Link |
@@ -330,6 +330,8 @@ Kontierung und Freigaben. Grids prüft aktuelle Rechte vor der Erzeugung erneut.
 `closeRecord` folgt dem Tabellenmodus: Direkt finalisiert; Vier-Augen fordert eine andere berechtigte Person zur Freigabe auf. Erwarteter Modus und Richtlinienrevision können eine Prüfung festschreiben. **Ausgewählte Datensätze schließen** prüft bis zu 100 exakte Datensätze. Das geschützte Profil behält bestätigte IDs statt eine Ansicht oder Abfrage neu auszuwerten. Geänderte Richtlinien oder geänderte/unvollständige Datensätze stoppen spätere Schritte; betroffene Datensätze bleiben bearbeitbar. Der Lauf zeigt abgeschlossene Schritte und Fehler.
 
 `createCorrectionDraft` verknüpft einen neuen Entwurf mit dem finalisierten Original und setzt seinen Typ. `copyFields` kopiert bis zu 100 Wertefelder samt Leerwerten und Objektlisten-Eingaben, aber keine eindeutigen Felder, IDs, Dateien, Relationen oder Berechnungen. Optionales `values` ergänzt bis zu 100 Eingaben, auch Pflichtrelationen; es überschreibt Kopien, nie Typ/Original. Relationen benötigen öffentliche IDs (`inputs.original.Kunde.recordId`). `saveAs` benennt das Ergebnis. Validierung, Rechte und aktuelle Formeln gelten weiter. Wiederholung liefert denselben Entwurf.
+
+`createRecord` kann ausgewählte Eingaben eines vorhandenen Datensatzes derselben Tabelle übernehmen: `copyFrom: inputs.original` zusammen mit `copyFields: [Positionen]`. Wähle bis zu 100 gespeicherte Wertfelder. IDs, eindeutige Felder, Dateien, Relationen und berechnete Felder werden nicht kopiert. Objektlisten übernehmen ihre Eingaben und berechnen Formeln neu. Explizite `values` überschreiben Kopien und durchlaufen die normale Schreibvalidierung. Das Original bleibt unverändert; eine Wiederholung desselben Workflow-Schritts liefert denselben neuen Datensatz. Diese Option gilt für die eigenständige Aktion, nicht für Einträge in `atomicRecords`.
 
 Der Starter beschriftet die Aktion als **Korrektur** oder **Storno**; die Ausführungsoption muss dazu passen. Der gewählte Auswahlwert speichert diese Bedeutung. Beides erstellt verknüpfte Entwürfe zum Vervollständigen, ohne Beträge, Steuern oder Buchungen umzukehren oder Dokumente zu erzeugen.
 

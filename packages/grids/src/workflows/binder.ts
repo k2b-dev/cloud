@@ -625,6 +625,26 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
       typeof config.table === "string"
         ? resolveCatalogRef(context, context.catalog.tables, config.table, "table", [...path, "table"])
         : null;
+    if ((config.copyFrom === undefined) !== (config.copyFields === undefined)) {
+      addDiagnostic(context, "binding.source", "copyFrom and copyFields must be supplied together", path);
+    }
+    if (config.copyFrom !== undefined) {
+      const source = expectReference(config.copyFrom, "grids.record", "copyFrom", [...path, "copyFrom"], scope, context);
+      if (source?.tableId && table && source.tableId !== table.id) {
+        addDiagnostic(context, "binding.scope", "Copy source must belong to the target table", [...path, "copyFrom"]);
+      }
+      if (table && Array.isArray(config.copyFields)) {
+        const seen = new Set<string>();
+        config.copyFields.forEach((field, index) => {
+          if (typeof field !== "string") return;
+          const at = [...path, "copyFields", index];
+          const bound = bindField(context, table.id, field, at);
+          if (!bound) return;
+          if (seen.has(bound.id)) addDiagnostic(context, "binding.duplicate", "Copy field is selected more than once", at);
+          seen.add(bound.id);
+        });
+      }
+    }
     bindFieldMap(config.values, table?.id, [...path, "values"], scope, context);
     output = { ...recordValue, ...(table ? { tableId: table.id } : {}) };
   } else if (step.action === "atomicRecords") {

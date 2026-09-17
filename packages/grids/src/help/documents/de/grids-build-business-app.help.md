@@ -56,10 +56,16 @@ Erzeugte Dokumente behalten ihren Snapshot und ihre Dateien. Quellenänderungen 
 
 Die Vorlage **Rechnungswesen** bietet Rechnungen, Korrekturen und Provisionsgutschriften in EUR für unterschiedliche deutsche Geschäftspartner mit USt-IdNr. und 7 % oder 19 % USt. Andere Fälle benötigen ein anderes Modell oder einen anderen Renderer.
 
-1. Ergänze unter **Dein Unternehmen** die echten Unternehmens- und Bankdaten. Beispieldatensätze sind Entwürfe.
+1. Lass einen Base-Admin unter **Base-Einstellungen → Dokumente** die echten Unternehmens- und Bankdaten ergänzen. Beispieldatensätze sind Entwürfe.
 2. Erstelle eine Rechnung, wähle oder erstelle den Partner und erfasse Objektlistenpositionen. Prüfe Summen, Leistungs- und Fälligkeitsdatum vor der Ausstellung.
-3. Wähle **Rechnung ausstellen / abrufen** auf der gespeicherten Detailseite. Das schreibt den Beleg fest. Wiederhole diese Aktion nach einem Renderfehler: Dokument und Nummer bleiben gleich. `REF-…` ist eine interne Referenz, keine Rechnungsnummer.
+3. Wähle **Rechnung ausstellen** auf der gespeicherten Detailseite. Während das PDF entsteht, kannst du weiterarbeiten. Nach einem Renderfehler wählst du **Erstellung fortsetzen**: Dokument, Unternehmensdaten und Nummer bleiben gleich. `REF-…` ist eine interne Referenz, keine Rechnungsnummer.
 4. Erfasse tatsächlich eingegangene oder ausgezahlte Beträge und wähle **Zahlung bestätigen**. Erst bestätigte Zahlungen zählen zum Saldo; danach sind sie unveränderlich. Es wird keine Überweisung ausgeführt.
+
+**Offene Zahlungen** trennt **Überfällig**, **Heute oder später fällig** und **Guthaben klären**. Öffne einen fälligen Betrag, um eine Zahlung zu erfassen. Guthaben öffnen den Originalbeleg zur Prüfung. Nur bestätigte Zahlungen zählen in diesen Listen.
+
+Wähle an einer festgeschriebenen Rechnung **Als neue Rechnung übernehmen**. Der neue Entwurf übernimmt Empfänger, Bestellreferenz und Positionen. Prüfe aktuelle Partnerangaben und Preise und wähle Leistungsdatum und Fälligkeit neu. Zahlungen, Korrekturen, interne Notizen und ausgestellte Dateien werden nicht übernommen.
+
+Partner erhalten eine schreibgeschützte, innerhalb der Base eindeutige Kundennummer wie **KD-00001**. Du siehst sie in der Partnerliste, der Empfängerauswahl sowie den Partner- und Belegdetails. Eine Namensänderung behält die Nummer bei.
 
 Bereite Korrekturen von der ursprünglichen Rechnung aus vor; reduziere kopierte Positionen für eine Teilkorrektur. Prüfungen erhalten den verbleibenden Netto- und Steuerbetrag je Satz. Provisionsgutschriften benötigen eine Vereinbarungsreferenz und das Empfängerkonto; erfasse Positionen direkt und rechne dieselbe Verpflichtung nicht zweimal ab. **Entwurf verwerfen** verschiebt unfertige, nicht ausgestellte Belege in den Papierkorb. Interne Notizen erscheinen nicht im PDF/XML.
 

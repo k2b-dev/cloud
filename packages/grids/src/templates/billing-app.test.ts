@@ -49,6 +49,7 @@ for (const locale of ["en", "de"]) {
         }),
       );
       expect(input(key)).toContainEqual(expect.objectContaining({ fieldId: { $ref: "field", key: "bills.due_date" }, required: true }));
+      expect(input(key)).toContainEqual(expect.objectContaining({ fieldId: { $ref: "field", key: "bills.service_date" }, required: true }));
     }
     for (const key of ["edit_draft", "edit_correction", "edit_self_billing"]) {
       expect(input(key)).toContainEqual(
@@ -82,7 +83,7 @@ for (const locale of ["en", "de"]) {
     expect(JSON.stringify(input("edit_payment"))).not.toContain("payments.refund");
     const billFields = template.tables.find((table) => table.key === "bills")!.fields;
     expect(billFields.find((field) => field.key === "buyer_reference")?.required).toBe(true);
-    expect(billFields.find((field) => field.key === "service_date")).toMatchObject({ required: true });
+    expect(billFields.find((field) => field.key === "service_date")?.required).not.toBe(true);
     expect(billFields.find((field) => field.key === "service_date")?.defaultValue).toBeUndefined();
     for (const table of template.tables) expect(new Set(table.fields.map((field) => field.name)).size).toBe(table.fields.length);
   });
@@ -209,10 +210,18 @@ for (const locale of ["en", "de"]) {
       app.pages.find((page) => page.id === id)!.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
     const balanceBlocks = blocksFor("balances");
     expect(balanceBlocks.some((block) => block.id === "payments")).toBe(false);
-    const openBalances = balanceBlocks.find((block) => block.id === "balances");
-    if (openBalances?.type !== "records" || openBalances.source.kind !== "gql") throw new Error("Missing balances work list");
-    expect(openBalances.source.query).toContain(" != 0");
-    expect(openBalances.source.query).toContain(ref("field:bills.due_date"));
+    for (const group of ["overdue", "upcoming", "credits"]) {
+      const list = balanceBlocks.find((block) => block.id === group);
+      if (list?.type !== "records" || list.source.kind !== "gql") throw new Error("Missing payment work list");
+      expect(list.source.query).toContain(group === "credits" ? " < 0" : " > 0");
+      if (group !== "credits") expect(list.source.query).toContain(group === "overdue" ? " < TODAY()" : " >= TODAY()");
+      expect(list.rowNavigate?.pageId).toBe(group === "credits" ? "bill" : "payment-new");
+      expect(list.source.query).toContain(ref("field:bills.due_date"));
+    }
+    expect(blocksFor("bill").find((block) => block.id === "reuse")?.availableWhen?.query).toContain("finalizationState = 'finalized'");
+    expect(blocksFor("bill").find((block) => block.id === "reuse")).toMatchObject({
+      actions: [{ kind: "workflow", launcherId: ref("launcher:reuse_invoice"), onSuccessNavigate: { pageId: "bill" } }],
+    });
     const pending = balanceBlocks.find((block) => block.id === "pending-payments");
     expect(pending).toMatchObject({
       type: "records",

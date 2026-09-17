@@ -1545,6 +1545,55 @@ steps:
     }
   });
 
+  postgresTest(
+    "createRecord copies only selected stored inputs and preserves explicit validation",
+    async () => {
+      const fixture = createFixture();
+      try {
+        await insertFixture(fixture);
+        const catalog = await loadWorkflowCatalog(fixture.baseId);
+        const copy = async (copyFields: string[], values: Record<string, WorkflowJsonValue> = { Status: "Copied" }) => {
+          const compiled = await compileAndBindGridsWorkflowSource(
+            JSON.stringify({
+              inputs: { record: { type: "record", table: "Tasks", required: true } },
+              steps: [{ createRecord: { table: "Tasks", copyFrom: "inputs.record", copyFields, values } }],
+            }),
+            catalog,
+          );
+          if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+          const runId = await queueRun(fixture, {
+            plan: compiled.plan,
+            inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+          });
+          return { runId, state: await drive(runId) };
+        };
+        const source = await recordData(fixture.recordId);
+        const name = [...catalog.fieldsByTable.get(fixture.tableId)!.refs.values()].find((field) => field.id === fixture.nameFieldId)!.name;
+        const json = [...catalog.fieldsByTable.get(fixture.tableId)!.refs.values()].find((field) => field.id === fixture.jsonFieldId)!.name;
+        const copied = await copy([name, json], { [name]: "New name" });
+        expect(copied.state).toBe("succeeded");
+        await drive(copied.runId);
+        const records = await sql<
+          Array<{ data: Record<string, unknown> }>
+        >`SELECT data FROM grids.records WHERE table_id = ${fixture.tableId}::uuid AND id <> ${fixture.recordId}::uuid`;
+        expect(records).toHaveLength(1);
+        expect(records[0]!.data[fixture.nameFieldId]).toBe("New name");
+        expect(records[0]!.data[fixture.jsonFieldId]).toBe(source[fixture.jsonFieldId]);
+        expect(records[0]!.data[fixture.assetIdFieldId]).toMatch(/^ITEM-\d{4}$/);
+        const generatedId = [...catalog.fieldsByTable.get(fixture.tableId)!.refs.values()].find(
+          (field) => field.id === fixture.assetIdFieldId,
+        )!.name;
+        expect((await copy([generatedId])).state).toBe("failed");
+        await sql`UPDATE grids.fields SET unique_constraint = true WHERE id = ${fixture.nameFieldId}::uuid`;
+        expect((await copy([name])).state).toBe("failed");
+        expect(await recordData(fixture.recordId)).toEqual(source);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    },
+    30_000,
+  );
+
   postgresTest("workflow list writes retain exact cells and reject invalid atomic changes", async () => {
     const fixture = createFixture();
     try {

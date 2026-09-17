@@ -56,10 +56,16 @@ Generated Documents keep their original snapshot and exact files. Editing source
 
 The **Billing** template provides invoices, corrections and commission self-billing in EUR for distinct German business partners with German VAT IDs and 7% or 19% VAT. Other cases need a different model or renderer.
 
-1. Complete **Your company** with real company and bank details. Sample records are drafts.
+1. Ask a Base admin to complete **Base settings → Documents** with real company and bank details. Sample records are drafts.
 2. Create an invoice, choose or create its partner, and enter Object-list positions. Check totals, service date and due date before issuing.
-3. Choose **Issue / retrieve invoice** on the saved document page. This freezes the bill. Repeat that action after a rendering failure: it keeps the same Document and number. `REF-…` is an internal reference, not the invoice number.
+3. Choose **Issue invoice** on the saved document page. You can keep working while the PDF is created. After a rendering failure, choose **Continue creation**: it keeps the same Document, company details and number. `REF-…` is an internal reference, not the invoice number.
 4. Record money actually received or paid out, then **Confirm payment**. Only confirmed payments affect balances; confirmation locks the payment. No bank transfer is executed.
+
+**Open payments** groups overdue payments, payments due today or later, and credit balances to review. Open an amount due to record a payment. Credit balances open the original document for review. Only confirmed payments affect these lists.
+
+Choose **Use as new invoice** on a finalized invoice to create a fresh draft with its recipient, buyer reference and positions. Check current partner details and prices, and choose new service and due dates. Payments, corrections, internal notes and issued files are not copied.
+
+Partners receive a read-only customer number such as **KD-00001**, unique within the Base. Find it in the partner list, recipient selection, partner details and bill details. Renaming a partner keeps their number.
 
 Prepare corrections from the original invoice; reduce copied positions for a partial correction. Checks preserve the remaining net and VAT at each rate. Self-billing needs an agreement reference and the recipient's bank account; enter positions directly and avoid settling the same obligation twice. **Discard draft** moves unfinished bills to Trash, not issued bills. Internal notes are not included in PDF/XML.
 

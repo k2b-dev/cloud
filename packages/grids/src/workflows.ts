@@ -142,10 +142,12 @@ const dateContext = async (ctx: WorkflowActionContext): Promise<DateContext> => 
   firstDayOfWeek: 1,
 });
 
-const viewerForScope = (scope: GridsWorkflowActionScope) => ({
+/** Relation reads inherit this effect's authority, including App-only access. */
+const viewerForScope = (scope: GridsWorkflowActionScope, authorizeTable: (tableId: string) => Promise<boolean>) => ({
   userId: scope.principal.userId,
   userGroups: scope.principal.groupIds,
   serviceAccountId: scope.principal.serviceAccountId,
+  authorizeTable,
 });
 
 /**
@@ -270,6 +272,47 @@ const fieldPayload = (
   key: "set" | "values",
   values: Record<string, WorkflowJsonValue>,
 ): Record<string, unknown> => fieldPayloadAt(ctx, [key], values);
+
+/** Copy trusted stored inputs, never computed columns or business identity. */
+const recordCreationValues = async (
+  ctx: WorkflowActionContext,
+  scope: GridsWorkflowActionScope,
+  tableId: string,
+  config: { copyFrom?: string; copyFields?: string[]; values: Record<string, WorkflowJsonValue> },
+  client: SqlClient = sql,
+): Promise<Record<string, unknown>> => {
+  const fields = await listFields(tableId, false, client);
+  let copied: Record<string, unknown> = {};
+  if (config.copyFrom !== undefined || config.copyFields !== undefined) {
+    if (!config.copyFrom || !config.copyFields?.length || config.copyFields.length > MAX_CORRECTION_PREFILL_FIELDS)
+      throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).copySourceInvalid);
+    const source = await recordReference(ctx, config.copyFrom, "copyFrom");
+    if (source.planned || source.tableId !== tableId) throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).copySourceInvalid);
+    const ids = config.copyFields.map((_, index) => boundIdAt(ctx, ["copyFields", index]));
+    if (new Set(ids).size !== ids.length) throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).copySourceInvalid);
+    for (const id of ids) {
+      const field = fields.find((field) => field.id === id);
+      if (!field || !isCorrectionPrefillFieldType(field.type) || field.uniqueConstraint)
+        throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).copySourceInvalid);
+    }
+    const [record] = await client<Array<{ data: Record<string, unknown> }>>`
+      SELECT data FROM grids.records WHERE id = ${source.recordId}::uuid AND table_id = ${tableId}::uuid AND deleted_at IS NULL`;
+    if (!record) throw actionError("NOT_FOUND", runtimeText(ctx).recordUnavailable);
+    copied = objectListRecordInputValues(
+      fields,
+      Object.fromEntries(
+        ids.map((id) => {
+          const value = record.data[id] ?? null;
+          return [
+            id,
+            fields.find((field) => field.id === id)!.type === "json" && typeof value === "string" ? JSON.stringify(value) : value,
+          ];
+        }),
+      ),
+    );
+  }
+  return resolveWorkflowRecordValues(scope, fields, { ...copied, ...fieldPayload(ctx, "values", config.values) }, client);
+};
 
 const correctionDraftValues = async (
   ctx: WorkflowActionContext,
@@ -886,7 +929,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const created = requireOk(
           await createRecordInTransaction(tx, original.tableId, { ...values, ...explicit }, actorId(scope), "workflow", {
             dateConfig: await dateContext(ctx),
-            viewer: viewerForScope(scope),
+            viewer: viewerForScope(scope, await createWorkflowCaptureTableAccess(scope, tx)),
           }),
         );
         await logAudit(
@@ -1075,7 +1118,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const updated = requireOk(
           await updateRecordInTransaction(tx, record.tableId, record.recordId, values, actorId(scope), "workflow", undefined, {
             dateConfig: await dateContext(ctx),
-            viewer: viewerForScope(scope),
+            viewer: viewerForScope(scope, await createWorkflowCaptureTableAccess(scope, tx)),
             ...(audit ? { audit } : {}),
           }),
         );
@@ -1124,16 +1167,11 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const tableId = boundId(ctx, "table");
         await currentTable(ctx, scope, tableId);
         await requireTableAccess(scope, tableId, "write", tx);
-        const values = await resolveWorkflowRecordValues(
-          scope,
-          await listFields(tableId, false, tx),
-          fieldPayload(ctx, "values", config.values),
-          tx,
-        );
+        const values = await recordCreationValues(ctx, scope, tableId, config, tx);
         const created = requireOk(
           await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
             dateConfig: await dateContext(ctx),
-            viewer: viewerForScope(scope),
+            viewer: viewerForScope(scope, await createWorkflowCaptureTableAccess(scope, tx)),
           }),
         );
         await logAudit(
@@ -1160,7 +1198,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const tableId = boundId(ctx, "table");
         await currentTable(ctx, scope, tableId);
         await requireTableAccess(scope, tableId, "write");
-        const values = await resolveWorkflowRecordValues(scope, await listFields(tableId), fieldPayload(ctx, "values", config.values));
+        const values = await recordCreationValues(ctx, scope, tableId, config);
         return {
           summary: runtimeText(ctx).createRecordWithFields({ count: Object.keys(values).length }),
           // Marked planned: a later step that cannot tell this from a real
@@ -1308,7 +1346,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             const result = requireOk(
               await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
                 dateConfig: dates,
-                viewer: viewerForScope(scope),
+                viewer: viewerForScope(scope, effectAccess.canReadTable),
               }),
             );
             await logAudit(
@@ -1347,7 +1385,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               change.updateRecord.ifVersion,
               {
                 dateConfig: dates,
-                viewer: viewerForScope(scope),
+                viewer: viewerForScope(scope, effectAccess.canReadTable),
                 ...(audit ? { audit } : {}),
               },
             ),

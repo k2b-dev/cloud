@@ -1186,3 +1186,26 @@ test("catalog snapshot roundtrip retains Combined table kind", async () => {
   expect(restored.tables.refs.get("Overview")?.kind).toBe("federated");
   expect(restored.tables.refs.get("TBL003")?.kind).toBe("federated");
 });
+
+test("createRecord binds selected copy fields and rejects mismatched or ambiguous copies", async () => {
+  const source = `inputs:
+  item: { type: record, table: Items, required: true }
+steps:
+  - createRecord:
+      table: Items
+      copyFrom: inputs.item
+      copyFields: [Name]
+      values: { Status: Open }
+`;
+  const bound = await compileAndBindGridsWorkflowSource(source, catalog());
+  expect(bound.ok).toBe(true);
+  if (bound.ok) expect(bound.plan.bindings["steps.0.createRecord.copyFields.0"]).toBe(ids.name);
+  for (const invalid of [
+    source.replace("      copyFrom: inputs.item\n", ""),
+    source.replace("      copyFields: [Name]\n", ""),
+    source.replace("copyFields: [Name]", "copyFields: [Name, FLD001]"),
+    source.replace("copyFields: [Name]", "copyFields: [Missing]"),
+    source.replace("table: Items, required: true", "table: Archive, required: true"),
+  ])
+    expect((await compileAndBindGridsWorkflowSource(invalid, catalog())).ok).toBe(false);
+});

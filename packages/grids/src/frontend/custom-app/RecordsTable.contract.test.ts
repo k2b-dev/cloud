@@ -20,7 +20,7 @@ describe("App Records table actions", () => {
     expect(source).toContain('["text", "longtext", "relation"].includes(column.type) ? "min-w-48" : "min-w-32"');
     expect(source).toContain('class="overflow-x-auto"');
     expect(source).toContain("result().rowNavigationParams?.[row.recordId]");
-    expect(source).toContain("await loadPage(cursor(), appliedQuery(), history())");
+    expect(source).toContain("onCommittedChanges: () => loadPage(cursor(), appliedQuery(), history())");
     expect(source).toContain("window.setTimeout(() => void loadPage(null, value.trim(), []), 250)");
     expect(source).toContain('<DataTable.Header title={props.title} as="h2" size="md" />');
     expect(source).toContain("<DataTable.Footer>");

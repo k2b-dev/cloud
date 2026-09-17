@@ -49,6 +49,8 @@ export const workflowRuntimeMessages = i18n.define({
       followUpDraftCreated: "Linked follow-up Draft created",
       createFollowUpDraft: "Create one linked follow-up Draft from the finalized original Record",
       updateFields: ({ count }: { count: number }) => `Update ${count} field(s) on one record`,
+      copySourceInvalid:
+        "Copying requires an existing record in the target table and a distinct selection of stored, non-unique value fields.",
       createRecordWithFields: ({ count }: { count: number }) => `Create one record with ${count} field(s)`,
       existingRecordRequired: ({ path }: { path: string }) => `${path} must reference an existing record`,
       atomicCheckFailed: "Atomic record check failed",
@@ -113,6 +115,8 @@ export const workflowRuntimeMessages = i18n.define({
       followUpDraftCreated: "Verknüpfter Folgeentwurf erstellt",
       createFollowUpDraft: "Einen verknüpften Folgeentwurf aus dem finalisierten Originaldatensatz erstellen",
       updateFields: ({ count }) => `${count === 1 ? "Ein Feld" : `${count} Felder`} in einem Datensatz aktualisieren`,
+      copySourceInvalid:
+        "Zum Übernehmen werden ein vorhandener Datensatz derselben Tabelle und unterschiedliche gespeicherte Wertfelder ohne Eindeutigkeitsregel benötigt.",
       createRecordWithFields: ({ count }) => `Einen Datensatz mit ${count === 1 ? "einem Feld" : `${count} Feldern`} erstellen`,
       existingRecordRequired: ({ path }) => `${path} muss auf einen vorhandenen Datensatz verweisen`,
       atomicCheckFailed: "Die atomare Datensatzprüfung ist fehlgeschlagen",

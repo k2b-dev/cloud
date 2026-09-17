@@ -28,9 +28,18 @@ const messages = i18n.define({
       noIssued: "Your issued documents will appear here, with their number and PDF status.",
       noPayments: "No confirmed payments yet.",
       noPendingPayments: "No payments waiting for confirmation.",
-      noBalances: "All issued documents are settled.",
       balanceHelp:
-        "Positive amounts are still due. Negative amounts are credit balances to review for a refund. Open a document to record its payment.",
+        "Open an amount due to record a payment. For self-billing, record the commission paid out. Review credit balances on the original document. Only confirmed payments affect these lists.",
+      overdue: "Overdue",
+      upcoming: "Due today or later",
+      credits: "Credit balances to review",
+      noOverdue: "No overdue payments. You are up to date.",
+      noUpcoming: "No payments due today or later.",
+      noCredits: "No credit balances to review.",
+      reuseInvoice: "Use as new invoice",
+      reuseHelp:
+        "Check the recipient, buyer reference and prices in this draft. Choose a new service date and due date before issuing the invoice.",
+      reuseError: "Choose a finalized invoice to reuse. Credit notes and self-billing cannot be used as a new invoice.",
       refundHelp:
         "Record an actual refund using a positive amount. Save it, then confirm it on the invoice. Recording a refund does not transfer money.",
       title: "Billing",
@@ -50,6 +59,7 @@ const messages = i18n.define({
       balances: "Open payments",
       paymentTotals: "Payments per bill",
       correctionTotals: "Corrections per invoice",
+      customerNumber: "Customer number",
       name: "Name",
       vatId: "VAT ID",
       street: "Street and number",
@@ -158,9 +168,19 @@ const messages = i18n.define({
       noIssued: "Ausgestellte Belege erscheinen hier mit ihrer Nummer und dem PDF-Status.",
       noPayments: "Noch keine bestätigten Zahlungen.",
       noPendingPayments: "Keine Zahlungen warten auf Bestätigung.",
-      noBalances: "Alle ausgestellten Belege sind ausgeglichen.",
       balanceHelp:
-        "Positive Beträge sind noch offen. Negative Beträge sind Guthaben, für die eine Erstattung infrage kommt. Öffne einen Beleg, um seine Zahlung zu erfassen.",
+        "Öffne einen fälligen Betrag, um eine Zahlung zu erfassen. Bei Provisionsgutschriften erfasst du die ausgezahlte Provision. Guthaben prüfst du am Originalbeleg. Nur bestätigte Zahlungen zählen hier.",
+      overdue: "Überfällig",
+      upcoming: "Heute oder später fällig",
+      credits: "Guthaben klären",
+      noOverdue: "Keine überfälligen Zahlungen. Alles im Blick.",
+      noUpcoming: "Keine heute oder später fälligen Zahlungen.",
+      noCredits: "Keine Guthaben zu klären.",
+      reuseInvoice: "Als neue Rechnung übernehmen",
+      reuseHelp:
+        "Prüfe Empfänger, Kundenreferenz und Preise in diesem Entwurf. Ergänze Leistungsdatum und Fälligkeit, bevor du die Rechnung ausstellst.",
+      reuseError:
+        "Wähle eine festgeschriebene Rechnung. Korrekturen und Provisionsgutschriften können nicht als neue Rechnung übernommen werden.",
       refundHelp:
         "Erfasse eine tatsächlich erfolgte Erstattung als positiven Betrag. Speichere sie und bestätige sie danach an der Rechnung. Die Erfassung überweist kein Geld.",
       title: "Rechnungswesen",
@@ -180,6 +200,7 @@ const messages = i18n.define({
       balances: "Offene Zahlungen",
       paymentTotals: "Zahlungen je Abrechnung",
       correctionTotals: "Korrekturen je Rechnung",
+      customerNumber: "Kundennummer",
       name: "Name",
       vatId: "USt-IdNr.",
       street: "Straße und Hausnummer",
@@ -306,9 +327,14 @@ export function createBillingTemplate(locale?: string): GridTemplate {
     config: { targetTableId: table(target), cardinality: multiple ? "multiple" : "single" },
   });
   const snapshots = (relationKey: string, target: string, prefix: string): TemplateField[] =>
-    partyFields().map((source) => ({
+    [{ key: "number", name: t.customerNumber }, ...partyFields()].map((source) => ({
       key: `${relationKey}_${source.key}`,
-      name: relationKey === "party" && source.key === "name" ? t.recipientSection : `${prefix}: ${source.name}`,
+      name:
+        source.key === "number"
+          ? t.customerNumber
+          : relationKey === "party" && source.key === "name"
+            ? t.recipientSection
+            : `${prefix}: ${source.name}`,
       type: "lookup",
       hideInTable: true,
       config: { relationFieldId: field(`bills.${relationKey}`), targetFieldId: field(`${target}.${source.key}`) },
@@ -340,7 +366,7 @@ export function createBillingTemplate(locale?: string): GridTemplate {
       ...((creating && key === "invoice_date") || (tableKey === "payments" && key === "date" && creating)
         ? { defaultValue: { kind: "now" } }
         : {}),
-      ...(["positions", "due_date"].includes(key) ? { required: true } : {}),
+      ...(["positions", "service_date", "due_date"].includes(key) ? { required: true } : {}),
       helpText: fieldHelp(tableKey, key),
       ...(section(tableKey, key) ? { section: section(tableKey, key) } : {}),
       ...(inlineCreate && tableKey === "bills" && key === "party"
@@ -367,7 +393,20 @@ export function createBillingTemplate(locale?: string): GridTemplate {
     baseName: t.title,
     baseDescription: t.description,
     tables: [
-      { key: "parties", name: t.parties, fields: partyFields() },
+      {
+        key: "parties",
+        name: t.parties,
+        fields: [
+          {
+            key: "number",
+            name: t.customerNumber,
+            type: "id",
+            presentable: true,
+            config: { strategy: "sequence", prefix: "KD-", padding: 5 },
+          },
+          ...partyFields(),
+        ],
+      },
       {
         key: "bills",
         name: t.bills,
@@ -397,9 +436,9 @@ export function createBillingTemplate(locale?: string): GridTemplate {
           },
           relation("party", t.party, "parties", true),
           { key: "invoice_date", name: t.invoiceDate, type: "date", required: true, defaultValue: { kind: "now" } },
-          { key: "service_date", name: t.serviceDate, type: "date", required: true },
-          // A prepared correction needs a newly chosen deadline. Forms and the
-          // issuance profile require it; the initial workflow-created draft may omit it.
+          // Reused drafts need new dates. Forms and the issuance profile require
+          // them; creating an unfinished draft must not invent or copy dates.
+          { key: "service_date", name: t.serviceDate, type: "date" },
           { key: "due_date", name: t.dueDate, type: "date" },
           text("buyer_reference", t.buyerReference, true, { maxLength: 100 }),
           ...amountFields,
@@ -594,6 +633,13 @@ export function createBillingTemplate(locale?: string): GridTemplate {
     workflows: billingWorkflows(t, locale),
     customApps: billingApp(t),
     workflowLaunchers: [
+      {
+        key: "reuse_invoice",
+        workflow: "reuse_invoice",
+        name: t.reuseInvoice,
+        config: { kind: "customApp", inputMode: "prompt" },
+        enabled: true,
+      },
       {
         key: "confirm_payment",
         workflow: "confirm_payment",

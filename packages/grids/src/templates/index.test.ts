@@ -1176,7 +1176,14 @@ describe("built-in grid templates", () => {
             { renderer },
             {
               app: { name: "Cloud" },
-              business: { legalName: "Example Operations", senderLine: "Example Operations", address: "Example Street 1" },
+              business: {
+                legalName: "Example Operations",
+                senderLine: "Example Operations",
+                address: "Example Street 1",
+                postalCode: "",
+                city: "",
+                countryCode: "",
+              },
               document: { number: "LN-2026-001" },
               rows: [
                 {

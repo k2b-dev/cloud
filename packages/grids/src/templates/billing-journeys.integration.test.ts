@@ -155,7 +155,9 @@ const fixture = async () => {
     const result = await updateBase(baseId, { documentDefaults: business }, actorId);
     if (!result.ok) throw new Error(result.error.message);
   };
-  return { baseId, table, invoke, appRows, balanceRows, configureBusiness };
+  const openBalanceRows = async () =>
+    (await Promise.all(["overdue", "upcoming", "credits"].map((group) => appRows("balances", group)))).flat();
+  return { baseId, table, invoke, appRows, openBalanceRows, balanceRows, configureBusiness };
 };
 
 const ref = (tableId: string, recordId: string): WorkflowJsonValue => ({ kind: "record", tableId, recordId });
@@ -491,7 +493,7 @@ journeyTest(
       succeeded(await f.invoke("Confirm payment", { payment: ref(payments.id, remainder.id) }));
       expect((await get(payments.id, remainder.id))?.finalizedAt).not.toBeNull();
       expect(await balance()).toMatchObject({ Paid: "22.6", Corrected: "0", Outstanding: "0" });
-      expect((await f.appRows("balances", "balances")).some((row) => row.id === issued.id)).toBe(false);
+      expect((await f.openBalanceRows()).some((row) => row.id === issued.id)).toBe(false);
       expect((await get(bills.id, issued.id))?.data[bills.ids.gross!]).toBe("22.6");
       const documentsAfterPayout = await sql`SELECT id::text, document_number, profile_snapshot, snapshot_sha256, profile_output
         FROM grids.documents WHERE base_id = ${f.baseId}::uuid`;
@@ -677,7 +679,7 @@ for (const scenario of [
           const overpayment = await payments.add({ bill: [invoice.id], date: "2026-09-16", amount: "100.00" });
           succeeded(await f.invoke("Confirm payment", { payment: ref(payments.id, overpayment.id) }));
           expect(await balance()).toMatchObject({ Paid: "125", Outstanding: "-77.4" });
-          expect((await f.appRows("balances", "balances")).find((row) => row.id === invoice.id)?.values).toMatchObject({
+          expect((await f.openBalanceRows()).find((row) => row.id === invoice.id)?.values).toMatchObject({
             Outstanding: "-77.4",
           });
           const refund = await payments.add({ bill: [invoice.id], date: "2026-09-17", amount: "60.00", refund: true });
@@ -694,7 +696,7 @@ for (const scenario of [
           expect(results.filter((result) => result.state === "succeeded")).toHaveLength(1);
           expect(results.filter((result) => result.state === "failed")).toHaveLength(1);
           expect(await balance()).toMatchObject({ Paid: "47.6", Corrected: "71.4", Outstanding: "0" });
-          expect((await f.appRows("balances", "balances")).some((row) => row.id === invoice.id)).toBe(false);
+          expect((await f.openBalanceRows()).some((row) => row.id === invoice.id)).toBe(false);
           const pendingRefund = contenders.find((_, index) => results[index]?.state === "failed")!;
           succeeded(await f.invoke("Discard pending payment", { payment: ref(payments.id, pendingRefund.id) }));
           expect(await get(payments.id, pendingRefund.id)).toBeNull();
@@ -712,7 +714,7 @@ for (const scenario of [
           expect((await finalize({ tableId: payments.id, recordId: pending.id, actorId: null, origin: "direct" })).ok).toBe(false);
           expect((await f.appRows("balances", "pending-payments")).some((row) => row.id === pending.id)).toBe(true);
           expect(await balance()).toMatchObject({ Paid: "47.6", Corrected: "71.4", Outstanding: "0" });
-          expect((await f.appRows("balances", "balances")).some((row) => row.id === invoice.id)).toBe(false);
+          expect((await f.openBalanceRows()).some((row) => row.id === invoice.id)).toBe(false);
           expect((await get(bills.id, invoice.id))?.data[bills.ids.gross!]).toBe("119");
           expect(render).toHaveBeenCalledTimes(2);
         }
@@ -726,3 +728,116 @@ for (const scenario of [
     },
   );
 }
+
+journeyTest("billing worklists classify live payments by date and credit without changing invoices", async () => {
+  const f = await fixture();
+  const bills = await f.table("bills");
+  const parties = await f.table("parties");
+  const payments = await f.table("payments");
+  const partner = await parties.add({ name: "Worklist customer" });
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const add = async (due: string, kind = "invoice", final = true) => {
+    const bill = await bills.add({
+      kind: [kind],
+      party: [partner.id],
+      invoice_date: yesterday,
+      service_date: yesterday,
+      due_date: due,
+      buyer_reference: "New order",
+      positions: lines("100.0000"),
+    });
+    if (final) expect((await finalize({ tableId: bills.id, recordId: bill.id, actorId: null, origin: "workflow" })).ok).toBe(true);
+    return bill;
+  };
+  const overdue = await add(yesterday);
+  const dueToday = await add(today);
+  const future = await add(tomorrow);
+  const settled = await add(yesterday);
+  const credit = await add(yesterday);
+  const commission = await add(tomorrow, "selfBilling");
+  await add(yesterday, "creditNote");
+  await add(yesterday, "invoice", false);
+  const pay = async (bill: string, amount: string, confirm = true) => {
+    const row = await payments.add({ bill: [bill], date: today, amount });
+    if (confirm) succeeded(await f.invoke("Confirm payment", { payment: ref(payments.id, row.id) }));
+  };
+  await pay(overdue.id, "19.00");
+  await pay(overdue.id, "100.00", false);
+  await pay(settled.id, "119.00");
+  await pay(credit.id, "130.00");
+  const rows = async (group: string) => f.appRows("balances", group);
+  expect((await rows("overdue")).map((row) => row.id)).toEqual([overdue.id]);
+  expect((await rows("overdue"))[0]!.values.Outstanding).toBe("100");
+  expect(new Set((await rows("upcoming")).map((row) => row.id))).toEqual(new Set([dueToday.id, future.id, commission.id]));
+  expect((await rows("credits")).map((row) => row.id)).toEqual([credit.id]);
+  expect((await rows("credits"))[0]!.values.Outstanding).toBe("-11");
+  expect((await get(bills.id, overdue.id))?.data[bills.ids.gross!]).toBe("119");
+});
+
+journeyTest("billing reuses only invoice inputs in a fresh draft and rejects other source kinds", async () => {
+  const f = await fixture();
+  const bills = await f.table("bills");
+  const parties = await f.table("parties");
+  const partner = await parties.add({ name: "Original customer" });
+  const anotherPartner = await parties.add({ name: "Other customer" });
+  expect(partner.data[parties.ids.number!]).toBe("KD-00001");
+  expect(anotherPartner.data[parties.ids.number!]).toBe("KD-00002");
+  expect((await update(parties.id, partner.id, { [parties.ids.number!]: "KD-99999" }, null, "workflow")).ok).toBe(false);
+
+  const original = await bills.add({
+    kind: ["invoice"],
+    party: [partner.id],
+    invoice_date: "2025-01-01",
+    service_date: "2025-01-01",
+    due_date: "2025-01-15",
+    buyer_reference: "Order 1",
+    positions: lines("100.0000"),
+    notes: "Private original note",
+  });
+  const inputs = { bill: ref(bills.id, original.id) };
+  expect((await f.invoke("Use as new invoice", inputs)).state).toBe("failed");
+  expect((await finalize({ tableId: bills.id, recordId: original.id, actorId: null, origin: "workflow" })).ok).toBe(true);
+  const frozen = await get(bills.id, original.id);
+  await parties.edit(partner.id, { name: "Current customer" });
+  const run = await f.invoke("Use as new invoice", inputs);
+  succeeded(run);
+  // Replaying a completed run must not create another draft.
+  await runGridsWorkflowRun(run.runId);
+  const drafts = await sql<
+    Array<{ id: string }>
+  >`SELECT id::text FROM grids.records WHERE table_id = ${bills.id}::uuid AND finalized_at IS NULL`;
+  expect(drafts).toHaveLength(1);
+  const copy = (await get(bills.id, drafts[0]!.id))!;
+  expect(copy.finalizedAt).toBeNull();
+  expect(copy.data[bills.ids.kind!]).toEqual(["invoice"]);
+  expect(copy.data[bills.ids.party!]).toEqual([partner.id]);
+  expect(copy.data[bills.ids.party_name!]).toBe("Current customer");
+  expect(copy.data[bills.ids.positions!]).toEqual(frozen!.data[bills.ids.positions!]);
+  expect(copy.data[bills.ids.buyer_reference!]).toBe("Order 1");
+  expect(String(copy.data[bills.ids.invoice_date!]).slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
+  expect(copy.data[bills.ids.service_date!] ?? null).toBeNull();
+  expect(copy.data[bills.ids.due_date!] ?? null).toBeNull();
+  expect((await f.invoke("Issue invoice", { bill: ref(bills.id, copy.id) })).state).toBe("failed");
+  expect((await get(bills.id, copy.id))?.finalizedAt).toBeNull();
+  expect(copy.data[bills.ids.reference!]).not.toBe(frozen!.data[bills.ids.reference!]);
+  for (const key of ["original_company", "original_number", "original_date", "notes", "reason", "agreement"]) {
+    expect(copy.data[bills.ids[key]!] ?? null).toBeNull();
+  }
+  expect(copy.data[bills.ids.original!]).toEqual([]);
+  expect(copy.data[bills.ids.party_number!]).toBe(partner.data[parties.ids.number!]);
+  expect(await get(bills.id, original.id)).toEqual(frozen);
+  expect(await sql`SELECT id FROM grids.documents WHERE base_id = ${f.baseId}::uuid`).toHaveLength(0);
+  for (const kind of ["creditNote", "selfBilling"]) {
+    const other = await bills.add({
+      kind: [kind],
+      party: [partner.id],
+      service_date: "2026-09-17",
+      buyer_reference: "No reuse",
+      positions: lines("1.0000"),
+    });
+    expect((await finalize({ tableId: bills.id, recordId: other.id, actorId: null, origin: "workflow" })).ok).toBe(true);
+    expect((await f.invoke("Use as new invoice", { ...inputs, bill: ref(bills.id, other.id) })).state).toBe("failed");
+  }
+});

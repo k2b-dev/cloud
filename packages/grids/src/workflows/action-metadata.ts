@@ -201,6 +201,22 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
       kind: "object",
       properties: {
         table: { kind: "string", minLength: 1, maxLength: 200, description: "Target table name or ID." },
+        copyFrom: {
+          kind: "string",
+          minLength: 1,
+          maxLength: 500,
+          optional: true,
+          description: "Existing record in the same table to copy selected inputs from.",
+        },
+        copyFields: {
+          kind: "array",
+          optional: true,
+          minItems: 1,
+          maxItems: MAX_CORRECTION_PREFILL_FIELDS,
+          items: { kind: "string", minLength: 1, maxLength: 200 },
+          description:
+            "Stored value fields to copy with copyFrom. Object-list calculations are recomputed. Explicit values override copies.",
+        },
         values: {
           kind: "record",
           minProperties: 1,

@@ -77,6 +77,35 @@ export const billingWorkflows = (t: BillingText, locale?: string): NonNullable<G
 `;
   return [
     {
+      key: "reuse_invoice",
+      name: t.reuseInvoice,
+      description: t.reuseHelp,
+      enabled: true,
+      source: `${inputs}steps:
+  - query:
+      source: |
+        from table ${q(t.bills)}
+        select ${q(t.reference)}
+        where record.id = @params.bill and record.finalizationState = 'finalized' and ${q(t.kind)} = 'invoice'
+        limit 1
+      parameters:
+        bill: {type: record, value: "\${{ inputs.bill }}"}
+      saveAs: sourceInvoice
+  - if:
+      equals: ["\${{ sourceInvoice.rowCount }}", 0]
+    then:
+      - fail: {message: ${q(t.reuseError)}}
+  - createRecord:
+      table: ${q(t.bills)}
+      copyFrom: inputs.bill
+      copyFields: [${name("positions")}, ${q(t.buyerReference)}]
+      values:
+        ${q(t.kind)}: [invoice]
+        ${q(t.party)}: "\${{ inputs.bill.${t.party}.recordId }}"
+      saveAs: invoice
+`,
+    },
+    {
       key: "issue_invoice",
       name: t.issue,
       enabled: true,

@@ -54,7 +54,7 @@ for (const locale of ["en", "de"]) {
           const workflows = await sql`SELECT w.id FROM grids.workflow_profile p
             JOIN workflows.workflow w ON w.id = p.id
             WHERE p.base_id = ${baseId}::uuid AND w.active_version_id IS NOT NULL`;
-          expect(workflows).toHaveLength(7);
+          expect(workflows).toHaveLength(8);
           const navigation = await getBaseNavigation(baseId);
           expect(navigation?.groups).toHaveLength(3);
           expect(navigation?.revision).toBe(1);

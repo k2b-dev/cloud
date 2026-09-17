@@ -2,7 +2,11 @@ import type { BillingText } from "./billing";
 import { field, formula, type GridTemplate, table, view } from "./types";
 
 /** Live balances do not modify or recapture finalized invoice amounts. */
-export const billingBalanceSource = (t: BillingText, oneRecord = false, options: { metrics?: boolean; openOnly?: boolean } = {}) => {
+export const billingBalanceSource = (
+  t: BillingText,
+  oneRecord = false,
+  options: { metrics?: boolean; group?: "overdue" | "upcoming" | "credits" } = {},
+) => {
   const paid = "IF(ISBLANK(payments_summary.summed_amount), 0, payments_summary.summed_amount)";
   const corrected = "IF(ISBLANK(credited.summed_amount), 0, credited.summed_amount)";
   const outstanding = ["IF(", field("bills.kind"), " = 'creditNote', 0, ", field("bills.gross"), ` - ${paid} - ${corrected})`];
@@ -15,13 +19,22 @@ export const billingBalanceSource = (t: BillingText, oneRecord = false, options:
     view("correction_totals"),
     " as credited on credited.gk_0 = bill.id\nselect ",
     ...(options.metrics ? [] : [field("bills.party_name"), ", ", field("bills.kind"), ", ", field("bills.due_date"), ", "]),
-    field("bills.gross"),
-    `, formula(${paid}) as ${t.paid}, formula(${corrected}) as ${t.corrected}, formula(`,
+    ...(options.group ? [] : [field("bills.gross"), `, formula(${paid}) as ${t.paid}, formula(${corrected}) as ${t.corrected}, `]),
+    "formula(",
     ...outstanding,
     `) as ${t.outstanding}`,
     "\nwhere record.finalizationState = 'finalized'",
     oneRecord ? " and record.id = @params.bill_id" : "",
-    ...(options.openOnly ? [" and ", ...outstanding, " != 0"] : []),
+    ...(options.group
+      ? [
+          " and ",
+          ...outstanding,
+          options.group === "credits" ? " < 0" : " > 0",
+          ...(options.group === "credits"
+            ? []
+            : [" and ", field("bills.due_date"), options.group === "overdue" ? " < TODAY()" : " >= TODAY()"]),
+        ]
+      : []),
     ...(oneRecord ? ["\nlimit 1"] : ["\nsort ", field("bills.due_date"), " asc, record.createdAt desc"]),
   );
 };

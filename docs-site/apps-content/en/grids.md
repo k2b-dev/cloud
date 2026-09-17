@@ -92,6 +92,14 @@ never alongside unsaved inputs. **Record payment** also opens a separate form.
    combines confirmed payments and finalized corrections without multiplying
    either through joins. Recording a payment does not initiate a bank transfer.
 
+**Open payments** separates **Overdue**, **Due today or later**, and **Credit balances to review**. Payments due today are not overdue. Open an amount due to record a payment; open a credit balance to review its document and any refund. Pending payments stay separate until confirmed. Paid documents leave these lists automatically.
+
+App tables display calculated numeric results using the current locale without rounding away their precision.
+
+On a finalized invoice, choose **Use as new invoice** to open a fresh draft with its business partner, buyer reference and positions. Check current partner details and prices. The document date starts at today; choose the service date and due date again. Notes, corrections, payments, document numbers and files are not copied. Saving the form and issuing both require the missing dates.
+
+Business partners receive an automatic customer number such as **KD-00001** within their Base. The number appears in partner lists, partner details, recipient selection and the bill detail page. It is read-only, remains stable when the name changes, and is frozen with issued bill data.
+
 Use **Discard draft** on the bill detail page to move an unfinished bill to Trash.
 Issued bills and their documents cannot be discarded this way.
 

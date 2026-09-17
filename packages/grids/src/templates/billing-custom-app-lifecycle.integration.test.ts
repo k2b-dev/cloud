@@ -316,6 +316,16 @@ postgresTest(
       expect(documents).toHaveLength(1);
       expect(render).toHaveBeenCalledTimes(2);
 
+      // The published copy action works for an App reader without Base access.
+      const copyRun = await start("bill", "reuse", "reuse-invoice", { bill_id: draft.data.id }, { bill: draft.data.shortId });
+      await finish(copyRun);
+      const [copy] = await sql`SELECT id::text, short_id FROM grids.records WHERE table_id = ${bills.id}::uuid AND finalized_at IS NULL`;
+      expect(copy).toBeDefined();
+      const copiedPage = await api.request(`/runtime/${app.shortId}/bill?bill_id=${copy.short_id}`);
+      expect(copiedPage.status, await copiedPage.clone().text()).toBe(200);
+      const repeated = await start("bill", "reuse", "reuse-invoice", { bill_id: copy.id }, { bill: copy.short_id }).catch(() => null);
+      expect(repeated).toBeNull();
+
       // The real app reader receives the single-record numeric snapshot,
       // including joined payment totals, without a Base grant.
       const summaryBeforePayment = await api.request(`/runtime/${app.shortId}/bill?bill_id=${draft.data.shortId}`);
