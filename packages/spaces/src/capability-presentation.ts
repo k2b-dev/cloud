@@ -197,6 +197,9 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Direkter Space-übergreifender Eintrag zum Auffinden lesbarer Aufgaben und Ereignisse nach Text oder Workflow-Facetten. Verwenden Sie zurückgegebenes spaces.item refs mit item.read. Verwenden Sie task.list oder event.list, um einen bekannten Space zu durchsuchen.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -254,6 +257,9 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Suchen Sie einen zugänglichen Space anhand des Namens oder der Beschreibung, wenn sein ID unbekannt ist. Verwenden Sie zurückgegebene spaces.space refs mit space.read oder deren IDs mit task.list, event.list und Artikel Actions.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",

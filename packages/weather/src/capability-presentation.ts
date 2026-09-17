@@ -58,6 +58,9 @@ export const weatherCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Finden Sie einen eigenen gespeicherten Standort anhand des Namens oder Bundeslandes, wenn sein ID unbekannt ist. Verwenden Sie das zurückgegebene weather.location refs mit location.read, forecast.current oder forecast.get. Verwenden Sie city.search für nicht gespeicherte Orte.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",

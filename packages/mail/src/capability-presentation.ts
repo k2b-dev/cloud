@@ -355,6 +355,9 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Durchsuchen Sie Nachrichten in lesbaren Postfächern, wenn kein Postfach bekannt ist. Dies ist der direkte mailboxübergreifende Eintrag; Zu den Ergebnissen gehören mail.conversation und mail.message refs für conversation.read oder message.read.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",

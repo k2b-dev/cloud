@@ -88,6 +88,9 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Suchen Sie einen öffentlichen oder zugänglichen Venue anhand des Namens, des Slugs oder der Beschreibung, wenn sein ID unbekannt ist. Verwenden Sie das zurückgegebene venue.venue refs mit venue.read, venue.status, shift.list oder feedback.summary.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",

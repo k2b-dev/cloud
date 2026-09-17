@@ -45,6 +45,9 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Suchen Sie eine zugängliche Pulse-Basis anhand des Namens oder der Beschreibung, wenn deren ID unbekannt ist. Verwenden Sie zurückgegebene pulse.base refs mit base.read oder deren IDs mit source.list, metric.search, field.search und Abfragetools.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -112,6 +115,9 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Direkter basenübergreifender Eintrag zum Auffinden beobachteter Ressourcen. Verwenden Sie das zurückgegebene zusammengesetzte Element pulse.resource ref unverändert mit resource.read. Verwenden Sie metric.search oder field.search, wenn Sie eine Abfrage in einer bekannten Basis erstellen.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",

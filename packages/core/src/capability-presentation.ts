@@ -19,6 +19,21 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "entities.search": {
+          title: "Empfänger für Zugriffsrechte suchen",
+          description: "Sucht sichtbare Benutzer, Gruppen und Dienstkonten für Berechtigungen. Öffentliche und angemeldete Benutzer sind explizite Empfänger und keine Suchergebnisse.",
+          input: {
+            query: "Name oder Kontokennung; leer werden sichtbare Empfänger aufgelistet.",
+            types: "Gewünschte Empfängertypen; ohne Angabe werden alle sichtbaren Typen berücksichtigt.",
+            cursor: "Cursor aus der vorherigen Empfängersuche.",
+            limit: "Maximale Anzahl pro Seite; bei Folgeseiten unverändert lassen.",
+          },
+        },
+        "ai.skill.access.read": {
+          title: "Skill-Zugriffsrechte lesen",
+          description: "Liest Berechtigungen und deren Revision vor einer Änderung. Erfordert Verwaltungsrechte. Zugriffe auf Skills und Studio-Apps sind unabhängig.",
+          input: { skillId: "ID des Skills, dessen Zugriffsrechte gelesen werden." },
+        },
         "ai.chat.read": {
           title: "Ein AI-Gespräch lesen",
           description:
@@ -123,6 +138,17 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "ai.skill.access.change": {
+          title: "Skill-Zugriffsrechte ändern",
+          description: "Erteilt, ändert oder entzieht eine Skill-Berechtigung nach erneuter Benutzerbestätigung. Lesen Sie zuerst ai.skill.access.read. Gewährt keinen Zugriff auf Apps, die der Skill referenziert.",
+          input: {
+            skillId: "ID des zu verwaltenden Skills.",
+            expectedAccessRevision: "Exakte Revision aus ai.skill.access.read; nach einem Konflikt erneut lesen und prüfen.",
+            principal: "Neuer Empfänger aus entities.search; entweder principal oder accessId angeben.",
+            accessId: "Vorhandene Berechtigungs-ID aus ai.skill.access.read; entweder accessId oder principal angeben.",
+            permission: "Neue Berechtigungsstufe; null entzieht die vorhandene Berechtigung.",
+          },
+        },
         "ai.chat.message": {
           title: "Senden Sie eine Nachricht an eine weitere AI-Konversation",
           description:

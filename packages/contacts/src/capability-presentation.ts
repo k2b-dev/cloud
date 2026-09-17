@@ -83,6 +83,9 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Sucht adressbuchübergreifend nach Name, E-Mail-Adresse, Telefonnummer oder Adressbuchmerkmal, wenn kein Adressbuch bekannt ist. Verwenden Sie die zurückgegebenen contacts.contact-Refs mit contact.read.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",

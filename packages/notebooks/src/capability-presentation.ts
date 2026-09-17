@@ -102,6 +102,9 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Direkter notizbuchübergreifender Eintrag zum Auffinden von Markdown-Notizen nach Titel oder Inhalt. Verwenden Sie zurückgegebenes notebooks.note refs mit note.read. Verwenden Sie note.tree, um ein bekanntes Notizbuch ohne Volltextsuche zu durchsuchen.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
@@ -147,6 +150,9 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Finden Sie zugängliche Notizbücher anhand des Namens oder der Beschreibung, wenn kein Notizbuch bekannt ist. Verwenden Sie zurückgegebene notebooks.notebook refs mit notebook.read oder deren IDs mit note.tree und tag.list.",
           input: {
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
+            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
             tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
