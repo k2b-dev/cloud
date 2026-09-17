@@ -1,10 +1,11 @@
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
 
 export type PdfPreviewRequest = () => Promise<Response | Blob>;
 
 export type PdfPreviewProps = {
   request: PdfPreviewRequest;
+  autoLoad?: boolean;
   disabled?: () => boolean;
   title?: string;
   buttonLabel?: string;
@@ -76,6 +77,10 @@ export default function PdfPreview(props: PdfPreviewProps) {
     }
   };
 
+  onMount(() => {
+    if (props.autoLoad) void load();
+  });
+
   const openInNewTab = async () => {
     if (loading() || opening() || props.disabled?.()) return;
     const generation = ++openGeneration;
@@ -144,7 +149,14 @@ export default function PdfPreview(props: PdfPreviewProps) {
         when={url()}
         fallback={
           <div class="k2b-content-pdf-preview__empty">
-            <Show when={error()} fallback={<span>{props.emptyText ?? messages().renderPdfPreview}</span>}>
+            <Show
+              when={error()}
+              fallback={
+                <span role={loading() ? "status" : undefined}>
+                  {loading() ? messages().loading : (props.emptyText ?? messages().renderPdfPreview)}
+                </span>
+              }
+            >
               {(message) => <div class="k2b-content-pdf-preview__error">{message()}</div>}
             </Show>
           </div>

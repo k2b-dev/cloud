@@ -32,6 +32,8 @@ Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. 
 
 The component provides separate actions to render inside the page or open the document in a new tab. `disabled` is a reactive guard for invalid form state or an unavailable renderer.
 
+Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled, and shows a loading state. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
+
 Authentication, request input, server-side rendering, and error sanitization remain with the caller.
 
 ## API reference
@@ -44,12 +46,12 @@ type LightboxImage = {
 type PdfPreviewRequest = () => Promise<Response | Blob>;
 
 type PdfPreviewProps = {
-  request: PdfPreviewRequest; disabled?: () => boolean; title?: string; buttonLabel?: string;
+  request: PdfPreviewRequest; autoLoad?: boolean; disabled?: () => boolean; title?: string; buttonLabel?: string;
   openButtonLabel?: string; emptyText?: string; class?: string;
 };
 ```
 
-`Lightbox` requires `images: LightboxImage[]` and `onClose: () => void`; `initialIndex?: number` defaults to 0. `PdfPreview.disabled` is an accessor, not a direct boolean. Omitted labels use localized defaults; `request` runs only after a preview/open action.
+`Lightbox` requires `images: LightboxImage[]` and `onClose: () => void`; `initialIndex?: number` defaults to 0. `PdfPreview.disabled` is an accessor, not a direct boolean. Omitted labels use localized defaults; without `autoLoad`, `request` runs only after a preview/open action.
 
 ## Accessibility
 
@@ -59,7 +61,7 @@ The lightbox uses a native dialog, labeled navigation controls, arrow keys, Esca
 
 ## Runtime
 
-Both components require hydration. `Lightbox` calls `showModal()` after mount. `PdfPreview` creates and revokes browser object URLs after an explicit request.
+Both components require hydration. `Lightbox` calls `showModal()` after mount. `PdfPreview` creates and revokes browser object URLs after loading a preview. A late response after unmount cannot display a preview or retain an object URL.
 
 The server may render their initial markup, but modal behavior, network requests, Blob URLs, and navigation controls run in the browser.
 
