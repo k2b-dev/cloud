@@ -9,12 +9,14 @@ export const cloudResourceSearchUrl = (request: {
   tags: readonly string[];
   appId?: string | null;
   scope?: CloudResourceRef;
+  scopeTag?: string;
   requireReader?: boolean;
 }): string => {
   const params = new URLSearchParams({ provider_limit: String(PROVIDER_LIMIT) });
   if (request.query.length > 0) params.set("q", request.query);
   for (const tag of request.tags) params.append("tag", tag);
   if (request.appId) params.set("app", request.appId);
+  if (request.scopeTag !== undefined) params.set("scope_tag", request.scopeTag);
   if (request.scope) {
     params.set("scope_type", request.scope.type);
     params.set("scope_id", request.scope.id);

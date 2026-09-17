@@ -641,3 +641,55 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+test("provider contexts use one chip, replace in place, and clear their hidden filter with the chip", async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const { createSignal } = await import("solid-js");
+  const { default: Search } = await import("./CloudResourceSearch");
+  const [request, setRequest] = createSignal<import("./search-bridge").GlobalSearchOptions>({
+    scope: { appId: "assistant", tag: "assistant-project", label: "Projects" },
+    query: "",
+  });
+  const requests: URL[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      requests.push(url);
+      const name = url.searchParams.get("scope_tag") === "studio-app" ? "Studio result" : "Project result";
+      return Response.json({ query: "", count: 1, apps: [], items: [item(name)] });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  delegateEvents(["input", "click", "keydown"]);
+  const dispose = render(() => <Search request={request()} onClose={() => {}} onSelect={() => {}} />, dom.root);
+  try {
+    await waitFor(() => dom.root.textContent?.includes("Project result") ?? false, "project results");
+    const input = dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    expect(input.value).toBe("");
+    expect(dom.root.querySelectorAll(".cloud-resource-search__tag")).toHaveLength(1);
+    expect(dom.root.textContent).not.toContain("#assistant-project");
+    expect(requests[0]?.searchParams.get("scope_tag")).toBe("assistant-project");
+    expect(requests[0]?.searchParams.has("tag")).toBe(false);
+    setRequest({ scope: { appId: "assistant", tag: "studio-app", label: "Studio" }, query: "" });
+    await Promise.resolve();
+    expect(dom.root.textContent).not.toContain("Project result");
+    expect(dom.root.querySelector("input")).toBe(input);
+    await waitFor(() => dom.root.textContent?.includes("Studio result") ?? false, "studio results");
+    expect(dom.root.querySelectorAll(".cloud-resource-search__tag")).toHaveLength(1);
+    input.value = "planner";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => requests.at(-1)?.searchParams.get("q") === "planner", "search text");
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Search beyond Studio"]')!.click();
+    expect(input.value).toBe("planner");
+    expect(dom.root.querySelectorAll(".cloud-resource-search__tag")).toHaveLength(0);
+    await waitFor(() => !requests.at(-1)?.searchParams.has("app"), "global search");
+    expect(requests.at(-1)?.searchParams.has("scope_tag")).toBe(false);
+    expect(requests.at(-1)?.searchParams.get("q")).toBe("planner");
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});

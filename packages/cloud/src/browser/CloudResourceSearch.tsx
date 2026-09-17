@@ -109,6 +109,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       tags: commandMode() ? [] : tags(),
       appId: commandMode() ? undefined : appId(),
       scope: commandMode() ? undefined : scope()?.ref,
+      scopeTag: commandMode() ? undefined : scope()?.tag,
       requireReader: props.requireReader,
     }),
   );
@@ -137,7 +138,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   );
   const suggestions = createMemo(() => matchingSearchTags(catalog(), tagContext()?.prefix ?? "", tags()));
   const navigation = createMemo(() =>
-    canSearch() && !scope()?.ref
+    canSearch() && !scope()?.ref && scope()?.tag === undefined
       ? matchNavigationSearchItems(props.navigationItems ?? [], {
           query: textQuery(),
           tags: tags(),
@@ -154,7 +155,8 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     const sameScope =
       (loaded.searchParams.get("scope_type") ?? undefined) === scope()?.ref?.type &&
       (loaded.searchParams.get("scope_id") ?? undefined) === scope()?.ref?.id &&
-      (loaded.searchParams.get("app") ?? undefined) === appId();
+      (loaded.searchParams.get("app") ?? undefined) === appId() &&
+      (loaded.searchParams.get("scope_tag") ?? undefined) === scope()?.tag;
     const resources = filterCloudResourceSearchItems(sameScope ? (response()?.items ?? []) : [], props).sort(
       (a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.title.localeCompare(b.title),
     );

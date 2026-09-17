@@ -768,6 +768,44 @@ describe("global capability search", () => {
     }
   });
 
+  test.each(["during discovery", "starting the signer", "waiting for the signer"])(
+    "handles client cancellation %s without an unhandled signer rejection",
+    async (phase) => {
+      const client = new AbortController();
+      const reason = new DOMException("Client disconnected", "AbortError");
+      let fetched = false;
+      let guardFinished = false;
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => {
+          if (phase === "during discovery") client.abort(reason);
+          return [provider(1)];
+        },
+        withActiveSigner: async (_purpose, _callback, options) => {
+          if (phase === "starting the signer") client.abort(reason);
+          if (phase === "waiting for the signer") {
+            queueMicrotask(() => client.abort(reason));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+          guardFinished = true;
+          options?.signal?.throwIfAborted();
+          throw new Error("Expected the request to be cancelled");
+        },
+        fetch: async () => {
+          fetched = true;
+          return Response.json({ data: [] });
+        },
+      });
+      const response = await routes.request(new Request("http://cloud.test/search?q=needle", { signal: client.signal }));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ code: "APP_UNAVAILABLE" });
+      // Flush the late guard rejection too. Bun fails this test on unhandled rejections.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(guardFinished).toBeTrue();
+      expect(fetched).toBeFalse();
+    },
+  );
+
   test("reports a global signing-guard failure as unavailable instead of an empty successful search", async () => {
     {
       let guardCalls = 0;
@@ -864,4 +902,48 @@ test("reports a failed scoped provider instead of silently presenting a successf
   const response = await routes.request("/search?app=demo&q=test");
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({ items: [], failedApps: ["demo"] });
+});
+
+test("an app tag context selects only its provider and cannot be widened by ordinary tags", async () => {
+  const scopedApp = {
+    ...app,
+    manifest: compileCapabilities("demo", {
+      ...capabilities,
+      queries: {
+        search: capabilities.queries.search,
+        projects: {
+          ...capabilities.queries.search,
+          universalSearch: { tags: [{ tag: "project", title: "Projects", description: "Find projects" }] },
+        },
+      },
+    }).manifest,
+  };
+  const calls: Array<{ url: string; input: unknown }> = [];
+  const routes = createSearchRoutes({
+    authenticate,
+    listCapabilities: async () => [scopedApp, provider(2)],
+    fetch: async (url, init) => {
+      calls.push({ url: String(url), input: JSON.parse(String(init?.body)).input });
+      return Response.json({ data: [] });
+    },
+  });
+  expect((await routes.request("/search?app=demo&scope_tag=project&q=plan")).status).toBe(200);
+  expect(calls).toEqual([
+    { url: "http://demo:3000/api/_internal/capabilities/v1/queries/projects", input: { query: "plan", tags: ["project"], limit: 30 } },
+  ]);
+  calls.length = 0;
+  expect((await routes.request("/search?app=demo&scope_tag=project&tag=item")).status).toBe(200);
+  expect(calls).toEqual([]);
+  for (const query of [
+    "scope_tag=project",
+    "app=demo&scope_tag=",
+    "app=demo&scope_tag=missing",
+    "app=search-02&scope_tag=project",
+    "app=demo&scope_tag=project&scope_type=demo.item&scope_id=AbCd12",
+  ]) {
+    expect((await routes.request(`/search?${query}`)).status).toBe(400);
+  }
+  expect(calls).toEqual([]);
+  expect((await routes.request("/search?app=demo&scope_tag=thing")).status).toBe(200);
+  expect(calls.map((call) => call.url)).toEqual(["http://demo:3000/api/_internal/capabilities/v1/queries/search"]);
 });

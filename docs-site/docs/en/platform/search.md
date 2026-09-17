@@ -266,6 +266,12 @@ openGlobalSearch({
 // App-wide search, including all resource kinds and static links of this app:
 openGlobalSearch({ scope: { appId: "notebooks", label: "Notebooks" } });
 
+// A list inside an app: one chip, no visible technical hashtag.
+openGlobalSearch({
+  scope: { appId: "assistant", tag: "assistant-project", label: "Projects", icon: "ti ti-folders" },
+  query: "",
+});
+
 // Ordinary cross-app search:
 openGlobalSearch();
 ```
@@ -280,6 +286,30 @@ request is retained, with a bounded wait and visible failure if it cannot open.
 On public pages, signed-out users can search the navigation links visible to
 them, such as Tools. The layout does not call the authenticated resource-search
 API for these users.
+
+### Choose the right context
+
+- Use `scope.ref` for the contents of a particular notebook, project, chat or mailbox.
+- Use `scope.appId` for everything searchable in an application.
+- Add `scope.tag` to select a list or search provider within that app, such as
+  Assistant projects, Studio apps or all chats. Use a tag declared by that
+  provider; the tag is part of the context, not another visible filter chip.
+
+For example, use `tag: "assistant-project"` with the label **Projects**,
+`tag: "studio-app"` with **Studio**, and `tag: "chat"` with **Chats**.
+Localize the label and give it the appropriate icon. Removing this single chip
+removes both the application and provider restriction while keeping the text.
+
+Do not put a technical `#tag` into `query` to replace an app's old Spotlight.
+That produces an extra visible tag beside the app chip. `query` supplies search
+text; a search context belongs in `scope`. Context commands use the same options
+and replace the context in place without closing the palette.
+
+The browser sends an app context tag as `scope_tag` together with `app`.
+It is separate from user-entered `tag` filters: those cannot add a different
+provider outside the context. Unknown or unsupported context tags fail closed
+with HTTP 400. A tag context and a resource reference are mutually exclusive.
+These are search restrictions, never authorization; providers still check access.
 
 Search providers must return resources that their destination views allow the
 user to open. Contacts search follows the same address-book membership checks
@@ -525,3 +555,19 @@ behind their existing confirmation or compose flow. Describe the target and
 outcome, such as “Reply to the sender of ‘Invoice’”, rather than repeating
 “Reply” as the description. Display only shortcuts that are actually active;
 do not hard-code an old key in button labels or accessibility attributes.
+
+## Test application search and context actions
+
+Use `@k2b/cloud/browser/testing` in browser-environment tests after mounting an
+application island:
+
+- `collectContextAwareCommands()` returns the currently registered actions.
+- `contextCommandsWithShortcuts()` applies the same shortcut conflict rules as
+  the palette and Help.
+- `registerGlobalSearchHost(handler)` captures search requests; call its returned
+  cleanup function after the test.
+- `readWorkspaceNavigation()` reads the active application's mobile navigation.
+
+Dispose the island and verify its actions disappear. Use the public
+`runContextAwareCommand()` and `openCommand()` APIs to exercise execution. These
+test probes do not replace application authorization or a real browser check.

@@ -34,6 +34,7 @@
     "./browser/resource-clipboard": "./src/browser/resource-clipboard.ts",
     "./browser/commands": "./src/browser/commands.ts",
     "./browser/search": "./src/browser/search.ts",
+    "./browser/testing": "./src/browser/testing.ts",
     "./browser/resource-picker": "./src/browser/resource-picker.tsx",
     "./capabilities": "./src/capabilities/client.ts",
     "./capabilities/server": "./src/capabilities/server.ts",

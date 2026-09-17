@@ -129,8 +129,8 @@ const settleBounded = async <T, R>(items: readonly T[], concurrency: number, run
 const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     const aborted = () => reject(signal.reason);
-    if (signal.aborted) return aborted();
-    signal.addEventListener("abort", aborted, { once: true });
+    // The work has already started; observe its rejection even if the client
+    // disconnected before we began waiting.
     value.then(
       (result) => {
         signal.removeEventListener("abort", aborted);
@@ -141,6 +141,8 @@ const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
         reject(error);
       },
     );
+    if (signal.aborted) return aborted();
+    signal.addEventListener("abort", aborted, { once: true });
   });
 
 /**
@@ -220,9 +222,13 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       const unsupportedTags = query.tag.filter((t) => !knownTags.has(t));
       const scope = query.scope_type && query.scope_id ? { type: query.scope_type, id: query.scope_id } : undefined;
       const appProviders = providers.filter(
-        (provider) => (!query.app || provider.appId === query.app) && (!scope || provider.scopeTypes.includes(scope.type)),
+        (provider) =>
+          (!query.app || provider.appId === query.app) &&
+          (!scope || provider.scopeTypes.includes(scope.type)) &&
+          (!query.scope_tag || provider.tags.includes(query.scope_tag)),
       );
-      if (scope && !appProviders.length) return c.json({ code: "INVALID_SEARCH_SCOPE", message: "Search scope is unavailable" }, 400);
+      if ((scope || query.scope_tag) && !appProviders.length)
+        return c.json({ code: "INVALID_SEARCH_SCOPE", message: "Search scope is unavailable" }, 400);
       const active =
         query.tag.length === 0 ? appProviders : appProviders.filter((provider) => provider.tags.some((tag) => query.tag.includes(tag)));
 
@@ -298,7 +304,9 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
         // Scope tags to those this provider declared. Apps no longer need
         // their own gate — the framework guarantees they only see tags
         // they understand.
-        const scopedTags = query.tag.filter((t) => provider.tags.includes(t));
+        const scopedTags = [...new Set([...(query.scope_tag ? [query.scope_tag] : []), ...query.tag])].filter((tag) =>
+          provider.tags.includes(tag),
+        );
 
         const headers = await (async () => {
           const signed = await signedInvocations?.[index];

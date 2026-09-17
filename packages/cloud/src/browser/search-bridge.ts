@@ -1,6 +1,9 @@
 import type { CloudResourceRef } from "../contracts";
 
-export type SearchScope = { label: string; icon?: string } & ({ ref: CloudResourceRef; appId?: never } | { appId: string; ref?: never });
+export type SearchScope = { label: string; icon?: string } & (
+  | { ref: CloudResourceRef; appId?: never; tag?: never }
+  | { appId: string; tag?: string; ref?: never }
+);
 export type GlobalSearchOptions = { scope?: SearchScope; query?: string };
 export type SearchNavigationTarget = { href: string; ref?: CloudResourceRef };
 type OpenRequest = { options: GlobalSearchOptions; accepted: boolean };

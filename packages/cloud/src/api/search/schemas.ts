@@ -40,6 +40,7 @@ export const SearchQuerySchema = z
       .transform((query) => query.trim()),
     tag: TagArraySchema.optional().default([]),
     app: z.string().trim().min(1).max(120).optional(),
+    scope_tag: z.string().trim().min(1).max(64).regex(TAG_PATTERN).toLowerCase().optional(),
     scope_type: CloudResourceRefSchema.shape.type.optional(),
     scope_id: CloudResourceRefSchema.shape.id.optional(),
     require_reader: z
@@ -48,7 +49,10 @@ export const SearchQuerySchema = z
       .transform((value) => value === "true"),
     provider_limit: z.coerce.number().int().min(1).max(30).optional().default(10),
   })
-  .refine((value) => Boolean(value.scope_type) === Boolean(value.scope_id), { message: "Both scope_type and scope_id are required" });
+  .refine((value) => Boolean(value.scope_type) === Boolean(value.scope_id), { message: "Both scope_type and scope_id are required" })
+  .refine((value) => !value.scope_tag || (Boolean(value.app) && !value.scope_type), {
+    message: "A tag context requires an app and cannot include a resource scope",
+  });
 
 export const SearchAppSchema = z.object({
   id: z.string(),
