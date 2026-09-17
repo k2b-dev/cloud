@@ -75,6 +75,11 @@ jobs:
           bun test --isolate --conditions=browser --preload ./packages/ui/test/solid-dom-preload.ts packages/dashboard/src/frontend/dashboard-controls.behavior.test.tsx packages/oauth/src/frontend/_components/OAuthClientDialog.behavior.test.tsx
       - name: Start isolated JetStream
         run: docker run -d --rm --name authorization-nats -p 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+      - name: Verify model access on a fresh dedicated database
+        run: |
+          bun --no-env-file -e 'import { sql } from "bun"; await sql`CREATE DATABASE cloud_ai_model_access_verify_ci`'
+          DATABASE_URL=postgres://postgres:authorization@127.0.0.1:5432/cloud_ai_model_access_verify_ci bun --no-env-file -e 'import { migrate as auth } from "./packages/core/src/migrate/core/auth"; import { migrate as settings } from "./packages/core/src/migrate/core/settings"; await auth(); await settings()'
+          DATABASE_URL=postgres://postgres:authorization@127.0.0.1:5432/cloud_ai_model_access_verify_ci CLOUD_AI_MODEL_ACCESS_TEST=1 bun --no-env-file test --timeout 15000 packages/cloud/test/integration/model-access.integration.test.ts
       - name: Migrate real Core and application schemas
         run: |
           bun -e 'import { runCoreSetup } from "./packages/core/src/runtime-helpers"; await runCoreSetup()'
@@ -89,6 +94,8 @@ jobs:
             packages/cloud/src/services/accounts/email-write.integration.test.ts \
             packages/cloud/src/services/service-account-credentials.test.ts \
             packages/cloud/src/services/notifications/batches.test.ts \
+            packages/cloud/src/ai/transcription.integration.test.ts \
+            packages/cloud/src/services/oauth-tokens.test.ts \
             packages/oauth/src/service/tokens.test.ts \
             packages/pulse/src/service/access-control.test.ts \
             packages/notebooks/src/service/api-key-permissions.test.ts \

@@ -83,10 +83,10 @@ suite("OAuth access-token verifier", () => {
   });
 
   test("accepts Core and legacy keys from one JWKS without a key-table query", async () => {
-    let queries = 0;
+    const queries: string[] = [];
     const countedSql = new Proxy(sql, {
       apply(target, thisArg, args) {
-        queries += 1;
+        queries.push(Array.isArray(args[0]) ? args[0].join("") : String(args[0]));
         return Reflect.apply(target, thisArg, args);
       },
     });
@@ -99,12 +99,17 @@ suite("OAuth access-token verifier", () => {
       user: { id: userId },
       scopes: ["read"],
     });
-    expect(queries).toBe(1);
+    // One joined principal read plus one uncached authorization-policy read; no signing-key lookup.
+    expect(queries).toEqual([expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/)]);
     expect(await verifyAccessToken(await accessToken(legacyPrivateKey, legacyKid), "cloud", options)).toMatchObject({
       kind: "user",
       user: { id: userId },
     });
-    expect(queries).toBe(2);
+    expect(queries).toEqual([
+      expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/),
+      expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/),
+    ]);
+    expect(queries.join("\n")).not.toMatch(/(?:auth|oauth)\.signing_keys/);
   });
 
   test("keeps a warm remote JWKS local and performs at most one forced unknown-kid refresh", async () => {
@@ -136,11 +141,11 @@ suite("OAuth access-token verifier", () => {
     }
   });
 
-  test("loads the client and complete principal in one actor-resolution query", async () => {
-    let queries = 0;
+  test("loads each client and principal together and rechecks durable account policy", async () => {
+    const queries: string[] = [];
     const countedSql = new Proxy(sql, {
       apply(target, thisArg, args) {
-        queries += 1;
+        queries.push(Array.isArray(args[0]) ? args[0].join("") : String(args[0]));
         return Reflect.apply(target, thisArg, args);
       },
     });
@@ -150,7 +155,8 @@ suite("OAuth access-token verifier", () => {
       ["admins"],
       countedSql,
     );
-    expect(queries).toBe(1);
+    // One joined principal read plus one uncached authorization-policy read; no signing-key lookup.
+    expect(queries).toEqual([expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/)]);
     expect(user).toMatchObject({ kind: "user", user: { id: userId, uid }, scopes: ["read", "write"] });
 
     const service = await resolveOAuthTokenActor(
@@ -158,7 +164,11 @@ suite("OAuth access-token verifier", () => {
       ["admins"],
       countedSql,
     );
-    expect(queries).toBe(2);
+    expect(queries).toEqual([
+      expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/),
+      expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/),
+    ]);
+    expect(queries.join("\n")).not.toMatch(/(?:auth|oauth)\.signing_keys/);
     expect(service).toMatchObject({
       kind: "service_account",
       serviceAccount: { id: serviceAccountId, status: "active", delegatedUserId: userId },

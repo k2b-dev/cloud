@@ -2,7 +2,13 @@ import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { runAiTranscription } from "./transcription";
 
-test("transcription failure reaches logs, trace and accounting without provider response content", async () => {
+const enabled = process.env.CLOUD_DATABASE_TEST === "1";
+const databaseUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
+if (enabled && !(["localhost", "127.0.0.1"].includes(databaseUrl.hostname) && databaseUrl.pathname === "/cloud_authorization_test")) {
+  throw new Error("Transcription integration requires the disposable cloud_authorization_test database");
+}
+
+(enabled ? test : test.skip)("transcription failure reaches logs, trace and accounting without provider response content", async () => {
   const task = `transcription-test-${crypto.randomUUID()}`;
   const bytes = new Uint8Array(44);
   bytes.set(new TextEncoder().encode("RIFFxxxxWAVE"));
@@ -51,6 +57,11 @@ test("transcription failure reaches logs, trace and accounting without provider 
     expect(spans.some((span) => span.status === "error")).toBe(true);
     expect(JSON.stringify({ run, entries, spans })).not.toContain("PRIVATE_SOURCE_SENTINEL");
   } finally {
+    // Recover the trace even when the assertion fails before reading the run.
+    if (!traceId) {
+      const [run] = await sql<{ trace_id: string | null }[]>`SELECT trace_id FROM ai.structured_runs WHERE task = ${task}`;
+      traceId = run?.trace_id ?? undefined;
+    }
     if (traceId) {
       await sql`DELETE FROM logging.entries WHERE metadata::text LIKE ${`%${traceId}%`}`;
       await sql`DELETE FROM logging.trace_events WHERE trace_id = ${traceId}`;

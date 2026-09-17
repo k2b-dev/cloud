@@ -44,12 +44,18 @@ const canUseNotificationBatchDatabase = async () => {
   }
 };
 
-/** Reported as skipped rather than silently passing when the backing service is absent. */
-const databaseAvailable = (await canUseAuthDatabase()) && (await canUseNotificationBatchDatabase());
-if (process.env.CLOUD_DATABASE_TEST === "1" && !databaseAvailable) {
+// Database tests are opt-in and may only use the disposable authorization fixture.
+const enabled = process.env.CLOUD_DATABASE_TEST === "1";
+const databaseUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
+if (enabled && !(["localhost", "127.0.0.1"].includes(databaseUrl.hostname) && databaseUrl.pathname === "/cloud_authorization_test")) {
+  throw new Error("Notification batch integration requires the disposable cloud_authorization_test database");
+}
+const databaseAvailable = enabled && (await canUseNotificationBatchDatabase());
+if (enabled && !databaseAvailable) {
   throw new Error("Required authorization test database is unavailable or not migrated");
 }
 const suite = databaseAvailable ? describe : describe.skip;
+const databaseTest = databaseAvailable ? test : test.skip;
 
 const insertUser = async (suffix: string, label: string) => {
   const [row] = await sql<{ id: string }[]>`
@@ -90,7 +96,7 @@ const cleanupAuthFixture = async (userIds: string[], groupIds: string[]) => {
   }
 };
 
-suite("notification batch selections", () => {
+describe("notification batch selections", () => {
   test("normalizes duplicate and unordered ids for stable drafts", () => {
     const selection = __notificationBatchTest.normalizeSelection({
       userIds: ["user-b", "user-a", "user-a"],
@@ -174,17 +180,21 @@ suite("notification batch selections", () => {
     expect(left).toBe(right);
   });
 
-  test("resolves explicit users and recursive group members", async () => {
+  databaseTest("resolves explicit users and recursive group members", async () => {
     const suffix = crypto.randomUUID();
-    const explicitUserId = await insertUser(suffix, "explicit-user");
-    const directMemberId = await insertUser(suffix, "direct-member");
-    const nestedMemberId = await insertUser(suffix, "nested-member");
-    const parentGroupId = await insertGroup(suffix, "parent-group");
-    const childGroupId = await insertGroup(suffix, "child-group");
-    const userIds = [explicitUserId, directMemberId, nestedMemberId];
-    const groupIds = [parentGroupId, childGroupId];
-
+    const userIds: string[] = [];
+    const groupIds: string[] = [];
     try {
+      const explicitUserId = await insertUser(suffix, "explicit-user");
+      userIds.push(explicitUserId);
+      const directMemberId = await insertUser(suffix, "direct-member");
+      userIds.push(directMemberId);
+      const nestedMemberId = await insertUser(suffix, "nested-member");
+      userIds.push(nestedMemberId);
+      const parentGroupId = await insertGroup(suffix, "parent-group");
+      groupIds.push(parentGroupId);
+      const childGroupId = await insertGroup(suffix, "child-group");
+      groupIds.push(childGroupId);
       await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${explicitUserId}::uuid, ${parentGroupId}::uuid)`;
       await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${directMemberId}::uuid, ${parentGroupId}::uuid)`;
       await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${nestedMemberId}::uuid, ${childGroupId}::uuid)`;
@@ -205,25 +215,25 @@ suite("notification batch selections", () => {
     }
   });
 
-  test("finalize rejects legacy rule drafts without creating a recipient snapshot", async () => {
+  databaseTest("finalize rejects legacy rule drafts without creating a recipient snapshot", async () => {
     const suffix = crypto.randomUUID();
     const actorId = await insertUser(suffix, "legacy-actor");
-    const legacySelection = { mode: "rules", rules: ["account_manager"] };
-    const selectionHash = __notificationBatchTest.selectionHash(legacySelection as never);
-    const [batch] = await sql<{ id: string }[]>`
-      INSERT INTO notifications.batches (subject, body_markdown, body_html, selection, selection_hash, created_by)
-      VALUES (
-        'Legacy rule draft',
-        'Body',
-        '<p>Body</p>',
-        ${JSON.stringify(legacySelection)}::jsonb,
-        ${selectionHash},
-        ${actorId}::uuid
-      )
-      RETURNING id
-    `;
-
     try {
+      const legacySelection = { mode: "rules", rules: ["account_manager"] };
+      const selectionHash = __notificationBatchTest.selectionHash(legacySelection as never);
+      const [batch] = await sql<{ id: string }[]>`
+        INSERT INTO notifications.batches (subject, body_markdown, body_html, selection, selection_hash, created_by)
+        VALUES (
+          'Legacy rule draft',
+          'Body',
+          '<p>Body</p>',
+          ${JSON.stringify(legacySelection)}::jsonb,
+          ${selectionHash},
+          ${actorId}::uuid
+        )
+        RETURNING id
+      `;
+
       const result = await notificationBatches.finalize({
         id: batch!.id,
         actor: { userId: actorId },
@@ -250,7 +260,7 @@ suite("notification batch selections", () => {
       expect(storedBatch?.status).toBe("draft");
       expect(storedBatch?.finalized_at).toBeNull();
     } finally {
-      await sql`DELETE FROM notifications.batches WHERE id = ${batch!.id}::uuid`;
+      await sql`DELETE FROM notifications.batches WHERE created_by = ${actorId}::uuid`;
       await cleanupAuthFixture([actorId], []);
     }
   });
@@ -335,21 +345,22 @@ suite("notification batch audit", () => {
     const actor = { userId };
     const selection = { userIds: [userId] };
     const input = { actor, selection, subject: "Rollback", bodyMarkdown: "Rollback" };
-    const draft = await notificationBatches.createDraft(input);
-    const sent = await notificationBatches.createDraft(input);
-    if (!draft.ok || !sent.ok) throw new Error("Missing batch fixtures");
-    const preview = await notificationBatches.preview(selection);
-    const finalization = {
-      actor,
-      expectedSelectionHash: draft.data.selectionHash,
-      expectedDeliverableCount: preview.deliverableCount,
-      expectedRecipientHash: preview.recipientHash,
-    };
-    expect((await notificationBatches.finalize({ id: sent.data.id, ...finalization })).ok).toBe(true);
-    await sql`UPDATE notifications.batches SET status='failed' WHERE id=${sent.data.id}::uuid`;
-    await sql`UPDATE notifications.batch_recipients SET status='error' WHERE batch_id=${sent.data.id}::uuid`;
-    const recorder = spyOn(audit, "record").mockRejectedValue(new Error("Audit storage unavailable"));
+    let recorder: ReturnType<typeof spyOn<typeof audit, "record">> | undefined;
     try {
+      const draft = await notificationBatches.createDraft(input);
+      const sent = await notificationBatches.createDraft(input);
+      if (!draft.ok || !sent.ok) throw new Error("Missing batch fixtures");
+      const preview = await notificationBatches.preview(selection);
+      const finalization = {
+        actor,
+        expectedSelectionHash: draft.data.selectionHash,
+        expectedDeliverableCount: preview.deliverableCount,
+        expectedRecipientHash: preview.recipientHash,
+      };
+      expect((await notificationBatches.finalize({ id: sent.data.id, ...finalization })).ok).toBe(true);
+      await sql`UPDATE notifications.batches SET status='failed' WHERE id=${sent.data.id}::uuid`;
+      await sql`UPDATE notifications.batch_recipients SET status='error' WHERE batch_id=${sent.data.id}::uuid`;
+      recorder = spyOn(audit, "record").mockRejectedValue(new Error("Audit storage unavailable"));
       await expect(notificationBatches.createDraft(input)).rejects.toThrow("Audit storage unavailable");
       const [count] = await sql`SELECT count(*)::int AS n FROM notifications.batches WHERE created_by=${userId}::uuid`;
       expect(count?.n).toBe(2);
@@ -370,7 +381,7 @@ suite("notification batch audit", () => {
       }
       expect(recorder).toHaveBeenCalledTimes(5);
     } finally {
-      recorder.mockRestore();
+      recorder?.mockRestore();
       await sql`DELETE FROM notifications.batches WHERE created_by=${userId}::uuid`;
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid`;
       await cleanupAuthFixture([userId], []);
