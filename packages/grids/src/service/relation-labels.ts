@@ -2,11 +2,11 @@ import { sql } from "bun";
 import type { DslSqlFederatedRecordSource } from "../query-dsl/sql-compiler-types";
 import { assertFederatedPublication, buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";
-import { buildFormulaSqlProjections } from "./computed-projections";
+import { applyComputedProjections, buildFormulaSqlProjections } from "./computed-projections";
 import { listByTable as listFields } from "./fields";
 import { storedLocalCalculationSqlMap } from "./local-calculation-storage";
 import { liveRecordParentJoinSql } from "./parent-checks";
-import { mapRecordCalculationData } from "./record-persistence";
+import { applyFinalizedComputedAccess, mapRecordCalculationData } from "./record-persistence";
 import { type ExpansionViewer, resolveReadableTableIds } from "./relation-access";
 import { enrichRecordsWithFormulas } from "./relation-formulas";
 import { collectRelationTargetIds, loadRelationTargetsBatch, relationLabelFields } from "./relation-targets";
@@ -142,6 +142,13 @@ export const lookupRecords = async (params: {
         )
       : null;
   const sourceFieldSql = recordSource ? buildFederatedFieldSqlMap(recordSource, fields) : storedLocalCalculationSqlMap(fields);
+  const storedProjections = recordSource
+    ? []
+    : buildFormulaSqlProjections(
+        fields.filter((field) => sourceFieldSql.has(field.id)),
+        { computedFieldSql: sourceFieldSql },
+      );
+  const storedFragments = storedProjections.reduce((fragments, projection) => sql`${fragments}, ${projection.fragment}`, sql``);
   const formulaSearchTargets = buildFormulaSqlProjections(fields, {
     useFinalizedFormulaValues: tableKind !== "federated",
     computedFieldSql: sourceFieldSql,
@@ -173,7 +180,7 @@ export const lookupRecords = async (params: {
         LIMIT ${limit}
       `
     : await sql<DbRow[]>`
-        SELECT r.id, r.data, r.finalized_at::text
+        SELECT r.id, r.data, r.finalized_at::text, r.finalized_computed_types, r.finalized_computed_dependencies${storedFragments}
         FROM grids.records r
         ${liveRecordParentJoinSql("r", "rt", "rb")}
         WHERE ${where}
@@ -185,9 +192,15 @@ export const lookupRecords = async (params: {
     ...mapRecordCalculationData(row),
     finalizedAt: typeof row.finalized_at === "string" ? row.finalized_at : null,
   }));
+  if (!recordSource) {
+    const recordsById = new Map(records.map((record) => [record.id, record]));
+    applyComputedProjections(rows, recordsById, storedProjections);
+    applyFinalizedComputedAccess(rows, recordsById, undefined, fields);
+  }
   enrichRecordsWithFormulas(records, fields, {
     useFinalizedFormulaValues: !recordSource,
-    skipObjectListFieldIds: recordSource ? new Set(sourceFieldSql.keys()) : undefined,
+    skipFormulaFieldIds: recordSource ? undefined : new Set(sourceFieldSql.keys()),
+    skipObjectListFieldIds: new Set(sourceFieldSql.keys()),
   });
   return {
     items: records.map((record) => {

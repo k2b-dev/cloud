@@ -2,9 +2,14 @@ import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";
-import { readableComputedTargetTableIds } from "./computed-projections";
+import {
+  applyComputedProjections,
+  buildFormulaSqlProjections,
+  type ComputedProjection,
+  readableComputedTargetTableIds,
+} from "./computed-projections";
 import { mapFieldRow } from "./field-read";
-import { parseJsonbRow } from "./jsonb";
+import { storedLocalCalculationSqlMap } from "./local-calculation-storage";
 import { liveRecordParentJoinSql } from "./parent-checks";
 import { applyFinalizedComputedAccess, mapRecordCalculationData } from "./record-persistence";
 import type { ExpansionViewer } from "./relation-access";
@@ -130,7 +135,26 @@ export const loadRelationTargetsBatch = async (
     }
   }
 
+  const storedPlans = new Map<string, { projections: ComputedProjection[]; fieldIds: Set<string>; scope?: ReadonlySet<string> }>();
   if (storedTableIds.length > 0 && storedRecordIds.size > 0) {
+    let fragments = sql``;
+    for (const tableId of storedTableIds) {
+      const fields = fieldsByTable.get(tableId) ?? [];
+      const scope = viewer ? await readableComputedTargetTableIds(fields, viewer, undefined, client) : authorizedTableIds;
+      const computedFieldSql = storedLocalCalculationSqlMap(fields, { authorizedTableIds: scope });
+      const projections = buildFormulaSqlProjections(
+        fields.filter((field) => computedFieldSql.has(field.id)),
+        { computedFieldSql },
+      );
+      storedPlans.set(tableId, { projections, fieldIds: new Set(computedFieldSql.keys()), scope });
+      for (const projection of projections) {
+        // This remains one batch query. Guards prevent a row from another table
+        // from being checked against this table's calculation signature.
+        fragments = sql`${fragments},
+          CASE WHEN r.table_id = ${tableId}::uuid THEN ${projection.expr} END AS ${sql.unsafe(projection.alias)},
+          CASE WHEN r.table_id = ${tableId}::uuid THEN COALESCE(${projection.errorSql}, false) ELSE false END AS ${sql.unsafe(`e_${projection.alias}`)}`;
+      }
+    }
     const storedRows = await client<
       Array<{
         id: string;
@@ -141,7 +165,7 @@ export const loadRelationTargetsBatch = async (
         finalized_computed_dependencies: unknown;
       }>
     >`
-      SELECT r.id, r.table_id, r.data, r.finalized_at::text, r.finalized_computed_types, r.finalized_computed_dependencies
+      SELECT r.id, r.table_id, r.data, r.finalized_at::text, r.finalized_computed_types, r.finalized_computed_dependencies${fragments}
       FROM grids.records r
       ${liveRecordParentJoinSql("r", "rt", "rb")}
       WHERE r.id = ANY(${toPgUuidArray([...storedRecordIds])}::uuid[])
@@ -153,20 +177,16 @@ export const loadRelationTargetsBatch = async (
       if (!targets || !idsByTargetTable.get(row.table_id)?.has(row.id)) continue;
       targets.records.push({
         id: row.id,
-        data: parseJsonbRow<Record<string, unknown>>(row.data, {}),
+        ...mapRecordCalculationData(row),
         finalizedAt: row.finalized_at,
       });
     }
     for (const tableId of storedTableIds) {
-      const requiredScope = viewer
-        ? await readableComputedTargetTableIds(fieldsByTable.get(tableId) ?? [], viewer, undefined, client)
-        : authorizedTableIds;
-      applyFinalizedComputedAccess(
-        storedRows.filter((row) => row.table_id === tableId),
-        new Map((targetsByTable.get(tableId)?.records ?? []).map((record) => [record.id, record])),
-        requiredScope,
-        fieldsByTable.get(tableId) ?? [],
-      );
+      const plan = storedPlans.get(tableId)!;
+      const rows = storedRows.filter((row) => row.table_id === tableId);
+      const records = new Map((targetsByTable.get(tableId)?.records ?? []).map((record) => [record.id, record]));
+      applyComputedProjections(rows, records, plan.projections);
+      applyFinalizedComputedAccess(rows, records, plan.scope, fieldsByTable.get(tableId) ?? []);
     }
   }
 
@@ -191,7 +211,8 @@ export const loadRelationTargetsBatch = async (
   for (const [targetTableId, targets] of targetsByTable) {
     enrichRecordsWithFormulas(targets.records, fieldsByTable.get(targetTableId) ?? [], {
       useFinalizedFormulaValues: tableKinds.get(targetTableId) !== "federated",
-      skipObjectListFieldIds: mappedCalculationFields.get(targetTableId),
+      skipFormulaFieldIds: storedPlans.get(targetTableId)?.fieldIds,
+      skipObjectListFieldIds: storedPlans.get(targetTableId)?.fieldIds ?? mappedCalculationFields.get(targetTableId),
     });
   }
   return targetsByTable;
