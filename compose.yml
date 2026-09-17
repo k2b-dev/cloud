@@ -82,21 +82,32 @@ services:
       - "8081:4000"
 
   filegate:
-    image: ghcr.io/valentinkolb/filegate:latest
+    image: ghcr.io/k2b-dev/filegate:5.1.0
+    platform: linux/amd64
     container_name: filegate
     restart: unless-stopped
-    environment:
-      FILE_PROXY_TOKEN: ${FILEGATE_TOKEN:-dev-secret-token}
-      ALLOWED_BASE_PATHS: /data/homes,/data/groups
-      PORT: "4000"
-      REDIS_URL: redis://valkey:6379
+    # Local POSIX tests need arbitrary UID/GID and access to their test files.
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID]
+    security_opt: [no-new-privileges:true]
+    configs:
+      - source: filegate_config
+        target: /etc/filegate/conf.yaml
+    secrets:
+      - source: filegate_token
+        target: /etc/filegate/token
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     volumes:
-      - filegate_homes:/data/homes
-      - filegate_groups:/data/groups
-    depends_on:
-      - valkey
+      - filegate_cloud:/data/cloud
+      - filegate_freeipa:/data/freeipa
+      - filegate_state:/var/lib/filegate
+    healthcheck:
+      test: ["CMD", "/app/filegate", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   gotenberg:
     image: docker.io/gotenberg/gotenberg:8.36.0
@@ -106,6 +117,26 @@ services:
       - "3001:3000"
 
 configs:
+  filegate_config:
+    content: |
+      server:
+        listen: "0.0.0.0:4000"
+        public_url: "http://localhost:4000"
+        allowed_origins: ["http://localhost:3000", "http://127.0.0.1:3000"]
+      auth:
+        token_file: /etc/filegate/token
+      state_dir: /var/lib/filegate
+      uploads:
+        max_file_size: 1GiB
+      roots:
+        - name: cloud
+          path: /data/cloud
+          index: true
+          versioning:
+            enabled: true
+        - name: freeipa
+          path: /data/freeipa
+          index: false
   # Prepared by bun run dev:infra; contains only the admin public key.
   nats_system_config:
     file: ./.local/nats/system.conf
@@ -120,10 +151,15 @@ configs:
         store_dir: /data
       }
 
+secrets:
+  filegate_token:
+    file: ./.local/filegate/token
+
 volumes:
   kit_rsql_data:
   ipa_postgres_data:
   ipa_valkey_data:
   ipa_nats_data:
-  filegate_homes:
-  filegate_groups:
+  filegate_cloud:
+  filegate_freeipa:
+  filegate_state:
