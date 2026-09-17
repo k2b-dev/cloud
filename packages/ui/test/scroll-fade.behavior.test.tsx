@@ -27,7 +27,7 @@ else
         Object.defineProperties(body, { scrollHeight: { configurable: true, value: 500 }, clientHeight: { value: 200 } });
         const scroll = (top: number) => {
           body.scrollTop = top;
-          body.dispatchEvent(new dom.window.Event("scroll"));
+          body.dispatchEvent(new Event("scroll"));
         };
         scroll(0);
         expect(body.dataset.scrollFade).toBe("bottom");
@@ -65,7 +65,7 @@ if (!isServer)
       expect(port.dataset.scrollFade).toBe("bottom");
       first();
       port.scrollTop = 100;
-      port.dispatchEvent(new dom.window.Event("scroll"));
+      port.dispatchEvent(new Event("scroll"));
       expect(port.dataset.scrollFade).toBe("both");
       const next = dom.document.createElement("div");
       next.setAttribute("data-scroll-fade-mode", "bottom");

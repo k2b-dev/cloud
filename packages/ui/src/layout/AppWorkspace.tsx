@@ -217,13 +217,14 @@ export type AppWorkspaceSidebarProps = {
 };
 export type AppWorkspaceSidebarVisibility = "always" | "expanded" | "collapsed";
 export type AppWorkspaceSidebarAccessoryVisibility = "always" | "hover";
-export type AppWorkspaceSidebarBodyProps = {
+type AppWorkspaceSidebarContentProps = {
   children: JSX.Element;
   class?: string;
   scrollPreserveKey?: string | false;
   sidebarMode?: AppWorkspaceSidebarVisibility;
 };
-export type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
+export type AppWorkspaceSidebarBodyProps = AppWorkspaceSidebarContentProps & { scrollFade?: boolean };
+export type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarContentProps & {
   title?: string;
   icon?: string;
   count?: number;
@@ -270,7 +271,7 @@ export type AppWorkspaceSidebarItemProps = {
   data?: Record<string, string | number | boolean | null | undefined>;
   sidebarMode?: AppWorkspaceSidebarVisibility;
 };
-export type AppWorkspaceSidebarIconGridProps = AppWorkspaceSidebarBodyProps & { title?: string; columns?: 2 | 3 };
+export type AppWorkspaceSidebarIconGridProps = AppWorkspaceSidebarContentProps & { title?: string; columns?: 2 | 3 };
 export type AppWorkspaceSidebarIconActionProps = {
   href?: string | null;
   /** Document navigation by default; opt into enhanced navigation only when the owning island applies the target state. */
@@ -606,7 +607,7 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
 
 const AppWorkspaceSidebarDesktop = (props: { children: JSX.Element }): JSX.Element =>
   ({ kind: SIDEBAR_DESKTOP, children: props.children }) as unknown as JSX.Element;
-const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps & { scrollFade?: boolean }) => {
+const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps) => {
   let body!: HTMLDivElement;
   createScrollFade(() => body, () => props.scrollFade !== false);
   return (
@@ -621,7 +622,7 @@ const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps & { scrollF
     </div>
   );
 };
-const AppWorkspaceSidebarFooter = (props: AppWorkspaceSidebarBodyProps) => (
+const AppWorkspaceSidebarFooter = (props: AppWorkspaceSidebarContentProps) => (
   <footer class={`k2b-app-workspace__sidebar-footer ${props.class ?? ""}`} {...modeAttrs(props.sidebarMode)}>
     {props.children}
   </footer>
@@ -1236,7 +1237,7 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   SidebarDesktop: (props: { children: JSX.Element }) => JSX.Element;
   SidebarSection: (props: AppWorkspaceSidebarSectionProps) => JSX.Element;
   SidebarBody: (props: AppWorkspaceSidebarBodyProps) => JSX.Element;
-  SidebarFooter: (props: AppWorkspaceSidebarBodyProps) => JSX.Element;
+  SidebarFooter: (props: AppWorkspaceSidebarContentProps) => JSX.Element;
   SidebarItem: (props: AppWorkspaceSidebarItemProps) => JSX.Element;
   SidebarItemIcon: (props: AppWorkspaceSidebarItemIconProps) => JSX.Element;
   SidebarItemLabel: (props: AppWorkspaceSidebarItemLabelProps) => JSX.Element;
