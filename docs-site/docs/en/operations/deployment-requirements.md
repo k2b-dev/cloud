@@ -14,9 +14,9 @@ Use this reference before deploying a fresh Cloud installation or adding an
 application. Choose the apps **and the features** you intend to use: a ready
 container does not prove that its mail, AI, storage, or PDF integration works.
 
-This page covers the gateway and all 22 built-in applications in the current
+This page covers the gateway and all 23 built-in applications in the current
 development Compose configuration. Production Compose includes the gateway and
-22 applications, including **Pulse**. A standalone application can have
+23 applications, including **Pulse**. A standalone application can have
 additional requirements declared by its author. Check the documentation and
 configuration shipped with the exact release you deploy.
 
@@ -114,6 +114,7 @@ or mutate real data without approval.
 | [Contacts](/en/apps/contacts) (`contacts`) | Baseline | No additional external service for contact books and records. Cross-app use requires whichever consumer/provider is selected. | Create and read a disposable contact in a test book; verify another account's access boundary. |
 | [FAQ](/en/apps/faq) (`faq`) | Baseline | No additional external service for authored FAQ content. | Publish a test entry and verify its intended visibility on `/faq`. |
 | [Files](/en/apps/files) (`files`) | Baseline; the process can start without a working Filegate | Actual file operations require Filegate, persistent allowed home/group roots and IPA identity/group data. Configure `files.filegate_url`, `files.filegate_token`, `files.base_homes`, `files.base_groups` and the directory/file modes. Configure these in Files administration; Cloud does not read Filegate bootstrap variables. | As an IPA user, list an authorized base and upload/download a disposable file; verify forbidden bases stay inaccessible. |
+| [Filesv2](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 5.1.0 with independent roots, backend token, browser-reachable public URL and exact CORS origins. Cloud storage requires local Linux identities; FreeIPA storage requires FreeIPA and valid POSIX identities. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses shared SMTP, not the Mail app. Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
 | [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
@@ -147,9 +148,12 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but the setting must still be configured. Forecast access is a separate dependency. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
-configuration, not invented global S3 environment keys. For Filegate, its
+configuration, not invented global S3 environment keys. For the older Files app and its Filegate v2 daemon, the
 server-side `FILE_PROXY_TOKEN` must match Cloud's Files token, and its
 `ALLOWED_BASE_PATHS` and mounted storage must cover the configured roots.
+Filesv2 uses the separate Filegate v5 root and lease API; see
+[Filesv2](/en/apps/filesv2). The local development daemon is v5 and cannot serve
+the older Files app.
 
 ## Bring up a fresh installation
 

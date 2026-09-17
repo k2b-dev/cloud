@@ -169,7 +169,7 @@ for (const appDir of appDirs) {
       });
     }
 
-    if (!/export\s+const\s+\w+Service\s*=\s*\{/.test(serviceSource)) {
+    if (!/export\s+const\s+\w+Service\s*=\s*(?:\{|create\w*Service\s*\()/.test(serviceSource)) {
       violations.push({
         file: serviceIndexPath,
         message: "service/index.ts must export a '*Service' facade object.",
@@ -239,8 +239,7 @@ for (const appDir of appDirs) {
     });
   }
 
-  const hasRateLimitImport =
-    apiSpecifiers.includes("@k2b/cloud/server") && importsNamed(apiSource, "@k2b/cloud/server", "rateLimit");
+  const hasRateLimitImport = apiSpecifiers.includes("@k2b/cloud/server") && importsNamed(apiSource, "@k2b/cloud/server", "rateLimit");
 
   if (hasRateLimitImport && !/\.use\(\s*rateLimit\(/.test(apiSource)) {
     violations.push({

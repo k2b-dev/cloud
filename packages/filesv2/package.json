@@ -1,0 +1,33 @@
+{
+  "name": "@k2b/cloud-app-filesv2",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cli": "./src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "bun test --isolate ./src && bun run test:ssr && bun run test:dom",
+    "test:ssr": "bun test --isolate --preload ./test/solid-ssr-preload.ts ./test/files-ui.render.test.tsx",
+    "test:dom": "bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts ./test/files-ui.behavior.test.tsx ./test/workspace-navigation.behavior.test.tsx"
+  },
+  "dependencies": {
+    "@k2b/cloud": "workspace:*",
+    "@k2b/filegate": "5.1.0",
+    "@k2b/ssr": "catalog:",
+    "@k2b/stdlib": "catalog:",
+    "@k2b/ui": "workspace:*",
+    "hono": "catalog:",
+    "hono-openapi": "catalog:",
+    "solid-js": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  },
+  "license": "AGPL-3.0-or-later"
+}

@@ -121,6 +121,10 @@ services:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-files:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
+  app-filesv2:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-filesv2:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+
   app-grids:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-grids:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}

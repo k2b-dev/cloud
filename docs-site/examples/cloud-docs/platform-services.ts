@@ -1,7 +1,16 @@
 import { defineApp, notification } from "@k2b/cloud";
-import type { WidgetResponse } from "@k2b/cloud/contracts";
+import type { RequestActor, WidgetResponse } from "@k2b/cloud/contracts";
 import type { AppContext } from "@k2b/cloud/server";
-import { audit, linuxIdentities, logger, notifications, renderHtmlToPdf, renderMarkdownToPdf, trace } from "@k2b/cloud/services";
+import {
+  accountIdentities,
+  audit,
+  linuxIdentities,
+  logger,
+  notifications,
+  renderHtmlToPdf,
+  renderMarkdownToPdf,
+  trace,
+} from "@k2b/cloud/services";
 import { extractDocumentMarkdown } from "@k2b/cloud/services/document-extraction";
 import { z } from "zod";
 
@@ -53,6 +62,13 @@ export const platformApp = defineApp({
 });
 
 export const stockLog = logger("inventory:stock");
+
+// Call after request authentication and the application's route policy checks.
+export const readOwnIdentity = async (actor: RequestActor, after?: string) => {
+  const identity = await accountIdentities.self(actor);
+  const groups = await accountIdentities.groups(actor, { after });
+  return { ...identity, groups };
+};
 
 type InventorySettings = AppContext<typeof platformApp>["Variables"]["settings"];
 

@@ -51,7 +51,8 @@ export type CloudCliModule = {
   booleanFlags?: readonly string[];
   requiresCloud?: boolean;
   requiresCloudFor?: (args: string[], flags: CloudCliFlags) => boolean;
-  help?: () => string;
+  /** Render module help in the request locale; command syntax stays unchanged. */
+  help?: (locale?: string) => string;
   run: (context: CloudCliContext) => Promise<number | void> | number | void;
 };
 

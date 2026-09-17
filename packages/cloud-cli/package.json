@@ -19,6 +19,7 @@
     "@k2b/cloud-app-assistant": "workspace:*",
     "@k2b/cloud-app-contacts": "workspace:*",
     "@k2b/cloud-app-faq": "workspace:*",
+    "@k2b/cloud-app-filesv2": "workspace:*",
     "@k2b/cloud-app-grids": "workspace:*",
     "@k2b/cloud-app-ipa-hosts": "workspace:*",
     "@k2b/cloud-app-mail": "workspace:*",

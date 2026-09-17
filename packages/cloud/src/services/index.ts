@@ -4,6 +4,8 @@ export { accounts } from "./accounts";
 export { accountsAppService } from "./accounts";
 export { posix as linuxIdentities, PosixError } from "./accounts/posix";
 export type { PosixCandidate } from "./accounts/posix";
+export { accountIdentities, AccountIdentityError } from "./accounts/identities";
+export type { AccountIdentityUser, AccountIdentityGroup, AccountIdentityPage, AccountIdentityAvailability } from "./accounts/identities";
 export { providers } from "./providers";
 export { requestPublicHttps, type PublicHttpInput } from "./public-http";
 export { authFlows } from "./auth-flows";

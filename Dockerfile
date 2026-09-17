@@ -25,6 +25,7 @@ COPY packages/core/package.json          packages/core/
 COPY packages/dashboard/package.json     packages/dashboard/
 COPY packages/faq/package.json           packages/faq/
 COPY packages/files/package.json         packages/files/
+COPY packages/filesv2/package.json       packages/filesv2/
 COPY packages/grids/package.json         packages/grids/
 COPY packages/gateway/package.json       packages/gateway/
 COPY packages/gateway-ops/package.json   packages/gateway-ops/

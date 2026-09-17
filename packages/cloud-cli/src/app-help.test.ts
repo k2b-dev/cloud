@@ -4,6 +4,7 @@ import accountsCliModule from "@k2b/cloud-app-accounts/cli";
 import apiDocsCliModule from "@k2b/cloud-app-api-docs/cli";
 import contactsCliModule from "@k2b/cloud-app-contacts/cli";
 import faqCliModule from "@k2b/cloud-app-faq/cli";
+import filesv2CliModule from "@k2b/cloud-app-filesv2/cli";
 import gridsCliModule from "@k2b/cloud-app-grids/cli";
 import ipaHostsCliModule from "@k2b/cloud-app-ipa-hosts/cli";
 import mailCliModule from "@k2b/cloud-app-mail/cli";
@@ -19,6 +20,7 @@ const appModules = [
   apiDocsCliModule,
   contactsCliModule,
   faqCliModule,
+  filesv2CliModule,
   gridsCliModule,
   ipaHostsCliModule,
   mailCliModule,

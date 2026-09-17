@@ -117,6 +117,12 @@ It checks administrator access on reads and writes. See
 [Linux identities](/en/docs/operations/linux-identities) for configuration,
 explicit provisioning, and the compatible FreeIPA mirror.
 
+`accountIdentities` is the supported application read service for the acting
+user, effective groups, provider availability and administrator-only paginated
+identity inventories. It does not allocate identities or track filesystems.
+See [Account administration API](/en/docs/reference/account-administration)
+for actor requirements and the limits of Cloud's FreeIPA inventory.
+
 `readAccountCategoryPolicy` supplies server-side presentation settings;
 `isAccountCategoryAllowed` is for platform-owned credential eligibility checks,
 not application resource authorization. The browser-safe contracts barrel

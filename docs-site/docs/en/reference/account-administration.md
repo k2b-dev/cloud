@@ -30,6 +30,48 @@ settings cache; invalid stored policy fails closed.
 
 ## Linux identity API
 
+### Read identities from an application
+
+Use `accountIdentities` from `@k2b/cloud/services` for server-side reads.
+Pass the authenticated request's `actor`; applications must still enforce
+their route policies, credential scopes and resource permissions.
+
+| Method | Result |
+| --- | --- |
+| `self(actor)` | Current user and `{ localLinuxEnabled, freeipaEnabled }` availability |
+| `groups(actor, { after? })` | A page of the caller's effective groups, including nested membership |
+| `inventory(actor, { kind, provider, after?, id?, name? })` | Administrator-only page of known users or groups |
+
+Users contain `{ id, provider, username, profile, posix }`. `posix` is either
+`{ uidNumber, primaryGidNumber }` or `null` when attributes are missing,
+incomplete or owned by a different provider. The primary GID is the stored
+primary GID; it is never inferred from the UID. Groups contain
+`{ id, provider, name, gidNumber }`, including logical groups with a null GID.
+An IPA user can also receive local groups through direct or nested membership.
+Group management alone does not confer membership.
+
+Reads check the current database account, expiry, category policy and provider
+against the actor. Missing accounts and changed identity snapshots are denied.
+Configuration reads bypass the settings cache. Disabled FreeIPA denies IPA
+callers; disabling local Linux identities changes availability without removing
+stored IDs. Applications that depend on local Linux identities must check
+`localLinuxEnabled` before granting access to that area.
+
+Both page methods return `{ items, nextCursor }`, with at most 50 items.
+Pass a non-null cursor back as `after` until it is null. Inventory `kind` is
+`"users"` or `"groups"`, and `provider` is `"local"` or `"ipa"`. Optional
+`id` and `name` filters are exact matches; `name` matches the username for users.
+Administrator rights are checked against current stored authority on every call.
+Failures throw `AccountIdentityError` with a stable `code` and HTTP `status`.
+
+The inventory represents identities known to Cloud. It is **not a complete
+FreeIPA directory inventory**. An absent IPA identity must not be interpreted as
+proof that an upstream account or group was deleted. Filesystem consumers must
+inspect the filesystem separately; these reads do not track directory existence
+or require directories to have been created through Cloud.
+
+### Administer Linux attributes
+
 The platform service `linuxIdentities`, exported from
 `@k2b/cloud/services`, enforces administrator access on every method,
 including calls outside HTTP. It owns identity configuration, reads and

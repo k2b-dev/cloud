@@ -19,6 +19,7 @@
       "packages/dashboard",
       "packages/faq",
       "packages/files",
+      "packages/filesv2",
       "packages/gateway",
       "packages/gateway-ops",
       "packages/grids",

@@ -23,6 +23,7 @@ import apiDocsCliModule from "@k2b/cloud-app-api-docs/cli";
 import assistantCliModule, { startCliCodeHostProcess } from "@k2b/cloud-app-assistant/cli";
 import contactsCliModule from "@k2b/cloud-app-contacts/cli";
 import faqCliModule from "@k2b/cloud-app-faq/cli";
+import filesv2CliModule from "@k2b/cloud-app-filesv2/cli";
 import gridsCliModule from "@k2b/cloud-app-grids/cli";
 import ipaHostsCliModule from "@k2b/cloud-app-ipa-hosts/cli";
 import mailCliModule from "@k2b/cloud-app-mail/cli";
@@ -117,6 +118,7 @@ const modules: CloudCliModule[] = [
   assistantCliModule,
   contactsCliModule,
   faqCliModule,
+  filesv2CliModule,
   gridsCliModule,
   ipaHostsCliModule,
   mailCliModule,
@@ -142,6 +144,7 @@ const germanModuleSummaries = new Map<string, string>([
   ["assistant", "Mit Assistant arbeiten."],
   ["contacts", "Kontakte verwalten."],
   ["faq", "FAQ-Einträge verwalten."],
+  ["filesv2", "Dateien und Ablagen verwalten."],
   ["grids", "Grids-Daten und -Konfiguration verwalten."],
   ["ipa-hosts", "FreeIPA-Hosts verwalten."],
   ["mail", "Mail verwalten."],
@@ -1598,7 +1601,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
 
   if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
     console.log(
-      module.help?.() ??
+      module.help?.(global.locale) ??
         `${module.name}: ${global.locale.toLowerCase().startsWith("de") ? (germanModuleSummaries.get(module.name) ?? module.summary) : module.summary}`,
     );
     return 0;

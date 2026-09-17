@@ -38,6 +38,11 @@ server-owned human messages. Application modules own their command descriptions
 and table headings. Localize them with explicit catalog keys, not by inspecting
 or replacing English output strings.
 
+The CLI passes the resolved locale to a module's optional `help(locale)` callback
+for root help. A module that builds localized command definitions should use
+that locale for `help` and `ctx.options.locale` for `run`. Existing callbacks
+without a locale argument remain valid.
+
 ```ts
 import { cliText } from "@k2b/cloud/cli";
 
