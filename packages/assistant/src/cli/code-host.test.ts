@@ -240,27 +240,27 @@ test("slow database and shared storage calls do not consume the short callback d
   }finally{await host.close();}
 },45000);
 
-test("replacing CLI hosts survives garbage collection without losing the new browser", async () => {
+// Each sequential replacement gets its own lifecycle budget. Keep all cycles in
+// one test process so finalizers from older hosts run against the replacement.
+test.each([0, 1, 2])("replacing CLI hosts survives garbage collection without losing the new browser (cycle %i)", async (cycle) => {
   const bundle = await cliHostBundle();
   const code = "export default () => 42";
   const compiled = await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
-  for (let cycle = 0; cycle < 3; cycle++) {
-    const host = await createCliCodeHost({fetch: async input => {
-      if (String(input).endsWith("host.js")) return new Response(bundle);
-      if (String(input).endsWith("/compile")) return Response.json(compiled);
-      throw new Error(`Unexpected host request ${input}`);
-    }});
-    try {
-      for (let probe = 0; probe < 8; probe++) {
-        // The old shared-process launcher loses its new Chromium pipe when
-        // finalizers from a previously closed browser run here.
-        Bun.gc(true);
-        expect(await host.execute({name:"code_run",callId:`gc-${probe}`,conversationId:crypto.randomUUID(),turnId:crypto.randomUUID(),args:{code}}))
-          .toMatchObject({status:"ready",output:"42"});
-      }
-    } finally { await host.close(); }
-    await host.close();
-  }
+  const host = await createCliCodeHost({fetch: async input => {
+    if (String(input).endsWith("host.js")) return new Response(bundle);
+    if (String(input).endsWith("/compile")) return Response.json(compiled);
+    throw new Error(`Unexpected host request ${input}`);
+  }});
+  try {
+    for (let probe = 0; probe < 8; probe++) {
+      // The old shared-process launcher loses its new Chromium pipe when
+      // finalizers from a previously closed browser run here.
+      Bun.gc(true);
+      expect(await host.execute({name:"code_run",callId:`gc-${cycle}-${probe}`,conversationId:crypto.randomUUID(),turnId:crypto.randomUUID(),args:{code}}))
+        .toMatchObject({status:"ready",output:"42"});
+    }
+  } finally { await host.close(); }
+  await host.close();
 }, 30000);
 
 test("finance exports and resource-scoped one-offs use the existing worker and management routes", async () => {

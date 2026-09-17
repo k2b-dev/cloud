@@ -1,3 +1,4 @@
+import { databaseConfigLock } from "./database-lock";
 import { sql, SQL } from "bun";
 import { z } from "zod";
 import { hasRole } from "@k2b/cloud/contracts";
@@ -17,7 +18,6 @@ function admin(identity: ArtifactIdentity) {
 async function config() {
   return {url:await app.settings.get("assistant.rsql_url"),token:await app.settings.get("assistant.rsql_api_token")};
 }
-export const databaseConfigLock = (db: typeof sql) => db`SELECT pg_advisory_xact_lock_shared(hashtext('assistant-rsql-settings'))`;
 function connection(c: { url: string; token: string }, signal?: AbortSignal, streaming = false) {
   if (!c.url || !c.token) throw new DatabaseError("DB_NOT_CONFIGURED", 409);
   const address = new URL(c.url);

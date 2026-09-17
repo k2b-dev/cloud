@@ -1,3 +1,4 @@
+import { databaseConfigLock } from "./database-lock";
 import { hasRole } from "@k2b/cloud/contracts";
 import { sql, type SQL } from "bun";
 import { z } from "zod";
@@ -138,7 +139,6 @@ export const artifacts = {
     return sql.begin(async db => managementState(db, (await requireArtifact(db, id, identity, "admin")).row));
   },
   async remove(id: string, identity: ArtifactIdentity, expectedManagementRevision?: string) {
-    const { databaseConfigLock } = await import("./database");
     return sql.begin(async db => {
       await databaseConfigLock(db);
       const { row } = await requireArtifact(db, id,identity,"admin");
