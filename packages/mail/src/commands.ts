@@ -1,5 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 import { z } from "zod";
+import { ResourceShortIdSchema } from "./contracts";
 
 export const MailComposeCommandInputSchema = z
   .object({
@@ -13,10 +14,25 @@ export const MailComposeCommandInputSchema = z
       .describe("Optional contact to read and choose a recipient from."),
   })
   .strict();
+export const MailDraftCalendarInputSchema = z
+  .object({
+    mailboxId: ResourceShortIdSchema.describe("Public mailbox ID."),
+    draftId: ResourceShortIdSchema.describe("Public ID of the existing draft to keep and edit."),
+  })
+  .strict();
 export const mailCommandMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      linkSpaceTitle: "Link this conversation to a task or event",
+      linkSpaceDescription: "Choose an existing Spaces entry. The email conversation stays here.",
+      calendarUnavailable: "This draft is not ready for a calendar invitation. Check editing access and the Spaces connection.",
+      calendarTitle: "Add a calendar invitation to this draft",
+      calendarDescription: "Choose or create an event and attach it to this email. Nothing is sent.",
+      importTitle: "Add or update this event in Spaces",
+      importDescription: "Choose a calendar and review the import before applying it.",
+      respondTitle: "Prepare a reply to this invitation",
+      respondDescription: "Choose accept, maybe or decline. Review the reply in Mail before sending.",
       replyDescription: ({ subject }: { subject: string }) => `Reply to the sender of “${subject}”.`,
       replyAllDescription: ({ subject }: { subject: string }) => `Reply to everyone in “${subject}”.`,
       forwardDescription: ({ subject }: { subject: string }) => `Forward “${subject}” to another recipient.`,
@@ -36,6 +52,16 @@ export const mailCommandMessages = i18n.define({
       sourceDescription: "Opens Spaces with this email conversation linked.",
     },
     de: {
+      linkSpaceTitle: "Diese Konversation mit Aufgabe oder Termin verknüpfen",
+      linkSpaceDescription: "Einen bestehenden Spaces-Eintrag auswählen. Die E-Mail-Konversation bleibt hier.",
+      calendarUnavailable:
+        "Dieser Entwurf ist noch nicht für eine Kalendereinladung bereit. Bearbeitungszugriff und Spaces-Verbindung prüfen.",
+      calendarTitle: "Kalendereinladung an diesen Entwurf anhängen",
+      calendarDescription: "Termin auswählen oder erstellen und an diese E-Mail anhängen. Es wird nichts gesendet.",
+      importTitle: "Diesen Termin in Spaces übernehmen oder aktualisieren",
+      importDescription: "Kalender auswählen und den Import vor dem Übernehmen prüfen.",
+      respondTitle: "Antwort auf diese Einladung vorbereiten",
+      respondDescription: "Zusagen, vielleicht oder absagen wählen. Die Antwort vor dem Senden in Mail prüfen.",
       replyDescription: ({ subject }) => `Dem Absender von „${subject}“ antworten.`,
       replyAllDescription: ({ subject }) => `Allen Beteiligten von „${subject}“ antworten.`,
       forwardDescription: ({ subject }) => `„${subject}“ an einen anderen Empfänger weiterleiten.`,

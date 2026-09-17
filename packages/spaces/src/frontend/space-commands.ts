@@ -7,7 +7,7 @@ import { createSignal, onCleanup, onMount } from "solid-js";
 import { z } from "zod";
 import { apiClient } from "../api/client";
 import { SpaceBrowseDataSchema } from "../capability-contracts";
-import { SpaceComposeInputSchema, spaceCommandMessages } from "../commands";
+import { SpaceComposeInputSchema, SpaceInvitationInputSchema, spaceCommandMessages } from "../commands";
 import type { SpaceDetail, SpaceItemResourceReferenceInput } from "../contracts";
 import { createItemController } from "./[id]/_components/sidebar/CreateItemButton";
 
@@ -114,6 +114,26 @@ export const createSpaceCommands = (options: { current?: () => SpaceDetail | und
         ),
       );
     }
+    onCleanup(
+      registerCommandHandler("spaces.event.invite", SpaceInvitationInputSchema, async (input, commandOptions) => {
+        if (pending || controller.pending()) throw new Error(t().invitationUnavailable);
+        pending = true;
+        try {
+          const event = await invokeCapabilityWithDataSchema(
+            { appId: "spaces", capabilityId: "item.read", kind: "query", input: { id: input.itemId }, signal: abort.signal },
+            z.object({ kind: z.literal("event"), spaceId: z.string(), title: z.string() }),
+          );
+          if (!event.ok) throw new Error(event.error.message);
+          if (!active) return;
+          const { openEventInvitation } = await import("./[id]/_components/detail/EventInvitations");
+          if (!active) return;
+          await openEventInvitation(event.data.data.spaceId, input.itemId, event.data.data.title, input.method, locale(), abort.signal);
+          if (active && commandOptions.returnTo) window.location.assign(commandOptions.returnTo);
+        } finally {
+          pending = false;
+        }
+      }),
+    );
     void consumeCommandLink();
   });
 };

@@ -4,7 +4,13 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
     de: {
-      commands: { compose: { title: "E-Mail verfassen", description: "Eine neue Nachricht in Mail schreiben." } },
+      commands: {
+        "draft.calendar": {
+          title: "Kalendereinladung an Entwurf anhängen",
+          description: "Bestehenden Entwurf öffnen und einen Termin zum Anhängen auswählen oder erstellen. Es wird nichts gesendet.",
+        },
+        compose: { title: "E-Mail verfassen", description: "Eine neue Nachricht in Mail schreiben." },
+      },
       types: {
         attachment: {
           title: "Mail-Aufsatz",

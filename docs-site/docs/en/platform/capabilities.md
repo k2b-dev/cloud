@@ -1296,3 +1296,26 @@ Localize titles, descriptions, and input field descriptions under
 `presentation.translations.<locale>.commands`, keyed by local Command ID.
 Follow the palette's [action wording guidance](/en/docs/platform/search#write-distinct-action-titles-and-useful-descriptions)
 so users can distinguish actions by scope and understand what each one opens.
+
+### Calendar Command entry points
+
+Mail and Spaces expose two context-dependent Commands. Neither accepts an
+empty input, so they do not crowd the global action catalog.
+
+| Command | Input | Interface |
+| --- | --- | --- |
+| `mail.draft.calendar` | `{ mailboxId, draftId }` | Attach an event to this existing Mail draft |
+| `spaces.event.invite` | `{ itemId, method?: "request" \| "cancel" }` | Prepare an invitation, update or cancellation for this event |
+
+IDs are public resource IDs. Opening a Command checks access and opens the
+existing form; it does not send mail. Mail keeps the same draft, recipients and
+attachments and uses its existing edit lease and revision checks. Spaces owns
+the event and invitation sequence; Mail owns the resulting draft and sending.
+Use `returnTo` only when there is a useful originating view to return to.
+
+The Mail composer also offers its calendar action for an unsaved draft. It
+saves through the existing composer flow before opening the inline event form.
+A save or lease failure leaves the user in the composer. Incoming invitation
+import, RSVP draft preparation and linking a conversation to an existing
+Spaces item remain local context actions with their existing selectors and
+confirmation steps.

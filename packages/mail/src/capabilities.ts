@@ -1,4 +1,4 @@
-import { MailComposeCommandInputSchema } from "./commands";
+import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
@@ -3665,6 +3665,13 @@ export const mailCapabilities = localizeCapabilityErrors(
     protocolVersion: 2,
     presentation: mailCapabilityPresentation,
     commands: {
+      "draft.calendar": {
+        title: "Add calendar invitation to draft",
+        description: "Open an existing draft and choose or create an event to attach. Nothing is sent.",
+        icon: "ti ti-calendar-plus",
+        input: MailDraftCalendarInputSchema,
+        path: "/app/mail/calendar",
+      },
       compose: {
         title: "Compose email",
         description: "Write a new message in Mail.",

@@ -175,3 +175,5 @@ There is no automatic undo. You can adjust the grouping again with the same acti
 ## Search this mailbox
 
 Use **Cmd/Ctrl+Shift+K** in a mailbox to search its messages and attachments. The mailbox name appears as a removable chip. Remove it to search the whole Cloud.
+
+For an open calendar invitation, Cloud search offers **Add or update this event in Spaces** and, when you can reply, **Prepare a reply to this invitation**. Choose a writable calendar, then confirm the import or choose your response. Replies open as drafts for review before sending.

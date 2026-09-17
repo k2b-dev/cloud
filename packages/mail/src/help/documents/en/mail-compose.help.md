@@ -138,3 +138,7 @@ Open **Message options**, then **Delivery options**, to change the selected iden
 - **Read receipt** asks the recipient's mail client to report a disposition. Recipients and organizations can ignore or refuse the request.
 
 Mail records received reports in conversation activity. A delivery report describes what a mail server reported; a read report describes what a mail client reported. Neither is proof that a person read, understood, or acted on the message.
+
+## Add an event from Cloud search
+
+While editing a draft, choose **Add a calendar invitation to this draft** in Cloud search. Mail saves the draft and opens the same event selector as the composer button. Your recipients, text and attachments stay in this draft. If saving fails or someone else holds the edit lease, resolve that first. Sending remains a separate step.

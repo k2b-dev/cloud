@@ -1,3 +1,5 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { mailCommandMessages } from "../../commands";
 import { documentNavigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
@@ -21,6 +23,10 @@ export default function MailCalendarInvitation(props: {
   const [pendingResponse, setPendingResponse] = createSignal<"accepted" | "tentative" | "declined" | null>(null);
   let responseIdempotencyKeys = new Map<"accepted" | "tentative" | "declined", string>();
   let destinationTouched = false;
+  let active = true;
+  onCleanup(() => {
+    active = false;
+  });
 
   const chooseSpace = (spaceId: string | null) => {
     destinationTouched = true;
@@ -136,6 +142,64 @@ export default function MailCalendarInvitation(props: {
   const destinationOptions = createMemo(() =>
     (destinations()?.items ?? []).map((space) => ({ id: space.id, label: space.name, color: space.color, icon: "ti ti-calendar-event" })),
   );
+
+  const chooseDestination = async (isCurrent: () => boolean) => {
+    const options = destinationOptions();
+    const choice = await prompts.search<{ id: string }>(
+      async ({ query }) =>
+        options
+          .filter((space) => space.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+          .map((space) => ({ value: { id: space.id }, label: space.label, icon: space.icon })),
+      { title: messages().chooseSpace, minQueryLength: 0 },
+    );
+    if (!choice?.value || !isCurrent()) return false;
+    chooseSpace(choice.value.id);
+    return true;
+  };
+  createEffect(() => {
+    const current = preview();
+    if (!current || !props.canWrite || !hasWritableDestination() || importEvent.loading() || respond.loading()) return;
+    const copy = mailCommandMessages.resolve([locale()]).t;
+    const messageId = props.messageId;
+    const mailboxId = props.mailboxId;
+    const isCurrent = () => active && props.messageId === messageId && props.mailboxId === mailboxId && props.canWrite;
+    onCleanup(
+      registerContextAwareCommand({
+        id: `mail.${messageId}.calendar.import`,
+        scope: "selection",
+        title: copy.importTitle,
+        description: copy.importDescription,
+        icon: "ti ti-calendar-plus",
+        action: async () => {
+          if (!(await chooseDestination(isCurrent)) || !isCurrent()) return;
+          if ((await prompts.confirm(current.invitation.title, { title: messages().addToSpaces })) && isCurrent())
+            await importEvent.mutate();
+        },
+      }),
+    );
+    if (!canRespond()) return;
+    onCleanup(
+      registerContextAwareCommand({
+        id: `mail.${messageId}.calendar.respond`,
+        scope: "selection",
+        title: copy.respondTitle,
+        description: copy.respondDescription,
+        icon: "ti ti-mail-forward",
+        action: async () => {
+          if (!(await chooseDestination(isCurrent)) || !isCurrent()) return;
+          const choice = await prompts.search<{ status: "accepted" | "tentative" | "declined" }>(
+            async () => [
+              { value: { status: "accepted" }, label: messages().accept },
+              { value: { status: "tentative" }, label: messages().maybe },
+              { value: { status: "declined" }, label: messages().decline },
+            ],
+            { title: copy.respondTitle, minQueryLength: 0 },
+          );
+          if (choice?.value && isCurrent() && canRespond()) await respond.mutate(choice.value.status);
+        },
+      }),
+    );
+  });
 
   onCleanup(() => {
     importEvent.abort();

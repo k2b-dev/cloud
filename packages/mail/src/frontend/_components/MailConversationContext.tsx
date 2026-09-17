@@ -19,6 +19,10 @@ export default function MailConversationContext(props: {
   active: boolean;
   subject?: string;
 }) {
+  let mounted = true;
+  onCleanup(() => {
+    mounted = false;
+  });
   const locale = useLocale();
   const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const contexts = query.createInfinite<string, MailConversationContext, string>({
@@ -161,7 +165,7 @@ export default function MailConversationContext(props: {
         size: "small",
       },
     );
-    if (!selected?.value) return;
+    if (!selected?.value || !mounted || !props.active || props.mailboxId !== mailboxId || props.conversationId !== conversationId) return;
     const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].spaces.link.$post({
       param: { mailboxId, conversationId },
       json: { itemId: selected.value.id },
@@ -196,6 +200,16 @@ export default function MailConversationContext(props: {
     if (!props.active || context()?.spaces.status !== "ready") return;
     const id = props.conversationId;
     const t = mailCommandMessages.resolve([locale()]).t;
+    onCleanup(
+      registerContextAwareCommand({
+        id: `mail.${id}.spaces.link`,
+        scope: "selection",
+        title: t.linkSpaceTitle,
+        description: t.linkSpaceDescription,
+        icon: "ti ti-link",
+        action: linkExistingSpaceItem,
+      }),
+    );
     for (const kind of ["task", "event"] as const)
       onCleanup(
         registerContextAwareCommand({

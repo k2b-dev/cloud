@@ -954,7 +954,7 @@ export default function ItemDetailPanel(props: Props) {
                 </DetailPanel.Section>
               </Show>
               <Show when={canShowInvitations()}>
-                <EventInvitations spaceId={props.spaceId} itemId={props.item.id} />
+                <EventInvitations spaceId={props.spaceId} itemId={props.item.id} title={props.item.title} />
               </Show>
             </DetailPanel.Group>
           </Show>

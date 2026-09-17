@@ -175,3 +175,5 @@ Es gibt kein automatisches Rückgängigmachen. Du kannst die Gruppierung mit den
 ## Dieses Postfach durchsuchen
 
 Mit **Cmd/Ctrl+Shift+K** suchst du in den Nachrichten und Anhängen des geöffneten Postfachs. Entferne den Chip mit dem Postfachnamen, um die gesamte Cloud zu durchsuchen.
+
+Bei einer geöffneten Kalendereinladung bietet die Cloud-Suche **Diesen Termin in Spaces übernehmen oder aktualisieren** und, wenn eine Antwort möglich ist, **Antwort auf diese Einladung vorbereiten** an. Wähle einen beschreibbaren Kalender und bestätige den Import oder wähle deine Antwort. Antworten werden als Entwurf zum Prüfen geöffnet.

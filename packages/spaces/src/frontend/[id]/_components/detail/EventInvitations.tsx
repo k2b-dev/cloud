@@ -1,3 +1,5 @@
+import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { spaceCommandMessages } from "../../../../commands";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -45,13 +47,7 @@ const parseAttendees = (value: string, t: ReturnType<typeof useSpaceMessages>) =
     : { ok: true as const, attendees: [...addresses].map((address) => ({ name: null, address })) };
 };
 
-function InvitationDialog(props: {
-  spaceId: string;
-  itemId: string;
-  method: "request" | "cancel";
-  close: () => void;
-  onCreated: () => void;
-}) {
+function InvitationDialog(props: { spaceId: string; itemId: string; title: string; method: "request" | "cancel"; close: () => void }) {
   const locale = useLocale();
   const t = useSpaceMessages();
   const [mailboxId, setMailboxId] = createSignal<string | null>(null);
@@ -118,7 +114,6 @@ function InvitationDialog(props: {
         const result = await response.json();
         intent.mailTab.location.replace(new URL(result.href, window.location.origin).href);
         toast.success(props.method === "cancel" ? t.cancellationOpened : t.invitationOpened);
-        props.onCreated();
         props.close();
       } catch (error) {
         intent.mailTab.close();
@@ -168,7 +163,7 @@ function InvitationDialog(props: {
     <PanelDialog>
       <PanelDialog.Header
         title={props.method === "cancel" ? t.prepareCancellation : t.prepareInvitation}
-        subtitle={t.senderRecipientsDescription}
+        subtitle={`${props.title} · ${t.senderRecipientsDescription}`}
         icon={props.method === "cancel" ? "ti ti-calendar-cancel" : "ti ti-calendar-share"}
         close={props.close}
       />
@@ -273,13 +268,25 @@ function InvitationDialog(props: {
   );
 }
 
-const openDialog = (spaceId: string, itemId: string, method: "request" | "cancel", onCreated: () => void) =>
-  dialogCore.open<void>(
-    (close) => <InvitationDialog spaceId={spaceId} itemId={itemId} method={method} close={() => close()} onCreated={onCreated} />,
+export const openEventInvitation = async (
+  spaceId: string,
+  itemId: string,
+  title: string,
+  method: "request" | "cancel",
+  locale: string,
+  signal?: AbortSignal,
+) => {
+  const context = await loadContext(spaceId, itemId, signal, locale);
+  if (signal?.aborted) return;
+  if (!context.mailboxes.length || (method === "cancel" && !context.canCancel))
+    throw new Error(spaceCommandMessages.resolve([locale]).t.invitationUnavailable);
+  await dialogCore.open<void>(
+    (close) => <InvitationDialog spaceId={spaceId} itemId={itemId} title={title} method={method} close={() => close()} />,
     panelDialogOptions,
   );
+};
 
-export default function EventInvitations(props: { spaceId: string; itemId: string }) {
+export default function EventInvitations(props: { spaceId: string; itemId: string; title: string }) {
   const locale = useLocale();
   const t = useSpaceMessages();
   const contextQuery = query.create<string, InvitationContext>({
@@ -290,6 +297,33 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
   const reconcile = () => {
     void contextQuery.invalidate().catch(() => prompts.error(t.invitationStatusRefreshFailed));
   };
+  const openInvitation = async (method: "request" | "cancel", itemId = props.itemId) => {
+    try {
+      await openCommand("spaces.event.invite", { itemId, method });
+      if (itemId === props.itemId) reconcile();
+    } catch (error) {
+      await prompts.error(error instanceof Error ? error.message : t.invitationDraftFailed);
+    }
+  };
+  createEffect(() => {
+    if (!context()?.mailboxes.length) return;
+    const copy = spaceCommandMessages.resolve([locale()]).t;
+    const itemId = props.itemId;
+    for (const method of ["request", "cancel"] as const) {
+      if (method === "cancel" && !context()?.canCancel) continue;
+      onCleanup(
+        registerContextAwareCommand({
+          id: `spaces.${itemId}.invitation.${method}`,
+          scope: "selection",
+          title: method === "cancel" ? t.prepareCancellation : t.prepareInvitation,
+          description:
+            method === "cancel" ? copy.cancelDescription({ title: props.title }) : copy.inviteDescription({ title: props.title }),
+          icon: method === "cancel" ? "ti ti-calendar-cancel" : "ti ti-calendar-share",
+          action: () => openInvitation(method, itemId),
+        }),
+      );
+    }
+  });
   return (
     <DetailPanel.Section title={t.invitations} icon="ti ti-calendar-share" tone="accent">
       <Show when={contextQuery.error()}>
@@ -322,14 +356,14 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
           type="button"
           leading={<i class="ti ti-calendar-share" aria-hidden="true" />}
           title={t.prepareInvitation}
-          onClick={() => openDialog(props.spaceId, props.itemId, "request", reconcile)}
+          onClick={() => openInvitation("request")}
         />
         <Show when={context()?.canCancel}>
           <DetailPanel.Action
             type="button"
             leading={<i class="ti ti-calendar-cancel" aria-hidden="true" />}
             title={t.prepareCancellation}
-            onClick={() => openDialog(props.spaceId, props.itemId, "cancel", reconcile)}
+            onClick={() => openInvitation("cancel")}
           />
         </Show>
       </div>

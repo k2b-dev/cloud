@@ -5,6 +5,10 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
   translations: {
     de: {
       commands: {
+        "event.invite": {
+          title: "Termineinladung vorbereiten",
+          description: "Absender und Empfänger für Einladung, Aktualisierung oder Absage wählen. Es wird nichts gesendet.",
+        },
         "task.compose": { title: "Neue Aufgabe", description: "Eine Aufgabe in Spaces erstellen." },
         "event.compose": { title: "Neuer Termin", description: "Einen Termin in Spaces erstellen." },
       },

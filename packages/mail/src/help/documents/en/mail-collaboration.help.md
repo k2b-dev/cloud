@@ -78,3 +78,5 @@ Private to one user:
 - device preferences such as compose format, Undo Send window, and pane layout.
 
 For draft behavior and takeover consequences, see [Write and send messages](/app/mail/help/mail-compose).
+
+For an open conversation, Cloud search also offers **Link this conversation to a task or event**. Choose an existing Spaces entry; Mail keeps the conversation open.

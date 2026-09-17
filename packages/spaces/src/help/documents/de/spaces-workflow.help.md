@@ -53,3 +53,7 @@ ab. Gib die Übernahme frei, bevor du die Aufgabe aus einer anderen Sitzung
 abschließt oder durch ein Wormhole verschiebst. Personen mit Adminzugriff
 können verwaiste Übernahmen über die CLI freigeben. Gewöhnliche gemeinsame
 Bearbeitungen bleiben während einer Übernahme möglich.
+
+## Einladungen über die Cloud-Suche vorbereiten
+
+Öffne einen Termin, um **Einladung vorbereiten** in der Cloud-Suche zu sehen. Für eine bestehende Einladung kannst du ein Update oder eine Absage vorbereiten. Wähle Postfach und Empfänger und prüfe und versende den Entwurf anschließend in Mail. Die Aktion benötigt Bearbeitungsrechte am Termin und ein geeignetes Postfach.

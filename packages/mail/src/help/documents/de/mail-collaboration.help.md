@@ -78,3 +78,5 @@ Privat für eine Person bleiben:
 - Geräteeinstellungen wie das Format beim Verfassen, das Zeitfenster zum Rückgängigmachen des Sendens und die Anordnung der Bereiche.
 
 Weitere Informationen zu Entwürfen und den Folgen einer Übernahme findest du unter [Nachrichten schreiben und senden](/app/mail/help/mail-compose).
+
+Bei einer geöffneten Konversation bietet die Cloud-Suche auch **Diese Konversation mit Aufgabe oder Termin verknüpfen** an. Wähle einen bestehenden Spaces-Eintrag; die Konversation bleibt geöffnet.

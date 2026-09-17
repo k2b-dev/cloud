@@ -9,10 +9,22 @@ export const SpaceComposeInputSchema = z
     source: CloudResourceRefSchema.optional().describe("Optional source resource to link visibly in the form."),
   })
   .strict();
+export const SpaceInvitationInputSchema = z
+  .object({
+    itemId: ResourceShortIdSchema.describe("Public ID of the event whose invitation to prepare."),
+    method: z
+      .enum(["request", "cancel"])
+      .default("request")
+      .describe("Prepare an invitation/update or a cancellation; never send automatically."),
+  })
+  .strict();
 export const spaceCommandMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      inviteDescription: ({ title }: { title: string }) => `Choose sender and recipients for “${title}”, then review the email in Mail.`,
+      cancelDescription: ({ title }: { title: string }) => `Prepare a cancellation for “${title}”. Nothing is sent yet.`,
+      invitationUnavailable: "This event or invitation is no longer available.",
       searchDescription: ({ name }: { name: string }) => `Find tasks and events in “${name}”.`,
       createDescription: ({ name }: { name: string }) => `Open the creation form in “${name}”.`,
       editDescription: "Change the title, description and other details.",
@@ -37,6 +49,9 @@ export const spaceCommandMessages = i18n.define({
       complete: ({ title }: { title: string }) => `Mark “${title}” as done`,
     },
     de: {
+      inviteDescription: ({ title }) => `Absender und Empfänger für „${title}“ wählen, dann die E-Mail in Mail prüfen.`,
+      cancelDescription: ({ title }) => `Eine Absage für „${title}“ vorbereiten. Es wird noch nichts gesendet.`,
+      invitationUnavailable: "Dieser Termin oder diese Einladung ist nicht mehr verfügbar.",
       searchDescription: ({ name }) => `Aufgaben und Termine in „${name}“ finden.`,
       createDescription: ({ name }) => `Das Formular zum Anlegen in „${name}“ öffnen.`,
       editDescription: "Titel, Beschreibung und weitere Details ändern.",

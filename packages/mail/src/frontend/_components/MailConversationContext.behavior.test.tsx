@@ -24,7 +24,7 @@ if (!isServer)
       { preconnect: originalFetch.preconnect },
     );
     const { registerCommandHandler } = await import("@k2b/cloud/browser/commands");
-    const { collectContextAwareCommands } = await import("../../../../cloud/src/browser/command-bridge");
+    const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
     const { default: MailConversationContext } = await import("./MailConversationContext");
     const calls: unknown[] = [];
     const stops = ["task", "event"].map((kind) =>
@@ -38,10 +38,11 @@ if (!isServer)
       dom.root,
     );
     try {
-      for (let i = 0; i < 100 && collectContextAwareCommands().length !== 2; i++) await Bun.sleep(10);
+      for (let i = 0; i < 100 && collectContextAwareCommands().length !== 3; i++) await Bun.sleep(10);
       const actions = collectContextAwareCommands();
-      expect(actions).toHaveLength(2);
-      for (const action of actions) {
+      expect(actions).toHaveLength(3);
+      expect(actions.find((action) => action.id.endsWith("spaces.link"))?.description).toContain("existing Spaces entry");
+      for (const action of actions.filter((action) => !action.id.endsWith("spaces.link"))) {
         expect(typeof action.action).toBe("object");
         if (typeof action.action === "function" || !("command" in action.action)) throw new Error("Expected a linkable Command");
         expect(action.scope).toBe("selection");

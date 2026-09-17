@@ -1,4 +1,4 @@
-import { SpaceComposeInputSchema } from "./commands";
+import { SpaceComposeInputSchema, SpaceInvitationInputSchema } from "./commands";
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -1703,6 +1703,13 @@ export const spacesCapabilities = defineCapabilities({
   protocolVersion: 2,
   presentation: spacesCapabilityPresentation,
   commands: {
+    "event.invite": {
+      title: "Prepare event invitation",
+      description: "Open sender and recipient selection for an event invitation, update or cancellation. Nothing is sent.",
+      icon: "ti ti-calendar-share",
+      input: SpaceInvitationInputSchema,
+      path: "/app/spaces",
+    },
     "task.compose": {
       title: "New task",
       description: "Create a task in Spaces.",

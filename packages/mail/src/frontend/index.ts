@@ -1,3 +1,4 @@
+import { mailCalendarCommandHref } from "./_components/mail-compose-route";
 import { ssr } from "../config";
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
@@ -13,6 +14,10 @@ import composePage from "./compose/page";
 import page from "./page";
 
 export default new Hono<AuthContext>()
+  .get("/calendar", auth.requireRole("user", ssr.access), (c) => {
+    const href = mailCalendarCommandHref(new URL(c.req.url));
+    return href ? c.redirect(href) : ssr.error(c, 400);
+  })
   .get("/compose", auth.requireRole("user", ssr.access), ...composePage)
   .get("/", auth.requireRole("user", ssr.access), ...page)
   .get("/:mailboxId/compose/local/:seedId", auth.requireRole("user", ssr.access), ...draftSeedComposePage)

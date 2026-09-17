@@ -1,3 +1,5 @@
+import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../commands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { dropzone, mutation as mutations, query, timed } from "@k2b/stdlib/solid";
@@ -11,7 +13,8 @@ import {
   isPanesItemVisible,
   NoticeCard,
   type PanesLayout,
-  prompts,ScrollArea,
+  prompts,
+  ScrollArea,
   Select,
   SplitButton,
   TextInput,
@@ -19,7 +22,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type {
   ComposePreview,
@@ -325,18 +328,21 @@ export default function MailComposer(props: {
   });
 
   const addCalendarInvitation = async () => {
+    if (!editable() || !props.calendarIntegrationAvailable)
+      throw new Error(statusMessage() || mailCommandMessages.resolve([locale()]).t.calendarUnavailable);
     const reservation = composerTransition.reserve("calendar");
     if (!reservation) return;
     try {
       const currentDraft = await persist();
       if (!currentDraft) throw new Error(statusMessage());
+      if (disposed) return;
       const updated = await openMailComposerCalendarDialog({
         mailboxId: props.mailboxId,
         draftId: currentDraft.id,
         recipientCount: parseMailRecipients(to()).length + parseMailRecipients(cc()).length,
         dateConfig: props.dateConfig,
       });
-      if (updated) {
+      if (updated && !disposed) {
         setDraft(updated);
         toast(t().invitationAddedDescription, { title: t().invitationAdded });
       }
@@ -346,6 +352,40 @@ export default function MailComposer(props: {
       composerTransition.release(reservation);
     }
   };
+
+  createEffect(() => {
+    if (!editable() || !props.calendarIntegrationAvailable) return;
+    const copy = mailCommandMessages.resolve([locale()]).t;
+    onCleanup(
+      registerContextAwareCommand({
+        id: "mail.draft.calendar",
+        scope: "selection",
+        title: copy.calendarTitle,
+        description: copy.calendarDescription,
+        icon: "ti ti-calendar-plus",
+        action: addCalendarInvitation,
+      }),
+    );
+  });
+  onMount(() => {
+    onCleanup(
+      registerCommandHandler(
+        "mail.draft.calendar",
+        MailDraftCalendarInputSchema,
+        async () => {
+          await addCalendarInvitation();
+        },
+        (input) => input.mailboxId === props.mailboxId && input.draftId === draft()?.id,
+      ),
+    );
+  });
+  let calendarLinkConsumed = false;
+  createEffect(() => {
+    // Wait for the existing draft lease; never bypass a conflict or open a second draft.
+    if (calendarLinkConsumed || !editable()) return;
+    calendarLinkConsumed = true;
+    void consumeCommandLink();
+  });
 
   const updateComposerPanes = (value: PanesLayout) => {
     setComposerPanes(value);
