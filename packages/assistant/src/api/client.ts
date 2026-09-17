@@ -66,6 +66,21 @@ export const assistantApi = {
     if (!response.ok) throw new Error(await readError(response, "Failed to load allowances"));
     return response.json();
   },
+  projectSkills: async (projectId:string, page=1, q="", available=false, signal?:AbortSignal) => {
+    const response=await skillsClient["project-links"][":projectId"].$get({param:{projectId},query:{page:String(page),q,available:available ? "true" : "false"}},{init:{signal}});
+    if (!response.ok) throw new Error(await readError(response,"Could not load Skills."));
+    return response.json();
+  },
+  linkedSkillProjects: async (skillId:string) => {
+    const response=await skillsClient[":skillId"].projects.$get({param:{skillId}});
+    if (!response.ok) throw new Error(await readError(response,"Failed to load skill access"));
+    return (await response.json()).projects;
+  },
+  linkSkillProject: async (skillId:string,projectId:string,linked:boolean) => {
+    const response=await skillsClient[":skillId"].projects[":projectId"].$put({param:{skillId,projectId},json:{linked}});
+    if (!response.ok) throw new Error(await readError(response,"Could not update Project skills."));
+    return response.json();
+  },
   listSkills: async (signal?: AbortSignal, query?: string): Promise<AiSkillSummary[]> => {
     const response = await skillsClient.index.$get({ query: query === undefined ? {} : { q: query } }, { init: { signal } });
     if (!response.ok) throw new Error(await readError(response, "Failed to load skills"));

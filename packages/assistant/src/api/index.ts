@@ -35,7 +35,7 @@ const app = new Hono<AuthContext>()
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Conversation")));
   })
   .get("/workspace/projects/:projectId/context", async (c) => {
-    const snapshot = await loadAssistantProjectContextSnapshot(c.get("accessSubject"), c.req.param("projectId")!);
+    const snapshot = await loadAssistantProjectContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("projectId")!);
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Project")));
   });
 

@@ -45,8 +45,8 @@ For a quick database check, load `code_sql` and call it directly with
 
 The tool uses the same SELECT restrictions and current permissions as
 `db.query()`. It never creates a database. Narrow the projection or LIMIT if the
-result exceeds the tool response budget. Project-only access is available only
-from the current authorized Project chat. The CLI equivalent is
+result exceeds the tool response budget. Project membership grants Use on linked published Apps, including database
+operations, without requiring a Project chat. The CLI equivalent is
 `assistant code sql RESOURCE_ID --input-file query.json`.
 
 ## Read and write records

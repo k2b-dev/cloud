@@ -88,9 +88,12 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   .post("/runtime/secrets/remove",v("json",z.object({scope:HttpScope,name:z.string(),revision:z.uuid()}).strict()),async c=>{const input=c.req.valid("json");return respond(c,ok(await httpService.remove(input.scope,input.name,input.revision,identity(c))));})
   .post("/runtime/http",v("json",HttpPrepare),async c=>respond(c,ok(await httpService.prepare(c.req.valid("json"),identity(c)))))
   .post("/runtime/http/:callId",v("json",z.object({approved:z.boolean()}).strict()),async c=>respond(c,ok(await httpService.execute(z.uuid().parse(c.req.param("callId")),c.req.valid("json").approved,identity(c),c.req.raw.signal))))
+  .get("/project-links/:projectId", v("query", PageQuery.extend({ available: z.enum(["true","false"]).optional() })), async c =>
+    respond(c,ok(await artifacts.projectApps(z.string().min(1).max(80).parse(c.req.param("projectId")),identity(c),page(c),c.req.valid("query").q,c.req.valid("query").available === "true"))))
   .get("/", v("query", PageQuery), async (c) => respond(c,ok(await artifacts.list(identity(c),page(c),c.req.valid("query").q))))
   .get("/admin/resources",v("query",PageQuery.extend({search:z.string().max(120).optional()})),async c => respond(c,ok(await artifactAdmin.list(identity(c),page(c),c.req.valid("query").search))))
   .delete("/admin/resources/:id",async c => respond(c,ok(await artifactAdmin.remove(id(c),identity(c)))))
+  .get("/admin/resources/:id/projects",async c => respond(c,ok(await artifacts.projects(id(c),adminIdentity(identity(c))))))
   .get("/admin/resources/:id/access",async c => respond(c,ok(await artifacts.access(id(c),adminIdentity(identity(c))))))
   .post("/admin/resources/:id/access",v("json",Grant),async c => respond(c,ok(await artifacts.grant(id(c),c.req.valid("json").principal,c.req.valid("json").permission,adminIdentity(identity(c))))))
   .put("/admin/resources/:id/access/:accessId",v("json",z.object({permission:Level.nullable()}).strict()),async c => respond(c,ok(await artifacts.changeGrant(id(c),z.uuid().parse(c.req.param("accessId")),c.req.valid("json").permission,adminIdentity(identity(c))))))

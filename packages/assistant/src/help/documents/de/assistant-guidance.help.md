@@ -71,7 +71,7 @@ Behandle erzeugte Tatsachen, Berechnungen, externe Aktionen und Änderungen an w
 ## Studio-App öffnen oder teilen
 
 App-Nutzer öffnen die eigenständige Ansicht ohne Assistant-Sidebar. App-Verwalter
-wählen im Aktionsmenü **App öffnen** oder **App-Link kopieren**. Der Link startet
+wählen oben **Vollbild öffnen** oder im Aktionsmenü **App-Link kopieren**. Der Link startet
 immer die zuletzt veröffentlichte Version. Private Apps benötigen weiterhin eine
 Anmeldung und eine App-Berechtigung.
 
@@ -84,3 +84,15 @@ und eingebettete Daten werden öffentlich. Entferne Öffentlich oder ziehe die
 Veröffentlichung zurück, um neue Aufrufe zu verhindern. Cloud-Administratoren
 können den App-Link als URL-Verknüpfung zur Navigation hinzufügen. Das vergibt
 keine App-Berechtigung.
+
+App-Admins sehen neben den Laufzeit-Aktionen die Badge **Entwurf** oder
+**Veröffentlicht**. Ein Klick erklärt den Status und bietet für gespeicherte
+Entwürfe **Veröffentlichen** an. **Vollbild öffnen** bietet diesen Schritt bei
+Bedarf ebenfalls an. Eine Veröffentlichung verändert die Freigaben nicht und
+macht die App nicht automatisch öffentlich.
+
+Im Projekt öffnet **+** neben **Studio Apps** oder **Skills** einen Dialog mit Suche und Liste. Wähle einen Inhalt, den du verwaltest. Der Hinweis erklärt, was freigegeben wird. Zum Verknüpfen oder Lösen musst du beide Ressourcen verwalten dürfen.
+
+Projektmitglieder können veröffentlichte Apps und ihre geteilten App-Daten im Studio und Vollbild nutzen. Verknüpfte Skills können sie lesen und nutzen. Bearbeitungsrechte bleiben separat; App-Entwürfe bleiben App-Admins vorbehalten. Im Freigabedialog steht, welche Projekte Zugriff vermitteln.
+
+Verknüpfungen bleiben bestehen, wenn ihr Ersteller später Zugriffs- oder Verwaltungsrechte verliert. Beim Entfernen einer Verknüpfung oder Verlassen eines Projekts entfällt nur der geerbte Zugriff; direkte Freigaben bleiben erhalten. Skills werden bei Bedarf geladen und beachten weiterhin **Für mich aktiviert**.

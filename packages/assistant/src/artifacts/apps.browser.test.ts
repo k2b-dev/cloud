@@ -30,7 +30,7 @@ test("Studio lists open details with all management actions; publication and ver
     if (path.endsWith("/compiled")) { compiledVersions.push(url.searchParams.get("revision")!); return Response.json({ ...compiled, revision: Number(url.searchParams.get("revision")) }); }
     if (path === "/api/assistant/artifacts") { listRequests++; return Response.json({ items: removed ? [] : longCatalog ? Array.from({ length: 30 }, (_, i) => ({ ...item, id: `App${i}`, title: `Catalog app ${i}`, publishedRevision })) : [{ ...item, publishedRevision }], page: 1, hasNext: false }); }
     if (path.startsWith("/api/assistant/artifacts/") && request.method === "DELETE") { removed = true; return Response.json({ ok: true }); }
-    if (path.startsWith("/api/assistant/artifacts/")) return Response.json({ ...item, publishedRevision, sourceRevision: url.searchParams.has("version") ? Number(url.searchParams.get("version")) : url.searchParams.has("published") ? publishedRevision : 2, source: { entry: "main.js", files: [] } });
+    if (path.startsWith("/api/assistant/artifacts/")) return Response.json({ ...item, permission: request.headers.get("referer")?.includes("/reader") ? "read" : item.permission, publishedRevision, sourceRevision: url.searchParams.has("version") ? Number(url.searchParams.get("version")) : url.searchParams.has("published") ? publishedRevision : 2, source: { entry: "main.js", files: [] } });
     return new Response('<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>', { headers: { "content-type": "text/html; charset=utf-8" } });
   } });
   const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -61,10 +61,19 @@ test("Studio lists open details with all management actions; publication and ver
     await popup.getByRole("link", { name: /Tip calculator/ }).click();
     await page.waitForURL("**/app/assistant/apps/*");
     await page.getByText("Published calculator", { exact: true }).waitFor();
+    expect(await page.getByRole("button", { name: "Open fullscreen", exact: true }).count()).toBe(1);
+    await page.getByRole("button", { name: "Published", exact: true }).click();
+    await page.getByText("Access stays unchanged", { exact: false }).waitFor();
+    expect(await page.getByRole("dialog").getByRole("button", { name: "Publish", exact: true }).count()).toBe(0);
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Actions", exact: true }).click();
-    for (const name of ["Delete", "Edit with Assistant", "Manage access", "Projects", "Update publication", "Unpublish", "Create your own copy", "Secrets", "Edit manually", "SQL console", "Local data", "Shared data", "Manage database"]) {
+    for (const name of ["Delete", "Edit", "Manage access", "Update publication", "Unpublish", "Create your own copy", "Secrets", "Edit manually", "SQL console", "Local data", "Shared data", "Manage database"]) {
       expect(await page.getByRole("menuitem", { name, exact: true }).count()).toBe(1);
     }
+    expect(await page.getByRole("menuitem", {name:"Projects",exact:true}).count()).toBe(0);
+    expect(await page.getByRole("menuitem").last().textContent()).toContain("Delete");
+    expect(await page.getByRole("menuitem", { name: "Edit", exact: true }).locator(".ti-pencil").count()).toBe(1);
+    await page.getByText("Danger zone", { exact: true }).waitFor();
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "Manage access", exact: true }).click();
@@ -79,9 +88,9 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByRole("dialog").getByRole("button", {name:"Publish",exact:true}).click();
     await page.getByRole("button", { name: "Actions", exact: true }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: "Actions", exact: true }).locator(":scope:not([disabled])").waitFor();
-    expect(publishedRevision).toBe(2);
+    expect<number | null>(publishedRevision).toBe(2);
     await page.getByRole("button", { name: "Actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Edit with Assistant", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
     await page.waitForURL("**/edited");
     compiledVersions.length = 0;
     await page.goto(new URL("/view", server.url).href);
@@ -92,7 +101,7 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByRole("dialog").getByRole("button",{name:"Start",exact:true}).click();
     await page.getByText("Published calculator",{exact:true}).waitFor();
     expect(compiledVersions).toEqual(["2","1"]);
-    expect(publishedRevision).toBe(2);
+    expect<number | null>(publishedRevision).toBe(2);
     expect(await page.getByRole("button", { name: "Publish", exact: true }).count()).toBe(0);
     await page.getByRole("button", {name:"Versions",exact:true}).click();
     await Promise.all([
@@ -116,11 +125,14 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByText("Not published yet", {exact:true}).waitFor();
     await page.keyboard.press("Escape");
     await page.goto(new URL("/draft",server.url).href);
-    await page.getByRole("button", { name: "Actions", exact: true }).click();
+    await page.getByRole("button", { name: "Draft", exact: true }).click();
+    await page.getByText("Only app managers can use this draft.", { exact: false }).waitFor();
     await Promise.all([
       page.waitForResponse(response => response.url().endsWith("/publish")),
-      page.getByRole("menuitem", { name: "Publish", exact: true }).click(),
+      page.getByRole("dialog").getByRole("button", { name: "Publish", exact: true }).click(),
     ]);
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Published", exact: true }).waitFor();
     expect(publicationNotes).toEqual(["Improve calculator", "Initial release"]);
     expect(await page.getByRole("textbox", {name:"What changed?"}).count()).toBe(0);
     await page.getByRole("button", { name: "Actions", exact: true }).locator(":scope:not([disabled])").waitFor();
@@ -135,6 +147,9 @@ test("Studio lists open details with all management actions; publication and ver
     expect(await page.getByRole("menuitem", { name: "Unpublish", exact: true }).count()).toBe(0);
     publishedRevision = 2;
     await page.goto(new URL("/reader", server.url).href);
+    await page.getByText("Published calculator", { exact: true }).waitFor();
+    expect(await page.getByRole("button", { name: "Published", exact: true }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Draft", exact: true }).count()).toBe(0);
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     for (const name of ["Create your own copy", "Secrets", "Local data"]) {
       expect(await page.getByRole("menuitem", { name, exact: true }).count()).toBe(1);
@@ -143,6 +158,13 @@ test("Studio lists open details with all management actions; publication and ver
       expect(await page.getByRole("menuitem", { name, exact: true }).count()).toBe(0);
     }
     await page.keyboard.press("Escape");
+    publishedRevision = null;
+    await page.goto(new URL("/draft", server.url).href);
+    await page.getByRole("button", { name: "Open fullscreen", exact: true }).click();
+    await page.getByText("Access stays unchanged", { exact: false }).waitFor();
+    await page.getByRole("dialog").getByRole("button", { name: "Publish", exact: true }).click();
+    await page.waitForURL("**/apps/*/run");
+    expect<number | null>(publishedRevision).toBe(2);
     longCatalog = true;
     await page.goto(new URL("/view?studio=1", server.url).href);
     const catalogDialog = page.getByRole("dialog", { name: "Studio", exact: true });

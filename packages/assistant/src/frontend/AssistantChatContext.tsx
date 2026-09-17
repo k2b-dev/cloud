@@ -358,7 +358,7 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
                     <Show when={!props.category}><AssistantContextViewAll count={apps().length + value().chat.runCount} onClick={() => overview("apps", "Studio")} /></Show>
                   </AssistantContextRows>
                 }>
-                  <ContextStudio snapshot={value().chat} projects={value().project ? [value().project!] : []} search={search()} refresh={props.state.refresh} onStart={props.onOpenApp} />
+                  <ContextStudio snapshot={value().chat} search={search()} refresh={props.state.refresh} onStart={props.onOpenApp} />
                 </Show>
               </AssistantContextSection>
             </Show>

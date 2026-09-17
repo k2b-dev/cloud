@@ -1,12 +1,12 @@
 import { createArtifactActions } from "./artifact-actions";
-import { AppWorkspace, Dropdown, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Dropdown, Placeholder, useLocale } from "@k2b/ui";
 import { navigateTo } from "@k2b/ssr/nav";
 import { createSignal, Show } from "solid-js";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import type { ArtifactBundle } from "./service";
 import AssistantSidebar from "../frontend/AssistantSidebar";
 import { AssistantLiveProvider, createAssistantLiveInvalidationHub } from "../frontend/assistant-live";
-import type { artifactClient } from "./client";
+import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { assistantApi } from "../api/client";
@@ -27,8 +27,8 @@ export default function Apps(props: Props) {
   const [selectedVersion, setSelectedVersion] = createSignal<number>();
   const [app, setApp] = createSignal(props.initialApp);
   const [editorDirty,setEditorDirty]=createSignal(false);
-  const { menu, action, busy, error, publish, versions } = createArtifactActions({
-    userId: props.userId, projects: props.projects, app, setApp, editorDirty, setSelectedVersion, view: props.view,
+  const { menu, action, busy, error, publish, versions, openRunner } = createArtifactActions({
+    userId: props.userId, app, setApp, editorDirty, setSelectedVersion, view: props.view,
   });
   return <AssistantLiveProvider value={live}><AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
     <AssistantSidebar conversations={() => sidebar().conversations} doneCount={sidebar().doneCount} projects={sidebar().projects} onConversationUpdated={() => void reloadSidebar()} onConversationArchived={() => void reloadSidebar()} activeView="apps" activeAppId={app()?.id} live={live}
@@ -42,6 +42,7 @@ export default function Apps(props: Props) {
             <div class="assistant-studio-runner-header">
               <h1><i class={selected().icon??"ti ti-app-window"}/>{selected().title}</h1>
               <div class="flex gap-2">
+                <Button variant="ghost" disabled={busy()} onClick={() => void openRunner(selected())}><i class="ti ti-maximize" aria-hidden="true" />{t().openApp}</Button>
                 <Dropdown.Root items={menu(selected())}><Dropdown.Trigger iconOnly variant="ghost" label={t().actions} disabled={busy()}><i class="ti ti-dots"/></Dropdown.Trigger></Dropdown.Root>
               </div>
             </div>
@@ -51,6 +52,7 @@ export default function Apps(props: Props) {
             <Show when={!props.view||props.view==="app"}><Show when={selectedVersion() ?? "current"} keyed>{version =>
               <ArtifactPanel artifactId={selected().id} userId={props.userId} version={typeof version === "number" ? version : undefined}
                 published={typeof version !== "number" && !!selected().publishedRevision} autoStart
+                onPublished={async () => { setApp(await artifactClient.get(selected().id)); }}
                 browseVersions={selected().permission === "admin" ? () => void versions(selected()) : undefined} />
             }</Show></Show>
           </>}

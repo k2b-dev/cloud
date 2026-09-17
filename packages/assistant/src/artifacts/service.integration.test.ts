@@ -42,6 +42,8 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text,updated_at timestamptz DEFAULT now())`;
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE ai.conversations(id uuid PRIMARY KEY,created_by_user_id uuid,archived_at timestamptz)`;
+    await sql`CREATE TABLE ai.projects(id uuid PRIMARY KEY,short_id text UNIQUE,name text,description text DEFAULT '',icon text DEFAULT '',instructions text DEFAULT '',default_model_profile_id text,revision integer DEFAULT 1,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now())`;
+    await sql`CREATE TABLE ai.project_access(project_id uuid,access_id uuid)`;
     await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text)`;
     await sql`CREATE TABLE ai.files(conversation_id uuid,path text,bytes bytea,size bigint,media_type text,origin text,producer_call_key text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(conversation_id,path))`;
     await sql`CREATE TABLE ai.dictations(conversation_id uuid,source_bytes bytea)`;
@@ -173,7 +175,7 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await sql`INSERT INTO assistant.artifact_projects SELECT id,${projectId}::uuid FROM assistant.artifacts WHERE short_id=${resource.id}`;
     await migrateArtifacts();
     expect(await artifacts.get(resource.id, reader)).toMatchObject({ kind: "app", source, publishedVersion: 1 });
-    expect(await artifacts.projects(resource.id, owner)).toEqual([{ projectId }]);
+    expect(await artifacts.projects(resource.id, owner)).toEqual([{ projectId, shortId: null, name: null }]);
     await expect(artifacts.create({ kind: "script", title: "Rejected legacy kind", source }, owner)).rejects.toThrow();
     await artifacts.remove(resource.id, owner);
   });
@@ -957,55 +959,104 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     await expect(artifacts.storage(app.id,{...write,content:"undefined"},owner)).rejects.toMatchObject({code:"INVALID_INPUT"});
   });
 
-  test("project scripts stay contextual and cannot grant edit or fork rights", async () => {
-    const projectId = crypto.randomUUID(), conversationId = crypto.randomUUID();
-    let member = true, currentProject: string | null = projectId;
-    const conversation = spyOn(aiConversations,"getConversation").mockImplementation(async input => ({
-      id: conversationId, shortId: "project1", title: "Project", titleSource: "user", description: "", descriptionSource: "user",
-      keywords: [], pinnedAt: null, done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null, runStatus: "idle", runError: null, unreadCompletion: false,
-      projectId: currentProject, draft: {content:[],revision:1,updatedAt:null}, createdByUserId: input.ownerUserId ?? null,
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    }));
-    const project = spyOn(aiProjects,"get").mockImplementation(async (id,subject,permission) =>
-      id === projectId && (subject?.type === "user" && subject.userId === owner.user.id || member && permission === "read")
-        ? {id,shortId:"project1",name:"Project",description:"",icon:"",instructions:"",defaultModelProfileId:null,
-          permission: permission ?? "read",revision:1,createdAt:"",updatedAt:""} : null);
+  test("project app selection only exposes manageable candidates and linking requires both admin grants", async () => {
+    const projectId = crypto.randomUUID();
+    const project = spyOn(aiProjects,"get").mockImplementation(async (id,subject,permission) => {
+      const projectAdmin = subject?.type === "user" && [owner.user.id, reader.user.id].includes(subject.userId);
+      const projectReader = subject?.type === "user" && subject.userId === stranger.user.id;
+      return id === projectId && (projectAdmin || projectReader && permission === "read")
+        ? {id,shortId:"linkproj",name:"Project",description:"",icon:"",instructions:"",defaultModelProfileId:null,
+          permission:projectAdmin ? "admin" : "read",revision:1,createdAt:"",updatedAt:""} : null;
+    });
     const shortProject = spyOn(aiProjects,"getByShortId").mockImplementation(async (shortId,subject,permission) =>
-      shortId === "project1" ? aiProjects.get(projectId,subject,permission) : null);
-    const contextual = {...stranger,conversationId};
+      shortId === "linkproj" ? aiProjects.get(projectId,subject,permission) : null);
     try {
-      const script = await artifacts.create({kind:"app",title:"Shared calculation",source},owner);
-      expect(script.kind).toBe("app");
+      const app = await artifacts.create({title:"Project selection draft",source},owner);
+      await artifacts.grant(app.id,{type:"user",userId:reader.user.id},"read",owner);
+      expect((await artifacts.projectApps("linkproj",owner,1,"Project selection",true)).items).toMatchObject([{id:app.id,canManage:true,linked:false,published:false}]);
+      expect((await artifacts.projectApps("linkproj",reader,1,"Project selection",true)).items).toEqual([]);
+      await expect(artifacts.projectApps("linkproj",stranger,1,"",true)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await expect(artifacts.projectApps("linkproj",editor)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await expect(artifacts.linkProject(app.id,"linkproj",true,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      const privateApp = await artifacts.create({title:"No project access",source},editor);
+      await expect(artifacts.linkProject(privateApp.id,"linkproj",true,editor)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await artifacts.linkProject(app.id,"linkproj",true,owner);
+      expect((await artifacts.projectApps("linkproj",owner)).items).toMatchObject([{id:app.id,linked:true,published:false}]);
+      expect((await artifacts.projectApps("linkproj",owner,1,"Project selection",true)).items).toEqual([]);
+      expect((await artifacts.projectApps("linkproj",reader)).items).toEqual([]);
+      await artifacts.publish(app.id,1,owner,"Initial release");
+      expect((await artifacts.projectApps("linkproj",stranger)).items).toMatchObject([{id:app.id,canManage:false,published:true}]);
+      expect((await artifacts.projectApps("linkproj",stranger,1,"does not match")).items).toEqual([]);
+      await expect(artifacts.linkProject(app.id,"linkproj",false,reader)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await artifacts.linkProject(app.id,projectId,false,owner);
+      expect((await artifacts.projectApps("linkproj",owner)).items).toEqual([]);
+    } finally { project.mockRestore(); shortProject.mockRestore(); }
+  });
+
+  test("project membership grants published Use everywhere and revocation never changes direct grants", async () => {
+    const projectId = crypto.randomUUID(), groupId = crypto.randomUUID();
+    await sql`INSERT INTO ai.projects(id,short_id,name) VALUES(${projectId}::uuid,'project1','Shared project')`;
+    await sql`INSERT INTO auth.groups(id,name) VALUES(${groupId}::uuid,'Project members')`;
+    await sql`INSERT INTO auth.user_groups_v2 VALUES(${stranger.user.id}::uuid,${groupId}::uuid)`;
+    const [manager] = await sql`INSERT INTO auth.access(user_id,permission) VALUES(${owner.user.id}::uuid,'admin') RETURNING id`;
+    const [members] = await sql`INSERT INTO auth.access(group_id,permission) VALUES(${groupId}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO ai.project_access VALUES(${projectId}::uuid,${manager!.id}::uuid),(${projectId}::uuid,${members!.id}::uuid)`;
+    const script = await artifacts.create({title:"Shared calculation",source},owner);
+    const contextual = {...stranger,conversationId:crypto.randomUUID()};
+    try {
       await artifacts.linkProject(script.id,"project1",true,owner);
-      expect(await artifacts.projects(script.id,owner)).toEqual([{projectId}]);
-      const administrator={...owner,actor:{kind:"user" as const,user:{...owner.user,roles:["admin" as const]}}};
-      expect((await artifactAdmin.list(administrator,1,"Shared calculation")).items[0]).toMatchObject({projects:[projectId],published:false,bytes:0});
-      await expect(artifacts.get(script.id,contextual)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      expect(await artifacts.projects(script.id,owner)).toEqual([{projectId,shortId:"project1",name:"Shared project"}]);
+      await expect(artifacts.get(script.id,stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      expect((await artifacts.list(stranger,1,"Shared calculation")).items).toEqual([]);
       await artifacts.publish(script.id,1,owner,"Initial release");
+      expect((await artifacts.get(script.id,stranger)).permission).toBe("read");
       expect((await artifacts.get(script.id,contextual)).permission).toBe("read");
-      expect(await artifacts.describe([script.id],stranger.user.id,conversationId)).toHaveLength(1);
-      expect(await artifacts.describe([script.id],stranger.user.id)).toEqual([]);
-      expect((await artifacts.list(contextual,1)).items.map(item=>item.id)).toContain(script.id);
-      expect((await artifacts.list(stranger,1)).items.map(item=>item.id)).not.toContain(script.id);
-      const toolContext = {...contextual, locale: "en", signal: new AbortController().signal};
+      expect(await artifacts.describe([script.id],stranger.user.id)).toHaveLength(1);
+      expect((await artifacts.list(stranger,1,"Shared calculation")).items).toMatchObject([{id:script.id,permission:"read"}]);
+      expect(await artifacts.runner(script.id,stranger)).toMatchObject({serverAccess:true,canManage:false});
+      await expect(artifacts.runner(script.id,{})).rejects.toMatchObject({code:"NOT_FOUND"});
+      const toolContext = {...stranger,locale:"en",signal:new AbortController().signal};
       expect(await artifactCodeHandlers.code_read({id:script.id,path:"main.js",offset:0},toolContext))
         .toMatchObject({ok:true,data:{data:{content:source.files[0]!.content}}});
-      expect(await artifactCodeHandlers.code_read({id:script.id,path:"main.js",offset:0},{...stranger,locale:"en",signal:toolContext.signal}))
-        .toMatchObject({ok:false,error:{code:"ACCESS_DENIED"}});
-      await expect(artifacts.fork(script.id,contextual)).rejects.toMatchObject({code:"ACCESS_DENIED"});
-      await expect(artifacts.writeFile(script.id,"main.js","export default () => 2",contextual)).rejects.toMatchObject({code:"ACCESS_DENIED"});
-      currentProject = crypto.randomUUID();
-      await expect(artifacts.get(script.id,contextual)).rejects.toMatchObject({code:"ACCESS_DENIED"});
-      currentProject = projectId; member = false;
-      await expect(artifacts.get(script.id,contextual)).rejects.toMatchObject({code:"ACCESS_DENIED"});
-      expect(await artifacts.describe([script.id],stranger.user.id,conversationId)).toEqual([]);
-      member = true;
+      expect((await artifacts.fork(script.id,stranger)).permission).toBe("admin");
+      await artifacts.storage(script.id,{area:"kv",operation:"write",key:"shared",content:"42"},owner);
+      expect(await artifacts.storage(script.id,{area:"kv",operation:"read",key:"shared"},stranger)).toMatchObject({item:{content:"42"}});
+      await expect(artifacts.writeFile(script.id,"main.js","export default () => 2",stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await expect(artifacts.linkProject(script.id,projectId,false,stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await expect(artifacts.grant(script.id,{type:"authenticated"},"read",stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      const successorGrant = await artifacts.grant(script.id,{type:"user",userId:reader.user.id},"admin",owner);
+      const creatorGrant = (await artifacts.access(script.id,owner)).find(entry=>entry.principal.type === "user" && entry.principal.userId === owner.user.id)!;
+      await artifacts.changeGrant(script.id,creatorGrant.id,null,reader);
+      await sql`DELETE FROM ai.project_access WHERE project_id=${projectId}::uuid AND access_id=${manager!.id}::uuid`;
+      expect((await artifacts.get(script.id,stranger)).permission).toBe("read");
+      expect(await artifacts.projects(script.id,reader)).toEqual([{projectId,shortId:null,name:null}]);
+      await artifacts.grant(script.id,{type:"user",userId:owner.user.id},"admin",reader);
+      await sql`INSERT INTO ai.project_access VALUES(${projectId}::uuid,${manager!.id}::uuid)`;
+      await artifacts.changeGrant(script.id,successorGrant!.id,null,owner);
+      const updated=await artifacts.writeFile(script.id,"main.js","export default () => 2",owner);
+      expect((await artifacts.get(script.id,stranger)).source).toEqual(source);
+      await expect(artifacts.get(script.id,stranger,updated.revision)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await sql`DELETE FROM auth.user_groups_v2 WHERE user_id=${stranger.user.id}::uuid AND group_id=${groupId}::uuid`;
+      await expect(artifacts.get(script.id,stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await expect(artifacts.runner(script.id,stranger)).rejects.toMatchObject({code:"NOT_FOUND"});
+      await expect(artifacts.storage(script.id,{area:"kv",operation:"read",key:"shared"},stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      expect(await artifacts.describe([script.id],stranger.user.id)).toEqual([]);
+      expect((await artifacts.list(stranger,1,"Shared calculation")).items.some(item=>item.id===script.id)).toBe(false);
+      await sql`INSERT INTO auth.user_groups_v2 VALUES(${stranger.user.id}::uuid,${groupId}::uuid)`;
       await artifacts.linkProject(script.id,projectId,false,owner);
-      await expect(artifacts.get(script.id,contextual)).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await expect(artifacts.get(script.id,stranger)).rejects.toMatchObject({code:"ACCESS_DENIED"});
       await artifacts.grant(script.id,{type:"user",userId:stranger.user.id},"read",owner);
-      expect((await artifacts.get(script.id,stranger)).kind).toBe("app");
-      expect((await artifacts.fork(script.id,stranger)).kind).toBe("app");
-    } finally { conversation.mockRestore(); project.mockRestore(); shortProject.mockRestore(); }
+      expect((await artifacts.get(script.id,stranger)).permission).toBe("read");
+      await artifacts.linkProject(script.id,projectId,true,owner);
+      await artifacts.linkProject(script.id,projectId,false,owner);
+      expect((await artifacts.runner(script.id,stranger)).serverAccess).toBe(true);
+      // App managers can see the link, but cannot read private project metadata.
+      await artifacts.grant(script.id,{type:"user",userId:reader.user.id},"admin",owner);
+      await artifacts.linkProject(script.id,projectId,true,owner);
+      expect(await artifacts.projects(script.id,reader)).toEqual([{projectId,shortId:null,name:null}]);
+      await artifacts.unpublish(script.id,owner);
+      await expect(artifacts.get(script.id,stranger)).rejects.toMatchObject({code:"NOT_FOUND"});
+    } finally { await artifacts.remove(script.id,owner); }
   });
 
   test("edit creates an unsent chat draft and indexes the app reference for admins only", async () => {

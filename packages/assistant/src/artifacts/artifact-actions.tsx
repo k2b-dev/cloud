@@ -2,15 +2,15 @@ import { openSecretsDialog } from "./SecretsDialog";
 import { Button, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { StudioPermissions } from "./StudioPermissions";
 import { runnerHref } from "./runner-contracts";
+import { openPublicationInfo, publishArtifact } from "./publication";
 import { navigateTo } from "@k2b/ssr/nav";
 import { createResource, createSignal, For, Show, type Accessor } from "solid-js";
-import type { AiProject } from "@k2b/cloud/ai";
 import type { ArtifactBundle, ArtifactSummary } from "./service";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
 import { advancedMessages } from "./advanced-messages";
 import { openDataDialog, openDatabaseDialog } from "./DataDialogs";
-export function createArtifactActions(props: { userId: string; projects: AiProject[]; refresh?: () => Promise<unknown>; app?: Accessor<ArtifactBundle | undefined>; editorDirty?: Accessor<boolean>; setApp?: (app: ArtifactBundle) => void; setSelectedVersion?: (version: number | undefined) => void; view?: "app" | "edit" | "database" }) {
+export function createArtifactActions(props: { userId: string; refresh?: () => Promise<unknown>; app?: Accessor<ArtifactBundle | undefined>; editorDirty?: Accessor<boolean>; setApp?: (app: ArtifactBundle) => void; setSelectedVersion?: (version: number | undefined) => void; view?: "app" | "edit" | "database" }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t, a = () => advancedMessages.resolve([locale()]).t;
   const [sharing, setSharing] = createSignal<ArtifactSummary>();
   const [busy, setBusy] = createSignal(false), [error, setError] = createSignal("");
@@ -23,6 +23,15 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
     finally { setBusy(false); }
   }
   const open = (id: string) => navigateTo(`/app/assistant/apps/${id}`);
+  const openRunner = async (item: ArtifactSummary) => {
+    if (item.publishedRevision) { navigateTo(runnerHref(item.id)); return; }
+    if (props.editorDirty?.()) { await prompts.alert(a().saveBeforePublish, { title: t().publish }); return; }
+    await openPublicationInfo({ id: item.id, revision: item.revision, published: false, locale: locale(), onPublished: async () => {
+      if (props.app?.()?.id === item.id) props.setApp?.(await artifactClient.get(item.id));
+      await props.refresh?.();
+      navigateTo(runnerHref(item.id));
+    } });
+  };
   const edit = (id: string) => action(async () => navigateTo((await artifactClient.editChat(id)).href));
   const share = async (item: ArtifactSummary) => {
     setSharing(item);
@@ -31,7 +40,7 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
       <Show when={!item.publishedRevision}><NoticeCard tone="warning" title={t().unpublishedAccess} detail={t().unpublishedAccessHelp} /></Show>
       <Show when={!access.loading} fallback={<Placeholder state="loading" title={t().loading} />}>
       <Show when={!access.error && access()} keyed fallback={<Placeholder state="error" title={t().loadFailed} />}>
-        {entries => <StudioPermissions entries={entries}
+        {entries => <StudioPermissions entries={entries} loadProjects={() => artifactClient.projects(item.id)}
           grant={(principal, level) => artifactClient.grant(item.id, principal, level)}
           change={(id, level) => artifactClient.changeGrant(item.id, id, level)} />}
       </Show>
@@ -42,12 +51,7 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
   const publish = async (item: ArtifactSummary) => {
     if(props.app?.()?.id===item.id&&props.editorDirty?.()){await prompts.alert(a().saveBeforePublish,{title:t().publish});return;}
     await action(async () => {
-      const firstRelease = !item.publishedVersion && !(await artifactClient.versions(item.id)).items.length;
-      const values = firstRelease ? { note: "Initial release" } : await prompts.form({ title: t().publish, confirmText: t().publish, fields: {
-        note: { type:"text", label:t().changeNote, required:true, maxLength:1000, multiline:true },
-      } });
-      if (!values) return;
-      await artifactClient.publish(item.id,item.revision,values.note);
+      if (!(await publishArtifact(item, locale()))) return;
       if (props.app?.()) { props.setApp?.(await artifactClient.get(item.id)); props.setSelectedVersion?.(undefined); }
     });
   };
@@ -81,39 +85,15 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
       </Show>
     </div>;
   },{title:t().versions,size:"medium"});
-  const projectLinks=(item:ArtifactSummary)=>action(async()=>{
-    const existing=await artifactClient.projects(item.id);
-    await prompts.dialog<void>(()=>{
-      const [linked,setLinked]=createSignal(new Set(existing.map(link=>link.projectId)));
-      const [saving,setSaving]=createSignal(false),[failure,setFailure]=createSignal("");
-      const available=props.projects.filter(project=>project.permission === "admin");
-      return <div class="flex flex-col gap-3">
-        <NoticeCard tone="info" title={t().projects} detail={t().projectScriptsHelp}/>
-        <Show when={failure()}><NoticeCard tone="danger" title={failure()}/></Show>
-        <For each={available}>{project=><div class="flex items-center justify-between gap-3"><span>{project.name}</span><Button size="sm" disabled={saving()} onClick={async()=>{
-          setSaving(true);setFailure("");
-          try {const next=!linked().has(project.id);await artifactClient.linkProject(item.id,project.id,next);setLinked(previous=>{const values=new Set(previous);if(next)values.add(project.id);else values.delete(project.id);return values;});}
-          catch(error){setFailure(error instanceof Error ? error.message : t().REQUEST_FAILED);}finally{setSaving(false);}
-        }}>{linked().has(project.id)?t().remove:t().add}</Button></div>}</For>
-      </div>;
-    },{title:t().projects,size:"medium"});
-  });
   const menu = (item: ArtifactSummary) => [
+    { label: t().openApp, icon: "ti ti-maximize", action: () => openRunner(item) },
     ...(item.publishedRevision ? [
-      { label: t().openApp, icon: "ti ti-external-link", action: () => navigateTo(runnerHref(item.id)) },
       { label: t().copyAppLink, icon: "ti ti-link", action: () => action(() => navigator.clipboard.writeText(new URL(runnerHref(item.id), location.origin).href)) },
     ] : []),
     ...(props.app?.() && props.view && props.view!=="app" ? [{label:a().app,icon:"ti ti-app-window",action:()=>open(item.id)}] : []),
     ...(item.permission === "admin" ? [
-      {label:t().remove,icon:"ti ti-trash",action:async()=>{
-        if(await prompts.confirm(t().removeConfirm,{title:t().remove,variant:"danger"})) await action(async()=>{
-          await artifactClient.remove(item.id);
-          if(props.app?.()?.id===item.id)navigateTo("/app/assistant?studio=1");
-        });
-      }},
-      { label: a().assistantEdit, icon: "ti ti-edit", action: () => edit(item.id) },
+      { label: a().assistantEdit, icon: "ti ti-pencil", action: () => edit(item.id) },
       { label: t().share, icon: "ti ti-users", action: () => share(item) },
-      {label:t().projects,icon:"ti ti-folders",action:()=>projectLinks(item)},
       { label: item.publishedRevision ? t().publishUpdate : t().publish, icon: "ti ti-upload",
         disabled: item.publishedRevision === item.revision,
         action: () => publish(item) },
@@ -138,6 +118,14 @@ export function createArtifactActions(props: { userId: string; projects: AiProje
         {label:a().database,icon:"ti ti-database-cog",action:()=>openDatabaseDialog(item.id,a().database)},
       ]:[]),
     ]},
+    ...(item.permission === "admin" ? [{ sectionLabel: a().dangerZone, items: [
+      {label:t().remove,icon:"ti ti-trash",variant:"danger" as const,action:async()=>{
+        if(await prompts.confirm(t().removeConfirm,{title:t().remove,variant:"danger"})) await action(async()=>{
+          await artifactClient.remove(item.id);
+          if(props.app?.()?.id===item.id)navigateTo("/app/assistant?studio=1");
+        });
+      }},
+    ] }] : []),
   ];
-  return { menu, action, busy, error, publish, versions };
+  return { menu, action, busy, error, publish, versions, openRunner };
 }

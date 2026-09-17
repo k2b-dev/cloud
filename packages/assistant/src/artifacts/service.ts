@@ -45,15 +45,11 @@ function predicate(identity: ArtifactIdentity) {
   // Public grants allow the isolated runner only, never server-backed operations.
   return sql`(${match}) AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL OR a.authenticated_only)`;
 }
-async function projectContext(identity: ArtifactIdentity) {
-  if (!identity.conversationId) return undefined;
-  const actor = user(identity);
-  const conversation = z.uuid().safeParse(identity.conversationId).success
-    ? await aiConversations.getConversation({conversationId:identity.conversationId,ownerUserId:actor.id})
-    : await aiConversations.getConversationByShortId({shortId:identity.conversationId,ownerUserId:actor.id});
-  if (!conversation) throw new ArtifactError("ACCESS_DENIED");
-  if (!conversation.projectId) return undefined;
-  return (await aiProjects.get(conversation.projectId,identity.accessSubject,"read"))?.id;
+/** Resolve membership through the owning project service, without copying grants. */
+async function accessibleLinkedProjects(db: SQL, subject: AccessSubject, artifactId?: string) {
+  const links = await db<{ project_id: string }[]>`SELECT DISTINCT project_id FROM assistant.artifact_projects
+    WHERE ${artifactId ? db`artifact_id=${artifactId}::uuid` : db`true`}`;
+  return [...(await aiProjects.resolveShortIds(links.map(link => link.project_id), subject)).keys()];
 }
 
 export async function requireArtifact(db: SQL, id: string, identity: ArtifactIdentity, required: PermissionLevel) {
@@ -69,11 +65,7 @@ export async function requireArtifact(db: SQL, id: string, identity: ArtifactIde
     ORDER BY CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END DESC LIMIT 1`;
   let permission = identity.administrative && hasRole(user(identity),"admin") ? "admin" as const : grant?.permission ?? "none";
   if (!hasPermission(permission, required) && required === "read" && row.published_revision !== null) {
-    const projectId = await projectContext(identity);
-    if (projectId) {
-      const [link] = await db`SELECT 1 FROM assistant.artifact_projects WHERE artifact_id=${id}::uuid AND project_id=${projectId}::uuid`;
-      if (link) permission = "read";
-    }
+    if ((await accessibleLinkedProjects(db, identity.accessSubject, id)).length) permission = "read";
   }
   if (!hasPermission(permission, required)) throw new ArtifactError("ACCESS_DENIED");
   if (permission !== "admin" && row.published_revision === null) throw new ArtifactError("NOT_FOUND");
@@ -175,13 +167,12 @@ export const artifacts = {
       return {deleted:true,databaseCleanupQueued:cleanup.length>0};
     });
   },
-  async describe(ids: string[], userId: string, conversationId?: string): Promise<Array<ArtifactSummary & { description: string; icon: string }>> {
+  async describe(ids: string[], userId: string, _conversationId?: string): Promise<Array<ArtifactSummary & { description: string; icon: string }>> {
     if (!ids.length) return [];
     const valid = ids.filter(id => CodeResourceId.safeParse(id).success);
     if (!valid.length) return [];
-    const conversation = conversationId ? await aiConversations.getConversation({conversationId,ownerUserId:userId}) : null;
-    const projectId = conversation && !conversation.archivedAt && conversation.projectId
-      ? (await aiProjects.get(conversation.projectId,{type:"user",userId},"read"))?.id : undefined;
+    const projects = await accessibleLinkedProjects(sql, { type: "user", userId });
+    const projectMatch = projects.length ? sql`project.project_id IN ${sql(projects)}` : sql`false`;
     const match = buildAccessPrincipalCondition({ subject: { type: "user", userId }, columns: {
       userId: sql`a.user_id`, groupId: sql`a.group_id`, serviceAccountId: sql`a.service_account_id`, authenticatedOnly: sql`a.authenticated_only`,
     } });
@@ -199,13 +190,15 @@ export const artifacts = {
       WHERE artifact.short_id IN ${sql(valid)}
       GROUP BY artifact.id HAVING bool_or(a.permission='admin') OR (artifact.published_revision IS NOT NULL AND
         (count(a.id)>0 OR (EXISTS(SELECT 1 FROM assistant.artifact_projects project
-          WHERE project.artifact_id=artifact.id AND project.project_id=${projectId ?? null}::uuid))))`;
+          WHERE project.artifact_id=artifact.id AND ${projectMatch}))))`;
   },
   async list(identity: ArtifactIdentity, page = 1, search = "", pageSize = 30) {
     z.number().int().min(1).max(100000).parse(page);
     z.string().max(500).parse(search);
     z.number().int().min(1).max(100).parse(pageSize);
-    const match = predicate(identity), projectId = await projectContext(identity);
+    const match = predicate(identity);
+    const projects = await accessibleLinkedProjects(sql, identity.accessSubject);
+    const projectMatch = projects.length ? sql`project.project_id IN ${sql(projects)}` : sql`false`;
     const rows = await sql<(ArtifactRow & { permission: PermissionLevel })[]>`SELECT p.*, (SELECT origin.short_id FROM assistant.artifacts origin WHERE origin.id=p.forked_from_id) AS forked_from_short_id,
       CASE max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 ELSE 1 END)
       WHEN 3 THEN 'admin' WHEN 2 THEN 'write' ELSE 'read' END AS permission
@@ -213,7 +206,7 @@ export const artifacts = {
       LEFT JOIN auth.access a ON a.id=link.access_id AND ${match} AND a.permission IN ('read','write','admin')
       GROUP BY p.id HAVING (bool_or(a.permission='admin') OR (p.published_revision IS NOT NULL AND
         (count(a.id)>0 OR (EXISTS(SELECT 1 FROM assistant.artifact_projects project
-          WHERE project.artifact_id=p.id AND project.project_id=${projectId ?? null}::uuid)))))
+          WHERE project.artifact_id=p.id AND ${projectMatch})))))
       AND strpos(lower(CASE WHEN bool_or(a.permission='admin') THEN p.title || ' ' || p.description
         ELSE coalesce(p.published_title,'') || ' ' || coalesce(p.published_description,'') END),lower(${search}))>0
       ORDER BY p.updated_at DESC,p.id LIMIT ${pageSize + 1} OFFSET ${(page - 1) * pageSize}`;
@@ -457,8 +450,42 @@ export const artifacts = {
   async projects(id: string, identity: ArtifactIdentity) {
     return sql.begin(async db => {
       id = (await requireArtifact(db, id,identity,"admin")).row.id;
-      return db<{projectId:string}[]>`SELECT project_id AS "projectId" FROM assistant.artifact_projects WHERE artifact_id=${id}::uuid ORDER BY project_id`;
+      const links = await db<{projectId:string}[]>`SELECT project_id AS "projectId" FROM assistant.artifact_projects WHERE artifact_id=${id}::uuid ORDER BY project_id`;
+      const result: Array<{ projectId: string; shortId: string | null; name: string | null }> = [];
+      for (const link of links) {
+        const project = await aiProjects.get(link.projectId, identity.accessSubject, "read");
+        result.push({ ...link, shortId: project?.shortId ?? null, name: project?.name ?? null });
+      }
+      return result;
     });
+  },
+  async projectApps(projectReference: string, identity: ArtifactIdentity, page = 1, search = "", available = false) {
+    z.string().min(1).max(80).parse(projectReference);
+    z.number().int().min(1).max(100000).parse(page);
+    z.string().max(500).parse(search);
+    const required = available ? "admin" : "read";
+    const project = z.uuid().safeParse(projectReference).success
+      ? await aiProjects.get(projectReference, identity.accessSubject, required)
+      : await aiProjects.getByShortId(projectReference, identity.accessSubject, required);
+    if (!project) throw new ArtifactError("ACCESS_DENIED");
+    const match = predicate(identity);
+    const rows = await sql<{ id: string; title: string; icon: string; published: boolean; canManage: boolean; linked: boolean }[]>`
+      WITH candidates AS (
+        SELECT p.short_id AS id, p.updated_at,
+          CASE WHEN coalesce(bool_or(a.permission='admin'),false) THEN p.title ELSE p.published_title END AS title,
+          CASE WHEN coalesce(bool_or(a.permission='admin'),false) THEN p.icon ELSE p.published_icon END AS icon,
+          p.published_revision IS NOT NULL AS published,
+          coalesce(bool_or(a.permission='admin'),false) AS "canManage",
+          EXISTS(SELECT 1 FROM assistant.artifact_projects l WHERE l.artifact_id=p.id AND l.project_id=${project.id}::uuid) AS linked
+        FROM assistant.artifacts p
+        LEFT JOIN assistant.artifact_access link ON link.artifact_id=p.id
+        LEFT JOIN auth.access a ON a.id=link.access_id AND ${match}
+        GROUP BY p.id
+      ) SELECT id,title,coalesce(icon,'ti ti-app-window') AS icon,published,"canManage",linked FROM candidates
+      WHERE (${available} AND "canManage" AND NOT linked OR NOT ${available} AND linked AND (published OR "canManage"))
+        AND strpos(lower(title),lower(${search}))>0
+      ORDER BY updated_at DESC,id LIMIT 31 OFFSET ${(page-1)*30}`;
+    return { items: rows.slice(0,30), hasNext: rows.length>30, page };
   },
   async linkProject(id: string, projectReference: string, linked: boolean, identity: ArtifactIdentity) {
     z.string().min(1).max(80).parse(projectReference);

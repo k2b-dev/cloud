@@ -1232,3 +1232,28 @@ describe("assistant CLI", () => {
     });
   });
 });
+
+
+test("Project Skill CLI searches available Skills and confirms link changes", async () => {
+  const requests: Array<{path:string;body:unknown}> = [];
+  const fetcher: CloudCliContext["fetch"] = async (input,init) => {
+    const path=String(input);
+    if (path === "/api/ai/projects") return json({projects:[{shortId:"proj12",name:"Finance"}]});
+    requests.push({path,body:init?.body ? JSON.parse(String(init.body)) : null});
+    return json(path.includes("project-links") ? {items:[],page:2,hasNext:false} : {linked:!path.includes("invalid")});
+  };
+  const list=createContext(["projects","skills","list","Finance"],fetcher);
+  list.ctx.flags={available:true,search:"reconciliation",page:"2"};
+  await assistantCli.run(list.ctx);
+  expect(requests[0]!.path).toBe("/api/ai/skills/project-links/proj12?q=reconciliation&page=2&available=true");
+  await expect(assistantCli.run(createContext(["projects","skills","link","Finance","skill1"],fetcher).ctx)).rejects.toThrow("--yes");
+  expect(requests).toHaveLength(1);
+  for (const action of ["link","unlink"]) {
+    const command=createContext(["projects","skills",action,"Finance","skill1"],fetcher);command.ctx.flags.yes=true;
+    await assistantCli.run(command.ctx);
+  }
+  expect(requests.slice(1)).toEqual([
+    {path:"/api/ai/skills/skill1/projects/proj12",body:{linked:true}},
+    {path:"/api/ai/skills/skill1/projects/proj12",body:{linked:false}},
+  ]);
+});

@@ -211,7 +211,8 @@ export function ManualEditor(props: {
           </For>
         </div>
         <div class="assistant-editor-execution">
-          <ArtifactPanel artifactId={base().id} userId={props.userId} refreshKey={String(base().sourceRevision)} />
+          <ArtifactPanel artifactId={base().id} userId={props.userId} refreshKey={String(base().sourceRevision)} unsavedChanges={dirty()}
+            onPublished={async () => { props.onSaved(await artifactClient.get(base().id)); }} />
         </div>
       </div>
     </div>

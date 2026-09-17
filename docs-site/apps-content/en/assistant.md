@@ -24,21 +24,52 @@ Select an app to open it directly, without opening a chat. Apps use Cloud person
 **Use** allows running and copying the published version; **Manage** also allows
 editing, publishing, and changing access. Administrators can see unpublished drafts.
 
-The app detail action menu provides **Edit with Assistant**, **Manage access**,
+The app detail action menu provides **Edit**, **Manage access**,
 and **Publish** for administrators. It retains the same actions as app cards
-inside chat context, including copying, deleting, Project links, and advanced tools.
+inside chat context, including copying, deleting, and advanced tools.
+**Delete** is the final menu entry, under **Danger zone**.
 **Edit** opens a new chat with the app attached, ready for your instructions. It
 does not send a message. Saving code updates the working draft. **Publish** makes
 that tested version available to users; later edits do not change it. Running apps
 keep their inputs and offer a restart when a newer publication becomes available.
 
 
+### Link Studio Apps and Skills to a Project
+
+Use **+** beside **Studio Apps** or **Skills** in a Project. The dialog has a
+search field, a list of resources you manage, and a notice explaining inherited
+access. Select a result to link it. Existing links appear under the section
+heading and are rendered on the server with the initial Project context.
+
+Linking or unlinking requires **Manage** on both the Project and the resource.
+Project members inherit **Use** on published Studio Apps, including shared app
+data, in Studio, the standalone runner, tools and CLI. They inherit **Read** on
+Skills, including instructions and references. No editing or management rights
+are inherited. App drafts remain private to app managers.
+
+The app or Skill permission dialog lists linked Projects and explains the
+inherited access. Private Project names are hidden from resource managers who
+cannot access those Projects. A link remains in place if its creator later
+loses access or management rights. Current Project membership still determines
+inherited access. Unlinking or losing Project access removes only that inherited
+access; direct grants and access through other Projects remain.
+
+Linked Skills enter the normal enabled Skill catalog. Assistant loads their
+instructions when needed; linking does not insert all instructions into every
+chat. Personal disabled-Skill preferences still apply. Skills never grant access
+to Studio Apps or external resources mentioned in their instructions.
+
 ### Standalone apps and public links
 
 Studio opens the standalone runner for users with **Use** access. App managers
-enter the management view and select **Open app** from its action menu. The
+enter the management view and select **Open fullscreen** in the header or action menu. The
 runner offers **Manage** to those managers. This distinction uses app permissions,
 not the global Cloud administrator role.
+
+App managers see a **Draft** or **Published** badge beside the runtime controls.
+Select it for a short explanation and a **Publish** button for saved drafts.
+Publishing selects a runnable version; it does not grant public access.
+**Open fullscreen** stays visible for drafts and offers publishing first.
 
 The runner's action menu keeps **Create your own copy**, **Secrets** and
 **Local data** available to authorized users. Public-only visitors can manage
@@ -321,7 +352,7 @@ apps are visible and usable only by administrators, even when Use access is gran
 ### Studio advanced tools
 
 Open an app's action menu and choose **Advanced**. The same menu is available
-on app cards inside chat context and in the app detail, manual editor, and SQL console. **Edit with Assistant** starts an
+on app cards inside chat context and in the app detail, manual editor, and SQL console. **Edit** starts an
 editing chat. Resource managers can also choose **Edit manually** or **SQL
 console**. These views keep the Assistant navigation. Switch views through the app action
 menu; no separate editor navigation replaces your chats.
@@ -382,8 +413,9 @@ changing their IDs, source, publications, grants, Project links or shared data.
 One-off scripts can receive selected attachments from their current chat. Apps
 never gain implicit access to chat attachments. A Project administrator who also
 manages an App can associate it with the Project. Current members can use its
-publication in that Project's chats; this does not grant editing, copying or
-global Studio visibility.
+publication through Studio, the standalone runner, tools and CLI. Members gain
+Use, including shared app data and copying published source, but never editing
+or management rights.
 
 Apps declare optional actions in `app.actions.json`, saved and published with
 source. Each action has a unique `name`, `title`, `description`, relative handler
@@ -737,9 +769,13 @@ suite runs their published handlers in the isolated Studio runtime.
 Browser-local storage belongs to that browser and cannot be erased by a server
 agent. Personal secret values stay in the trusted `code_secret` dialog; listing
 or deleting another person's credentials is not an App management operation.
-Project associations retain their existing Studio/CLI administration path
-(`assistant code projects` and `assistant code project-link`); they are not
-exposed as an implicit grant or a general vendor API. Operator connection settings and secrets remain installation
+Project associations are managed from the **Studio Apps** section of a Project or the CLI
+(`assistant code projects` and `assistant code project-link`). Linking or unlinking requires
+Manage access to both the app and Project. The app picker only lists apps you
+manage; linked drafts are unavailable to members until published. Project links
+grant current members Use in Studio and the standalone runner as well as tools
+and CLI, without editing rights. They persist independently of their creator's
+later permissions. They are not a general vendor API. Operator connection settings and secrets remain installation
 administration; normal App workflows do not load or expose them. There is no
 arbitrary vendor-admin SQL interface. Every path retains the owning service's
 current authorization and version checks.

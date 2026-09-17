@@ -416,9 +416,14 @@ description supplied by the app and clear it when the app returns to ready.
 ### Standalone apps and public links
 
 Studio opens the standalone runner for users with **Use** access. App managers
-enter the management view and select **Open app** from its action menu. The
+enter the management view and select **Open fullscreen** in the header or action menu. The
 runner offers **Manage** to those managers. This distinction uses app permissions,
 not the global Cloud administrator role.
+
+App managers see a **Draft** or **Published** badge beside the runtime controls.
+Select it for a short explanation and a **Publish** button for saved drafts.
+Publishing selects a runnable version; it does not grant public access.
+**Open fullscreen** stays visible for drafts and offers publishing first.
 
 **Copy app link** copies `/app/assistant/apps/ID/run`. This URL always runs the
 latest publication, even for managers. It loads no Assistant sidebar, chat list,

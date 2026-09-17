@@ -164,9 +164,9 @@ and persist across runs and publications. Forks start with empty data. Use
 `code sql` with `{"sql":"SELECT title FROM todos LIMIT 20","params":[]}` for
 a direct read-only query. It never creates a database. `code database-connect`
 explicitly provisions one when the instance has rsql configured;
-`code database` accepts structured schema/row operations. `--conversation`
-supplies an authorized Project-chat context to read/run/storage/database
-commands; it never grants edit or fork rights.
+`code database` accepts structured schema/row operations. Project membership grants Use on linked published Apps, including
+read/run/storage/database commands and copying published source. A Project chat
+is not required; editing and management rights remain separate.
 
 Normal capability approvals also apply inside scripts. Interactive Assistant
 sessions show the review and eligible Remember option. For a direct run or
@@ -329,7 +329,7 @@ consent, including reads; personal remembered approvals do not apply.
 ### Shared Studio files and limits
 
 Use binary commands for file contents (Use access; `--manage` explicitly requires
-Manage). `--conversation CHAT` supplies an authorized Project-chat context:
+Manage). Project members inherit Use on linked published Apps:
 
 ```bash
 cld assistant code file-upload APP --file invoice.pdf --key invoices/invoice.pdf
@@ -400,7 +400,7 @@ Use JSON files or stdin, preserving exact returned IDs and paths:
 
 Copies preserve binary bytes and apply both stores' permissions and destination
 limits. App files require Use; Project destinations require Write; chats require
-ownership. `--conversation` supplies authorized Project-chat context when needed.
+ownership. Project membership can provide Use for a linked published App.
 Show the exact destination and overwrite before confirming; shared destinations
 may disclose private chat files. Inspect conflicts or uncertain outcomes before
 retrying. No vendor database API or filesystem access is implied by these tools.
@@ -443,3 +443,19 @@ Operator `studio-admin grant` and `change-grant` enforce the same rules.
 
 Cloud administrators can use this runner URL as a Link shortcut in the existing
 navigation settings. Shortcut visibility and app access remain separate.
+
+### Project Skills
+
+```bash
+cld assistant projects skills list PROJECT --json
+cld assistant projects skills list PROJECT --available --search reconciliation --json
+cld assistant projects skills link PROJECT SKILL_ID --yes
+cld assistant projects skills unlink PROJECT SKILL_ID --yes
+```
+
+Lists are paginated with `--page`. Project members inherit Read/Use on linked
+Skills, including the normal searchable catalog and lazy instruction loading.
+Personal disabled-Skill preferences still apply. Linking and unlinking require
+Manage on both resources. A link stays intact if its creator later loses access;
+unlinking or losing membership removes only inherited access. Direct grants
+remain. The same persistence rule applies to `code project-link` for Studio Apps.

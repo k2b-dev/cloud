@@ -52,7 +52,10 @@ const page = {
   hasNext: false,
 } as AiConversationPage;
 
+const initialApps = { items: [{ id: "appSSR1", title: "Project bank reconciliation", icon: "ti ti-app-window", published: true, canManage: true, linked: true }], page: 1, hasNext: false };
 const projectContext = {
+  apps: initialApps,
+              skills: {items:[{id:"skill123",shortId:"skill123",name:"project-skill",description:"Reconcile statements",permission:"read" as const,enabled:true,revision:1,referenceCount:0,createdAt:"",updatedAt:""}],page:1,hasNext:false},
   projectId: project.id,
   knowledge: [
     {
@@ -108,6 +111,8 @@ describe("Assistant Project view", () => {
             project,
             initialPage: page,
             initialContext: {
+              apps: initialApps,
+              skills: {items:[{id:"skill123",shortId:"skill123",name:"project-skill",description:"Reconcile statements",permission:"read" as const,enabled:true,revision:1,referenceCount:0,createdAt:"",updatedAt:""}],page:1,hasNext:false},
               projectId: project.id,
               knowledge: [],
               files: [],
@@ -141,6 +146,11 @@ describe("Assistant Project view", () => {
     expect(html).not.toContain("divide-y");
     expect(html).toContain("Project context");
     expect(html).toContain("View project");
+    expect(html).toContain("Studio Apps");
+    expect(html).toContain("Project bank reconciliation");
+    expect(html).toContain("project-skill");
+    expect(html).not.toContain("Loading Studio Apps");
+    expect(html).toContain('aria-label="Link a Studio App"');
     expect(html).toContain('class="ti ti-eye"');
     expect(html).toContain("IT support");
     expect(html).toContain("text-[var(--ui-app-accent-text)]");

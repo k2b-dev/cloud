@@ -45,7 +45,7 @@ export default function Admin(props:{initial:Awaited<ReturnType<typeof artifactA
   });
   const permissions=(id:string)=>act(async()=>{
     const entries=await artifactClient.admin.access(id);
-    await prompts.dialog<void>(()=><StudioPermissions entries={entries}
+    await prompts.dialog<void>(()=><StudioPermissions entries={entries} loadProjects={() => artifactClient.admin.projects(id)}
       grant={(principal,level)=>artifactClient.admin.grant(id,principal,level)}
       change={(accessId,level)=>artifactClient.admin.change(id,accessId,level)}
     />,{title:t().share,size:"medium"});

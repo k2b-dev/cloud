@@ -26,7 +26,7 @@ export function pickFiles(multiple: boolean, folder: boolean, accept: string, si
   });
 }
 
-export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetadata; onRunnerMetadata?: (metadata: RunnerMetadata) => void; refreshKey?: string; published?: boolean; version?: number; sourceRevision?:number; test?:boolean; pickerInputs?:File[]; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
+export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetadata; onRunnerMetadata?: (metadata: RunnerMetadata) => void; onPublished?: () => Promise<void>; unsavedChanges?: boolean; refreshKey?: string; published?: boolean; version?: number; sourceRevision?:number; test?:boolean; pickerInputs?:File[]; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
   const loadMetadata = async () => props.runner ? runnerClient.get(props.artifactId) : artifactClient.get(props.artifactId, props.published, props.version);
   const [metadata, { mutate }] = createResource(() => props.runner ? false : props.artifactId, loadMetadata, { initialValue: props.runner });
@@ -44,7 +44,7 @@ export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetada
     if (props.runner && "serverAccess" in bundle && bundle.serverAccess !== activeServerAccess()) {
       void stop(); mutate(bundle); setError(t().runnerAccessChanged); return;
     }
-    if (props.runner || bundle.sourceRevision > (metadata()?.sourceRevision ?? 0)) mutate(bundle);
+    mutate(bundle);
   }).catch((failure: unknown) => {
     if (token === generation && props.runner && failure instanceof Error && "status" in failure && (failure.status === 403 || failure.status === 404)) { void stop(); setError(t().runnerUnavailable); }
   }).finally(() => { refreshing = false; }); };
@@ -67,6 +67,28 @@ export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetada
   const consoleId = `artifact-console-${createUniqueId()}`;
   createEffect(on(() => error() || state()?.error, (failure) => { if (failure) setConsoleOpen(true); }));
   const [revision, setRevision] = createSignal<number>();
+  const [runningPublication, setRunningPublication] = createSignal<{ published: boolean; version?: number | null }>();
+  const isManager = () => { const bundle = metadata(); return bundle && ("canManage" in bundle ? bundle.canManage : bundle.permission === "admin"); };
+  const publication = createMemo(() => {
+    const bundle = metadata();
+    if (!bundle) return { published: false, version: undefined };
+    const sourceRevision = revision() ?? props.sourceRevision ?? bundle.sourceRevision;
+    if ("serverAccess" in bundle) return runningPublication() ?? { published: true, version: bundle.publishedVersion };
+    if (bundle.publishedRevision === sourceRevision) return { published: true, version: bundle.publishedVersion };
+    return runningPublication() ?? { published: props.version !== undefined, version: props.version };
+  });
+  async function explainPublication() {
+    const sourceRevision = revision() ?? props.sourceRevision ?? metadata()?.sourceRevision;
+    if (!isManager() || sourceRevision === undefined) return;
+    try {
+      const { openPublicationInfo } = await import("./publication");
+      await openPublicationInfo({ id: props.artifactId, revision: sourceRevision, ...publication(), locale: locale(), unsavedChanges: props.unsavedChanges, onPublished: async () => {
+        mutate(await loadMetadata());
+        await props.onPublished?.();
+        window.dispatchEvent(new Event("assistant-artifact-saved"));
+      } });
+    } catch (failure) { setError(failure instanceof Error ? failure.message : t().REQUEST_FAILED); }
+  }
   let container!: HTMLDivElement, session: ArtifactSession | undefined, generation = 0;
   const activeModalId=createMemo(()=>props.test?state()?.modalId:undefined);
   createEffect(on(activeModalId,modalId=>{
@@ -101,6 +123,8 @@ export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetada
       if (!("runtime" in compiled)) throw new Error(t().REQUEST_FAILED);
       mutate(bundle);
       setRevision(runRevision);
+      setRunningPublication({ published: !!loaded || props.version !== undefined || ("publishedRevision" in bundle && bundle.publishedRevision === runRevision),
+        version: props.version ?? bundle.publishedVersion });
       const serverAccess = loaded ? loaded.metadata.serverAccess : true;
       if (props.runner && serverAccess && props.userId === "public-visitor") throw new Error(t().runnerUnavailable);
       setActiveServerAccess(serverAccess);
@@ -149,7 +173,11 @@ export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetada
           <i class="ti ti-terminal-2" aria-hidden="true" />{t().console}
           <i class={consoleOpen() ? "ti ti-chevron-down" : "ti ti-chevron-up"} aria-hidden="true" />
         </Button>
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1 flex-wrap justify-end">
+          <Show when={isManager()}><Button size="sm" variant="ghost" class="p-0" onClick={() => void explainPublication()}>
+            <StatusBadge tone={publication().published ? "neutral" : "warning"} icon={publication().published ? "ti ti-tag" : "ti ti-pencil"}
+              label={publication().published ? `${t().published}${publication().version ? ` · v${publication().version}` : ""}` : t().draft} />
+          </Button></Show>
           <Show when={props.browseSource}><Button size="sm" variant="ghost" onClick={() => props.browseSource?.()}>{t().source}</Button></Show>
           <Show when={props.browseVersions}><Button size="sm" variant="ghost" onClick={() => props.browseVersions?.()}><i class="ti ti-git-branch" aria-hidden="true" />{t().versions}</Button></Show>
           <Button size="sm" variant="ghost" disabled={loading()} aria-busy={loading() ? "true" : undefined} onClick={() => void start()}><i class={`ti ti-refresh${loading() ? " k2b-spin" : ""}`} aria-hidden="true" />{t().restart}</Button>

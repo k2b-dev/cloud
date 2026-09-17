@@ -17,6 +17,10 @@ async function checked(response: Pick<Response, "json" | "ok" | "status">): Prom
   }
 }
 export const artifactClient = {
+  projectApps: async (projectId: string, page = 1, q = "", available = false, signal?: AbortSignal) => {
+    const response = await client["project-links"][":projectId"].$get({param:{projectId},query:{page:String(page),q,available:available ? "true" : "false"}},{init:{signal}});
+    await checked(response); return response.json();
+  },
   action: async (input: z.infer<typeof CodeActionInput>, conversationId: string, signal: AbortSignal) => {
     const response = await client.runtime.action.$post({ json: input, query: { conversationId } }, { init: { signal } });
     await checked(response);
@@ -67,6 +71,7 @@ export const artifactClient = {
   projects: async(id:string) => {const response=await client[":id"].projects.$get({param:{id}});await checked(response);return response.json();},
   linkProject: async(id:string,projectId:string,linked:boolean) => {const response=await client[":id"].projects[":projectId"].$put({param:{id,projectId},json:{linked}});await checked(response);return response.json();},
   admin: {
+    projects: async (id:string) => {const response=await client.admin.resources[":id"].projects.$get({param:{id}});await checked(response);return response.json();},
     remove: async (id:string) => {const response=await client.admin.resources[":id"].$delete({param:{id}});await checked(response);return response.json();},
     settings: async () => {const response=await client.admin.database.settings.$get();await checked(response);return response.json();},
     configure: async (input:{url:string;token?:string}) => {const response=await client.admin.database.settings.$put({json:input});await checked(response);return response.json();},

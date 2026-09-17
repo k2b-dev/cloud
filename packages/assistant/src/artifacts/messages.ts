@@ -2,12 +2,16 @@ import { i18n } from "@k2b/stdlib";
 export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
   en: {
     PUBLIC_READ_ONLY: "Public access only allows running the published app. Manage cannot be public.",
-    openApp: "Open app", copyAppLink: "Copy app link",
+    openApp: "Open fullscreen", copyAppLink: "Copy app link",
     publicAccessTitle: "Public access is restricted",
     publicAccessHelp: "Visitors can run the published app without signing in. Public access does not include the database, server files or KV, secrets, server HTTP/PDF services or protected Cloud actions. Apps that need these features may not work fully. Published code and embedded data are public. Manage access is never public.",
     publicServerUnavailable: "This feature needs an explicit app permission. Public access cannot use server data.",
     runnerUnavailable: "This app is no longer available. Reload to check access.",
     runnerAccessChanged: "App access changed. Restart the app to continue with the current permissions.",
+    draftPreviewHelp: "Only app managers can use this draft. Publish it to enable fullscreen and use by people with app access.",
+    publishedPreviewHelp: "This version is released. Draft changes only take effect when you publish again.",
+    publishAccessTitle: "Access stays unchanged",
+    publishAccessHelp: "Publishing does not make the app public.",
 
     analysisSnapshot:"Snapshot", analysisLive:"Loaded from source", analysisPartial:"Partial data", analysisFixture:"Example data", analysisLoading:"Loading; previous data remains visible", analysisRefresh:"Refresh", analysisCompare:"Compare with this data step", analysisClearComparison:"Clear comparison",
     HTTP_DENIED:"This HTTP request is not authorized.", HTTP_CONFLICT:"The secret or request changed. Refresh before continuing.", HTTP_LIMIT:"HTTP or secret storage exceeds its budget.", HTTP_UNKNOWN:"The HTTP request may have been sent. Inspect the external service before deliberately retrying; nothing was replayed.", HTTP_SECRET:"The secret is missing or does not allow this HTTPS origin, header and prefix.", HTTP_FAILED:"The external HTTP request failed.",
@@ -30,7 +34,7 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     DB_NOT_CONNECTED:"Call database.connect() before using the database.",
     DB_SERVER_IN_USE:"This server still owns app databases or pending cleanup. It cannot be replaced or cleared yet.",
 
-    projects:"Projects", projectScriptsHelp:"Project members can read and run published scripts in Project chats. This does not add them to their Studio or grant editing rights.", add:"Add",
+    projects:"Projects", projectAccessTitle:"Access through projects", inaccessibleProject:"Project without access to its details", projectScriptsHelp:"Members of these projects can use this published Studio App and its shared app data. Editing permissions stay unchanged.", add:"Add",
     administration:"Studio administration", storageHelp:"Counts cover shared server storage. Browser-local files and KV cannot be counted or removed remotely.",
     testConnection:"Test connection", connectionReady:"Connection successful", clearSettings:"Remove connection", database:"Database", settings:"Database settings", serverUrl:"rsql server URL", token:"API token", tokenHint:"Leave blank to keep the stored token.",
     remove:"Delete", removeConfirm:"Permanently delete this app, its publications and shared data?", search:"Search apps", kind:"Type", present:"Present", absent:"None",
@@ -67,12 +71,16 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
   },
   de: {
     PUBLIC_READ_ONLY: "Öffentlicher Zugriff erlaubt nur das Ausführen der veröffentlichten App. Verwalten kann nicht öffentlich sein.",
-    openApp: "App öffnen", copyAppLink: "App-Link kopieren",
+    openApp: "Vollbild öffnen", copyAppLink: "App-Link kopieren",
     publicAccessTitle: "Öffentlicher Zugriff ist eingeschränkt",
     publicAccessHelp: "Besucher können die veröffentlichte App ohne Anmeldung ausführen. Öffentlicher Zugriff umfasst keine Datenbank, Server-Dateien oder KV, Zugangsdaten, HTTP-/PDF-Serverdienste oder geschützten Cloud-Aktionen. Apps, die diese Funktionen benötigen, sind möglicherweise nur eingeschränkt nutzbar. Veröffentlichter Code und darin enthaltene Daten sind öffentlich. Verwalten ist niemals öffentlich möglich.",
     publicServerUnavailable: "Diese Funktion benötigt eine ausdrückliche App-Berechtigung. Öffentlicher Zugriff erlaubt keine Serverdaten.",
     runnerUnavailable: "Diese App ist nicht mehr verfügbar. Lade die Seite neu, um den Zugriff zu prüfen.",
     runnerAccessChanged: "Der App-Zugriff hat sich geändert. Starte die App neu, um sie mit den aktuellen Berechtigungen fortzusetzen.",
+    draftPreviewHelp: "Nur App-Admins können diesen Entwurf nutzen. Veröffentliche ihn für Vollbild und Personen mit App-Zugriff.",
+    publishedPreviewHelp: "Dieser Stand ist freigegeben. Änderungen am Entwurf werden erst mit der nächsten Veröffentlichung übernommen.",
+    publishAccessTitle: "Freigaben bleiben unverändert",
+    publishAccessHelp: "Veröffentlichen macht die App nicht öffentlich.",
 
     analysisSnapshot:"Datenstand", analysisLive:"Aus Quelle geladen", analysisPartial:"Unvollständige Daten", analysisFixture:"Beispieldaten", analysisLoading:"Wird geladen; bisherige Daten bleiben sichtbar", analysisRefresh:"Aktualisieren", analysisCompare:"Mit diesem Datenstand vergleichen", analysisClearComparison:"Vergleich entfernen",
     HTTP_DENIED:"Dieser HTTP-Aufruf ist nicht freigegeben.", HTTP_CONFLICT:"Das Secret oder der Request wurde geändert. Bitte zuerst aktualisieren.", HTTP_LIMIT:"Das Limit für HTTP oder Secrets wurde erreicht.", HTTP_UNKNOWN:"Der HTTP-Aufruf wurde möglicherweise gesendet. Prüfe den externen Dienst vor einem bewussten neuen Versuch; es wurde nichts wiederholt.", HTTP_SECRET:"Das Secret fehlt oder erlaubt dieses HTTPS-Ziel, diesen Header und dieses Präfix nicht.", HTTP_FAILED:"Der externe HTTP-Aufruf ist fehlgeschlagen.",
@@ -95,7 +103,7 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     DB_NOT_CONNECTED:"Rufe vor dem Datenbankzugriff database.connect() auf.",
     DB_SERVER_IN_USE:"Dieser Server enthält noch App-Datenbanken oder ausstehende Bereinigungen und kann noch nicht ersetzt oder geleert werden.",
 
-    projects:"Projekte", projectScriptsHelp:"Projektmitglieder können veröffentlichte Skripte in Projekt-Chats lesen und ausführen. Sie erhalten dadurch weder einen Studio-Eintrag noch Bearbeitungsrechte.", add:"Hinzufügen",
+    projects:"Projekte", projectAccessTitle:"Zugriff über Projekte", inaccessibleProject:"Projekt ohne Zugriff auf Details", projectScriptsHelp:"Mitglieder dieser Projekte können die veröffentlichte Studio App und ihre geteilten App-Daten nutzen. Bearbeitungsrechte bleiben unverändert.", add:"Hinzufügen",
     administration:"Studio verwalten", storageHelp:"Die Zahlen zeigen den gemeinsamen Serverspeicher. Lokale Browser-Dateien und KV lassen sich nicht zentral zählen oder löschen.",
     testConnection:"Verbindung prüfen", connectionReady:"Verbindung erfolgreich", clearSettings:"Verbindung entfernen", database:"Datenbank", settings:"Datenbank-Einstellungen", serverUrl:"rsql-Serveradresse", token:"API-Token", tokenHint:"Leer lassen, um das gespeicherte Token beizubehalten.",
     remove:"Löschen", removeConfirm:"Diese App mit allen Veröffentlichungen und gemeinsamen Daten endgültig löschen?", search:"Apps suchen", kind:"Typ", present:"Vorhanden", absent:"Keine",

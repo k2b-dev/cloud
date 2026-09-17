@@ -1,3 +1,5 @@
+import { AssistantProjectSkills } from "./AssistantProjectSkills";
+import { AssistantProjectApps } from "./AssistantProjectApps";
 import { Link, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
 import { query as solidQuery } from "@k2b/stdlib/solid";
 import {
@@ -510,6 +512,8 @@ export default function AssistantProjectView(props: Props) {
             >
               {(value) => (
                 <>
+                  <AssistantProjectApps project={props.project} initialPage={value().apps} />
+                  <AssistantProjectSkills project={props.project} initialPage={value().skills} />
                   <AssistantContextSection
                     title={text("Project knowledge")}
                     action={

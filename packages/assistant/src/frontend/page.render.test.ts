@@ -133,6 +133,7 @@ test("authorized project omitted by sidebar cap remains in the rendered workspac
       knowledge: [],
       files: [],
       references: [],
+      skills: { items: [], page: 1, hasNext: false }, apps: { items: [], page: 1, hasNext: false },
     }),
   );
   const response = await request();

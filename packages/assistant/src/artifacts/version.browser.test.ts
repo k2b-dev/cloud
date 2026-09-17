@@ -16,7 +16,8 @@ test("validation text renders and saved versions require explicit restart", asyn
   let revision = 1;
   let unavailable = false;
   const compiledRequests: number[] = [];
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+  const publishRequests: number[] = [];
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/bundle.js") return new Response(code, { headers: { "content-type": "text/javascript" } });
     if (url.pathname.endsWith("/compiled")) {
@@ -24,7 +25,12 @@ test("validation text renders and saved versions require explicit restart", asyn
       return Response.json({ ...compiled, revision });
     }
     if (unavailable && url.pathname.startsWith("/api/")) return new Response("Unavailable", {status: 502});
-    if (url.pathname.startsWith("/api/")) return Response.json({ id: "test", title: "Test", revision, sourceRevision: revision });
+    if (url.pathname.endsWith("/versions")) return Response.json({ items: [], page: 1, hasNext: false });
+    if (url.pathname.endsWith("/publish")) {
+      publishRequests.push((await request.json()).expectedRevision);
+      return Response.json({ message: "Restart before publishing." }, { status: 409 });
+    }
+    if (url.pathname.startsWith("/api/")) return Response.json({ id: "test", title: "Test", revision, sourceRevision: revision, permission: "admin", publishedRevision: null });
     return new Response('<!doctype html><meta charset="utf-8"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>', { headers: { "content-type": "text/html" } });
   } });
   const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -47,6 +53,12 @@ test("validation text renders and saved versions require explicit restart", asyn
     await page.getByText("A newer revision is available. Restart to use it.").waitFor();
     expect(await input.inputValue()).toBe("80");
     expect(compiledRequests).toEqual([1]);
+    await page.getByRole("button", { name: "Draft", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Publish", exact: true }).click();
+    await page.getByText("Restart before publishing.", { exact: true }).waitFor();
+    expect(publishRequests).toEqual([1]);
+    expect(await input.inputValue()).toBe("80");
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Restart", exact: true }).first().click();
     await page.getByText("Ready", { exact: true }).waitFor();
     expect(await input.inputValue()).toBe("");

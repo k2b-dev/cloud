@@ -24,7 +24,7 @@ Personal applications can be published without granting anybody access.
 There is no preview mode: users start applications. Use-level users only receive
 the latest publication. Admins can run older published versions from Studio management.
 The standalone `/app/assistant/apps/ID/run` URL always uses the latest publication.
-App managers reach it with **Open app**; users without Manage open it by default.
+App managers reach it with **Open fullscreen**; users without Manage open it by default.
 
 `code_versions` lists numbered publications with notes, authors, and dates;
 `code_history` is the separate automatic source-save history. For rollback, read
@@ -36,9 +36,12 @@ it never deletes history or restores user data. A concurrent write produces a
 conflict: read the new state and reconcile instead of blindly retrying. Coordinate
 overlapping edits; do not build branching machinery for ordinary single-user apps.
 
-Sharing and publishing are independent. Project-linked Apps are available only
-in that project’s chats to its current members. That context does not grant
-editing, forking, or visibility in the global Studio list.
+Sharing and publishing are independent. Linking an App to a Project gives its
+current members Use on the publication in Studio, the standalone runner, tools
+and CLI, including shared app data and copying published source. It never grants
+editing or management rights. Links persist if their creator later loses access.
+Removing a link or Project membership removes only inherited access; direct
+grants remain. Linking or unlinking requires Manage on both resources.
 
 For requested permission changes, read [Access](access.md). Publishing never
 grants access automatically.

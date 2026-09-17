@@ -71,7 +71,7 @@ Treat generated facts, calculations, external actions, and changes to important 
 ## Open or share a Studio app
 
 App users open the standalone view without the Assistant sidebar. App managers
-can select **Open app** or **Copy app link** from the action menu. The link always
+can select **Open fullscreen** in the header or **Copy app link** from the action menu. The link always
 runs the latest published version. Private apps still require sign-in and access.
 
 In **Manage access**, Public allows execution only, never administration. The
@@ -81,3 +81,14 @@ downloads work. Server-dependent apps may need to remain private. Published code
 and embedded data become public. Remove Public or unpublish to stop new loads.
 Cloud administrators can add the app link to the navigation as a URL shortcut;
 this does not grant access.
+
+App managers see a **Draft** or **Published** badge beside the runtime controls.
+Select the badge to learn what it means and publish a saved draft.
+**Open fullscreen** also offers publishing when needed. Publishing does not
+change access grants or automatically make an app public.
+
+In a Project, use **+** beside **Studio Apps** or **Skills**. Search the list and select a resource you manage. The notice explains what is shared. You must manage both resources to link or unlink them.
+
+Project members can use published linked apps and their shared app data in Studio and fullscreen. They can read and use linked Skills. Editing rights remain separate, and app drafts stay private to app managers. Permission dialogs show which Projects grant access.
+
+Links remain if their creator later loses access or management rights. Removing a link or leaving a Project removes only inherited access; direct grants remain. Linked Skills are loaded when needed and still respect **Enabled for me**.

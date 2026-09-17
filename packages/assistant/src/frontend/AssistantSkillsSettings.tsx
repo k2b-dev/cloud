@@ -62,15 +62,23 @@ const referencePath = (name: string): string => `references/${normalizedReferenc
 
 const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
   const text = assistantBrowserText;
-  const entries = await assistantApi.listSkillAccess(skill.id).catch(async (error) => {
+  const access = await Promise.all([assistantApi.listSkillAccess(skill.id), assistantApi.linkedSkillProjects(skill.id)]).catch(async (error) => {
     await prompts.error(error instanceof Error ? error.message : text("Failed to load skill access"));
     return null;
   });
-  if (!entries) return;
+  if (!access) return;
+  const [entries, projects] = access;
   await prompts.dialog<void>(
     () => (
       <div class="flex min-h-0 flex-col gap-3">
         <p class="text-sm text-secondary">{text("Share this skill through Cloud permissions. At least one administrator must remain.")}</p>
+        <Show when={projects.length}>
+          <NoticeCard tone="info" title={text("Access through projects")} detail={text("Members of these projects can read and use this Skill. Editing permissions stay unchanged.")}>
+            <ul class="flex flex-col gap-1"><For each={projects}>{project => <li class="flex items-center gap-2 text-sm">
+              <i class="ti ti-folders" aria-hidden="true" />{project.name ?? text("Project without access to its details")}
+            </li>}</For></ul>
+          </NoticeCard>
+        </Show>
         <PermissionEditor
           initialEntries={entries}
           canEdit

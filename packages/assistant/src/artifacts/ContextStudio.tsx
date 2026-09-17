@@ -1,13 +1,12 @@
 import { DataTable, Placeholder, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
-import type { AiProject } from "@k2b/cloud/ai";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { createArtifactActions } from "./artifact-actions";
 import { StudioCard } from "./StudioCard";
 
-export function ContextStudio(props: { snapshot: AssistantChatContextSnapshot; projects: AiProject[]; search: string; refresh: () => Promise<unknown>; onStart?: (id: string, title: string, start?: boolean) => void }) {
+export function ContextStudio(props: { snapshot: AssistantChatContextSnapshot; search: string; refresh: () => Promise<unknown>; onStart?: (id: string, title: string, start?: boolean) => void }) {
   const locale = useLocale(), de = () => locale().startsWith("de");
-  const actions = createArtifactActions({ userId: props.snapshot.viewerUserId, projects: props.projects, refresh: props.refresh });
+  const actions = createArtifactActions({ userId: props.snapshot.viewerUserId, refresh: props.refresh });
   const matches = (value: string) => value.toLocaleLowerCase().includes(props.search.toLocaleLowerCase());
   const status = (value: string) => ({ ready: de() ? "Erfolgreich" : "Succeeded", error: de() ? "Fehlgeschlagen" : "Failed", lost: de() ? "Verbindung verloren" : "Host lost", stopped: de() ? "Gestoppt" : "Stopped", unknown: de() ? "Unbekannt" : "Unknown" }[value] ?? (de() ? "In Arbeit" : "In progress"));
   const runs = () => props.snapshot.runs.filter(run => matches(status(run.status)) || matches(run.createdAt));
