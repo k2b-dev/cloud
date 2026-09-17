@@ -1,7 +1,9 @@
 import { sql } from "bun";
+import { type BackgroundFailureContext, backgroundFailureMessage } from "../custom-apps/background-failure";
 import type { BackgroundDocumentState } from "../custom-apps/background-state";
 import type { CustomAppCapabilities, CustomAppDefinition, CustomAppPage } from "../custom-apps/contracts";
 import { customAppDocumentDownloadUrl } from "../custom-apps/routing";
+import type { GridsWorkflowRun } from "../workflows/contracts";
 import { resolvePublicIds } from "./public-resources";
 
 /** Caller has admitted the published page/records. Return presentation only,
@@ -13,6 +15,7 @@ export async function loadBackgroundDocumentStates(input: {
   page: CustomAppPage;
   capabilities: CustomAppCapabilities;
   records: Array<{ id: string; finalizedAt?: string | null }>;
+  failureContext?: BackgroundFailureContext;
 }): Promise<Record<string, BackgroundDocumentState>> {
   if (!input.records.length) return {};
   const blocks = input.page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
@@ -50,9 +53,23 @@ export async function loadBackgroundDocumentStates(input: {
         AND template_id = ANY(${sql.array(templateIds, "UUID")}::uuid[])
       ORDER BY record_id, created_at DESC, id DESC
     `,
-    sql<Array<{ record_id: string; state: string }>>`
+    sql<
+      Array<{
+        record_id: string;
+        state: GridsWorkflowRun["status"];
+        user_id: string | null;
+        service_account_id: string | null;
+        actor_service_account_id: string | null;
+        error_code: string | null;
+        error_message: string | null;
+      }>
+    >`
       SELECT DISTINCT ON (r.authorization_snapshot->'authorization'->>'recordId')
-        r.authorization_snapshot->'authorization'->>'recordId' AS record_id, r.state
+        r.authorization_snapshot->'authorization'->>'recordId' AS record_id, r.state,
+        r.authorization_snapshot->'principal'->>'userId' AS user_id,
+        r.authorization_snapshot->'principal'->>'serviceAccountId' AS service_account_id,
+        r.authorization_snapshot->'principal'->>'actorServiceAccountId' AS actor_service_account_id,
+        r.error->>'code' AS error_code, r.error->>'message' AS error_message
       FROM workflows.run r JOIN grids.workflow_run_profile p ON p.run_id = r.id
       WHERE p.base_id = ${input.baseId}::uuid AND r.mode = 'execute'
         AND p.launcher_id = ANY(${sql.array(
@@ -83,6 +100,7 @@ export async function loadBackgroundDocumentStates(input: {
           record.id,
           {
             status: "ready",
+            finalized: Boolean(record.finalizedAt),
             document: { id: doc.short_id, number: doc.document_number, blockId: capability.blockId },
           } satisfies BackgroundDocumentState,
         ];
@@ -90,6 +108,8 @@ export async function loadBackgroundDocumentStates(input: {
       return [
         record.id,
         {
+          finalized: Boolean(record.finalizedAt),
+          ...(run ? { message: backgroundFailureMessage(run, input.failureContext) } : {}),
           status:
             run && ["queued", "running", "waiting"].includes(run.state)
               ? "running"

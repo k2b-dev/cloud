@@ -4,6 +4,7 @@ import { jsonHandler } from "../../../field-types/tier3";
 import type { FieldValidationContext, ValueFieldType } from "../../../field-types/types";
 import { fieldValidationMessages } from "../../../field-types/validation-messages";
 import type { FrontendField, UserInputEntry } from "./form-fields";
+import { normalizeNumberInput } from "./number-input";
 
 const handlers: Record<string, ValueFieldType> = {
   ...objectListScalarHandlers,
@@ -26,6 +27,7 @@ export function formFieldError(
   // access checks belong to the server, whose relation validator expects UUIDs.
   const handler = handlers[field.type];
   if (!handler) return;
-  const result = handler.validate(field.type === "boolean" && value === undefined ? false : value, field.config, required, context);
+  const input = field.type === "number" && typeof value === "string" ? normalizeNumberInput(value, context.locale ?? "en") : value;
+  const result = handler.validate(field.type === "boolean" && input === undefined ? false : input, field.config, required, context);
   return result.ok ? undefined : result.error;
 }

@@ -183,3 +183,16 @@ describe("Grids App routing", () => {
     );
   });
 });
+
+test("record relation navigation needs the server-resolved relation, never substitutes the source record", () => {
+  const action = {
+    id: "invoice",
+    label: "Invoice",
+    kind: "navigate" as const,
+    pageId: "bill",
+    history: "push" as const,
+    params: { bill_id: { source: "RECORD" as const, path: "relation" as const, fieldId: "FIELD1" } },
+  };
+  expect(customAppActionHref("APP001", action, {}, "PAY001")).toBeNull();
+  expect(customAppActionHref("APP001", action, {}, "PAY001", { bill_id: "BILL01" })).toBe("/apps/APP001/bill?bill_id=BILL01");
+});

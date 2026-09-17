@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ObjectListValue } from "./ObjectListValue";
@@ -32,7 +33,30 @@ describe("ObjectListValue", () => {
     expect(render([])).toContain("0 rows");
     expect(render([null])).toContain("This list cannot be displayed");
   });
-  test("keeps exact decimal strings intact in detail views", () => {
-    expect(render([{ Amount: "9007199254740993.25", Total1: "18014398509481986.50" }])).toContain("18014398509481986.50");
+  test("keeps large decimal values exact in detail views", () => {
+    expect(render([{ Amount: "9007199254740993.25", Total1: "18014398509481986.50" }])).toContain("18014398509481986.5");
+  });
+  test("removes numeric storage padding, localizes decimals and retains units without altering snapshots", () => {
+    const value = [{ Amount: "1.0000", Total1: "10.2500" }];
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(ObjectListValue, {
+            value,
+            detail: true,
+            config: {
+              fields: [
+                { id: "Amount", name: "Quantity", type: "number", config: { decimalPlaces: 4 } },
+                { id: "Total1", name: "Price", type: "number", config: { decimalPlaces: 4, unit: "EUR" } },
+              ],
+            },
+          });
+        },
+      }),
+    );
+    expect(html).toContain(">1</dd>");
+    expect(html).toContain("10,25 EUR");
+    expect(value).toEqual([{ Amount: "1.0000", Total1: "10.2500" }]);
   });
 });

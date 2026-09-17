@@ -189,3 +189,255 @@ domTest("inline required fields are validated before saving their parent", async
     dom.cleanup();
   }
 });
+
+domTest("a collapsed section keeps inputs mounted, preserves values and opens for invalid input", async () => {
+  const dom = createDomTestHarness();
+  const original = globalThis.fetch;
+  const bodies: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      return Response.json({});
+    },
+    { preconnect: original.preconnect },
+  );
+  const { default: Form } = await import("./PublicFormSubmit.island");
+  const dispose = render(
+    () =>
+      createComponent(Form, {
+        submitUrl: "/save",
+        form: {
+          id: "FORM01",
+          name: "Invoice",
+          config: {
+            fields: [
+              { kind: "user_input", fieldId: "FIELD1", required: true, section: { title: "Optional settings", collapsible: true } },
+              { kind: "user_input", fieldId: "FIELD2" },
+            ],
+          },
+        },
+        fields: [field("text"), { ...field("text"), id: "FIELD2", name: "Note" }],
+      }),
+    dom.root,
+  );
+  try {
+    const input = dom.root.querySelector<HTMLInputElement>('[name="FIELD1"]')!;
+    const note = dom.root.querySelector<HTMLInputElement>('[name="FIELD2"]')!;
+    expect(input).not.toBeNull();
+    expect(input.closest("[hidden]")).not.toBeNull();
+    const submit = () => dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    submit();
+    await Bun.sleep(5);
+    expect(bodies).toHaveLength(0);
+    expect(input.closest("[hidden]")).toBeNull();
+    expect(dom.document.activeElement).toBe(input);
+    input.value = "Corrected";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    note.value = "Keep this note";
+    note.dispatchEvent(new Event("input", { bubbles: true }));
+    dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!.click();
+    expect(input.closest("[hidden]")).not.toBeNull();
+    expect(dom.root.querySelector('[name="FIELD1"]')).toBe(input);
+    submit();
+    await Bun.sleep(5);
+    expect(bodies).toHaveLength(1);
+    expect(JSON.parse(bodies[0]!).data).toEqual({ FIELD1: "Corrected", FIELD2: "Keep this note" });
+  } finally {
+    dispose();
+    globalThis.fetch = original;
+    dom.cleanup();
+  }
+});
+
+domTest("an external action lock disables the form and prevents programmatic submission without losing its values", async () => {
+  const dom = createDomTestHarness();
+  const original = globalThis.fetch;
+  const bodies: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      return Response.json({});
+    },
+    { preconnect: original.preconnect },
+  );
+  const { default: Form } = await import("./PublicFormSubmit.island");
+  const [disabled, setDisabled] = createSignal(true);
+  const dispose = render(
+    () =>
+      createComponent(Form, {
+        submitUrl: "/save",
+        get disabled() {
+          return disabled();
+        },
+        form: {
+          id: "FORM01",
+          name: "Invoice",
+          config: { fields: [{ kind: "user_input", fieldId: "FIELD1", defaultValue: "Saved input" }] },
+        },
+        fields: [field("text")],
+      }),
+    dom.root,
+  );
+  try {
+    const submit = () => dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(dom.root.querySelector("fieldset")!.disabled).toBe(true);
+    expect(dom.root.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+    submit();
+    await Bun.sleep(5);
+    expect(bodies).toHaveLength(0);
+    setDisabled(false);
+    expect(dom.root.querySelector("fieldset")!.disabled).toBe(false);
+    expect(dom.root.querySelector<HTMLInputElement>('input[name="FIELD1"]')!.value).toBe("Saved input");
+    submit();
+    await Bun.sleep(5);
+    expect(JSON.parse(bodies[0]!).data.FIELD1).toBe("Saved input");
+  } finally {
+    dispose();
+    globalThis.fetch = original;
+    dom.cleanup();
+  }
+});
+
+for (const selected of [[], ["existing"], ["tmp_new"]]) {
+  domTest(`linked-record notice is contextual for ${JSON.stringify(selected)}`, async () => {
+    const dom = createDomTestHarness();
+    const { default: Form } = await import("./PublicFormSubmit.island");
+    const dispose = render(
+      () =>
+        createComponent(Form, {
+          submitUrl: "/save",
+          form: {
+            id: "FORM01",
+            name: "Invoice",
+            config: { fields: [{ kind: "user_input", fieldId: "FIELD1", inlineCreate: { enabled: true, fields: [] } }] },
+          },
+          fields: [field("relation", { targetTableId: "TABLE2", cardinality: "single" })],
+          relationLabels: { existing: "Existing partner" },
+          inlineTargetFields: { TABLE2: [] },
+          initialRecord: { version: 1, values: { FIELD1: selected }, inlineCreates: { FIELD1: [{ tempId: "tmp_new", data: {} }] } },
+        }),
+      dom.root,
+    );
+    try {
+      expect(dom.root.textContent?.includes("New linked records will be saved together with this form.")).toBe(
+        selected.includes("tmp_new"),
+      );
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+}
+
+domTest("edit forms show populated optional sections while keeping empty sections closed without reopening on input", async () => {
+  const dom = createDomTestHarness();
+  const { default: Form } = await import("./PublicFormSubmit.island");
+  const dispose = render(
+    () =>
+      createComponent(Form, {
+        submitUrl: "/save",
+        form: {
+          id: "FORM01",
+          name: "Invoice",
+          config: {
+            fields: [
+              { kind: "user_input", fieldId: "FIELD1", section: { title: "Notes", collapsible: true } },
+              { kind: "user_input", fieldId: "FIELD2", section: { title: "Extra", collapsible: true } },
+            ],
+          },
+        },
+        fields: [field("text"), { ...field("text"), id: "FIELD2" }],
+        initialRecord: { version: 1, values: { FIELD1: "Use our project reference", FIELD2: "" }, inlineCreates: {} },
+      }),
+    dom.root,
+  );
+  try {
+    const note = dom.root.querySelector<HTMLInputElement>('input[name="FIELD1"]')!;
+    const extra = dom.root.querySelector<HTMLInputElement>('input[name="FIELD2"]')!;
+    expect(note.closest("[hidden]")).toBeNull();
+    expect(extra.closest("[hidden]")).not.toBeNull();
+    note.value = "Changed reference";
+    note.dispatchEvent(new Event("input", { bubbles: true }));
+    dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!.click();
+    expect(note.closest("[hidden]")).not.toBeNull();
+    extra.value = "Changed elsewhere";
+    extra.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(note.closest("[hidden]")).not.toBeNull();
+    expect(extra.closest("[hidden]")).not.toBeNull();
+    expect(note.value).toBe("Changed reference");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+domTest("German decimal entry submits exact canonical text for fields and object-list cells, including native form capture", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const originalFormData = globalThis.FormData;
+  Object.defineProperty(globalThis, "FormData", { value: dom.window.FormData, writable: true, configurable: true });
+  const bodies: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      return Response.json({});
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { LocaleProvider } = await import("@k2b/ui");
+  const { default: Form } = await import("./PublicFormSubmit");
+  const dispose = render(
+    () =>
+      createComponent(LocaleProvider, {
+        locale: "de-DE",
+        get children() {
+          return createComponent(Form, {
+            submitUrl: "/save",
+            form: {
+              id: "FORM01",
+              name: "Payment",
+              config: {
+                fields: [
+                  { kind: "user_input", fieldId: "FIELD1" },
+                  { kind: "user_input", fieldId: "FIELD2" },
+                ],
+              },
+            },
+            fields: [
+              field("number", { decimalPlaces: 4 }),
+              {
+                ...field("object_list", {
+                  fields: [{ id: "Price1", name: "Price", type: "number", config: { decimalPlaces: 4 } }],
+                }),
+                id: "FIELD2",
+              },
+            ],
+            initialRecord: { version: 1, values: { FIELD1: "10.5000", FIELD2: [{ Price1: "1.0000" }] }, inlineCreates: {} },
+          });
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const amount = dom.root.querySelector<HTMLInputElement>('input[name="FIELD1"]')!;
+    const price = dom.root.querySelector<HTMLInputElement>('input[name="FIELD2-0-Price1"]')!;
+    expect(amount.value).toBe("10,5");
+    price.focus();
+    price.value = "9007199254740993,1234";
+    price.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(price.value).toBe("9007199254740993,1234");
+    amount.focus();
+    amount.value = "22,60";
+    amount.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(amount.value).toBe("22,60");
+    dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Bun.sleep(5);
+    expect(bodies).toHaveLength(1);
+    expect(JSON.parse(bodies[0]!).data).toEqual({ FIELD1: "22.60", FIELD2: [{ Price1: "9007199254740993.1234" }] });
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    globalThis.FormData = originalFormData;
+    dom.cleanup();
+  }
+});

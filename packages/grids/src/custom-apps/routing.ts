@@ -55,6 +55,13 @@ export const customAppPageHref = (shortId: string, pageId: string, params: Recor
   return `${path}${querySuffix(params)}`;
 };
 
+/** A static sidebar target supplies only the page's existing record parameter. */
+export const customAppNavigationParams = (page: CustomAppPage): Record<string, string> =>
+  page.record && page.navigation.recordId ? { [page.record.id.path]: page.navigation.recordId } : {};
+
+export const customAppNavigationHref = (shortId: string, page: CustomAppPage): string =>
+  customAppPageHref(shortId, page.id, customAppNavigationParams(page));
+
 export const customAppFormSubmitUrl = (shortId: string, pageId: string, blockId: string, params: Record<string, string>): string =>
   customAppRuntimeUrl(shortId, pageId, blockId, ["submit"], params);
 
@@ -135,7 +142,11 @@ export const customAppDocumentDownloadUrl = (
 };
 
 export const customAppDocumentPreviewUrl = (
-  shortId: string, pageId: string, blockId: string, templateId: string, params: Record<string, string>,
+  shortId: string,
+  pageId: string,
+  blockId: string,
+  templateId: string,
+  params: Record<string, string>,
 ): string => customAppRuntimeUrl(shortId, pageId, blockId, ["document-previews", templateId], params);
 
 export const customAppActionHref = (
@@ -143,10 +154,12 @@ export const customAppActionHref = (
   action: Extract<CustomAppAction, { kind: "navigate" }>,
   pageParams: Record<string, string>,
   recordId?: string,
+  relationParams: Readonly<Record<string, string>> = {},
 ): string | null => {
   const params: Record<string, string> = {};
   for (const [parameterId, value] of Object.entries(action.params)) {
-    const resolved = value.source === "PARAMS" ? pageParams[value.path] : recordId;
+    const resolved =
+      value.source === "PARAMS" ? pageParams[value.path] : value.path === "relation" ? relationParams[parameterId] : recordId;
     if (!resolved) return null;
     params[parameterId] = resolved;
   }

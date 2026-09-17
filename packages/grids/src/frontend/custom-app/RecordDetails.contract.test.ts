@@ -8,14 +8,14 @@ describe("App record details", () => {
     expect(source).toContain("PanelHeader");
     expect(source).toContain("<FieldValue");
     expect(source).toContain('mode="detail"');
-    expect(source).not.toContain("formatFieldValueText");
+    expect(source).toContain("const headingValue");
     expect(source).not.toContain('class="divide-y rounded-xl border"');
     expect(source).not.toContain('class="rounded-xl border p-4"');
     expect(source).not.toContain("divide-y");
     expect(source).toContain('layout="rows"');
-    expect(source).toContain('actionVisibility="progressive"');
-    expect(source).toContain("<IconButton");
-    expect(source).toContain('fallback={<Placeholder align="left"');
+    expect(source).toContain('actionVisibility="always"');
+    expect(source).toContain("messages().downloadPdf");
+    expect(source).toContain('<Placeholder align="left"');
     expect(source).toContain("description={messages().noDocuments}");
     expect(source).not.toContain('<ul class="flex flex-col gap-1">');
     expect(source).toContain("fetch(document.downloadUrl");

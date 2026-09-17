@@ -10,7 +10,7 @@ import { chartDataFromPreview, metricCellsFromPreview } from "../../../service/c
 import CustomAppChart from "../../custom-app/Chart";
 import RecordsTable from "../../custom-app/RecordsTable.island";
 import { formatCustomAppValue } from "../../custom-app/value-format";
-import FormSubmit from "../forms/PublicFormSubmit.island";
+import FormSubmit from "../forms/PublicFormSubmit";
 import { errorMessage } from "../utils/api-helpers";
 import { useCustomAppBuilderMessages } from "./builder-messages";
 import type { CustomAppCatalog } from "./custom-app-catalog";
@@ -158,7 +158,7 @@ function SourcePreview(props: {
             />
           ) : props.block.type === "metrics" ? (
             <StatGrid columns={3}>
-              <For each={metricCellsFromPreview(resolved, sourceFields())}>
+              <For each={metricCellsFromPreview(resolved, sourceFields(), props.block.valueFormat)}>
                 {(cell) => {
                   const value = formatCustomAppValue(cell.value, cell.valueFormat, props.dateConfig);
                   return <StatCell label={cell.label} value={value} title={value} />;

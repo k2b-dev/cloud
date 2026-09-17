@@ -329,14 +329,19 @@ domTest("form date defaults use one supplied instant and retain explicitly autho
       { kind: "user_input" as const, fieldId: "FIELD1", defaultValue: { kind: "now" } },
       { kind: "user_input" as const, fieldId: "FIELD2", defaultValue: "2026-01-01" },
     ];
-    expect(buildInitialValues(entries, fields, {
-      dateConfig: { timeZone: "Europe/Berlin" }, now: new Date("2026-09-14T23:30:00Z"),
-    })).toEqual({ FIELD1: "2026-09-15", FIELD2: "2026-01-01" });
+    expect(
+      buildInitialValues(entries, fields, {
+        dateConfig: { timeZone: "Europe/Berlin" },
+        now: new Date("2026-09-14T23:30:00Z"),
+      }),
+    ).toEqual({ FIELD1: "2026-09-15", FIELD2: "2026-01-01" });
     expect(entries[0]?.defaultValue).toEqual({ kind: "now" });
     // SSR clients receive a concrete server date; without an explicit instant
     // they must not re-evaluate the sentinel during hydration.
     expect(buildInitialValues(entries, fields)).toEqual({ FIELD2: "2026-01-01" });
-  } finally { dom.cleanup(); }
+  } finally {
+    dom.cleanup();
+  }
 });
 
 domTest("form cross-field errors appear once after submit and disappear when corrected", async () => {
@@ -392,12 +397,24 @@ domTest("an untouched form keeps its date across midnight and closes without dis
   const { dialogCore } = await import("@k2b/ui");
   try {
     setSystemTime(new Date("2026-09-14T21:30:00Z"));
-    const result = openFormModal({
-      id: "FORM01", tableId: "TABLE1", name: "Date form", publicToken: null, isActive: true,
-      ownerUserId: null, position: 0, isDefault: false, deletedAt: null,
-      createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
-      config: { fields: [{ kind: "user_input", fieldId: "FIELD1", defaultValue: { kind: "now" } }] },
-    }, [field("FIELD1", "date")], { dateConfig: { timeZone: "Europe/Berlin" } });
+    const result = openFormModal(
+      {
+        id: "FORM01",
+        tableId: "TABLE1",
+        name: "Date form",
+        publicToken: null,
+        isActive: true,
+        ownerUserId: null,
+        position: 0,
+        isDefault: false,
+        deletedAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        config: { fields: [{ kind: "user_input", fieldId: "FIELD1", defaultValue: { kind: "now" } }] },
+      },
+      [field("FIELD1", "date")],
+      { dateConfig: { timeZone: "Europe/Berlin" } },
+    );
     expect(dom.document.body.textContent).toContain("14 Sep 2026");
     setSystemTime(new Date("2026-09-14T23:30:00Z"));
     expect(dom.document.body.textContent).toContain("14 Sep 2026");
@@ -408,6 +425,40 @@ domTest("an untouched form keeps its date across midnight and closes without dis
     await result;
   } finally {
     setSystemTime();
+    while (dialogCore.isOpen()) dialogCore.close();
+    dom.cleanup();
+  }
+});
+
+domTest("native invalid events reveal a collapsed form section before browser focus", async () => {
+  const dom = createDomTestHarness();
+  const { openFormModal } = await import("./FormSubmitModal");
+  const { dialogCore } = await import("@k2b/ui");
+  try {
+    void openFormModal(
+      {
+        id: "FORM01",
+        tableId: "TABLE1",
+        name: "Date form",
+        publicToken: null,
+        isActive: true,
+        ownerUserId: null,
+        position: 0,
+        isDefault: false,
+        deletedAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        config: {
+          fields: [{ kind: "user_input", fieldId: "FIELD1", required: true, section: { title: "Additional", collapsible: true } }],
+        },
+      },
+      [field()],
+    );
+    const input = dom.document.querySelector<HTMLInputElement>('input[name="FIELD1"]')!;
+    expect(input.closest("[hidden]")).not.toBeNull();
+    input.dispatchEvent(new Event("invalid", { bubbles: false, cancelable: true }));
+    expect(input.closest("[hidden]")).toBeNull();
+  } finally {
     while (dialogCore.isOpen()) dialogCore.close();
     dom.cleanup();
   }

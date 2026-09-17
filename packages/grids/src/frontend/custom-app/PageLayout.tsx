@@ -2,7 +2,7 @@ import type { DndController } from "@k2b/stdlib/solid";
 import { AppWorkspace, PanelHeader } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { CustomAppBlock, CustomAppDefinition, CustomAppPage } from "../../custom-apps/contracts";
-import { customAppPageHref } from "../../custom-apps/routing";
+import { customAppNavigationHref } from "../../custom-apps/routing";
 import {
   type CustomAppBlockDropIntent,
   type CustomAppBlockDropSegment,
@@ -105,7 +105,7 @@ export function CustomAppPageLayout(props: {
         <AppWorkspace.SidebarItem
           active={page.id === props.page.id}
           icon={`ti ti-${page.navigation.icon ?? "file"}`}
-          href={props.editor ? undefined : customAppPageHref(props.appId, page.id)}
+          href={props.editor ? undefined : customAppNavigationHref(props.appId, page)}
           onClick={props.editor ? () => props.editor?.onSelectPage(page.id) : undefined}
         >
           <AppWorkspace.SidebarItemLabel>{page.title}</AppWorkspace.SidebarItemLabel>
@@ -202,6 +202,9 @@ export function CustomAppPageLayout(props: {
             data-dnd-dragging={props.editor?.dnd.isDragging() ? "true" : undefined}
           >
             <div class="mx-auto flex w-full max-w-[96rem] flex-col gap-10">
+              <Show when={!props.page.record}>
+                <PanelHeader title={props.page.title} as="h1" size="md" />
+              </Show>
               <For each={props.page.rows}>
                 {(row, rowIndex) => {
                   const multiColumnRow = row.columns.length > 1;

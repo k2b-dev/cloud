@@ -9,16 +9,31 @@ domTest("defaults seed each new entry without refilling existing or cleared valu
   const { TextInput } = await import("@k2b/ui");
   const { ObjectListInput } = await import("./ObjectListInput");
   const [value, setValue] = createSignal<unknown>([{ Count1: null }]);
-  const dispose = render(() => createComponent(ObjectListInput, {
-    name: "Items1", label: "Items",
-    config: { fields: [{ id: "Count1", name: "Count", type: "number", defaultValue: "1" }] },
-    get value() { return value(); }, onChange: setValue,
-    renderCell: (column, name, cell, onChange) => createComponent(TextInput, {
-      name, label: column.name, value: () => String(cell() ?? ""), onValueChange: onChange,
-    }),
-  }), dom.root);
+  const dispose = render(
+    () =>
+      createComponent(ObjectListInput, {
+        name: "Items1",
+        label: "Items",
+        config: { fields: [{ id: "Count1", name: "Count", type: "number", defaultValue: "1" }] },
+        get value() {
+          return value();
+        },
+        onChange: setValue,
+        renderCell: (column, name, cell, onChange) =>
+          createComponent(TextInput, {
+            name,
+            label: column.name,
+            value: () => String(cell() ?? ""),
+            onValueChange: onChange,
+          }),
+      }),
+    dom.root,
+  );
   try {
-    const add = () => Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Add entry"))!.click();
+    const add = () =>
+      Array.from(dom.root.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("Add entry"))!
+        .click();
     expect(value()).toEqual([{ Count1: null }]);
     add();
     expect(value()).toEqual([{ Count1: null }, { Count1: "1" }]);
@@ -27,25 +42,39 @@ domTest("defaults seed each new entry without refilling existing or cleared valu
     input.dispatchEvent(new Event("input", { bubbles: true }));
     add();
     expect(value()).toEqual([{ Count1: null }, { Count1: "" }, { Count1: "1" }]);
-  } finally { dispose(); dom.cleanup(); }
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
 });
 domTest("quiet empty state and explicit widths preserve mixed input/output order", async () => {
   const dom = createDomTestHarness();
   const { TextInput } = await import("@k2b/ui");
   const { ObjectListInput } = await import("./ObjectListInput");
   const [value, setValue] = createSignal<unknown>([]);
-  const dispose = render(() => createComponent(ObjectListInput, {
-    name: "Items1", label: "Measurements",
-    config: { fields: [
-      { id: "Count1", name: "Count", type: "number", width: "compact" },
-      { id: "Double", name: "Double", type: "number", width: "compact", formula: { expression: "Count1 * 2" } },
-      { id: "Notes1", name: "Notes", type: "text", width: "fullWidth" },
-      { id: "Label1", name: "Label", type: "text", width: "compact", formula: { expression: "CONCAT('Count: ', Count1)" } },
-      { id: "Hidden", name: "Helper", type: "number", detailsOnly: true, formula: { expression: "Count1 * 3" } },
-    ] },
-    get value() { return value(); }, onChange: setValue,
-    renderCell: (column, name, cell, onChange) => createComponent(TextInput, { name, label: column.name, value: () => String(cell() ?? ""), onValueChange: onChange }),
-  }), dom.root);
+  const dispose = render(
+    () =>
+      createComponent(ObjectListInput, {
+        name: "Items1",
+        label: "Measurements",
+        config: {
+          fields: [
+            { id: "Count1", name: "Count", type: "number", width: "compact" },
+            { id: "Double", name: "Double", type: "number", width: "compact", formula: { expression: "Count1 * 2" } },
+            { id: "Notes1", name: "Notes", type: "text", width: "fullWidth" },
+            { id: "Label1", name: "Label", type: "text", width: "compact", formula: { expression: "CONCAT('Count: ', Count1)" } },
+            { id: "Hidden", name: "Helper", type: "number", detailsOnly: true, formula: { expression: "Count1 * 3" } },
+          ],
+        },
+        get value() {
+          return value();
+        },
+        onChange: setValue,
+        renderCell: (column, name, cell, onChange) =>
+          createComponent(TextInput, { name, label: column.name, value: () => String(cell() ?? ""), onValueChange: onChange }),
+      }),
+    dom.root,
+  );
   try {
     expect(dom.root.textContent).toContain("No entries yet");
     expect(dom.root.querySelector("button[aria-pressed]")).toBeNull();
@@ -55,7 +84,10 @@ domTest("quiet empty state and explicit widths preserve mixed input/output order
     expect(dom.document.activeElement).toBe(dom.root.querySelector("[data-list-row]"));
     const controls = Array.from(dom.root.querySelectorAll("input, output"));
     expect(controls.map((element) => element.getAttribute("name") ?? element.getAttribute("aria-label"))).toEqual([
-      "Items1-0-Count1", "Double", "Items1-0-Notes1", "Label",
+      "Items1-0-Count1",
+      "Double",
+      "Items1-0-Notes1",
+      "Label",
     ]);
     const count = dom.root.querySelector<HTMLInputElement>("input")!;
     const layout = dom.root.querySelector("[data-list-row] > .flex-wrap")!;
@@ -64,7 +96,10 @@ domTest("quiet empty state and explicit widths preserve mixed input/output order
     count.dispatchEvent(new Event("input", { bubbles: true }));
     expect(Array.from(dom.root.querySelectorAll("output")).map((output) => output.textContent)).toEqual(["6", "Count: 3"]);
     expect(value()).toEqual([{ Count1: "3" }]);
-  } finally { dispose(); dom.cleanup(); }
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
 });
 domTest("discloses helper calculations without replacing inputs or changing entered values", async () => {
   const dom = createDomTestHarness();
@@ -244,6 +279,88 @@ domTest("keeps typing focus and moves focus with row actions", async () => {
     expect(dom.document.activeElement).toBe(host.querySelector("[data-list-row]"));
   } finally {
     dispose?.();
+    dom.cleanup();
+  }
+});
+
+domTest("optional details can be disclosed while required inputs remain visible and tab before row actions", async () => {
+  const dom = createDomTestHarness();
+  const { TextInput } = await import("@k2b/ui");
+  const { ObjectListInput } = await import("./ObjectListInput");
+  const [value, setValue] = createSignal<unknown>([{ Title1: "Work", Notes1: "Existing detail" }]);
+  const dispose = render(
+    () =>
+      createComponent(ObjectListInput, {
+        name: "Items1",
+        label: "Items",
+        config: {
+          fields: [
+            { id: "Title1", name: "Title", type: "text", required: true, detailsOnly: true },
+            { id: "Notes1", name: "Notes", type: "text", detailsOnly: true },
+          ],
+        },
+        get value() {
+          return value();
+        },
+        onChange: setValue,
+        renderCell: (column, name, cell, onChange) =>
+          createComponent(TextInput, { name, label: column.name, value: () => String(cell() ?? ""), onValueChange: onChange }),
+      }),
+    dom.root,
+  );
+  try {
+    const row = dom.root.querySelector("[data-list-row]")!;
+    expect(row.querySelector("input, button")?.tagName).toBe("INPUT");
+    expect(dom.root.querySelector('[name="Items1-0-Notes1"]')).toBeNull();
+    const toggle = dom.root.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
+    expect(toggle.textContent).toContain("Additional details");
+    toggle.click();
+    const notes = dom.root.querySelector<HTMLInputElement>('[name="Items1-0-Notes1"]')!;
+    expect(notes.value).toBe("Existing detail");
+    notes.value = "Changed";
+    notes.dispatchEvent(new Event("input", { bubbles: true }));
+    toggle.click();
+    toggle.click();
+    expect(dom.root.querySelector<HTMLInputElement>('[name="Items1-0-Notes1"]')?.value).toBe("Changed");
+    expect(value()).toEqual([{ Title1: "Work", Notes1: "Changed" }]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+domTest("validation reveals invalid additional inputs on a hidden list page", async () => {
+  const dom = createDomTestHarness();
+  const { TextInput } = await import("@k2b/ui");
+  const { ObjectListInput } = await import("./ObjectListInput");
+  const [error, setError] = createSignal<string>();
+  const value = Array.from({ length: 26 }, (_, index) => ({ Notes1: index === 25 ? "too long" : "ok" }));
+  const dispose = render(
+    () =>
+      createComponent(ObjectListInput, {
+        name: "Items1",
+        label: "Items",
+        config: { fields: [{ id: "Notes1", name: "Notes", type: "text", config: { maxLength: 3 }, detailsOnly: true }] },
+        value,
+        get error() {
+          return error();
+        },
+        onChange: () => {},
+        renderCell: (column, name, cell, onChange, error) =>
+          createComponent(TextInput, { name, label: column.name, value: () => String(cell() ?? ""), onValueChange: onChange, error }),
+      }),
+    dom.root,
+  );
+  try {
+    expect(dom.root.querySelector("input")).toBeNull();
+    setError("Invalid list");
+    await Promise.resolve();
+    const input = dom.root.querySelector<HTMLInputElement>('[name="Items1-25-Notes1"]')!;
+    expect(input).not.toBeNull();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(dom.root.querySelector("button[aria-pressed]")?.getAttribute("aria-pressed")).toBe("true");
+  } finally {
+    dispose();
     dom.cleanup();
   }
 });

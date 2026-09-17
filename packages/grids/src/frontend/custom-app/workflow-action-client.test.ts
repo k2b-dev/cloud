@@ -237,3 +237,29 @@ test("a reviewed receipt still awaiting resume falls back to paced polling", asy
   expect(review).toHaveBeenCalledTimes(1);
   expect(headers.every((header) => !header.has("X-Workflow-Changes"))).toBe(true);
 });
+
+test("carries only a local custom app completion URL after success", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const [url, expected] of [
+      ["/apps/APP001/bill?bill_id=DRAFT1", "/apps/APP001/bill?bill_id=DRAFT1"],
+      ["https://evil.example/bill", undefined],
+      ["//evil.example/bill", undefined],
+    ]) {
+      globalThis.fetch = Object.assign(async () => Response.json({ status: "succeeded", navigateTo: url }), {
+        preconnect: original.preconnect,
+      });
+      expect(
+        (
+          await invokeCustomAppWorkflow({
+            endpoint: "/invoke",
+            signal: new AbortController().signal,
+            operation: { operationId: "same", statusUrl: "/status" },
+          })
+        ).navigateTo,
+      ).toBe(expected);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});

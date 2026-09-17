@@ -305,3 +305,30 @@ domTest("embedded form reports dirty and pending state and clears dirty after su
     dom.cleanup();
   }
 });
+
+domTest("form field settings stage a section and disclosure without changing the original entry", async () => {
+  const dom = createDomTestHarness();
+  const { openFormFieldSettingsDialog } = await import("./FormFieldSettings");
+  const { dialogCore } = await import("@k2b/ui");
+  const entry = { kind: "user_input" as const, fieldId: field.id };
+  try {
+    const result = openFormFieldSettingsDialog({ entry, field });
+    await Bun.sleep(5);
+    change(inputFor(dom.document, "Start section (optional)"), "Additional information");
+    change(inputFor(dom.document, "Section description"), "Only if relevant");
+    const label = Array.from(dom.document.querySelectorAll("label")).find((node) => node.textContent?.includes("Show on demand"))!;
+    const checkbox = label.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    checkbox.click();
+    button(dom.document, "Confirm").click();
+    const saved = await result;
+    expect(saved?.kind === "user_input" ? saved.section : undefined).toEqual({
+      title: "Additional information",
+      description: "Only if relevant",
+      collapsible: true,
+    });
+    expect(entry).not.toHaveProperty("section");
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    dom.cleanup();
+  }
+});

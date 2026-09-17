@@ -103,7 +103,11 @@ const inferValueFormatFromAgg = (agg: string, field: Field | null): CustomAppVal
   return field ? valueFormatForField(field) : undefined;
 };
 
-export const metricCellsFromPreview = (preview: PreviewSuccess, sourceFields: Field[]): CustomAppMetricCell[] => {
+export const metricCellsFromPreview = (
+  preview: PreviewSuccess,
+  sourceFields: Field[],
+  valueFormat?: CustomAppValueFormat,
+): CustomAppMetricCell[] => {
   const row = preview.rows[0];
   if (!row) return [];
   const fieldsById = new Map(sourceFields.map((field) => [field.id, field]));
@@ -113,11 +117,12 @@ export const metricCellsFromPreview = (preview: PreviewSuccess, sourceFields: Fi
       label: column.label,
       value: row.values[column.key] ?? null,
       valueFormat:
-        column.type === "aggregate"
+        valueFormat ??
+        (column.type === "aggregate"
           ? inferValueFormatFromAgg(aggregateKindForColumn(column), field)
           : field
             ? valueFormatForField(field)
-            : undefined,
+            : undefined),
     };
   });
 };

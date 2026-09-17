@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { PublicFormConfigSchema } from "./api/public-dto";
 import { FormConfigSchema } from "./contracts";
-import { ObjectListConfigSchema } from "./field-types/object-list";
 import { customAppFormFieldHash, customAppFormSecurityHash } from "./custom-apps/form-capability";
+import { ObjectListConfigSchema } from "./field-types/object-list";
 import { normalizeFormConfig } from "./service/forms";
 
 test("form widths survive stored normalization and public contracts, including inline and computed fields", () => {
@@ -52,4 +52,17 @@ test("object-list widths affect neither calculations nor form authorization fing
       fields: [{ ...compact, config: { ...compact.config, maxItems: 20 } }],
     }),
   ).not.toBe(initial);
+});
+
+test("form sections survive public and stored contracts without changing authorization", () => {
+  const section = { title: "Notes", description: "Only when needed", collapsible: true };
+  const config = (fieldId: string) => ({ fields: [{ kind: "user_input" as const, fieldId, section }] });
+  const stored = FormConfigSchema.parse(config("00000000-0000-4000-8000-000000000001"));
+  expect(normalizeFormConfig(stored)).toMatchObject(stored);
+  expect(PublicFormConfigSchema.parse(config("Field1"))).toEqual(config("Field1"));
+  expect(PublicFormConfigSchema.safeParse({ fields: [{ ...config("Field1").fields[0], section: { title: " " } }] }).success).toBe(false);
+  const field = { id: "Field1", tableId: "Table1", type: "text", config: {}, required: false, defaultValue: null, deletedAt: null };
+  expect(customAppFormSecurityHash({ tableId: "Table1", config: config("Field1"), fields: [field] })).toBe(
+    customAppFormSecurityHash({ tableId: "Table1", config: { fields: [{ kind: "user_input", fieldId: "Field1" }] }, fields: [field] }),
+  );
 });

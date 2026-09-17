@@ -3,7 +3,7 @@ import { confirmDiscardIfDirty, dialogCore, PanelDialog, panelDialogOptions } fr
 import { createSignal } from "solid-js";
 import type { PublicField as Field } from "../../api/public-dto";
 import type { PublicRenderableForm } from "../../service/forms";
-import FormSubmit from "../_components/forms/PublicFormSubmit.island";
+import FormSubmit from "../_components/forms/PublicFormSubmit";
 
 export type CustomAppRenderedSidebarAction = {
   id: string;

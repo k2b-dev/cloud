@@ -99,8 +99,8 @@ domTest("workspace navigation preserves links and opens forms through controller
         appId="APP001"
         pageId="invoices"
         pages={[
-          { id: "invoices", title: "Invoices", icon: "receipt" },
-          { id: "balances", title: "Balances" },
+          { id: "invoices", title: "Invoices", icon: "receipt", href: "/apps/APP001/invoices" },
+          { id: "balances", title: "Balances", href: "/apps/APP001/balances" },
         ]}
         actions={[action]}
       />

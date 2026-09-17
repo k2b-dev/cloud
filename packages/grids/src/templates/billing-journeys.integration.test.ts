@@ -118,12 +118,7 @@ const fixture = async () => {
     }
     throw new Error(`Run did not settle: ${runId}`);
   };
-  const appRows = async (pageId: string, blockId: string) => {
-    const [app] = await sql`SELECT published_definition FROM grids.custom_apps WHERE base_id = ${baseId}::uuid`;
-    const definition = app.published_definition;
-    const source = definition.pages
-      .find((page: { id: string }) => page.id === pageId)
-      .rows[0].columns[0].blocks.find((block: { id: string }) => block.id === blockId).source.query;
+  const queryRows = async (source: string) => {
     const parsed = parseGridsQueryDsl(source);
     if (!parsed.ok) throw new Error(JSON.stringify(parsed));
     const context = await buildTrustedGqlResolverContext({ baseId, ast: parsed.ast, purpose: "custom-app-render" });
@@ -140,7 +135,19 @@ const fixture = async () => {
       values: Object.fromEntries(result.data.columns.map((column) => [column.label, row.values[column.key]])),
     }));
   };
-  return { baseId, table, invoke, appRows };
+  const appRows = async (pageId: string, blockId: string) => {
+    const [app] = await sql`SELECT published_definition FROM grids.custom_apps WHERE base_id = ${baseId}::uuid`;
+    const source = app.published_definition.pages
+      .find((page: { id: string }) => page.id === pageId)
+      .rows[0].columns[0].blocks.find((block: { id: string }) => block.id === blockId).source.query;
+    return queryRows(source);
+  };
+  const balanceRows = async () => {
+    const name = definition.views!.find((view) => view.key === "balances")!.name;
+    const [view] = await sql`SELECT source FROM grids.views WHERE base_id = ${baseId}::uuid AND name = ${name}`;
+    return queryRows(view.source);
+  };
+  return { baseId, table, invoke, appRows, balanceRows };
 };
 
 const ref = (tableId: string, recordId: string): WorkflowJsonValue => ({ kind: "record", tableId, recordId });
@@ -452,7 +459,7 @@ journeyTest(
       expect((await f.invoke("Discard draft", { bill: ref(bills.id, issued.id) })).state).toBe("failed");
       expect(await get(bills.id, issued.id)).not.toBeNull();
       const payments = await f.table("payments");
-      const balance = async () => (await f.appRows("balances", "balances")).find((row) => row.id === issued.id)?.values;
+      const balance = async () => (await f.balanceRows()).find((row) => row.id === issued.id)?.values;
       expect(await balance()).toMatchObject({ Paid: "0", Corrected: "0", Outstanding: "22.6" });
       const payout = await payments.add({ bill: [issued.id], date: "2026-09-16", amount: "10.00", reference: "Partial payout" });
       expect(await balance()).toMatchObject({ Paid: "0", Corrected: "0", Outstanding: "22.6" });
@@ -465,6 +472,7 @@ journeyTest(
       succeeded(await f.invoke("Confirm payment", { payment: ref(payments.id, remainder.id) }));
       expect((await get(payments.id, remainder.id))?.finalizedAt).not.toBeNull();
       expect(await balance()).toMatchObject({ Paid: "22.6", Corrected: "0", Outstanding: "0" });
+      expect((await f.appRows("balances", "balances")).some((row) => row.id === issued.id)).toBe(false);
       expect((await get(bills.id, issued.id))?.data[bills.ids.gross!]).toBe("22.6");
       const documentsAfterPayout = await sql`SELECT id::text, document_number, profile_snapshot, snapshot_sha256, profile_output
         FROM grids.documents WHERE base_id = ${f.baseId}::uuid`;
@@ -631,7 +639,7 @@ for (const scenario of [
           const payments = await f.table("payments");
           const first = await payments.add({ bill: [invoice.id], date: "2026-09-16", amount: "10.00", reference: "Transfer A" });
           const second = await payments.add({ bill: [invoice.id], date: "2026-09-16", amount: "10.00", reference: "Transfer B" });
-          const balance = async () => (await f.appRows("balances", "balances")).find((row) => row.id === invoice.id)?.values;
+          const balance = async () => (await f.balanceRows()).find((row) => row.id === invoice.id)?.values;
           // Equal payments are distinct transactions. Draft corrections do not
           // consume credit, and multiple payments cannot multiply credit totals.
           expect(await balance()).toMatchObject({ Paid: "0", Corrected: "71.4", Outstanding: "47.6" });
@@ -642,6 +650,9 @@ for (const scenario of [
           const overpayment = await payments.add({ bill: [invoice.id], date: "2026-09-16", amount: "100.00" });
           succeeded(await f.invoke("Confirm payment", { payment: ref(payments.id, overpayment.id) }));
           expect(await balance()).toMatchObject({ Paid: "125", Outstanding: "-77.4" });
+          expect((await f.appRows("balances", "balances")).find((row) => row.id === invoice.id)?.values).toMatchObject({
+            Outstanding: "-77.4",
+          });
           const refund = await payments.add({ bill: [invoice.id], date: "2026-09-17", amount: "60.00", refund: true });
           succeeded(await f.invoke("Confirm payment", { payment: ref(payments.id, refund.id) }));
           expect(await balance()).toMatchObject({ Paid: "65", Outstanding: "-17.4" });
@@ -656,6 +667,7 @@ for (const scenario of [
           expect(results.filter((result) => result.state === "succeeded")).toHaveLength(1);
           expect(results.filter((result) => result.state === "failed")).toHaveLength(1);
           expect(await balance()).toMatchObject({ Paid: "47.6", Corrected: "71.4", Outstanding: "0" });
+          expect((await f.appRows("balances", "balances")).some((row) => row.id === invoice.id)).toBe(false);
           const pendingRefund = contenders.find((_, index) => results[index]?.state === "failed")!;
           succeeded(await f.invoke("Discard pending payment", { payment: ref(payments.id, pendingRefund.id) }));
           expect(await get(payments.id, pendingRefund.id)).toBeNull();
@@ -673,6 +685,7 @@ for (const scenario of [
           expect((await finalize({ tableId: payments.id, recordId: pending.id, actorId: null, origin: "direct" })).ok).toBe(false);
           expect((await f.appRows("balances", "pending-payments")).some((row) => row.id === pending.id)).toBe(true);
           expect(await balance()).toMatchObject({ Paid: "47.6", Corrected: "71.4", Outstanding: "0" });
+          expect((await f.appRows("balances", "balances")).some((row) => row.id === invoice.id)).toBe(false);
           expect((await get(bills.id, invoice.id))?.data[bills.ids.gross!]).toBe("119");
           expect(render).toHaveBeenCalledTimes(2);
         }

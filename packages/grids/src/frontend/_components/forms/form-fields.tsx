@@ -23,6 +23,7 @@ import { formFieldClass, formLayoutClass } from "./field-layout";
 import { formFieldError } from "./form-input-validation";
 import type { InlineCreateDraft, InlineCreateState } from "./form-submit-payload";
 import { gridsFormMessages } from "./messages";
+import { displayNumberInput, normalizeNumberInput } from "./number-input";
 import { ObjectListInput } from "./ObjectListInput";
 import PrincipalInput from "./PrincipalInput";
 
@@ -211,10 +212,13 @@ export function FieldInput(props: {
         return String(v);
       };
       const compactNumberText = () =>
-        numberText().replace(/^([+-]?\d+)\.(\d+)$/, (_match, integer: string, fraction: string) => {
-          const significant = fraction.replace(/0+$/, "");
-          return significant ? `${integer}.${significant}` : integer;
-        });
+        displayNumberInput(
+          numberText().replace(/^([+-]?\d+)\.(\d+)$/, (_match, integer: string, fraction: string) => {
+            const significant = fraction.replace(/0+$/, "");
+            return significant ? `${integer}.${significant}` : integer;
+          }),
+          locale(),
+        );
       return (
         <TextInput
           name={props.field.id}
@@ -229,7 +233,7 @@ export function FieldInput(props: {
           onBlur={() => setEditing(false)}
           onValueChange={(v) => {
             setDraft(v);
-            props.onChange(v);
+            props.onChange(normalizeNumberInput(v, locale()));
           }}
           inputMode={decimalPlaces === 0 ? "numeric" : "decimal"}
           icon="ti ti-number"

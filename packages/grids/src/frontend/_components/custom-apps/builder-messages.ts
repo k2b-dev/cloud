@@ -3,6 +3,15 @@ import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
 const deCopy = {
+  "Actions using the saved form": "Aktionen für den gespeicherten Stand",
+  "Keep these actions disabled until changes are saved.": "Diese Aktionen bleiben gesperrt, bis Änderungen gespeichert sind.",
+  "Heading field": "Feld für die Überschrift",
+  "Block title": "Blocktitel",
+  "Use a visible field to identify the record instead of repeating the table name.":
+    "Zeige ein sichtbares Feld als Überschrift, damit der Datensatz erkennbar ist.",
+  "Use the document number as heading": "Dokumentnummer als Überschrift verwenden",
+  "After creation, show the document number above the selected heading field.":
+    "Zeige nach der Erstellung die Dokumentnummer über dem gewählten Feld.",
   "Form action": "Formularaktion",
   "Create a record": "Datensatz anlegen",
   "Edit this page's record": "Datensatz dieser Seite bearbeiten",
@@ -128,7 +137,7 @@ const deCopy = {
   "Show comments for the page record.": "Kommentare zum Datensatz der Seite anzeigen.",
   "Add a Record block first.": "Füge zuerst einen Datensatzblock hinzu.",
   "Insights and actions": "Auswertungen und Aktionen",
-  "Summarize data with aggregate GQL.": "Daten mit aggregierendem GQL zusammenfassen.",
+  "Show totals or a numeric record summary with limit 1.": "Summen oder eine numerische Datensatzübersicht mit limit 1 anzeigen.",
   "Visualize grouped data from GQL or a saved view.": "Gruppierte Daten aus GQL oder einer gespeicherten Ansicht visualisieren.",
   "Add a groupable field or grouped saved view first.":
     "Füge zuerst ein gruppierbares Feld oder eine gruppierte gespeicherte Ansicht hinzu.",
@@ -192,6 +201,12 @@ const deCopy = {
   Action: "Aktion",
   "App settings": "App-Einstellungen",
   "Action settings": "Aktionseinstellungen",
+  "After successful workflow": "Nach erfolgreichem Workflow",
+  "Workflow result record": "Ergebnisdatensatz des Workflows",
+  Emphasis: "Gewichtung",
+  "Primary action": "Hauptaktion",
+  "Secondary action": "Weitere Aktion",
+  "Destructive action": "Löschende Aktion",
   "Content block": "Inhaltsblock",
   "Page settings": "Seiteneinstellungen",
   "Close inspector": "Inspektor schließen",
@@ -220,6 +235,10 @@ const deCopy = {
   Title: "Titel",
   "Navigation icon": "Navigationssymbol",
   "Show in app navigation": "In der App-Navigation anzeigen",
+  "Navigation record": "Datensatz für die Navigation",
+  "Choose the record this page opens from the app navigation.": "Wähle den Datensatz, den diese Seite aus der App-Navigation öffnet.",
+  "Choose a navigation record to show this record page in the sidebar.":
+    "Wähle einen Datensatz für die Navigation, um diese Datensatzseite in der Seitenleiste anzuzeigen.",
   "Pages with required parameters are route-only and cannot appear in navigation.":
     "Seiten mit erforderlichen Parametern sind nur über ihre Route erreichbar und können nicht in der Navigation erscheinen.",
   "This page requires a record, so it cannot be the start page. Remove its route parameters first.":
@@ -239,6 +258,7 @@ const deCopy = {
   "GQL source": "GQL-Datenquelle",
   "row navigation": "Zeilennavigation",
   "Form binding": "Formularbindung",
+  "Workflow success navigation": "Navigation nach Workflow-Erfolg",
   "Form success navigation": "Navigation nach erfolgreichem Absenden",
   "row action availability": "Verfügbarkeit der Zeilenaktion",
   "Row action input": "Eingabe der Zeilenaktion",

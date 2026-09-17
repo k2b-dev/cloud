@@ -1,4 +1,3 @@
-import CustomAppNavigation from "./CustomAppNavigation.island";
 import type { AuthContext, getDateConfig } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
@@ -16,17 +15,20 @@ import {
   type RecordBlock,
   type RecordsLikeBlock,
 } from "../../api/custom-app-published-page";
-import { ssr } from "../../config";
 import { gridsAccessContext } from "../../api/permissions";
-import { customAppPageNeedsLogin } from "./login";
+import { ssr } from "../../config";
 import type { CustomAppDefinition, CustomAppPage } from "../../custom-apps/contracts";
 import { renderCustomAppMarkdown } from "../../custom-apps/markdown-context";
+import { customAppNavigationHref } from "../../custom-apps/routing";
 import type { DslQueryContextValues } from "../../query-dsl/parameters";
 import FormSubmit from "../_components/forms/PublicFormSubmit.island";
 import RecordComments from "../_components/records/RecordComments.island";
 import type { WorkflowScannerState } from "../_components/workflows/WorkflowScannerSurface";
 import Actions, { type CustomAppRenderedAction } from "./Actions.island";
 import CustomAppChart from "./Chart";
+import CustomAppNavigation from "./CustomAppNavigation.island";
+import FormWorkspace from "./FormWorkspace.island";
+import { customAppPageNeedsLogin } from "./login";
 import { CustomAppPageLayout } from "./PageLayout";
 import RecordDetails from "./RecordDetails.island";
 import RecordsTable, { type CustomAppRenderedRowAction } from "./RecordsTable.island";
@@ -84,7 +86,7 @@ const Metrics = (props: { data: MetricsBlockData; dateConfig: ReturnType<typeof 
   }
   if (props.data.cells.length === 0) return <Placeholder variant="compact" align="left" description={messages().noMetrics} />;
   return (
-    <StatGrid columns={props.data.cells.length === 1 ? 1 : props.data.cells.length === 2 ? 2 : 3}>
+    <StatGrid columns={props.data.cells.length === 1 ? 1 : props.data.cells.length === 2 ? 2 : props.data.cells.length === 4 ? 4 : 3}>
       {props.data.cells.map((cell) => {
         const value = formatCustomAppValue(cell.value, cell.valueFormat, props.dateConfig);
         return <StatCell label={cell.label} value={value} title={value} />;
@@ -150,10 +152,18 @@ const Record = (props: {
   );
 };
 
-const Form = (props: { block: FormBlock; data: FormBlockData; dateConfig: ReturnType<typeof getDateConfig> }) => {
+const Form = (props: {
+  block: FormBlock;
+  data: FormBlockData;
+  actions: CustomAppRenderedAction[];
+  dateConfig: ReturnType<typeof getDateConfig>;
+}) => {
   const messages = useCustomAppRuntimeMessages();
   if (!props.data.ok) {
     return <Placeholder variant="compact" align="left" title={messages().formUnavailable} description={props.data.message} />;
+  }
+  if (props.block.actionsBlockId) {
+    return <FormWorkspace data={props.data} actions={props.actions} dateConfig={props.dateConfig} showTitle={!props.block.title} />;
   }
   return (
     <FormSubmit
@@ -196,92 +206,119 @@ const CustomAppPage = (props: {
   signedIn: boolean;
 }) => {
   const messages = useCustomAppRuntimeMessages();
+  const formActionIds = new Set(
+    props.page.rows.flatMap((row) =>
+      row.columns.flatMap((column) =>
+        column.blocks.flatMap((block) => (block.type === "form" && block.actionsBlockId ? [block.actionsBlockId] : [])),
+      ),
+    ),
+  );
+  const layoutPage = {
+    ...props.page,
+    rows: props.page.rows
+      .map((row) => ({
+        ...row,
+        columns: row.columns
+          .map((column) => ({
+            ...column,
+            blocks: column.blocks.filter((block) => !formActionIds.has(block.id)),
+          }))
+          .filter((column) => column.blocks.length > 0),
+      }))
+      .filter((row) => row.columns.length > 0),
+  };
   return (
     <>
-    <CustomAppNavigation
-      name={props.definition.name}
-      pages={props.definition.pages.filter((page) => page.navigation.visible).map((page) => ({
-        id: page.id,
-        title: page.title,
-        icon: page.navigation.icon,
-      }))}
-      pageId={props.page.id}
-      appId={props.shortId}
-      actions={props.sidebarActions}
-    />
-    <CustomAppPageLayout
-      definition={props.definition}
-      page={props.page}
-      appId={props.shortId}
-      hasSidebarActions={props.sidebarActions.length > 0}
-      sidebarActions={<SidebarActions actions={props.sidebarActions} />}
-      renderBlock={(block) =>
-        block.type === "markdown" ? (
-          <MarkdownView markdown={renderCustomAppMarkdown(block.markdown, props.markdownContext)} headingScale="large" />
-        ) : block.type === "records" || block.type === "referenced_records" ? (
-          <Records
-            block={block}
-            data={props.results.get(block.id) ?? { ok: false, message: messages().recordsAreUnavailable }}
-            baseId={props.definition.baseId}
-            dateConfig={props.dateConfig}
-            shortId={props.shortId}
-            endpoint={props.recordEndpoints.get(block.id) ?? ""}
-            rowActions={props.rowActions.get(block.id) ?? []}
-          />
-        ) : block.type === "metrics" ? (
-          <Metrics
-            data={props.metrics.get(block.id) ?? { ok: false, message: messages().metricsAreUnavailable }}
-            dateConfig={props.dateConfig}
-          />
-        ) : block.type === "chart" ? (
-          <AppChart
-            block={block}
-            data={props.charts.get(block.id) ?? { ok: false, message: messages().chartDataUnavailable }}
-            dateConfig={props.dateConfig}
-          />
-        ) : block.type === "record" ? (
-          <Record
-            block={block}
-            pageRecord={props.pageRecords.get(block.id) ?? null}
-            baseId={props.definition.baseId}
-            updateEndpoint={props.recordUpdateEndpoints.get(block.id)}
-            documents={props.documents.get(block.id) ?? []}
-            documentPreviews={props.documentPreviews.get(block.id) ?? []}
-            dateConfig={props.dateConfig}
-          />
-        ) : block.type === "html" ? (
-          <RenderedHtml
-            html={props.renderedHtml.get(block.id)?.html}
-            title={block.title ?? props.renderedHtml.get(block.id)?.fieldName ?? messages().renderedHtml}
-            height={block.height}
-          />
-        ) : block.type === "comments" ? (
-          <RecordComments
-            endpoint={props.commentEndpoints.get(block.id) ?? ""}
-            title={block.title}
-            dateConfig={props.dateConfig}
-            cursorParameter="_cursor"
-          />
-        ) : block.type === "actions" ? (
-          <Actions actions={props.actions.get(block.id) ?? []} />
-        ) : block.type === "form" ? (
-          <Form
-            block={block}
-            data={props.forms.get(block.id) ?? { ok: false, message: messages().thisFormUnavailable }}
-            dateConfig={props.dateConfig}
-          />
-        ) : props.scanners.has(block.id) ? (
-          <Scanner {...props.scanners.get(block.id)!} />
-        ) : (
-          <Placeholder
-            variant="compact"
-            align="left"
-            title={props.signedIn ? messages().scannerUnavailable : messages().signInToScan}
-            description={props.signedIn ? messages().scannerChanged : undefined}
-          />
-        )
-      }
-    />
+      <CustomAppNavigation
+        name={props.definition.name}
+        pages={props.definition.pages
+          .filter((page) => page.navigation.visible)
+          .map((page) => ({
+            id: page.id,
+            title: page.title,
+            icon: page.navigation.icon,
+            href: customAppNavigationHref(props.shortId, page),
+          }))}
+        pageId={props.page.id}
+        appId={props.shortId}
+        actions={props.sidebarActions}
+      />
+      <CustomAppPageLayout
+        definition={props.definition}
+        page={layoutPage}
+        appId={props.shortId}
+        hasSidebarActions={props.sidebarActions.length > 0}
+        sidebarActions={<SidebarActions actions={props.sidebarActions} />}
+        renderBlock={(block) =>
+          block.type === "markdown" ? (
+            <MarkdownView markdown={renderCustomAppMarkdown(block.markdown, props.markdownContext)} headingScale="large" />
+          ) : block.type === "records" || block.type === "referenced_records" ? (
+            <Records
+              block={block}
+              data={props.results.get(block.id) ?? { ok: false, message: messages().recordsAreUnavailable }}
+              baseId={props.definition.baseId}
+              dateConfig={props.dateConfig}
+              shortId={props.shortId}
+              endpoint={props.recordEndpoints.get(block.id) ?? ""}
+              rowActions={props.rowActions.get(block.id) ?? []}
+            />
+          ) : block.type === "metrics" ? (
+            <Metrics
+              data={props.metrics.get(block.id) ?? { ok: false, message: messages().metricsAreUnavailable }}
+              dateConfig={props.dateConfig}
+            />
+          ) : block.type === "chart" ? (
+            <AppChart
+              block={block}
+              data={props.charts.get(block.id) ?? { ok: false, message: messages().chartDataUnavailable }}
+              dateConfig={props.dateConfig}
+            />
+          ) : block.type === "record" ? (
+            <Record
+              block={block}
+              pageRecord={props.pageRecords.get(block.id) ?? null}
+              baseId={props.definition.baseId}
+              updateEndpoint={props.recordUpdateEndpoints.get(block.id)}
+              documents={props.documents.get(block.id) ?? []}
+              documentPreviews={props.documentPreviews.get(block.id) ?? []}
+              dateConfig={props.dateConfig}
+            />
+          ) : block.type === "html" ? (
+            <RenderedHtml
+              html={props.renderedHtml.get(block.id)?.html}
+              title={block.title ?? props.renderedHtml.get(block.id)?.fieldName ?? messages().renderedHtml}
+              height={block.height}
+            />
+          ) : block.type === "comments" ? (
+            <RecordComments
+              endpoint={props.commentEndpoints.get(block.id) ?? ""}
+              title={block.title}
+              dateConfig={props.dateConfig}
+              cursorParameter="_cursor"
+            />
+          ) : block.type === "actions" ? (
+            formActionIds.has(block.id) ? null : (
+              <Actions actions={props.actions.get(block.id) ?? []} />
+            )
+          ) : block.type === "form" ? (
+            <Form
+              block={block}
+              data={props.forms.get(block.id) ?? { ok: false, message: messages().thisFormUnavailable }}
+              actions={block.actionsBlockId ? (props.actions.get(block.actionsBlockId) ?? []) : []}
+              dateConfig={props.dateConfig}
+            />
+          ) : props.scanners.has(block.id) ? (
+            <Scanner {...props.scanners.get(block.id)!} />
+          ) : (
+            <Placeholder
+              variant="compact"
+              align="left"
+              title={props.signedIn ? messages().scannerUnavailable : messages().signInToScan}
+              description={props.signedIn ? messages().scannerChanged : undefined}
+            />
+          )
+        }
+      />
     </>
   );
 };

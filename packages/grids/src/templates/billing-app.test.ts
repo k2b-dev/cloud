@@ -23,9 +23,10 @@ for (const locale of ["en", "de"]) {
         width: "compact",
         defaultValue: { kind: "now" },
         helpText: expect.any(String),
+        section: { title: expect.any(String) },
       });
     }
-    for (const key of ["edit_draft", "edit_self_billing", "edit_correction"]) {
+    for (const key of ["edit_draft", "edit_self_billing", "edit_correction", "edit_payment"]) {
       const entries = template.forms?.find((form) => form.key === key)?.config.fields;
       expect(JSON.stringify(entries)).not.toContain('"defaultValue"');
     }
@@ -35,6 +36,46 @@ for (const locale of ["en", "de"]) {
     for (const key of ["postal_code", "city", "vat_id"]) {
       expect(serialized).toMatch(new RegExp(`"key":"parties\\.${key}"[^}]*}[^}]*"width":"compact"`));
     }
+  });
+  test(`billing ${locale} exposes essentials and groups optional information without weakening validation`, () => {
+    const template = createBillingTemplate(locale);
+    const input = (key: string) => template.forms?.find((form) => form.key === key)?.config.fields;
+    for (const key of ["new_invoice", "edit_draft", "new_self_billing", "edit_self_billing", "edit_correction"]) {
+      expect(input(key)).toContainEqual(
+        expect.objectContaining({
+          fieldId: { $ref: "field", key: "bills.positions" },
+          required: true,
+          section: { title: expect.any(String) },
+        }),
+      );
+      expect(input(key)).toContainEqual(expect.objectContaining({ fieldId: { $ref: "field", key: "bills.due_date" }, required: true }));
+    }
+    for (const key of ["edit_draft", "edit_correction", "edit_self_billing"]) {
+      expect(input(key)).toContainEqual(
+        expect.objectContaining({
+          fieldId: { $ref: "field", key: "bills.notes" },
+          section: { title: expect.any(String), collapsible: true },
+        }),
+      );
+    }
+    expect(input("partner")).toContainEqual(
+      expect.objectContaining({
+        fieldId: { $ref: "field", key: "parties.iban" },
+        section: { title: expect.any(String), description: expect.any(String), collapsible: true },
+      }),
+    );
+    expect(input("setup")).toContainEqual(
+      expect.objectContaining({ fieldId: { $ref: "field", key: "settings.iban" }, section: { title: expect.any(String) } }),
+    );
+    const lines = billingLineConfig(locale);
+    expect(lines.fields.find((field) => field.id === "Detail")).toMatchObject({ detailsOnly: true, required: false });
+    expect(JSON.stringify(input("edit_payment"))).not.toContain("payments.bill");
+    expect(JSON.stringify(input("edit_payment"))).not.toContain("payments.refund");
+    const billFields = template.tables.find((table) => table.key === "bills")!.fields;
+    expect(billFields.find((field) => field.key === "buyer_reference")?.required).toBe(true);
+    expect(billFields.find((field) => field.key === "service_date")).toMatchObject({ required: true });
+    expect(billFields.find((field) => field.key === "service_date")?.defaultValue).toBeUndefined();
+    for (const table of template.tables) expect(new Set(table.fields.map((field) => field.name)).size).toBe(table.fields.length);
   });
   test(`billing ${locale} row checks project only the fields they need`, () => {
     const queries = createBillingTemplate(locale).workflows?.flatMap((workflow) => workflowQueries(Bun.YAML.parse(workflow.source))) ?? [];
@@ -130,7 +171,7 @@ for (const locale of ["en", "de"]) {
       .find((block) => block.id === "bills");
     expect(overview).toMatchObject({ type: "records", workflowStatus: true });
     if (overview?.type !== "records" || overview.source.kind !== "gql") throw new Error("Missing billing overview");
-    expect(overview.source.query).not.toContain("finalizationState = 'draft'");
+    expect(overview.source.query).toContain("finalizationState = 'finalized'");
     const invalidStatus = structuredClone(app);
     const invalidList = invalidStatus.pages
       .find((page) => page.id === "invoices")!
@@ -145,71 +186,122 @@ for (const locale of ["en", "de"]) {
         block.type === "actions" ? block.actions.filter((action) => action.kind === "workflow" && action.background) : [],
       );
     expect(documentActions).toHaveLength(3);
-    for (const action of documentActions) expect(action).toMatchObject({ background: { documentBlockId: "identity" } });
-
+    for (const action of documentActions) expect(action).toMatchObject({ variant: "primary", background: { documentBlockId: "identity" } });
     expect(app.pages).toHaveLength(11);
-    expect(app.pages.some((page) => page.id === "issued")).toBe(false);
-    const balanceBlocks = app.pages
-      .find((page) => page.id === "balances")!
-      .rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
-    expect(balanceBlocks.find((block) => block.id === "finalized-help")).toMatchObject({ type: "markdown" });
-    for (const id of ["pending-payments", "payments"]) {
-      const block = balanceBlocks.find((block) => block.id === id);
-      expect(block?.type).toBe("records");
-      if (block?.type === "records" && block.source.kind === "gql")
-        expect(block.source.query).toContain(`record.finalizationState = '${id === "payments" ? "finalized" : "draft"}'`);
-    }
-    const paymentBlocks = app.pages
-      .find((page) => page.id === "payment")!
-      .rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
-    expect(paymentBlocks.some((block) => block.type === "form")).toBe(false);
+    expect(app.pages.filter((page) => page.navigation?.visible).map((page) => page.id)).toEqual([
+      "invoices",
+      "balances",
+      "partners",
+      "settings",
+    ]);
+    expect(app.sidebar?.actions).toHaveLength(1);
+    expect(app.pages.some((page) => page.id === "bill-details" || page.id === "payment-edit")).toBe(false);
+    const blocksFor = (id: string) =>
+      app.pages.find((page) => page.id === id)!.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
+    const balanceBlocks = blocksFor("balances");
+    expect(balanceBlocks.some((block) => block.id === "payments")).toBe(false);
+    const openBalances = balanceBlocks.find((block) => block.id === "balances");
+    if (openBalances?.type !== "records" || openBalances.source.kind !== "gql") throw new Error("Missing balances work list");
+    expect(openBalances.source.query).toContain(" != 0");
+    expect(openBalances.source.query).toContain(ref("field:bills.due_date"));
+    const pending = balanceBlocks.find((block) => block.id === "pending-payments");
+    expect(pending).toMatchObject({
+      type: "records",
+      rowActions: [
+        { id: "confirm", variant: "primary" },
+        { id: "discard", variant: "danger" },
+      ],
+    });
+    const paymentBlocks = blocksFor("payment");
+    expect(paymentBlocks.find((block) => block.id === "edit")).toMatchObject({
+      type: "form",
+      formId: ref("form:edit_payment"),
+      actionsBlockId: "actions",
+    });
+    expect(paymentBlocks.find((block) => block.id === "payment-context")).toMatchObject({
+      type: "record",
+      fieldIds: [ref("field:payments.bill"), ref("field:payments.refund")],
+      editableFieldIds: [],
+    });
     expect(paymentBlocks.find((block) => block.id === "actions")?.availableWhen?.query).toContain("record.finalizationState = 'draft'");
+    expect(paymentBlocks.find((block) => block.id === "back")).toMatchObject({
+      type: "actions",
+      actions: [{ params: { bill_id: { source: "RECORD", path: "relation", fieldId: ref("field:payments.bill") } } }],
+    });
     expect(template.tables.find((table) => table.key === "payments")).toMatchObject({
       finalization: { mode: "direct" },
       mutationPolicy: { mode: "selected", sources: ["form", "workflow"] },
     });
-    const billBlocks = app.pages.find((page) => page.id === "bill")!.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
-    expect(billBlocks.some((block) => block.type === "form")).toBe(false);
-    expect(billBlocks.find((block) => block.id === "saved")).toMatchObject({ type: "record", editableFieldIds: [] });
-    const editPage = app.pages.find((page) => page.id === "bill-details")!;
-    expect(editPage.title).toBe(locale === "de" ? "Belegdetails" : "Document details");
-    // The neutral page supplies record context; the visible Form title names
-    // the current task (editing a draft or recording a payment).
-    expect(template.forms?.find((form) => form.key === "payment")?.name).toBe(locale === "de" ? "Zahlung erfassen" : "Record payment");
-    expect(editPage.record?.tableId).toBe(ref("table:bills"));
-    const editBlocks = editPage.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
-    const editForms = editBlocks.filter((block) => block.type === "form" && block.mode === "edit");
-    expect(editForms).toHaveLength(3);
-    for (const block of editForms) {
-      if (block.type !== "form") throw new Error("Expected an edit form");
+    const billBlocks = blocksFor("bill");
+    expect(billBlocks.find((block) => block.id === "identity")).toMatchObject({
+      type: "record",
+      heading: { fieldId: ref("field:bills.party_name"), documentNumber: true },
+    });
+    expect(billBlocks.find((block) => block.id === "identity")?.availableWhen).toBeUndefined();
+    const forms = billBlocks.filter((block) => block.type === "form");
+    expect(forms).toHaveLength(3);
+    for (const block of forms) {
       expect(block.availableWhen?.query).toContain("record.finalizationState = 'draft'");
-      expect(block.onSuccessNavigate).toEqual({
-        kind: "navigate",
-        pageId: "bill",
-        params: { bill_id: { source: "RESULT", path: "recordId" } },
+      expect(block.actionsBlockId).toBeTruthy();
+      const actions = billBlocks.find((candidate) => candidate.id === block.actionsBlockId);
+      expect(actions?.availableWhen?.query).not.toContain("record.finalizationState");
+      if (actions?.type === "actions")
+        expect(actions.actions.find((action) => action.id === "discard")?.availableWhen?.query).toContain(
+          "record.finalizationState = 'draft'",
+        );
+      expect(actions).toMatchObject({
+        type: "actions",
+        actions: [{ variant: "primary" }, { id: "discard", variant: "danger", onSuccessNavigate: { pageId: "invoices" } }],
       });
     }
-    // No editable form can coexist with issuance/retrieval, including
-    // recording a payment. Workflow reloads must not discard unsaved inputs.
-    for (const page of app.pages) {
-      const pageBlocks = page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
-      if (!pageBlocks.some((block) => block.type === "form")) continue;
-      expect(pageBlocks.some((block) => block.type === "actions" && block.actions.some((action) => action.kind === "workflow"))).toBe(
-        false,
+    const metrics = billBlocks.find((block) => block.id === "balance");
+    if (metrics?.type !== "metrics" || metrics.source.kind !== "gql") throw new Error("Missing numeric balance summary");
+    expect(metrics.source.query).not.toContain(ref("field:bills.party_name"));
+    expect(metrics.source.query).not.toContain(ref("field:bills.due_date"));
+    expect(metrics.source.query).toContain("@params.bill_id");
+    expect(metrics.source.query).toContain("\nlimit 1");
+    expect(metrics.source.query).not.toContain("\naggregate ");
+    for (const id of ["payments", "pending-payments"])
+      expect(billBlocks.find((block) => block.id === id)?.availableWhen?.query).toContain("record.finalizationState = 'finalized'");
+    for (const id of ["payment-new", "refund-new"]) {
+      const page = app.pages.find((page) => page.id === id)!;
+      expect(page.title).toBe(
+        id === "payment-new"
+          ? locale === "de"
+            ? "Zahlung erfassen"
+            : "Record payment"
+          : locale === "de"
+            ? "Erstattung erfassen"
+            : "Record refund",
       );
-      expect(pageBlocks.some((block) => block.type === "record" && block.documents?.preview)).toBe(false);
+      expect(blocksFor(id).find((block) => block.type === "form")).toMatchObject({
+        onSuccessNavigate: { pageId: "bill", params: { bill_id: { source: "PARAMS", path: "bill_id" } } },
+      });
     }
-    const details = app.pages.find((page) => page.id === "bill-details");
-    expect(details?.navigation?.visible).toBe(false);
-    expect(template.forms?.some((form) => form.key === "bill_details")).toBe(false);
-    const drafts = app.pages.find((page) => page.id === "invoices")!;
-    const blocks = drafts.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
-    const setup = blocks.find((block) => block.id === "start-action");
-    expect(setup?.type).toBe("actions");
-    if (setup?.type !== "actions") throw new Error("Missing setup action");
-    expect(setup.actions[0]).toMatchObject({ kind: "navigate", pageId: "settings" });
-    expect(setup.availableWhen?.query).toContain(" = false");
-    expect(blocks.find((block) => block.id === "start-help")?.availableWhen).toEqual(setup.availableWhen);
+    expect(billBlocks.find((block) => block.id === "other-actions")).toMatchObject({
+      type: "actions",
+      actions: [
+        { id: "new-correction", onSuccessNavigate: { pageId: "bill", params: { bill_id: { source: "RESULT", path: "recordId" } } } },
+        { id: "refund" },
+      ],
+    });
+    const settings = app.pages.find((page) => page.id === "settings")!;
+    expect(settings.navigation).toMatchObject({ visible: true, recordId: ref("record:settings") });
+    expect(blocksFor("settings").some((block) => block.type === "records")).toBe(false);
+    expect(blocksFor("settings").some((block) => block.id === "identity")).toBe(false);
+    expect(blocksFor("invoices").find((block) => block.id === "start-help")?.availableWhen?.query).toContain(" = false");
+    // Saving refreshes the same workspace so editing stays available and all
+    // headings, saved values and computed totals reflect the committed version.
+    for (const page of app.pages) {
+      for (const block of blocksFor(page.id)) {
+        if (block.type !== "form" || block.mode !== "edit") continue;
+        expect(block.onSuccessNavigate).toEqual({
+          kind: "navigate",
+          pageId: page.id,
+          params: Object.fromEntries(Object.keys(page.parameters).map((key) => [key, { source: "PARAMS", path: key }])),
+        });
+      }
+    }
     let queries = 0;
     const checkQueries = (value: unknown): void => {
       if (!value || typeof value !== "object") return;

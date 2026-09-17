@@ -41,6 +41,8 @@ Referenced records is available only on a Record page. It shows rows from one pi
 
 Metrics and Chart read either an existing saved view or an inline GQL query. The runtime applies shared query budgets.
 
+Metrics normally infer number formatting from selected fields. For aggregate expressions without field metadata, set a common `valueFormat`, such as `{ style: "number", decimalPlaces: 2, unit: "EUR" }`. This explicit override applies to every value in the block; Grids does not infer a currency from the query. It changes display only, preserving exact calculation values.
+
 Metrics accepts an ungrouped aggregate query and renders up to 12 named scalar results. Chart accepts a grouped aggregate query and renders a donut, bar, or line chart with at least one aggregate value series. A Chart block may render at most 100 groups through its `limit`.
 
 The published capability records the exact tables and fields behind the block. App readers need no Base access, and the runtime cannot query sources outside that immutable capability. Republish after changing a saved View's source.
@@ -60,6 +62,8 @@ One app may publish up to 24 Form blocks. Each referenced Form may expose up to 
 ### Record
 
 Record requires a page record. It renders the explicit `fieldIds` list and may allow direct editing through an explicit `editableFieldIds` subset. Every editable field must also be displayed and must be a writable stored field; computed and system fields fail publication.
+
+Use `heading: { fieldId }` to identify a record with one of its displayed fields, such as a customer or subject. The field moves into the heading instead of appearing twice. With `heading: { fieldId, documentNumber: true }` and a `documents` template allowlist, an existing document number becomes the heading and the field stays visible below it. Drafts keep their field heading. Document downloads stay visible as labeled buttons.
 
 The Edit action appears only when the publication includes that writable field and the block is available. Submission rechecks the app grant, immutable field allowlist, `availableWhen`, live field type, table audit questions, and current record version. Fields outside the block's editable subset remain read-only.
 

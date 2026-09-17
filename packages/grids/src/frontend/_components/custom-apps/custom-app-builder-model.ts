@@ -40,7 +40,13 @@ export const renameCustomAppPage = (definition: CustomAppDefinition, from: strin
       if (block.type !== "actions") return block;
       return {
         ...block,
-        actions: block.actions.map((action) => (action.kind === "navigate" && action.pageId === from ? { ...action, pageId: to } : action)),
+        actions: block.actions.map((action) =>
+          action.kind === "navigate" && action.pageId === from
+            ? { ...action, pageId: to }
+            : action.kind === "workflow" && action.onSuccessNavigate?.pageId === from
+              ? { ...action, onSuccessNavigate: { ...action.onSuccessNavigate, pageId: to } }
+              : action,
+        ),
       };
     }),
   ),
@@ -151,6 +157,21 @@ export const renameCustomAppPageParameter = (
           return {
             ...action,
             availableWhen: actionAvailableWhen,
+            onSuccessNavigate: action.onSuccessNavigate
+              ? {
+                  ...action.onSuccessNavigate,
+                  params: Object.fromEntries(
+                    Object.entries(
+                      action.onSuccessNavigate.pageId === pageId
+                        ? renameMappingKey(action.onSuccessNavigate.params, from, to)
+                        : action.onSuccessNavigate.params,
+                    ).map(([key, value]) => [
+                      key,
+                      ownsParameter && value.source === "PARAMS" && value.path === from ? { source: "PARAMS" as const, path: to } : value,
+                    ]),
+                  ),
+                }
+              : undefined,
             inputs: ownsParameter
               ? Object.fromEntries(
                   Object.entries(action.inputs).map(([name, value]) => [
@@ -188,7 +209,8 @@ type CustomAppPageParameterUsage =
   | "action availability"
   | "Navigate action target"
   | "Navigate action source"
-  | "Workflow action input";
+  | "Workflow action input"
+  | "Workflow success navigation";
 
 export const customAppPageParameterUsage = (
   definition: CustomAppDefinition,
@@ -238,6 +260,15 @@ export const customAppPageParameterUsage = (
           if (block.type !== "actions") continue;
           for (const action of block.actions) {
             if (page.id === pageId && action.availableWhen?.query.includes(contextReference)) usage.add("action availability");
+            if (action.kind === "workflow" && action.onSuccessNavigate) {
+              if (action.onSuccessNavigate.pageId === pageId && action.onSuccessNavigate.params[parameterId])
+                usage.add("Workflow success navigation");
+              if (
+                page.id === pageId &&
+                Object.values(action.onSuccessNavigate.params).some((value) => value.source === "PARAMS" && value.path === parameterId)
+              )
+                usage.add("Workflow success navigation");
+            }
             if (action.kind === "navigate") {
               if (action.pageId === pageId && action.params[parameterId]) usage.add("Navigate action target");
               if (

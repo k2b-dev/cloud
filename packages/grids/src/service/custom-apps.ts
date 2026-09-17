@@ -31,6 +31,7 @@ import { planFormComputedFields } from "../form-computed-fields";
 import type { DslQueryContextValues } from "../query-dsl/parameters";
 import { isDslAggregateOnlyPlan } from "../query-dsl/resolver";
 import { collectDslPlanTableIds } from "../query-dsl/source-plan";
+import { compileDslQueryPlanToSql } from "../query-dsl/sql-compiler";
 import { logAudit, type SqlClient } from "./audit";
 import { customAppDocumentPreviewFingerprint } from "./custom-app-document-preview";
 import { customAppFormRelationScope } from "./custom-app-form-relations";
@@ -294,6 +295,11 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
             for (const [actionIndex, action] of block.actions.entries()) {
               if (action.kind === "workflow")
                 checkReference("launcher", action.launcherId, [...path, "actions", actionIndex, "launcherId"]);
+              if (action.kind === "navigate")
+                for (const [parameterId, binding] of Object.entries(action.params)) {
+                  if (binding.source === "RECORD" && binding.path === "relation")
+                    checkReference("field", binding.fieldId, [...path, "actions", actionIndex, "params", parameterId, "fieldId"]);
+                }
             }
           } else if (block.type === "scanner") {
             checkReference("launcher", block.launcherId, [...path, "launcherId"]);
@@ -513,6 +519,17 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
       if ((await resolveTableBaseId(tableId(page.record.tableId))) !== base.id) {
         diagnostics.push(customAppDiagnostic(locale, "record_page.table_invalid", ["pages", pageIndex, "record", "tableId"]));
         continue;
+      }
+      if (page.navigation.recordId) {
+        const [navigationRecord] = await client<Array<{ id: string }>>`
+          SELECT id FROM grids.records
+          WHERE short_id = ${page.navigation.recordId}
+            AND table_id = ${tableId(page.record.tableId)}::uuid
+            AND deleted_at IS NULL
+        `;
+        if (!navigationRecord) {
+          diagnostics.push(customAppDiagnostic(locale, "navigation.record_invalid", ["pages", pageIndex, "navigation", "recordId"]));
+        }
       }
       let relationLabels: CustomAppCapabilities["records"][number]["relationLabels"] = [];
       if (fieldIds.length > 0) {
@@ -913,11 +930,22 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
         (plan.query.aggregations?.length ?? 0) + (plan.sqlAggregations?.length ?? 0) + (plan.formulaAggregations?.length ?? 0);
       const groupCount = (plan.query.groupBy?.length ?? 0) + (plan.sqlGroupBy?.length ?? 0);
       if (block.type === "metrics") {
-        if (!isDslAggregateOnlyPlan(plan)) {
-          diagnostics.push(customAppDiagnostic(locale, "metrics.aggregate_required", ["pages", page.id, "blocks", block.id, "source"]));
-          continue;
+        const aggregateOnly = isDslAggregateOnlyPlan(plan);
+        const snapshotColumns = plan.outputColumns ?? [];
+        if (!aggregateOnly) {
+          // Explicit, bounded numeric rows also support per-record summaries
+          // over joined aggregate views. Reuse SQL's output types rather than
+          // guessing from field names or evaluating a preview at publication.
+          const snapshot =
+            aggregationCount === 0 && groupCount === 0 && plan.query.limit === 1 && snapshotColumns.length > 0
+              ? compileDslQueryPlanToSql(plan, { fieldsByTableId: compiled.data.fieldsByTableId })
+              : null;
+          if (!snapshot?.ok || !snapshot.query.columns.every((column) => column.sqlType === "numeric")) {
+            diagnostics.push(customAppDiagnostic(locale, "metrics.aggregate_required", ["pages", page.id, "blocks", block.id, "source"]));
+            continue;
+          }
         }
-        if (aggregationCount > 12) {
+        if ((aggregateOnly ? aggregationCount : snapshotColumns.length) > 12) {
           diagnostics.push(customAppDiagnostic(locale, "metrics.aggregation_limit", ["pages", page.id, "blocks", block.id, "source"]));
           continue;
         }
@@ -1193,6 +1221,41 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
     }
   };
   await compileFormCapabilities();
+
+  // Relation links use an explicitly exposed single relation; no hidden field reads.
+  for (const { page, block } of actionBlocks) {
+    for (const action of block.actions) {
+      if (action.kind !== "navigate" || !page.record) continue;
+      const exposed = new Set(customAppPageRecordFieldIds(page));
+      const fields = await resolveFields(tableId(page.record.tableId));
+      const targetPage = definition.pages.find((candidate) => candidate.id === action.pageId)!;
+      for (const [parameterId, binding] of Object.entries(action.params)) {
+        if (binding.source !== "RECORD" || binding.path !== "relation") continue;
+        const field = fields.find((candidate) => candidate.id === fieldId(binding.fieldId));
+        const target = targetPage.parameters[parameterId];
+        if (
+          !exposed.has(binding.fieldId) ||
+          field?.type !== "relation" ||
+          field.config.cardinality !== "single" ||
+          !target ||
+          field.config.targetTableId !== tableId(target.tableId)
+        ) {
+          diagnostics.push(
+            customAppDiagnostic(locale, "navigation.relation_invalid", [
+              "pages",
+              page.id,
+              "blocks",
+              block.id,
+              "actions",
+              action.id,
+              "params",
+              parameterId,
+            ]),
+          );
+        }
+      }
+    }
+  }
 
   const compileWorkflowCapabilities = async () => {
     const workflowActionOwners = [

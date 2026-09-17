@@ -41,9 +41,9 @@ Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–
 | `markdown` | `markdown` (bis 20.000 Zeichen, leer erlaubt) | keine |
 | `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `workflowStatus`, `rowNavigate`, `rowActions` (bis 6) |
 | `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (bis 6) |
-| `metrics` | `source` | keine |
+| `metrics` | `source` | `valueFormat` (gemeinsames Format für alle Werte dieses Blocks) |
 | `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (je 1–60) |
-| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (bis 30), `documents:{templateIds:[…]}` (1–12) |
+| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (bis 30), `heading:{fieldId,documentNumber?}`, `documents:{templateIds:[…]}` (1–12) |
 | `html` | `fieldId` | `height:normal` (`compact\|normal\|large`) |
 | `comments` | keine | keine |
 | `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate` |

@@ -4,7 +4,7 @@ import { projectPublishedRecords } from "../api/custom-app-public-dto";
 import { resolvePublishedCustomAppRuntime } from "../api/custom-app-published-runtime";
 import { projectDocuments } from "../api/documents-api-shared";
 import { toPublicForm } from "../api/form-api-shared";
-import { accessActorUser, actorViewerFor, gridsAccessContext } from "../api/permissions";
+import { accessActorUser, actorViewerFor, currentWorkflowPrincipal, gridsAccessContext } from "../api/permissions";
 import {
   type PublicField,
   type PublicGridFile,
@@ -25,6 +25,7 @@ import {
   customAppDocumentDownloadUrl,
   customAppDocumentPreviewUrl,
   customAppFormSubmitUrl,
+  customAppNavigationParams,
   customAppPageHref,
   customAppRecordFilesUrl,
   customAppRecordsUrl,
@@ -324,8 +325,9 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
   const availableNavigationPageIds = await availableIdsInBatches(
     definition.pages.filter((item) => item.navigation.visible),
     async (candidate) => {
-      if (candidate.id === page.id) return true;
-      const candidateParams: Record<string, string> = {};
+      if (candidate.id === page.id && (!candidate.record || publicPageParams[candidate.record.id.path] === candidate.navigation.recordId))
+        return true;
+      const candidateParams = customAppNavigationParams(candidate);
       const candidateContext = buildCustomAppRuntimeContext({
         access: requestAccess,
         app,
@@ -652,7 +654,8 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
           ),
         ]);
         if (!publicResponse.ok) return [block.id, { ok: false, message: t.dataSourceUnavailable }];
-        if (block.type === "metrics") return [block.id, { ok: true, cells: metricCellsFromPreview(publicResponse, sourceFields) }];
+        if (block.type === "metrics")
+          return [block.id, { ok: true, cells: metricCellsFromPreview(publicResponse, sourceFields, block.valueFormat) }];
         const chart = chartDataFromPreview(publicResponse, sourceFields);
         if (chart.kind === "error") return [block.id, { ok: false, message: t.chartDataUnavailable }];
         return [block.id, { ok: true, chart }];
@@ -740,6 +743,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
         page,
         capabilities,
         records: [pageRecord],
+        failureContext: { principal: currentWorkflowPrincipal(c), messages: gridsApiMessages.resolve([getLocale(c)]).t },
       })
     : {};
   const actions = new Map<string, CustomAppRenderedAction[]>();
@@ -748,8 +752,45 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
     for (const action of block.actions) {
       if (!(await available("action", action.availableWhen?.query, block.id, action.id))) continue;
       if (action.kind === "navigate") {
-        const href = customAppActionHref(app.shortId, action, publicPageParams, pageRecord?.shortId);
-        if (href) rendered.push({ id: action.id, kind: "navigate", label: action.label, icon: action.icon, href, history: action.history });
+        const relationParams: Record<string, string> = {};
+        for (const [parameterId, binding] of Object.entries(action.params)) {
+          if (binding.source !== "RECORD" || binding.path !== "relation" || !pageRecord) continue;
+          const id = await resolvePublicId("field", binding.fieldId);
+          const field = id ? await gridsService.field.get(id) : null;
+          const targetPage = definition.pages.find((candidate) => candidate.id === action.pageId);
+          const targetTable = targetPage?.parameters[parameterId]?.tableId;
+          const targetTableId = targetTable ? await resolvePublicId("table", targetTable) : null;
+          if (
+            !field ||
+            field.tableId !== pageRecord.tableId ||
+            field.type !== "relation" ||
+            field.config.cardinality !== "single" ||
+            field.config.targetTableId !== targetTableId ||
+            !customAppPageRecordFieldIds(page).includes(binding.fieldId)
+          )
+            continue;
+          const value = pageRecord.data[field.id];
+          const recordId =
+            typeof value === "string"
+              ? value
+              : Array.isArray(value) && value.length === 1 && typeof value[0] === "string"
+                ? value[0]
+                : null;
+          if (!recordId || !targetTableId) continue;
+          const related = await gridsService.record.get(targetTableId, recordId, { viewer, dateConfig });
+          if (related) relationParams[parameterId] = related.shortId;
+        }
+        const href = customAppActionHref(app.shortId, action, publicPageParams, pageRecord?.shortId, relationParams);
+        if (href)
+          rendered.push({
+            id: action.id,
+            kind: "navigate",
+            label: action.label,
+            icon: action.icon,
+            variant: action.variant,
+            href,
+            history: action.history,
+          });
         continue;
       }
       if (!accessActorUser(requestAccess)) continue;
@@ -768,6 +809,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
           kind: "workflow",
           label: action.label,
           icon: action.icon,
+          variant: action.variant,
           endpoint: customAppActionUrl(app.shortId, page.id, block.id, action.id, publicPageParams),
           confirm: action.confirm,
           ...(action.background && pageRecord
@@ -809,6 +851,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
           label: action.label,
           icon: action.icon,
           showLabel: action.showLabel,
+          variant: action.variant,
           endpoint: customAppRowActionUrl(app.shortId, page.id, block.id, action.id, publicPageParams),
           confirm: action.confirm,
         });

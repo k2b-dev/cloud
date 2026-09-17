@@ -1418,7 +1418,18 @@ const InlineCreateConfigSchema = z.object({
   fields: z.array(InlineCreateFormFieldSchema).optional(),
 });
 
+/** Starts a group at this input; following inputs belong to it until the next section. */
+export const FormSectionSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    description: z.string().max(2_000).optional(),
+    collapsible: z.boolean().optional(),
+  })
+  .strict();
+export type FormSection = z.infer<typeof FormSectionSchema>;
+
 const UserInputFormFieldEntrySchema = z.object({
+  section: FormSectionSchema.optional(),
   kind: z.literal("user_input"),
   fieldId: z.string().uuid(),
   width: FormFieldWidthSchema.optional(),

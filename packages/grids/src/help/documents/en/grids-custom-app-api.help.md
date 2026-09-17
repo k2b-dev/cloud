@@ -41,9 +41,9 @@ Every block requires `id` and `type`; all accept optional `title` (1–160 chara
 | `markdown` | `markdown` (up to 20,000 characters; empty is allowed) | none |
 | `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `workflowStatus`, `rowNavigate`, `rowActions` (up to 6) |
 | `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (up to 6) |
-| `metrics` | `source` | none |
+| `metrics` | `source` | `valueFormat` (common override for all values in this block) |
 | `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (each 1–60) |
-| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (up to 30), `documents:{templateIds:[…]}` (1–12) |
+| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (up to 30), `heading:{fieldId,documentNumber?}`, `documents:{templateIds:[…]}` (1–12) |
 | `html` | `fieldId` | `height:normal` (`compact\|normal\|large`) |
 | `comments` | none | none |
 | `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate` |

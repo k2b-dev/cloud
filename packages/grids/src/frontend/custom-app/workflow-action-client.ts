@@ -3,6 +3,7 @@ import { WorkflowPendingDocumentConfirmationSchema } from "../../workflows/query
 type CustomAppWorkflowOutcome = {
   kind: "running" | "success" | "error";
   message: string;
+  navigateTo?: string;
 };
 
 /** Retain this handle while the outcome is unknown; retries must not create a second run. */
@@ -80,7 +81,14 @@ export const invokeCustomAppWorkflow = async (input: {
   for (let attempt = 0; attempt < 150 && Date.now() < deadline; attempt += 1) {
     if (attempt > 0 && !live) await delay(Math.min(400 + attempt * 100, 2_000), input.signal);
     input.signal.throwIfAborted();
-    let status: { status?: unknown; message?: unknown; documentConfirmation?: unknown; live?: unknown; committedChanges?: unknown };
+    let status: {
+      status?: unknown;
+      message?: unknown;
+      documentConfirmation?: unknown;
+      live?: unknown;
+      committedChanges?: unknown;
+      navigateTo?: unknown;
+    };
     try {
       const statusResponse = await fetch(operation.statusUrl, {
         headers: { Accept: "application/json", ...(live ? { "X-Workflow-Changes": String(committedChanges) } : {}) },
@@ -98,7 +106,13 @@ export const invokeCustomAppWorkflow = async (input: {
       if (status.status !== "succeeded") await input.onCommittedChanges?.();
     }
     if (status.status === "succeeded") {
-      return { kind: "success", message: typeof status.message === "string" ? status.message : messages.completed };
+      return {
+        kind: "success",
+        message: typeof status.message === "string" ? status.message : messages.completed,
+        ...(typeof status.navigateTo === "string" && /^\/apps\/[A-Za-z0-9]{6}\//.test(status.navigateTo)
+          ? { navigateTo: status.navigateTo }
+          : {}),
+      };
     }
     if (status.status === "failed") {
       return { kind: "error", message: typeof status.message === "string" ? status.message : messages.failed };

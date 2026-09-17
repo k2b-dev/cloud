@@ -1174,6 +1174,8 @@ describe("Grids App Form runtime", () => {
               label: "Approve",
               kind: "workflow",
               launcherId: launcherPublicId,
+              variant: "primary",
+              onSuccessNavigate: { kind: "navigate", pageId: "request", params: { request_id: { source: "RESULT", path: "recordId" } } },
               inputs: { request: { source: "RECORD", path: "id" } },
               availableWhen: { query: actionAvailability },
             },
@@ -1451,6 +1453,7 @@ describe("Grids App Form runtime", () => {
             channel: "customApp" | "scanner";
           }
         >();
+        let workflowResult: GridsWorkflowRun["result"] = null;
         let statusResult: Pick<GridsWorkflowRun, "status" | "error" | "resultMessage"> = {
           status: "succeeded",
           error: null,
@@ -1539,7 +1542,7 @@ describe("Grids App Form runtime", () => {
                       actorUserId: accepted.principal.userId,
                       serviceAccountId: accepted.principal.serviceAccountId,
                       inputs: {},
-                      result: null,
+                      result: workflowResult,
                       ...statusResult,
                       createdAt: "2026-01-01T00:00:00.000Z",
                       startedAt: "2026-01-01T00:00:00.000Z",
@@ -1566,6 +1569,13 @@ describe("Grids App Form runtime", () => {
         expect(ownStatus.status).toBe(200);
         expect(await ownStatus.json()).toMatchObject({ status: "succeeded", message: "Approved", committedChanges: 0 });
         expect((await secondServiceAccountApi.request(statusPath)).status).toBe(404);
+        workflowResult = { kind: "record", tableId, recordId };
+        expect(await (await firstServiceAccountApi.request(statusPath)).json()).toMatchObject({
+          status: "succeeded",
+          navigateTo: `/apps/${applied.data.shortId}/request?request_id=${body.recordId}`,
+        });
+        workflowResult = null;
+        expect(await (await firstServiceAccountApi.request(statusPath)).json()).not.toHaveProperty("navigateTo");
 
         statusResult = { status: "running", error: null, resultMessage: null };
         const waitingHeaders = { "X-Workflow-Changes": "0" };

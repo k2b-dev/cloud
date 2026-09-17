@@ -1,12 +1,14 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, CopyButton, confirmDiscardIfDirty, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form } from "../../../api/public-dto";
 import { evaluateFormValidations } from "../../../form-validations";
 import { FormComputedSummary } from "../forms/FormComputedSummary";
+import { createFormSections, FormSections, focusFormField } from "../forms/FormSections";
 import { formFieldClass, formLayoutClass } from "../forms/field-layout";
 import { buildFormSubmitPayload, buildInitialValues, FieldInput, type InlineCreateState, userInputEntriesOf } from "../forms/form-fields";
+import { formFieldError } from "../forms/form-input-validation";
 import { gridsFormMessages } from "../forms/messages";
 import { errorMessage } from "../utils/api-helpers";
 import { recordMessages } from "./messages";
@@ -61,8 +63,10 @@ function FormSubmitBody(props: {
   const fieldsById = new Map(props.fields.map((f) => [f.id, f]));
   const entries = userInputEntriesOf(props.form.config.fields);
 
+  let formRef: HTMLFormElement | undefined;
   const freshValues = () => buildInitialValues(entries, props.fields, { dateConfig: props.dateConfig, now: new Date() });
   let initialValues = freshValues();
+  const sections = createFormSections(entries, initialValues);
   const [values, setValues] = createSignal<Record<string, unknown>>(initialValues);
   const [inlineCreates, setInlineCreates] = createSignal<InlineCreateState>({});
   const [submitting, setSubmitting] = createSignal(false);
@@ -75,14 +79,27 @@ function FormSubmitBody(props: {
     if (
       done() ||
       (await confirmDiscardIfDirty(
-        () =>
-          JSON.stringify(values()) !== JSON.stringify(initialValues) || Object.keys(inlineCreates()).length > 0,
+        () => JSON.stringify(values()) !== JSON.stringify(initialValues) || Object.keys(inlineCreates()).length > 0,
       ))
     )
       props.close();
   };
   props.registerClose(() => void requestClose());
-  const validationFailures = createMemo(() => evaluateFormValidations(props.form.config.validations, values(), fieldsById));
+  const validationFailures = createMemo(() => {
+    const failures: Array<{ errorFieldId: string; message: string }> = evaluateFormValidations(
+      props.form.config.validations,
+      values(),
+      fieldsById,
+    );
+    if (attempted())
+      for (const entry of entries) {
+        const field = fieldsById.get(entry.fieldId);
+        if (!field || field.deletedAt) continue;
+        const message = formFieldError(field, entry, values()[field.id], { locale: locale(), dateConfig: props.dateConfig });
+        if (message) failures.push({ errorFieldId: field.id, message });
+      }
+    return failures;
+  });
   const validationErrors = createMemo(() =>
     Object.fromEntries((attempted() ? validationFailures() : []).map((failure) => [failure.errorFieldId, failure.message])),
   );
@@ -99,9 +116,9 @@ function FormSubmitBody(props: {
     if (submitting()) return;
     setAttempted(true);
     setError(null);
-    const invalid = validationFailures()[0];
+    const invalid = pendingSubmission() ? undefined : validationFailures()[0];
     if (invalid) {
-      if (event.currentTarget instanceof HTMLElement) event.currentTarget.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+      focusFormField(formRef, invalid.errorFieldId, sections);
       return;
     }
     setSubmitting(true);
@@ -153,7 +170,22 @@ function FormSubmitBody(props: {
         <SuccessState message={props.form.config.successMessage ?? t().saved} onOk={() => props.close()} onAddAnother={handleAddAnother} />
       }
     >
-      <form class="flex flex-col gap-3" onSubmit={handleSubmit}>
+      <form
+        ref={(form) => {
+          formRef = form;
+          const revealInvalid = (event: Event) => {
+            const fieldId =
+              event.target instanceof HTMLElement
+                ? event.target.closest<HTMLElement>("[data-grids-form-field]")?.dataset.gridsFormField
+                : undefined;
+            if (fieldId) sections.reveal(fieldId);
+          };
+          form.addEventListener("invalid", revealInvalid, true);
+          onCleanup(() => form.removeEventListener("invalid", revealInvalid, true));
+        }}
+        class="flex flex-col gap-3"
+        onSubmit={handleSubmit}
+      >
         {/* Keep title images compact and uncropped across logo and banner aspect ratios. */}
         <Show when={props.form.config.titleImage}>
           {(src) => <img src={src()} alt="" class="w-full max-h-24 rounded-md object-contain" />}
@@ -163,26 +195,26 @@ function FormSubmitBody(props: {
         </Show>
 
         <fieldset disabled={submitting() || pendingSubmission() !== null} class={formLayoutClass}>
-          <For each={entries}>
+          <FormSections state={sections}>
             {(entry) => {
               const field = fieldsById.get(entry.fieldId);
               if (!field || field.deletedAt) return null;
               return (
-                <div class={formFieldClass(entry.width)}>
-                <FieldInput
-                  field={field}
-                  entry={entry}
-                  value={values()[entry.fieldId]}
-                  onChange={(v) => setValue(entry.fieldId, v)}
-                  error={() => validationErrors()[entry.fieldId]}
-                  inlineCreates={inlineCreates}
-                  onInlineCreatesChange={setInlineDrafts}
-                  dateConfig={props.dateConfig}
-                />
+                <div class={formFieldClass(entry.width)} data-grids-form-field={entry.fieldId}>
+                  <FieldInput
+                    field={field}
+                    entry={entry}
+                    value={values()[entry.fieldId]}
+                    onChange={(v) => setValue(entry.fieldId, v)}
+                    error={() => validationErrors()[entry.fieldId]}
+                    inlineCreates={inlineCreates}
+                    onInlineCreatesChange={setInlineDrafts}
+                    dateConfig={props.dateConfig}
+                  />
                 </div>
               );
             }}
-          </For>
+          </FormSections>
         </fieldset>
 
         <Show when={error()}>

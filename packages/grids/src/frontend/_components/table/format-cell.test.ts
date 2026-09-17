@@ -34,9 +34,13 @@ describe("formatCell", () => {
     ).toBe("Done, Open");
   });
 
-  test("renders number units without changing stored decimal text", () => {
-    expect(formatCell("12.3400", "number", { unit: "EUR", unitPosition: "prefix" })).toBe("EUR 12.3400");
-    expect(formatCell("12.3400", "number", { unit: "kg" })).toBe("12.3400 kg");
+  test("renders exact numeric values with configured precision, locale and unit", () => {
+    expect(formatCell("12.3400", "number", { unit: "EUR", unitPosition: "prefix" })).toBe("EUR 12.34");
+    expect(formatCell("12.3400", "number", { unit: "kg" })).toBe("12.34 kg");
+    expect(formatCell("22.6", "number", { decimalPlaces: 2, unit: "EUR" }, undefined, undefined, "de")).toBe("22,60 EUR");
+    expect(formatCell("1.0000", "number", { integerOnly: true }, undefined, undefined, "de")).toBe("1");
+    expect(formatCell("9007199254740993.2500", "number", { decimalPlaces: 2 }, undefined, undefined, "de")).toBe("9007199254740993,25");
+    expect(formatCell("10.0000", "number", { unit: "EUR", decimalPlaces: 4 }, { kind: "decimal" }, undefined, "de")).toBe("10 EUR");
   });
 
   test("applies decimal format overrides only to numeric/formula values", () => {

@@ -1,5 +1,5 @@
 import { Button, IconButton, NoticeCard, Placeholder, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Index, type JSX, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, type JSX, Show } from "solid-js";
 import {
   createObjectListEntry,
   type ObjectListColumn,
@@ -9,8 +9,8 @@ import {
 } from "../../../field-types/object-list";
 import type { FormulaRuntimeContext } from "../../../formula/function-runtime";
 import { formatCell } from "../table/format-cell";
-import { gridsFormMessages } from "./messages";
 import { formFieldClass, formLayoutClass } from "./field-layout";
+import { gridsFormMessages } from "./messages";
 
 /** A parent-owned value editor; row controls never create independent records. */
 export function ObjectListInput(props: {
@@ -55,6 +55,24 @@ export function ObjectListInput(props: {
       : [];
   const validValue = () => props.value == null || (Array.isArray(props.value) && rows().length === props.value.length);
   const calculatedColumns = createMemo(() => config()?.fields.filter((column) => column.formula) ?? []);
+  const secondaryColumn = (column: ObjectListColumn) => column.detailsOnly && (Boolean(column.formula) || !column.required);
+  createEffect(() => {
+    if (!props.error) return;
+    for (const [index, row] of rows().entries()) {
+      for (const column of config()?.fields ?? []) {
+        if (column.formula) continue;
+        const result = objectListScalarHandlers[column.type].validate(row[column.id], column.config, column.required, {
+          dateConfig: props.dateConfig,
+          locale: locale(),
+        });
+        if (!result.ok) {
+          setPage(Math.floor(index / pageSize));
+          if (secondaryColumn(column)) setShowDetails(true);
+          return;
+        }
+      }
+    }
+  });
   const addButton = () => (
     <Button
       type="button"
@@ -133,8 +151,33 @@ export function ObjectListInput(props: {
                 return (
                   <fieldset data-list-row tabIndex={-1} class="paper flex min-w-0 flex-col gap-3 p-3">
                     <legend class="sr-only">{t().listRow({ number: index + 1 })}</legend>
-                    <div class="flex items-center gap-2">
-                      <span class="mr-auto text-sm text-dimmed">{t().listRow({ number: index + 1 })}</span>
+                    <span class="text-sm text-dimmed">{t().listRow({ number: index + 1 })}</span>
+                    <div class={formLayoutClass}>
+                      <For each={config()?.fields.filter((column) => !secondaryColumn(column) || showDetails()) ?? []}>
+                        {(column) => (
+                          <div class={formFieldClass(column.width)}>
+                            {column.formula
+                              ? calculatedValue(column)
+                              : props.renderCell(
+                                  column,
+                                  `${props.name}-${index}-${column.id}`,
+                                  () => row()[column.id],
+                                  (value) => changeCell(index, column.id, value),
+                                  () => {
+                                    const value = row()[column.id];
+                                    if (value === undefined && !props.error) return undefined;
+                                    const result = objectListScalarHandlers[column.type].validate(value, column.config, column.required, {
+                                      dateConfig: props.dateConfig,
+                                      locale: locale(),
+                                    });
+                                    return result.ok ? undefined : result.error;
+                                  },
+                                )}
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                    <div class="flex items-center justify-end gap-2">
                       <IconButton
                         type="button"
                         variant="ghost"
@@ -168,31 +211,6 @@ export function ObjectListInput(props: {
                       >
                         <i class="ti ti-trash" aria-hidden="true" />
                       </IconButton>
-                    </div>
-                    <div class={formLayoutClass}>
-                      <For each={config()?.fields.filter((column) => !column.detailsOnly || showDetails()) ?? []}>
-                        {(column) => (
-                          <div class={formFieldClass(column.width)}>
-                            {column.formula
-                              ? calculatedValue(column)
-                              : props.renderCell(
-                                  column,
-                                  `${props.name}-${index}-${column.id}`,
-                                  () => row()[column.id],
-                                  (value) => changeCell(index, column.id, value),
-                                  () => {
-                                    const value = row()[column.id];
-                                    if (value === undefined && !props.error) return undefined;
-                                    const result = objectListScalarHandlers[column.type].validate(value, column.config, column.required, {
-                                      dateConfig: props.dateConfig,
-                                      locale: locale(),
-                                    });
-                                    return result.ok ? undefined : result.error;
-                                  },
-                                )}
-                          </div>
-                        )}
-                      </For>
                     </div>
                     <Show when={calculationError()}>
                       {(error) => (
@@ -232,10 +250,12 @@ export function ObjectListInput(props: {
         <Show when={rows().length > 0} fallback={<Placeholder variant="compact" title={t().listEmpty} action={addButton()} />}>
           <div class="flex flex-wrap items-center gap-3">
             {addButton()}
-            <Show when={calculatedColumns().some((column) => column.detailsOnly)}>
+            <Show when={config()?.fields.some(secondaryColumn)}>
               <Button type="button" variant="input" aria-pressed={showDetails()} onClick={() => setShowDetails(!showDetails())}>
                 <i class={showDetails() ? "ti ti-eye-off" : "ti ti-eye"} aria-hidden="true" />
-                {t().listCalculationDetails}
+                {config()?.fields.some((column) => secondaryColumn(column) && !column.formula)
+                  ? t().listDetails
+                  : t().listCalculationDetails}
               </Button>
             </Show>
           </div>

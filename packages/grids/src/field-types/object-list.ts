@@ -39,7 +39,7 @@ export const ObjectListColumnSchema = z
     config: z.record(z.string(), z.unknown()).default({}),
     required: z.boolean().default(false),
     formula: FormulaConfigSchema.optional(),
-    /** Presentation only: calculated helper columns can be disclosed on demand. */
+    /** Presentation only: optional inputs and calculated helper columns can be disclosed on demand. */
     detailsOnly: z.boolean().optional(),
     width: FormFieldWidthSchema.optional(),
     /** Literal suggestion for a newly added entry; never a write-time fallback. */
@@ -47,10 +47,6 @@ export const ObjectListColumnSchema = z
   })
   .strict()
   .transform((column, ctx) => {
-    if (column.detailsOnly && !column.formula) {
-      ctx.addIssue({ code: "custom", path: ["detailsOnly"], message: "only calculated columns can be details-only" });
-      return z.NEVER;
-    }
     const parsed = objectListScalarHandlers[column.type].configSchema.pipe(z.record(z.string(), z.unknown())).safeParse(column.config);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: ["config", ...issue.path], message: issue.message });
@@ -113,9 +109,11 @@ type ObjectListValue = Array<Record<string, unknown>>;
 
 /** Defaults initialize new entries only, including independent multi-select arrays. */
 export const createObjectListEntry = (config: ObjectListConfig): Record<string, unknown> =>
-  Object.fromEntries(config.fields
-    .filter((column) => !column.formula && column.defaultValue !== undefined && column.defaultValue !== null)
-    .map((column) => [column.id, structuredClone(column.defaultValue)]));
+  Object.fromEntries(
+    config.fields
+      .filter((column) => !column.formula && column.defaultValue !== undefined && column.defaultValue !== null)
+      .map((column) => [column.id, structuredClone(column.defaultValue)]),
+  );
 
 export const objectListFormulaColumns = (
   fields: ReadonlyArray<{ id: string; type: string; config: unknown }>,

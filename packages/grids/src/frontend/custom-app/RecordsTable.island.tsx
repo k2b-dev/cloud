@@ -1,5 +1,16 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, DataTable, type DataTableColumn, IconButton, Placeholder, prompts, TextInput, toast } from "@k2b/ui";
+import {
+  Button,
+  DataTable,
+  type DataTableColumn,
+  IconButton,
+  Placeholder,
+  prompts,
+  StatusBadge,
+  TextInput,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { PublicField, PublicGridRecord } from "../../api/public-dto";
 import type { DslQueryPreviewResponse, RecordDisplayConfig } from "../../contracts";
@@ -9,6 +20,8 @@ import { customAppRowHref } from "../../custom-apps/routing";
 import type { GridFilePreview } from "../../service";
 import { RecordCardsView } from "../_components/records-view/RecordCardsView";
 import { FieldValue } from "../_components/table/FieldValue";
+import { fieldDisplayFormat } from "../_components/table/field-value-format";
+import { formatCell } from "../_components/table/format-cell";
 import { openFinancialExportDialog } from "../_components/workflows/FinancialExportDialog";
 import { customAppCardFileUrl } from "./records-card-url";
 import { customAppRecordsResultColumns } from "./records-table-model";
@@ -35,6 +48,7 @@ export type CustomAppRenderedRowAction = {
   icon?: string;
   showLabel: boolean;
   endpoint: string;
+  variant?: "primary" | "secondary" | "danger";
   confirm?: string;
 };
 const displayValue = (value: unknown): string => {
@@ -67,6 +81,7 @@ export default function RecordsTable(props: {
   preview?: boolean;
 }) {
   const messages = useCustomAppRuntimeMessages();
+  const locale = useLocale();
   const [result, setResult] = createSignal(props.result);
   const [query, setQuery] = createSignal("");
   const [appliedQuery, setAppliedQuery] = createSignal("");
@@ -153,6 +168,8 @@ export default function RecordsTable(props: {
   };
 
   const resultColumns = createMemo(() => customAppRecordsResultColumns(result().columns, props.selectedColumnIds));
+  const emptyTable = () =>
+    !result().cards && result().rows.length === 0 && resultColumns().length > 0 && !query().trim() && !appliedQuery() && !loading();
   const presentationFields = createMemo(() => new Map((result().presentation?.fields ?? []).map((field) => [field.id, field])));
   const rows = createMemo(() =>
     result().rows.map((row, index) => ({
@@ -234,7 +251,11 @@ export default function RecordsTable(props: {
       if (
         !operations()[key] &&
         action.confirm &&
-        !(await prompts.confirm(action.confirm, { title: action.label, confirmText: action.label }))
+        !(await prompts.confirm(action.confirm, {
+          title: action.label,
+          confirmText: action.label,
+          ...(action.variant === "danger" ? { variant: "danger" as const } : {}),
+        }))
       )
         return;
       if (disposed) return;
@@ -263,8 +284,8 @@ export default function RecordsTable(props: {
       });
       if (outcome.kind !== "running") setOperations((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== key)));
       if (outcome.kind === "success") {
-        toast.success(outcome.message);
-        await loadPage(cursor(), appliedQuery(), history());
+        if (outcome.navigateTo) window.location.replace(outcome.navigateTo);
+        else window.location.reload();
       } else if (outcome.kind === "error") toast.error(outcome.message);
       else toast(outcome.message);
     } catch (cause) {
@@ -278,7 +299,7 @@ export default function RecordsTable(props: {
   return (
     <DataTable.Panel class="overflow-hidden">
       <DataTable.Header title={props.title} as="h2" size="md" />
-      <Show when={!props.preview && props.searchable}>
+      <Show when={!props.preview && props.searchable && !emptyTable()}>
         <DataTable.Controls>
           <Show when={props.searchable}>
             <TextInput
@@ -310,52 +331,85 @@ export default function RecordsTable(props: {
               />
             }
           >
-            <DataTable
-              ariaLabel={props.title}
-              rows={rows()}
-              columns={columns()}
-              getRowId={(row) => row.rowKey}
-              density="compact"
-              surface="plain"
-              class="overflow-x-auto"
-              hoverRows={Boolean(props.rowNavigate)}
-              rowClass={(row) => (row.href ? "cursor-pointer" : undefined)}
-              onRowClick={
-                props.rowNavigate
-                  ? (row) => {
-                      if (!row.href) return;
-                      if (props.rowNavigate?.history === "replace") window.location.replace(row.href);
-                      else window.location.assign(row.href);
-                    }
-                  : undefined
-              }
-              empty={<span>{appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}</span>}
-              renderCell={({ row, col, value }) => {
-                if (col.id === "__workflowStatus") {
-                  const state = row.recordId ? result().workflowStates?.[row.recordId] : undefined;
-                  return state?.status === "ready"
-                    ? messages().documentReady
-                    : state?.status === "running"
-                      ? messages().documentCreating
-                      : state?.status === "failed" || state?.status === "attention"
-                        ? messages().documentFailed
-                        : state?.status === "missing"
-                          ? messages().documentMissing
-                          : messages().documentDraft;
+            <Show when={!emptyTable()} fallback={<Placeholder variant="compact" align="left" description={props.emptyText} />}>
+              <DataTable
+                ariaLabel={props.title}
+                rows={rows()}
+                columns={columns()}
+                getRowId={(row) => row.rowKey}
+                density="compact"
+                surface="plain"
+                class="overflow-x-auto"
+                hoverRows={Boolean(props.rowNavigate)}
+                rowClass={(row) => (row.href ? "cursor-pointer" : undefined)}
+                onRowClick={
+                  props.rowNavigate
+                    ? (row) => {
+                        if (!row.href) return;
+                        if (props.rowNavigate?.history === "replace") window.location.replace(row.href);
+                        else window.location.assign(row.href);
+                      }
+                    : undefined
                 }
-                if (col.id === "__actions") {
-                  if (!row.recordId) return null;
-                  return (
-                    <div class="flex min-w-max flex-wrap items-center gap-1">
-                      <For each={props.rowActions ?? []}>
-                        {(action) => (
-                          <Show
-                            when={action.showLabel}
-                            fallback={
-                              <IconButton
-                                label={actionLabel(row.recordId!, action)}
+                empty={<span>{appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}</span>}
+                renderCell={({ row, col, value }) => {
+                  if (col.id === "__workflowStatus") {
+                    const state = row.recordId ? result().workflowStates?.[row.recordId] : undefined;
+                    const label =
+                      state?.status === "ready"
+                        ? messages().documentReady
+                        : state?.status === "running"
+                          ? messages().documentCreating
+                          : state?.status === "failed" || state?.status === "attention"
+                            ? messages().documentFailed
+                            : state?.status === "missing"
+                              ? messages().documentMissing
+                              : messages().documentDraft;
+                    const tone =
+                      state?.status === "ready"
+                        ? "ok"
+                        : state?.status === "running"
+                          ? "running"
+                          : state?.status === "failed" || state?.status === "attention" || state?.status === "missing"
+                            ? "warning"
+                            : "neutral";
+                    return (
+                      <span class="flex flex-col items-start gap-1">
+                        <Show when={state?.status === "ready" && state.document?.number}>
+                          {(number) => <span class="font-medium tabular-nums text-primary">{number()}</span>}
+                        </Show>
+                        <StatusBadge tone={tone} label={label} variant="dot" />
+                      </span>
+                    );
+                  }
+                  if (col.id === "__actions") {
+                    if (!row.recordId) return null;
+                    return (
+                      <div class="flex min-w-max flex-wrap items-center gap-1">
+                        <For each={props.rowActions ?? []}>
+                          {(action) => (
+                            <Show
+                              when={action.showLabel}
+                              fallback={
+                                <IconButton
+                                  label={actionLabel(row.recordId!, action)}
+                                  size="xs"
+                                  variant={action.variant ?? "secondary"}
+                                  loading={pendingKey() === `${row.recordId}:${action.id}`}
+                                  loadingLabel={`${action.label}…`}
+                                  disabled={props.preview || Boolean(pendingKey())}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void invoke(row.recordId!, action);
+                                  }}
+                                >
+                                  <i class={`ti ti-${action.icon}`} aria-hidden="true" />
+                                </IconButton>
+                              }
+                            >
+                              <Button
                                 size="xs"
-                                variant="secondary"
+                                variant={action.variant ?? "secondary"}
                                 loading={pendingKey() === `${row.recordId}:${action.id}`}
                                 loadingLabel={`${action.label}…`}
                                 disabled={props.preview || Boolean(pendingKey())}
@@ -364,61 +418,54 @@ export default function RecordsTable(props: {
                                   void invoke(row.recordId!, action);
                                 }}
                               >
-                                <i class={`ti ti-${action.icon}`} aria-hidden="true" />
-                              </IconButton>
-                            }
-                          >
-                            <Button
-                              size="xs"
-                              variant="secondary"
-                              loading={pendingKey() === `${row.recordId}:${action.id}`}
-                              loadingLabel={`${action.label}…`}
-                              disabled={props.preview || Boolean(pendingKey())}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void invoke(row.recordId!, action);
-                              }}
-                            >
-                              <Show when={action.icon}>
-                                <i class={`ti ti-${action.icon}`} aria-hidden="true" />
-                              </Show>
-                              {actionLabel(row.recordId!, action)}
-                            </Button>
-                          </Show>
-                        )}
-                      </For>
+                                <Show when={action.icon}>
+                                  <i class={`ti ti-${action.icon}`} aria-hidden="true" />
+                                </Show>
+                                {actionLabel(row.recordId!, action)}
+                              </Button>
+                            </Show>
+                          )}
+                        </For>
+                      </div>
+                    );
+                  }
+                  const resultColumn = resultColumns().find((column) => column.key === col.id);
+                  const field = resultColumn?.fieldId ? presentationFields().get(resultColumn.fieldId) : undefined;
+                  const rendered = field ? (
+                    <FieldValue
+                      field={field}
+                      value={value}
+                      record={rowRecord(row)}
+                      baseId={props.baseId}
+                      dateConfig={props.dateConfig}
+                      format={
+                        field.type === "date"
+                          ? (fieldDisplayFormat(field) ?? { kind: "date", format: "short", includeTime: field.config.includeTime === true })
+                          : undefined
+                      }
+                      mode="table"
+                      relationValueMode={field.type === "relation" ? "labels" : undefined}
+                    />
+                  ) : resultColumn?.type === "date" || resultColumn?.sqlType === "date" ? (
+                    formatCell(value, "date", undefined, { kind: "date", format: "short" }, props.dateConfig, locale())
+                  ) : (
+                    displayValue(value)
+                  );
+                  return row.href && col.id === firstColumnId() ? (
+                    <a href={row.href} class="group font-medium text-primary" onClick={(event) => event.stopPropagation()}>
+                      <span class="whitespace-pre-wrap break-words underline-offset-2 group-hover:underline group-focus-visible:underline">
+                        {rendered}
+                      </span>{" "}
+                      <i class="ti ti-external-link inline-block text-[10px] text-dimmed" aria-hidden="true" />
+                    </a>
+                  ) : (
+                    <div class={field?.type === "date" ? "whitespace-nowrap tabular-nums" : "whitespace-pre-wrap break-words"}>
+                      {rendered}
                     </div>
                   );
-                }
-                const resultColumn = resultColumns().find((column) => column.key === col.id);
-                const field = resultColumn?.fieldId ? presentationFields().get(resultColumn.fieldId) : undefined;
-                const rendered = field ? (
-                  <FieldValue
-                    field={field}
-                    value={value}
-                    record={rowRecord(row)}
-                    baseId={props.baseId}
-                    dateConfig={props.dateConfig}
-                    mode="table"
-                    relationValueMode={field.type === "relation" ? "labels" : undefined}
-                  />
-                ) : (
-                  displayValue(value)
-                );
-                return row.href && col.id === firstColumnId() ? (
-                  <a href={row.href} class="group font-medium text-primary" onClick={(event) => event.stopPropagation()}>
-                    <span class="whitespace-pre-wrap break-words underline-offset-2 group-hover:underline group-focus-visible:underline">
-                      {rendered}
-                    </span>{" "}
-                    <i class="ti ti-external-link inline-block text-[10px] text-dimmed" aria-hidden="true" />
-                  </a>
-                ) : (
-                  <div class={field?.type === "date" ? "whitespace-nowrap tabular-nums" : "whitespace-pre-wrap break-words"}>
-                    {rendered}
-                  </div>
-                );
-              }}
-            />
+                }}
+              />
+            </Show>
           </Show>
         }
       >
@@ -454,7 +501,7 @@ export default function RecordsTable(props: {
                             <IconButton
                               label={actionLabel(record.id, action)}
                               size="xs"
-                              variant="secondary"
+                              variant={action.variant ?? "secondary"}
                               loading={pendingKey() === `${record.id}:${action.id}`}
                               loadingLabel={`${action.label}…`}
                               disabled={props.preview || Boolean(pendingKey())}
@@ -466,7 +513,7 @@ export default function RecordsTable(props: {
                         >
                           <Button
                             size="xs"
-                            variant="secondary"
+                            variant={action.variant ?? "secondary"}
                             loading={pendingKey() === `${record.id}:${action.id}`}
                             loadingLabel={`${action.label}…`}
                             disabled={props.preview || Boolean(pendingKey())}

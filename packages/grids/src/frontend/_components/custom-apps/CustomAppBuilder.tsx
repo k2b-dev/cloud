@@ -41,6 +41,7 @@ import type {
 } from "../../../custom-apps/contracts";
 import { type CustomAppBlockDragMeta, type CustomAppBlockDropMeta, CustomAppPageLayout } from "../../custom-app/PageLayout";
 import { isRecordInputField } from "../fields/field-render";
+import RecordPicker from "../records/RecordPicker";
 import { errorMessage } from "../utils/api-helpers";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
 import { acknowledgeWorkspaceResource } from "../workspace/workspace-live-state";
@@ -52,6 +53,7 @@ import { CustomAppAvailabilitySection, CustomAppGqlField } from "./CustomAppGqlF
 import { CustomAppHtmlEditor } from "./CustomAppHtmlEditor";
 import { CustomAppMarkdownField } from "./CustomAppMarkdownField";
 import { CustomAppSettings } from "./CustomAppSettings";
+import { CustomAppValueFormatEditor } from "./CustomAppValueFormatEditor";
 import {
   applyCustomAppBlockDrop,
   type CustomAppBlockDropIntent,
@@ -1141,7 +1143,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
           ? {
               icon: "ti ti-chart-dots",
               label: text("Metrics"),
-              description: text("Summarize data with aggregate GQL."),
+              description: text("Show totals or a numeric record summary with limit 1."),
               action: addMetricsBlock,
             }
           : { icon: "ti ti-chart-dots", label: text("Metrics"), description: text("Create a table with fields first."), disabled: true },
@@ -1301,7 +1303,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
         })),
       })),
     });
-    patchPage({ rows: page.rows, ...(removingLastRecord ? { record: undefined } : {}) });
+    patchPage({
+      rows: page.rows,
+      ...(removingLastRecord
+        ? { record: undefined, navigation: { ...selectedPage().navigation, recordId: undefined, visible: false } }
+        : {}),
+    });
   };
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1573,13 +1580,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       ...(isPageRecord
         ? {
             record: { tableId, id: { source: "PARAMS" as const, path: parameterId } },
+            navigation: { ...selectedPage().navigation, recordId: undefined, visible: false },
             rows: selectedPage().rows.map((row) => ({
               ...row,
               columns: row.columns.map((column) => ({
                 ...column,
                 blocks: column.blocks.map((block) =>
                   block.type === "record"
-                    ? { ...block, fieldIds: fields.map((field) => field.id), editableFieldIds: [], documents: undefined }
+                    ? {
+                        ...block,
+                        fieldIds: fields.map((field) => field.id),
+                        editableFieldIds: [],
+                        documents: undefined,
+                        heading: undefined,
+                      }
                     : block.type === "html" && htmlField
                       ? { ...block, fieldId: htmlField.id }
                       : block,
@@ -1609,6 +1623,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     patchPage({
       parameters: Object.fromEntries(Object.entries(selectedPage().parameters).filter(([id]) => id !== parameterId)),
       record: undefined,
+      navigation: { ...selectedPage().navigation, recordId: undefined, visible: false },
       rows: selectedPage().rows.map((row) => ({
         ...row,
         columns: row.columns.map((column) => {
@@ -2352,16 +2367,35 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     onValueChange={(value) => patchPage({ navigation: { ...selectedPage().navigation, icon: iconSlug(value) } })}
                     clearable
                   />
+                  <Show when={selectedPage().record}>
+                    {(record) => (
+                      <RecordPicker
+                        tableId={record().tableId}
+                        label={text("Navigation record")}
+                        description={text("Choose the record this page opens from the app navigation.")}
+                        value={() => selectedPage().navigation.recordId ?? ""}
+                        onChange={(recordId) =>
+                          patchPage({
+                            navigation: {
+                              ...selectedPage().navigation,
+                              recordId: recordId || undefined,
+                              visible: recordId ? selectedPage().navigation.visible : false,
+                            },
+                          })
+                        }
+                      />
+                    )}
+                  </Show>
                   <Switch
                     label={text("Show in app navigation")}
                     description={
-                      Object.keys(selectedPage().parameters).length > 0
-                        ? text("Pages with required parameters are route-only and cannot appear in navigation.")
+                      Object.keys(selectedPage().parameters).length > 0 && !selectedPage().navigation.recordId
+                        ? text("Choose a navigation record to show this record page in the sidebar.")
                         : undefined
                     }
                     value={() => selectedPage().navigation.visible}
                     onValueChange={(visible) => patchPage({ navigation: { ...selectedPage().navigation, visible } })}
-                    disabled={Object.keys(selectedPage().parameters).length > 0}
+                    disabled={Object.keys(selectedPage().parameters).length > 0 && !selectedPage().navigation.recordId}
                   />
                   <Show
                     when={draft.draft().startPageId === selectedPage().id}
@@ -2959,6 +2993,19 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           </Show>
                         </div>
                       </DetailPanel.Section>
+                      <Show when={selected().block.type === "metrics"}>
+                        <DetailPanel.Section title={text("Value format")} icon="ti ti-decimal" collapsible defaultOpen>
+                          <CustomAppValueFormatEditor
+                            value={(() => {
+                              const block = selectedSourceBlock();
+                              return block?.type === "metrics" ? block.valueFormat : undefined;
+                            })()}
+                            onChange={(valueFormat) =>
+                              updateSelectedBlock((block) => (block.type === "metrics" ? { ...block, valueFormat } : block))
+                            }
+                          />
+                        </DetailPanel.Section>
+                      </Show>
                       <Show when={selected().block.type === "records"}>
                         <DetailPanel.Section
                           title={text("Records table")}
@@ -3290,6 +3337,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         />
                       </DetailPanel.Section>
                       <Show when={selectedForm()}>
+                        <Select
+                          label={text("Actions using the saved form")}
+                          description={text("Keep these actions disabled until changes are saved.")}
+                          clearable
+                          value={() => selectedFormBlock()?.actionsBlockId ?? null}
+                          options={selected()
+                            .column.blocks.filter((block) => block.type === "actions")
+                            .map((block) => ({ id: block.id, label: block.title ?? block.id }))}
+                          onValueChange={(actionsBlockId) =>
+                            updateSelectedBlock((block) =>
+                              block.type === "form" ? { ...block, actionsBlockId: actionsBlockId || undefined } : block,
+                            )
+                          }
+                        />
                         <Show when={selectedFormBindingOptions().length > 0}>
                           <DetailPanel.Section
                             title={text("Values supplied by this page")}
@@ -3537,6 +3598,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       ...block,
                                       fieldIds: fieldIds.slice(0, 30),
                                       editableFieldIds: block.editableFieldIds.filter((id) => fieldIds.includes(id)),
+                                      heading: block.heading && fieldIds.includes(block.heading.fieldId) ? block.heading : undefined,
                                     }
                                   : block,
                               )
@@ -3558,6 +3620,24 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             onValueChange={(editableFieldIds) =>
                               updateSelectedBlock((block) =>
                                 block.type === "record" ? { ...block, editableFieldIds: editableFieldIds.slice(0, 30) } : block,
+                              )
+                            }
+                          />
+                          <Select
+                            label={text("Heading field")}
+                            description={text("Use a visible field to identify the record instead of repeating the table name.")}
+                            value={() => selectedRecordBlock()?.heading?.fieldId ?? ""}
+                            options={[
+                              { id: "", label: text("Block title") },
+                              ...pageRecordFields()
+                                .filter((field) => selectedRecordBlock()?.fieldIds.includes(field.id))
+                                .map((field) => ({ id: field.id, label: field.name })),
+                            ]}
+                            onValueChange={(fieldId) =>
+                              updateSelectedBlock((block) =>
+                                block.type === "record"
+                                  ? { ...block, heading: fieldId ? { ...block.heading, fieldId } : undefined }
+                                  : block,
                               )
                             }
                           />
@@ -3591,21 +3671,49 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             onValueChange={(templateIds) =>
                               updateSelectedBlock((block) =>
                                 block.type === "record"
-                                  ? { ...block, documents: templateIds.length > 0 ? { ...block.documents, templateIds: templateIds.slice(0, 12) } : undefined }
+                                  ? {
+                                      ...block,
+                                      documents:
+                                        templateIds.length > 0 ? { ...block.documents, templateIds: templateIds.slice(0, 12) } : undefined,
+                                      heading: block.heading
+                                        ? {
+                                            ...block.heading,
+                                            documentNumber: templateIds.length > 0 ? block.heading.documentNumber : undefined,
+                                          }
+                                        : undefined,
+                                    }
                                   : block,
                               )
                             }
                           />
                           <Show when={(selectedRecordBlock()?.documents?.templateIds.length ?? 0) > 0}>
+                            <Show when={selectedRecordBlock()?.heading}>
+                              <Switch
+                                label={text("Use the document number as heading")}
+                                description={text("After creation, show the document number above the selected heading field.")}
+                                value={() => selectedRecordBlock()?.heading?.documentNumber === true}
+                                onValueChange={(documentNumber) =>
+                                  updateSelectedBlock((block) =>
+                                    block.type === "record" && block.heading
+                                      ? { ...block, heading: { ...block.heading, documentNumber } }
+                                      : block,
+                                  )
+                                }
+                              />
+                            </Show>
                             <Switch
                               label={text("Allow draft PDF previews")}
-                              description={text("Readers can preview saved drafts using these templates, including their queried data. No document is issued. Template or schema changes require republishing the app.")}
-                              value={() => selectedRecordBlock()?.documents?.preview === true}
-                              onValueChange={(preview) => updateSelectedBlock((block) =>
-                                block.type === "record" && block.documents
-                                  ? { ...block, documents: { ...block.documents, preview } }
-                                  : block,
+                              description={text(
+                                "Readers can preview saved drafts using these templates, including their queried data. No document is issued. Template or schema changes require republishing the app.",
                               )}
+                              value={() => selectedRecordBlock()?.documents?.preview === true}
+                              onValueChange={(preview) =>
+                                updateSelectedBlock((block) =>
+                                  block.type === "record" && block.documents
+                                    ? { ...block, documents: { ...block.documents, preview } }
+                                    : block,
+                                )
+                              }
                             />
                           </Show>
                         </Show>
@@ -3684,6 +3792,19 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }}
                             clearable
                           />
+                          <Select
+                            label={text("Emphasis")}
+                            value={() => selected().action.variant ?? "secondary"}
+                            options={[
+                              { id: "primary", label: text("Primary action") },
+                              { id: "secondary", label: text("Secondary action") },
+                              { id: "danger", label: text("Destructive action") },
+                            ]}
+                            onValueChange={(variant) => {
+                              if (variant === "primary" || variant === "secondary" || variant === "danger")
+                                updateSelectedAction((action) => ({ ...action, variant }));
+                            }}
+                          />
                           <Show when={selected().owner === "rows"}>
                             <Switch
                               label={text("Show label in table")}
@@ -3727,6 +3848,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                     id: action.id,
                                     label: action.label,
                                     icon: action.icon,
+                                    variant: action.variant,
                                     availableWhen: action.availableWhen,
                                     kind: "navigate",
                                     pageId: page.id,
@@ -3741,6 +3863,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                     id: action.id,
                                     label: action.label,
                                     icon: action.icon,
+                                    variant: action.variant,
                                     availableWhen: action.availableWhen,
                                     kind: "workflow",
                                     launcherId: launcher.id,
@@ -3792,6 +3915,21 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                   <For each={Object.entries(target()?.parameters ?? {})}>
                                     {([parameterId, parameter]) => {
                                       const options = () => [
+                                        ...pageRecordFields()
+                                          .filter(
+                                            (field) =>
+                                              field.type === "relation" &&
+                                              field.config.cardinality === "single" &&
+                                              field.config.targetTableId === parameter.tableId &&
+                                              selectedPage().rows.some((row) =>
+                                                row.columns.some((column) =>
+                                                  column.blocks.some(
+                                                    (block) => block.type === "record" && block.fieldIds.includes(field.id),
+                                                  ),
+                                                ),
+                                              ),
+                                          )
+                                          .map((field) => ({ id: `RELATION:${field.id}`, label: field.name })),
                                         ...(selectedPage().record?.tableId === parameter.tableId
                                           ? [{ id: "RECORD", label: text("Current page record") }]
                                           : []),
@@ -3805,7 +3943,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                           label={messages().valueFor({ label: parameterId })}
                                           value={() => {
                                             const value = current();
-                                            return value?.source === "RECORD" ? "RECORD" : value ? `PARAMS:${value.path}` : null;
+                                            return value?.source === "RECORD"
+                                              ? value.path === "relation"
+                                                ? `RELATION:${value.fieldId}`
+                                                : "RECORD"
+                                              : value
+                                                ? `PARAMS:${value.path}`
+                                                : null;
                                           }}
                                           options={options()}
                                           error={() => (current() ? undefined : text("Choose a compatible record source."))}
@@ -3820,7 +3964,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                                       [parameterId]:
                                                         value === "RECORD"
                                                           ? { source: "RECORD", path: "id" }
-                                                          : { source: "PARAMS", path: value.slice("PARAMS:".length) },
+                                                          : value.startsWith("RELATION:")
+                                                            ? {
+                                                                source: "RECORD",
+                                                                path: "relation",
+                                                                fieldId: value.slice("RELATION:".length),
+                                                              }
+                                                            : { source: "PARAMS", path: value.slice("PARAMS:".length) },
                                                     },
                                                   }
                                                 : candidate,
@@ -3986,6 +4136,94 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       </div>
                                     );
                                   }}
+                                </For>
+                              </Show>
+                              <Show
+                                when={
+                                  selected().owner === "actions" &&
+                                  (() => {
+                                    const action = workflowAction();
+                                    return !("background" in action && action.background);
+                                  })()
+                                }
+                              >
+                                <Select
+                                  label={text("After successful workflow")}
+                                  value={() => {
+                                    const action = selectedWorkflowAction();
+                                    return action && "onSuccessNavigate" in action ? (action.onSuccessNavigate?.pageId ?? null) : null;
+                                  }}
+                                  options={draft.draft().pages.map((page) => ({ id: page.id, label: page.title }))}
+                                  clearable
+                                  onValueChange={(pageId) =>
+                                    updateSelectedAction((action) => {
+                                      if (action.kind !== "workflow" || "showLabel" in action) return action;
+                                      const target = draft.draft().pages.find((page) => page.id === pageId);
+                                      return {
+                                        ...action,
+                                        onSuccessNavigate: target
+                                          ? {
+                                              kind: "navigate",
+                                              pageId: target.id,
+                                              params: Object.fromEntries(
+                                                Object.keys(target.parameters).map((key) => [
+                                                  key,
+                                                  { source: "RESULT" as const, path: "recordId" as const },
+                                                ]),
+                                              ),
+                                            }
+                                          : undefined,
+                                      };
+                                    })
+                                  }
+                                />
+                                <For
+                                  each={Object.entries(
+                                    (() => {
+                                      const action = selectedWorkflowAction();
+                                      return action && "onSuccessNavigate" in action ? (action.onSuccessNavigate?.params ?? {}) : {};
+                                    })(),
+                                  )}
+                                >
+                                  {([parameterId, binding]) => (
+                                    <Select
+                                      label={messages().valueFor({ label: parameterId })}
+                                      value={() => (binding.source === "RESULT" ? "RESULT" : `PARAMS:${binding.path}`)}
+                                      options={[
+                                        { id: "RESULT", label: text("Workflow result record") },
+                                        ...Object.entries(selectedPage().parameters)
+                                          .filter(([, parameter]) => {
+                                            const action = selectedWorkflowAction();
+                                            const pageId =
+                                              action && "onSuccessNavigate" in action ? action.onSuccessNavigate?.pageId : undefined;
+                                            return (
+                                              draft.draft().pages.find((page) => page.id === pageId)?.parameters[parameterId]?.tableId ===
+                                              parameter.tableId
+                                            );
+                                          })
+                                          .map(([id]) => ({ id: `PARAMS:${id}`, label: `@params.${id}` })),
+                                      ]}
+                                      onValueChange={(value) =>
+                                        updateSelectedAction((action) => {
+                                          if (!value || action.kind !== "workflow" || "showLabel" in action || !action.onSuccessNavigate)
+                                            return action;
+                                          return {
+                                            ...action,
+                                            onSuccessNavigate: {
+                                              ...action.onSuccessNavigate,
+                                              params: {
+                                                ...action.onSuccessNavigate.params,
+                                                [parameterId]:
+                                                  value === "RESULT"
+                                                    ? { source: "RESULT", path: "recordId" }
+                                                    : { source: "PARAMS", path: value.slice("PARAMS:".length) },
+                                              },
+                                            },
+                                          };
+                                        })
+                                      }
+                                    />
+                                  )}
                                 </For>
                               </Show>
                               <TextInput

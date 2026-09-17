@@ -378,6 +378,22 @@ describe("Grids App definition contract", () => {
     expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(false);
   });
 
+  test("metrics accept explicit common formatting and reject inconsistent numeric formats", () => {
+    const example = CustomAppDefinitionSchema.parse(structuredClone(CUSTOM_APP_REFERENCE.example));
+    const blocks = example.pages[0]!.rows[0]!.columns[0]!.blocks;
+    blocks.push({
+      id: "formatted",
+      type: "metrics",
+      source: { kind: "gql", query: "from table Example\naggregate count(*) as Count" },
+      valueFormat: { style: "number", decimalPlaces: 2, unit: "EUR" },
+    });
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(true);
+    const metric = blocks.at(-1)!;
+    if (metric.type !== "metrics") throw new Error("Expected metrics");
+    metric.valueFormat = { style: "integer", unit: "EUR" };
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(false);
+  });
+
   test("accepts an exact Record document template allowlist and rejects duplicates", () => {
     const example = CustomAppDefinitionSchema.parse(structuredClone(CUSTOM_APP_REFERENCE.example));
     const detail = example.pages.find((page) => page.record)!;
@@ -386,6 +402,23 @@ describe("Grids App definition contract", () => {
     expect(record.documents?.templateIds).toHaveLength(1);
     record.documents = { templateIds: [uuid(70), uuid(70)] };
     expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(false);
+  });
+
+  test("allows record headings only from displayed fields and allowed documents", () => {
+    const example = CustomAppDefinitionSchema.parse(structuredClone(CUSTOM_APP_REFERENCE.example));
+    const record = example.pages
+      .flatMap((page) => page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks)))
+      .find((block) => block.type === "record")!;
+    if (record.type !== "record") throw new Error("Expected Record block");
+    record.heading = { fieldId: record.fieldIds[0]!, documentNumber: true };
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(true);
+    record.heading.fieldId = "OTHER1";
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(false);
+    record.heading.fieldId = record.fieldIds[0]!;
+    record.documents = undefined;
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(false);
+    record.heading.documentNumber = false;
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(true);
   });
 
   test("accepts bounded server availability and rejects legacy presentation conditions", () => {

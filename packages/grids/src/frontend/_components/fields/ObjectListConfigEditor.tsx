@@ -5,9 +5,9 @@ import { z } from "zod";
 import { FormulaConfigSchema } from "../../../field-types/formula";
 import { OBJECT_LIST_LIMITS, ObjectListColumnSchema, ObjectListScalarTypeSchema } from "../../../field-types/object-list";
 import { planObjectListCalculations } from "../../../formula/object-list-plan";
-import { gridsFieldMessages } from "./messages";
 import { FormFieldWidthSelect } from "../forms/field-layout";
 import { FieldInput } from "../forms/form-fields";
+import { gridsFieldMessages } from "./messages";
 
 // Drafts permit unfinished names/formulas; the owning field schema validates save.
 const DraftColumns = z.array(
@@ -69,7 +69,8 @@ export function ObjectListConfigEditor(props: {
                   value={() => column().type}
                   onValueChange={(value) => {
                     const type = ObjectListScalarTypeSchema.safeParse(value);
-                    if (type.success && type.data !== column().type) update(index, { type: type.data, config: {}, defaultValue: undefined });
+                    if (type.success && type.data !== column().type)
+                      update(index, { type: type.data, config: {}, defaultValue: undefined });
                   }}
                 />
               </div>
@@ -110,9 +111,11 @@ export function ObjectListConfigEditor(props: {
                       field={{ ...column(), name: t().defaultValue }}
                       entry={{ kind: "user_input", fieldId: column().id, required: false }}
                       value={column().defaultValue}
-                      onChange={(value) => update(index, {
-                        defaultValue: value === "" || value === null || (Array.isArray(value) && value.length === 0) ? undefined : value,
-                      })}
+                      onChange={(value) =>
+                        update(index, {
+                          defaultValue: value === "" || value === null || (Array.isArray(value) && value.length === 0) ? undefined : value,
+                        })
+                      }
                     />
                     <p class="text-sm text-dimmed">{t().listDefaultDescription}</p>
                     <Show when={column().defaultValue !== undefined && column().defaultValue !== null}>
@@ -124,13 +127,22 @@ export function ObjectListConfigEditor(props: {
                   <CheckboxCard
                     value={() => Boolean(column().formula)}
                     disabled={column().type === "select" && !column().formula}
-                    onValueChange={(calculated) => update(index, { formula: calculated ? { expression: "" } : undefined, detailsOnly: calculated ? column().detailsOnly : undefined, defaultValue: calculated ? undefined : column().defaultValue })}
+                    onValueChange={(calculated) =>
+                      update(index, {
+                        formula: calculated ? { expression: "" } : undefined,
+                        defaultValue: calculated ? undefined : column().defaultValue,
+                      })
+                    }
                     label={t().listCalculatedColumn}
                     description={column().type === "select" ? t().listCalculatedSelectUnsupported : t().listCalculatedDescription}
                   />
+                  <CheckboxCard
+                    label={t().listDetailsOnly}
+                    value={() => column().detailsOnly ?? false}
+                    disabled={column().required && !column().formula}
+                    onValueChange={(detailsOnly) => update(index, { detailsOnly })}
+                  />
                   <Show when={column().formula}>
-                    <CheckboxCard label={t().listDetailsOnly} value={() => column().detailsOnly ?? false}
-                      onValueChange={(detailsOnly) => update(index, { detailsOnly })} />
                     <TextInput
                       label={t().listRowFormula}
                       value={() => column().formula?.expression ?? ""}

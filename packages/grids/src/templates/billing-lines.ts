@@ -56,8 +56,16 @@ export const billingLineConfig = (locale?: string): ObjectListConfig => {
     maxItems: 1_000,
     fields: [
       { id: "Label1", name: t.description, type: "text", required: true, config: { maxLength: 200 } },
-      { id: "Detail", name: t.details, type: "longtext", required: false, config: { maxLength: 4_000 } },
-      { id: "Qty001", width: "compact", name: t.quantity, type: "number", required: true, defaultValue: "1", config: { min: "0.0001", decimalPlaces: 4 } },
+      { id: "Detail", detailsOnly: true, name: t.details, type: "longtext", required: false, config: { maxLength: 4_000 } },
+      {
+        id: "Qty001",
+        width: "compact",
+        name: t.quantity,
+        type: "number",
+        required: true,
+        defaultValue: "1",
+        config: { min: "0.0001", decimalPlaces: 4 },
+      },
       {
         id: "Unit01",
         defaultValue: ["C62"],

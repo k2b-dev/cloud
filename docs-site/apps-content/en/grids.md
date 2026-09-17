@@ -329,6 +329,10 @@ A calculated column references sibling columns in the same row. Use names
 does not change its ID; update name-based formulas before saving. Do not send
 calculated cells in write payloads: Grids calculates them. Send exact amounts
 as decimal strings, such as `"42.50"`.
+Form number inputs, including object-list cells, accept the UI locale’s decimal
+separator: German `22,60` is submitted as exact `"22.60"`. A decimal point is
+also accepted. Grouping separators are not removed or guessed; mixed or
+repeated separators remain invalid.
 
 Selection columns are inputs, not calculated columns. Regex constraints are
 supported on text inputs, not calculated text. Saving checks that row
@@ -389,6 +393,49 @@ values and the joined table's access checks. For stored tables,
 `Receipts != null` checks for current attachments; `Receipts = null` checks for
 none. Combined-table file presence is not supported.
 
+### Design a focused Custom App
+
+Use a record block's `heading.fieldId` to promote one displayed field to its
+heading. With `heading.documentNumber: true`, an available document number
+becomes the heading and the field becomes its subtitle. Keep the relevant
+document templates in the block's allowlist. Document downloads remain visible
+beside the record; a draft preview uses the saved record.
+
+Actions and row actions accept `variant: "primary" | "secondary" | "danger"`;
+secondary is the default. Reserve primary for the next task and danger for
+irreversible or destructive operations. An editable form can reference one
+Actions block in the same column with `actionsBlockId`. That block appears
+inside the form workspace and cannot run while changes are unsaved or saving.
+The form stays locked while an action is running or its outcome is uncertain;
+its status can still be checked.
+Each Actions block can belong to only one form.
+
+A foreground workflow action can use `onSuccessNavigate` to return to a page
+using existing `PARAMS`, or open its created record with
+`{ source: "RESULT", path: "recordId" }`. Only a successful canonical record
+result is accepted; Grids checks the destination page and record again.
+Background actions retain their status surface instead. A record navigation
+binding can follow an exposed single relation with
+`{ source: "RECORD", path: "relation", fieldId }` when its target table matches
+the destination parameter.
+
+Metrics can apply one explicit `valueFormat` to every displayed value, including
+aggregate expressions without field metadata. For example,
+`{ style: "number", decimalPlaces: 2, unit: "EUR" }` displays a currency amount
+without changing its stored value. Without an override, selected number fields
+provide their formatting; Grids does not infer currencies from formulas.
+
+Metrics blocks accept ungrouped scalar aggregations or an explicit numeric
+projection with `limit 1`. A projection can show up to 12 numeric values from a
+single record, including formulas over joined summary views. Text, grouped
+results, unbounded projections, and implicit whole-record selections are rejected
+when publishing.
+
+For a singleton such as company settings, set `navigation.recordId` to its
+public record ID. The sidebar opens the record page directly. Publishing
+validates that the record exists in the page's table; ordinary runtime access
+checks still apply. Start pages remain unparameterized.
+
 ## How Grids fits Cloud
 
 Grids owns its bases, schema, records, queries, views, forms, dashboards,
@@ -430,6 +477,20 @@ all-or-nothing parent and related-row edits. Shared relation targets stay links,
 not inline editors. Base writers use `forms submit --record <id>`; App readers
 use `apps runtime read` and `submit`. Stable Form idempotency keys protect exact
 retries; unkeyed creates do not. Finalization and mutation policies still apply.
+
+Form inputs can start a named section with `section: { title, description?,
+collapsible? }`. Following inputs belong to that section until the next section
+starts. Collapsible sections begin closed when empty and open when they contain initial
+values. They keep their controls mounted, including unsaved values. Later input
+changes do not override the user’s choice to open or close a section. Invalid inputs open their section before receiving
+focus; sections do not change required fields, validation, or submission rules.
+The form field editor configures this on the first field in a section.
+
+Object-list columns marked `detailsOnly` appear under additional details.
+This includes optional inputs as well as calculated helper values. Required
+inputs remain visible. Validation reveals an invalid additional input, even
+when it belongs to a later page of the list. Row inputs precede reorder and
+remove actions in the keyboard order.
 
 Published-runtime HTTP list controls use `_search`, `_cursor`, and `_limit` so
 they cannot overwrite a page's Record parameters. CLI flags remain `--search`,

@@ -41,6 +41,8 @@ Referenzierte Datensätze ist nur auf einer Record-Seite verfügbar. Der Block z
 
 Kennzahlen und Diagramm lesen entweder eine vorhandene gespeicherte Ansicht oder eine Inline-GQL-Abfrage. Die Laufzeit wendet gemeinsame Abfragebudgets an.
 
+Kennzahlen übernehmen normalerweise das Zahlenformat ausgewählter Felder. Für Aggregatausdrücke ohne Feldinformationen lässt sich ein gemeinsames `valueFormat` festlegen, etwa `{ style: "number", decimalPlaces: 2, unit: "EUR" }`. Es gilt für jeden Wert des Blocks. Grids leitet keine Währung aus der Abfrage ab. Die Formatierung verändert nur die Anzeige, nicht die exakten Berechnungswerte.
+
 Kennzahlen akzeptiert eine nicht gruppierte Aggregatabfrage und stellt bis zu 12 benannte skalare Ergebnisse dar. Diagramm akzeptiert eine gruppierte Aggregatabfrage und stellt ein Ring-, Balken- oder Liniendiagramm mit mindestens einer Aggregatwertreihe dar. Ein Diagrammblock darf über sein `limit` höchstens 100 Gruppen darstellen.
 
 Die veröffentlichte Capability zeichnet die exakten Tabellen und Felder hinter dem Block auf. Lesende Personen der App benötigen keinen Basiszugriff. Die Laufzeit kann keine Quellen außerhalb dieser unveränderlichen Capability abfragen. Veröffentliche nach einer Änderung der Quelle einer gespeicherten Ansicht erneut.
@@ -60,6 +62,8 @@ Eine App darf bis zu 24 Formularblöcke veröffentlichen. Jedes referenzierte Fo
 ### Datensatz
 
 Datensatz erfordert einen Seitendatensatz. Der Block stellt die ausdrückliche Liste `fieldIds` dar und kann direkte Bearbeitung über eine ausdrückliche Teilmenge `editableFieldIds` erlauben. Jedes bearbeitbare Feld muss auch angezeigt werden und ein beschreibbares gespeichertes Feld sein. Berechnete und Systemfelder verhindern die Veröffentlichung.
+
+Mit `heading: { fieldId }` wird ein angezeigtes Feld zur Überschrift, etwa Kunde oder Betreff. Es erscheint dann nicht nochmals in der Feldliste. Mit `heading: { fieldId, documentNumber: true }` und einer `documents`-Vorlagenliste wird die vorhandene Dokumentnummer zur Überschrift; das gewählte Feld bleibt darunter sichtbar. Entwürfe behalten die Feldüberschrift. Dokumente lassen sich über dauerhaft sichtbare, beschriftete Schaltflächen herunterladen.
 
 Die Aktion Bearbeiten erscheint nur, wenn die Veröffentlichung dieses beschreibbare Feld enthält und der Block verfügbar ist. Beim Absenden prüft Grids erneut App-Freigabe, unveränderliche Feld-Erlaubnisliste, `availableWhen`, aktiven Feldtyp, Audit-Fragen der Tabelle und aktuelle Datensatzversion. Felder außerhalb der bearbeitbaren Teilmenge des Blocks bleiben schreibgeschützt.
 

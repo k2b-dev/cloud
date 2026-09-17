@@ -7,6 +7,9 @@ export const customAppRuntimeMessages = i18n.define({
   messages: {
     en: {
       actions: "Actions",
+      saveChanges: "Save changes",
+      discardUnsavedChanges: "Discard unsaved changes",
+      saveBeforeActions: "Save your changes before continuing. These actions use the saved record.",
       pages: "Pages",
       chart: "Chart",
       comments: "Comments",
@@ -31,6 +34,7 @@ export const customAppRuntimeMessages = i18n.define({
       documentCreationAttention: "Creation requires an administrator to review the workflow. Do not issue a replacement document.",
       documentReady: "The document is ready.",
       openDocument: "Open document",
+      downloadPdf: "Download PDF",
       documentCreationRetry: "Continue creation",
       documentCreationFailed: "Creation did not finish. Check the saved details and try again. Finalized data stays unchanged.",
       documentCreationMissing: "The data is finalized; the document still needs to be created.",
@@ -94,6 +98,9 @@ export const customAppRuntimeMessages = i18n.define({
     },
     de: {
       actions: "Aktionen",
+      saveChanges: "Änderungen speichern",
+      discardUnsavedChanges: "Ungespeicherte Änderungen verwerfen",
+      saveBeforeActions: "Speichere deine Änderungen, bevor du fortfährst. Diese Aktionen verwenden den gespeicherten Stand.",
       pages: "Seiten",
       chart: "Diagramm",
       comments: "Kommentare",
@@ -118,6 +125,7 @@ export const customAppRuntimeMessages = i18n.define({
       documentCreationAttention: "Die Erstellung muss von einem Administrator im Workflow geprüft werden. Stelle keinen Ersatzbeleg aus.",
       documentReady: "Das Dokument ist fertig.",
       openDocument: "Dokument öffnen",
+      downloadPdf: "PDF herunterladen",
       documentCreationRetry: "Erstellung fortsetzen",
       documentCreationFailed:
         "Die Erstellung wurde nicht abgeschlossen. Prüfe die gespeicherten Angaben und versuche es erneut. Festgeschriebene Daten bleiben unverändert.",

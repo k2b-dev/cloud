@@ -20,6 +20,7 @@ import {
   FormatSpecSchema,
   FormComputedFieldSchema,
   FormFieldWidthSchema,
+  FormSectionSchema,
   type GridRecord,
   GridRecordSchema,
   PublicTableAuditPolicySchema,
@@ -295,6 +296,7 @@ const PublicInlineCreateFieldSchema = z.object({
 });
 const PublicFormFieldEntrySchema = z.discriminatedUnion("kind", [
   z.object({
+    section: FormSectionSchema.optional(),
     kind: z.literal("user_input"),
     fieldId: ShortIdSchema,
     width: FormFieldWidthSchema.optional(),

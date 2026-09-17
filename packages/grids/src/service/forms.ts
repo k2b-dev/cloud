@@ -1,6 +1,13 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { FormConfigSchema, FormFieldWidthSchema, type FormValidationRule, FormValidationRuleSchema } from "../contracts";
+import {
+  FormConfigSchema,
+  FormFieldWidthSchema,
+  type FormSection,
+  FormSectionSchema,
+  type FormValidationRule,
+  FormValidationRuleSchema,
+} from "../contracts";
 import { logAudit } from "./audit";
 import { listByTable as listFields } from "./fields";
 import { validateFormConfig } from "./form-config-validation";
@@ -36,6 +43,7 @@ type InlineCreateFieldEntry =
 export type FormFieldEntry =
   | {
       kind: "user_input";
+      section?: FormSection;
       fieldId: string;
       label?: string;
       helpText?: string;
@@ -149,6 +157,7 @@ const normalizeFieldEntry = (raw: unknown): FormFieldEntry | null => {
   // Default → user_input (covers explicit "user_input" and older entries).
   return {
     kind: "user_input",
+    section: FormSectionSchema.safeParse(obj.section).data,
     fieldId,
     label: typeof obj.label === "string" ? obj.label : undefined,
     helpText: typeof obj.helpText === "string" ? obj.helpText : undefined,

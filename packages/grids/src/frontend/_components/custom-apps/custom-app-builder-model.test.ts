@@ -216,3 +216,22 @@ describe("App builder model", () => {
     expect(moveCustomAppPage(definition(), "loan", -1).pages.map((page) => page.id)).toEqual(["loan", "home"]);
   });
 });
+
+test("workflow success navigation follows page and source/target parameter renames", () => {
+  const source = definition();
+  const block = source.pages[1]!.rows[0]!.columns[0]!.blocks.find((item) => item.type === "actions");
+  if (!block || block.type !== "actions") throw new Error("Actions required");
+  const action = block.actions.find((item) => item.kind === "workflow");
+  if (!action || action.kind !== "workflow") throw new Error("Workflow required");
+  action.onSuccessNavigate = { kind: "navigate", pageId: "loan", params: { loan_id: { source: "PARAMS", path: "loan_id" } } };
+  expect(customAppPageParameterUsage(source, "loan", "loan_id")).toContain("Workflow success navigation");
+  const renamed = renameCustomAppPageParameter(renameCustomAppPage(source, "loan", "detail"), "detail", "loan_id", "item_id");
+  const renamedBlock = renamed.pages[1]!.rows[0]!.columns[0]!.blocks.find((item) => item.type === "actions");
+  if (!renamedBlock || renamedBlock.type !== "actions") throw new Error("Actions required");
+  const renamedAction = renamedBlock.actions.find((item) => item.id === action.id);
+  expect(renamedAction && "onSuccessNavigate" in renamedAction && renamedAction.onSuccessNavigate).toEqual({
+    kind: "navigate",
+    pageId: "detail",
+    params: { item_id: { source: "PARAMS", path: "item_id" } },
+  });
+});

@@ -1,5 +1,16 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, DescriptionList, IconButton, PanelHeader, Placeholder, prompts, dialogCore, PanelDialog, PdfPreview, panelDialogFixedOptions } from "@k2b/ui";
+import {
+  Button,
+  DescriptionList,
+  dialogCore,
+  PanelDialog,
+  PanelHeader,
+  PdfPreview,
+  Placeholder,
+  panelDialogFixedOptions,
+  prompts,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { CustomAppDocumentPreview } from "../../api/custom-app-published-page";
 import type { PublicField as Field, PublicGridFile as GridFile, PublicGridRecord as GridRecord } from "../../api/public-dto";
@@ -13,6 +24,7 @@ import RecordFileField from "../_components/records/RecordFileField";
 import { formatRecordRelativeTime } from "../_components/records/RecordHistorySection";
 import { openRecordUpsertDialog, RecordSaveConflictError } from "../_components/records/RecordUpsertDialog";
 import { FieldValue } from "../_components/table/FieldValue";
+import { fieldDisplayFormat, formatFieldValueText } from "../_components/table/field-value-format";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
 
 type RecordBlock = Extract<CustomAppBlock, { type: "record" }>;
@@ -39,26 +51,63 @@ export default function RecordDetails(props: {
   dateConfig: DateContext;
 }) {
   const messages = useCustomAppRuntimeMessages();
-  const preview = (entry: CustomAppDocumentPreview) => dialogCore.open<void>((close) => {
-    const controller = new AbortController();
-    onCleanup(() => controller.abort());
-    return (
-    <PanelDialog>
-      <PanelDialog.Header title={messages().previewDocument} subtitle={entry.name} close={close} />
-      <PanelDialog.Body>
-        <p class="text-sm text-secondary">{messages().previewDraftOnly}</p>
-        <PdfPreview title={messages().previewDocument} buttonLabel={messages().renderPreview}
-          class="h-[62dvh] min-h-72" request={() => fetch(entry.url, { method: "POST", signal: controller.signal, headers: { Accept: "application/pdf" } })} />
-      </PanelDialog.Body>
-    </PanelDialog>
+  const locale = useLocale();
+  const preview = (entry: CustomAppDocumentPreview) =>
+    dialogCore.open<void>(
+      (close) => {
+        const controller = new AbortController();
+        onCleanup(() => controller.abort());
+        return (
+          <PanelDialog>
+            <PanelDialog.Header title={messages().previewDocument} subtitle={entry.name} close={close} />
+            <PanelDialog.Body>
+              <p class="text-sm text-secondary">{messages().previewDraftOnly}</p>
+              <PdfPreview
+                autoLoad
+                title={messages().previewDocument}
+                buttonLabel={messages().renderPreview}
+                class="h-[62dvh] min-h-72"
+                request={() => fetch(entry.url, { method: "POST", signal: controller.signal, headers: { Accept: "application/pdf" } })}
+              />
+            </PanelDialog.Body>
+          </PanelDialog>
+        );
+      },
+      { ...panelDialogFixedOptions, panelClassName: `${panelDialogFixedOptions.panelClassName} is-wide` },
     );
-  }, { ...panelDialogFixedOptions, panelClassName: `${panelDialogFixedOptions.panelClassName} is-wide` });
   const [record, setRecord] = createSignal(props.record);
   const [relationLabels, setRelationLabels] = createSignal(props.relationLabels);
   const [saving, setSaving] = createSignal(false);
   const [downloadingId, setDownloadingId] = createSignal<string | null>(null);
   const fieldsById = new Map(props.fields.map((field) => [field.id, field]));
   const displayedFields = props.block.fieldIds.map((fieldId) => fieldsById.get(fieldId)).filter((field): field is Field => Boolean(field));
+  const headingField = props.block.heading ? fieldsById.get(props.block.heading.fieldId) : undefined;
+  const documentHeading = () => (props.block.heading?.documentNumber ? props.documents[0]?.number : undefined);
+  const headingValue = () =>
+    headingField
+      ? record().fieldErrors?.[headingField.id] ||
+        formatFieldValueText({
+          field: headingField,
+          value: record().data[headingField.id],
+          record: record(),
+          relationLabels: relationLabels(),
+          dateConfig: props.dateConfig,
+          format:
+            headingField.type === "date"
+              ? (fieldDisplayFormat(headingField) ?? {
+                  kind: "date",
+                  format: "short",
+                  includeTime: headingField.config.includeTime === true,
+                })
+              : undefined,
+          locale: locale(),
+        }) ||
+        props.block.title ||
+        props.tableName
+      : undefined;
+  const detailFields = displayedFields.filter(
+    (field) => field.id !== headingField?.id || ["file", "object_list", "html_template", "longtext"].includes(field.type),
+  );
   const editableFields = props.block.editableFieldIds
     .map((fieldId) => fieldsById.get(fieldId))
     .filter((field): field is Field => Boolean(field) && field?.type !== "file");
@@ -137,23 +186,29 @@ export default function RecordDetails(props: {
 
   return (
     <div class="flex flex-col gap-5">
-      <PanelHeader
-        title={props.block.title ?? props.tableName}
-        as="h2"
-        size="md"
-        actions={
-          <Show when={props.updateEndpoint && editableFields.length > 0 && !record().finalizedAt}>
-            <Button variant="secondary" size="sm" disabled={saving()} onClick={() => void edit()}>
-              <i class="ti ti-pencil" aria-hidden="true" />
-              {messages().edit}
-            </Button>
-          </Show>
-        }
-      />
+      <div class="flex min-w-0 flex-col gap-1">
+        <Show when={headingField && props.block.title}>
+          <p class="text-xs font-medium uppercase tracking-wide text-secondary">{props.block.title}</p>
+        </Show>
+        <PanelHeader
+          title={documentHeading() ?? headingValue() ?? props.block.title ?? props.tableName}
+          subtitle={documentHeading() ? headingValue() : undefined}
+          as="h2"
+          size="md"
+          actions={
+            <Show when={props.updateEndpoint && editableFields.length > 0 && !record().finalizedAt}>
+              <Button variant="secondary" size="sm" disabled={saving()} onClick={() => void edit()}>
+                <i class="ti ti-pencil" aria-hidden="true" />
+                {messages().edit}
+              </Button>
+            </Show>
+          }
+        />
+      </div>
       <DescriptionList
-        columns={1}
+        columns={headingField ? 2 : 1}
         size="sm"
-        items={displayedFields.map((field) => ({
+        items={detailFields.map((field) => ({
           term: field.name,
           description:
             field.type === "file" && props.fileEndpoints[field.id] ? (
@@ -173,6 +228,11 @@ export default function RecordDetails(props: {
                 allFields={props.fields}
                 relationLabels={relationLabels()}
                 dateConfig={props.dateConfig}
+                format={
+                  field.type === "date"
+                    ? (fieldDisplayFormat(field) ?? { kind: "date", format: "short", includeTime: field.config.includeTime === true })
+                    : undefined
+                }
                 mode="detail"
                 empty="—"
               />
@@ -183,21 +243,27 @@ export default function RecordDetails(props: {
         <section class="flex min-w-0 flex-col gap-3" aria-labelledby={`${props.block.id}-documents`}>
           <PanelHeader title={<span id={`${props.block.id}-documents`}>{messages().documents}</span>} as="h3" size="md" />
           <div class="flex flex-wrap gap-2">
-            <For each={props.documentPreviews ?? []}>{(entry) => (
-              <Button variant="secondary" onClick={() => void preview(entry)}>
-                <i class="ti ti-eye" aria-hidden="true" />
-                {messages().previewDocument}: {entry.name}
-              </Button>
-            )}</For>
+            <For each={props.documentPreviews ?? []}>
+              {(entry) => (
+                <Button variant="secondary" onClick={() => void preview(entry)}>
+                  <i class="ti ti-eye" aria-hidden="true" />
+                  {messages().previewDocument}: {entry.name}
+                </Button>
+              )}
+            </For>
           </div>
           <Show
             when={props.documents.length > 0}
-            fallback={<Placeholder align="left" class="px-0 py-1" description={messages().noDocuments} />}
+            fallback={
+              <Show when={!props.documentPreviews?.length}>
+                <Placeholder align="left" class="px-0 py-1" description={messages().noDocuments} />
+              </Show>
+            }
           >
             <DescriptionList
               layout="rows"
               size="sm"
-              actionVisibility="progressive"
+              actionVisibility="always"
               items={props.documents.map((document) => ({
                 term: (
                   <span class="flex items-center gap-2">
@@ -212,17 +278,18 @@ export default function RecordDetails(props: {
                   </span>
                 ),
                 action: (
-                  <IconButton
-                    size="xs"
-                    variant="ghost"
-                    label={messages().downloadFile({ filename: document.filename })}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    aria-label={messages().downloadFile({ filename: document.filename })}
                     loading={downloadingId() === document.id}
                     loadingLabel={messages().downloadingFile({ filename: document.filename })}
                     disabled={Boolean(downloadingId())}
                     onClick={() => void download(document)}
                   >
                     <i class="ti ti-download" aria-hidden="true" />
-                  </IconButton>
+                    {messages().downloadPdf}
+                  </Button>
                 ),
               }))}
             />

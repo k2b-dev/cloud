@@ -12,6 +12,28 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      recipientSection: "Recipient",
+      positionsSection: "Services and prices",
+      datesSection: "Dates and payment terms",
+      additionalSection: "Internal notes",
+      companySection: "Company details",
+      addressSection: "Billing address",
+      bankSection: "Bank account",
+      bankHelp: "Needed for refunds and commission payouts.",
+      reviewSection: "Ready to issue",
+      paymentSection: "Payment details",
+      savePayment: "Save payment for confirmation",
+      newPartner: "New business partner",
+      noPartners: "No business partners yet. Add one here or while creating an invoice.",
+      noDrafts: "All drafts completed. Create a new invoice when you are ready.",
+      noIssued: "Your issued documents will appear here, with their number and PDF status.",
+      noPayments: "No confirmed payments yet.",
+      noPendingPayments: "No payments waiting for confirmation.",
+      noBalances: "All issued documents are settled.",
+      balanceHelp:
+        "Positive amounts are still due. Negative amounts are credit balances to review for a refund. Open a document to record its payment.",
+      refundHelp:
+        "Record an actual refund using a positive amount. Save it, then confirm it on the invoice. Recording a refund does not transfer money.",
       title: "Billing",
       examplePartner: "Example business partner (replace before issuing)",
       examplePosition: "Example service",
@@ -21,15 +43,15 @@ const messages = i18n.define({
       positions: "Free-text positions with exact totals",
       documents: "Billing documents",
       parties: "Business partners",
-      bills: "Billing documents",
+      bills: "Invoices",
       payments: "Payments",
       paid: "Paid",
       corrected: "Corrected",
       outstanding: "Outstanding",
-      balances: "Balances",
+      balances: "Open payments",
       paymentTotals: "Payments per bill",
       correctionTotals: "Corrections per invoice",
-      settings: "Billing settings",
+      settings: "My company",
       name: "Name",
       vatId: "VAT ID",
       street: "Street and number",
@@ -63,10 +85,9 @@ const messages = i18n.define({
       ready: "Issuer details checked",
       setup: "Your company",
       setupAction: "Complete issuer details",
-      startHelp:
-        "Before issuing your first document, enter and check your company and bank details. You can already save drafts. Open a draft to review its positions and totals before issuing.",
+      startHelp: "Complete My company before issuing your first invoice. You can already create and save drafts.",
       setupHelp:
-        "Enter your real issuer and bank details before issuing. This template supports EUR and German businesses with distinct German VAT IDs, at 7% or 19% VAT. It does not provide accounting or legal certification.",
+        "These details appear on newly issued invoices. Check your company and bank details, then confirm below that they are ready to use.",
       draft: "Save draft",
       saved: "Draft saved. Review it before issuing.",
       newInvoice: "New invoice",
@@ -79,22 +100,23 @@ const messages = i18n.define({
       refund: "Customer refund",
       balanceAmount: "Balance effect (EUR)",
       refundError: "Refunds belong to the original invoice and must not exceed its current credit balance. Reload and check the amount.",
-      pendingPayments: "Pending payments",
+      pendingPayments: "Payments to confirm",
       confirmedPayments: "Confirmed payments",
       confirmPayment: "Confirm payment",
       confirmPaymentMessage:
         "Confirm that this payment actually occurred? Its amount, date and linked document will become immutable and count toward the balance.",
       paymentPendingHelp:
-        "Pending payment: it does not affect balances. Save any changes, then confirm it after checking the money actually received or paid. Its document must already be finalized.",
+        "Check the amount and date, save any changes, then confirm the payment. It counts toward the balance only after confirmation.",
       paymentConfirmedHelp: "Confirmed payment. Its amount, date and linked document are immutable and included in the balance.",
       paymentError:
         "The payment must still be pending and unchanged, and its linked document must be finalized. Reload and review it before confirming.",
       discardDraft: "Discard draft",
       discardPayment: "Discard pending payment",
+      discardPaymentConfirm: "Discard this unconfirmed payment? It has not affected the balance and will be removed.",
       discardDraftConfirm:
         "Move this draft to the trash? It will no longer appear in the draft list. Finalized documents cannot be discarded.",
       paymentHelp:
-        "Only confirmed payments affect balances; recording one does not transfer money. Record customer payments and refunds on the original invoice. Record commission payouts on the self-billing document. Always enter a positive amount; the Refund action sets its direction.",
+        "Enter the amount actually received or paid out. Save it, then confirm it on the document. Recording a payment does not transfer money.",
       partnerHelp:
         "Keep company details current. Issued documents retain their original details. Add the partner's bank account before a refund or self-billing.",
       refundBankError: "Add the recipient's refund IBAN and account holder under Business partners before issuing the credit note.",
@@ -111,11 +133,10 @@ const messages = i18n.define({
       issueError:
         "Check issuer setup and the selected business partner. If the invoice was just issued, run this action again to retrieve it.",
       setupKey: "Setup key",
-      creationAccepted:
-        "Document creation requested. You can keep working. Find its status and the finished document under Billing documents.",
+      creationAccepted: "Document creation requested. You can keep working; its status and PDF will appear here and under Invoices.",
       drafts: "Drafts",
-      issued: "Finalized",
-      frozen: "Finalized details",
+      issued: "Issued documents",
+      frozen: "Document details",
       noBills: "No billing documents yet.",
       finalizedHelp:
         "These details can no longer be edited. Open an entry's Documents section for its official number and file; REF identifies only the internal record. Continue creation completes a missing file. Open document opens the finished file with its original number.",
@@ -126,9 +147,31 @@ const messages = i18n.define({
       correctionRoundingError:
         "The positions exceed the remaining net/VAT amount or leave a rounding difference. Adjust the partial positions or correct the full remaining amount so the remainder stays exactly correctable.",
       correctionHelp:
-        "Correction drafts initially contain all original positions. Reduce quantities or remove positions for a partial correction. The remaining net and VAT amounts must stay exactly correctable; an incompatible rounding split is rejected before finalization. The document uses the original issuer and recipient details.",
+        "For a partial correction, reduce quantities or remove positions. Check the correction reason and choose a due date. The original company and recipient details are retained.",
     },
     de: {
+      recipientSection: "Empfänger",
+      positionsSection: "Leistungen und Preise",
+      datesSection: "Datum und Zahlungsziel",
+      additionalSection: "Interne Notizen",
+      companySection: "Unternehmensangaben",
+      addressSection: "Rechnungsadresse",
+      bankSection: "Bankverbindung",
+      bankHelp: "Für Erstattungen und Provisionsauszahlungen erforderlich.",
+      reviewSection: "Bereit zum Ausstellen",
+      paymentSection: "Zahlungsangaben",
+      savePayment: "Zahlung zur Bestätigung speichern",
+      newPartner: "Neuer Geschäftspartner",
+      noPartners: "Noch keine Geschäftspartner. Lege hier oder beim Erstellen einer Rechnung einen an.",
+      noDrafts: "Alle Entwürfe erledigt. Bei Bedarf kannst du eine neue Rechnung erstellen.",
+      noIssued: "Ausgestellte Belege erscheinen hier mit ihrer Nummer und dem PDF-Status.",
+      noPayments: "Noch keine bestätigten Zahlungen.",
+      noPendingPayments: "Keine Zahlungen warten auf Bestätigung.",
+      noBalances: "Alle ausgestellten Belege sind ausgeglichen.",
+      balanceHelp:
+        "Positive Beträge sind noch offen. Negative Beträge sind Guthaben, für die eine Erstattung infrage kommt. Öffne einen Beleg, um seine Zahlung zu erfassen.",
+      refundHelp:
+        "Erfasse eine tatsächlich erfolgte Erstattung als positiven Betrag. Speichere sie und bestätige sie danach an der Rechnung. Die Erfassung überweist kein Geld.",
       title: "Rechnungswesen",
       examplePartner: "Beispiel-Geschäftspartner (vor Ausstellung ersetzen)",
       examplePosition: "Beispielleistung",
@@ -138,15 +181,15 @@ const messages = i18n.define({
       positions: "Freitextpositionen mit exakten Summen",
       documents: "Abrechnungsbelege",
       parties: "Geschäftspartner",
-      bills: "Abrechnungen",
+      bills: "Rechnungen",
       payments: "Zahlungen",
       paid: "Bezahlt",
       corrected: "Korrigiert",
       outstanding: "Offen",
-      balances: "Salden",
+      balances: "Offene Zahlungen",
       paymentTotals: "Zahlungen je Abrechnung",
       correctionTotals: "Korrekturen je Rechnung",
-      settings: "Abrechnungseinstellungen",
+      settings: "Mein Unternehmen",
       name: "Name",
       vatId: "USt-IdNr.",
       street: "Straße und Hausnummer",
@@ -180,10 +223,9 @@ const messages = i18n.define({
       ready: "Ausstellerangaben geprüft",
       setup: "Dein Unternehmen",
       setupAction: "Ausstellerdaten vervollständigen",
-      startHelp:
-        "Ergänze und prüfe vor dem ersten Ausstellen deine Unternehmens- und Bankdaten. Entwürfe kannst du bereits speichern. Öffne einen Entwurf, um Positionen und Summen vor dem Ausstellen zu prüfen.",
+      startHelp: "Vervollständige Mein Unternehmen vor der ersten Ausstellung. Rechnungsentwürfe kannst du bereits anlegen und speichern.",
       setupHelp:
-        "Trage vor dem Ausstellen deine echten Unternehmens- und Bankdaten ein. Die Vorlage unterstützt EUR und deutsche Unternehmen mit unterschiedlichen deutschen USt-IdNrn., bei 7 % oder 19 % Umsatzsteuer. Sie bietet keine buchhalterische oder rechtliche Zertifizierung.",
+        "Diese Angaben erscheinen auf neu ausgestellten Rechnungen. Prüfe deine Unternehmens- und Bankdaten und bestätige unten, dass sie verwendet werden können.",
       draft: "Entwurf speichern",
       saved: "Entwurf gespeichert. Prüfe ihn vor dem Ausstellen.",
       newInvoice: "Neue Rechnung",
@@ -197,22 +239,23 @@ const messages = i18n.define({
       balanceAmount: "Saldowirkung (EUR)",
       refundError:
         "Erstattungen gehören zur ursprünglichen Rechnung und dürfen ihr aktuelles Guthaben nicht überschreiten. Lade neu und prüfe den Betrag.",
-      pendingPayments: "Unbestätigte Zahlungen",
+      pendingPayments: "Zahlungen zum Bestätigen",
       confirmedPayments: "Bestätigte Zahlungen",
       confirmPayment: "Zahlung bestätigen",
       confirmPaymentMessage:
         "Bestätigen, dass diese Zahlung tatsächlich erfolgt ist? Betrag, Datum und zugeordneter Beleg werden unveränderlich und im Saldo berücksichtigt.",
       paymentPendingHelp:
-        "Unbestätigte Zahlung: Sie verändert noch keinen Saldo. Speichere Änderungen und bestätige danach den tatsächlichen Geldeingang oder die Auszahlung. Der zugeordnete Beleg muss bereits festgeschrieben sein.",
+        "Prüfe Betrag und Datum, speichere Änderungen und bestätige dann die Zahlung. Erst die Bestätigung berücksichtigt sie im offenen Betrag.",
       paymentConfirmedHelp: "Bestätigte Zahlung. Betrag, Datum und zugeordneter Beleg sind unveränderlich und im Saldo berücksichtigt.",
       paymentError:
         "Die Zahlung muss noch unbestätigt und unverändert sein, ihr Beleg bereits festgeschrieben. Lade die Seite neu und prüfe die Angaben vor der Bestätigung.",
       discardDraft: "Entwurf verwerfen",
       discardPayment: "Unbestätigte Zahlung verwerfen",
+      discardPaymentConfirm: "Diese unbestätigte Zahlung verwerfen? Sie hat den offenen Betrag noch nicht verändert und wird entfernt.",
       discardDraftConfirm:
         "Diesen Entwurf in den Papierkorb verschieben? Er erscheint danach nicht mehr in der Entwurfsliste. Festgeschriebene Belege können nicht verworfen werden.",
       paymentHelp:
-        "Nur bestätigte Zahlungen verändern den Saldo; die Erfassung überweist kein Geld. Erfasse Kundenzahlungen und Erstattungen an der ursprünglichen Rechnung, Provisionsauszahlungen an der Provisionsgutschrift. Gib den Betrag positiv ein; die Aktion Erstattung bestimmt die Richtung.",
+        "Erfasse den tatsächlich eingegangenen oder ausgezahlten Betrag. Speichere ihn und bestätige ihn danach am Beleg. Die Erfassung überweist kein Geld.",
       partnerHelp:
         "Pflege hier die Unternehmensangaben. Ausgestellte Dokumente behalten ihre ursprünglichen Angaben. Ergänze vor Rückzahlungen oder Provisionsgutschriften das Bankkonto des Geschäftspartners.",
       refundBankError:
@@ -230,10 +273,10 @@ const messages = i18n.define({
       issueError:
         "Prüfe Ausstellerangaben und Geschäftspartner. Wurde die Rechnung gerade ausgestellt, führe die Aktion erneut aus, um sie abzurufen.",
       setupKey: "Einrichtungsschlüssel",
-      creationAccepted: "Belegerstellung beauftragt. Du kannst weiterarbeiten. Status und fertiges Dokument findest du unter Abrechnungen.",
+      creationAccepted: "Belegerstellung beauftragt. Du kannst weiterarbeiten; Status und PDF erscheinen hier und unter Rechnungen.",
       drafts: "Entwürfe",
-      issued: "Festgeschrieben",
-      frozen: "Festgeschriebene Angaben",
+      issued: "Ausgestellte Belege",
+      frozen: "Rechnungsangaben",
       noBills: "Noch keine Abrechnungen vorhanden.",
       finalizedHelp:
         "Diese Angaben sind nicht mehr bearbeitbar. Öffne den Abschnitt Dokumente eines Eintrags für seine offizielle Nummer und Datei; REF bezeichnet nur den internen Datensatz. Erstellung fortsetzen ergänzt eine fehlende Datei. Dokument öffnen öffnet die fertige Datei mit ihrer ursprünglichen Nummer.",
@@ -244,7 +287,7 @@ const messages = i18n.define({
       correctionRoundingError:
         "Die Positionen überschreiten den verbleibenden Netto-/Steuerbetrag oder hinterlassen eine Rundungsdifferenz. Passe die Teilpositionen an oder korrigiere den gesamten Restbetrag, damit der Rest exakt korrigierbar bleibt.",
       correctionHelp:
-        "Der Korrekturentwurf enthält zunächst alle ursprünglichen Positionen. Verringere Mengen oder entferne Positionen für eine Teilkorrektur. Verbleibende Netto- und Steuerbeträge müssen exakt korrigierbar bleiben; eine unpassende Rundungsaufteilung wird vor der Festschreibung abgelehnt. Das Dokument verwendet die ursprünglichen Aussteller- und Empfängerangaben.",
+        "Für eine Teilkorrektur verringerst du Mengen oder entfernst Positionen. Ergänze Korrekturgrund und Zahlungsziel. Unternehmens- und Empfängerangaben werden aus dem Original übernommen.",
     },
   },
 });
@@ -281,13 +324,30 @@ export function createBillingTemplate(locale?: string): GridTemplate {
   const snapshots = (relationKey: string, target: string, prefix: string): TemplateField[] =>
     partyFields().map((source) => ({
       key: `${relationKey}_${source.key}`,
-      name: `${prefix}: ${source.name}`,
+      name: relationKey === "party" && source.key === "name" ? t.recipientSection : `${prefix}: ${source.name}`,
       type: "lookup",
       hideInTable: true,
       config: { relationFieldId: field(`bills.${relationKey}`), targetFieldId: field(`${target}.${source.key}`) },
     }));
   const amountFields = billingAmountFields("bills", locale);
-  const billInputs = ["party", "invoice_date", "service_date", "due_date", "buyer_reference", "positions"];
+  const billInputs = ["party", "buyer_reference", "positions", "invoice_date", "service_date", "due_date"];
+  const section = (tableKey: string, key: string) => {
+    if (tableKey === "bills") {
+      if (key === "party") return { title: t.recipientSection };
+      if (key === "positions") return { title: t.positionsSection };
+      if (key === "invoice_date") return { title: t.datesSection };
+      if (key === "notes") return { title: t.additionalSection, collapsible: true };
+    }
+    if (tableKey === "parties" || tableKey === "settings") {
+      if (key === "name") return { title: t.companySection };
+      if (key === "street") return { title: t.addressSection };
+      if (key === "iban")
+        return { title: t.bankSection, ...(tableKey === "parties" ? { description: t.bankHelp, collapsible: true } : {}) };
+      if (key === "ready") return { title: t.reviewSection };
+    }
+    if (tableKey === "payments" && key === "date") return { title: t.paymentSection };
+    return undefined;
+  };
   const inputs = (tableKey: string, keys: string[], inlineCreate = false, creating = false) =>
     keys.map((key) => ({
       kind: "user_input",
@@ -295,18 +355,23 @@ export function createBillingTemplate(locale?: string): GridTemplate {
       ...(["invoice_date", "service_date", "due_date", "date", "amount", "postal_code", "city", "vat_id"].includes(key)
         ? { width: "compact" }
         : {}),
-      ...((creating && key === "invoice_date") || (tableKey === "payments" && key === "date") ? { defaultValue: { kind: "now" } } : {}),
+      ...((creating && key === "invoice_date") || (tableKey === "payments" && key === "date" && creating)
+        ? { defaultValue: { kind: "now" } }
+        : {}),
       ...(["positions", "due_date"].includes(key) ? { required: true } : {}),
       helpText: fieldHelp(tableKey, key),
+      ...(section(tableKey, key) ? { section: section(tableKey, key) } : {}),
       ...(inlineCreate && tableKey === "bills" && key === "party"
         ? {
             inlineCreate: {
               enabled: true,
-              fields: partyFields().map((entry) => ({
-                fieldId: field(`parties.${entry.key}`),
-                helpText: fieldHelp("parties", entry.key),
-                ...(["postal_code", "city", "vat_id"].includes(entry.key) ? { width: "compact" } : {}),
-              })),
+              fields: partyFields()
+                .filter((entry) => !["iban", "account_name"].includes(entry.key))
+                .map((entry) => ({
+                  fieldId: field(`parties.${entry.key}`),
+                  helpText: fieldHelp("parties", entry.key),
+                  ...(["postal_code", "city", "vat_id"].includes(entry.key) ? { width: "compact" } : {}),
+                })),
             },
           }
         : {}),
@@ -451,7 +516,7 @@ export function createBillingTemplate(locale?: string): GridTemplate {
           fields: [
             ...inputs(
               "bills",
-              ["party", "agreement", "invoice_date", "service_date", "due_date", "buyer_reference", "positions"],
+              ["party", "buyer_reference", "agreement", "positions", "invoice_date", "service_date", "due_date"],
               false,
               true,
             ),
@@ -469,12 +534,12 @@ export function createBillingTemplate(locale?: string): GridTemplate {
         config: {
           fields: inputs("bills", [
             "party",
+            "buyer_reference",
             "agreement",
+            "positions",
             "invoice_date",
             "service_date",
             "due_date",
-            "buyer_reference",
-            "positions",
             "notes",
           ]),
           computedFields: ["net", "tax", "gross"].map((key) => ({ fieldId: field(`bills.${key}`), width: "compact" })),
@@ -528,7 +593,7 @@ export function createBillingTemplate(locale?: string): GridTemplate {
         table: "bills",
         name: t.correction,
         config: {
-          fields: inputs("bills", ["invoice_date", "service_date", "due_date", "buyer_reference", "positions", "reason", "notes"]),
+          fields: inputs("bills", ["positions", "reason", "invoice_date", "service_date", "due_date", "buyer_reference", "notes"]),
           computedFields: ["net", "tax", "gross"].map((key) => ({ fieldId: field(`bills.${key}`), width: "compact" })),
           submitLabel: t.draft,
         },
@@ -538,8 +603,18 @@ export function createBillingTemplate(locale?: string): GridTemplate {
         table: "payments",
         name: t.paymentForm,
         config: {
-          fields: inputs("payments", ["bill", "date", "amount", "reference"]),
-          submitLabel: t.draft,
+          fields: inputs("payments", ["bill", "date", "amount", "reference"], false, true),
+          submitLabel: t.savePayment,
+          successMessage: t.paymentPendingHelp,
+        },
+      },
+      {
+        key: "edit_payment",
+        table: "payments",
+        name: t.payments,
+        config: {
+          fields: inputs("payments", ["date", "amount", "reference"]),
+          submitLabel: t.savePayment,
           successMessage: t.paymentPendingHelp,
         },
       },
@@ -549,10 +624,10 @@ export function createBillingTemplate(locale?: string): GridTemplate {
         name: t.refundForm,
         config: {
           fields: [
-            ...inputs("payments", ["bill", "date", "amount", "reference"]),
+            ...inputs("payments", ["bill", "date", "amount", "reference"], false, true),
             { kind: "form_value", fieldId: field("payments.refund"), value: true },
           ],
-          submitLabel: t.draft,
+          submitLabel: t.savePayment,
           successMessage: t.paymentPendingHelp,
         },
       },

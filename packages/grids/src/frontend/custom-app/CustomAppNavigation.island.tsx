@@ -1,13 +1,12 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { createNavigation, type NavigationItem, toast } from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
-import { customAppPageHref } from "../../custom-apps/routing";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
 import type { CustomAppRenderedSidebarAction } from "./sidebar-form";
 
 export default function CustomAppNavigation(props: {
   name: string;
-  pages: Array<{ id: string; title: string; icon?: string }>;
+  pages: Array<{ id: string; title: string; icon?: string; href: string }>;
   appId: string;
   pageId: string;
   actions: CustomAppRenderedSidebarAction[];
@@ -31,7 +30,7 @@ export default function CustomAppNavigation(props: {
         id: page.id,
         label: page.title,
         icon: `ti ti-${page.icon ?? "file"}`,
-        href: customAppPageHref(props.appId, page.id),
+        href: page.href,
         active: page.id === props.pageId,
       })),
     ],

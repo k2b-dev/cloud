@@ -163,7 +163,7 @@ export const gridsFieldMessages = i18n.define({
       listCalculatedDescription: "Read-only result calculated from columns in the same row.",
       listCalculatedSelectUnsupported: "Selection columns use option IDs and cannot be calculated. Use an input column instead.",
       listRowFormula: "Row formula",
-      listDetailsOnly: "Show under calculation details",
+      listDetailsOnly: "Show under additional details",
       listFormulaHelp:
         "Reference columns by name; put names with spaces in double quotes. After renaming a column, update its references. Use its stable column ID when names should be free to change.",
       listBounds: "Row limits",
@@ -427,7 +427,7 @@ export const gridsFieldMessages = i18n.define({
       listCalculatedSelectUnsupported:
         "Auswahlspalten verwenden Options-IDs und können nicht berechnet werden. Verwende sie als Eingabespalte.",
       listRowFormula: "Zeilenformel",
-      listDetailsOnly: "Unter Berechnungsdetails anzeigen",
+      listDetailsOnly: "Unter weiteren Angaben anzeigen",
       listFormulaHelp:
         "Verwende Spaltennamen; Namen mit Leerzeichen stehen in doppelten Anführungszeichen. Passe Verweise nach dem Umbenennen an. Mit der stabilen Spalten-ID bleiben Verweise unabhängig vom Namen.",
       listBounds: "Zeilenanzahl begrenzen",

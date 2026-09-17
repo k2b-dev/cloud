@@ -13,10 +13,12 @@ import { CUSTOM_APP_API_REFERENCE } from "../custom-apps/reference";
 import {
   customAppActionStatusUrl,
   customAppFormSuccessHref,
+  customAppPageHref,
   customAppScannerRunUrl,
   customAppSidebarFormSuccessHref,
 } from "../custom-apps/routing";
 import { resolveCustomAppValueBinding } from "../custom-apps/value-bindings";
+import { customAppWorkflowSuccessParams } from "../custom-apps/workflow-navigation";
 import { customAppWorkflowStatusMessage } from "../custom-apps/workflow-status-message";
 import { isRecordWritableFieldType } from "../field-types";
 import { toWorkflowRunEventSummary } from "../lib/workflow-run-events";
@@ -60,7 +62,7 @@ import {
 import { runWithQueryAdmission } from "./query-admission";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
 import { v } from "./validator";
-import { ScannerLauncherRequestSchema, toPublicWorkflowError } from "./workflow-api-shared";
+import { ScannerLauncherRequestSchema, toPublicWorkflowError, toPublicWorkflowPayloads } from "./workflow-api-shared";
 
 const DefinitionBaseSchema = z.object({ baseId: ShortIdSchema });
 const CustomAppCreateSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
@@ -1351,6 +1353,7 @@ export const createCustomAppsApi = (
           page,
           capabilities,
           records: [bindingContext.pageRecord],
+          failureContext: { principal: currentWorkflowPrincipal(c), messages: apiMessages(c) },
         });
         const state = states[bindingContext.pageRecord.id];
         return state
@@ -1390,7 +1393,7 @@ export const createCustomAppsApi = (
         },
       });
       if (!result.ok) return respond(c, () => Promise.resolve(result));
-      if (action.background) return c.json({ status: "running" as const }, 202);
+      if (action.background) return c.json({ status: "running" as const, finalized: Boolean(bindingContext.pageRecord?.finalizedAt) }, 202);
       const [projected, publicPageParams] = await Promise.all([projectWorkflowInvocation(result.data), projectRecordParams(pageParams)]);
       return c.json(
         {
@@ -1577,12 +1580,35 @@ export const createCustomAppsApi = (
               : ["failed", "canceled", "needs_attention"].includes(run.status)
                 ? "failed"
                 : "running";
+          let navigateTo: string | undefined;
+          const navigation = "onSuccessNavigate" in workflowAction ? workflowAction.onSuccessNavigate : undefined;
+          if (status === "succeeded" && navigation) {
+            const targetPage = runtime.definition.pages.find((candidate) => candidate.id === navigation.pageId);
+            const [publicResult] = await toPublicWorkflowPayloads([run.result]);
+            const params = targetPage
+              ? customAppWorkflowSuccessParams(navigation, targetPage, runtime.publicPageParams, publicResult)
+              : null;
+            if (params) {
+              const target = await resolvePublishedCustomAppRuntime({
+                access: runtime.access,
+                shortId: runtime.app.shortId,
+                pageId: navigation.pageId,
+                query: params,
+                dateConfig: runtime.dateConfig,
+                signal: c.req.raw.signal,
+              });
+              if (target && (await loadRuntimeBindingContext(target))) {
+                navigateTo = customAppPageHref(runtime.app.shortId, navigation.pageId, params);
+              }
+            }
+          }
           const confirmation = run.status === "waiting" ? await getWorkflowDocumentConfirmation(run.id) : undefined;
           canWait = status === "running" && !confirmation && c.req.header("X-Workflow-Changes") === String(committedChanges);
           return c.json({
             live: Boolean(eventCursor),
             committedChanges,
             status,
+            ...(navigateTo ? { navigateTo } : {}),
             message: customAppWorkflowStatusMessage(run, apiMessages(c)),
             ...(confirmation
               ? {

@@ -28,7 +28,7 @@ export const formatCell = (
 ): string => {
   if (value === null || value === undefined || value === "") return "";
 
-  const override = format ? formatOverride(value, type, format, dateConfig, locale) : null;
+  const override = format ? formatOverride(value, type, format, dateConfig, locale, fieldConfig) : null;
   if (override !== null) return override;
 
   // ── Type-default rendering ──────────────────────────────────────
@@ -47,9 +47,15 @@ const formatOverride = (
   format: FormatSpec,
   dateConfig: DateContext | undefined,
   locale: string,
+  fieldConfig?: Record<string, unknown>,
 ): string | null => {
   if (format.kind === "date" && canUseDateFormat(type, value)) return formatDate(value, format, dateConfig, locale);
-  if (format.kind === "decimal" && canUseDecimalFormat(type, value)) return formatDecimal(value, format, locale);
+  if (format.kind === "decimal" && canUseDecimalFormat(type, value))
+    return formatWithUnit(
+      formatDecimal(value, format, locale),
+      typeof fieldConfig?.unit === "string" ? fieldConfig.unit : "",
+      fieldConfig?.unitPosition === "prefix" ? "prefix" : "suffix",
+    );
   if (format.kind === "percent" && canUsePercentFormat(type)) return formatPercent(value, format, locale);
   return null;
 };
@@ -70,7 +76,7 @@ const DEFAULT_RENDERERS: Record<string, CellRenderer> = {
     return value ? t.yes : t.no;
   },
   select: (value, fieldConfig) => (Array.isArray(value) ? formatSelect(value, fieldConfig) : fallbackValue(value)),
-  number: (value, fieldConfig) => formatNumberDefault(value, fieldConfig),
+  number: (value, fieldConfig, _dateConfig, locale) => formatNumberDefault(value, fieldConfig, locale),
   percent: (value, config) =>
     typeof value === "number" ? `${config.range === "fraction" ? new Decimal(value).mul(100).toFixed() : value}%` : fallbackValue(value),
   duration: (value) => (typeof value === "number" ? formatDuration(value) : fallbackValue(value)),
@@ -96,14 +102,17 @@ const formatSelect = (ids: unknown[], fieldConfig: Record<string, unknown>): str
   return ids.map((id) => labels.get(String(id)) ?? String(id)).join(", ");
 };
 
-const formatNumberDefault = (value: unknown, fieldConfig: Record<string, unknown>): string => {
+const formatNumberDefault = (value: unknown, fieldConfig: Record<string, unknown>, locale: string): string => {
   const unit = typeof fieldConfig.unit === "string" ? fieldConfig.unit : "";
   const unitPosition = fieldConfig.unitPosition === "prefix" ? "prefix" : "suffix";
   const amount =
     typeof value === "object" && value !== null && "amount" in value
       ? (value as { amount?: string | number }).amount
       : (value as string | number);
-  return formatWithUnit(amount, unit, unitPosition);
+  const precision = fieldConfig.integerOnly ? 0 : typeof fieldConfig.decimalPlaces === "number" ? fieldConfig.decimalPlaces : undefined;
+  const formatted =
+    typeof amount === "string" || typeof amount === "number" ? formatDecimal(amount, { kind: "decimal", precision }, locale) : amount;
+  return formatWithUnit(formatted, unit, unitPosition);
 };
 
 const formatDuration = (value: number): string => {

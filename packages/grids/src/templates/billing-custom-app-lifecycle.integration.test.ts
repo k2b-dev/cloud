@@ -42,7 +42,7 @@ postgresTest(
       const authoredBillPage = definition.customApps![0]!.definition.pages.find((page) => page.id === "bill")!;
       const authoredActions = authoredBillPage.rows
         .flatMap((row) => row.columns.flatMap((column) => column.blocks))
-        .find((block) => block.id === "actions");
+        .find((block) => block.id === "issue-actions");
       if (authoredActions?.type !== "actions" || !("actions" in authoredActions)) throw new Error("Missing authored bill actions");
       const authoredIssue = authoredActions.actions.find((action) => action.id === "issue")!;
       authoredActions.actions.push({
@@ -167,20 +167,20 @@ postgresTest(
         }
         throw new Error(`Run did not settle: ${runId}`);
       };
-      const issue = () => start("bill", "actions", "issue", { bill_id: draft.data.id }, { bill: draft.data.shortId });
+      const issue = () => start("bill", "issue-actions", "issue", { bill_id: draft.data.id }, { bill: draft.data.shortId });
       // Exercise the real availability query separately so a denied launcher
       // reports query/configuration diagnostics instead of only FORBIDDEN.
       const billPage = app.publishedDefinition!.pages.find((page) => page.id === "bill")!;
       const issueBlock = billPage.rows
         .flatMap((row) => row.columns.flatMap((column) => column.blocks))
-        .find((block) => block.id === "actions");
+        .find((block) => block.id === "issue-actions");
       if (issueBlock?.type !== "actions") throw new Error("Missing bill actions");
       const issueAction = issueBlock.actions.find((action) => action.id === "lookup-check")!;
       const issueAvailability = app.publishedCapabilities.availability.find(
         (capability) =>
           capability.target === "action" &&
           capability.pageId === "bill" &&
-          capability.blockId === "actions" &&
+          capability.blockId === "issue-actions" &&
           capability.actionId === "lookup-check",
       );
       if (!issueAvailability || !issueAction.availableWhen) throw new Error("Missing issue availability");
@@ -237,7 +237,7 @@ postgresTest(
         "/",
         createCustomAppsApi({ loadOptionalActor: async (_c, next) => next(), requireAuthenticated: async (_c, next) => next() }),
       );
-      const endpoint = `/runtime/${app.shortId}/bill/actions/actions/issue?bill_id=${draft.data.shortId}`;
+      const endpoint = `/runtime/${app.shortId}/bill/issue-actions/actions/issue?bill_id=${draft.data.shortId}`;
       const post = () =>
         api.request(endpoint, {
           method: "POST",
@@ -247,10 +247,10 @@ postgresTest(
       const accepted = await Promise.all([post(), post()]);
       for (const response of accepted) {
         expect(response.status, await response.clone().text()).toBe(202);
-        expect(await response.json()).toEqual({ status: "running" });
+        expect(await response.json()).toEqual({ status: "running", finalized: false });
       }
       // No worker has run: admission and status must work while rendering is arbitrarily delayed.
-      expect(await (await api.request(endpoint)).json()).toMatchObject({ status: "running" });
+      expect(await (await api.request(endpoint)).json()).toMatchObject({ status: "running", finalized: false });
       const originalUser = user;
       const secondActorId = testUuid();
       await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
@@ -272,7 +272,7 @@ postgresTest(
       const reloaded = await api.request(`/runtime/${app.shortId}/bill?bill_id=${draft.data.shortId}`);
       expect(reloaded.status, await reloaded.clone().text()).toBe(200);
       expect(await reloaded.text()).toContain('"status":"running"');
-      const overview = await api.request(`/runtime/${app.shortId}/invoices/bills/records`);
+      const overview = await api.request(`/runtime/${app.shortId}/invoices/drafts/records`);
       expect(overview.status, await overview.clone().text()).toBe(200);
       expect(await overview.text()).toContain('"status":"running"');
 
@@ -285,18 +285,19 @@ postgresTest(
       });
       await finish(issueRun, "failed");
       const failure = await (await api.request(endpoint)).json();
-      expect(failure.status).toBe("failed");
+      expect(failure).toMatchObject({ status: "failed", finalized: true, message: expect.any(String) });
+      expect(render).toHaveBeenCalledTimes(1);
       expect(JSON.stringify(failure)).not.toContain("Private renderer");
       expect((await get(bills.id, draft.data.id))?.finalizedAt).not.toBeNull();
       await sql`UPDATE workflows.run SET state = 'needs_attention' WHERE id = ${issueRun}::uuid`;
-      expect((await (await post()).json()).status).toBe("attention");
+      expect(await (await post()).json()).toMatchObject({ status: "attention", finalized: true });
       await sql`UPDATE workflows.run SET state = 'failed' WHERE id = ${issueRun}::uuid`;
-      expect((await (await post()).json()).status).toBe("running");
+      expect(await (await post()).json()).toMatchObject({ status: "running", finalized: true });
       await finish(await issue());
       expect((await get(bills.id, draft.data.id))?.finalizedAt).not.toBeNull();
       expect(await canExecuteRun(scope)).toBe(true);
       const finished = await (await api.request(endpoint)).json();
-      expect(finished.status).toBe("ready");
+      expect(finished).toMatchObject({ status: "ready", finalized: true });
       expect(finished.downloadUrl).toContain("/documents/");
       expect(finished).not.toHaveProperty("runId");
       expect((await (await post()).json()).status).toBe("ready");
@@ -308,6 +309,26 @@ postgresTest(
       expect(documents).toHaveLength(1);
       expect(render).toHaveBeenCalledTimes(2);
 
+      // The real app reader receives the single-record numeric snapshot,
+      // including joined payment totals, without a Base grant.
+      const summaryBeforePayment = await api.request(`/runtime/${app.shortId}/bill?bill_id=${draft.data.shortId}`);
+      expect(summaryBeforePayment.status).toBe(200);
+      expect(await summaryBeforePayment.json()).toMatchObject({
+        blocks: expect.arrayContaining([
+          expect.objectContaining({
+            id: "balance",
+            metrics: {
+              ok: true,
+              cells: expect.arrayContaining([
+                expect.objectContaining({ label: "Paid", value: "0" }),
+                expect.objectContaining({ label: "Corrected", value: "0" }),
+                expect.objectContaining({ label: "Outstanding", value: "119" }),
+              ]),
+            },
+          }),
+        ]),
+      });
+
       const payment = await create(
         payments.id,
         payments.values({ bill: [draft.data.id], date: "2026-09-16", amount: "119.00" }),
@@ -317,9 +338,25 @@ postgresTest(
       if (!payment.ok) throw new Error(payment.error.message);
       await finish(await start("payment", "actions", "confirm", { payment_id: payment.data.id }, { payment: payment.data.shortId }));
       expect((await get(payments.id, payment.data.id))?.finalizedAt).not.toBeNull();
+      const summaryAfterPayment = await api.request(`/runtime/${app.shortId}/bill?bill_id=${draft.data.shortId}`);
+      expect(summaryAfterPayment.status).toBe(200);
+      expect(await summaryAfterPayment.json()).toMatchObject({
+        blocks: expect.arrayContaining([
+          expect.objectContaining({
+            id: "balance",
+            metrics: {
+              ok: true,
+              cells: expect.arrayContaining([
+                expect.objectContaining({ label: "Paid", value: "119" }),
+                expect.objectContaining({ label: "Outstanding", value: "0" }),
+              ]),
+            },
+          }),
+        ]),
+      });
       const discarded = await create(bills.id, draftData, null, "form");
       if (!discarded.ok) throw new Error(discarded.error.message);
-      await finish(await start("bill", "actions", "discard", { bill_id: discarded.data.id }, { bill: discarded.data.shortId }));
+      await finish(await start("bill", "issue-actions", "discard", { bill_id: discarded.data.id }, { bill: discarded.data.shortId }));
       expect(await get(bills.id, discarded.data.id)).toBeNull();
 
       await sql`UPDATE grids.workflow_launchers SET enabled = false WHERE id = ${scope.launcherId}::uuid`;

@@ -4,6 +4,13 @@ export const gridsFormMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      sectionTitle: "Start section (optional)",
+      sectionDescription: "This field and following fields form a section, until the next section starts.",
+      sectionHelp: "Section description",
+      sectionCollapsible: "Show on demand",
+      sectionCollapsibleDescription:
+        "Empty sections start closed. Entered values stay visible, and validation opens inputs that need attention.",
+      listDetails: "Additional details",
       fieldWidth: "Field width",
       fullWidth: "Full width",
       compact: "Compact",
@@ -151,7 +158,7 @@ export const gridsFormMessages = i18n.define({
       noPrincipals: "No users or groups found",
       submitFailed: "Submit failed",
       submit: "Submit",
-      linkedRecordsWarning: "This form can also create linked records. Everything is saved together when you submit.",
+      linkedRecordsWarning: "New linked records will be saved together with this form.",
       durationPlaceholder: "HH:MM:SS or seconds",
       relationMissingTarget: "This relation has no target table and cannot be completed.",
       createNew: "Create new",
@@ -167,10 +174,18 @@ export const gridsFormMessages = i18n.define({
       removeDraft: "Remove draft",
     },
     de: {
+      sectionTitle: "Abschnitt beginnen (optional)",
+      sectionDescription: "Dieses Feld und die folgenden Felder bilden einen Abschnitt, bis ein neuer beginnt.",
+      sectionHelp: "Abschnittsbeschreibung",
+      sectionCollapsible: "Bei Bedarf anzeigen",
+      sectionCollapsibleDescription:
+        "Leere Abschnitte beginnen geschlossen. Vorhandene Werte bleiben sichtbar; ungültige Eingaben öffnen den Abschnitt.",
+      listDetails: "Weitere Angaben",
       fieldWidth: "Feldbreite",
       fullWidth: "Volle Breite",
       compact: "Kompakt",
-      summaryError: "Die Werte konnten nicht berechnet werden. Prüfe deine Eingaben oder bitte den Formularverantwortlichen, die Formeln zu prüfen.",
+      summaryError:
+        "Die Werte konnten nicht berechnet werden. Prüfe deine Eingaben oder bitte den Formularverantwortlichen, die Formeln zu prüfen.",
       computedSummary: "Berechnete Werte",
       computedSummaryDescription:
         "Zeige schreibgeschützte Formelwerte unter den Eingaben. Sie werden beim Eingeben und erneut beim Speichern berechnet.",
@@ -320,7 +335,7 @@ export const gridsFormMessages = i18n.define({
       noPrincipals: "Keine Personen oder Gruppen gefunden",
       submitFailed: "Formular konnte nicht abgesendet werden",
       submit: "Absenden",
-      linkedRecordsWarning: "Dieses Formular kann auch verknüpfte Datensätze erstellen. Beim Absenden wird alles zusammen gespeichert.",
+      linkedRecordsWarning: "Neue verknüpfte Datensätze werden mit diesem Formular gespeichert.",
       durationPlaceholder: "HH:MM:SS oder Sekunden",
       relationMissingTarget: "Für diese Relation ist keine Zieltabelle eingerichtet. Das Feld kann nicht ausgefüllt werden.",
       createNew: "Neu erstellen",

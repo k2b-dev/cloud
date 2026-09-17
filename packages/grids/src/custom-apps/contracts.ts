@@ -113,6 +113,19 @@ const CustomAppRowValueBindingSchema = z.discriminatedUnion("source", [
   CustomAppRowIdValueSchema,
 ]);
 
+const CustomAppFormSuccessValueSchema = z.discriminatedUnion("source", [
+  CustomAppParamValueSchema,
+  z.object({ source: z.literal("RESULT"), path: z.literal("recordId") }).strict(),
+]);
+
+const CustomAppFormSuccessNavigationSchema = z
+  .object({
+    kind: z.literal("navigate"),
+    pageId: CustomAppLocalIdSchema,
+    params: z.record(CustomAppParameterIdSchema, CustomAppFormSuccessValueSchema),
+  })
+  .strict();
+
 const CustomAppActionSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -125,10 +138,18 @@ const CustomAppActionSchema = z.discriminatedUnion("kind", [
         .max(120)
         .regex(/^[a-z0-9-]+$/, "Use a Tabler icon slug")
         .optional(),
+      variant: z.enum(["primary", "secondary", "danger"]).optional(),
       kind: z.literal("navigate"),
       pageId: CustomAppLocalIdSchema,
       history: z.enum(["push", "replace"]).default("push"),
-      params: z.record(CustomAppParameterIdSchema, z.union([CustomAppParamValueSchema, CustomAppRecordIdValueSchema])),
+      params: z.record(
+        CustomAppParameterIdSchema,
+        z.union([
+          CustomAppParamValueSchema,
+          CustomAppRecordIdValueSchema,
+          z.object({ source: z.literal("RECORD"), path: z.literal("relation"), fieldId: CustomAppResourceIdSchema }).strict(),
+        ]),
+      ),
       ...CustomAppAvailabilityShape,
     })
     .strict(),
@@ -143,7 +164,9 @@ const CustomAppActionSchema = z.discriminatedUnion("kind", [
         .max(120)
         .regex(/^[a-z0-9-]+$/, "Use a Tabler icon slug")
         .optional(),
+      variant: z.enum(["primary", "secondary", "danger"]).optional(),
       kind: z.literal("workflow"),
+      onSuccessNavigate: CustomAppFormSuccessNavigationSchema.optional(),
       launcherId: CustomAppResourceIdSchema,
       inputs: z.record(z.string().trim().min(1).max(120), CustomAppValueBindingSchema).default({}),
       confirm: z.string().trim().min(1).max(240).optional(),
@@ -172,6 +195,7 @@ const CustomAppRowActionSchema = z
       .regex(/^[a-z0-9-]+$/, "Use a Tabler icon slug")
       .optional(),
     showLabel: z.boolean().default(true),
+    variant: z.enum(["primary", "secondary", "danger"]).optional(),
     kind: z.literal("workflow"),
     launcherId: CustomAppResourceIdSchema,
     inputs: z.record(z.string().trim().min(1).max(120), CustomAppRowValueBindingSchema).default({}),
@@ -184,19 +208,6 @@ const CustomAppRowActionSchema = z
       ctx.addIssue({ code: "custom", message: "Icon-only row actions require an icon", path: ["icon"] });
     }
   });
-
-const CustomAppFormSuccessValueSchema = z.discriminatedUnion("source", [
-  CustomAppParamValueSchema,
-  z.object({ source: z.literal("RESULT"), path: z.literal("recordId") }).strict(),
-]);
-
-const CustomAppFormSuccessNavigationSchema = z
-  .object({
-    kind: z.literal("navigate"),
-    pageId: CustomAppLocalIdSchema,
-    params: z.record(CustomAppParameterIdSchema, CustomAppFormSuccessValueSchema),
-  })
-  .strict();
 
 const CustomAppGlobalFormSuccessNavigationSchema = z
   .object({
@@ -326,6 +337,7 @@ const CustomAppMetricsBlockSchema = z
     type: z.literal("metrics"),
     title: z.string().trim().min(1).max(160).optional(),
     source: CustomAppInsightSourceSchema,
+    valueFormat: CustomAppValueFormatSchema.optional(),
     ...CustomAppAvailabilityShape,
   })
   .strict();
@@ -354,6 +366,7 @@ const CustomAppRecordBlockSchema = z
     emptyText: z.string().trim().min(1).max(240).optional(),
     fieldIds: z.array(CustomAppResourceIdSchema).min(1).max(30),
     editableFieldIds: z.array(CustomAppResourceIdSchema).max(30).default([]),
+    heading: z.object({ fieldId: CustomAppResourceIdSchema, documentNumber: z.boolean().optional() }).strict().optional(),
     documents: z
       .object({
         templateIds: z.array(CustomAppResourceIdSchema).min(1).max(12),
@@ -366,6 +379,16 @@ const CustomAppRecordBlockSchema = z
   .strict()
   .superRefine((block, ctx) => {
     const displayed = new Set(block.fieldIds);
+    if (block.heading && !displayed.has(block.heading.fieldId)) {
+      ctx.addIssue({ code: "custom", message: "The heading field must be displayed by the Record block", path: ["heading", "fieldId"] });
+    }
+    if (block.heading?.documentNumber && !block.documents) {
+      ctx.addIssue({
+        code: "custom",
+        message: "A document number heading requires a document template allowlist",
+        path: ["heading", "documentNumber"],
+      });
+    }
     const editable = new Set<string>();
     for (const [index, fieldId] of block.editableFieldIds.entries()) {
       if (editable.has(fieldId)) {
@@ -424,6 +447,7 @@ const CustomAppFormBlockSchema = z
     title: z.string().trim().min(1).max(160).optional(),
     formId: CustomAppResourceIdSchema,
     mode: z.enum(["create", "edit"]).optional(),
+    actionsBlockId: CustomAppLocalIdSchema.optional(),
     fixedValues: z.record(CustomAppResourceIdSchema, CustomAppFormValueBindingSchema).default({}),
     onSuccessNavigate: CustomAppFormSuccessNavigationSchema.optional(),
     ...CustomAppAvailabilityShape,
@@ -479,6 +503,7 @@ const CustomAppPageSchema = z
     navigation: z
       .object({
         visible: z.boolean().default(true),
+        recordId: CustomAppResourceIdSchema.optional(),
         icon: z
           .string()
           .trim()
@@ -660,6 +685,12 @@ export const CustomAppDefinitionSchema = z
                 });
               for (const [index, action] of block.actions.entries()) {
                 if (action.kind !== "workflow" || !action.background) continue;
+                if (action.onSuccessNavigate)
+                  ctx.addIssue({
+                    code: "custom",
+                    message: "Background document actions keep their durable status on the current page",
+                    path: [...blockPath, "actions", index, "onSuccessNavigate"],
+                  });
                 const documentBlock = page.rows
                   .flatMap((row) => row.columns.flatMap((column) => column.blocks))
                   .find((candidate) => candidate.id === action.background!.documentBlockId);
@@ -691,6 +722,19 @@ export const CustomAppDefinitionSchema = z
               ctx.addIssue({ code: "custom", message: "A Comments block requires a page record", path: [...blockPath, "type"] });
             }
             if (block.type === "form") {
+              if (block.actionsBlockId) {
+                const target = column.blocks.find((candidate) => candidate.id === block.actionsBlockId);
+                const owners = column.blocks.filter(
+                  (candidate) => candidate.type === "form" && candidate.actionsBlockId === block.actionsBlockId,
+                );
+                if (target?.type !== "actions" || owners.length !== 1) {
+                  ctx.addIssue({
+                    code: "custom",
+                    message: "Form actions must reference one exclusively owned Actions block in the same column",
+                    path: [...blockPath, "actionsBlockId"],
+                  });
+                }
+              }
               if (block.mode === "edit" && !page.record) {
                 ctx.addIssue({ code: "custom", message: "Editing a Form requires a page record", path: [...blockPath, "mode"] });
               }
@@ -754,12 +798,16 @@ export const CustomAppDefinitionSchema = z
           });
         }
         const hasRecordContent = page.rows.some((row) =>
-          row.columns.some((column) => column.blocks.some((block) => block.type === "record" || block.type === "html")),
+          row.columns.some((column) =>
+            column.blocks.some(
+              (block) => block.type === "record" || block.type === "html" || (block.type === "form" && block.mode === "edit"),
+            ),
+          ),
         );
         if (!hasRecordContent) {
           ctx.addIssue({
             code: "custom",
-            message: "A page record requires at least one Record or Rendered HTML block",
+            message: "A page record requires a Record, Rendered HTML, or edit Form block",
             path: ["pages", pageIndex, "record"],
           });
         }
@@ -784,10 +832,10 @@ export const CustomAppDefinitionSchema = z
             path: ["pages", pageIndex, "parameters"],
           });
         }
-        if (page.navigation.visible) {
+        if (page.navigation.visible && !page.navigation.recordId) {
           ctx.addIssue({
             code: "custom",
-            message: "Record pages must be route-only navigation targets",
+            message: "Visible record pages require a navigation record",
             path: ["pages", pageIndex, "navigation", "visible"],
           });
         }
@@ -796,6 +844,13 @@ export const CustomAppDefinitionSchema = z
           code: "custom",
           message: "Pages with required parameters must be route-only navigation targets",
           path: ["pages", pageIndex, "navigation", "visible"],
+        });
+      }
+      if (page.navigation.recordId && !page.record) {
+        ctx.addIssue({
+          code: "custom",
+          message: "A navigation record requires a bound record page",
+          path: ["pages", pageIndex, "navigation", "recordId"],
         });
       }
     }
@@ -816,9 +871,17 @@ export const CustomAppDefinitionSchema = z
                 ? [{ navigation: block.onSuccessNavigate, key: "onSuccessNavigate" }]
                 : []),
               ...(block.type === "actions"
-                ? block.actions.flatMap((action, actionIndex) =>
-                    action.kind === "navigate" ? [{ navigation: action, key: `actions.${actionIndex}` }] : [],
-                  )
+                ? block.actions.flatMap((action, actionIndex) => {
+                    const navigation = action.kind === "navigate" ? action : action.onSuccessNavigate;
+                    return navigation
+                      ? [
+                          {
+                            navigation,
+                            key: action.kind === "navigate" ? `actions.${actionIndex}` : `actions.${actionIndex}.onSuccessNavigate`,
+                          },
+                        ]
+                      : [];
+                  })
                 : []),
             ];
             for (const { navigation, key } of navigations) {
@@ -856,7 +919,10 @@ export const CustomAppDefinitionSchema = z
                       });
                     }
                   }
-                  if (value.source === "RECORD" && (!page.record || targetParameter?.tableId !== page.record.tableId)) {
+                  if (
+                    value.source === "RECORD" &&
+                    (!page.record || (value.path === "id" && targetParameter?.tableId !== page.record.tableId))
+                  ) {
                     ctx.addIssue({
                       code: "custom",
                       message: "RECORD navigation must target a parameter for the current record table",
@@ -1012,7 +1078,7 @@ export const CustomAppCapabilitiesSchema = z
           .object({
             pageId: CustomAppLocalIdSchema,
             tableId: z.string().uuid(),
-            fieldIds: z.array(z.string().uuid()).min(1).max(30),
+            fieldIds: z.array(z.string().uuid()).max(30),
             editableFieldIds: z.array(z.string().uuid()).max(30).default([]),
             relationLabels: z
               .array(
@@ -1211,7 +1277,8 @@ export const CUSTOM_APP_REFERENCE = {
     scannerBlocks: 24,
   },
   pages: {
-    navigation: "Set visible to false for route-only parameterized pages; visible pages follow pages array order and may use an icon",
+    navigation:
+      "Visible pages follow pages array order and may use an icon. A visible record page requires navigation.recordId, the public id of a record in its bound table; other parameterized pages are route-only",
     parameters: "This release supports required same-base record parameters",
     record: "Bind one authorized page record from PARAMS",
   },
@@ -1245,7 +1312,8 @@ export const CUSTOM_APP_REFERENCE = {
       search: "Optional server-side PostgreSQL search over displayed result fields",
       pagination: "Cursor-paged from 5 to 100 rows per request; a GQL limit caps the complete result",
       rowNavigate: "Optionally navigate a row id or selected single relation into a target page record parameter",
-      rowActions: "Optionally invoke plural workflow actions with ROW.id and accessible label/icon presentation",
+      rowActions:
+        "Optionally invoke plural workflow actions with ROW.id, accessible label/icon presentation and explicit primary/secondary/danger variant",
     },
     referenced_records: {
       required: ["id", "type", "sourceTableId", "relationFieldId", "fieldIds", "display"],
@@ -1257,8 +1325,10 @@ export const CUSTOM_APP_REFERENCE = {
     },
     metrics: {
       required: ["id", "type", "source"],
-      source: "Saved view or inline aggregate GQL",
-      note: "Renders up to 12 named scalar aggregations from one bounded source row",
+      valueFormat:
+        "Optional common value format overriding inferred field formats for all metrics in this block; number, integer or percent, with explicit decimal places and optional number unit.",
+      source: "Saved view or inline GQL: ungrouped aggregates, or explicit numeric SELECT with limit 1",
+      note: "Renders up to 12 named values from one bounded source row; numeric snapshots may join grouped summary views",
     },
     chart: {
       required: ["id", "type", "chartType", "source"],
@@ -1268,6 +1338,8 @@ export const CUSTOM_APP_REFERENCE = {
     },
     record: {
       required: ["id", "type", "fieldIds"],
+      heading:
+        "Optionally promote a displayed field with heading:{fieldId}. documentNumber:true promotes an existing allowed document number, retaining the field as subtitle; requires documents.",
       editableFieldIds: "Optional writable or attachable subset of fieldIds",
       documents:
         "Show existing documents from templateIds (1–12). Optional preview:true grants saved draft PDF previews and the templates' queried data; source interpolation is limited to record.id/record.shortId, and template/schema changes require republishing. Does not issue documents.",
@@ -1287,6 +1359,10 @@ export const CUSTOM_APP_REFERENCE = {
     },
     actions: {
       required: ["id", "type", "actions"],
+      variant: "primary, secondary (default), or danger",
+      navigation: "PARAMS, RECORD.id or an exposed single RECORD relation matching the target parameter table",
+      onSuccessNavigate:
+        "Workflow actions may replace-navigate with PARAMS or the canonical RESULT.recordId after success; destination access and record table are checked",
       note: "Navigate inside the app or invoke an exact published workflow launcher; background document actions acknowledge acceptance and recover durable status",
     },
     scanner: {

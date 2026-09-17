@@ -18,9 +18,9 @@ import { isRecordInputField } from "../fields/field-render";
 import { fieldTypeIcon, fieldTypeLabel } from "../fields/field-type-meta";
 import { gridsFieldMessages } from "../fields/messages";
 import { errorMessage } from "../utils/api-helpers";
+import { FormFieldWidthSelect } from "./field-layout";
 import { FieldInput, type FrontendField } from "./form-fields";
 import { gridsFormMessages } from "./messages";
-import { FormFieldWidthSelect } from "./field-layout";
 export function FormFieldInspector(props: {
   class?: string;
   entry: () => FormFieldEntry | null;
@@ -114,6 +114,29 @@ function FormFieldSettings(props: {
                 lines={2}
               />
             </div>
+            <TextInput
+              label={t().sectionTitle}
+              description={t().sectionDescription}
+              value={() => entry().section?.title ?? ""}
+              onValueChange={(title) => props.updateEntry({ section: title.trim() ? { ...entry().section, title } : undefined })}
+            />
+            <Show when={entry().section}>
+              {(section) => (
+                <>
+                  <TextInput
+                    label={t().sectionHelp}
+                    value={() => section().description ?? ""}
+                    onValueChange={(description) => props.updateEntry({ section: { ...section(), description: description || undefined } })}
+                  />
+                  <Checkbox
+                    label={t().sectionCollapsible}
+                    description={t().sectionCollapsibleDescription}
+                    value={() => section().collapsible ?? false}
+                    onValueChange={(collapsible) => props.updateEntry({ section: { ...section(), collapsible } })}
+                  />
+                </>
+              )}
+            </Show>
             <InlineCreateEditor field={props.field()!} entry={entry()} onChange={(patch) => props.updateEntry(patch)} />
           </>
         )}
