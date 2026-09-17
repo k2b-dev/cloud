@@ -118,7 +118,7 @@ describe("German E-Invoice profile", () => {
       expect(xml).toContain("20260815");
       expect(xml).toContain("<ram:GrandTotalAmount>140.40</ram:GrandTotalAmount>");
       expect(html).toContain(`<h1>${title} ${context.number}</h1>`);
-      expect(html).toContain("140.40 EUR");
+      expect(html).toContain("140,40 EUR");
       // Keep totals and payment details together when the positions span pages.
       expect(html).toContain(".settlement{break-inside:avoid}");
       const settlement = html.match(/<tbody class="settlement">([\s\S]*?)<\/tbody>/)?.[1];
@@ -136,6 +136,46 @@ describe("German E-Invoice profile", () => {
       }
     });
   }
+
+  test("localizes human amounts and dates without rounding fractional prices or changing machine values", async () => {
+    const input = germanBillingSnapshotSchema.parse({
+      ...snapshot,
+      serviceDate: "2026-08-15",
+      billing: { kind: "invoice" },
+      lines: [
+        { name: "Fractional service", quantity: "1.2500", unitPrice: "1234.5678", unitCode: "HUR", taxRate: "19.00" },
+        { name: "Whole unit", quantity: "1.0000", unitPrice: "10.0000", unitCode: "C62", taxRate: "7.00" },
+      ],
+    });
+    const original = structuredClone(input);
+    let html = "";
+    let xml = "";
+    const profile = createGermanBillingProfile({
+      render: async (value) => {
+        html = value.html;
+        xml = value.xml;
+        return { pdf: new TextEncoder().encode("%PDF-1.7 fixture") };
+      },
+    });
+    const issued = await profile.issue(input, context);
+    expect(input).toEqual(original);
+    expect(html).toContain("1,25 Std.");
+    expect(html).toContain("1 Stk.");
+    expect(html).toContain("1.234,5678 EUR");
+    expect(html).toContain("10 EUR");
+    expect(html).toContain("19 %");
+    expect(html).toContain("7 %");
+    expect(html).toContain("1.543,21 EUR");
+    expect(html).toContain("15.08.2026");
+    expect(html).toContain("22.08.2026");
+    expect(html).toContain("05.09.2026");
+    expect(xml).toContain('<ram:BilledQuantity unitCode="HUR">1.2500</ram:BilledQuantity>');
+    expect(xml).toContain("<ram:ChargeAmount>1234.5678</ram:ChargeAmount>");
+    expect(xml).toContain("<ram:LineTotalAmount>1543.21</ram:LineTotalAmount>");
+    expect(xml).toContain("20260815");
+    expect(issued.output?.netAmount).toBe("1553.21");
+    expect(new TextDecoder().decode(issued.artifacts.find((artifact) => artifact.key === "structured")!.bytes)).toBe(xml);
+  });
 
   test("version 2 rejects ambiguous document kinds, missing references and invalid party roles", () => {
     const input = { ...snapshot, serviceDate: "2026-08-15", billing: { kind: "invoice" } };
@@ -216,8 +256,8 @@ describe("German E-Invoice profile", () => {
     expect(xml).toContain("<ram:LineTotalAmount>3.03</ram:LineTotalAmount>");
     expect(xml).toContain("<ram:GrandTotalAmount>3.61</ram:GrandTotalAmount>");
     expect(xml).toContain("<ram:ChargeAmount>1.0050</ram:ChargeAmount>");
-    expect(html.match(/<td>1.01 EUR<\/td>/g)).toHaveLength(3);
-    expect(html).toContain("3.61 EUR");
+    expect(html.match(/<td>1,01 EUR<\/td>/g)).toHaveLength(3);
+    expect(html).toContain("3,61 EUR");
   });
 
   test("rejects floating-point amounts and unsupported invoice shapes at the public profile boundary", () => {

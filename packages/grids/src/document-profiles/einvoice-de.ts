@@ -168,6 +168,16 @@ export const buildGermanEInvoiceXml = (
   context: Parameters<DocumentProfile<GermanEInvoiceSnapshot>["issue"]>[1],
 ): string => unwrap(einvoice.serialize(invoiceInput(snapshot, context.number), { format: "zugferd-2.5-en16931" })).xml;
 
+// The profile emits German human-readable documents; machine values stay exact.
+const germanInteger = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
+const germanDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+const displayDecimal = (value: string, minimumFractionDigits = 0): string => {
+  const decimal = new Decimal(value);
+  const [integer = "0", fraction] = decimal.toFixed(Math.max(minimumFractionDigits, decimal.decimalPlaces())).split(".");
+  return `${germanInteger.format(BigInt(integer))}${fraction ? `,${fraction}` : ""}`;
+};
+const displayDate = (value: string): string => germanDate.format(new Date(`${value}T00:00:00Z`));
+
 const buildHtml = (snapshot: GermanEInvoiceSnapshot, number: string) => {
   const totals = calculate(snapshot);
   const billing = "billing" in snapshot ? snapshot.billing : undefined;
@@ -175,11 +185,11 @@ const buildHtml = (snapshot: GermanEInvoiceSnapshot, number: string) => {
     billing?.kind === "creditNote" ? "Rechnungskorrektur" : billing?.kind === "selfBilling" ? "Gutschrift (Selbstabrechnung)" : "Rechnung";
   const detail =
     billing?.kind === "creditNote"
-      ? `<p>Bezug: ${escapeHtml(billing.original.number)} vom ${billing.original.invoiceDate}<br>${escapeHtml(billing.reason)}</p>`
+      ? `<p>Bezug: ${escapeHtml(billing.original.number)} vom ${displayDate(billing.original.invoiceDate)}<br>${escapeHtml(billing.reason)}</p>`
       : billing?.kind === "selfBilling"
         ? `<p>Erstellt durch den Leistungsempfänger (Käufer). Vereinbarung: ${escapeHtml(billing.agreementReference)}</p>`
         : "";
-  const service = "serviceDate" in snapshot ? `<p>Leistungsdatum: ${snapshot.serviceDate}</p>` : "";
+  const service = "serviceDate" in snapshot ? `<p>Leistungsdatum: ${displayDate(snapshot.serviceDate)}</p>` : "";
   const unitLabel = (line: (typeof totals.lines)[number]) => {
     const unit = "unitCode" in line ? line.unitCode : "C62";
     return unit === "HUR" ? "Std." : unit === "DAY" ? "Tage" : unit === "KGM" ? "kg" : "Stk.";
@@ -187,10 +197,10 @@ const buildHtml = (snapshot: GermanEInvoiceSnapshot, number: string) => {
   const rows = totals.lines
     .map(
       (line) =>
-        `<tr><td>${escapeHtml(line.name)}${"description" in line && line.description ? `<div class="description">${escapeHtml(line.description)}</div>` : ""}</td><td>${line.quantity} ${unitLabel(line)}</td><td>${line.unitPrice} EUR</td><td>${line.taxRate} %</td><td>${line.net} EUR</td></tr>`,
+        `<tr><td>${escapeHtml(line.name)}${"description" in line && line.description ? `<div class="description">${escapeHtml(line.description)}</div>` : ""}</td><td>${displayDecimal(line.quantity)} ${unitLabel(line)}</td><td>${displayDecimal(line.unitPrice)} EUR</td><td>${displayDecimal(line.taxRate)} %</td><td>${displayDecimal(line.net, 2)} EUR</td></tr>`,
     )
     .join("");
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}thead{display:table-header-group}tr{break-inside:avoid}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left;overflow-wrap:anywhere}.description{white-space:pre-wrap;margin-top:4px}.total{font-weight:700}.settlement{break-inside:avoid}.settlement td{white-space:nowrap}.settlement .payment{text-align:left;white-space:normal;overflow-wrap:anywhere}</style></head><body><h1>${title} ${escapeHtml(number)}</h1>${detail}${service}<p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${snapshot.invoiceDate} · Fällig: ${snapshot.dueDate}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody><tbody class="settlement"><tr><td colspan="4">Netto</td><td>${totals.net} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${totals.tax} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${totals.total} EUR</td></tr><tr><td class="payment" colspan="5">IBAN: ${snapshot.payment.iban}</td></tr></tbody></table></body></html>`;
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>@page{size:A4;margin:18mm}body{font:12px system-ui;color:#17202a}h1{font-size:24px}table{width:100%;border-collapse:collapse;margin-top:24px}thead{display:table-header-group}tr{break-inside:avoid}th,td{padding:8px;border-bottom:1px solid #ccd1d1;text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left;overflow-wrap:anywhere}.description{white-space:pre-wrap;margin-top:4px}.total{font-weight:700}.settlement{break-inside:avoid}.settlement td{white-space:nowrap}.settlement .payment{text-align:left;white-space:normal;overflow-wrap:anywhere}</style></head><body><h1>${title} ${escapeHtml(number)}</h1>${detail}${service}<p>${escapeHtml(snapshot.seller.name)} · ${escapeHtml(snapshot.seller.address.line1)} · ${escapeHtml(snapshot.seller.address.postalCode)} ${escapeHtml(snapshot.seller.address.city)}</p><p>An: ${escapeHtml(snapshot.buyer.name)}<br>${escapeHtml(snapshot.buyer.address.line1)}<br>${escapeHtml(snapshot.buyer.address.postalCode)} ${escapeHtml(snapshot.buyer.address.city)}</p><p>Rechnungsdatum: ${displayDate(snapshot.invoiceDate)} · Fällig: ${displayDate(snapshot.dueDate)}</p><table><thead><tr><th>Leistung</th><th>Menge</th><th>Einzelpreis</th><th>USt.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody><tbody class="settlement"><tr><td colspan="4">Netto</td><td>${displayDecimal(totals.net, 2)} EUR</td></tr><tr><td colspan="4">Umsatzsteuer</td><td>${displayDecimal(totals.tax, 2)} EUR</td></tr><tr class="total"><td colspan="4">Gesamt</td><td>${displayDecimal(totals.total, 2)} EUR</td></tr><tr><td class="payment" colspan="5">IBAN: ${snapshot.payment.iban}</td></tr></tbody></table></body></html>`;
 };
 
 export const createGermanEInvoiceProfile = (dependencies: { render?: Render } = {}): DocumentProfile<GermanEInvoiceSnapshot> => ({

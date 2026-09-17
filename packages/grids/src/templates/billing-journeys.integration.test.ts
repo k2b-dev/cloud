@@ -228,7 +228,7 @@ realPdfJourneyTest("billing workflows persist real invoice, correction and self-
       expect(text).toContain(title);
       expect(text).toContain(document.documentNumber);
       expect(text).toContain("Consulting");
-      expect(text).toContain("119.00 EUR");
+      expect(text).toContain("119,00 EUR");
       expect(text).toContain(company.iban);
       if (filename === "invoice") invoiceNumber = document.documentNumber;
       if (filename === "correction") {
