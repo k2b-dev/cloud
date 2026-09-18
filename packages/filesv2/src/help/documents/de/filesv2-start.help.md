@@ -24,6 +24,12 @@ Mit Strg/Cmd-Klick ergänzt du Einträge, mit Shift-Klick wählst du einen Berei
 
 Das Detailpanel öffnet sich neben der Liste und zeigt den vollständigen Namen, Pfad, Änderungszeitpunkt, die Größe und den Dateibereich. **Details schließen** schließt es und hebt die Auswahl auf. Dateien ohne Vorschau kannst du herunterladen. Bei einer fehlgeschlagenen Vorschau hilft **Erneut versuchen**. Ordnerinhalte werden bei der gemeinsamen Dateigröße nicht mitgezählt.
 
+## Suchen und Ordner anlegen
+
+Gib in **In diesem Ordner suchen** einen Namensbestandteil ein und drücke Enter. Die Suche umfasst Namen unterhalb des aktuellen Ordners einschließlich Unterordnern und zeigt zu jedem Treffer seinen Ordner. Öffne den Ordner eines Treffers aus dem Ergebnis oder setze die Suche zurück, um zur Auflistung zurückzukehren. Ablagen ohne Suchindex werden bei Bedarf durchsucht; enthält ein Ordner dafür zu viele Einträge, suche in einem kleineren Ordner.
+
+**Neuer Ordner** legt einen Ordner im aktuellen Ordner an. Namen dürfen keine Schrägstriche enthalten, bestehende Namen werden nicht überschrieben.
+
 ## Datei herunterladen
 
 Wähle **Herunterladen** neben einer Datei. Die Cloud prüft deinen aktuellen Zugriff und bereitet einen kurzzeitig gültigen Download direkt vom Dateiserver vor. Schlägt die Vorbereitung fehl, erscheint oberhalb der Liste eine Fehlermeldung. Du kannst den Download erneut anfordern.
@@ -36,7 +42,7 @@ Melde dich mit `cld login --server <Cloud-URL>` an. `cld filesv2 bases list --js
 
 `cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf` lädt eine Datei direkt von Filegate in eine neue lokale Datei. Bestehende Pfade werden nie überschrieben. Mit `--json` erhältst du den gespeicherten Pfad und die Byteanzahl. `cld filesv2 help` zeigt alle verfügbaren Befehle.
 
-`cld filesv2 stat <base-id> <path> --json` liest aktuelle Dateidetails. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` speichert eine Bildvorschau.
+`cld filesv2 search <base-id> Bericht --path Dokumente --json` sucht Namen unterhalb eines Ordners und `cld filesv2 mkdir <base-id> Dokumente/2026` legt einen Ordner an. `cld filesv2 stat <base-id> <path> --json` liest aktuelle Dateidetails. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` speichert eine Bildvorschau.
 
 ## Wenn eine Ablage nicht verfügbar ist
 

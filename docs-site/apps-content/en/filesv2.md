@@ -44,11 +44,19 @@ Unsupported formats retain their metadata and download action. Previews and
 thumbnails obtain a short-lived Cloud-authorized lease and load their bytes
 directly from Filegate. Retry a failed preview to obtain a fresh lease.
 
+**Search this folder** finds names below the current folder, including
+subfolders, and lists each hit with its folder. Indexed storage answers from the
+index; other storage is scanned on demand and reports when a folder holds too
+many entries to scan, so search within a smaller folder in that case. **New
+folder** creates a folder in the current folder without overwriting existing
+names.
+
 Use **Download** for one or several individual files. Multiple downloads may need
 browser permission. Folder downloads and file mutations are not offered in this
 browser yet. Listings retain Filegate's name order and explicit pagination.
 
-The CLI provides `filesv2 stat <base-id> <path> --json` for the same current
+The CLI provides `filesv2 search <base-id> <fragment> --path <folder>`,
+`filesv2 mkdir <base-id> <path>`, `filesv2 stat <base-id> <path> --json` for the same current
 metadata and `filesv2 thumbnail <base-id> <path> --out <file>` for a direct preview
 download. Use `--size small|large` to select the thumbnail size.
 

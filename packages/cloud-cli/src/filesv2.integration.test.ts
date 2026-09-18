@@ -809,3 +809,26 @@ test("stat and thumbnail use the same authenticated base and keep transfer crede
   expect(result.stdout + result.stderr).not.toContain(leaseSecret);
   expect(seen).toEqual([`/api/filesv2/bases/${base.id}/entry`, `/api/filesv2/bases/${base.id}/thumbnail`]);
 });
+
+test("search and mkdir pass folder scope and names through the authenticated API", async () => {
+  const seen: string[] = [];
+  const cloud = serve(async (request) => {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+    const url = new URL(request.url);
+    seen.push(`${request.method} ${url.pathname}`);
+    if (url.pathname.endsWith("/search")) {
+      expect(url.searchParams.get("q")).toBe("report");
+      expect(url.searchParams.get("path")).toBe("Documents");
+      return Response.json({ base, path: "Documents", query: "report", items: [entry], next: null });
+    }
+    expect(await request.json()).toEqual({ path: "Documents/2026" });
+    return Response.json({ base, entry: { name: "2026", path: "Documents/2026", directory: true, size: 0, modified: entry.modified } });
+  });
+  const search = await run(["--json", "filesv2", "search", base.id, "report", "--path", "Documents"], { server: cloud.url.href });
+  expect(search.exitCode, search.stderr).toBe(0);
+  expect(JSON.parse(search.stdout).items).toEqual([entry]);
+  const made = await run(["--json", "filesv2", "mkdir", base.id, "Documents/2026"], { server: cloud.url.href });
+  expect(made.exitCode, made.stderr).toBe(0);
+  expect(JSON.parse(made.stdout).entry.path).toBe("Documents/2026");
+  expect(seen).toEqual([`GET /api/filesv2/bases/${base.id}/search`, `POST /api/filesv2/bases/${base.id}/directories`]);
+});

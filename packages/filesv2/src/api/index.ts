@@ -28,11 +28,13 @@ import {
   ConfirmPathSchema,
   DeleteDirectorySchema,
   DirectoryIdentitySchema,
+  DirectoryInputSchema,
   DirectoryTargetSchema,
   DownloadInputSchema,
   EntryQuerySchema,
   ErrorSchema,
   RootActionSchema,
+  SearchQuerySchema,
   ThumbnailInputSchema,
 } from "../contracts";
 import { FilesError, filesService } from "../service";
@@ -81,6 +83,18 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Read authorized current file or folder metadata", ...requiresAuth }),
     v("query", EntryQuerySchema),
     async (c) => respond(c, ok(await filesService.entry(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+  )
+  .get(
+    "/bases/:baseId/search",
+    middleware.openapi({ summary: "Search names below an authorized folder", ...requiresAuth }),
+    v("query", SearchQuerySchema),
+    async (c) => respond(c, ok(await filesService.search(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+  )
+  .post(
+    "/bases/:baseId/directories",
+    middleware.openapi({ summary: "Create a folder", ...requiresAuth }),
+    v("json", DirectoryInputSchema),
+    async (c) => respond(c, ok(await filesService.mkdir(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
     "/bases/:baseId/thumbnail",

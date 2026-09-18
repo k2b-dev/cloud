@@ -92,3 +92,7 @@
     display: table-cell;
   }
 }
+
+.filesv2-search {
+  width: 16rem;
+}

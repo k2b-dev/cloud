@@ -18,8 +18,11 @@ import {
   prompts,
   ScrollArea,
   SegmentedControl,
+  TextInput,
+  toast,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { apiClient } from "../api/client";
 import type { BasesResult, DirectoryResult, EntryResult, FileEntry } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
 import { type BrowserPreferences, defaultPreferences, preferencesCookie } from "./browser-preferences";
@@ -27,12 +30,12 @@ import FileInspector from "./FileInspector";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
-import { contentLease } from "./file-preview";
+import { apiFailure, contentLease } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { filesUrl, pathCrumbs } from "./urls";
 
 export default function Browser(props: {
-  directory: DirectoryResult;
+  directory: DirectoryResult & { query?: string };
   after?: string;
   source?: string;
   detail?: EntryResult | null;
@@ -43,6 +46,8 @@ export default function Browser(props: {
   onSelectionSource?: (source: string) => void;
   onRetry?: () => void;
   onOpenDirectory?: (path: string) => void;
+  onSearch?: (query: string | null) => void;
+  onCreated?: (path: string) => void;
   onNavigate: (event: LinkNavigateEvent) => Promise<void>;
 }) {
   const t = useFilesMessages();
@@ -67,7 +72,13 @@ export default function Browser(props: {
     initial: requestedFile() ? [requestedFile()!] : [],
     onChange: (paths) => {
       if (!mounted || syncing || location !== `${props.directory.base.id}:${props.directory.path}:${props.after ?? ""}`) return;
-      const source = filesUrl(props.directory.base.id, props.directory.path, props.after, paths.length === 1 ? paths[0] : null);
+      const source = filesUrl(
+        props.directory.base.id,
+        props.directory.path,
+        props.after,
+        paths.length === 1 ? paths[0] : null,
+        props.directory.query,
+      );
       commitHistory(source, {
         replace: true,
         scroll: "manual",
@@ -219,12 +230,51 @@ export default function Browser(props: {
       class: "w-10",
     },
     { id: "name", header: t().name },
+    ...(searching() ? [{ id: "folder", header: b().parentFolder, class: "filesv2-modified-column" }] : []),
     { id: "size", header: t().size, align: "right" as const },
     { id: "modified", header: t().modified, class: "filesv2-modified-column" },
     { id: "actions", header: <span class="sr-only">{t().actions}</span>, align: "right" as const },
   ];
   const refreshHref = () =>
-    filesUrl(props.directory.base.id, props.directory.path, props.after, selectedPaths().length === 1 ? selectedPaths()[0] : null);
+    filesUrl(
+      props.directory.base.id,
+      props.directory.path,
+      props.after,
+      selectedPaths().length === 1 ? selectedPaths()[0] : null,
+      props.directory.query,
+    );
+  const searching = () => !!props.directory.query;
+  const [searchText, setSearchText] = createSignal(props.directory.query ?? "");
+  createEffect(() => setSearchText(props.directory.query ?? ""));
+  const submitSearch = () => {
+    const value = searchText().trim();
+    if (value !== (props.directory.query ?? "")) props.onSearch?.(value || null);
+  };
+  const parentOf = (path: string) => path.split("/").slice(0, -1).join("/") || props.directory.base.name;
+  const createFolder = async () => {
+    const values = await prompts.form({
+      title: b().newFolder,
+      fields: {
+        name: {
+          type: "text",
+          label: b().newFolderName,
+          required: true,
+          maxLength: 255,
+          validate: (value) => (value && !value.includes("/") && value.trim() === value && value !== "." && value !== ".." ? null : b().newFolderInvalid),
+        },
+      },
+    });
+    if (!values) return;
+    const path = props.directory.path ? `${props.directory.path}/${values.name}` : values.name;
+    try {
+      const response = await apiClient.bases[":baseId"].directories.$post({ param: { baseId: props.directory.base.id }, json: { path } });
+      if (!response.ok) await apiFailure(response, t().unavailable);
+      toast.success(b().folderCreated(values.name));
+      props.onCreated?.(path);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t().unavailable);
+    }
+  };
   const pageKey = () => `filesv2:${props.directory.base.id}:${props.directory.path}:${props.after ?? ""}:${preferences().view}`;
   return (
     <>
@@ -268,6 +318,30 @@ export default function Browser(props: {
               </ol>
             </nav>
             <div class="flex shrink-0 items-center gap-1">
+              <TextInput
+                type="search"
+                size="sm"
+                icon="ti ti-search"
+                placeholder={b().search}
+                aria-label={b().searchIn(props.directory.path.split("/").at(-1) || props.directory.base.name)}
+                value={searchText()}
+                onValueChange={setSearchText}
+                onSubmit={submitSearch}
+                onBlur={submitSearch}
+                clearable
+                clearLabel={b().clearSearch}
+                onClear={() => {
+                  setSearchText("");
+                  if (searching()) props.onSearch?.(null);
+                }}
+                class="filesv2-search"
+              />
+              <Show when={!searching()}>
+                <Button size="sm" variant="secondary" disabled={props.pending} onClick={() => void createFolder()}>
+                  <i class="ti ti-folder-plus" aria-hidden="true" />
+                  {b().newFolder}
+                </Button>
+              </Show>
               <Show when={touch()}>
                 <Button size="xs" variant="secondary" onClick={() => setSelectMode(!selectMode())}>
                   {selectMode() ? b().endSelect : b().selectMode}
@@ -322,7 +396,9 @@ export default function Browser(props: {
             </div>
           </div>
           <div class="filesv2-selection-bar">
-            <span class="text-xs text-dimmed">{b().pageItems(props.directory.items.length)}</span>
+            <span class="text-xs text-dimmed">
+              {searching() ? b().searchResults(props.directory.items.length) : b().pageItems(props.directory.items.length)}
+            </span>
             <Show when={selectedPaths().length}>
               <span aria-hidden="true" class="text-xs text-dimmed">
                 ·
@@ -380,7 +456,13 @@ export default function Browser(props: {
         <Show
           when={props.directory.items.length}
           fallback={
-            <Placeholder class="flex-1" variant="panel" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
+            <Placeholder
+              class="flex-1"
+              variant="panel"
+              icon={searching() ? "ti ti-search-off" : "ti ti-folder"}
+              title={searching() ? b().noResultsTitle : b().emptyTitle}
+              description={searching() ? b().noResultsDescription : b().emptyDescription}
+            />
           }
         >
           <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={menuItems()} label={t().actions} disabled={props.pending}>
@@ -401,7 +483,9 @@ export default function Browser(props: {
                     }}
                     renderPreview={(row) => <FileThumbnail baseId={props.directory.base.id} entry={row} large />}
                     renderLabel={(row) => <span title={row.name}>{row.name}</span>}
-                    renderMeta={(row) => (row.directory ? b().folder : <Format.Bytes value={row.size} />)}
+                    renderMeta={(row) =>
+                      searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : row.directory ? b().folder : <Format.Bytes value={row.size} />
+                    }
                     renderActions={(row) => (
                       <>
                         {checkbox(row)}
@@ -439,6 +523,7 @@ export default function Browser(props: {
                         </span>
                       </div>
                     );
+                  if (col.id === "folder") return <span class="text-dimmed">{parentOf(row.path)}</span>;
                   if (col.id === "size") return row.directory ? "—" : <Format.Bytes value={row.size} />;
                   if (col.id === "modified") return <Format.DateTime value={row.modified} />;
                   return rowActions(row);
@@ -450,7 +535,7 @@ export default function Browser(props: {
         <nav class="filesv2-browser__pagination" aria-label={t().files}>
           <Show when={props.after}>
             <ButtonLink
-              href={filesUrl(props.directory.base.id, props.directory.path)}
+              href={filesUrl(props.directory.base.id, props.directory.path, null, null, props.directory.query)}
               navigation="enhanced"
               onNavigate={props.onNavigate}
               size="sm"
@@ -462,7 +547,7 @@ export default function Browser(props: {
           <Show when={props.directory.next}>
             {(next) => (
               <ButtonLink
-                href={filesUrl(props.directory.base.id, props.directory.path, next())}
+                href={filesUrl(props.directory.base.id, props.directory.path, next(), null, props.directory.query)}
                 navigation="enhanced"
                 onNavigate={props.onNavigate}
                 size="sm"

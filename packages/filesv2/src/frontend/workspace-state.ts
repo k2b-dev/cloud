@@ -6,7 +6,7 @@ export type WorkspaceSnapshot = {
   source: string;
   bases: BasesResult;
   selectedId: string | null;
-  directory: DirectoryResult | null;
+  directory: (DirectoryResult & { query?: string }) | null;
   errorCode: string | null;
   detail?: EntryResult | null;
 };

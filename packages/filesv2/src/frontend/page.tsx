@@ -3,7 +3,7 @@ import { AccountIdentityError } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import { ssr } from "../config";
-import { BrowseQuerySchema, EntryQuerySchema } from "../contracts";
+import { BrowseQuerySchema, EntryQuerySchema, SearchQuerySchema } from "../contracts";
 import { FilesError, filesService } from "../service";
 import { readBrowserPreferences } from "./browser-preferences";
 import { filesMessages } from "./messages";
@@ -17,10 +17,12 @@ export default ssr<AuthContext>(async (c) => {
   const query = BrowseQuerySchema.safeParse(c.req.query());
   if (!query.success) return ssr.error(c, 400);
   const requestedFile = c.req.query("file");
+  const search = c.req.query("q")?.trim() || undefined;
+  if (search && !SearchQuerySchema.safeParse({ ...query.data, q: search }).success) return ssr.error(c, 400);
   if (requestedFile && !EntryQuerySchema.safeParse({ path: requestedFile }).success) return ssr.error(c, 400);
   const requestedBase = c.req.query("base");
   const initial: WorkspaceSnapshot = {
-    source: filesUrl(requestedBase, query.data.path, query.data.after, requestedFile),
+    source: filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search),
     bases: { items: [], issues: [] },
     selectedId: null,
     directory: null,
@@ -34,7 +36,9 @@ export default ssr<AuthContext>(async (c) => {
     if (requestedBase && !selected) throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
     if (selected?.status === "existing") {
-      initial.directory = await filesService.list(actor, { baseId: selected.id, ...query.data });
+      initial.directory = search
+        ? await filesService.search(actor, { baseId: selected.id, ...query.data, q: search })
+        : await filesService.list(actor, { baseId: selected.id, ...query.data });
       if (requestedFile) {
         // Detail failures belong to the inspector, not the surrounding directory.
         initial.detail = await filesService.entry(actor, { baseId: selected.id, path: requestedFile }).catch(() => null);

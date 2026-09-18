@@ -22,6 +22,7 @@ import {
   type DirectoryResult,
   type DownloadLease,
   type EntryResult,
+  type SearchResult,
   type InventoryState,
   InventoryStateSchema,
 } from "./contracts";
@@ -140,6 +141,39 @@ function filesCommands(locale?: string) {
             ),
           );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Saved", de: "Gespeichert" })}: ${result.path} (${result.bytes} bytes)`);
+        },
+      }),
+      command("search", {
+        summary: t({ en: "Search names below a folder", de: "Namen unterhalb eines Ordners suchen" }),
+        args: { ...baseArgs, query: arg.required({ description: t({ en: "Name fragment", de: "Namensbestandteil" }) }) },
+        flags: {
+          path: flag.string({ default: "", description: t({ en: "Folder to search below", de: "Ordner, unterhalb dessen gesucht wird" }) }),
+          after,
+        },
+        async run({ ctx, args, flags }) {
+          const result = await ctx.readJson<SearchResult>(
+            await api(ctx).bases[":baseId"].search.$get({
+              param: { baseId: args.base },
+              query: { q: args.query, path: flags.path, after: flags.after },
+            }),
+          );
+          printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
+            { key: "path", label: t({ en: "Path", de: "Pfad" }) },
+            { key: "directory", label: t({ en: "Directory", de: "Verzeichnis" }) },
+            { key: "size", label: "Bytes" },
+            { key: "modified", label: t({ en: "Modified", de: "Geändert" }) },
+          ]);
+          next(ctx, result.next);
+        },
+      }),
+      command("mkdir", {
+        summary: t({ en: "Create a folder", de: "Ordner anlegen" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "New folder path relative to the base", de: "Neuer Ordnerpfad relativ zur Ablage" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<EntryResult>(
+            await api(ctx).bases[":baseId"].directories.$post({ param: { baseId: args.base }, json: { path: args.path } }),
+          );
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${result.entry.path}`);
         },
       }),
       command("stat", {

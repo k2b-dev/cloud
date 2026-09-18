@@ -3,6 +3,7 @@ import { type AccountIdentityGroup, type AccountIdentityPage, type AccountIdenti
 import { Filegate, FilegateError, type Node, type RootClient, type RootInfo } from "@k2b/filegate";
 import { z } from "zod";
 import type {
+  FileEntry,
   AdminResult,
   Area,
   Availability,
@@ -16,6 +17,7 @@ import type {
   InventoryEntry,
   InventoryState,
   RootSummary,
+  SearchResult,
 } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { operations } from "../data/operations";
@@ -33,6 +35,15 @@ type Identity = { id: string; name: string; uid: number | null; gid: number | nu
 type Candidate = NewBinding & { name: string };
 type Inspection = { summary: BaseSummary; candidate: Candidate; binding: Binding | null };
 const PAGE_SIZE = 50;
+/** Filesystem scans without an index stop here; Filegate answers 413 beyond it. */
+const SEARCH_SCAN_LIMIT = 10_000;
+const fileEntry = (relative: string, node: Node): FileEntry => ({
+  name: relative.split("/").at(-1)!,
+  path: relative,
+  directory: node.directory,
+  size: node.size,
+  modified: node.modified,
+});
 const filesystemCursor = z.tuple([
   z.string().max(4096).nullable(),
   z
@@ -291,29 +302,74 @@ export function createFilesService(
         if (!node.path.startsWith(`${current.target}/`) || node.path.slice(current.target.length + 1).includes("/"))
           throw new FilesError("unavailable", 503);
         if (!relative || relative.split("/")[0] === "trash") continue;
-        items.push({
-          name: relative.split("/").at(-1)!,
-          path: relative,
-          directory: node.directory,
-          size: node.size,
-          modified: node.modified,
-        });
+        items.push(fileEntry(relative, node));
       }
       return { base: current.inspection.summary, path: current.relative, items, next: page.next ?? null };
+    },
+    async search(actor: RequestActor, input: { baseId: string; path?: string; q: string; after?: string }): Promise<SearchResult> {
+      const current = await authorized(actor, input.baseId, input.path ?? "", true);
+      let page: Awaited<ReturnType<RootClient["search"]>>;
+      try {
+        page = await current.root.search(input.q, {
+          path: current.target,
+          after: input.after,
+          limit: PAGE_SIZE,
+          maxEntries: SEARCH_SCAN_LIMIT,
+        });
+      } catch (error) {
+        if (error instanceof FilegateError && error.status === 413) throw new FilesError("search_limited");
+        throw error;
+      }
+      // FreeIPA rights are checked per hit; directories between the searched folder and a hit are cached.
+      const checked = new Map<string, Promise<boolean>>();
+      const readable = (path: string, rights: number) => {
+        const key = `${path}:${rights}`;
+        if (!checked.has(key))
+          checked.set(
+            key,
+            (async () => {
+              const node = await current.root.stat(path);
+              const acl = await current.root.getACL(path, "access");
+              return permits(node, acl, current.state.unix!, rights);
+            })().catch(() => false),
+          );
+        return checked.get(key)!;
+      };
+      const items: FileEntry[] = [];
+      for (const node of page.items) {
+        if (!node.path.startsWith(`${current.target}/`)) continue;
+        const relative = node.path.slice(current.inspection.candidate.path.length + 1);
+        if (relative.split("/")[0] === "trash") continue;
+        if (current.inspection.candidate.area === "freeipa") {
+          const parts = node.path.slice(current.target.length + 1).split("/");
+          let allowed = await readable(node.path, node.directory ? 5 : 4);
+          for (let i = 1; allowed && i < parts.length; i++)
+            allowed = await readable(`${current.target}/${parts.slice(0, i).join("/")}`, 1);
+          if (!allowed) continue;
+        }
+        items.push(fileEntry(relative, node));
+      }
+      return { base: current.inspection.summary, path: current.relative, query: input.q, items, next: page.next ?? null };
+    },
+    async mkdir(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
+      const relative = userPath(input.path);
+      if (!relative) throw new FilesError("invalid_path");
+      const parts = relative.split("/");
+      const current = await authorized(actor, input.baseId, parts.slice(0, -1).join("/"), true);
+      const { candidate } = current.inspection;
+      if (candidate.area === "freeipa") await checkUnix(current.root, current.target, current.state.unix, 3);
+      const node = await current.root.mkdir(joinPath(current.target, parts.at(-1)!), {
+        ownership:
+          candidate.area === "freeipa"
+            ? { uid: current.state.unix!.uid, gid: current.node.gid, dirMode: candidate.kind === "groups" ? "2770" : "0700" }
+            : { dirMode: "0700" },
+      });
+      return { base: current.inspection.summary, entry: fileEntry(relative, node) };
     },
     async entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
       if (!input.path) throw new FilesError("invalid_path");
       const current = await authorized(actor, input.baseId, input.path);
-      return {
-        base: current.inspection.summary,
-        entry: {
-          name: current.relative.split("/").at(-1)!,
-          path: current.relative,
-          directory: current.node.directory,
-          size: current.node.size,
-          modified: current.node.modified,
-        },
-      };
+      return { base: current.inspection.summary, entry: fileEntry(current.relative, current.node) };
     },
     async thumbnail(actor: RequestActor, input: { baseId: string; path: string; size: "small" | "large" }): Promise<DownloadLease> {
       if (!input.path) throw new FilesError("invalid_path");

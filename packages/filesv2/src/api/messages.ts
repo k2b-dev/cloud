@@ -75,6 +75,10 @@ const messages: Record<string, [string, string]> = {
   not_directory: ["The selected path is not a directory.", "Der ausgewählte Pfad ist kein Verzeichnis."],
   not_file: ["Select one file to download.", "Wähle eine einzelne Datei zum Herunterladen."],
   not_found: ["The requested path or identity was not found.", "Der angeforderte Pfad oder die Identität wurde nicht gefunden."],
+  search_limited: [
+    "This folder holds too many entries to search without an index. Search within a smaller folder.",
+    "Dieser Ordner enthält zu viele Einträge für eine Suche ohne Index. Suche in einem kleineren Ordner.",
+  ],
 };
 export function errorMessage(code: string, locale: string): string {
   return (messages[code] ?? [

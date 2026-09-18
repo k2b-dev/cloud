@@ -31,13 +31,11 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       if (requested && !selected) throw new Error(t().missingDescription);
       let directory: WorkspaceSnapshot["directory"] = null;
       if (selected?.status === "existing") {
-        const response = await apiClient.bases[":baseId"].entries.$get(
-          {
-            param: { baseId: selected.id },
-            query: { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined },
-          },
-          { init: { signal } },
-        );
+        const query = { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined };
+        const q = url.searchParams.get("q")?.trim();
+        const response = q
+          ? await apiClient.bases[":baseId"].search.$get({ param: { baseId: selected.id }, query: { ...query, q } }, { init: { signal } })
+          : await apiClient.bases[":baseId"].entries.$get({ param: { baseId: selected.id }, query }, { init: { signal } });
         if (!response.ok) throw await apiError(response);
         directory = await response.json();
       }
@@ -87,6 +85,8 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     ),
   );
   const after = () => new URL(snapshot().source, "https://files.invalid").searchParams.get("after") ?? undefined;
+  const openDirectory = (base: string, path: string) =>
+    void workspace.navigate(filesUrl(base, path), () => commitHistory(filesUrl(base, path), { scroll: "manual" }));
   const problem = () => workspace.failure()?.message ?? snapshot().errorCode;
   const retryHref = () => workspace.failure()?.source ?? snapshot().source;
   const retry = () => (
@@ -217,11 +217,15 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
               pending={workspace.pending()}
               error={workspace.failure()?.message}
               onRetry={() => void workspace.navigate(retryHref(), () => commitHistory(retryHref(), { replace: true, scroll: "manual" }))}
-              onOpenDirectory={(path) =>
-                void workspace.navigate(filesUrl(directory().base.id, path), () =>
-                  commitHistory(filesUrl(directory().base.id, path), { scroll: "manual" }),
-                )
-              }
+              onOpenDirectory={(path) => openDirectory(directory().base.id, path)}
+              onSearch={(query) => {
+                const target = filesUrl(directory().base.id, directory().path, null, null, query);
+                void workspace.navigate(target, () => commitHistory(target, { scroll: "manual" }));
+              }}
+              onCreated={(path) => {
+                const target = filesUrl(directory().base.id, directory().path, null, path);
+                void workspace.navigate(target, () => commitHistory(target, { replace: true, scroll: "manual" }));
+              }}
               onNavigate={onNavigate}
             />
           )}

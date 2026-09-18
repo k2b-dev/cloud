@@ -41,6 +41,8 @@ export type DownloadLease = { url: string; method: "GET"; expires: string };
 export type EntryResult = { base: BaseSummary; entry: FileEntry };
 export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
 export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
+export type SearchResult = DirectoryResult & { query: string };
+export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export type RootSummary = {
   name: string;
   indexEnabled: boolean;
@@ -78,6 +80,7 @@ export type AdminResult = {
 };
 export const BrowseQuerySchema = z.object({ path: z.string().max(4096).default(""), after: z.string().max(4096).optional() });
 export const DownloadInputSchema = z.object({ path: z.string().min(1).max(4096) });
+export const SearchQuerySchema = BrowseQuerySchema.extend({ q: z.string().trim().min(1).max(256) });
 export const AdminQuerySchema = z.object({
   area: AreaSchema.default("cloud"),
   kind: KindSchema.default("users"),

@@ -24,6 +24,12 @@ Use Ctrl/Cmd-click to add entries, Shift-click to select a range, or the checkbo
 
 The detail panel opens beside the list and shows the full name, path, date, size, and storage area. Close it with **Close details**, which also clears the selection. Unsupported formats can still be downloaded. If a preview fails, use **Try again**. Selected folder contents are not counted in the combined file size.
 
+## Search and create folders
+
+Type a name fragment into **Search this folder** and press Enter. The search covers names below the current folder, including subfolders, and shows each hit with its folder. Open a hit's folder from the result, or clear the search to return to the listing. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search within a smaller folder.
+
+**New folder** creates a folder in the current folder. Names cannot contain slashes, and existing names are not overwritten.
+
 ## Download a file
 
 Select **Download** beside a file. Cloud checks your current access and prepares a short-lived download directly from the file server. If preparing the download fails, the error appears above the list and you can try again.
@@ -36,7 +42,7 @@ After signing in with `cld login --server <Cloud URL>`, use `cld filesv2 bases l
 
 Download a file with `cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf`. The CLI downloads directly from Filegate to a new local file. Existing paths are never overwritten. Use `--json` for the saved path and byte count, or `cld filesv2 help` for all available commands.
 
-`cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
+`cld filesv2 search <base-id> report --path Documents --json` searches names below a folder and `cld filesv2 mkdir <base-id> Documents/2026` creates a folder. `cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
 
 ## When storage is unavailable
 

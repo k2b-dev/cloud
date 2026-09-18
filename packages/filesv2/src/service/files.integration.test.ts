@@ -124,6 +124,14 @@ suite("Files service and durable bindings", () => {
           ],
         });
       }
+      if (operation === "search") {
+        const q = req.searchParams.get("q")!.toLowerCase();
+        const scanned = [...nodes.values()].filter((item) => item.root === root && item.path.startsWith(`${path}/`));
+        if (scanned.length > Number(req.searchParams.get("maxEntries") ?? 0))
+          return Response.json({ error: "limit_exceeded", message: "limit exceeded" }, { status: 413 });
+        const items = scanned.filter((item) => item.path.split("/").at(-1)!.toLowerCase().includes(q)).sort((a, b) => a.path.localeCompare(b.path));
+        return Response.json({ items, next: undefined });
+      }
       if (operation === "entries") {
         const items = [...nodes.values()]
           .filter((item) => item.root === root && item.path.startsWith(`${path}/`) && !item.path.slice(path.length + 1).includes("/"))
@@ -261,6 +269,45 @@ suite("Files service and durable bindings", () => {
     expect(leases).toBe(1);
     directory("freeipa", "users/alice", 1001, 2001, "0600");
     await expect(service.download(actor, { baseId, path: "report" })).rejects.toMatchObject({ code: "forbidden" });
+  });
+  test("search hides trash and unreadable FreeIPA hits and reports scan limits", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Reports");
+    directory("freeipa", "users/alice/Reports/q3-report.pdf", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Private", 999, 999, "0700");
+    directory("freeipa", "users/alice/Private/secret-report.txt", 999, 999, "0600", false);
+    directory("freeipa", "users/alice/trash");
+    directory("freeipa", "users/alice/trash/old-report.txt", 1001, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const result = await service.search(actor, { baseId, q: "report" });
+    expect(result.query).toBe("report");
+    expect(result.items.map((item) => item.path)).toEqual(["Reports", "Reports/q3-report.pdf"]);
+    expect((await service.search(actor, { baseId, path: "Reports", q: "REPORT" })).items).toHaveLength(1);
+    await expect(service.search(actor, { baseId, path: "trash", q: "old" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.search(actor, { baseId, path: "Private", q: "secret" })).rejects.toMatchObject({ code: "forbidden" });
+    for (let i = 0; i < 10_001; i++) directory("freeipa", `users/alice/Reports/bulk-${i}.txt`, 1001, 2001, "0640", false);
+    await expect(service.search(actor, { baseId, path: "Reports", q: "bulk" })).rejects.toMatchObject({ code: "search_limited" });
+  });
+  test("mkdir requires write access to the parent, keeps user ownership and rejects reserved or existing paths", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const created = await service.mkdir(actor, { baseId, path: "Projects" });
+    expect(created.entry).toMatchObject({ name: "Projects", path: "Projects", directory: true });
+    expect(nodes.get("freeipa:users/alice/Projects")).toMatchObject({ uid: 1001, gid: 2001, mode: "0700" });
+    expect((await service.mkdir(actor, { baseId, path: "Projects/2026" })).entry.path).toBe("Projects/2026");
+    await expect(service.mkdir(actor, { baseId, path: "Projects" })).rejects.toMatchObject({ status: 409 });
+    await expect(service.mkdir(actor, { baseId, path: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.mkdir(actor, { baseId, path: "trash/keep" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.mkdir(actor, { baseId, path: "ReadOnly/new" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.mkdir(actor, { baseId, path: "Missing/new" })).rejects.toMatchObject({ code: "not_found" });
+    const admin = await user("admin", "local", true);
+    config.cloud.autoCreate = true;
+    const cloudBase = (await service.bases(admin)).items.find((base) => base.area === "cloud")!.id;
+    await service.mkdir(admin, { baseId: cloudBase, path: "Notes" });
+    expect(nodes.get("cloud:users/admin/Notes")).toMatchObject({ mode: "0700" });
   });
   test("detail and thumbnails enforce current leaf rights, traversal and trash before any lease", async () => {
     const actor = await user("alice", "ipa");
