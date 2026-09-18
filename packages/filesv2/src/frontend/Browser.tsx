@@ -309,11 +309,20 @@ export default function Browser(props: {
   const runAction = (run: () => Promise<void>) => {
     if (!busy()) void action.mutate(run);
   };
+  // Every name prompt says where the entry will live, which matters most in tree view.
   const askName = (title: string, label: string, initial = "") =>
     prompts
       .form({
         title,
         fields: {
+          location: {
+            type: "info",
+            content: () => (
+              <InlineGuidance icon="ti ti-folder">
+                <span class="break-all">{`${props.directory.base.name} / ${folder()}`.replace(/ \/ $/, "")}</span>
+              </InlineGuidance>
+            ),
+          },
           name: {
             type: "text",
             label,
