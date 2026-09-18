@@ -9,6 +9,9 @@ export function filesUrl(baseId?: string, path = "", after?: string | null, file
   return `/app/filesv2${query.size ? `?${query}` : ""}`;
 }
 
+/** The editor view: the folder stays in the URL so leaving the editor returns to the file's row. */
+export const editorUrl = (baseId: string, path: string) => `${filesUrl(baseId, path.split("/").slice(0, -1).join("/"), null, path)}&view=edit`;
+
 export function pathCrumbs(path: string) {
   const parts = path.split("/").filter(Boolean);
   return parts.map((name, index) => ({ name, path: parts.slice(0, index + 1).join("/") }));

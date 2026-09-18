@@ -65,10 +65,10 @@ function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: 
           <>
             <PanelDialog.Body>
               <NoticeCard tone="success" title={b().shareCreated} detail={props.kind === "inbox" ? b().shareInboxScope : b().shareDownloadScope} />
-              <label class="flex flex-col gap-1 text-sm">
+              <div class="flex flex-col gap-1 text-sm">
                 <span class="font-medium">{b().shareLink}</span>
                 <code class="break-all rounded-md bg-[var(--k2b-surface-muted)] px-2 py-1 text-xs">{created()!.url}</code>
-              </label>
+              </div>
               <div class="flex flex-wrap gap-2">
                 <CopyButton text={created()!.url} label={b().copyLink} copiedLabel={b().copiedLink} />
                 <Button variant="ghost" size="sm" onClick={() => window.open(created()!.url, "_blank", "noopener")}>

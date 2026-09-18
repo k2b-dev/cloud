@@ -14,12 +14,18 @@ export function userPath(value: string): string {
   if (path.split("/")[0] === "trash") throw new FilesError("reserved_path", 403);
   return path;
 }
+/** Service addresses are plain origins: no credentials, path, query or fragment. */
+function validateOrigin(value: string): void {
+  if (!value) return;
+  const url = new URL(value);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== "/")
+    throw new FilesError("invalid_configuration");
+}
 export function validateConfiguration(config: Configuration): void {
-  if (config.url) {
-    const url = new URL(config.url);
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== "/")
-      throw new FilesError("invalid_configuration");
-  }
+  validateOrigin(config.url);
+  validateOrigin(config.collabora.url);
+  validateOrigin(config.collabora.internalUrl);
+  validateOrigin(config.collabora.wopiOrigin);
   for (const area of [config.cloud, config.freeipa]) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(area.root)) throw new FilesError("invalid_configuration");
     relativePath(area.prefix);

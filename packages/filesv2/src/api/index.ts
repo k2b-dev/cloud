@@ -39,6 +39,7 @@ import {
   UploadIdSchema,
   UploadInputSchema,
   CopyInputSchema,
+  CreateDocumentInputSchema,
   CreateShareInputSchema,
   ShareIdSchema,
   MoveInputSchema,
@@ -51,8 +52,11 @@ import {
 } from "../contracts";
 import { FilesError, filesService } from "../service";
 import { errorMessage } from "./messages";
+import { wopiApi } from "./wopi";
 
 const api = new Hono<AuthContext>()
+  // Collabora reaches these routes with an editor token instead of a session; they must answer before the role check.
+  .route("/wopi", wopiApi)
   .use(rateLimit())
   .use("*", auth.requireRole("user"))
   .onError((error, c) => {
@@ -107,6 +111,18 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Create a folder", ...requiresAuth }),
     v("json", DirectoryInputSchema),
     async (c) => respond(c, ok(await filesService.mkdir(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/documents",
+    middleware.openapi({ summary: "Create an empty office document from a template", ...requiresAuth }),
+    v("json", CreateDocumentInputSchema),
+    async (c) => respond(c, ok(await filesService.createDocument(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/editor",
+    middleware.openapi({ summary: "Prepare a Collabora editor session for one file", ...requiresAuth }),
+    v("json", EntryQuerySchema),
+    async (c) => respond(c, ok(await filesService.editor(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
     "/bases/:baseId/uploads",

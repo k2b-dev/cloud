@@ -56,6 +56,13 @@ const messages: Record<string, [string, string]> = {
   ],
   overlapping_roots: ["Choose separate Filegate roots for Cloud and FreeIPA.", "Wähle getrennte Filegate-Roots für Cloud und FreeIPA."],
   not_configured: ["Configure the Filegate URL and token first.", "Konfiguriere zuerst Filegate-URL und Token."],
+  editor_disabled: ["Document editing is not configured for this Cloud.", "Die Dokumentbearbeitung ist in dieser Cloud nicht konfiguriert."],
+  editor_unsupported: ["This file type cannot be edited in the browser.", "Dieser Dateityp kann nicht im Browser bearbeitet werden."],
+  editor_unavailable: ["The document editor is not reachable. Try again later.", "Der Dokumenteditor ist nicht erreichbar. Bitte später erneut versuchen."],
+  document_changed: [
+    "The file changed on the server while it was open. Reload to see the latest version.",
+    "Die Datei wurde zwischenzeitlich auf dem Server geändert. Neu laden, um den aktuellen Stand zu sehen.",
+  ],
   area_disabled: ["This storage area is disabled.", "Dieser Dateibereich ist deaktiviert."],
   forbidden: ["You do not have permission to read this path.", "Du hast keine Leseberechtigung für diesen Pfad."],
   reserved_path: [

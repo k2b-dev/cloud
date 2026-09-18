@@ -6,7 +6,9 @@ import { Filegate, type Node } from "@k2b/filegate";
 import { sql } from "bun";
 import { z } from "zod";
 import { bindings } from "../data/bases";
+import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
+import { entryRefId } from "../resource-ref";
 import { createFilesService } from ".";
 
 const url = process.env.FILESV2_TEST_DATABASE_URL;
@@ -39,6 +41,7 @@ suite("Files service and durable bindings", () => {
       archive: "archive",
     },
     freeipa: { enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+  collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as DocumentFormat },
   };
   const set = async (key: string, value: unknown) => {
     const encrypted = await secrets.encrypt(value);
@@ -49,10 +52,35 @@ suite("Files service and durable bindings", () => {
     nodes.set(`${root}:${path}`, node);
     return node;
   };
+  const directUploads = new Map<string, { size: number; ownership: { uid?: number; gid?: number; mode?: string } }>();
+  const contents = new Map<string, string>();
+  const DISCOVERY = `<wopi-discovery><net-zone name="external-http"><app name="writer"><action default="true" ext="odt" name="edit" urlsrc="http://collabora:9980/browser/abc/cool.html?"/><action ext="odt" name="view" urlsrc="http://collabora:9980/browser/abc/cool.html?"/></app></net-zone></wopi-discovery>`;
   const transport = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
       const req = new URL(input instanceof Request ? input.url : input.toString());
       const parts = req.pathname.split("/");
+      // Direct leases: bytes bypass the API and land on the storage node itself.
+      if (req.pathname === "/hosting/discovery") return new Response(DISCOVERY);
+      if (parts[1] === "signed") {
+        const key = `${parts[2]}:${decodeURIComponent(parts.slice(3).join("/"))}`;
+        return nodes.has(key) ? new Response(contents.get(key) ?? "") : new Response("", { status: 404 });
+      }
+      if (parts[1] === "direct") {
+        const key = `${parts[2]}:${decodeURIComponent(parts.slice(3).join("/"))}`;
+        const pending = directUploads.get(key);
+        if (!pending || init?.method !== "PUT") return Response.json({ error: "not_found" }, { status: 404 });
+        const body = await new Response(init.body as BodyInit).text();
+        const existing = nodes.get(key);
+        const node = {
+          ...directory(parts[2]!, key.slice(parts[2]!.length + 1), pending.ownership.uid ?? existing?.uid ?? 0, pending.ownership.gid ?? existing?.gid ?? 0, pending.ownership.mode ?? existing?.mode ?? "0644", false),
+          size: body.length,
+          modified: new Date(Date.now() + ++versionCounter * 1000).toISOString(),
+        };
+        nodes.set(key, node);
+        contents.set(key, body);
+        directUploads.delete(key);
+        return Response.json(node);
+      }
       if (req.pathname === "/v1/downloads/archives") {
         const input = z.object({ items: z.array(z.object({ root: z.string(), path: z.string(), archivePath: z.string() })) }).parse(JSON.parse(String(init?.body)));
         archives.push(input.items);
@@ -72,9 +100,11 @@ suite("Files service and durable bindings", () => {
           available: 1000,
           capacity: 2000,
         });
+      if (operation === "content") return nodes.has(`${root}:${req.searchParams.get("path")}`) ? new Response(contents.get(`${root}:${req.searchParams.get("path")}`) ?? "") : new Response("", { status: 404 });
       if (operation === "downloads" || operation === "thumbnail") {
         leases++;
-        return Response.json({ method: "GET", url: "http://localhost:4000/signed", expires: "2099-01-01T00:00:00Z" });
+        const target = z.object({ path: z.string().optional() }).parse(init?.body ? JSON.parse(String(init.body)) : {});
+        return Response.json({ method: "GET", url: `http://localhost:4000/signed/${root}/${target.path ?? ""}`, expires: "2099-01-01T00:00:00Z" });
       }
       if (operation === "uploads") {
         const sessionId = parts[6];
@@ -82,6 +112,12 @@ suite("Files service and durable bindings", () => {
         const input = z
           .object({ path: z.string().optional(), size: z.number().optional(), onConflict: z.string().optional(), ownership: z.unknown().optional() })
           .parse(init?.body ? JSON.parse(String(init.body)) : {});
+        if (parts[5] === "direct") {
+          if (nodes.has(`${root}:${input.path}`) && input.onConflict === "error") return Response.json({ error: "already_exists", message: "exists" }, { status: 409 });
+          const ownership = z.object({ uid: z.number().optional(), gid: z.number().optional(), mode: z.string().optional() }).parse(input.ownership ?? {});
+          directUploads.set(`${root}:${input.path}`, { size: input.size!, ownership });
+          return Response.json({ method: "PUT", url: `http://localhost:4000/direct/${root}/${input.path}`, expires: "2099-01-01T00:00:00Z" });
+        }
         if (!sessionId) {
           if (nodes.has(`${root}:${input.path}`) && input.onConflict === "error")
             return Response.json({ error: "already_exists", message: "exists" }, { status: 409 });
@@ -267,8 +303,12 @@ suite("Files service and durable bindings", () => {
       config = { ...input, token: input.token || config.token, tokenConfigured: true };
     },
     publicOrigin: async () => "https://cloud.test",
+    userById: async (id: string) => users.get(id) ?? null,
+    transfer: transport,
     connect: (configuration) => new Filegate({ baseUrl: configuration.url, token: configuration.token, fetch: transport }),
   });
+  /** WOPI resolves users by id; the test keeps every actor it created. */
+  const users = new Map<string, Extract<RequestActor, { kind: "user" }>["user"]>();
   const user = async (
     name: string,
     provider: "local" | "ipa" = "local",
@@ -279,9 +319,7 @@ suite("Files service and durable bindings", () => {
       { id: string }[]
     >`INSERT INTO auth.users(uid,provider,profile,admin) VALUES(${name},${provider},${profile},${admin}) RETURNING id`;
     if (provider === "ipa") await sql`INSERT INTO auth.user_posix VALUES(${row!.id},'ipa',1001,2001)`;
-    return {
-      kind: "user",
-      user: UserSchema.parse({
+    const parsed = UserSchema.parse({
         id: row!.id,
         uid: name,
         provider,
@@ -313,8 +351,9 @@ suite("Files service and durable bindings", () => {
                 sshPublicKeys: [],
                 sshFingerprints: [],
               },
-      }),
-    };
+      });
+    users.set(parsed.id, parsed);
+    return { kind: "user", user: parsed };
   };
   const id = (actor: RequestActor) => (actor.kind === "user" ? actor.user.id : "");
   beforeAll(async () => {
@@ -340,6 +379,10 @@ suite("Files service and durable bindings", () => {
   beforeEach(async () => {
     sessions.clear();
     versions.clear();
+    directUploads.clear();
+    contents.clear();
+    users.clear();
+    config.collabora = { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
     archives.length = 0;
     lostCommitResponse = false;
     await sql`TRUNCATE filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
@@ -582,6 +625,49 @@ suite("Files service and durable bindings", () => {
     expect((await service.versions(admin, { baseId, path: "report.txt" })).some((version) => version.id === v1.id)).toBeFalse();
     await expect(service.versions(admin, { baseId, path: "trash/x" })).rejects.toMatchObject({ code: "reserved_path" });
   });
+  test("office documents are created from templates and edited through token-bound WOPI calls that re-check rights", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    expect((await service.bases(actor)).editor).toBeNull();
+    await expect(service.createDocument(actor, { baseId, path: "Docs/Minutes", kind: "text" })).rejects.toMatchObject({ code: "editor_disabled", status: 403 });
+    config.collabora = { url: "http://localhost:9980", internalUrl: "http://collabora:9980", wopiOrigin: "http://gateway:3000", documentFormat: "odf" };
+    expect((await service.bases(actor)).editor).toEqual({ documentFormat: "odf" });
+    const created = await service.createDocument(actor, { baseId, path: "Docs/Minutes", kind: "text" });
+    expect(created.entry).toMatchObject({ name: "Minutes.odt", path: "Docs/Minutes.odt", directory: false });
+    expect(nodes.get("freeipa:users/alice/Docs/Minutes.odt")).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
+    expect(contents.get("freeipa:users/alice/Docs/Minutes.odt")?.length).toBeGreaterThan(0);
+    await expect(service.createDocument(actor, { baseId, path: "Docs/Minutes", kind: "text" })).rejects.toMatchObject({ code: "path_conflict", status: 409 });
+    directory("freeipa", "users/alice/Docs/notes.txt", 1001, 2001, "0640", false);
+    await expect(service.editor(actor, { baseId, path: "Docs/notes.txt" })).rejects.toMatchObject({ code: "editor_unsupported" });
+    const launch = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    expect(launch.canWrite).toBe(true);
+    expect(launch.action.startsWith("http://localhost:9980/browser/abc/cool.html?WOPISrc=")).toBe(true);
+    const wopiSrc = decodeURIComponent(launch.action.split("WOPISrc=")[1]!);
+    expect(wopiSrc.startsWith("http://gateway:3000/api/filesv2/wopi/files/")).toBe(true);
+    const fileId = wopiSrc.split("/").at(-1)!;
+    const info = await service.editorFileInfo(launch.token, fileId);
+    expect(info).toMatchObject({ BaseFileName: "Minutes.odt", UserCanWrite: true, UserFriendlyName: "alice", PostMessageOrigin: "https://cloud.test", EnableShare: false, UserCanNotWriteRelative: true });
+    expect(await (await service.editorContent(launch.token, fileId)).text()).toBe(contents.get("freeipa:users/alice/Docs/Minutes.odt") ?? "");
+    const saved = await service.editorSave(launch.token, fileId, { body: new Blob(["edited"]), timestamp: info.LastModifiedTime });
+    expect(saved).toMatchObject({ modified: expect.any(String) });
+    expect(contents.get("freeipa:users/alice/Docs/Minutes.odt")).toBe("edited");
+    expect(await service.editorSave(launch.token, fileId, { body: new Blob(["stale"]), timestamp: info.LastModifiedTime })).toEqual({ conflict: true });
+    expect(contents.get("freeipa:users/alice/Docs/Minutes.odt")).toBe("edited");
+    await expect(service.editorFileInfo(`${launch.token}x`, fileId)).rejects.toMatchObject({ code: "forbidden", status: 403 });
+    await expect(service.editorFileInfo(launch.token, entryRefId(baseId, "Docs/notes.txt")!)).rejects.toMatchObject({ code: "forbidden" });
+    // Rights are read at call time: a file that becomes group-readable only opens read-only and refuses saves.
+    directory("freeipa", "users/alice/Docs/Minutes.odt", 999, 2001, "0640", false);
+    const readOnly = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    expect(readOnly.canWrite).toBe(false);
+    expect((await service.editorFileInfo(readOnly.token, fileId)).UserCanWrite).toBe(false);
+    await expect(service.editorSave(readOnly.token, fileId, { body: new Blob(["x"]), timestamp: null })).rejects.toMatchObject({ code: "forbidden" });
+    directory("freeipa", "users/alice/Docs/Minutes.odt", 999, 999, "0600", false);
+    await expect(service.editorFileInfo(launch.token, fileId)).rejects.toMatchObject({ code: "forbidden" });
+    users.delete(id(actor));
+    await expect(service.editorFileInfo(readOnly.token, fileId)).rejects.toMatchObject({ code: "forbidden" });
+  });
   test("shares stay inside one base, are visible to everyone who may read their scope, and serve leases only while active", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -593,7 +679,7 @@ suite("Files service and durable bindings", () => {
     const baseId = (await service.bases(actor)).items[0]!.id;
     const share = await service.createShare(actor, { baseId, kind: "download", paths: ["Docs/a.txt", "Docs/Sub/b.txt"], folder: "", title: "Q3", expiresIn: "7d" });
     expect(share).toMatchObject({ kind: "download", scope: "Docs", items: ["Docs/a.txt", "Docs/Sub/b.txt"], state: "active", createdBy: "alice" });
-    expect(share.url).toMatch(/^https:\/\/cloud\.test\/public\/filesv2\/s\/[A-Za-z0-9_-]{32}$/);
+    expect(share.url).toMatch(/^https:\/\/cloud\.test\/share\/filesv2\/s\/[A-Za-z0-9_-]{32}$/);
     await expect(service.createShare(actor, { baseId, kind: "download", paths: ["trash/x"], folder: "", title: "t", expiresIn: "1d" })).rejects.toMatchObject({ code: "reserved_path" });
     const token = share.url.split("/").at(-1)!;
     const view = await service.publicShare(token, "download");
@@ -746,7 +832,9 @@ suite("Files service and durable bindings", () => {
         throw new Error("Unexpected configuration write");
       },
       publicOrigin: async () => "https://cloud.test",
-    connect: (configuration) => new Filegate({ baseUrl: configuration.url, token: configuration.token, fetch: transport }),
+      userById: async (id: string) => users.get(id) ?? null,
+      transfer: transport,
+      connect: (configuration) => new Filegate({ baseUrl: configuration.url, token: configuration.token, fetch: transport }),
     });
     const result = await slowService.admin(admin, { area: "freeipa", kind: "users" });
     expect(result.items).toHaveLength(1);

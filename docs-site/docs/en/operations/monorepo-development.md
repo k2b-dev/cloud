@@ -77,6 +77,26 @@ The existing `files` app uses the Filegate v2 API and cannot use this v5 daemon.
 Do not point that app at the new roots. Its old Docker volumes are not migrated
 or attached. Filesv2 remains a separate application with its own configuration.
 
+## Test Collabora locally
+
+Development infrastructure also includes Collabora Online (CODE) for Filesv2
+document editing. It listens on `http://localhost:9980` for browsers, while
+Collabora itself reaches Cloud through the `gateway` service name. Point
+Filesv2 at it with the administrator CLI:
+
+```bash
+bun run dev:cld -- filesv2 admin configuration get --json > filesv2.json
+# add to filesv2.json:
+#   "collabora": { "url": "http://localhost:9980", "internalUrl": "http://collabora:9980",
+#                  "wopiOrigin": "http://gateway:3000", "documentFormat": "odf" }
+bun run dev:cld -- filesv2 admin configuration set --input-file filesv2.json --json
+```
+
+The container allows `gateway:3000` as WOPI host and `localhost:3000` as frame
+ancestor, runs without TLS and without the jail mount helper, and has the
+welcome dialog, admin console and AI features disabled. These are development
+settings, not production ones.
+
 ## Work on one application
 
 ```bash

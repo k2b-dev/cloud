@@ -24,6 +24,12 @@ Das Suchfeld oben durchsucht Namen überall unterhalb des aktuellen Ordners; Tre
 
 Verschieben bleibt innerhalb einer Ablage. Kopieren kann in eine andere Ablage zielen; die Originale bleiben erhalten, damit eine Gruppendatei nie versehentlich in einem privaten Verzeichnis verschwindet.
 
+## Dokumente gemeinsam bearbeiten
+
+Hat deine Administration Collabora Online angebunden, öffnen sich Textdokumente, Tabellen und Präsentationen (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) in einem Editor, der den Hauptbereich füllt: Doppelklick auf die Datei oder **Bearbeiten** im Detailpanel. Mehrere Personen können gleichzeitig im selben Dokument arbeiten und sehen die Änderungen der anderen. Die Kopfzeile zeigt den Dateinamen und ob Collabora deine Änderungen gespeichert hat; der Pfeil links führt zurück in den Ordner mit ausgewählter Datei. Darfst du eine Datei nur lesen, öffnet sie sich schreibgeschützt. Jedes Speichern wird zur aktuellen Datei; die Versionsgeschichte bleibt im Detailpanel.
+
+Das Plus-Menü bietet dann zusätzlich **Neues Textdokument**, **Neue Tabelle** und **Neue Präsentation**. Du gibst einen Namen ein, die Dateiendung wird ergänzt, und das neue Dokument öffnet sich im Editor.
+
 ## Hinzufügen, hochladen und ändern
 
 Das Plus neben dem Suchfeld bietet **Hochladen**, **Ordner hochladen**, **Neuer Ordner** und **Neue Datei**. Du kannst Dateien auch von deinem Gerät auf die Liste ziehen. Jede Datei geht direkt an den Dateiserver, nachdem Cloud deinen Zugriff geprüft hat, und wird erst veröffentlicht, wenn die Übertragung vollständig ist. Der Fortschritt erscheint als Benachrichtigung mit Fortschrittsbalken. Existieren Namen bereits, entscheidest du einmal pro Upload, ob du sie ersetzt oder nur die neuen Dateien hochlädst. Namen dürfen keine Schrägstriche enthalten.

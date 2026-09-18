@@ -16,6 +16,8 @@ Enable Cloud and FreeIPA independently and select their Filegate roots. **Advanc
 
 Cloud storage requires enabled local Linux identities. Only eligible user accounts and POSIX groups have directories. **Create local directories automatically** is off by default. Automatic archiving is on by default and can be disabled separately; it archives managed directories of deleted local accounts or groups, and groups with POSIX disabled. Files remain recoverable. An unknown identity state never counts as deletion. FreeIPA has no automatic creation or archiving: choose its directory actions explicitly.
 
+**Collabora Online** connects a document editor for text documents, spreadsheets and presentations. Enter the **Collabora address** browsers load the editor from; leaving it empty disables editing. Choose the **format of new documents**: OpenDocument or Microsoft Office. **Advanced** holds two optional addresses for deployments in which this application reaches Collabora, or Collabora reaches this Cloud, under different addresses than browsers use. Collabora must be able to reach this Cloud's address, and this application must reach Collabora.
+
 ## Read the Overview
 
 The overview shows capacity, available space, active uploads, counts, and sizes for the selected root. Unknown values stay unknown. Statistics cover the whole root, including paths outside an area's prefix.

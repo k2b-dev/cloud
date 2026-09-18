@@ -1,5 +1,5 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Disclosure, InlineGuidance, NoticeCard, SettingsPage, SettingsPanelFooter, SettingsSection, Switch, TextInput } from "@k2b/ui";
+import { Disclosure, InlineGuidance, NoticeCard, Select, SettingsPage, SettingsPanelFooter, SettingsSection, Switch, TextInput } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -26,6 +26,7 @@ export default function Settings(props: {
     url: value.url,
     cloud: { ...value.cloud },
     freeipa: { ...value.freeipa },
+    collabora: { ...value.collabora },
   });
   const [baseline, setBaseline] = createSignal(clean(props.configuration));
   const [configuration, setConfiguration] = createStore(clean(props.configuration));
@@ -40,7 +41,7 @@ export default function Settings(props: {
         const error = ErrorSchema.safeParse(await response.json());
         throw new Error(error.success ? error.data.message : t().saveFailed);
       }
-      setBaseline({ url: json.url, cloud: { ...json.cloud }, freeipa: { ...json.freeipa } });
+      setBaseline({ url: json.url, cloud: { ...json.cloud }, freeipa: { ...json.freeipa }, collabora: { ...json.collabora } });
       setToken("");
       setSaved(true);
       // Saving and reloading are separate outcomes; the workspace owns read failures.
@@ -77,6 +78,7 @@ export default function Settings(props: {
       url: configuration.url,
       cloud: { ...configuration.cloud },
       freeipa: { ...configuration.freeipa },
+      collabora: { ...configuration.collabora },
       ...(token() ? { token: token() } : {}),
     });
   };
@@ -116,6 +118,54 @@ export default function Settings(props: {
               value={token()}
               onValueChange={setToken}
             />
+          </fieldset>
+        </SettingsSection>
+        <SettingsSection title={a().collabora} icon="ti ti-file-text">
+          <fieldset class="flex min-w-0 flex-col gap-4" disabled={save.loading()}>
+            <NoticeCard tone="info" title={a().collaboraPurpose} detail={a().collaboraExplanation} />
+            <div class="grid min-w-0 gap-4 md:grid-cols-2">
+              <TextInput
+                name="collabora-url"
+                type="url"
+                label={a().collaboraUrl}
+                description={a().collaboraUrlHint}
+                value={configuration.collabora.url}
+                onValueChange={(value) => setConfiguration("collabora", "url", value)}
+                placeholder="https://office.example.org"
+              />
+              <Select
+                name="collabora-format"
+                label={a().documentFormat}
+                value={configuration.collabora.documentFormat}
+                onValueChange={(value) => setConfiguration("collabora", "documentFormat", value === "ooxml" ? "ooxml" : "odf")}
+                options={[
+                  { value: "odf", label: a().documentFormatOdf },
+                  { value: "ooxml", label: a().documentFormatOoxml },
+                ]}
+              />
+            </div>
+            <Disclosure summary={a().advanced} surface="plain" icon="ti ti-network">
+              <div class="grid min-w-0 gap-4 pt-4 md:grid-cols-2">
+                <TextInput
+                  name="collabora-internal-url"
+                  type="url"
+                  label={a().collaboraInternalUrl}
+                  description={a().collaboraInternalUrlHint}
+                  value={configuration.collabora.internalUrl}
+                  onValueChange={(value) => setConfiguration("collabora", "internalUrl", value)}
+                  placeholder="http://collabora:9980"
+                />
+                <TextInput
+                  name="collabora-wopi-origin"
+                  type="url"
+                  label={a().collaboraWopiOrigin}
+                  description={a().collaboraWopiOriginHint}
+                  value={configuration.collabora.wopiOrigin}
+                  onValueChange={(value) => setConfiguration("collabora", "wopiOrigin", value)}
+                  placeholder="http://gateway:3000"
+                />
+              </div>
+            </Disclosure>
           </fieldset>
         </SettingsSection>
         <For each={areas}>

@@ -116,6 +116,22 @@ services:
     ports:
       - "3001:3000"
 
+  # Collabora Online (CODE) for Filesv2 document editing. The browser loads the
+  # editor from localhost:9980; Collabora itself reaches Cloud through the
+  # gateway service name, which Filesv2 sends as the WOPI origin.
+  collabora:
+    image: collabora/code:26.04.4.1.1
+    container_name: collabora
+    restart: unless-stopped
+    cap_add: [MKNOD]
+    environment:
+      aliasgroup1: http://gateway:3000
+      dictionaries: de_DE en_US
+      DONT_GEN_SSL_CERT: "1"
+      extra_params: --o:ssl.enable=false --o:ssl.termination=false --o:net.frame_ancestors=localhost:3000 --o:admin_console.enable=false --o:ai.enabled=false --o:mount_jail_tree=false
+    ports:
+      - "127.0.0.1:9980:9980"
+
 configs:
   filegate_config:
     content: |

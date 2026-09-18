@@ -48,6 +48,7 @@ const configuration: PublicConfiguration = {
     archive: "archive",
   },
   freeipa: { enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+  collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
 };
 const directory: DirectoryResult = {
   base: {
@@ -114,7 +115,7 @@ describe("Files v2 interactions", () => {
     await flush();
     expect(requests).toHaveLength(1);
     expect(requests[0]!.input).toEqual({
-      json: { url: "http://filegate:4001", cloud: configuration.cloud, freeipa: configuration.freeipa },
+      json: { url: "http://filegate:4001", cloud: configuration.cloud, freeipa: configuration.freeipa, collabora: configuration.collabora },
     });
     requests[0]!.resolve(Response.json({ code: "unavailable", message: "Filegate is unavailable." }, { status: 503 }));
     await flush();
@@ -126,7 +127,7 @@ describe("Files v2 interactions", () => {
     await flush();
     expect(requests).toHaveLength(2);
     expect(requests[1]!.input).toEqual({
-      json: { url: "http://filegate:4001", cloud: configuration.cloud, freeipa: configuration.freeipa, token: "replacement-test-token" },
+      json: { url: "http://filegate:4001", cloud: configuration.cloud, freeipa: configuration.freeipa, collabora: configuration.collabora, token: "replacement-test-token" },
     });
     requests[1]!.resolve(Response.json({}));
     await flush();

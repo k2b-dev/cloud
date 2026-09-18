@@ -915,3 +915,26 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
     "POST /api/filesv2/shares/s1/revoke",
   ]);
 });
+
+test("documents create and edit-url reach the editor API and print the Cloud address", async () => {
+  const seen: string[] = [];
+  const cloud = serve(async (request) => {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+    const url = new URL(request.url);
+    seen.push(`${request.method} ${url.pathname}`);
+    if (url.pathname.endsWith("/documents")) {
+      expect(await request.json()).toEqual({ path: "Documents/Minutes", kind: "spreadsheet" });
+      return Response.json({ base, entry: { ...entry, path: "Documents/Minutes.ods", name: "Minutes.ods" } });
+    }
+    return Response.json({ message: "unexpected" }, { status: 500 });
+  });
+  const server = { server: cloud.url.href };
+  const created = await run(["--json", "filesv2", "documents", "create", base.id, "Documents/Minutes", "--kind", "spreadsheet"], server);
+  expect(created.exitCode, created.stderr).toBe(0);
+  expect(JSON.parse(created.stdout).entry.path).toBe("Documents/Minutes.ods");
+  const address = await run(["filesv2", "edit-url", base.id, "Documents/Minutes.ods"], server);
+  expect(address.exitCode, address.stderr).toBe(0);
+  const query = new URLSearchParams({ base: base.id, path: "Documents", file: "Documents/Minutes.ods" });
+  expect(address.stdout.trim()).toBe(`${cloud.url.origin}/app/filesv2?${query}&view=edit`);
+  expect(seen).toEqual([`POST /api/filesv2/bases/${base.id}/documents`]);
+});

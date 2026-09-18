@@ -19,6 +19,7 @@ const defaults = {
     archive: "archive",
   },
   freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+  collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 export async function readConfiguration(): Promise<PublicConfiguration & { token: string }> {
   const value = await app.settings.get("filesv2.configuration");

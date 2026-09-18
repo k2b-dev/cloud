@@ -1,5 +1,5 @@
 import type { RequestActor } from "@k2b/cloud/server";
-import { type AccountIdentityGroup, type AccountIdentityPage, type AccountIdentityUser, accountIdentities, coreSettings } from "@k2b/cloud/services";
+import { type AccountIdentityGroup, type AccountIdentityPage, type AccountIdentityUser, accountIdentities, accounts, coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Filegate, FilegateError, type Node, type RootClient, type RootInfo } from "@k2b/filegate";
 import { randomBytes } from "node:crypto";
@@ -15,6 +15,7 @@ import type {
   ConfigurationInput,
   DirectoryResult,
   DownloadLease,
+  EditorLaunch,
   EntryResult,
   InventoryEntry,
   InventoryState,
@@ -30,10 +31,13 @@ import type {
   ShareView,
 } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
+import { type DocumentKind, documentExtension, editableExtension } from "../documents";
+import { entryRefId, parseEntryRefId } from "../resource-ref";
 import { operations } from "../data/operations";
 import { type ShareRow, shares } from "../data/shares";
 import { trash } from "../data/trash";
 import { uploads } from "../data/uploads";
+import { discoverEditor, signEditorToken, verifyEditorToken } from "./collabora";
 import { readConfiguration, writeConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import { createDirectoryLifecycle } from "./lifecycle";
@@ -48,6 +52,13 @@ type Identity = { id: string; name: string; uid: number | null; gid: number | nu
 type Candidate = NewBinding & { name: string };
 type Inspection = { summary: BaseSummary; candidate: Candidate; binding: Binding | null };
 const PAGE_SIZE = 50;
+/** A working day; every WOPI call re-checks permissions, the token only names user and file. */
+const EDITOR_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+/** Collabora hands over whole documents; Cloud holds one in memory while forwarding it to Filegate. */
+export const EDITOR_DOCUMENT_LIMIT = 256 * 1024 * 1024;
+const EDITOR_TRANSFER_TIMEOUT_MS = 5 * 60 * 1000;
+const withWopiSrc = (action: string, wopiSrc: string) =>
+  `${action}${action.endsWith("?") || action.endsWith("&") ? "" : action.includes("?") ? "&" : "?"}WOPISrc=${encodeURIComponent(wopiSrc)}`;
 /** Filesystem scans without an index stop here; Filegate answers 413 beyond it. */
 const SEARCH_SCAN_LIMIT = 10_000;
 const fileEntry = (relative: string, node: Node): FileEntry => ({
@@ -116,6 +127,9 @@ export function createFilesService(
     readConfiguration,
     writeConfiguration,
     publicOrigin: async () => publicCloudOrigin(await coreSettings.get<string>("app.url")),
+    userById: (id: string) => accounts.users.get({ id }),
+    /** Byte transfers between Filegate leases and Collabora; separate from the short-timeout API client. */
+    transfer: fetch as typeof fetch,
     connect: (config: Config) =>
       new Filegate({
         baseUrl: config.url,
@@ -345,6 +359,60 @@ export function createFilesService(
     if (!current.info.versioning.enabled) throw new FilesError("versioning_disabled");
     return current;
   }
+  /** A file Collabora can open, with the write decision the editor and every WOPI call share. */
+  async function editableFile(actor: RequestActor, baseId: string, path: string) {
+    const current = await authorized(actor, baseId, path, false);
+    const extension = editableExtension(current.relative.split("/").at(-1)!);
+    if (!extension) throw new FilesError("editor_unsupported", 400);
+    let canWrite = true;
+    if (current.inspection.candidate.area === "freeipa") {
+      const parentTarget = joinPath(current.inspection.candidate.path, current.relative.split("/").slice(0, -1).join("/"));
+      try {
+        await checkUnix(current.root, parentTarget, current.state.unix, 3);
+        await checkUnix(current.root, current.target, current.state.unix, 2);
+      } catch (error) {
+        if (!(error instanceof FilesError && error.code === "forbidden")) throw error;
+        canWrite = false;
+      }
+    }
+    return { ...current, extension, canWrite };
+  }
+  /** Leases name Filegate's browser-facing address; Cloud itself always talks to Filegate at the configured backend URL. */
+  const backendLease = (config: Config, url: string) => {
+    const target = new URL(url);
+    const backend = new URL(config.url);
+    target.protocol = backend.protocol;
+    target.host = backend.host;
+    return target.href;
+  };
+  /** Whole-document writes from Cloud: a direct lease, one PUT, and the resulting node. */
+  async function writeBytes(current: Awaited<ReturnType<typeof authorized>> & { target: string }, body: Blob, onConflict: "error" | "overwrite"): Promise<Node> {
+    if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
+    const capability = await current.root.directUpload(current.target, body.size, { onConflict, ownership: ownershipFor(current, false) });
+    const response = await deps.transfer(backendLease(current.state.config, capability.url), {
+      method: "PUT",
+      body,
+      signal: AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new FilesError(response.status === 409 ? "path_conflict" : "unavailable", response.status === 409 ? 409 : 503);
+    return current.root.stat(current.target);
+  }
+  const editorConfig = (config: Config) => {
+    if (!config.collabora.url) throw new FilesError("editor_disabled", 403);
+    return config.collabora;
+  };
+  /** WOPI calls carry only the editor token; user, file and rights are resolved fresh on every call. */
+  async function wopiFile(token: string, id: string) {
+    const payload = verifyEditorToken(token);
+    const ref = parseEntryRefId(id);
+    if (!payload || !ref || ref.baseId !== payload.baseId || ref.path !== payload.path) throw new FilesError("forbidden", 403);
+    const user = await deps.userById(payload.userId);
+    if (!user) throw new FilesError("forbidden", 403);
+    const actor: RequestActor = { kind: "user", user };
+    const current = await editableFile(actor, payload.baseId, payload.path);
+    editorConfig(current.state.config);
+    return { ...current, actor };
+  }
   const UPLOAD_LEASE_SECONDS = 300;
   /** A commit whose response was lost is recognised from Filegate's session record; repeats are idempotent. */
   async function commitSession(root: RootClient, row: Awaited<ReturnType<typeof uploads.get>> & object): Promise<FileEntry> {
@@ -384,7 +452,11 @@ export function createFilesService(
     ...lifecycle,
     async bases(actor: RequestActor): Promise<BasesResult> {
       const state = await context(actor);
-      const output: BasesResult = { items: [], issues: [] };
+      const output: BasesResult = {
+        items: [],
+        issues: [],
+        editor: state.config.collabora.url ? { documentFormat: state.config.collabora.documentFormat } : null,
+      };
       for (const area of ["cloud", "freeipa"] as const) {
         const issue = issueFor(state.config, area, state.self.availability);
         if (issue) {
@@ -692,6 +764,79 @@ export function createFilesService(
       const current = await versionFile(actor, input.baseId, input.path, false);
       const lease = await current.root.directVersionDownload(current.target, input.id, 60);
       return { url: lease.url, method: "GET", expires: lease.expires };
+    },
+    async editor(actor: RequestActor, input: { baseId: string; path: string }): Promise<EditorLaunch> {
+      const current = await editableFile(actor, input.baseId, input.path);
+      const collabora = editorConfig(current.state.config);
+      const action = await discoverEditor(
+        { url: collabora.url, internalUrl: collabora.internalUrl, extension: current.extension, action: current.canWrite ? "edit" : "view" },
+        deps.transfer,
+      );
+      const id = entryRefId(input.baseId, current.relative);
+      if (!id) throw new FilesError("invalid_path");
+      const wopiSrc = `${collabora.wopiOrigin || (await deps.publicOrigin())}/api/filesv2/wopi/files/${id}`;
+      const expiresAt = Date.now() + EDITOR_TOKEN_TTL_MS;
+      return {
+        base: current.inspection.summary,
+        entry: fileEntry(current.relative, current.node),
+        action: withWopiSrc(action, wopiSrc),
+        token: signEditorToken({ userId: current.state.self.user.id, baseId: input.baseId, path: current.relative, expiresAt }),
+        tokenTtl: expiresAt,
+        canWrite: current.canWrite,
+      };
+    },
+    /** A new document starts from an empty template in the administrator's format; the extension is appended here. */
+    async createDocument(actor: RequestActor, input: { baseId: string; path: string; kind: DocumentKind }): Promise<EntryResult> {
+      const current = await writableParent(actor, input.baseId, input.path);
+      const extension = documentExtension(input.kind, editorConfig(current.state.config).documentFormat);
+      const relative = `${current.relative}.${extension}`;
+      const target = joinPath(current.target, `${current.name}.${extension}`);
+      try {
+        await current.root.stat(target);
+        throw new FilesError("path_conflict", 409);
+      } catch (error) {
+        if (!(error instanceof FilegateError && error.status === 404)) throw error;
+      }
+      const template = Bun.file(new URL(`../templates/empty.${extension}`, import.meta.url));
+      const node = await writeBytes({ ...current, target }, template, "error");
+      return { base: current.inspection.summary, entry: fileEntry(relative, node) };
+    },
+    async editorFileInfo(token: string, id: string) {
+      const current = await wopiFile(token, id);
+      const user = current.actor.user;
+      return {
+        BaseFileName: current.relative.split("/").at(-1)!,
+        Size: current.node.size,
+        OwnerId: current.inspection.summary.id,
+        UserId: user.id,
+        UserFriendlyName: user.displayName || user.uid,
+        UserCanWrite: current.canWrite,
+        UserCanNotWriteRelative: true,
+        LastModifiedTime: current.node.modified,
+        PostMessageOrigin: await deps.publicOrigin(),
+        EnableShare: false,
+        HidePrintOption: true,
+        HideExportOption: true,
+        DisableAISettings: true,
+        SupportsLocks: false,
+        SupportsRename: false,
+        EnableOwnerTermination: false,
+      };
+    },
+    /** Bytes flow Filegate → Cloud → Collabora on the server side; the browser never sees a Filegate lease here. */
+    async editorContent(token: string, id: string): Promise<Response> {
+      const current = await wopiFile(token, id);
+      const response = await current.root.contentRaw(current.target, AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS));
+      if (!response.ok || !response.body) throw new FilesError("unavailable", 503);
+      return response;
+    },
+    /** Every save overwrites the file in place; Filegate's own versioning policy decides what becomes a version. */
+    async editorSave(token: string, id: string, input: { body: Blob; timestamp: string | null }): Promise<{ modified: string } | { conflict: true }> {
+      const current = await wopiFile(token, id);
+      if (!current.canWrite) throw new FilesError("forbidden", 403);
+      if (input.timestamp && new Date(input.timestamp).getTime() !== new Date(current.node.modified).getTime()) return { conflict: true };
+      const node = await writeBytes(current, input.body, "overwrite");
+      return { modified: node.modified };
     },
     async createShare(
       actor: RequestActor,

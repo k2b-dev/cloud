@@ -175,6 +175,37 @@ Inventory scans return a cursor when their time budget is exhausted. Slow or
 cancelled FreeIPA checks remain unknown; they never authorize archival or
 deletion. Use the next page to continue a partial scan.
 
+## Edit office documents
+
+Filesv2 opens text documents, spreadsheets and presentations (`odt`, `ods`,
+`odp`, `docx`, `xlsx`, `pptx`) in Collabora Online for collaborative editing.
+Administrators enable it in the Files v2 settings by entering the Collabora
+address browsers load the editor from. Two optional advanced fields cover
+deployments in which this application reaches Collabora under a different
+address, or Collabora reaches Cloud under a different address than the public
+one. Leaving the Collabora address empty disables editing without touching
+existing files.
+
+Once configured, office files open in an editor view that fills the main area,
+and the plus menu offers a new text document, spreadsheet or presentation. New
+documents start from an empty template in the configured default format:
+OpenDocument unless the administrator selects Microsoft Office formats. Users
+who may only read a FreeIPA file get the editor in view mode.
+
+Collabora talks to Filesv2 through WOPI under `/api/filesv2/wopi`. The editor
+token it receives names one user and one file and carries no rights: every
+WOPI call resolves the user and the current permissions again, so revoked
+access ends a session at its next call and no instance keeps editor state.
+Document bytes move between Filegate and Collabora on the server side through
+the configured backend address; the Filegate token never leaves the backend.
+Every save replaces the file in Filegate, and the root's versioning policy
+decides which saves become versions. A save whose base timestamp no longer
+matches the stored file is refused so Collabora can show its conflict dialog.
+
+Several Collabora instances need sticky routing on the `WOPISrc` parameter,
+which is a Collabora deployment concern; Filesv2 scales horizontally
+unchanged.
+
 ## Download files
 
 For each download, the browser requests a short-lived lease from Filesv2.
@@ -195,6 +226,8 @@ The same operations are available through `cld filesv2`. Sign in with
 cld filesv2 bases list --json
 cld filesv2 list <base-id> --path Documents --json
 cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf --json
+cld filesv2 documents create <base-id> Documents/Minutes --kind text --json
+cld filesv2 edit-url <base-id> Documents/Minutes.odt
 cld filesv2 admin inventory --area freeipa --kind groups --json
 cld filesv2 admin configuration get --json
 cld filesv2 admin configuration set --input-file ./filesv2.json --json
@@ -235,11 +268,12 @@ root, including paths outside the configured prefix.
 
 ## Current scope
 
-This version includes browsing, individual downloads, storage configuration,
-directory provisioning and reconciliation, and administrator archive, restore,
-and permanent deletion. Uploads, user trash and restore actions, version-history
-controls, public shares, and public inboxes are planned separately. The reserved
-top-level `trash` directory is excluded from ordinary browsing and downloads.
+This version includes browsing, uploads, trash and restore, version history,
+public shares and inboxes, office editing through Collabora Online, storage
+configuration, directory provisioning and reconciliation, and administrator
+archive, restore, and permanent deletion. Comments and AI assistance inside the
+editor are not part of this version. The reserved top-level `trash` directory
+is excluded from ordinary browsing and downloads.
 
 The existing Files application remains independent and uses its older Filegate
 API. There is no automatic migration of its settings or storage. Operators map

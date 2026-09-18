@@ -14,7 +14,7 @@ if (!isServer) {
 
 const initial: WorkspaceSnapshot = {
   source: "/app/filesv2?base=home",
-  bases: { items: [], issues: [] },
+  bases: { items: [], issues: [], editor: null },
   selectedId: null,
   directory: null,
   errorCode: null,
@@ -196,7 +196,7 @@ describe("Files v2 progressive navigation", () => {
       versioningEnabled: false,
     };
     const missing = { ...base, id: "missing", name: "Missing group", status: "missing" as const };
-    const bases = { items: [base, missing], issues: [] };
+    const bases = { items: [base, missing], issues: [], editor: null };
     const directory = {
       base,
       path: "",

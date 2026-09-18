@@ -14,6 +14,8 @@ import {
 import type { ApiType } from "./api";
 import { adminLifecycleCommands } from "./cli-admin";
 import { downloadFile } from "./cli-download";
+import { DOCUMENT_KINDS } from "./documents";
+import { editorUrl } from "./frontend/urls";
 import { uploadFile } from "./cli-upload";
 import {
   type AdminResult,
@@ -81,6 +83,7 @@ function filesCommands(locale?: string) {
       "admin files": t({ en: "Browse and manage files as administrator", de: "Dateien als Administrator durchsuchen und verwalten" }),
       "admin root": t({ en: "Refresh statistics and rebuild the root index", de: "Statistiken aktualisieren und Root-Index neu aufbauen" }),
       "admin operations": t({ en: "Resume pending directory operations", de: "Ausstehende Verzeichnisaktionen fortsetzen" }),
+      documents: t({ en: "Create office documents for the browser editor", de: "Office-Dokumente für den Browser-Editor anlegen" }),
     },
     commands: [
       command("bases list", {
@@ -214,6 +217,31 @@ function filesCommands(locale?: string) {
             },
           });
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Uploaded", de: "Hochgeladen" })}: ${result.entry.path} (${result.entry.size} bytes)`);
+        },
+      }),
+      command("documents create", {
+        summary: t({ en: "Create an empty office document in the configured format", de: "Leeres Office-Dokument im konfigurierten Format anlegen" }),
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "Target path relative to the base, without extension", de: "Zielpfad relativ zur Ablage, ohne Endung" }) }),
+        },
+        flags: {
+          kind: flag.enum(DOCUMENT_KINDS, { default: "text", description: t({ en: "text, spreadsheet or presentation", de: "text, spreadsheet oder presentation" }) }),
+        },
+        examples: ["cld filesv2 documents create <base-id> Documents/Minutes --kind text"],
+        async run({ ctx, args, flags }) {
+          const result = await ctx.readJson<EntryResult>(
+            await api(ctx).bases[":baseId"].documents.$post({ param: { baseId: args.base }, json: { path: args.path, kind: flags.kind ?? "text" } }),
+          );
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${result.entry.path}`);
+        },
+      }),
+      command("edit-url", {
+        summary: t({ en: "Print the browser address that opens a file in the editor", de: "Browser-Adresse ausgeben, die eine Datei im Editor öffnet" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }) },
+        async run({ ctx, args }) {
+          const url = new URL(editorUrl(args.base, args.path), ctx.options.server).href;
+          if (!printStructured(ctx, { url })) ctx.print(url);
         },
       }),
       command("rename", {

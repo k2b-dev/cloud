@@ -24,6 +24,12 @@ The search field at the top searches names everywhere below the current folder; 
 
 Moving stays inside one storage location. Copying can target another storage location; the originals stay where they are, so a group file can never disappear into a private home by accident.
 
+## Edit documents together
+
+When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The header shows the file name and whether Collabora has saved your changes; the arrow on the left returns to the folder with the file selected. If you may only read a file, it opens read-only. Every save becomes the current file; the file's version history stays in its details panel.
+
+The plus menu then also offers **New text document**, **New spreadsheet** and **New presentation**. You enter a name, the file extension is added for you, and the new document opens in the editor.
+
 ## Add, upload, and change entries
 
 The plus button next to the search field offers **Upload**, **Upload folder**, **New folder**, and **New file**. You can also drop files from your computer onto the list. Each file is transferred directly to the file server after Cloud has checked your access, and it is published only when the whole transfer has arrived. Progress appears in a notification with a progress bar. If names already exist you decide once per upload whether to replace them or upload only the new files. Names cannot contain slashes.

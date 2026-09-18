@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOCUMENT_FORMATS, DOCUMENT_KINDS, type DocumentFormat } from "./documents";
 
 export const AreaSchema = z.enum(["cloud", "freeipa"]);
 export type Area = z.infer<typeof AreaSchema>;
@@ -12,10 +13,20 @@ export const AreaConfigurationSchema = z.object({
   groups: z.string().min(1).max(1024),
   archive: z.string().min(1).max(1024),
 });
+export const DocumentFormatSchema = z.enum(DOCUMENT_FORMATS);
+export const DocumentKindSchema = z.enum(DOCUMENT_KINDS);
+/** Collabora Online: `url` is what browsers load; `internalUrl` and `wopiOrigin` only matter when servers reach each other differently. */
+export const CollaboraConfigurationSchema = z.object({
+  url: z.string().url().or(z.literal("")).default(""),
+  internalUrl: z.string().url().or(z.literal("")).default(""),
+  wopiOrigin: z.string().url().or(z.literal("")).default(""),
+  documentFormat: DocumentFormatSchema.default("odf"),
+});
 export const ConfigurationSchema = z.object({
   url: z.string().url().or(z.literal("")),
   cloud: AreaConfigurationSchema.extend({ autoCreate: z.boolean().default(false), autoArchive: z.boolean().default(true) }),
   freeipa: AreaConfigurationSchema,
+  collabora: CollaboraConfigurationSchema.default({ url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" }),
 });
 export const ConfigurationInputSchema = ConfigurationSchema.extend({ token: z.string().max(4096).optional() });
 export type Configuration = z.infer<typeof ConfigurationSchema>;
@@ -35,7 +46,9 @@ export type BaseSummary = {
   versioningEnabled: boolean;
 };
 export type FileEntry = { name: string; path: string; directory: boolean; size: number; modified: string };
-export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[] };
+/** Present when an administrator configured Collabora; the browser then offers editing and new documents. */
+export type EditorInfo = { documentFormat: DocumentFormat };
+export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[]; editor: EditorInfo | null };
 export type DirectoryResult = { base: BaseSummary; path: string; items: FileEntry[]; next: string | null };
 export type DownloadLease = { url: string; method: "GET"; expires: string };
 export type EntryResult = { base: BaseSummary; entry: FileEntry };
@@ -60,6 +73,9 @@ export const MoveInputSchema = z.object({ paths: PathsSchema, folder: z.string()
 export const CopyInputSchema = z.object({ paths: PathsSchema, targetBaseId: z.string().min(1), folder: z.string().max(4096) });
 export const PathsInputSchema = z.object({ paths: PathsSchema });
 export const TrashIdSchema = z.object({ id: z.string().uuid() });
+export const CreateDocumentInputSchema = z.object({ path: PathSchema, kind: DocumentKindSchema });
+/** Everything the browser needs to load one file into Collabora; the token is bound to this user and file. */
+export type EditorLaunch = { base: BaseSummary; entry: FileEntry; action: string; token: string; tokenTtl: number; canWrite: boolean };
 export const VersionRefSchema = z.object({ path: PathSchema, id: z.string().min(1).max(128) });
 export const VersionCommentSchema = VersionRefSchema.extend({ comment: z.string().trim().max(2000) });
 export const VersionRestoreAsSchema = VersionRefSchema.extend({ name: z.string().min(1).max(255) });

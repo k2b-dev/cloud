@@ -26,9 +26,10 @@ export default ssr<AuthContext>(async (c) => {
   const requestedBase = c.req.query("base");
   const view = c.req.query("view");
   const trashView = view === "trash";
+  const editView = view === "edit" && !!requestedFile;
   const initial: WorkspaceSnapshot = {
-    source: `${filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope)}${view === "trash" || view === "shares" ? `${requestedBase || query.data.path ? "&" : "?"}view=${view}` : ""}`,
-    bases: { items: [], issues: [] },
+    source: `${filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope)}${view === "trash" || view === "shares" || editView ? `${requestedBase || query.data.path ? "&" : "?"}view=${view}` : ""}`,
+    bases: { items: [], issues: [], editor: null },
     selectedId: null,
     directory: null,
     errorCode: null,
@@ -41,6 +42,7 @@ export default ssr<AuthContext>(async (c) => {
     if (requestedBase && !selected) throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
     if (view === "shares") initial.shares = await filesService.listShares(actor);
+    else if (editView && selected?.status === "existing") initial.editor = await filesService.editor(actor, { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
       initial.directory = search
         ? await filesService.search(actor, { baseId: selected.id, ...query.data, q: search, scope })

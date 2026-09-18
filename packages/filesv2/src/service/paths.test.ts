@@ -14,6 +14,7 @@ const configuration = {
     archive: "archive",
   },
   freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "homes", groups: "groups", archive: "archive" },
+  collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 describe("Files path boundaries", () => {
   test("rejects traversal, absolute and private paths", () => {

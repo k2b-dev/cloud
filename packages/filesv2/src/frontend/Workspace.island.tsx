@@ -6,6 +6,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry } from "../contracts";
 import Browser from "./Browser";
+import Editor from "./Editor";
 import { useBrowserMessages } from "./browser-messages";
 import type { ViewPreference } from "./browser-preferences";
 import { IssueMessage } from "./feedback";
@@ -13,7 +14,7 @@ import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
 import SharesOverview from "./SharesOverview";
 import TrashView from "./TrashView";
-import { filesUrl } from "./urls";
+import { editorUrl, filesUrl } from "./urls";
 import { createWorkspaceState, type WorkspaceSnapshot } from "./workspace-state";
 
 const ancestors = (path: string) => {
@@ -43,12 +44,18 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         : (bases.items.find((base) => base.status === "existing") ?? bases.items[0]);
       if (requested && !selected) throw new Error(t().missingDescription);
       const view = url.searchParams.get("view");
+      const file = url.searchParams.get("file");
       let directory: WorkspaceSnapshot["directory"] = null;
       let shares: WorkspaceSnapshot["shares"];
+      let editor: WorkspaceSnapshot["editor"];
       if (view === "shares") {
         const response = await apiClient.shares.$get({}, { init: { signal } });
         if (!response.ok) throw await apiError(response);
         shares = await response.json();
+      } else if (view === "edit" && file && selected?.status === "existing") {
+        const response = await apiClient.bases[":baseId"].editor.$post({ param: { baseId: selected.id }, json: { path: file } }, { init: { signal } });
+        if (!response.ok) throw await apiError(response);
+        editor = await response.json();
       } else if (selected?.status === "existing" && view !== "trash") {
         const query = { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined };
         const q = url.searchParams.get("q")?.trim();
@@ -58,7 +65,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         if (!response.ok) throw await apiError(response);
         directory = await response.json();
       }
-      return { source, bases, selectedId: selected?.id ?? null, directory, errorCode: null, shares };
+      return { source, bases, selectedId: selected?.id ?? null, directory, errorCode: null, shares, editor };
     },
   });
   const snapshot = workspace.snapshot;
@@ -222,7 +229,31 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   );
   const centered = (content: () => ReturnType<typeof Placeholder>) => <div class="flex min-h-0 flex-1 items-center justify-center">{content()}</div>;
   const trashId = (baseId: string) => `${baseId}:trash`;
+  const editorBack = (launch: NonNullable<WorkspaceSnapshot["editor"]>) =>
+    filesUrl(launch.base.id, launch.entry.path.split("/").slice(0, -1).join("/"), null, launch.entry.path);
+  const editorView = () => (
+    <AppWorkspace mobileSurface="flush">
+      <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
+      <AppWorkspace.Content>
+        <Show
+          when={snapshot().editor}
+          fallback={
+            <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
+              <Show when={!workspace.pending()} fallback={centered(() => <Placeholder state="loading" variant="panel" description={b().editorLoading} />)}>
+                {centered(() => (
+                  <Placeholder state="error" variant="panel" title={b().editorFailed} description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />} action={retry()} />
+                ))}
+              </Show>
+            </AppWorkspace.Main>
+          }
+        >
+          {(launch) => <Editor launch={launch()} backHref={editorBack(launch())} onNavigate={onNavigate} />}
+        </Show>
+      </AppWorkspace.Content>
+    </AppWorkspace>
+  );
   return (
+    <Show when={currentView() !== "edit"} fallback={editorView()}>
     <AppWorkspace mobileSurface="flush">
       <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
       <AppWorkspace.Sidebar label={t().storage} collapsible>
@@ -383,6 +414,8 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                     })
                   }
                   onShareInbox={(folder) => void openShareDialog({ baseId: directory().base.id, kind: "inbox", folder, defaultTitle: folder.split("/").at(-1) || directory().base.name })}
+                  editor={snapshot().bases.editor}
+                  onEdit={(entry) => void go(editorUrl(directory().base.id, entry.path))}
                   onNavigate={onNavigate}
                 />
               )}
@@ -391,5 +424,6 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         </Show>
       </AppWorkspace.Content>
     </AppWorkspace>
+    </Show>
   );
 }

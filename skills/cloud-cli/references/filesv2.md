@@ -28,7 +28,15 @@ cld filesv2 shares revoke <share-id> --json
 cld filesv2 stat <base-id> Documents/report.pdf --json
 cld filesv2 thumbnail <base-id> Photos/team.jpg --size small --out ./team-preview.png --json
 cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf --json
+cld filesv2 documents create <base-id> Documents/Minutes --kind text --json
+cld filesv2 edit-url <base-id> Documents/Minutes.odt
 ```
+
+`documents create` needs Collabora configured by an administrator; it appends
+the extension of the configured format (`odt`/`ods`/`odp` or
+`docx`/`xlsx`/`pptx`) and fails with `path_conflict` when the file exists.
+`edit-url` prints the Cloud address that opens a file in the browser editor;
+editing itself happens in a browser, not in the CLI.
 
 Use a base `id` returned by `bases list`, not a username or an absolute server
 path. Paths are relative to that base. `list` returns one page; pass its `next`
@@ -203,7 +211,9 @@ statistics; do not replace unknown values with zero.
 
 Read the current configuration, edit the intended fields, then submit the
 complete configuration. `get` exposes `tokenConfigured`, never the backend
-token. Each area contains `enabled`, `root`, `prefix`, `homes`, `groups`, and
+token. The optional `collabora` block holds `url` (browser-facing Collabora
+address, empty disables editing), `internalUrl`, `wopiOrigin` and
+`documentFormat` (`odf` or `ooxml`). Each area contains `enabled`, `root`, `prefix`, `homes`, `groups`, and
 `archive`; the top-level `url` is the Filegate backend URL. The Cloud area also
 contains `autoCreate` (default `false`) and `autoArchive` (default `true`). These
 control local directory creation and archival of orphaned local directories.

@@ -22,7 +22,8 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
-import type { BaseSummary, BasesResult, DirectoryResult, EntryResult, FileEntry } from "../contracts";
+import type { BaseSummary, BasesResult, DirectoryResult, EditorInfo, EntryResult, FileEntry } from "../contracts";
+import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { useBrowserMessages } from "./browser-messages";
 import { folderKey, preferencesCookie, type ViewPreference, viewFor, withView } from "./browser-preferences";
 import FileInspector from "./FileInspector";
@@ -65,6 +66,9 @@ export default function Browser(props: {
   onChanged?: (selectPath?: string | null) => void;
   onShare?: (paths: readonly string[]) => void;
   onShareInbox?: (folder: string) => void;
+  /** Collabora is configured: office files open in the editor and the plus menu offers new documents. */
+  editor?: EditorInfo | null;
+  onEdit?: (entry: FileEntry) => void;
   onNavigate: (event: LinkNavigateEvent) => Promise<void>;
 }) {
   const t = useFilesMessages();
@@ -361,6 +365,20 @@ export default function Browser(props: {
     const name = await askName(b().newFile, b().newFileName);
     if (name) startUpload([new File([], name)]);
   };
+  const editable = (entry: FileEntry) => !!props.editor && !!props.onEdit && !entry.directory && !!editableExtension(entry.name);
+  const createDocument = async (kind: DocumentKind, title: string) => {
+    const extension = documentExtension(kind, props.editor?.documentFormat ?? "odf");
+    const name = await askName(title, b().documentName(extension));
+    if (!name) return;
+    const path = folder() ? `${folder()}/${name}` : name;
+    runAction(async () => {
+      const response = await apiClient.bases[":baseId"].documents.$post({ param: { baseId: baseId() }, json: { path, kind } });
+      if (!response.ok) await apiFailure(response, t().unavailable);
+      const created = await response.json();
+      toast.success(b().documentCreated(created.entry.name));
+      props.onEdit?.(created.entry);
+    });
+  };
   const moveIntoNewFolder = async (items: readonly FileEntry[]) => {
     const name = await askName(b().moveToNewFolder, b().newFolderName);
     if (!name) return;
@@ -424,6 +442,10 @@ export default function Browser(props: {
     if (busy()) return;
     if (entry.directory) {
       openFolder(entry.path);
+      return;
+    }
+    if (editable(entry)) {
+      props.onEdit?.(entry);
       return;
     }
     void prompts.dialog(() => <FilePreview baseId={baseId()} entry={entry} onDownload={() => startDownload([entry])} />, { title: entry.name, size: "large" });
@@ -490,6 +512,17 @@ export default function Browser(props: {
     { label: b().upload, icon: "ti ti-upload", action: () => filePicker?.click() },
     { label: b().uploadFolder, icon: "ti ti-folder-up", action: () => folderPicker?.click() },
     { items: [{ label: b().newFolder, icon: "ti ti-folder-plus", action: () => void createFolder() }, { label: b().newFile, icon: "ti ti-file-plus", action: () => void createFile() }] },
+    ...(props.editor && props.onEdit
+      ? [
+          {
+            items: [
+              { label: b().newDocument, icon: "ti ti-file-text", action: () => void createDocument("text", b().newDocument) },
+              { label: b().newSpreadsheet, icon: "ti ti-table", action: () => void createDocument("spreadsheet", b().newSpreadsheet) },
+              { label: b().newPresentation, icon: "ti ti-presentation", action: () => void createDocument("presentation", b().newPresentation) },
+            ],
+          },
+        ]
+      : []),
   ];
   const goUp = () => {
     setOpening("up");
@@ -750,6 +783,7 @@ export default function Browser(props: {
               if (focused) selection.focus(focused);
             }}
             onOpen={open}
+            editable={editable}
             onDownload={startDownload}
             onRename={(item) => void rename(item)}
             onDuplicate={duplicate}

@@ -16,6 +16,8 @@ Aktiviere Cloud und FreeIPA unabhängig und wähle ihre Filegate-Roots. **Erweit
 
 Cloud-Ablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur berechtigte Nutzerkonten und POSIX-Gruppen haben Verzeichnisse. **Lokale Verzeichnisse automatisch erstellen** ist zunächst ausgeschaltet. Die automatische Archivierung ist standardmäßig eingeschaltet und separat deaktivierbar. Sie archiviert verwaltete Verzeichnisse gelöschter lokaler Konten oder Gruppen sowie von Gruppen mit deaktiviertem POSIX. Die Dateien bleiben wiederherstellbar. Ein unbekannter Identitätszustand gilt nie als Löschung. FreeIPA hat keine automatische Erstellung oder Archivierung: Wähle die Verzeichnisaktionen ausdrücklich aus.
 
+**Collabora Online** bindet einen Editor für Textdokumente, Tabellen und Präsentationen an. Trage die **Collabora-Adresse** ein, von der Browser den Editor laden; bleibt sie leer, ist die Bearbeitung deaktiviert. Wähle das **Format neuer Dokumente**: OpenDocument oder Microsoft Office. **Erweitert** enthält zwei optionale Adressen für Umgebungen, in denen diese Anwendung Collabora oder Collabora diese Cloud über andere Adressen erreicht als Browser. Collabora muss die Adresse dieser Cloud erreichen können und diese Anwendung Collabora.
+
 ## Übersicht lesen
 
 Die Übersicht zeigt Kapazität, verfügbaren Speicher, aktive Uploads, Anzahlen und Größen für den ausgewählten Root. Unbekannte Werte bleiben unbekannt. Statistiken gelten für den gesamten Root, auch für Pfade außerhalb des Basispfads eines Bereichs.

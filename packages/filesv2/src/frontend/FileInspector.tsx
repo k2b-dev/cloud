@@ -22,6 +22,9 @@ export default function FileInspector(props: {
   busy?: boolean;
   onClose: () => void;
   onOpen: (entry: FileEntry) => void;
+  /** Files Collabora can open; the primary action then edits instead of previewing. */
+  editable?: (entry: FileEntry) => boolean;
+  canEdit?: boolean;
   onDownload: (entries: readonly FileEntry[]) => void;
   onRename: (entry: FileEntry) => void;
   onDuplicate: (entry: FileEntry) => void;
@@ -140,8 +143,8 @@ export default function FileInspector(props: {
                   primaryActions={
                     <>
                       <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onOpen(item())}>
-                        <i class={item().directory ? "ti ti-folder-open" : "ti ti-eye"} aria-hidden="true" />
-                        {item().directory ? t().open : t().preview}
+                        <i class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"} aria-hidden="true" />
+                        {item().directory ? t().open : props.editable?.(item()) ? (props.canEdit === false ? t().openReadOnly : t().edit) : t().preview}
                       </Button>
                       <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload([item()])}>
                         <i class="ti ti-download" aria-hidden="true" />
