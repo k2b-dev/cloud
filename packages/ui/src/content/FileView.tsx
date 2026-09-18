@@ -347,7 +347,6 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
     <Select label={messages().csvView} value={preferences().view} options={[
       { value: "table", label: messages().dataTable }, { value: "raw", label: messages().csvRaw },
     ]} onValueChange={(value) => { if (value === "table" || value === "raw") update({ view: value }); }} />
-    <Show when={props.previewPreferencesKey}><p>{messages().csvPreferencesSaved}</p></Show>
   </div>, { title: messages().csvSettings });
   const headers = createMemo(() => preview().rows[0] ?? []);
   const rows = createMemo(() => preview().rows.slice(1));
