@@ -78,6 +78,8 @@ const messages: Record<string, [string, string]> = {
   insufficient_space: ["The storage does not have enough free space for this file.", "Die Ablage hat nicht genug freien Speicherplatz für diese Datei."],
   upload_closed: ["This upload is no longer open. Start it again.", "Dieser Upload ist nicht mehr offen. Starte ihn erneut."],
   upload_incomplete: ["The upload has not transferred all data yet.", "Der Upload hat noch nicht alle Daten übertragen."],
+  move_into_self: ["A folder cannot be moved or copied into itself.", "Ein Ordner kann nicht in sich selbst verschoben oder kopiert werden."],
+  versioning_disabled: ["Versions are not enabled for this storage.", "Für diese Ablage sind Versionen nicht aktiviert."],
   search_limited: [
     "This folder holds too many entries to search without an index. Search within a smaller folder.",
     "Dieser Ordner enthält zu viele Einträge für eine Suche ohne Index. Suche in einem kleineren Ordner.",

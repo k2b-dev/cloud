@@ -52,6 +52,21 @@ export const UploadIdSchema = z.object({ id: z.string().min(1).max(256) });
 /** Browser and CLI transfer segments straight to `url`; Cloud never sees the bytes. */
 export type UploadSession = { id: string; path: string; size: number; chunkSize: number; url: string; expires: string };
 export type UploadLease = { url: string; expires: string };
+const PathSchema = z.string().min(1).max(4096);
+/** A selection never exceeds two listing pages. */
+const PathsSchema = z.array(PathSchema).min(1).max(100);
+export const RenameInputSchema = z.object({ path: PathSchema, name: z.string().min(1).max(255) });
+export const MoveInputSchema = z.object({ paths: PathsSchema, folder: z.string().max(4096) });
+export const CopyInputSchema = z.object({ paths: PathsSchema, targetBaseId: z.string().min(1), folder: z.string().max(4096) });
+export const PathsInputSchema = z.object({ paths: PathsSchema });
+export const TrashIdSchema = z.object({ id: z.string().uuid() });
+export const VersionRefSchema = z.object({ path: PathSchema, id: z.string().min(1).max(128) });
+export const VersionCommentSchema = VersionRefSchema.extend({ comment: z.string().trim().max(2000) });
+export const VersionRestoreAsSchema = VersionRefSchema.extend({ name: z.string().min(1).max(255) });
+export type FileVersion = { id: string; created: string; size: number; pinned: boolean; comment: string | null; author: string | null };
+export type TrashEntry = { id: string; original: string; name: string; directory: boolean; deletedAt: string };
+export type EntriesResult = { base: BaseSummary; entries: FileEntry[] };
+export type ArchiveDownload = { url: string; method: "POST"; expires: string; manifest: string };
 export type RootSummary = {
   name: string;
   indexEnabled: boolean;

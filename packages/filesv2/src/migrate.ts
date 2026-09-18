@@ -59,4 +59,18 @@ export async function migrate(): Promise<void> {
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
+  // User deletions move entries into the reserved trash folder; the row remembers where they came from.
+  await sql`CREATE TABLE IF NOT EXISTS filesv2.trash (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    base_id UUID NOT NULL REFERENCES filesv2.bases(id),
+    user_id UUID NOT NULL,
+    root TEXT NOT NULL,
+    original TEXT NOT NULL,
+    trashed TEXT NOT NULL,
+    directory BOOLEAN NOT NULL,
+    state TEXT NOT NULL DEFAULT 'trashed' CHECK (state IN ('trashed','restored','gone')),
+    deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_trash_base ON filesv2.trash(base_id,deleted_at) WHERE state='trashed'`.simple();
 }

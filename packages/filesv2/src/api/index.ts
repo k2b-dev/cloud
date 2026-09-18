@@ -38,6 +38,14 @@ import {
   ThumbnailInputSchema,
   UploadIdSchema,
   UploadInputSchema,
+  CopyInputSchema,
+  MoveInputSchema,
+  PathsInputSchema,
+  RenameInputSchema,
+  TrashIdSchema,
+  VersionCommentSchema,
+  VersionRefSchema,
+  VersionRestoreAsSchema,
 } from "../contracts";
 import { FilesError, filesService } from "../service";
 import { errorMessage } from "./messages";
@@ -124,6 +132,84 @@ const api = new Hono<AuthContext>()
       await filesService.abortUpload(c.get("actor"), c.req.valid("param"));
       return respond(c, ok({ aborted: true }));
     },
+  )
+  .post(
+    "/bases/:baseId/rename",
+    middleware.openapi({ summary: "Rename a file or folder", ...requiresAuth }),
+    v("json", RenameInputSchema),
+    async (c) => respond(c, ok(await filesService.rename(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/move",
+    middleware.openapi({ summary: "Move entries within the same base", ...requiresAuth }),
+    v("json", MoveInputSchema),
+    async (c) => respond(c, ok(await filesService.move(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/copy",
+    middleware.openapi({ summary: "Copy entries within or across bases", ...requiresAuth }),
+    v("json", CopyInputSchema),
+    async (c) => respond(c, ok(await filesService.copy(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/delete",
+    middleware.openapi({ summary: "Move entries to the trash", ...requiresAuth }),
+    v("json", PathsInputSchema),
+    async (c) => respond(c, ok(await filesService.remove(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .get("/bases/:baseId/trash", middleware.openapi({ summary: "List trashed entries", ...requiresAuth }), async (c) =>
+    respond(c, ok(await filesService.trash(c.get("actor"), { baseId: c.req.param("baseId") ?? "" }))),
+  )
+  .post(
+    "/bases/:baseId/trash/:id/restore",
+    middleware.openapi({ summary: "Restore a trashed entry to its original path", ...requiresAuth }),
+    v("param", TrashIdSchema.extend({ baseId: z.string() })),
+    async (c) => respond(c, ok(await filesService.restoreTrash(c.get("actor"), c.req.valid("param")))),
+  )
+  .post(
+    "/bases/:baseId/archive",
+    middleware.openapi({ summary: "Issue a direct ZIP download lease for a selection", ...requiresAuth }),
+    v("json", PathsInputSchema),
+    async (c) => respond(c, ok(await filesService.bundle(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .get(
+    "/bases/:baseId/versions",
+    middleware.openapi({ summary: "List versions of a file", ...requiresAuth }),
+    v("query", EntryQuerySchema),
+    async (c) => respond(c, ok(await filesService.versions(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+  )
+  .post(
+    "/bases/:baseId/versions/comment",
+    middleware.openapi({ summary: "Comment a version", ...requiresAuth }),
+    v("json", VersionCommentSchema),
+    async (c) => respond(c, ok(await filesService.commentVersion(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/versions/restore",
+    middleware.openapi({ summary: "Restore a version in place", ...requiresAuth }),
+    v("json", VersionRefSchema),
+    async (c) => respond(c, ok(await filesService.restoreVersion(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/versions/restore-as",
+    middleware.openapi({ summary: "Restore a version as a new file", ...requiresAuth }),
+    v("json", VersionRestoreAsSchema),
+    async (c) => respond(c, ok(await filesService.restoreVersionAs(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/versions/delete",
+    middleware.openapi({ summary: "Delete a version", ...requiresAuth }),
+    v("json", VersionRefSchema),
+    async (c) => {
+      await filesService.deleteVersion(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") });
+      return respond(c, ok({ deleted: true }));
+    },
+  )
+  .post(
+    "/bases/:baseId/versions/download",
+    middleware.openapi({ summary: "Issue a direct download lease for a version", ...requiresAuth }),
+    v("json", VersionRefSchema),
+    async (c) => respond(c, ok(await filesService.versionDownload(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
     "/bases/:baseId/thumbnail",

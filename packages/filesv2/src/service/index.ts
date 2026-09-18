@@ -20,9 +20,14 @@ import type {
   SearchResult,
   UploadLease,
   UploadSession,
+  ArchiveDownload,
+  EntriesResult,
+  FileVersion,
+  TrashEntry,
 } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { operations } from "../data/operations";
+import { trash } from "../data/trash";
 import { uploads } from "../data/uploads";
 import { readConfiguration, writeConfiguration } from "./configuration";
 import { FilesError } from "./errors";
@@ -264,7 +269,7 @@ export function createFilesService(
     if (current.inspection.candidate.area === "freeipa") await checkUnix(current.root, current.target, current.state.unix, 3);
     return { ...current, relative, name: parts.at(-1)! };
   }
-  const ownershipFor = (current: Awaited<ReturnType<typeof writableParent>>, directory: boolean) => {
+  const ownershipFor = (current: { inspection: Inspection; state: { unix: UnixIdentity | null }; node: Node }, directory: boolean) => {
     const { candidate } = current.inspection;
     const mode = directory ? (candidate.kind === "groups" ? "2770" : "0700") : candidate.kind === "groups" ? "0660" : "0600";
     return candidate.area === "freeipa"
@@ -272,6 +277,29 @@ export function createFilesService(
       : { [directory ? "dirMode" : "mode"]: mode };
   };
   /** Filegate caps session leases at five minutes; clients renew through Cloud while a session stays open. */
+  /** An existing entry the user may remove from its folder: readable itself, parent writable, never trash. */
+  async function movable(actor: RequestActor, baseId: string, path: string) {
+    const current = await authorized(actor, baseId, path);
+    if (!current.relative) throw new FilesError("invalid_path");
+    const parts = current.relative.split("/");
+    const parentTarget = joinPath(current.inspection.candidate.path, parts.slice(0, -1).join("/"));
+    if (current.inspection.candidate.area === "freeipa") await checkUnix(current.root, parentTarget, current.state.unix, 3);
+    return { ...current, name: parts.at(-1)!, parentTarget };
+  }
+  const versionEntry = (version: { id: string; created: string; size: number; pinned: boolean; metadata?: Record<string, unknown> }): FileVersion => ({
+    id: version.id,
+    created: version.created,
+    size: version.size,
+    pinned: version.pinned,
+    comment: typeof version.metadata?.comment === "string" ? version.metadata.comment : null,
+    author: typeof version.metadata?.author === "string" ? version.metadata.author : null,
+  });
+  async function versionFile(actor: RequestActor, baseId: string, path: string, write: boolean) {
+    const current = write ? await movable(actor, baseId, path) : await authorized(actor, baseId, path, false);
+    if (current.node.directory) throw new FilesError("not_file");
+    if (!current.info.versioning.enabled) throw new FilesError("versioning_disabled");
+    return current;
+  }
   const UPLOAD_LEASE_SECONDS = 300;
   /** Sessions are bound to the user that opened them; commit re-checks the target before Filegate publishes. */
   async function uploadRow(actor: RequestActor, baseId: string, id: string) {
@@ -451,6 +479,169 @@ export function createFilesService(
       const node = await current.root.commitSession(row.id);
       await uploads.finish(row.id, "committed", node);
       return { base, entry: fileEntry(row.path, node) };
+    },
+    async rename(actor: RequestActor, input: { baseId: string; path: string; name: string }): Promise<EntryResult> {
+      const source = await movable(actor, input.baseId, input.path);
+      const relative = userPath(joinPath(source.relative.split("/").slice(0, -1).join("/"), input.name));
+      if (relative.split("/").length !== source.relative.split("/").length) throw new FilesError("invalid_path");
+      const node = await source.root.transfer(source.target, source.inspection.candidate.root, joinPath(source.inspection.candidate.path, relative), {
+        move: true,
+        onConflict: "error",
+      });
+      return { base: source.inspection.summary, entry: fileEntry(relative, node) };
+    },
+    async move(actor: RequestActor, input: { baseId: string; paths: string[]; folder: string }): Promise<EntriesResult> {
+      const destination = await authorized(actor, input.baseId, input.folder, true);
+      if (destination.inspection.candidate.area === "freeipa") await checkUnix(destination.root, destination.target, destination.state.unix, 3);
+      const entries: FileEntry[] = [];
+      for (const path of input.paths) {
+        const source = await movable(actor, input.baseId, path);
+        if (destination.target === source.target || destination.target.startsWith(`${source.target}/`)) throw new FilesError("move_into_self", 409);
+        const relative = destination.relative ? `${destination.relative}/${source.name}` : source.name;
+        if (relative === source.relative) {
+          entries.push(fileEntry(relative, source.node));
+          continue;
+        }
+        const node = await source.root.transfer(source.target, source.inspection.candidate.root, joinPath(destination.target, source.name), {
+          move: true,
+          onConflict: "error",
+        });
+        entries.push(fileEntry(relative, node));
+      }
+      return { base: destination.inspection.summary, entries };
+    },
+    // Copies may cross bases; moves never do, so a group file cannot silently disappear into a home.
+    async copy(actor: RequestActor, input: { baseId: string; paths: string[]; targetBaseId: string; folder: string }): Promise<EntriesResult> {
+      const destination = await writableParent(actor, input.targetBaseId, joinPath(input.folder, "placeholder"));
+      const entries: FileEntry[] = [];
+      for (const path of input.paths) {
+        const source = await authorized(actor, input.baseId, path);
+        if (destination.target === source.target || destination.target.startsWith(`${source.target}/`)) throw new FilesError("move_into_self", 409);
+        const name = source.relative.split("/").at(-1)!;
+        const sameFolder = destination.target === source.target.slice(0, -(name.length + 1)) && input.targetBaseId === input.baseId;
+        const node = await source.root.transfer(source.target, destination.inspection.candidate.root, joinPath(destination.target, name), {
+          move: false,
+          onConflict: sameFolder ? "rename" : "error",
+          ownership: { ...ownershipFor(destination, true), ...ownershipFor(destination, false) },
+        });
+        entries.push(fileEntry(node.path.slice(destination.inspection.candidate.path.length + 1), node));
+      }
+      return { base: destination.inspection.summary, entries };
+    },
+    async remove(actor: RequestActor, input: { baseId: string; paths: string[] }): Promise<TrashEntry[]> {
+      const removed: TrashEntry[] = [];
+      for (const path of input.paths) {
+        const source = await movable(actor, input.baseId, path);
+        const { candidate, binding } = source.inspection;
+        const trashTarget = joinPath(candidate.path, "trash");
+        try {
+          await source.root.mkdir(trashTarget, { ownership: ownershipFor(source, true) });
+        } catch (error) {
+          if (!(error instanceof FilegateError && error.status === 409)) throw error;
+        }
+        const node = await source.root.transfer(source.target, candidate.root, joinPath(trashTarget, source.name), { move: true, onConflict: "rename" });
+        const row = await trash.create({
+          base_id: binding!.id,
+          user_id: source.state.self.user.id,
+          root: candidate.root,
+          original: source.relative,
+          trashed: node.path.slice(candidate.path.length + 1),
+          directory: node.directory,
+        });
+        removed.push({ id: row.id, original: row.original, name: source.name, directory: row.directory, deletedAt: row.deleted_at.toISOString() });
+      }
+      return removed;
+    },
+    async trash(actor: RequestActor, input: { baseId: string }): Promise<{ base: BaseSummary; entries: TrashEntry[] }> {
+      const current = await authorized(actor, input.baseId, "", true);
+      const rows = await trash.list(current.inspection.binding!.id);
+      return {
+        base: current.inspection.summary,
+        entries: rows.map((row) => ({
+          id: row.id,
+          original: row.original,
+          name: row.original.split("/").at(-1)!,
+          directory: row.directory,
+          deletedAt: row.deleted_at.toISOString(),
+        })),
+      };
+    },
+    async restoreTrash(actor: RequestActor, input: { baseId: string; id: string }): Promise<EntryResult> {
+      const current = await authorized(actor, input.baseId, "", true);
+      const row = await trash.get(input.id, current.inspection.binding!.id);
+      if (!row || row.state !== "trashed") throw new FilesError("not_found", 404);
+      const destination = await writableParent(actor, input.baseId, row.original);
+      const { candidate } = current.inspection;
+      let node: Node;
+      try {
+        node = await current.root.transfer(joinPath(candidate.path, row.trashed), candidate.root, joinPath(candidate.path, row.original), {
+          move: true,
+          onConflict: "error",
+        });
+      } catch (error) {
+        if (error instanceof FilegateError && error.status === 404) await trash.finish(row.id, "gone");
+        throw error;
+      }
+      await trash.finish(row.id, "restored");
+      return { base: destination.inspection.summary, entry: fileEntry(row.original, node) };
+    },
+    async bundle(actor: RequestActor, input: { baseId: string; paths: string[] }): Promise<ArchiveDownload> {
+      const state = await context(actor);
+      const items: { root: string; path: string; archivePath: string }[] = [];
+      for (const path of input.paths) {
+        const current = await authorized(actor, input.baseId, path);
+        items.push({ root: current.inspection.candidate.root, path: current.target, archivePath: current.relative });
+      }
+      const lease = await deps.connect(state.config).archiveLease(items, 300);
+      return { url: lease.url, method: "POST", expires: lease.expires, manifest: lease.manifest };
+    },
+    async versions(actor: RequestActor, input: { baseId: string; path: string }): Promise<FileVersion[]> {
+      const current = await authorized(actor, input.baseId, input.path, false);
+      if (!current.info.versioning.enabled) return [];
+      return (await current.root.versions(current.target)).map(versionEntry);
+    },
+    async commentVersion(actor: RequestActor, input: { baseId: string; path: string; id: string; comment: string }): Promise<FileVersion> {
+      const current = await versionFile(actor, input.baseId, input.path, true);
+      const existing = (await current.root.versions(current.target)).find((version) => version.id === input.id);
+      if (!existing) throw new FilesError("not_found", 404);
+      const metadata = { ...existing.metadata, comment: input.comment || undefined, author: input.comment ? current.state.self.user.username : undefined };
+      return versionEntry(await current.root.updateVersion(current.target, input.id, { pinned: existing.pinned, metadata }));
+    },
+    async restoreVersion(actor: RequestActor, input: { baseId: string; path: string; id: string }): Promise<EntryResult> {
+      const current = await versionFile(actor, input.baseId, input.path, true);
+      const node = await current.root.restore(current.target, input.id);
+      return { base: current.inspection.summary, entry: fileEntry(current.relative, node) };
+    },
+    /**
+     * Filegate has no "restore a version to another path" yet. The file is snapshotted, restored, copied and put
+     * back; every step is a native Filegate operation and no bytes pass through Cloud.
+     */
+    async restoreVersionAs(actor: RequestActor, input: { baseId: string; path: string; id: string; name: string }): Promise<EntryResult> {
+      const current = await versionFile(actor, input.baseId, input.path, true);
+      const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
+      if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative) throw new FilesError("invalid_path");
+      const keep = await current.root.snapshot(current.target, { metadata: { reason: "restore-as-copy" } });
+      await current.root.restore(current.target, input.id);
+      try {
+        const node = await current.root.transfer(current.target, current.inspection.candidate.root, joinPath(current.inspection.candidate.path, relative), {
+          move: false,
+          onConflict: "error",
+          ownership: ownershipFor(current, false),
+        });
+        return { base: current.inspection.summary, entry: fileEntry(relative, node) };
+      } finally {
+        await current.root.restore(current.target, keep.id);
+        await current.root.deleteVersion(current.target, keep.id).catch(() => {});
+      }
+    },
+    async deleteVersion(actor: RequestActor, input: { baseId: string; path: string; id: string }): Promise<void> {
+      const current = await versionFile(actor, input.baseId, input.path, true);
+      await current.root.deleteVersion(current.target, input.id);
+    },
+    async versionDownload(actor: RequestActor, input: { baseId: string; path: string; id: string }): Promise<DownloadLease> {
+      const current = await versionFile(actor, input.baseId, input.path, false);
+      const lease = await current.root.directVersionDownload(current.target, input.id, 60);
+      return { url: lease.url, method: "GET", expires: lease.expires };
     },
     async abortUpload(actor: RequestActor, input: { baseId: string; id: string }): Promise<void> {
       const { row, current } = await uploadRow(actor, input.baseId, input.id);

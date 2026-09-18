@@ -18,6 +18,9 @@ suite("Files service and durable bindings", () => {
   let failMove = false;
   let leases = 0;
   let sessionCounter = 0;
+  let versionCounter = 0;
+  const versions = new Map<string, Array<{ id: string; fileId: string; created: string; size: number; pinned: boolean; metadata?: Record<string, unknown>; copyMode: string; content: string }>>();
+  const archives: Array<Array<{ root: string; path: string; archivePath: string }>> = [];
   let lostCommitResponse = false;
   const sessions = new Map<string, { id: string; root: string; path: string; size: number; received: number; state: string; ownership?: unknown; result?: Node }>();
   let reconciliations = 0;
@@ -50,13 +53,18 @@ suite("Files service and durable bindings", () => {
     async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
       const req = new URL(input instanceof Request ? input.url : input.toString());
       const parts = req.pathname.split("/");
+      if (req.pathname === "/v1/downloads/archives") {
+        const input = z.object({ items: z.array(z.object({ root: z.string(), path: z.string(), archivePath: z.string() })) }).parse(JSON.parse(String(init?.body)));
+        archives.push(input.items);
+        return Response.json({ url: "http://localhost:4000/archive", method: "POST", expires: "2099-01-01T00:00:00Z", manifest: "signed" });
+      }
       const root = parts[3]!;
       const operation = parts[4];
       if (!operation)
         return Response.json({
           name: root,
           index: { enabled: root === "cloud" },
-          versioning: { enabled: false },
+          versioning: { enabled: root === "cloud" },
           stats: null,
           versions: 0,
           versionBytes: 0,
@@ -111,8 +119,10 @@ suite("Files service and durable bindings", () => {
           path: z.string().optional(),
           targetRoot: z.string().optional(),
           targetPath: z.string().optional(),
-          ownership: z.object({ uid: z.number().optional(), gid: z.number().optional(), dirMode: z.string().optional() }).optional(),
+          ownership: z.object({ uid: z.number().optional(), gid: z.number().optional(), mode: z.string().optional(), dirMode: z.string().optional() }).optional(),
           acl: z.object({ default: z.unknown().optional() }).optional(),
+          move: z.boolean().optional(),
+          onConflict: z.string().optional(),
         })
         .parse(init?.body ? JSON.parse(String(init.body)) : {});
       if (operation === "directories" && init?.method === "POST") {
@@ -128,24 +138,77 @@ suite("Files service and durable bindings", () => {
           throw new Error("unavailable");
         }
         const source = body.path!;
-        const target = body.targetPath!;
+        const targetRoot = body.targetRoot ?? root;
+        let target = body.targetPath!;
         const original = nodes.get(`${root}:${source}`);
         if (!original) return Response.json({ error: "not_found", message: "missing" }, { status: 404 });
-        if (nodes.has(`${root}:${target}`)) return Response.json({ error: "already_exists", message: "exists" }, { status: 409 });
+        if (nodes.has(`${targetRoot}:${target}`)) {
+          if (body.onConflict !== "rename") return Response.json({ error: "already_exists", message: "exists" }, { status: 409 });
+          const dot = body.targetPath!.slice(body.targetPath!.lastIndexOf("/") + 1).lastIndexOf(".");
+          const stem = dot > 0 ? body.targetPath!.slice(0, body.targetPath!.length - (body.targetPath!.slice(body.targetPath!.lastIndexOf("/") + 1).length - dot)) : body.targetPath!;
+          const ext = dot > 0 ? body.targetPath!.slice(stem.length) : "";
+          for (let i = 1; nodes.has(`${targetRoot}:${target}`); i++) target = `${stem}-${String(i).padStart(2, "0")}${ext}`;
+        }
         for (const [key, node] of [...nodes])
           if (node.root === root && (node.path === source || node.path.startsWith(source + "/"))) {
-            nodes.delete(key);
-            const updated = { ...node, path: target + node.path.slice(source.length) };
-            nodes.set(`${root}:${updated.path}`, updated);
+            if (body.move !== false) nodes.delete(key);
+            const updated = {
+              ...node,
+              root: targetRoot,
+              path: target + node.path.slice(source.length),
+              ...(body.move === false && body.ownership ? { uid: body.ownership.uid ?? node.uid, gid: body.ownership.gid ?? node.gid, mode: node.directory ? (body.ownership.dirMode ?? node.mode) : (body.ownership.mode ?? node.mode) } : {}),
+            };
+            nodes.set(`${targetRoot}:${updated.path}`, updated);
           }
+        if (body.move === false) return Response.json(nodes.get(`${targetRoot}:${target}`));
         if (lostMoveResponse) {
           lostMoveResponse = false;
           failMove = false;
           throw new Error("lost_response");
         }
-        return Response.json(nodes.get(`${root}:${target}`));
+        return Response.json(nodes.get(`${targetRoot}:${target}`));
       }
       const path = req.searchParams.get("path") ?? ".";
+      if (operation === "versions") {
+        const versionId = parts[5];
+        const action = parts[6];
+        // Direct version downloads carry the path in the body instead of the query.
+        const vpath = req.searchParams.get("path") ?? (z.object({ path: z.string() }).parse(JSON.parse(String(init?.body ?? "{}"))).path);
+        const fileVersions = () => versions.get(`${root}:${vpath}`) ?? [];
+        if (!versionId) {
+          if (init?.method === "POST") {
+            const options = z.object({ pinned: z.boolean().optional(), metadata: z.record(z.string(), z.unknown()).optional() }).parse(init.body ? JSON.parse(String(init.body)) : {});
+            const version = { id: `v${++versionCounter}`, fileId: "file", created: new Date().toISOString(), size: nodes.get(`${root}:${vpath}`)?.size ?? 0, pinned: options.pinned ?? false, metadata: options.metadata, copyMode: "copy", content: `content-of-${nodes.get(`${root}:${vpath}`)?.modified}` };
+            versions.set(`${root}:${vpath}`, [version, ...fileVersions()]);
+            return Response.json(version, { status: 201 });
+          }
+          return Response.json(fileVersions());
+        }
+        const version = fileVersions().find((item) => item.id === versionId);
+        if (!version) return Response.json({ error: "not_found", message: "missing" }, { status: 404 });
+        if (action === "restore") {
+          const node = nodes.get(`${root}:${vpath}`)!;
+          const snapshot = { ...version, id: `v${++versionCounter}`, metadata: undefined, created: new Date().toISOString(), content: `content-of-${node.modified}` };
+          versions.set(`${root}:${vpath}`, [snapshot, ...fileVersions()]);
+          const restored = { ...node, modified: `restored:${version.id}` };
+          nodes.set(`${root}:${vpath}`, restored);
+          return Response.json(restored);
+        }
+        if (action === "downloads") {
+          leases++;
+          return Response.json({ method: "GET", url: `http://localhost:4000/signed/${versionId}`, expires: "2099-01-01T00:00:00Z" });
+        }
+        if (init?.method === "PATCH") {
+          const options = z.object({ pinned: z.boolean().optional(), metadata: z.record(z.string(), z.unknown()).optional() }).parse(JSON.parse(String(init.body)));
+          Object.assign(version, { pinned: options.pinned ?? version.pinned, metadata: options.metadata });
+          return Response.json(version);
+        }
+        if (init?.method === "DELETE") {
+          versions.set(`${root}:${vpath}`, fileVersions().filter((item) => item.id !== versionId));
+          return new Response(null, { status: 204 });
+        }
+        return Response.json(version);
+      }
       if (operation === "files" && init?.method === "DELETE") {
         for (const [key, node] of [...nodes])
           if (node.root === root && (node.path === path || node.path.startsWith(path + "/"))) nodes.delete(key);
@@ -273,8 +336,10 @@ suite("Files service and durable bindings", () => {
   });
   beforeEach(async () => {
     sessions.clear();
+    versions.clear();
+    archives.length = 0;
     lostCommitResponse = false;
-    await sql`TRUNCATE filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
+    await sql`TRUNCATE filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await set(
       "linux.identity_config",
       JSON.stringify({ enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
@@ -402,6 +467,117 @@ suite("Files service and durable bindings", () => {
     const gone = await service.upload(actor, { baseId, path: "expired.txt", size: 2, onConflict: "error" });
     sessions.get(gone.id)!.state = "expired";
     await expect(service.commitUpload(actor, { baseId, id: gone.id })).rejects.toMatchObject({ code: "upload_closed" });
+  });
+  test("rename, move and duplicate stay inside the base, need a writable parent and never touch trash", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    directory("freeipa", "users/alice/Docs/a.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Archive", 999, 2001, "0750");
+    directory("freeipa", "users/alice/Archive/old.txt", 999, 2001, "0640", false);
+    directory("freeipa", "users/alice/trash");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    expect((await service.rename(actor, { baseId, path: "Docs/a.txt", name: "b.txt" })).entry.path).toBe("Docs/b.txt");
+    await expect(service.rename(actor, { baseId, path: "Docs/b.txt", name: "../x.txt" })).rejects.toMatchObject({ code: "invalid_path" });
+    await expect(service.rename(actor, { baseId, path: "Docs", name: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.rename(actor, { baseId, path: "Archive/old.txt", name: "new.txt" })).rejects.toMatchObject({ code: "forbidden" });
+    const moved = await service.move(actor, { baseId, paths: ["Docs/b.txt"], folder: "" });
+    expect(moved.entries.map((entry) => entry.path)).toEqual(["b.txt"]);
+    await expect(service.move(actor, { baseId, paths: ["Docs"], folder: "Docs" })).rejects.toMatchObject({ code: "move_into_self" });
+    await expect(service.move(actor, { baseId, paths: ["b.txt"], folder: "Archive" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.move(actor, { baseId, paths: ["b.txt"], folder: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
+    const duplicated = await service.copy(actor, { baseId, paths: ["b.txt"], targetBaseId: baseId, folder: "" });
+    expect(duplicated.entries[0]!.path).toBe("b-01.txt");
+    expect(nodes.get("freeipa:users/alice/b-01.txt")).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
+  });
+  test("copies may cross bases but moves never leave a base", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/private.txt", 1001, 2001, "0640", false);
+    const [group] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','ipa',2002) RETURNING id`;
+    await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${group!.id})`;
+    await sql`INSERT INTO auth.ipa_user_effective_groups VALUES(${id(actor)},'team')`;
+    directory("freeipa", "groups/team", 10001, 2002, "2770");
+    directory("freeipa", "groups/team/shared.txt", 999, 2002, "0660", false);
+    const bases = (await service.bases(actor)).items;
+    const home = bases.find((base) => base.kind === "users")!.id;
+    const team = bases.find((base) => base.kind === "groups")!.id;
+    expect(group).toBeTruthy();
+    const copied = await service.copy(actor, { baseId: home, paths: ["private.txt"], targetBaseId: team, folder: "" });
+    expect(copied.base.id).toBe(team);
+    expect(nodes.get("freeipa:groups/team/private.txt")).toMatchObject({ uid: 1001, gid: 2002, mode: "0660" });
+    expect(nodes.has("freeipa:users/alice/private.txt")).toBeTrue();
+    // The service has no cross-base move; a target folder always belongs to the source base.
+    await expect(service.move(actor, { baseId: team, paths: ["shared.txt"], folder: "../../users/alice" })).rejects.toThrow();
+    expect(nodes.has("freeipa:groups/team/shared.txt")).toBeTrue();
+  });
+  test("deleting moves entries into trash with a restorable record", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    directory("freeipa", "users/alice/Docs/note.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Docs/note (1).txt", 1001, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const removed = await service.remove(actor, { baseId, paths: ["Docs/note.txt"] });
+    expect(removed[0]).toMatchObject({ original: "Docs/note.txt", name: "note.txt", directory: false });
+    expect(nodes.has("freeipa:users/alice/Docs/note.txt")).toBeFalse();
+    expect(nodes.get("freeipa:users/alice/trash")).toMatchObject({ uid: 1001, gid: 2001, mode: "0700" });
+    expect(nodes.has("freeipa:users/alice/trash/note.txt")).toBeTrue();
+    expect((await service.list(actor, { baseId, path: "" })).items.map((item) => item.name)).toEqual(["Docs"]);
+    const listed = await service.trash(actor, { baseId });
+    expect(listed.entries.map((entry) => entry.original)).toEqual(["Docs/note.txt"]);
+    await expect(service.remove(actor, { baseId, paths: ["trash/note.txt"] })).rejects.toMatchObject({ code: "reserved_path" });
+    // A second delete of the same name lands beside the first, and restoring requires a free original path.
+    directory("freeipa", "users/alice/Docs/note.txt", 1001, 2001, "0640", false);
+    await service.remove(actor, { baseId, paths: ["Docs/note.txt"] });
+    expect(nodes.has("freeipa:users/alice/trash/note-01.txt")).toBeTrue();
+    const restored = await service.restoreTrash(actor, { baseId, id: removed[0]!.id });
+    expect(restored.entry.path).toBe("Docs/note.txt");
+    await expect(service.restoreTrash(actor, { baseId, id: removed[0]!.id })).rejects.toMatchObject({ code: "not_found" });
+    const second = (await service.trash(actor, { baseId })).entries[0]!;
+    await expect(service.restoreTrash(actor, { baseId, id: second.id })).rejects.toMatchObject({ status: 409 });
+  });
+  test("selections download as one signed archive of authorized entries", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    directory("freeipa", "users/alice/a.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/secret.txt", 999, 999, "0600", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const lease = await service.bundle(actor, { baseId, paths: ["Docs", "a.txt"] });
+    expect(lease).toMatchObject({ method: "POST", manifest: "signed" });
+    expect(archives[0]).toEqual([
+      { root: "freeipa", path: "users/alice/Docs", archivePath: "Docs" },
+      { root: "freeipa", path: "users/alice/a.txt", archivePath: "a.txt" },
+    ]);
+    await expect(service.bundle(actor, { baseId, paths: ["a.txt", "secret.txt"] })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.bundle(actor, { baseId, paths: ["trash"] })).rejects.toMatchObject({ code: "reserved_path" });
+    expect(archives).toHaveLength(1);
+  });
+  test("versions are listed with comments, restored in place or as a copy, and deleted", async () => {
+    const admin = await user("admin", "local", true);
+    config.cloud.autoCreate = true;
+    const baseId = (await service.bases(admin)).items.find((base) => base.area === "cloud")!.id;
+    directory("cloud", "users/admin/report.txt", 0, 0, "0600", false);
+    expect(await service.versions(admin, { baseId, path: "report.txt" })).toEqual([]);
+    const filegate = new Filegate({ baseUrl: "http://filegate:4000", token: "backend-test-secret", fetch: transport }).root("cloud");
+    const v1 = await filegate.snapshot("users/admin/report.txt", { metadata: { comment: "first" } });
+    const commented = await service.commentVersion(admin, { baseId, path: "report.txt", id: v1.id, comment: "final draft" });
+    expect(commented).toMatchObject({ id: v1.id, comment: "final draft", author: "admin" });
+    expect((await service.versions(admin, { baseId, path: "report.txt" }))[0]).toMatchObject({ id: v1.id, comment: "final draft" });
+    const asCopy = await service.restoreVersionAs(admin, { baseId, path: "report.txt", id: v1.id, name: "report-v1.txt" });
+    expect(asCopy.entry.path).toBe("report-v1.txt");
+    expect(nodes.get("cloud:users/admin/report-v1.txt")?.modified).toBe(`restored:${v1.id}`);
+    // The current file is put back and the helper snapshot is removed again.
+    expect(nodes.get("cloud:users/admin/report.txt")?.modified).not.toBe(`restored:${v1.id}`);
+    expect((await service.versions(admin, { baseId, path: "report.txt" })).some((version) => version.id === v1.id)).toBeTrue();
+    await expect(service.restoreVersionAs(admin, { baseId, path: "report.txt", id: v1.id, name: "report.txt" })).rejects.toMatchObject({ code: "invalid_path" });
+    const restored = await service.restoreVersion(admin, { baseId, path: "report.txt", id: v1.id });
+    expect(restored.entry.modified).toBe(`restored:${v1.id}`);
+    expect((await service.versionDownload(admin, { baseId, path: "report.txt", id: v1.id })).url).toContain(v1.id);
+    await service.deleteVersion(admin, { baseId, path: "report.txt", id: v1.id });
+    expect((await service.versions(admin, { baseId, path: "report.txt" })).some((version) => version.id === v1.id)).toBeFalse();
+    await expect(service.versions(admin, { baseId, path: "trash/x" })).rejects.toMatchObject({ code: "reserved_path" });
   });
   test("detail and thumbnails enforce current leaf rights, traversal and trash before any lease", async () => {
     const actor = await user("alice", "ipa");
