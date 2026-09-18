@@ -128,6 +128,12 @@ export function TextInput(props: TextInputProps): JSX.Element {
                     input(event.currentTarget.value);
                   }}
                   onChange={(event) => commit(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
+                      event.preventDefault();
+                      local.onSubmit();
+                    }
+                  }}
                 />
               }
             >

@@ -33,7 +33,7 @@ clearing emits an empty string through both value callbacks.
 - `variant="ai"` changes the field treatment and default icon. It does not add AI behavior.
 - `monospace`, `prefix`, and `suffix` adapt the field to code-like values and short units.
 
-In plain multiline mode, Enter calls `onSubmit` and Shift+Enter inserts a newline. In markdown mode, <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> calls `onSubmit`; bare Enter stays available for writing.
+Enter calls `onSubmit` in single-line fields and in plain multiline mode, where Shift+Enter inserts a newline. In markdown mode, <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> calls `onSubmit`; bare Enter stays available for writing.
 
 ## Field state
 
