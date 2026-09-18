@@ -1,6 +1,8 @@
 import type { RequestActor } from "@k2b/cloud/server";
-import { type AccountIdentityGroup, type AccountIdentityPage, type AccountIdentityUser, accountIdentities } from "@k2b/cloud/services";
+import { type AccountIdentityGroup, type AccountIdentityPage, type AccountIdentityUser, accountIdentities, coreSettings } from "@k2b/cloud/services";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Filegate, FilegateError, type Node, type RootClient, type RootInfo } from "@k2b/filegate";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type {
   FileEntry,
@@ -24,9 +26,12 @@ import type {
   EntriesResult,
   FileVersion,
   TrashEntry,
+  PublicShare,
+  ShareView,
 } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { operations } from "../data/operations";
+import { type ShareRow, shares } from "../data/shares";
 import { trash } from "../data/trash";
 import { uploads } from "../data/uploads";
 import { readConfiguration, writeConfiguration } from "./configuration";
@@ -110,6 +115,7 @@ export function createFilesService(
     bindings,
     readConfiguration,
     writeConfiguration,
+    publicOrigin: async () => publicCloudOrigin(await coreSettings.get<string>("app.url")),
     connect: (config: Config) =>
       new Filegate({
         baseUrl: config.url,
@@ -276,6 +282,45 @@ export function createFilesService(
       ? { uid: current.state.unix!.uid, gid: current.node.gid, [directory ? "dirMode" : "mode"]: mode }
       : { [directory ? "dirMode" : "mode"]: mode };
   };
+  const SHARE_TTL_MS = { "1d": 86_400_000, "7d": 7 * 86_400_000, "30d": 30 * 86_400_000, "90d": 90 * 86_400_000 } as const;
+  const shareState = (row: ShareRow): ShareView["state"] => (row.revoked_at ? "revoked" : row.expires_at.getTime() <= Date.now() ? "expired" : "active");
+  const shareUrl = (row: ShareRow, origin: string) => `${origin}/share/filesv2/${row.kind === "inbox" ? "inbox" : "s"}/${row.token}`;
+  const shareView = (row: ShareRow, base: { id: string; name: string }, origin: string): ShareView => ({
+    id: row.id,
+    kind: row.kind,
+    url: shareUrl(row, origin),
+    title: row.title,
+    note: row.note,
+    base,
+    scope: row.scope,
+    items: row.items,
+    createdBy: row.created_by_name,
+    createdAt: row.created_at.toISOString(),
+    expiresAt: row.expires_at.toISOString(),
+    state: shareState(row),
+    accessCount: row.access_count,
+    lastAccessedAt: row.last_accessed_at?.toISOString() ?? null,
+  });
+  /** A share is visible to everyone who may read its scope folder, so it never crosses a rights boundary. */
+  async function visibleShare(actor: RequestActor, id: string) {
+    const row = await shares.get(id);
+    if (!row) throw new FilesError("not_found", 404);
+    const state = await context(actor);
+    const candidate = state.candidates.find((item) => item.root === row.root && item.path === row.base_path);
+    if (!candidate) throw new FilesError("not_found", 404);
+    const baseId = `${candidate.area}:${candidate.kind}:${candidate.identity_id}`;
+    const current = await authorized(actor, baseId, row.scope, true);
+    return { row, current, baseId };
+  }
+  async function activeShare(token: string, kind: ShareRow["kind"]) {
+    const row = token.length >= 16 ? await shares.byToken(token) : null;
+    if (!row || row.kind !== kind || shareState(row) !== "active") throw new FilesError("not_found", 404);
+    const config = await deps.readConfiguration();
+    const root = deps.connect(config).root(row.root);
+    return { row, root, config };
+  }
+  const shareTarget = (row: ShareRow, relative: string) => joinPath(row.base_path, relative);
+  const shareContains = (row: ShareRow, relative: string) => row.items.some((item) => relative === item || relative.startsWith(`${item}/`));
   /** Filegate caps session leases at five minutes; clients renew through Cloud while a session stays open. */
   /** An existing entry the user may remove from its folder: readable itself, parent writable, never trash. */
   async function movable(actor: RequestActor, baseId: string, path: string) {
@@ -301,6 +346,26 @@ export function createFilesService(
     return current;
   }
   const UPLOAD_LEASE_SECONDS = 300;
+  /** A commit whose response was lost is recognised from Filegate's session record; repeats are idempotent. */
+  async function commitSession(root: RootClient, row: Awaited<ReturnType<typeof uploads.get>> & object): Promise<FileEntry> {
+    // Filegate may rename on conflict; the published node decides the final name.
+    const published = (node: Node) => fileEntry([...row.path.split("/").slice(0, -1), node.path.split("/").at(-1)!].join("/"), node);
+    if (row.state === "committed" && row.result) return published(row.result);
+    if (row.state === "aborted") throw new FilesError("upload_closed", 409);
+    const session = await root.session(row.id);
+    if (session.state === "committed" && session.result) {
+      await uploads.finish(row.id, "committed", session.result);
+      return published(session.result);
+    }
+    if (session.state !== "open") {
+      await uploads.finish(row.id, "aborted", null);
+      throw new FilesError("upload_closed", 409);
+    }
+    if (session.received !== session.size) throw new FilesError("upload_incomplete");
+    const node = await root.commitSession(row.id);
+    await uploads.finish(row.id, "committed", node);
+    return published(node);
+  }
   /** Sessions are bound to the user that opened them; commit re-checks the target before Filegate publishes. */
   async function uploadRow(actor: RequestActor, baseId: string, id: string) {
     const state = await context(actor);
@@ -463,23 +528,7 @@ export function createFilesService(
     },
     async commitUpload(actor: RequestActor, input: { baseId: string; id: string }): Promise<EntryResult> {
       const { row, current } = await uploadRow(actor, input.baseId, input.id);
-      const base = current.inspection.summary;
-      if (row.state === "committed" && row.result) return { base, entry: fileEntry(row.path, row.result) };
-      if (row.state === "aborted") throw new FilesError("upload_closed", 409);
-      // A commit whose response was lost is recognised from Filegate's session record.
-      const session = await current.root.session(row.id);
-      if (session.state === "committed" && session.result) {
-        await uploads.finish(row.id, "committed", session.result);
-        return { base, entry: fileEntry(row.path, session.result) };
-      }
-      if (session.state !== "open") {
-        await uploads.finish(row.id, "aborted", null);
-        throw new FilesError("upload_closed", 409);
-      }
-      if (session.received !== session.size) throw new FilesError("upload_incomplete");
-      const node = await current.root.commitSession(row.id);
-      await uploads.finish(row.id, "committed", node);
-      return { base, entry: fileEntry(row.path, node) };
+      return { base: current.inspection.summary, entry: await commitSession(current.root, row) };
     },
     async rename(actor: RequestActor, input: { baseId: string; path: string; name: string }): Promise<EntryResult> {
       const source = await movable(actor, input.baseId, input.path);
@@ -643,6 +692,147 @@ export function createFilesService(
       const current = await versionFile(actor, input.baseId, input.path, false);
       const lease = await current.root.directVersionDownload(current.target, input.id, 60);
       return { url: lease.url, method: "GET", expires: lease.expires };
+    },
+    async createShare(
+      actor: RequestActor,
+      input: { baseId: string; kind: "download" | "inbox"; paths: string[]; folder: string; title: string; note?: string; expiresIn: keyof typeof SHARE_TTL_MS },
+    ): Promise<ShareView> {
+      let scope: string;
+      let items: string[] = [];
+      let current: Awaited<ReturnType<typeof authorized>>;
+      if (input.kind === "inbox") {
+        const parent = await writableParent(actor, input.baseId, joinPath(input.folder, "placeholder"));
+        current = parent;
+        scope = parent.relative.split("/").slice(0, -1).join("/");
+      } else {
+        if (!input.paths.length) throw new FilesError("invalid_path");
+        const relatives: string[] = [];
+        for (const path of input.paths) relatives.push((await authorized(actor, input.baseId, path)).relative);
+        const segments = relatives.map((path) => path.split("/").slice(0, -1));
+        scope = segments[0]!.filter((segment, index) => segments.every((other) => other[index] === segment)).join("/");
+        current = await authorized(actor, input.baseId, scope, true);
+        items = [...new Set(relatives)];
+      }
+      const { candidate, binding } = current.inspection;
+      const row = await shares.create({
+        token: randomBytes(24).toString("base64url"),
+        kind: input.kind,
+        base_id: binding!.id,
+        root: candidate.root,
+        base_path: candidate.path,
+        scope,
+        items,
+        title: input.title,
+        note: input.note || null,
+        owner_uid: candidate.area === "freeipa" ? current.state.unix!.uid : null,
+        owner_gid: candidate.area === "freeipa" ? current.node.gid : null,
+        created_by: current.state.self.user.id,
+        created_by_name: current.state.self.user.username,
+        expires_at: new Date(Date.now() + SHARE_TTL_MS[input.expiresIn]),
+      });
+      return shareView(row, { id: input.baseId, name: current.inspection.summary.name }, await deps.publicOrigin());
+    },
+    async listShares(actor: RequestActor): Promise<ShareView[]> {
+      const state = await context(actor);
+      const origin = await deps.publicOrigin();
+      const output: ShareView[] = [];
+      for (const base of (await this.bases(actor)).items) {
+        if (base.status !== "existing") continue;
+        const candidate = state.candidates.find((item) => `${item.area}:${item.kind}:${item.identity_id}` === base.id)!;
+        const binding = (await deps.bindings.find(candidate))[0];
+        if (!binding) continue;
+        const root = deps.connect(state.config).root(candidate.root);
+        for (const row of await shares.listByBase(binding.id)) {
+          if (candidate.area === "freeipa") {
+            try {
+              await checkUnix(root, joinPath(candidate.path, row.scope), state.unix, 5);
+            } catch {
+              continue;
+            }
+          }
+          output.push(shareView(row, { id: base.id, name: base.name }, origin));
+        }
+      }
+      return output.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+    async revokeShare(actor: RequestActor, input: { id: string }): Promise<ShareView> {
+      const { row, current, baseId } = await visibleShare(actor, input.id);
+      await shares.revoke(row.id, current.state.self.user.id);
+      return shareView((await shares.get(row.id))!, { id: baseId, name: current.inspection.summary.name }, await deps.publicOrigin());
+    },
+    async publicShare(token: string, kind: "download" | "inbox"): Promise<PublicShare> {
+      const { row, root } = await activeShare(token, kind);
+      const items: PublicShare["items"] = [];
+      for (const relative of row.items) {
+        try {
+          const node = await root.stat(shareTarget(row, relative));
+          items.push({ path: relative, name: relative.split("/").at(-1)!, directory: node.directory, size: node.size });
+        } catch (error) {
+          if (!(error instanceof FilegateError && error.status === 404)) throw error;
+        }
+      }
+      await shares.touch(row.id);
+      return { kind: row.kind, title: row.title, expiresAt: row.expires_at.toISOString(), items };
+    },
+    async publicShareDownload(token: string, path: string): Promise<DownloadLease> {
+      const { row, root } = await activeShare(token, "download");
+      const relative = userPath(path);
+      if (!shareContains(row, relative)) throw new FilesError("not_found", 404);
+      const node = await root.stat(shareTarget(row, relative));
+      if (node.directory) throw new FilesError("not_file");
+      await shares.touch(row.id);
+      const lease = await root.directDownload(shareTarget(row, relative), 60);
+      return { url: lease.url, method: "GET", expires: lease.expires };
+    },
+    async publicShareArchive(token: string): Promise<ArchiveDownload> {
+      const { row, config } = await activeShare(token, "download");
+      await shares.touch(row.id);
+      const lease = await deps.connect(config).archiveLease(
+        row.items.map((relative) => ({ root: row.root, path: shareTarget(row, relative), archivePath: relative })),
+        300,
+      );
+      return { url: lease.url, method: "POST", expires: lease.expires, manifest: lease.manifest };
+    },
+    async publicInboxUpload(token: string, input: { name: string; size: number }): Promise<UploadSession> {
+      const { row, root } = await activeShare(token, "inbox");
+      const relative = userPath(joinPath(row.scope, input.name));
+      if (relative.split("/").length !== row.scope.split("/").filter(Boolean).length + 1) throw new FilesError("invalid_path");
+      const info = await root.info();
+      if (input.size > info.available) throw new FilesError("insufficient_space", 409);
+      const created = await root.createSession(shareTarget(row, relative), input.size, {
+        onConflict: "rename",
+        ownership: row.owner_uid !== null ? { uid: row.owner_uid, gid: row.owner_gid ?? undefined, mode: "0660" } : { mode: "0600" },
+        expiresIn: UPLOAD_LEASE_SECONDS,
+        allowAbort: true,
+      });
+      await uploads.create({ id: created.session.id, base_id: row.base_id, user_id: row.created_by, root: row.root, path: relative, size: input.size, share_id: row.id });
+      await shares.touch(row.id);
+      return { id: created.session.id, path: relative, size: input.size, chunkSize: created.session.chunkSize, url: created.lease.url, expires: created.lease.expires };
+    },
+    async publicInboxLease(token: string, id: string): Promise<UploadLease> {
+      const { row, root } = await activeShare(token, "inbox");
+      const upload = await uploads.getForShare(id, row.id);
+      if (!upload || upload.state !== "open") throw new FilesError("upload_closed", 409);
+      const lease = await root.sessionLease(upload.id, { expiresIn: UPLOAD_LEASE_SECONDS, allowAbort: true });
+      return { url: lease.url, expires: lease.expires };
+    },
+    async publicInboxCommit(token: string, id: string): Promise<{ name: string; size: number }> {
+      const { row, root } = await activeShare(token, "inbox");
+      const upload = await uploads.getForShare(id, row.id);
+      if (!upload) throw new FilesError("not_found", 404);
+      const entry = await commitSession(root, upload);
+      return { name: entry.name, size: entry.size };
+    },
+    async publicInboxAbort(token: string, id: string): Promise<void> {
+      const { row, root } = await activeShare(token, "inbox");
+      const upload = await uploads.getForShare(id, row.id);
+      if (!upload || upload.state !== "open") return;
+      try {
+        await root.abortSession(upload.id);
+      } catch (error) {
+        if (!(error instanceof FilegateError && (error.status === 404 || error.status === 409))) throw error;
+      }
+      await uploads.finish(upload.id, "aborted", null);
     },
     async abortUpload(actor: RequestActor, input: { baseId: string; id: string }): Promise<void> {
       const { row, current } = await uploadRow(actor, input.baseId, input.id);

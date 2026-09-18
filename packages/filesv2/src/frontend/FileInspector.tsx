@@ -29,6 +29,7 @@ export default function FileInspector(props: {
   onCopy: (entry: FileEntry) => void;
   onTrash: (entry: FileEntry) => void;
   onShare?: (entry: FileEntry) => void;
+  onShareInbox?: (entry: FileEntry) => void;
   onChanged: (selectPath?: string | null) => void;
 }) {
   const t = useBrowserMessages();
@@ -196,6 +197,7 @@ export default function FileInspector(props: {
                         {actionRow(t().moveTo, "ti ti-arrow-move-right", () => props.onMove(item()))}
                         {actionRow(t().copyTo, "ti ti-folder-symlink", () => props.onCopy(item()))}
                         <Show when={props.onShare}>{actionRow(t().shareSelection, "ti ti-world-share", () => props.onShare?.(item()))}</Show>
+                        <Show when={props.onShareInbox && item().directory}>{actionRow(t().shareInbox, "ti ti-inbox", () => props.onShareInbox?.(item()))}</Show>
                         {actionRow(t().trashSelection, "ti ti-trash", () => props.onTrash(item()), { danger: true })}
                       </div>
                     </DetailPanel.Section>

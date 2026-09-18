@@ -6,6 +6,7 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry } from "../contracts";
 import Browser from "./Browser";
+import { openShareDialog } from "./ShareDialog";
 import TrashView from "./TrashView";
 import { useBrowserMessages } from "./browser-messages";
 import type { ViewPreference } from "./browser-preferences";
@@ -322,6 +323,17 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                   ensureLoaded(expanded());
                   go(filesUrl(directory().base.id, directory().path, null, selectPath ?? null, directory().query, directory().scope), true);
                 }}
+                onShare={(paths) =>
+                  void openShareDialog({
+                    baseId: directory().base.id,
+                    kind: "download",
+                    paths,
+                    defaultTitle: paths.length === 1 ? paths[0]!.split("/").at(-1)! : `${directory().path.split("/").at(-1) || directory().base.name} (${paths.length})`,
+                  })
+                }
+                onShareInbox={(folder) =>
+                  void openShareDialog({ baseId: directory().base.id, kind: "inbox", folder, defaultTitle: folder.split("/").at(-1) || directory().base.name })
+                }
                 onNavigate={onNavigate}
               />
             )}

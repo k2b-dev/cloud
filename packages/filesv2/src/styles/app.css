@@ -144,6 +144,8 @@
   color: var(--k2b-text-muted);
 }
 .filesv2-list__row {
+  /* Tree depth; rows override the default inline. */
+  --depth: 0;
   display: flex;
   align-items: center;
   min-height: 2.25rem;

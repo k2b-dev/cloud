@@ -867,3 +867,51 @@ test("upload opens a session through Cloud, streams segments to Filegate without
   expect(result.stdout + result.stderr).not.toContain(leaseSecret);
   expect(seen).toEqual([`POST /api/filesv2/bases/${base.id}/uploads`, `POST /api/filesv2/bases/${base.id}/uploads/s1/commit`]);
 });
+
+test("delete, trash restore, versions and shares are thin wrappers over the authenticated API", async () => {
+  const seen: string[] = [];
+  const cloud = serve(async (request) => {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+    const url = new URL(request.url);
+    seen.push(`${request.method} ${url.pathname}`);
+    if (url.pathname.endsWith("/delete")) {
+      expect(await request.json()).toEqual({ paths: [entry.path, "Documents/old.txt"] });
+      return Response.json([{ id: "11111111-1111-4111-8111-111111111111", original: entry.path, name: entry.name, directory: false, deletedAt: entry.modified }]);
+    }
+    if (url.pathname.endsWith("/restore") && url.pathname.includes("/trash/")) return Response.json({ base, entry });
+    if (url.pathname.endsWith("/versions")) return Response.json([{ id: "v1", created: entry.modified, size: 4, pinned: false, comment: "draft", author: "alice" }]);
+    if (url.pathname.endsWith("/versions/restore-as")) {
+      expect(await request.json()).toEqual({ path: entry.path, id: "v1", name: "copy.txt" });
+      return Response.json({ base, entry: { ...entry, path: "Documents/copy.txt", name: "copy.txt" } });
+    }
+    if (url.pathname.endsWith("/shares") && request.method === "POST") {
+      expect(await request.json()).toEqual({ kind: "download", paths: [entry.path], folder: "", title: "Report", expiresIn: "7d" });
+      return Response.json({ id: "s1", kind: "download", url: "https://cloud.test/share/filesv2/s/tok", title: "Report", note: null, base, scope: "Documents", items: [entry.path], createdBy: "alice", createdAt: entry.modified, expiresAt: entry.modified, state: "active", accessCount: 0, lastAccessedAt: null });
+    }
+    if (url.pathname.endsWith("/revoke")) return Response.json({ id: "s1", state: "revoked", title: "Report" });
+    return Response.json({ message: "unexpected" }, { status: 500 });
+  });
+  const server = { server: cloud.url.href };
+  const removed = await run(["--json", "filesv2", "delete", base.id, entry.path, "Documents/old.txt"], server);
+  expect(removed.exitCode, removed.stderr).toBe(0);
+  expect(JSON.parse(removed.stdout)[0].original).toBe(entry.path);
+  const restored = await run(["--json", "filesv2", "trash", "restore", base.id, "11111111-1111-4111-8111-111111111111"], server);
+  expect(restored.exitCode, restored.stderr).toBe(0);
+  const versions = await run(["--json", "filesv2", "versions", "list", base.id, entry.path], server);
+  expect(JSON.parse(versions.stdout)[0].comment).toBe("draft");
+  const asCopy = await run(["--json", "filesv2", "versions", "restore", base.id, entry.path, "v1", "--as", "copy.txt"], server);
+  expect(JSON.parse(asCopy.stdout).entry.path).toBe("Documents/copy.txt");
+  const share = await run(["filesv2", "shares", "create", base.id, entry.path, "--title", "Report", "--expires-in", "7d"], server);
+  expect(share.exitCode, share.stderr).toBe(0);
+  expect(share.stdout.trim()).toBe("https://cloud.test/share/filesv2/s/tok");
+  const revoked = await run(["--json", "filesv2", "shares", "revoke", "s1"], server);
+  expect(JSON.parse(revoked.stdout).state).toBe("revoked");
+  expect(seen).toEqual([
+    `POST /api/filesv2/bases/${base.id}/delete`,
+    `POST /api/filesv2/bases/${base.id}/trash/11111111-1111-4111-8111-111111111111/restore`,
+    `GET /api/filesv2/bases/${base.id}/versions`,
+    `POST /api/filesv2/bases/${base.id}/versions/restore-as`,
+    `POST /api/filesv2/bases/${base.id}/shares`,
+    "POST /api/filesv2/shares/s1/revoke",
+  ]);
+});

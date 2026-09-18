@@ -22,7 +22,11 @@ import {
   ConfigurationInputSchema,
   type DirectoryResult,
   type DownloadLease,
+  type EntriesResult,
   type EntryResult,
+  type FileVersion,
+  type ShareView,
+  type TrashEntry,
   type SearchResult,
   type UploadLease,
   type UploadSession,
@@ -210,6 +214,154 @@ function filesCommands(locale?: string) {
             },
           });
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Uploaded", de: "Hochgeladen" })}: ${result.entry.path} (${result.entry.size} bytes)`);
+        },
+      }),
+      command("rename", {
+        summary: t({ en: "Rename a file or folder", de: "Datei oder Ordner umbenennen" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "Path relative to the base", de: "Pfad relativ zur Ablage" }) }), name: arg.required({ description: t({ en: "New name", de: "Neuer Name" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].rename.$post({ param: { baseId: args.base }, json: { path: args.path, name: args.name } }));
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Renamed", de: "Umbenannt" })}: ${result.entry.path}`);
+        },
+      }),
+      command("move", {
+        summary: t({ en: "Move entries into a folder of the same base", de: "Einträge in einen Ordner derselben Ablage verschieben" }),
+        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Paths relative to the base", de: "Pfade relativ zur Ablage" }) }) },
+        flags: { to: flag.string({ required: true, description: t({ en: "Target folder relative to the base", de: "Zielordner relativ zur Ablage" }) }) },
+        async run({ ctx, args, flags }) {
+          const result = await ctx.readJson<EntriesResult>(await api(ctx).bases[":baseId"].move.$post({ param: { baseId: args.base }, json: { paths: args.paths, folder: flags.to! } }));
+          printRows(ctx, ctx.options.output === "jsonl" ? result.entries : result, result.entries, [{ key: "path", label: t({ en: "Path", de: "Pfad" }) }]);
+        },
+      }),
+      command("copy", {
+        summary: t({ en: "Copy entries into a folder of this or another base", de: "Einträge in einen Ordner dieser oder einer anderen Ablage kopieren" }),
+        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Paths relative to the base", de: "Pfade relativ zur Ablage" }) }) },
+        flags: {
+          to: flag.string({ required: true, description: t({ en: "Target folder relative to the target base", de: "Zielordner relativ zur Zielablage" }) }),
+          "target-base": flag.string({ description: t({ en: "Target base ID; defaults to the source base", de: "Ziel-Ablage-ID; Standard ist die Quellablage" }) }),
+        },
+        async run({ ctx, args, flags }) {
+          const result = await ctx.readJson<EntriesResult>(
+            await api(ctx).bases[":baseId"].copy.$post({ param: { baseId: args.base }, json: { paths: args.paths, targetBaseId: flags["target-base"] ?? args.base, folder: flags.to! } }),
+          );
+          printRows(ctx, ctx.options.output === "jsonl" ? result.entries : result, result.entries, [{ key: "path", label: t({ en: "Path", de: "Pfad" }) }]);
+        },
+      }),
+      command("delete", {
+        summary: t({ en: "Move entries to the trash", de: "Einträge in den Papierkorb verschieben" }),
+        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Paths relative to the base", de: "Pfade relativ zur Ablage" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<TrashEntry[]>(await api(ctx).bases[":baseId"].delete.$post({ param: { baseId: args.base }, json: { paths: args.paths } }));
+          printRows(ctx, result, result, [
+            { key: "id", label: "ID" },
+            { key: "original", label: t({ en: "Original path", de: "Ursprünglicher Pfad" }) },
+          ]);
+        },
+      }),
+      command("trash list", {
+        summary: t({ en: "List trashed entries of a base", de: "Papierkorb einer Ablage auflisten" }),
+        args: baseArgs,
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<{ entries: TrashEntry[] }>(await api(ctx).bases[":baseId"].trash.$get({ param: { baseId: args.base } }));
+          printRows(ctx, ctx.options.output === "jsonl" ? result.entries : result, result.entries, [
+            { key: "id", label: "ID" },
+            { key: "original", label: t({ en: "Original path", de: "Ursprünglicher Pfad" }) },
+            { key: "deletedAt", label: t({ en: "Deleted", de: "Gelöscht" }) },
+          ]);
+        },
+      }),
+      command("trash restore", {
+        summary: t({ en: "Restore a trashed entry to its original path", de: "Eintrag aus dem Papierkorb an den ursprünglichen Ort zurücklegen" }),
+        args: { ...baseArgs, id: arg.required({ description: t({ en: "Trash entry ID", de: "Papierkorb-ID" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].trash[":id"].restore.$post({ param: { baseId: args.base, id: args.id } }));
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${result.entry.path}`);
+        },
+      }),
+      command("versions list", {
+        summary: t({ en: "List versions of a file", de: "Versionen einer Datei auflisten" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<FileVersion[]>(await api(ctx).bases[":baseId"].versions.$get({ param: { baseId: args.base }, query: { path: args.path } }));
+          printRows(ctx, result, result, [
+            { key: "id", label: "ID" },
+            { key: "created", label: t({ en: "Created", de: "Erstellt" }) },
+            { key: "size", label: "Bytes" },
+            { key: "comment", label: t({ en: "Comment", de: "Kommentar" }) },
+          ]);
+        },
+      }),
+      command("versions restore", {
+        summary: t({ en: "Restore a version in place or as a new file", de: "Version an Ort und Stelle oder als neue Datei wiederherstellen" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }), id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }) },
+        flags: { as: flag.string({ description: t({ en: "Restore as a new file with this name", de: "Als neue Datei mit diesem Namen wiederherstellen" }) }) },
+        async run({ ctx, args, flags }) {
+          const param = { baseId: args.base };
+          const result = await ctx.readJson<EntryResult>(
+            flags.as
+              ? await api(ctx).bases[":baseId"].versions["restore-as"].$post({ param, json: { path: args.path, id: args.id, name: flags.as } })
+              : await api(ctx).bases[":baseId"].versions.restore.$post({ param, json: { path: args.path, id: args.id } }),
+          );
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${result.entry.path}`);
+        },
+      }),
+      command("versions comment", {
+        summary: t({ en: "Set the comment of a version", de: "Kommentar einer Version setzen" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }), id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }), comment: arg.required({ description: t({ en: "Comment text", de: "Kommentartext" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<FileVersion>(await api(ctx).bases[":baseId"].versions.comment.$post({ param: { baseId: args.base }, json: { path: args.path, id: args.id, comment: args.comment } }));
+          if (!printStructured(ctx, result)) ctx.print(`${result.id}: ${result.comment ?? ""}`);
+        },
+      }),
+      command("versions delete", {
+        summary: t({ en: "Delete a version", de: "Version löschen" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }), id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }) },
+        flags: { yes: flag.boolean({ description: t({ en: "Confirm this operation", de: "Diesen Vorgang bestätigen" }) }) },
+        async run({ ctx, args, flags }) {
+          if (!flags.yes) throw new Error(t({ en: "Pass --yes to delete a version permanently.", de: "Gib --yes an, um eine Version endgültig zu löschen." }));
+          const result = await ctx.readJson<{ deleted: boolean }>(await api(ctx).bases[":baseId"].versions.delete.$post({ param: { baseId: args.base }, json: { path: args.path, id: args.id } }));
+          if (!printStructured(ctx, result)) ctx.print(t({ en: "Version deleted.", de: "Version gelöscht." }));
+        },
+      }),
+      command("shares list", {
+        summary: t({ en: "List public shares visible to you", de: "Für dich sichtbare öffentliche Freigaben auflisten" }),
+        async run({ ctx }) {
+          const result = await ctx.readJson<ShareView[]>(await api(ctx).shares.$get());
+          printRows(ctx, result, result, [
+            { key: "id", label: "ID" },
+            { key: "kind", label: t({ en: "Kind", de: "Art" }) },
+            { key: "title", label: t({ en: "Name", de: "Name" }) },
+            { key: "state", label: "Status" },
+            { key: "expiresAt", label: t({ en: "Expires", de: "Läuft ab" }) },
+            { key: "url", label: "URL" },
+          ]);
+        },
+      }),
+      command("shares create", {
+        summary: t({ en: "Create a public download share or an upload inbox", de: "Öffentliche Download-Freigabe oder Upload-Eingang erstellen" }),
+        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Entries to share (download) or one folder (inbox)", de: "Einträge (Download) oder ein Ordner (Eingang)" }) }) },
+        flags: {
+          kind: flag.enum(["download", "inbox"], { default: "download" }),
+          title: flag.string({ required: true, description: t({ en: "Name shown to visitors", de: "Name, den Besucher sehen" }) }),
+          "expires-in": flag.enum(["1d", "7d", "30d", "90d"], { default: "30d" }),
+          note: flag.string({ description: t({ en: "Internal note", de: "Interne Notiz" }) }),
+        },
+        async run({ ctx, args, flags }) {
+          const result = await ctx.readJson<ShareView>(
+            await api(ctx).bases[":baseId"].shares.$post({
+              param: { baseId: args.base },
+              json: { kind: flags.kind ?? "download", paths: (flags.kind ?? "download") === "download" ? args.paths : [], folder: flags.kind === "inbox" ? (args.paths[0] ?? "") : "", title: flags.title!, note: flags.note, expiresIn: flags["expires-in"] },
+            }),
+          );
+          if (!printStructured(ctx, result)) ctx.print(result.url);
+        },
+      }),
+      command("shares revoke", {
+        summary: t({ en: "Revoke a public share", de: "Öffentliche Freigabe widerrufen" }),
+        args: { id: arg.required({ description: t({ en: "Share ID", de: "Freigabe-ID" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<ShareView>(await api(ctx).shares[":id"].revoke.$post({ param: { id: args.id } }));
+          if (!printStructured(ctx, result)) ctx.print(`${result.title}: ${result.state}`);
         },
       }),
       command("stat", {

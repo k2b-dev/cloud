@@ -73,4 +73,29 @@ export async function migrate(): Promise<void> {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_trash_base ON filesv2.trash(base_id,deleted_at) WHERE state='trashed'`.simple();
+  await sql`ALTER TABLE filesv2.uploads ADD COLUMN IF NOT EXISTS share_id UUID`.simple();
+  // Public shares: a bundle of entries for download or a folder that accepts anonymous uploads. Both stay inside one base.
+  await sql`CREATE TABLE IF NOT EXISTS filesv2.shares (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    token TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL CHECK (kind IN ('download','inbox')),
+    base_id UUID NOT NULL REFERENCES filesv2.bases(id),
+    root TEXT NOT NULL,
+    base_path TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    title TEXT NOT NULL,
+    note TEXT,
+    owner_uid INTEGER,
+    owner_gid INTEGER,
+    created_by UUID NOT NULL,
+    created_by_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    revoked_by UUID,
+    access_count INTEGER NOT NULL DEFAULT 0,
+    last_accessed_at TIMESTAMPTZ
+  )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_shares_base ON filesv2.shares(base_id,created_at)`.simple();
 }

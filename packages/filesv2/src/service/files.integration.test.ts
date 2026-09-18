@@ -22,7 +22,7 @@ suite("Files service and durable bindings", () => {
   const versions = new Map<string, Array<{ id: string; fileId: string; created: string; size: number; pinned: boolean; metadata?: Record<string, unknown>; copyMode: string; content: string }>>();
   const archives: Array<Array<{ root: string; path: string; archivePath: string }>> = [];
   let lostCommitResponse = false;
-  const sessions = new Map<string, { id: string; root: string; path: string; size: number; received: number; state: string; ownership?: unknown; result?: Node }>();
+  const sessions = new Map<string, { id: string; root: string; path: string; size: number; received: number; state: string; ownership?: unknown; onConflict?: string; result?: Node }>();
   let reconciliations = 0;
   let config = {
     url: "http://filegate:4000",
@@ -83,10 +83,10 @@ suite("Files service and durable bindings", () => {
           .object({ path: z.string().optional(), size: z.number().optional(), onConflict: z.string().optional(), ownership: z.unknown().optional() })
           .parse(init?.body ? JSON.parse(String(init.body)) : {});
         if (!sessionId) {
-          if (nodes.has(`${root}:${input.path}`) && input.onConflict !== "overwrite")
+          if (nodes.has(`${root}:${input.path}`) && input.onConflict === "error")
             return Response.json({ error: "already_exists", message: "exists" }, { status: 409 });
           const id = `session-${++sessionCounter}`;
-          sessions.set(id, { id, root, path: input.path!, size: input.size!, received: 0, state: "open", ownership: input.ownership });
+          sessions.set(id, { id, root, path: input.path!, size: input.size!, received: 0, state: "open", ownership: input.ownership, onConflict: input.onConflict });
           return Response.json({
             session: { id, root, path: input.path, size: input.size, chunkSize: 4, expires: "2099-01-01T00:00:00Z", state: "open", segments: {}, received: 0 },
             lease: { url: `http://localhost:4000/lease/${id}`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write", "abort"] },
@@ -98,8 +98,10 @@ suite("Files service and durable bindings", () => {
         if (action === "commit") {
           if (session.state !== "open") return Response.json({ error: "conflict", message: "closed" }, { status: 409 });
           const ownership = z.object({ uid: z.number().optional(), gid: z.number().optional(), mode: z.string().optional() }).parse(session.ownership ?? {});
-          const node = { ...directory(root, session.path, ownership.uid ?? 0, ownership.gid ?? 0, ownership.mode ?? "0644", false), size: session.size };
-          nodes.set(`${root}:${session.path}`, node);
+          let target = session.path;
+          if (session.onConflict === "rename") for (let i = 1; nodes.has(`${root}:${target}`); i++) target = session.path.replace(/(\.[^./]+)?$/, `-${String(i).padStart(2, "0")}$1`);
+          const node = { ...directory(root, target, ownership.uid ?? 0, ownership.gid ?? 0, ownership.mode ?? "0644", false), size: session.size };
+          nodes.set(`${root}:${target}`, node);
           session.state = "committed";
           session.result = node;
           if (lostCommitResponse) {
@@ -264,6 +266,7 @@ suite("Files service and durable bindings", () => {
     writeConfiguration: async (input) => {
       config = { ...input, token: input.token || config.token, tokenConfigured: true };
     },
+    publicOrigin: async () => "https://cloud.test",
     connect: (configuration) => new Filegate({ baseUrl: configuration.url, token: configuration.token, fetch: transport }),
   });
   const user = async (
@@ -339,7 +342,7 @@ suite("Files service and durable bindings", () => {
     versions.clear();
     archives.length = 0;
     lostCommitResponse = false;
-    await sql`TRUNCATE filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
+    await sql`TRUNCATE filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await set(
       "linux.identity_config",
       JSON.stringify({ enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
@@ -579,6 +582,62 @@ suite("Files service and durable bindings", () => {
     expect((await service.versions(admin, { baseId, path: "report.txt" })).some((version) => version.id === v1.id)).toBeFalse();
     await expect(service.versions(admin, { baseId, path: "trash/x" })).rejects.toMatchObject({ code: "reserved_path" });
   });
+  test("shares stay inside one base, are visible to everyone who may read their scope, and serve leases only while active", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    directory("freeipa", "users/alice/Docs/a.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Docs/Sub");
+    directory("freeipa", "users/alice/Docs/Sub/b.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/trash");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const share = await service.createShare(actor, { baseId, kind: "download", paths: ["Docs/a.txt", "Docs/Sub/b.txt"], folder: "", title: "Q3", expiresIn: "7d" });
+    expect(share).toMatchObject({ kind: "download", scope: "Docs", items: ["Docs/a.txt", "Docs/Sub/b.txt"], state: "active", createdBy: "alice" });
+    expect(share.url).toMatch(/^https:\/\/cloud\.test\/public\/filesv2\/s\/[A-Za-z0-9_-]{32}$/);
+    await expect(service.createShare(actor, { baseId, kind: "download", paths: ["trash/x"], folder: "", title: "t", expiresIn: "1d" })).rejects.toMatchObject({ code: "reserved_path" });
+    const token = share.url.split("/").at(-1)!;
+    const view = await service.publicShare(token, "download");
+    expect(view.items.map((item) => item.path)).toEqual(["Docs/a.txt", "Docs/Sub/b.txt"]);
+    expect((await service.publicShareDownload(token, "Docs/a.txt")).method).toBe("GET");
+    await expect(service.publicShareDownload(token, "Docs/Sub")).rejects.toMatchObject({ code: "not_found" });
+    await expect(service.publicShare(token, "inbox")).rejects.toMatchObject({ code: "not_found" });
+    expect((await service.publicShareArchive(token)).manifest).toBe("signed");
+    expect((await service.listShares(actor)).map((item) => item.id)).toEqual([share.id]);
+    // Another member without read rights on the scope does not see the share.
+    const bob = await user("bob", "ipa");
+    await sql`UPDATE auth.user_posix SET uid_number=1002 WHERE user_id=${id(bob)}::uuid`;
+    directory("freeipa", "users/bob");
+    expect(await service.listShares(bob)).toEqual([]);
+    await expect(service.revokeShare(bob, { id: share.id })).rejects.toMatchObject({ code: "not_found" });
+    const revoked = await service.revokeShare(actor, { id: share.id });
+    expect(revoked.state).toBe("revoked");
+    await expect(service.publicShare(token, "download")).rejects.toMatchObject({ code: "not_found" });
+    expect((await service.listShares(actor))[0]?.accessCount).toBe(3);
+  });
+  test("an upload inbox accepts anonymous sessions into its folder without replacing existing files", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Inbox");
+    directory("freeipa", "users/alice/Inbox/report.pdf", 1001, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const inbox = await service.createShare(actor, { baseId, kind: "inbox", paths: [], folder: "Inbox", title: "Drop", expiresIn: "30d" });
+    expect(inbox).toMatchObject({ kind: "inbox", scope: "Inbox", items: [] });
+    const token = inbox.url.split("/").at(-1)!;
+    expect((await service.publicShare(token, "inbox")).title).toBe("Drop");
+    const opened = await service.publicInboxUpload(token, { name: "report.pdf", size: 8 });
+    expect(opened.path).toBe("Inbox/report.pdf");
+    expect(sessions.get(opened.id)?.ownership).toEqual({ uid: 1001, gid: 2001, mode: "0660" });
+    await expect(service.publicInboxUpload(token, { name: "../x", size: 1 })).rejects.toMatchObject({ code: "invalid_path" });
+    await expect(service.publicInboxUpload(token, { name: "sub/x", size: 1 })).rejects.toMatchObject({ code: "invalid_path" });
+    sessions.get(opened.id)!.received = 8;
+    expect((await service.publicInboxLease(token, opened.id)).url).toContain("renewed");
+    const committed = await service.publicInboxCommit(token, opened.id);
+    expect(committed.name).toBe("report-01.pdf");
+    expect(nodes.has("freeipa:users/alice/Inbox/report.pdf") && nodes.has("freeipa:users/alice/Inbox/report-01.pdf")).toBeTrue();
+    await expect(service.publicInboxCommit("x".repeat(32), opened.id)).rejects.toMatchObject({ code: "not_found" });
+    await service.revokeShare(actor, { id: inbox.id });
+    await expect(service.publicInboxUpload(token, { name: "late.txt", size: 1 })).rejects.toMatchObject({ code: "not_found" });
+  });
   test("detail and thumbnails enforce current leaf rights, traversal and trash before any lease", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -686,7 +745,8 @@ suite("Files service and durable bindings", () => {
       writeConfiguration: async () => {
         throw new Error("Unexpected configuration write");
       },
-      connect: (configuration) => new Filegate({ baseUrl: configuration.url, token: configuration.token, fetch: transport }),
+      publicOrigin: async () => "https://cloud.test",
+    connect: (configuration) => new Filegate({ baseUrl: configuration.url, token: configuration.token, fetch: transport }),
     });
     const result = await slowService.admin(admin, { area: "freeipa", kind: "users" });
     expect(result.items).toHaveLength(1);

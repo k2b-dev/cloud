@@ -39,6 +39,8 @@ import {
   UploadIdSchema,
   UploadInputSchema,
   CopyInputSchema,
+  CreateShareInputSchema,
+  ShareIdSchema,
   MoveInputSchema,
   PathsInputSchema,
   RenameInputSchema,
@@ -210,6 +212,21 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Issue a direct download lease for a version", ...requiresAuth }),
     v("json", VersionRefSchema),
     async (c) => respond(c, ok(await filesService.versionDownload(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .get("/shares", middleware.openapi({ summary: "List public shares visible to the user", ...requiresAuth }), async (c) =>
+    respond(c, ok(await filesService.listShares(c.get("actor")))),
+  )
+  .post(
+    "/bases/:baseId/shares",
+    middleware.openapi({ summary: "Create a public download share or upload inbox", ...requiresAuth }),
+    v("json", CreateShareInputSchema),
+    async (c) => respond(c, ok(await filesService.createShare(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/shares/:id/revoke",
+    middleware.openapi({ summary: "Revoke a public share", ...requiresAuth }),
+    v("param", ShareIdSchema),
+    async (c) => respond(c, ok(await filesService.revokeShare(c.get("actor"), c.req.valid("param")))),
   )
   .post(
     "/bases/:baseId/thumbnail",

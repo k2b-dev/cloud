@@ -8,31 +8,39 @@ order: 100
 
 Files v2 zeigt deine zugänglichen Cloud- und FreeIPA-Verzeichnisse in einer Oberfläche. Die Kennzeichnung neben dem Namen einer Ablage zeigt ihre Herkunft.
 
-## Ordner öffnen
+## Zurechtfinden
 
-Wähle eine Ablage in der Workspace-Seitenleiste und öffne einen Ordner per Doppelklick oder über seine Aktion **Öffnen**. Auf dem Smartphone findest du die Ablagen im Cloud-Menü. Über den Ordnerpfad oberhalb der Liste gelangst du zu übergeordneten Ordnern. **Nächste Seite** zeigt weitere Einträge; **Erste Seite** öffnet den Anfang des aktuellen Ordners. Ablage, Ordner und Seite bleiben in der Adresse erhalten und können neu geladen oder als Lesezeichen gespeichert werden.
+Die Seitenleiste zeigt deine Ablagen mit ihren Ordnern als Baum; der aktuelle Ordner ist hervorgehoben. Ein Klick auf einen Ordner in der Liste öffnet ihn. Ein Klick auf eine Datei öffnet rechts das Detailpanel, für Ordner nutzt du dafür den kleinen Info-Button am Zeilenanfang. Das X schließt das Panel und hebt die Auswahl auf.
 
-**Aktualisieren** liest den aktuellen Dateisystembestand erneut ein. Das erfasst auch außerhalb der Cloud angelegte Verzeichnisse und Dateien.
+Über der Liste wählst du **Liste**, **Grid** oder **Baum**. Der Baum klappt Ordner an Ort und Stelle auf, wenn du ihr Symbol anklickst, mehrere gleichzeitig. Im Grid erscheint zusätzlich die Kachelgröße. Ansicht und Größe merkt sich der Browser pro Ordner. **Nächste Seite** und **Erste Seite** blättern in großen Ordnern; Ablage, Ordner, Seite und eine einzeln ausgewählte Datei bleiben in der Adresse, sodass du neu laden oder ein Lesezeichen setzen kannst.
 
-## Auswählen und Vorschau öffnen
+## Suchen
 
-Wechsle über die Ansichtssteuerung zwischen **Liste** und **Grid**. Unter **Darstellungsoptionen** änderst du die Listendichte oder Vorschaugröße. Der Browser merkt sich diese Einstellungen.
+Das Suchfeld oben durchsucht Namen. Mit **Dieser Ordner** findest du nur direkte Einträge, mit **Mit Unterordnern** alles darunter; Treffer zeigen dann ihren Pfad relativ zum Ordner. Enter startet die Suche, das Leeren des Feldes führt zurück zur Auflistung. Ablagen ohne Suchindex werden bei Bedarf durchsucht; enthält ein Ordner dafür zu viele Einträge, suche in einem kleineren Ordner. Die Lupe oben in der Seitenleiste öffnet die globale Cloud-Suche nur für Dateien über alle deine Ablagen; ein Treffer führt in seinen Ordner mit ausgewählter Datei.
 
-Ein Klick wählt einen Eintrag aus und zeigt seine Details mit verfügbarer Vorschau. Doppelklick oder Enter öffnet eine größere Vorschau. Auf Touchscreens öffnet ein Antippen den Eintrag; nutze **Einträge auswählen** oder die Kontrollkästchen für eine Auswahl.
+## Auswählen und handeln
 
-Mit Strg/Cmd-Klick ergänzt du Einträge, mit Shift-Klick wählst du einen Bereich aus. Die Pfeiltasten bewegen sich durch Liste und Grid, die Leertaste schaltet die Auswahl um und Escape hebt sie auf. Strg/Cmd-A wählt die aktuelle Seite aus. Ein Ordner- oder Seitenwechsel hebt die Auswahl auf. Ein einzelner ausgewählter Eintrag bleibt zum Verlinken in der Adresse erhalten.
+Strg/Cmd-Klick fügt Einträge zur Auswahl hinzu, Umschalt-Klick wählt einen Bereich, Strg/Cmd-A die geladene Seite. Pfeiltasten bewegen, Leertaste wechselt, Escape hebt auf. Mit einer Auswahl erscheinen **n ausgewählt** und ein Menü **Aktionen** neben dem Plus: herunterladen (eine Datei direkt, mehrere Einträge oder Ordner als ZIP), in neuen Ordner verschieben, in einen anderen Ordner verschieben, in diese oder eine andere Ablage kopieren, öffentlich teilen oder in den Papierkorb verschieben. Ein Rechtsklick auf eine Zeile bietet dieselben Aktionen.
 
-Das Detailpanel öffnet sich neben der Liste und zeigt den vollständigen Namen, Pfad, Änderungszeitpunkt, die Größe und den Dateibereich. **Details schließen** schließt es und hebt die Auswahl auf. Dateien ohne Vorschau kannst du herunterladen. Bei einer fehlgeschlagenen Vorschau hilft **Erneut versuchen**. Ordnerinhalte werden bei der gemeinsamen Dateigröße nicht mitgezählt.
+Verschieben bleibt innerhalb einer Ablage. Kopieren kann in eine andere Ablage zielen; die Originale bleiben erhalten, damit eine Gruppendatei nie versehentlich in einem privaten Verzeichnis verschwindet.
 
-## Suchen und Ordner anlegen
+## Hinzufügen, hochladen und ändern
 
-Gib in **In diesem Ordner suchen** einen Namensbestandteil ein und drücke Enter. Die Suche umfasst Namen unterhalb des aktuellen Ordners einschließlich Unterordnern und zeigt zu jedem Treffer seinen Ordner. Öffne den Ordner eines Treffers aus dem Ergebnis oder setze die Suche zurück, um zur Auflistung zurückzukehren. Ablagen ohne Suchindex werden bei Bedarf durchsucht; enthält ein Ordner dafür zu viele Einträge, suche in einem kleineren Ordner.
+Das Plus bietet **Hochladen**, **Ordner hochladen**, **Neuer Ordner** und **Neue Datei**. Du kannst Dateien auch von deinem Gerät auf die Liste ziehen. Jede Datei geht direkt an den Dateiserver, nachdem Cloud deinen Zugriff geprüft hat, und wird erst veröffentlicht, wenn die Übertragung vollständig ist. Existiert ein Name bereits, entscheidest du zwischen Ersetzen und Überspringen. Namen dürfen keine Schrägstriche enthalten.
 
-**Neuer Ordner** legt einen Ordner im aktuellen Ordner an. Namen dürfen keine Schrägstriche enthalten, bestehende Namen werden nicht überschrieben.
+Das Detailpanel eines Eintrags bietet **In neuem Tab öffnen**, **Umbenennen**, **Duplizieren**, **Verschieben nach**, **Kopieren nach**, **Öffentlich teilen** und **In den Papierkorb**. Ordner bieten zusätzlich **Als Upload-Eingang freigeben**. Der Kopieren-Button in der Kopfzeile legt eine Cloud-Referenz in die Zwischenablage, die andere Apps verstehen.
 
-## Dateien hochladen
+## Papierkorb
 
-Wähle mit **Hochladen** Dateien aus oder ziehe Dateien von deinem Gerät auf die Dateiliste. Jede Datei geht direkt an den Dateiserver; Cloud prüft vorher deinen Zugriff und veröffentlicht die Datei erst, wenn die Übertragung vollständig angekommen ist. Der Fortschritt erscheint über der Liste, **Abbrechen** stoppt die laufende Übertragung. Existiert bereits eine Datei mit demselben Namen, wirst du gefragt, ob du sie ersetzen oder die Datei überspringen möchtest. **Neue Datei** im Plus-Menü legt eine leere Datei an.
+Löschen entfernt nie etwas endgültig: Einträge wandern in den Papierkorb ihrer Ablage. Öffne den Papierkorb über die Seitenleiste, um Gelöschtes zu sehen; **Wiederherstellen** legt einen Eintrag an seinen ursprünglichen Ort zurück. Nur die Administration kann den Papierkorb leeren.
+
+## Versionen
+
+Wo die Ablage Versionen behält, listet das Detailpanel frühere Versionen einer Datei ganz unten. Zu jeder Version kannst du einen Kommentar hinterlegen, sie herunterladen, an Ort und Stelle wiederherstellen, als neue Datei neben der aktuellen wiederherstellen oder sie löschen. Beim Wiederherstellen an Ort und Stelle bleibt der aktuelle Stand als neue Version erhalten.
+
+## Öffentlich teilen
+
+Wähle Einträge aus und nutze **Öffentlich teilen**, oder gib einen Ordner in seinen Details als **Upload-Eingang** frei. Vergib einen Namen, wähle die Gültigkeit des Links und ergänze bei Bedarf eine interne Notiz. Alle, die den Ordner mit den geteilten Einträgen öffnen können, sehen die Freigabe unter **Freigaben** in der Seitenleiste und können den Link kopieren oder widerrufen. Eine Download-Freigabe lässt jede Person mit dem Link die Einträge einzeln oder als ZIP herunterladen; ein Upload-Eingang lässt jede Person mit dem Link Dateien in diesen Ordner legen, ohne dessen Inhalt zu sehen. Bestehende Dateien werden dabei nie ersetzt.
 
 ## Datei herunterladen
 
@@ -46,7 +54,7 @@ Melde dich mit `cld login --server <Cloud-URL>` an. `cld filesv2 bases list --js
 
 `cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf` lädt eine Datei direkt von Filegate in eine neue lokale Datei. Bestehende Pfade werden nie überschrieben. Mit `--json` erhältst du den gespeicherten Pfad und die Byteanzahl. `cld filesv2 help` zeigt alle verfügbaren Befehle.
 
-`cld filesv2 search <base-id> Bericht --path Dokumente --json` sucht Namen unterhalb eines Ordners und `cld filesv2 mkdir <base-id> Dokumente/2026` legt einen Ordner an. `cld filesv2 upload <base-id> ./bericht.pdf --to Dokumente/bericht.pdf` lädt eine Datei direkt zum Dateiserver hoch; mit `--replace` ersetzt du eine bestehende Datei. `cld filesv2 stat <base-id> <path> --json` liest aktuelle Dateidetails. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` speichert eine Bildvorschau.
+`cld filesv2 search <base-id> Bericht --path Dokumente --json` sucht Namen unterhalb eines Ordners und `cld filesv2 mkdir <base-id> Dokumente/2026` legt einen Ordner an. `rename`, `move --to`, `copy --to [--target-base]`, `delete`, `trash list|restore`, `versions list|comment|restore|delete` und `shares list|create|revoke` decken die übrigen Vorgänge ab. `cld filesv2 upload <base-id> ./bericht.pdf --to Dokumente/bericht.pdf` lädt eine Datei direkt zum Dateiserver hoch; mit `--replace` ersetzt du eine bestehende Datei. `cld filesv2 stat <base-id> <path> --json` liest aktuelle Dateidetails. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` speichert eine Bildvorschau.
 
 ## Wenn eine Ablage nicht verfügbar ist
 

@@ -67,6 +67,39 @@ export type FileVersion = { id: string; created: string; size: number; pinned: b
 export type TrashEntry = { id: string; original: string; name: string; directory: boolean; deletedAt: string };
 export type EntriesResult = { base: BaseSummary; entries: FileEntry[] };
 export type ArchiveDownload = { url: string; method: "POST"; expires: string; manifest: string };
+export const ShareValiditySchema = z.enum(["1d", "7d", "30d", "90d"]);
+export const CreateShareInputSchema = z.object({
+  kind: z.enum(["download", "inbox"]),
+  paths: z.array(PathSchema).max(100).default([]),
+  folder: z.string().max(4096).default(""),
+  title: z.string().trim().min(1).max(200),
+  note: z.string().trim().max(500).optional(),
+  expiresIn: ShareValiditySchema.default("30d"),
+});
+export const ShareIdSchema = z.object({ id: z.string().uuid() });
+export type ShareView = {
+  id: string;
+  kind: "download" | "inbox";
+  url: string;
+  title: string;
+  note: string | null;
+  base: { id: string; name: string };
+  scope: string;
+  items: string[];
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+  state: "active" | "expired" | "revoked";
+  accessCount: number;
+  lastAccessedAt: string | null;
+};
+export const PublicUploadInputSchema = z.object({ name: z.string().min(1).max(255), size: z.number().int().min(0) });
+export type PublicShare = {
+  kind: "download" | "inbox";
+  title: string;
+  expiresAt: string;
+  items: { path: string; name: string; directory: boolean; size: number }[];
+};
 export type RootSummary = {
   name: string;
   indexEnabled: boolean;

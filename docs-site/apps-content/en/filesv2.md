@@ -25,46 +25,46 @@ empty directory.
 
 ## Browse, select, and preview
 
-Choose **List** or **Grid** without losing your selection. Display options change
-list density or tile size; the browser remembers these settings. Click an item
-to select it and show its details. Double-click or press Enter to open a folder
-or a larger preview. Folder action links also support opening in another tab.
-On touchscreens, tap to open or enable **Select items** for multiple selection.
+The sidebar is a folder tree per storage location with global file search at
+the top and the trash and **Shares** below. The list is a flat striped list;
+folders open on click, files open the details panel, and every row has an info
+button. **List**, **Grid**, and **Tree** views (tree expands folders in place,
+several at once) and the grid tile size are remembered per folder in a cookie.
+Storage, folder, page, single selection, search query, and scope stay in the
+URL.
 
-Use checkboxes, Ctrl/Cmd-click, or Shift-click to select several entries. Arrow
-keys move through entries; Space toggles selection and Escape clears it.
-Ctrl/Cmd-A selects the loaded page. Selecting several items shows their file
-count and known file sizes; folder contents are not included in that total.
-Selection is scoped to the current folder and page. A single selected item's
-path is included in the URL and can be bookmarked with its details.
+Search covers **This folder** or **With subfolders**; subtree hits show their
+path relative to the searched folder. Filesv2 also answers the universal
+search under the `file` tag through the `filesv2.entry` resource type, and
+each entry's Cloud reference can be copied from the details panel.
 
-The detail panel shows the full name, location, size, modification time, and
-storage area. Images, PDFs, text, and supported audio/video formats have previews.
-Unsupported formats retain their metadata and download action. Previews and
-thumbnails obtain a short-lived Cloud-authorized lease and load their bytes
-directly from Filegate. Retry a failed preview to obtain a fresh lease.
+Selections act through one **Actions** menu: direct download for one file, a
+signed Filegate ZIP for several entries or folders, move into a new folder,
+move, copy, public share, trash. Moves never leave a base; copies may cross
+bases with the target's ownership. Deleting moves entries into the reserved
+`trash` folder with a restorable record; only administrators empty it.
+Renaming, duplicating and moving reuse Filegate transfers.
 
-**Search this folder** finds names below the current folder, including
-subfolders, and lists each hit with its folder. Indexed storage answers from the
-index; other storage is scanned on demand and reports when a folder holds too
-many entries to scan, so search within a smaller folder in that case. **New
-folder** creates a folder in the current folder without overwriting existing
-names.
+The details panel shows a preview hero (images enlarge into a dialog),
+facts including the storage area, an action list, and, where the root keeps
+versions, a versions section with comments (stored as version metadata),
+download, restore in place, restore as a new file, and delete.
 
-**Upload** and drag-and-drop transfer files directly to Filegate through an
-upload session: Cloud authorizes the target, issues a short-lived session
-lease that clients renew through Cloud, and publishes the file only after the
-complete transfer is committed. Existing names are never replaced without
-asking. **New file** creates an empty file the same way.
+Uploads, folder uploads and new files open a Filegate upload session per
+file: Cloud authorizes the target, the browser streams segments to the
+session lease and renews it through Cloud, and Cloud commits after re-checking
+the target. Existing names ask before being replaced.
 
-Use **Download** for one or several individual files. Multiple downloads may need
-browser permission. Folder downloads, renaming and moving are not offered in this
-browser yet. Listings retain Filegate's name order and explicit pagination.
+## Public shares
 
-The CLI provides `filesv2 search <base-id> <fragment> --path <folder>`,
-`filesv2 mkdir <base-id> <path>`, `filesv2 upload <base-id> <file> --to <path>`, `filesv2 stat <base-id> <path> --json` for the same current
-metadata and `filesv2 thumbnail <base-id> <path> --out <file>` for a direct preview
-download. Use `--size small|large` to select the thumbnail size.
+A share is either a download bundle of entries or an upload inbox for one
+folder, always inside one base. Its scope is the common ancestor of the
+entries; everyone who can read that folder sees the share under **Shares** and
+may revoke it, so shares never cross a rights boundary. Links live under
+`/share/filesv2/s/<token>` and `/share/filesv2/inbox/<token>`, expire after
+1, 7, 30 or 90 days, and are served token-only with rate limiting. Visitors
+download through short leases or one signed archive; inbox uploads open
+sessions owned by the share creator and never replace existing files.
 
 ## Configure storage
 

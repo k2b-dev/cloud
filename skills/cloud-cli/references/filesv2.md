@@ -14,6 +14,17 @@ cld filesv2 list <base-id> --path Documents --after '<next>' --json
 cld filesv2 search <base-id> report --path Documents --json
 cld filesv2 mkdir <base-id> Documents/2026 --json
 cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf --json
+cld filesv2 rename <base-id> Documents/report.pdf report-2026.pdf --json
+cld filesv2 move <base-id> Documents/a.txt Documents/b.txt --to Archive --json
+cld filesv2 copy <base-id> Documents/a.txt --to Shared --target-base <other-base-id> --json
+cld filesv2 delete <base-id> Documents/old.txt --json
+cld filesv2 trash list <base-id> --json
+cld filesv2 trash restore <base-id> <trash-id> --json
+cld filesv2 versions list <base-id> Documents/report.pdf --json
+cld filesv2 versions restore <base-id> Documents/report.pdf <version-id> [--as report-v1.pdf] --json
+cld filesv2 shares create <base-id> Documents/report.pdf --title "Report" --expires-in 7d --json
+cld filesv2 shares list --json
+cld filesv2 shares revoke <share-id> --json
 cld filesv2 stat <base-id> Documents/report.pdf --json
 cld filesv2 thumbnail <base-id> Photos/team.jpg --size small --out ./team-preview.png --json
 cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf --json
@@ -47,6 +58,13 @@ the session lease without Cloud credentials, and commits through Cloud; the
 result is `{base, entry}`. Existing targets fail with `path_conflict` unless
 `--replace` is passed. Interrupted uploads are aborted, nothing partial is
 published.
+`move` stays inside one base; `copy` may target another base with
+`--target-base` and keeps the originals. `delete` moves entries to the base's
+trash and prints restorable trash IDs. `versions restore` without `--as`
+replaces the current content (the current state is kept as a new version);
+`--as <name>` writes the version next to the file. `shares create --kind
+download` shares the listed entries, `--kind inbox` shares one folder as an
+anonymous upload target; both print the public URL.
 `stat` returns `{base, entry}` after checking current access, even when the entry
 is outside the current listing page. `thumbnail` saves a generated image preview;
 `--size` accepts `small` (320 px) or `large` (1024 px). It uses the same private

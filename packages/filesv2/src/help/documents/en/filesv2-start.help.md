@@ -8,31 +8,39 @@ order: 100
 
 Files v2 brings your accessible Cloud and FreeIPA directories into one view. The label beside each storage name identifies its source.
 
-## Open a folder
+## Find your way around
 
-Select a storage location in the workspace sidebar, then double-click a folder or use its **Open** action. On mobile, find the same storage choices in the Cloud menu. Use the folder path above the list to return to a parent folder. **Next page** opens more entries; **First page** returns to the beginning of the current folder. Your selected storage, folder, and page remain in the address, so you can reload or bookmark it.
+The sidebar lists your storage locations and their folders as a tree; the current folder is highlighted. Click a folder in the list to open it. Click a file to open its details panel on the right, or use the small info button at the start of any row for folders too. Close the panel with the X; that also clears the selection.
 
-Use **Refresh** to read the current filesystem contents, including directories and files created outside Cloud.
+Choose **List**, **Grid**, or **Tree** above the list. Tree keeps folders in place and expands them when you click their icon, and you can open several at once. Grid adds a tile size control. The browser remembers view and size per folder. **Next page** and **First page** move through long folders; storage, folder, page, and a single selected file stay in the address bar so you can reload or bookmark.
 
-## Select and preview
+## Search
 
-Switch between **List** and **Grid** using the view control. **Display options** changes list density or preview size. These choices are remembered in this browser.
+The search field at the top searches names. Choose **This folder** for direct children only or **With subfolders** to include everything below the current folder; results then show each hit with its path relative to the folder. Press Enter to search and clear the field to return to the listing. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search in a smaller folder. The magnifier at the top of the sidebar opens the global Cloud search restricted to files across all your storage locations; opening a result jumps to its folder with the file selected.
 
-Click an entry to show its details and available preview. Double-click or press Enter to open a larger preview. On touchscreens, tap to open; use **Select items** or the checkboxes to select entries instead.
+## Select and act
 
-Use Ctrl/Cmd-click to add entries, Shift-click to select a range, or the checkboxes. Arrow keys move through the list or grid, Space toggles selection, and Escape clears it. Ctrl/Cmd-A selects the current page. Folder and page changes clear selection. A single selected file remains in the URL for bookmarking.
+Ctrl/Cmd-click adds entries to the selection, Shift-click selects a range, and Ctrl/Cmd-A selects the loaded page. Arrow keys move, Space toggles, Escape clears. With a selection, **n selected** and an **Actions** menu appear next to the plus button: download (one file directly, several entries or folders as one ZIP), move into a new folder, move to another folder, copy to this or another storage, share publicly, or move to the trash. Right-click a row for the same actions.
 
-The detail panel opens beside the list and shows the full name, path, date, size, and storage area. Close it with **Close details**, which also clears the selection. Unsupported formats can still be downloaded. If a preview fails, use **Try again**. Selected folder contents are not counted in the combined file size.
+Moving stays inside one storage location. Copying can target another storage location; the originals stay where they are, so a group file can never disappear into a private home by accident.
 
-## Search and create folders
+## Add, upload, and change entries
 
-Type a name fragment into **Search this folder** and press Enter. The search covers names below the current folder, including subfolders, and shows each hit with its folder. Open a hit's folder from the result, or clear the search to return to the listing. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search within a smaller folder.
+The plus button offers **Upload**, **Upload folder**, **New folder**, and **New file**. You can also drop files from your computer onto the list. Each file is transferred directly to the file server after Cloud has checked your access, and it is published only when the whole transfer has arrived. If a name already exists you decide whether to replace or skip. Names cannot contain slashes.
 
-**New folder** creates a folder in the current folder. Names cannot contain slashes, and existing names are not overwritten.
+The details panel of an entry offers **Open in new tab**, **Rename**, **Duplicate**, **Move to**, **Copy to**, **Share publicly**, and **Move to trash**. Folders additionally offer **Share as upload inbox**. The copy button in the panel header copies a Cloud reference to the clipboard that other apps understand.
 
-## Upload files
+## Trash
 
-Use **Upload** to choose files, or drag files from your computer onto the file list. Each file is transferred directly to the file server; Cloud checks your access first and publishes the file only after the whole transfer has arrived. Progress appears above the list, and **Cancel** stops the current transfer. If a file with the same name already exists, you are asked whether to replace it or skip the file. **New file** in the plus menu creates an empty file.
+Deleting never removes anything permanently: entries move into the trash of their storage location. Open the trash from the sidebar to see what you deleted and **Restore** puts an entry back to its original place. Only an administrator can empty the trash.
+
+## Versions
+
+Where the storage keeps versions, the details panel lists earlier versions of a file at the bottom. For each version you can add a comment, download it, restore it in place, restore it as a new file next to the current one, or delete it. Restoring in place keeps the current state as a new version.
+
+## Share publicly
+
+Select entries and choose **Share publicly**, or share a folder as an **upload inbox** from its details. Give the share a name, choose how long the link stays valid, and optionally add an internal note. Everyone who can open the folder that contains the shared entries sees the share under **Shares** in the sidebar and can copy or revoke the link. A download share lets anyone with the link download the listed entries or everything as a ZIP; an upload inbox lets anyone with the link add files to that folder without seeing its contents. Existing files are never replaced by inbox uploads.
 
 ## Download a file
 
@@ -46,7 +54,7 @@ After signing in with `cld login --server <Cloud URL>`, use `cld filesv2 bases l
 
 Download a file with `cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf`. The CLI downloads directly from Filegate to a new local file. Existing paths are never overwritten. Use `--json` for the saved path and byte count, or `cld filesv2 help` for all available commands.
 
-`cld filesv2 search <base-id> report --path Documents --json` searches names below a folder and `cld filesv2 mkdir <base-id> Documents/2026` creates a folder. `cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf` uploads a file directly to the file server; add `--replace` to replace an existing file. `cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
+`cld filesv2 search <base-id> report --path Documents --json` searches names below a folder and `cld filesv2 mkdir <base-id> Documents/2026` creates a folder. `rename`, `move --to`, `copy --to [--target-base]`, `delete`, `trash list|restore`, `versions list|comment|restore|delete`, and `shares list|create|revoke` cover the remaining operations. `cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf` uploads a file directly to the file server; add `--replace` to replace an existing file. `cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
 
 ## When storage is unavailable
 
