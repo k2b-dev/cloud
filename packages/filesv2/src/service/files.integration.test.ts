@@ -17,6 +17,9 @@ suite("Files service and durable bindings", () => {
   let lostMoveResponse = false;
   let failMove = false;
   let leases = 0;
+  let sessionCounter = 0;
+  let lostCommitResponse = false;
+  const sessions = new Map<string, { id: string; root: string; path: string; size: number; received: number; state: string; ownership?: unknown; result?: Node }>();
   let reconciliations = 0;
   let config = {
     url: "http://filegate:4000",
@@ -64,6 +67,44 @@ suite("Files service and durable bindings", () => {
       if (operation === "downloads" || operation === "thumbnail") {
         leases++;
         return Response.json({ method: "GET", url: "http://localhost:4000/signed", expires: "2099-01-01T00:00:00Z" });
+      }
+      if (operation === "uploads") {
+        const sessionId = parts[6];
+        const action = parts[7];
+        const input = z
+          .object({ path: z.string().optional(), size: z.number().optional(), onConflict: z.string().optional(), ownership: z.unknown().optional() })
+          .parse(init?.body ? JSON.parse(String(init.body)) : {});
+        if (!sessionId) {
+          if (nodes.has(`${root}:${input.path}`) && input.onConflict !== "overwrite")
+            return Response.json({ error: "already_exists", message: "exists" }, { status: 409 });
+          const id = `session-${++sessionCounter}`;
+          sessions.set(id, { id, root, path: input.path!, size: input.size!, received: 0, state: "open", ownership: input.ownership });
+          return Response.json({
+            session: { id, root, path: input.path, size: input.size, chunkSize: 4, expires: "2099-01-01T00:00:00Z", state: "open", segments: {}, received: 0 },
+            lease: { url: `http://localhost:4000/lease/${id}`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write", "abort"] },
+          });
+        }
+        const session = sessions.get(sessionId);
+        if (!session) return Response.json({ error: "not_found", message: "missing" }, { status: 404 });
+        if (action === "lease") return Response.json({ url: `http://localhost:4000/lease/${sessionId}/renewed`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write"] });
+        if (action === "commit") {
+          if (session.state !== "open") return Response.json({ error: "conflict", message: "closed" }, { status: 409 });
+          const ownership = z.object({ uid: z.number().optional(), gid: z.number().optional(), mode: z.string().optional() }).parse(session.ownership ?? {});
+          const node = { ...directory(root, session.path, ownership.uid ?? 0, ownership.gid ?? 0, ownership.mode ?? "0644", false), size: session.size };
+          nodes.set(`${root}:${session.path}`, node);
+          session.state = "committed";
+          session.result = node;
+          if (lostCommitResponse) {
+            lostCommitResponse = false;
+            throw new Error("lost_response");
+          }
+          return Response.json(node);
+        }
+        if (init?.method === "DELETE") {
+          session.state = "aborted";
+          return new Response(null, { status: 204 });
+        }
+        return Response.json({ ...session, chunkSize: 4, expires: "2099-01-01T00:00:00Z", segments: {} });
       }
       const body = z
         .object({
@@ -231,7 +272,9 @@ suite("Files service and durable bindings", () => {
     await sql`CREATE TABLE IF NOT EXISTS settings.entries(key text PRIMARY KEY,value text)`.simple();
   });
   beforeEach(async () => {
-    await sql`TRUNCATE filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
+    sessions.clear();
+    lostCommitResponse = false;
+    await sql`TRUNCATE filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await set(
       "linux.identity_config",
       JSON.stringify({ enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
@@ -308,6 +351,57 @@ suite("Files service and durable bindings", () => {
     const cloudBase = (await service.bases(admin)).items.find((base) => base.area === "cloud")!.id;
     await service.mkdir(admin, { baseId: cloudBase, path: "Notes" });
     expect(nodes.get("cloud:users/admin/Notes")).toMatchObject({ mode: "0700" });
+  });
+  test("uploads open a bound Filegate session and publish only after the owner commits a complete transfer", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Reports");
+    directory("freeipa", "users/alice/existing.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const opened = await service.upload(actor, { baseId, path: "Reports/new.txt", size: 12, onConflict: "error" });
+    expect(opened).toMatchObject({ path: "Reports/new.txt", size: 12, chunkSize: 4, url: `http://localhost:4000/lease/${opened.id}` });
+    expect(sessions.get(opened.id)?.ownership).toEqual({ uid: 1001, gid: 2001, mode: "0600" });
+    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_incomplete" });
+    sessions.get(opened.id)!.received = 12;
+    expect((await service.uploadLease(actor, { baseId, id: opened.id })).url).toContain("renewed");
+    const committed = await service.commitUpload(actor, { baseId, id: opened.id });
+    expect(committed.entry).toMatchObject({ path: "Reports/new.txt", size: 12, directory: false });
+    expect(nodes.get("freeipa:users/alice/Reports/new.txt")).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
+    // Repeating the commit is idempotent and no longer talks to Filegate.
+    sessions.delete(opened.id);
+    expect((await service.commitUpload(actor, { baseId, id: opened.id })).entry.path).toBe("Reports/new.txt");
+    await expect(service.uploadLease(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_closed" });
+    // Existing names are only replaced when the client asks for it.
+    await expect(service.upload(actor, { baseId, path: "existing.txt", size: 1, onConflict: "error" })).rejects.toMatchObject({ status: 409 });
+    const replace = await service.upload(actor, { baseId, path: "existing.txt", size: 1, onConflict: "overwrite" });
+    expect(replace.path).toBe("existing.txt");
+    await expect(service.upload(actor, { baseId, path: "Reports", size: 1, onConflict: "overwrite" })).rejects.toMatchObject({ code: "not_file" });
+    await expect(service.upload(actor, { baseId, path: "ReadOnly/x.txt", size: 1, onConflict: "error" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.upload(actor, { baseId, path: "trash/x.txt", size: 1, onConflict: "error" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.upload(actor, { baseId, path: "huge.bin", size: 5000, onConflict: "error" })).rejects.toMatchObject({ code: "insufficient_space" });
+    // Another user cannot commit, renew or abort a session they did not open.
+    const bob = await user("bob", "ipa");
+    directory("freeipa", "users/bob");
+    await expect(service.commitUpload(bob, { baseId, id: replace.id })).rejects.toMatchObject({ code: "not_found" });
+    await expect(service.abortUpload(bob, { baseId, id: replace.id })).rejects.toMatchObject({ code: "not_found" });
+    await service.abortUpload(actor, { baseId, id: replace.id });
+    expect(sessions.get(replace.id)?.state).toBe("aborted");
+    await expect(service.commitUpload(actor, { baseId, id: replace.id })).rejects.toMatchObject({ code: "upload_closed" });
+    await service.abortUpload(actor, { baseId, id: replace.id });
+  });
+  test("a commit whose response was lost is recovered from the Filegate session record", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const opened = await service.upload(actor, { baseId, path: "lost.txt", size: 0, onConflict: "error" });
+    lostCommitResponse = true;
+    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toThrow("lost_response");
+    const recovered = await service.commitUpload(actor, { baseId, id: opened.id });
+    expect(recovered.entry).toMatchObject({ path: "lost.txt", size: 0 });
+    const gone = await service.upload(actor, { baseId, path: "expired.txt", size: 2, onConflict: "error" });
+    sessions.get(gone.id)!.state = "expired";
+    await expect(service.commitUpload(actor, { baseId, id: gone.id })).rejects.toMatchObject({ code: "upload_closed" });
   });
   test("detail and thumbnails enforce current leaf rights, traversal and trash before any lease", async () => {
     const actor = await user("alice", "ipa");

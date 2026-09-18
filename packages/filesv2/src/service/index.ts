@@ -18,9 +18,12 @@ import type {
   InventoryState,
   RootSummary,
   SearchResult,
+  UploadLease,
+  UploadSession,
 } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { operations } from "../data/operations";
+import { uploads } from "../data/uploads";
 import { readConfiguration, writeConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import { createDirectoryLifecycle } from "./lifecycle";
@@ -250,7 +253,34 @@ export function createFilesService(
     const node = await root.stat(target);
     if (item.area === "freeipa") await checkUnix(root, target, state.unix, node.directory ? 5 : 4);
     if (directory !== undefined && node.directory !== directory) throw new FilesError(directory ? "not_directory" : "not_file", 400);
-    return { root, inspection, target, relative, state, node };
+    return { root, inspection, target, relative, state, node, info };
+  }
+  /** Parent folder of a new entry: authorized for reading, writable, and never inside trash. */
+  async function writableParent(actor: RequestActor, baseId: string, path: string) {
+    const relative = userPath(path);
+    if (!relative) throw new FilesError("invalid_path");
+    const parts = relative.split("/");
+    const current = await authorized(actor, baseId, parts.slice(0, -1).join("/"), true);
+    if (current.inspection.candidate.area === "freeipa") await checkUnix(current.root, current.target, current.state.unix, 3);
+    return { ...current, relative, name: parts.at(-1)! };
+  }
+  const ownershipFor = (current: Awaited<ReturnType<typeof writableParent>>, directory: boolean) => {
+    const { candidate } = current.inspection;
+    const mode = directory ? (candidate.kind === "groups" ? "2770" : "0700") : candidate.kind === "groups" ? "0660" : "0600";
+    return candidate.area === "freeipa"
+      ? { uid: current.state.unix!.uid, gid: current.node.gid, [directory ? "dirMode" : "mode"]: mode }
+      : { [directory ? "dirMode" : "mode"]: mode };
+  };
+  /** Filegate caps session leases at five minutes; clients renew through Cloud while a session stays open. */
+  const UPLOAD_LEASE_SECONDS = 300;
+  /** Sessions are bound to the user that opened them; commit re-checks the target before Filegate publishes. */
+  async function uploadRow(actor: RequestActor, baseId: string, id: string) {
+    const state = await context(actor);
+    const row = await uploads.get(id, state.self.user.id);
+    if (!row) throw new FilesError("not_found", 404);
+    const current = await writableParent(actor, baseId, row.path);
+    if (current.inspection.binding?.id !== row.base_id) throw new FilesError("not_found", 404);
+    return { row, current };
   }
   async function requireAdmin(actor: RequestActor) {
     // The public inventory contract performs the canonical admin check.
@@ -352,19 +382,85 @@ export function createFilesService(
       return { base: current.inspection.summary, path: current.relative, query: input.q, items, next: page.next ?? null };
     },
     async mkdir(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
-      const relative = userPath(input.path);
-      if (!relative) throw new FilesError("invalid_path");
-      const parts = relative.split("/");
-      const current = await authorized(actor, input.baseId, parts.slice(0, -1).join("/"), true);
-      const { candidate } = current.inspection;
-      if (candidate.area === "freeipa") await checkUnix(current.root, current.target, current.state.unix, 3);
-      const node = await current.root.mkdir(joinPath(current.target, parts.at(-1)!), {
-        ownership:
-          candidate.area === "freeipa"
-            ? { uid: current.state.unix!.uid, gid: current.node.gid, dirMode: candidate.kind === "groups" ? "2770" : "0700" }
-            : { dirMode: "0700" },
+      const current = await writableParent(actor, input.baseId, input.path);
+      const node = await current.root.mkdir(joinPath(current.target, current.name), { ownership: ownershipFor(current, true) });
+      return { base: current.inspection.summary, entry: fileEntry(current.relative, node) };
+    },
+    async upload(
+      actor: RequestActor,
+      input: { baseId: string; path: string; size: number; onConflict: "error" | "overwrite" },
+    ): Promise<UploadSession> {
+      const current = await writableParent(actor, input.baseId, input.path);
+      const target = joinPath(current.target, current.name);
+      // Filegate only detects name conflicts at commit; checking now avoids transferring bytes that cannot be published.
+      let existing: Node | null = null;
+      try {
+        existing = await current.root.stat(target);
+      } catch (error) {
+        if (!(error instanceof FilegateError && error.status === 404)) throw error;
+      }
+      if (existing && input.onConflict === "error") throw new FilesError("path_conflict", 409);
+      if (existing?.directory) throw new FilesError("not_file", 409);
+      if (existing && current.inspection.candidate.area === "freeipa") await checkUnix(current.root, target, current.state.unix, 2);
+      if (input.size > current.info.available) throw new FilesError("insufficient_space", 409);
+      const created = await current.root.createSession(target, input.size, {
+        onConflict: input.onConflict,
+        ownership: ownershipFor(current, false),
+        expiresIn: UPLOAD_LEASE_SECONDS,
+        allowAbort: true,
       });
-      return { base: current.inspection.summary, entry: fileEntry(relative, node) };
+      await uploads.create({
+        id: created.session.id,
+        base_id: current.inspection.binding!.id,
+        user_id: current.state.self.user.id,
+        root: current.inspection.candidate.root,
+        path: current.relative,
+        size: input.size,
+      });
+      return {
+        id: created.session.id,
+        path: current.relative,
+        size: input.size,
+        chunkSize: created.session.chunkSize,
+        url: created.lease.url,
+        expires: created.lease.expires,
+      };
+    },
+    async uploadLease(actor: RequestActor, input: { baseId: string; id: string }): Promise<UploadLease> {
+      const { row, current } = await uploadRow(actor, input.baseId, input.id);
+      if (row.state !== "open") throw new FilesError("upload_closed", 409);
+      const lease = await current.root.sessionLease(row.id, { expiresIn: UPLOAD_LEASE_SECONDS, allowAbort: true });
+      return { url: lease.url, expires: lease.expires };
+    },
+    async commitUpload(actor: RequestActor, input: { baseId: string; id: string }): Promise<EntryResult> {
+      const { row, current } = await uploadRow(actor, input.baseId, input.id);
+      const base = current.inspection.summary;
+      if (row.state === "committed" && row.result) return { base, entry: fileEntry(row.path, row.result) };
+      if (row.state === "aborted") throw new FilesError("upload_closed", 409);
+      // A commit whose response was lost is recognised from Filegate's session record.
+      const session = await current.root.session(row.id);
+      if (session.state === "committed" && session.result) {
+        await uploads.finish(row.id, "committed", session.result);
+        return { base, entry: fileEntry(row.path, session.result) };
+      }
+      if (session.state !== "open") {
+        await uploads.finish(row.id, "aborted", null);
+        throw new FilesError("upload_closed", 409);
+      }
+      if (session.received !== session.size) throw new FilesError("upload_incomplete");
+      const node = await current.root.commitSession(row.id);
+      await uploads.finish(row.id, "committed", node);
+      return { base, entry: fileEntry(row.path, node) };
+    },
+    async abortUpload(actor: RequestActor, input: { baseId: string; id: string }): Promise<void> {
+      const { row, current } = await uploadRow(actor, input.baseId, input.id);
+      if (row.state !== "open") return;
+      try {
+        await current.root.abortSession(row.id);
+      } catch (error) {
+        if (!(error instanceof FilegateError && (error.status === 404 || error.status === 409))) throw error;
+      }
+      await uploads.finish(row.id, "aborted", null);
     },
     async entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
       if (!input.path) throw new FilesError("invalid_path");

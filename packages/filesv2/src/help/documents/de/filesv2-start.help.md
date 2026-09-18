@@ -30,6 +30,10 @@ Gib in **In diesem Ordner suchen** einen Namensbestandteil ein und drücke Enter
 
 **Neuer Ordner** legt einen Ordner im aktuellen Ordner an. Namen dürfen keine Schrägstriche enthalten, bestehende Namen werden nicht überschrieben.
 
+## Dateien hochladen
+
+Wähle mit **Hochladen** Dateien aus oder ziehe Dateien von deinem Gerät auf die Dateiliste. Jede Datei geht direkt an den Dateiserver; Cloud prüft vorher deinen Zugriff und veröffentlicht die Datei erst, wenn die Übertragung vollständig angekommen ist. Der Fortschritt erscheint über der Liste, **Abbrechen** stoppt die laufende Übertragung. Existiert bereits eine Datei mit demselben Namen, wirst du gefragt, ob du sie ersetzen oder die Datei überspringen möchtest. **Neue Datei** im Plus-Menü legt eine leere Datei an.
+
 ## Datei herunterladen
 
 Wähle **Herunterladen** neben einer Datei. Die Cloud prüft deinen aktuellen Zugriff und bereitet einen kurzzeitig gültigen Download direkt vom Dateiserver vor. Schlägt die Vorbereitung fehl, erscheint oberhalb der Liste eine Fehlermeldung. Du kannst den Download erneut anfordern.
@@ -42,7 +46,7 @@ Melde dich mit `cld login --server <Cloud-URL>` an. `cld filesv2 bases list --js
 
 `cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf` lädt eine Datei direkt von Filegate in eine neue lokale Datei. Bestehende Pfade werden nie überschrieben. Mit `--json` erhältst du den gespeicherten Pfad und die Byteanzahl. `cld filesv2 help` zeigt alle verfügbaren Befehle.
 
-`cld filesv2 search <base-id> Bericht --path Dokumente --json` sucht Namen unterhalb eines Ordners und `cld filesv2 mkdir <base-id> Dokumente/2026` legt einen Ordner an. `cld filesv2 stat <base-id> <path> --json` liest aktuelle Dateidetails. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` speichert eine Bildvorschau.
+`cld filesv2 search <base-id> Bericht --path Dokumente --json` sucht Namen unterhalb eines Ordners und `cld filesv2 mkdir <base-id> Dokumente/2026` legt einen Ordner an. `cld filesv2 upload <base-id> ./bericht.pdf --to Dokumente/bericht.pdf` lädt eine Datei direkt zum Dateiserver hoch; mit `--replace` ersetzt du eine bestehende Datei. `cld filesv2 stat <base-id> <path> --json` liest aktuelle Dateidetails. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` speichert eine Bildvorschau.
 
 ## Wenn eine Ablage nicht verfügbar ist
 

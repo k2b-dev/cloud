@@ -14,6 +14,7 @@ import {
 import type { ApiType } from "./api";
 import { adminLifecycleCommands } from "./cli-admin";
 import { downloadFile } from "./cli-download";
+import { uploadFile } from "./cli-upload";
 import {
   type AdminResult,
   AdoptInputSchema,
@@ -23,6 +24,8 @@ import {
   type DownloadLease,
   type EntryResult,
   type SearchResult,
+  type UploadLease,
+  type UploadSession,
   type InventoryState,
   InventoryStateSchema,
 } from "./contracts";
@@ -174,6 +177,39 @@ function filesCommands(locale?: string) {
             await api(ctx).bases[":baseId"].directories.$post({ param: { baseId: args.base }, json: { path: args.path } }),
           );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${result.entry.path}`);
+        },
+      }),
+      command("upload", {
+        summary: t({ en: "Upload one local file directly to Filegate", de: "Eine lokale Datei direkt zu Filegate hochladen" }),
+        args: {
+          ...baseArgs,
+          file: arg.required({ description: t({ en: "Local file to upload", de: "Lokale Datei zum Hochladen" }) }),
+        },
+        flags: {
+          to: flag.string({
+            required: true,
+            description: t({ en: "Target file path relative to the base", de: "Zieldateipfad relativ zur Ablage" }),
+          }),
+          replace: flag.boolean({ description: t({ en: "Replace an existing file at the target path", de: "Bestehende Datei am Zielpfad ersetzen" }) }),
+        },
+        examples: ["cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf"],
+        async run({ ctx, args, flags }) {
+          const param = { baseId: args.base };
+          const result = await uploadFile(ctx, args.file, {
+            open: async (size, signal) =>
+              ctx.readJson<UploadSession>(
+                await api(ctx).bases[":baseId"].uploads.$post(
+                  { param, json: { path: flags.to!, size, onConflict: flags.replace ? "overwrite" : "error" } },
+                  { init: { signal } },
+                ),
+              ),
+            renew: async (id) => ctx.readJson<UploadLease>(await api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...param, id } })),
+            commit: async (id) => ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...param, id } })),
+            abort: async (id) => {
+              await api(ctx).bases[":baseId"].uploads[":id"].abort.$post({ param: { ...param, id } });
+            },
+          });
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Uploaded", de: "Hochgeladen" })}: ${result.entry.path} (${result.entry.size} bytes)`);
         },
       }),
       command("stat", {

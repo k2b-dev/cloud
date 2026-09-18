@@ -46,4 +46,17 @@ export async function migrate(): Promise<void> {
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_archive_inventory ON filesv2.operations(area,root,id) WHERE action='archive' AND state IN ('pending','complete')`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_pending_recovery ON filesv2.operations(updated_at,id) WHERE state='pending'`.simple();
+  // Upload sessions live in Filegate; this row binds one session to the user and target that opened it.
+  await sql`CREATE TABLE IF NOT EXISTS filesv2.uploads (
+    id TEXT PRIMARY KEY,
+    base_id UUID NOT NULL REFERENCES filesv2.bases(id),
+    user_id UUID NOT NULL,
+    root TEXT NOT NULL,
+    path TEXT NOT NULL,
+    size BIGINT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open','committed','aborted')),
+    result JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`.simple();
 }

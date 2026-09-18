@@ -6,9 +6,37 @@
 .filesv2-browser {
   container-type: inline-size;
   container-name: files-browser;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+.filesv2-browser__surface {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.filesv2-browser__drop {
+  position: absolute;
+  inset: 0.5rem;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 2px dashed var(--k2b-action);
+  border-radius: var(--k2b-radius-control);
+  background: color-mix(in srgb, var(--k2b-action) 6%, var(--k2b-surface));
+  opacity: 0.97;
+  color: var(--k2b-action);
+  font-weight: 600;
+  pointer-events: none;
+}
+.filesv2-browser__drop i {
+  font-size: 2rem;
 }
 .filesv2-browser__header {
   display: flex;
@@ -94,5 +122,6 @@
 }
 
 .filesv2-search {
-  width: 16rem;
+  width: 14rem;
+  max-width: 100%;
 }

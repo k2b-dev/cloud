@@ -832,3 +832,38 @@ test("search and mkdir pass folder scope and names through the authenticated API
   expect(JSON.parse(made.stdout).entry.path).toBe("Documents/2026");
   expect(seen).toEqual([`GET /api/filesv2/bases/${base.id}/search`, `POST /api/filesv2/bases/${base.id}/directories`]);
 });
+
+test("upload opens a session through Cloud, streams segments to Filegate without Cloud credentials, and commits", async () => {
+  const dir = await directory();
+  const local = join(dir, "notes.txt");
+  await writeFile(local, "hello filegate");
+  let received = 0;
+  const transfer = serve(async (request) => {
+    expect(request.headers.get("authorization")).toBeNull();
+    expect(request.headers.get("cookie")).toBeNull();
+    const url = new URL(request.url);
+    expect(url.searchParams.get("lease")).toBe(leaseSecret);
+    const status = () => ({ id: "s1", root: "cloud", size: 14, chunkSize: 4, expires: "2030-01-01T00:00:00Z", state: "open", segments: {}, received });
+    if (request.method === "GET") return Response.json(status());
+    expect(request.method).toBe("PUT");
+    received += (await request.arrayBuffer()).byteLength;
+    return Response.json(status());
+  });
+  const seen: string[] = [];
+  const cloud = serve(async (request) => {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+    const url = new URL(request.url);
+    seen.push(`${request.method} ${url.pathname}`);
+    if (url.pathname.endsWith("/uploads")) {
+      expect(await request.json()).toEqual({ path: "Documents/notes.txt", size: 14, onConflict: "overwrite" });
+      return Response.json({ id: "s1", path: "Documents/notes.txt", size: 14, chunkSize: 4, url: `${transfer.url}?lease=${leaseSecret}`, expires: "2030-01-01T00:00:00Z" });
+    }
+    expect(received).toBe(14);
+    return Response.json({ base, entry: { ...entry, name: "notes.txt", path: "Documents/notes.txt", size: 14 } });
+  });
+  const result = await run(["--json", "filesv2", "upload", base.id, local, "--to", "Documents/notes.txt", "--replace"], { server: cloud.url.href });
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout).entry).toMatchObject({ path: "Documents/notes.txt", size: 14 });
+  expect(result.stdout + result.stderr).not.toContain(leaseSecret);
+  expect(seen).toEqual([`POST /api/filesv2/bases/${base.id}/uploads`, `POST /api/filesv2/bases/${base.id}/uploads/s1/commit`]);
+});

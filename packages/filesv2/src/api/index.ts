@@ -36,6 +36,8 @@ import {
   RootActionSchema,
   SearchQuerySchema,
   ThumbnailInputSchema,
+  UploadIdSchema,
+  UploadInputSchema,
 } from "../contracts";
 import { FilesError, filesService } from "../service";
 import { errorMessage } from "./messages";
@@ -95,6 +97,33 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Create a folder", ...requiresAuth }),
     v("json", DirectoryInputSchema),
     async (c) => respond(c, ok(await filesService.mkdir(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/uploads",
+    middleware.openapi({ summary: "Open a direct upload session", ...requiresAuth }),
+    v("json", UploadInputSchema),
+    async (c) => respond(c, ok(await filesService.upload(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/uploads/:id/lease",
+    middleware.openapi({ summary: "Renew the lease of an open upload session", ...requiresAuth }),
+    v("param", UploadIdSchema.extend({ baseId: z.string() })),
+    async (c) => respond(c, ok(await filesService.uploadLease(c.get("actor"), c.req.valid("param")))),
+  )
+  .post(
+    "/bases/:baseId/uploads/:id/commit",
+    middleware.openapi({ summary: "Publish a fully transferred upload session", ...requiresAuth }),
+    v("param", UploadIdSchema.extend({ baseId: z.string() })),
+    async (c) => respond(c, ok(await filesService.commitUpload(c.get("actor"), c.req.valid("param")))),
+  )
+  .post(
+    "/bases/:baseId/uploads/:id/abort",
+    middleware.openapi({ summary: "Abort an upload session", ...requiresAuth }),
+    v("param", UploadIdSchema.extend({ baseId: z.string() })),
+    async (c) => {
+      await filesService.abortUpload(c.get("actor"), c.req.valid("param"));
+      return respond(c, ok({ aborted: true }));
+    },
   )
   .post(
     "/bases/:baseId/thumbnail",

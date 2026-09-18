@@ -30,6 +30,10 @@ Type a name fragment into **Search this folder** and press Enter. The search cov
 
 **New folder** creates a folder in the current folder. Names cannot contain slashes, and existing names are not overwritten.
 
+## Upload files
+
+Use **Upload** to choose files, or drag files from your computer onto the file list. Each file is transferred directly to the file server; Cloud checks your access first and publishes the file only after the whole transfer has arrived. Progress appears above the list, and **Cancel** stops the current transfer. If a file with the same name already exists, you are asked whether to replace it or skip the file. **New file** in the plus menu creates an empty file.
+
 ## Download a file
 
 Select **Download** beside a file. Cloud checks your current access and prepares a short-lived download directly from the file server. If preparing the download fails, the error appears above the list and you can try again.
@@ -42,7 +46,7 @@ After signing in with `cld login --server <Cloud URL>`, use `cld filesv2 bases l
 
 Download a file with `cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf`. The CLI downloads directly from Filegate to a new local file. Existing paths are never overwritten. Use `--json` for the saved path and byte count, or `cld filesv2 help` for all available commands.
 
-`cld filesv2 search <base-id> report --path Documents --json` searches names below a folder and `cld filesv2 mkdir <base-id> Documents/2026` creates a folder. `cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
+`cld filesv2 search <base-id> report --path Documents --json` searches names below a folder and `cld filesv2 mkdir <base-id> Documents/2026` creates a folder. `cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf` uploads a file directly to the file server; add `--replace` to replace an existing file. `cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
 
 ## When storage is unavailable
 

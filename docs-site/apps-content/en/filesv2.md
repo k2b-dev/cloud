@@ -51,12 +51,18 @@ many entries to scan, so search within a smaller folder in that case. **New
 folder** creates a folder in the current folder without overwriting existing
 names.
 
+**Upload** and drag-and-drop transfer files directly to Filegate through an
+upload session: Cloud authorizes the target, issues a short-lived session
+lease that clients renew through Cloud, and publishes the file only after the
+complete transfer is committed. Existing names are never replaced without
+asking. **New file** creates an empty file the same way.
+
 Use **Download** for one or several individual files. Multiple downloads may need
-browser permission. Folder downloads and file mutations are not offered in this
+browser permission. Folder downloads, renaming and moving are not offered in this
 browser yet. Listings retain Filegate's name order and explicit pagination.
 
 The CLI provides `filesv2 search <base-id> <fragment> --path <folder>`,
-`filesv2 mkdir <base-id> <path>`, `filesv2 stat <base-id> <path> --json` for the same current
+`filesv2 mkdir <base-id> <path>`, `filesv2 upload <base-id> <file> --to <path>`, `filesv2 stat <base-id> <path> --json` for the same current
 metadata and `filesv2 thumbnail <base-id> <path> --out <file>` for a direct preview
 download. Use `--size small|large` to select the thumbnail size.
 

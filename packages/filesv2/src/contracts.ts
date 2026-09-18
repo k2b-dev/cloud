@@ -43,6 +43,15 @@ export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
 export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
 export type SearchResult = DirectoryResult & { query: string };
 export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
+export const UploadInputSchema = z.object({
+  path: z.string().min(1).max(4096),
+  size: z.number().int().min(0),
+  onConflict: z.enum(["error", "overwrite"]).default("error"),
+});
+export const UploadIdSchema = z.object({ id: z.string().min(1).max(256) });
+/** Browser and CLI transfer segments straight to `url`; Cloud never sees the bytes. */
+export type UploadSession = { id: string; path: string; size: number; chunkSize: number; url: string; expires: string };
+export type UploadLease = { url: string; expires: string };
 export type RootSummary = {
   name: string;
   indexEnabled: boolean;
