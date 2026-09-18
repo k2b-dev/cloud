@@ -74,14 +74,18 @@ export const filesCapabilities = defineCapabilities({
         const actor = userActor(context);
         if (!actor) return fail(err.forbidden("File search runs on behalf of a signed-in user."));
         const q = query.trim();
-        if (!q) return ok({ data: [] });
         const bases = (await filesService.bases(actor)).items.filter((base) => base.status === "existing").slice(0, SEARCH_BASE_LIMIT);
+        // Without a query the palette offers the top level of every storage, newest first; Filegate cannot yet
+        // answer "recently modified" across a root, so this stays a bounded first page per base.
         const pages = await Promise.all(
-          bases.map((base) => filesService.search(actor, { baseId: base.id, q }).catch(() => ({ base, items: [] }))),
+          bases.map((base) =>
+            (q ? filesService.search(actor, { baseId: base.id, q }) : filesService.list(actor, { baseId: base.id })).catch(() => ({ base, items: [] })),
+          ),
         );
         const data = pages
-          .flatMap((page) =>
-            page.items.map((entry) => {
+          .flatMap((page) => (q ? page.items : [...page.items].sort((a, b) => b.modified.localeCompare(a.modified))).map((entry) => ({ page, entry })))
+          .map(({ page, entry }) =>
+            {
               const id = entryRefId(page.base.id, entry.path);
               if (!id) return null;
               const folder = parent(entry.path);
@@ -94,8 +98,7 @@ export const filesCapabilities = defineCapabilities({
                 metadata: [{ label: "Storage", value: page.base.name }],
                 links: [{ rel: "open" as const, href: entryHref(page.base.id, entry.path, entry.directory) }],
               };
-            }),
-          )
+            })
           .filter((item) => item !== null)
           .slice(0, limit);
         return ok({ data });

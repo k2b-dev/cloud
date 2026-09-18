@@ -153,7 +153,7 @@ describe("Files v2 interactions", () => {
       dispose();
       dom.cleanup();
     };
-    const rows = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")];
+    const rows = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row:not(.filesv2-list__row--up)")];
     rows[0]!.click();
     expect(opened).toBe("Budget #1/Final ?");
     const next = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((entry) => entry.textContent?.includes("Next page"))!;

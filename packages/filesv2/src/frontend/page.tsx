@@ -24,9 +24,10 @@ export default ssr<AuthContext>(async (c) => {
   if (search && !SearchQuerySchema.safeParse({ ...query.data, q: search }).success) return ssr.error(c, 400);
   if (requestedFile && !EntryQuerySchema.safeParse({ path: requestedFile }).success) return ssr.error(c, 400);
   const requestedBase = c.req.query("base");
-  const trashView = c.req.query("view") === "trash";
+  const view = c.req.query("view");
+  const trashView = view === "trash";
   const initial: WorkspaceSnapshot = {
-    source: `${filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope)}${trashView ? `${requestedBase || query.data.path ? "&" : "?"}view=trash` : ""}`,
+    source: `${filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope)}${view === "trash" || view === "shares" ? `${requestedBase || query.data.path ? "&" : "?"}view=${view}` : ""}`,
     bases: { items: [], issues: [] },
     selectedId: null,
     directory: null,
@@ -39,7 +40,8 @@ export default ssr<AuthContext>(async (c) => {
       : (initial.bases.items.find((base) => base.status === "existing") ?? initial.bases.items[0]);
     if (requestedBase && !selected) throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
-    if (selected?.status === "existing" && !trashView) {
+    if (view === "shares") initial.shares = await filesService.listShares(actor);
+    else if (selected?.status === "existing" && !trashView) {
       initial.directory = search
         ? await filesService.search(actor, { baseId: selected.id, ...query.data, q: search, scope })
         : await filesService.list(actor, { baseId: selected.id, ...query.data });

@@ -27,14 +27,16 @@ empty directory.
 
 The sidebar is a folder tree per storage location with global file search at
 the top and the trash and **Shares** below. The list is a flat striped list;
-folders open on click, files open the details panel, and every row has an info
-button. **List**, **Grid**, and **Tree** views (tree expands folders in place,
-several at once) and the grid tile size are remembered per folder in a cookie.
+folders open on click (the opened folder's icon becomes a spinner, a leading
+`..` row goes up), files open the details panel, and every row ends with an
+info button. **List**, **Grid**, and **Tree** views (tree starts at the storage
+root and is expanded down to the current folder) and the grid tile size are
+remembered per folder in a cookie.
 Storage, folder, page, single selection, search query, and scope stay in the
 URL.
 
-Search covers **This folder** or **With subfolders**; subtree hits show their
-path relative to the searched folder. Filesv2 also answers the universal
+Search always covers the subtree below the current folder; hits show their
+path relative to it. Filesv2 also answers the universal
 search under the `file` tag through the `filesv2.entry` resource type, and
 each entry's Cloud reference can be copied from the details panel.
 
@@ -60,7 +62,8 @@ the target. Existing names ask before being replaced.
 A share is either a download bundle of entries or an upload inbox for one
 folder, always inside one base. Its scope is the common ancestor of the
 entries; everyone who can read that folder sees the share under **Shares** and
-may revoke it, so shares never cross a rights boundary. Links live under
+may revoke it, so shares never cross a rights boundary. The overview lives inside the workspace at
+`/app/filesv2?view=shares`, the trash at `/app/filesv2?view=trash`. Links live under
 `/share/filesv2/s/<token>` and `/share/filesv2/inbox/<token>`, expire after
 1, 7, 30 or 90 days, and are served token-only with rate limiting. Visitors
 download through short leases or one signed archive; inbox uploads open

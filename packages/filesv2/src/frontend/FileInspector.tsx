@@ -321,9 +321,9 @@ function VersionsSection(props: { base: BaseSummary; entry: FileEntry; busy?: bo
   return (
     <DetailPanel.Group label={t().versions}>
       <DetailPanel.Section title={t().versions} icon="ti ti-history" tone="neutral" meta={props.base.versioningEnabled ? items().length : undefined}>
-        <Show when={props.base.versioningEnabled} fallback={<p class="text-sm text-dimmed">{t().versionsUnavailable}</p>}>
+        <Show when={props.base.versioningEnabled} fallback={<p class="text-xs text-dimmed">{t().versionsUnavailable}</p>}>
           <Show when={!versions.loading() || items().length} fallback={<Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />}>
-            <Show when={items().length} fallback={<p class="text-sm text-dimmed">{t().noVersions}</p>}>
+            <Show when={items().length} fallback={<p class="text-xs text-dimmed">{t().noVersions}</p>}>
               <div class="flex flex-col gap-1">
                 <For each={items()}>
                   {(version) => (

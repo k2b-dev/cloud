@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
-import type { BasesResult, DirectoryResult, EntryResult } from "../contracts";
+import type { BasesResult, DirectoryResult, EntryResult, ShareView } from "../contracts";
 
 export type WorkspaceSnapshot = {
   source: string;
@@ -9,6 +9,7 @@ export type WorkspaceSnapshot = {
   directory: (DirectoryResult & { query?: string; scope?: "folder" | "tree" }) | null;
   errorCode: string | null;
   detail?: EntryResult | null;
+  shares?: ShareView[];
 };
 
 type Transition = {
