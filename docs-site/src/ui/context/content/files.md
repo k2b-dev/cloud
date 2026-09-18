@@ -251,3 +251,41 @@ const source: FileSource = {
   renderers={applicationRenderers}
 />
 ```
+
+## Paginated list and grid views
+
+Use `FileGrid` with `createCollectionSelection` when the host owns a paginated
+collection rather than an entire tree. Pass the same controller to
+`DataTable.selection` and `FileGrid.selection` to preserve selection when changing
+views. Both require stable `getRowId` values. The controller's `ids` accessor is
+the selectable collection in display order; removed IDs are pruned.
+
+```tsx
+const selection = createCollectionSelection({ ids: () => entries().map(file => file.path) });
+<FileGrid
+  rows={entries()}
+  getRowId={file => file.path}
+  selection={selection}
+  label="Files"
+  size="md"
+  renderPreview={file => <i class={file.icon} aria-hidden="true" />}
+  renderLabel={file => file.name}
+  renderMeta={file => file.sizeLabel}
+  onOpen={openFile}
+/>
+```
+
+Click selects, Ctrl/Cmd-click toggles, and Shift-click selects a range. Arrow keys,
+Home, and End navigate; Space toggles, Ctrl/Cmd-A selects the supplied collection,
+and Escape clears it. Enter and double-click call `onOpen` (or
+`DataTable.onRowDoubleClick`). Nested controls retain their own behavior.
+`renderActions` accepts host-owned buttons or checkboxes. The host owns data,
+context menus, authorization, previews, and navigation; `onContextMenu` can align
+selection before opening a menu. Use `sm`, `md`, or `lg` for tile size. `FileGrid`
+has no scroll owner; place it in `ScrollArea`. A `DataTable` already owns scrolling.
+
+For signed native media URLs, `FileView.crossOrigin="anonymous"` omits credentials
+on cross-origin media requests. `onPreviewError` reports native image/audio/video
+load errors so the host can request a fresh URL and offer retry. These options
+leave existing media behavior unchanged when omitted. PDF and text content can
+instead be fetched by the host with an abort signal and explicit byte limit.

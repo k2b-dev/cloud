@@ -1,5 +1,5 @@
 import { createScrollFade } from "./scroll-fade";
-import { createEffect, createSignal, createUniqueId, type JSX, Show, splitProps } from "solid-js";
+import { children, createEffect, createSignal, createUniqueId, type JSX, Show, splitProps } from "solid-js";
 import { Button, ButtonLink, type ButtonLinkProps, type ButtonProps } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 
@@ -290,6 +290,8 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
     });
   });
   const className = () => classNames("k2b-detail-panel__section", props.class);
+  // Resolve once: reading `props.children` twice would instantiate the section body twice.
+  const resolved = children(() => props.children);
 
   return (
     <Show
@@ -311,8 +313,8 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
               <div class="k2b-detail-panel__section-actions">{props.actions}</div>
             </Show>
           </header>
-          <Show when={props.children !== undefined}>
-            <div class="k2b-detail-panel__section-body">{props.children}</div>
+          <Show when={resolved()}>
+            <div class="k2b-detail-panel__section-body">{resolved()}</div>
           </Show>
         </section>
       }

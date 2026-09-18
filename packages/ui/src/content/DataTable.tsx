@@ -13,11 +13,12 @@ import {
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { useUiMessages } from "../intl/messages";
 import { useLocale } from "../intl/locale";
+import { useUiMessages } from "../intl/messages";
 import { PanelHeader } from "../layout/PanelHeader";
 import { Paper } from "../surfaces/Paper";
 import Placeholder from "../surfaces/Placeholder";
+import type { CollectionSelection } from "./collection-selection";
 
 export type DataTableColumn<T> = {
   id: string;
@@ -69,10 +70,13 @@ export type DataTableProps<T> = {
    */
   sortHref?: (next: DataTableSort) => string;
   selectedRowId?: string | null;
+  /** Optional multi-selection shared with another collection view. Requires getRowId. */
+  selection?: CollectionSelection;
   rowClass?: string | ((row: T) => string | undefined);
   hoverRows?: boolean;
   onRowClick?: (row: T) => void;
   onRowDoubleClick?: (row: T) => void;
+  onRowContextMenu?: (row: T) => void;
   renderCell?: DataTableRenderCell<T>;
   renderHeader?: DataTableRenderHeader<T>;
   footer?: DataTableFooter<T>;
@@ -147,6 +151,7 @@ const rowInteractiveSelector = [
   "a[href]",
   "button",
   "input",
+  "label",
   "select",
   "textarea",
   "summary",
@@ -199,7 +204,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   let previousLoadingMore = !!props.loadingMore;
   let previousHasMore = !!props.hasMore;
   const rowId = (row: T) => props.getRowId?.(row);
-  const isInteractive = () => !!props.onRowClick || !!props.onRowDoubleClick;
+  const isInteractive = () => !!props.selection || !!props.onRowClick || !!props.onRowDoubleClick;
   const shouldHoverRows = () => props.hoverRows ?? isInteractive();
   const shouldRenderLoadMoreSentinel = () => !!props.onLoadMore;
   const labelledBy = () => props.ariaLabelledBy ?? (panel?.hasHeading() ? panel.headingId : undefined);
@@ -372,13 +377,17 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   const onRowKeyDown = (event: KeyboardEvent, row: T) => {
     if (!isInteractive()) return;
     if (isNestedRowControl(event)) return;
+    const id = rowId(row);
+    if (id !== undefined && props.selection?.keyDown(event, id)) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    (props.onRowClick ?? props.onRowDoubleClick)?.(row);
+    (props.selection ? props.onRowDoubleClick : (props.onRowClick ?? props.onRowDoubleClick))?.(row);
   };
 
   const onRowClick = (event: MouseEvent, row: T) => {
     if (isNestedRowControl(event)) return;
+    const id = rowId(row);
+    if (id !== undefined) props.selection?.select(id, event);
     props.onRowClick?.(row);
   };
 
@@ -492,16 +501,27 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                 <For each={props.rows}>
                   {(row) => {
                     const id = () => rowId(row);
-                    const isSelected = () => props.selectedRowId && id() === props.selectedRowId;
+                    const isSelected = () =>
+                      props.selection ? props.selection.selected().has(id() ?? "") : props.selectedRowId && id() === props.selectedRowId;
                     return (
                       <tr
+                        ref={(element) => {
+                          const key = id();
+                          if (key !== undefined) props.selection?.register(key, element);
+                        }}
                         class={`k2b-data-table__row ${rowClass(row)}`}
                         data-hover={shouldHoverRows() ? "true" : undefined}
                         data-clickable={shouldHoverRows() && isInteractive() ? "true" : undefined}
                         data-selected={isSelected() ? "true" : undefined}
-                        tabIndex={isInteractive() ? 0 : undefined}
+                        aria-selected={props.selection ? !!isSelected() : undefined}
+                        tabIndex={props.selection ? (props.selection.focused() === id() ? 0 : -1) : isInteractive() ? 0 : undefined}
+                        onFocus={() => {
+                          const key = id();
+                          if (key !== undefined) props.selection?.markFocused(key);
+                        }}
                         onClick={(event) => onRowClick(event, row)}
                         onDblClick={(event) => onRowDoubleClick(event, row)}
+                        onContextMenu={() => props.onRowContextMenu?.(row)}
                         onKeyDown={(e) => onRowKeyDown(e, row)}
                       >
                         <For each={props.columns}>

@@ -1,4 +1,5 @@
 @reference "tailwindcss";
+@import "./file-grid.css";
 
 @layer theme, base, components, utilities;
 

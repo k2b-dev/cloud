@@ -219,3 +219,12 @@ const columns: DataTableColumn<RouteRow>[] = [
   }
 />
 ```
+
+For multi-selection, supply `selection={createCollectionSelection({ ids })}`
+and `getRowId`. The controller may also be shared with `FileGrid` to retain the
+same selection between presentations. Rows expose `aria-selected` and roving
+keyboard focus. Shift selects a range, Ctrl/Cmd toggles individual rows, Space
+toggles the focused row, and Ctrl/Cmd-A selects the supplied IDs. Enter invokes
+`onRowDoubleClick` in this mode. Existing single-row callbacks remain unchanged
+when `selection` is omitted. `onRowContextMenu` lets the host align selection with
+its context menu. See [File browser](/en/ui/content/files) for the shared model.

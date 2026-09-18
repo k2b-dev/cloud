@@ -25,13 +25,13 @@ import {
   untrack,
 } from "solid-js";
 import { prompts } from "../feedback/prompts";
-import { Select } from "../inputs/Select";
-import { decodeDelimitedContent, readDelimitedPreferences, type DelimitedPreferences } from "./delimited-preferences";
 import { toast } from "../feedback/toast";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
+import { Select } from "../inputs/Select";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
 import CodeDisplay, { type CodeDisplayLanguage } from "./CodeDisplay";
+import { type DelimitedPreferences, decodeDelimitedContent, readDelimitedPreferences } from "./delimited-preferences";
 import { type FileViewFile, fileViewExtension, getFileViewPreviewKind, parseDelimitedText } from "./file-view-preview";
 import MarkdownView from "./MarkdownView";
 import StructuredDataPreview, { type StructuredDataValue } from "./StructuredDataPreview";
@@ -53,6 +53,10 @@ export type FileViewProps = {
   save?: (content: string) => Promise<void>;
   /** Authenticated inline URL used by browser-native image, PDF, audio, and video previews. */
   previewHref?: string | null;
+  /** CORS mode for native image/audio/video previews. Omit to preserve browser defaults. */
+  crossOrigin?: "anonymous" | "use-credentials";
+  /** Native media failed to load; the host can renew a signed URL and offer retry. */
+  onPreviewError?: () => void;
   downloadHref?: string | null;
   /** App-specific renderers matched before the built-ins for this instance. */
   renderers?: readonly FileViewRenderer[];
@@ -67,6 +71,8 @@ export type FileViewRendererProps = {
   file: FileViewFile;
   content: FileViewContent;
   previewHref: string | null;
+  crossOrigin?: "anonymous" | "use-credentials";
+  onPreviewError?: () => void;
   downloadHref: string | null;
   /** Null when the file is read-only. */
   editor: {
@@ -393,7 +399,7 @@ function ImageRenderer(props: FileViewRendererProps) {
   return (
     <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media">
-        <img src={mediaSource(props)} alt={props.file.path} />
+        <img crossOrigin={props.crossOrigin} onError={props.onPreviewError} src={mediaSource(props)} alt={props.file.path} />
       </div>
     </OverlayPanel>
   );
@@ -414,7 +420,14 @@ function AudioRenderer(props: FileViewRendererProps) {
   return (
     <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media" data-kind="audio">
-        <audio controls preload="metadata" src={mediaSource(props)} aria-label={props.file.path}>
+        <audio
+          crossOrigin={props.crossOrigin}
+          onError={props.onPreviewError}
+          controls
+          preload="metadata"
+          src={mediaSource(props)}
+          aria-label={props.file.path}
+        >
           {messages().audioUnsupported}
         </audio>
       </div>
@@ -427,7 +440,15 @@ function VideoRenderer(props: FileViewRendererProps) {
   return (
     <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media" data-kind="video">
-        <video controls preload="metadata" playsinline src={mediaSource(props)} aria-label={props.file.path}>
+        <video
+          crossOrigin={props.crossOrigin}
+          onError={props.onPreviewError}
+          controls
+          preload="metadata"
+          playsinline
+          src={mediaSource(props)}
+          aria-label={props.file.path}
+        >
           {messages().videoUnsupported}
         </video>
       </div>
@@ -476,8 +497,7 @@ const BUILTIN_RENDERERS: FileViewRenderer[] = [
   },
   {
     id: "delimited-text",
-    match: (file, content) =>
-      getFileViewPreviewKind({ ...file, mediaType: content.mediaType || file.mediaType }) === "delimited-text",
+    match: (file, content) => getFileViewPreviewKind({ ...file, mediaType: content.mediaType || file.mediaType }) === "delimited-text",
     component: DelimitedTextRenderer,
   },
   {
@@ -607,6 +627,8 @@ export default function FileView(props: FileViewProps) {
                 file={props.file}
                 content={resolvedContent()!}
                 previewHref={nativePreviewHref()}
+                crossOrigin={props.crossOrigin}
+                onPreviewError={props.onPreviewError}
                 downloadHref={props.downloadHref ?? null}
                 editor={editor()}
               />

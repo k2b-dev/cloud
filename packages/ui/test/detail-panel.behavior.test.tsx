@@ -75,3 +75,29 @@ describe("DetailPanel section disclosure", () => {
     }
   });
 });
+
+test("a section instantiates its body once even though it renders the body conditionally", async () => {
+  const dom = createDomTestHarness();
+  const { DetailPanel } = await import("../src");
+  let created = 0;
+  const dispose = render(
+    () => (
+      <DetailPanel>
+        <DetailPanel.Body>
+          <DetailPanel.Section title="Preview">
+            {(() => {
+              created++;
+              return <span>body</span>;
+            })()}
+          </DetailPanel.Section>
+          <DetailPanel.Section title="Empty" />
+        </DetailPanel.Body>
+      </DetailPanel>
+    ),
+    dom.root,
+  );
+  expect(created).toBe(1);
+  expect(dom.root.querySelectorAll(".k2b-detail-panel__section-body")).toHaveLength(1);
+  dispose();
+  dom.cleanup();
+});

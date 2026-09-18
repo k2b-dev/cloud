@@ -94,3 +94,6 @@ export { createChartCursor, type ChartCursor } from "./chart-cursor";
 
 export { ChartSnapshotView } from "./ChartSnapshotView";
 export { ChartFilterControls, type ChartFilterControlsProps } from "./ChartFilterControls";
+
+export { type CollectionSelection, createCollectionSelection, type SelectionModifiers } from "./collection-selection";
+export { FileGrid, type FileGridProps } from "./FileGrid";

@@ -36,6 +36,7 @@ import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";
 
+import { FileGridDemo } from "./file-grid";
 type Row = { id: string; name: string; owner: string; requests: number };
 const rows: Row[] = [
   { id: "api", name: "Public API", owner: "Platform", requests: 18492 },
@@ -487,6 +488,7 @@ const TemplateDemo = () => {
     >
       <div class="ui-template-demo">
         <section class="ui-showcase-frame">
+      <FileGridDemo />
           <span>TemplateEditor</span>
           <TemplateEditor aria-label="Template source" value={value()} onValueChange={setValue} variables={variables} lines={8} />
         </section>
