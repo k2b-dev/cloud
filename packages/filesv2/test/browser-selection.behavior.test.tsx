@@ -29,7 +29,7 @@ const initial: DirectoryResult = {
     versioningEnabled: false,
   },
   path: "",
-  items: ["A", "B"].map((name) => ({ name, path: name, directory: true, size: 0, modified: "2026-09-18T00:00:00Z" })),
+  items: ["A.txt", "B.txt"].map((name) => ({ name, path: name, directory: false, size: 3, modified: "2026-09-18T00:00:00Z" })),
   next: null,
 };
 const flush = async () => {
@@ -46,14 +46,14 @@ test("view changes preserve selection; superseded details cannot replace current
   const { default: Browser } = await import("../src/frontend/Browser");
   const [directory, setDirectory] = createSignal(initial);
   const [source, setSource] = createSignal("/app/filesv2?base=home");
-  const dispose = render(() => <Browser directory={directory()} source={source()} onNavigate={async () => {}} />, dom.root);
+  const dispose = render(() => <Browser directory={directory()} bases={[initial.base]} cloudUrl="https://cloud.test" source={source()} onNavigate={async () => {}} />, dom.root);
   cleanup = () => {
     dispose();
     dom.cleanup();
   };
   await flush();
   expect(requests).toHaveLength(0);
-  const rows = [...dom.root.querySelectorAll<HTMLTableRowElement>("tbody tr")];
+  const rows = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")];
   const header = dom.root.querySelector(".filesv2-browser__header")!;
   const headerBlocks = header.childElementCount;
   rows[0]!.click();
@@ -69,16 +69,16 @@ test("view changes preserve selection; superseded details cannot replace current
   await flush();
   requests[0]!.resolve(Response.json({ base: initial.base, entry: initial.items[0] }));
   await flush();
-  expect(dom.root.querySelector("h2")?.textContent).toBe("B");
-  expect(dom.window.location.search).toContain("file=B");
+  expect(dom.root.querySelector("h2")?.textContent).toBe("B.txt");
+  expect(dom.window.location.search).toContain("file=B.txt");
   [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Grid"))!.click();
   await flush();
-  expect(dom.root.querySelector('[role="gridcell"][aria-selected="true"]')?.textContent).toContain("B");
+  expect(dom.root.querySelector('.k2b-file-grid__item[aria-selected="true"]')?.textContent).toContain("B.txt");
   expect(requests).toHaveLength(2);
   // A new page never writes its old selected path into the new URL.
   setDirectory({ ...initial, path: "A", items: [] });
   setSource("/app/filesv2?base=home&path=A");
   await flush();
-  expect(dom.root.querySelector("h2")?.textContent).not.toBe("B");
+  expect(dom.root.querySelector("h2")?.textContent).not.toBe("B.txt");
   expect(dom.root.textContent).toContain("This folder is empty");
 });

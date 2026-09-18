@@ -364,7 +364,7 @@ export function createFilesService(
       }
       return { base: current.inspection.summary, path: current.relative, items, next: page.next ?? null };
     },
-    async search(actor: RequestActor, input: { baseId: string; path?: string; q: string; after?: string }): Promise<SearchResult> {
+    async search(actor: RequestActor, input: { baseId: string; path?: string; q: string; after?: string; scope?: "folder" | "tree" }): Promise<SearchResult> {
       const current = await authorized(actor, input.baseId, input.path ?? "", true);
       let page: Awaited<ReturnType<RootClient["search"]>>;
       try {
@@ -398,6 +398,7 @@ export function createFilesService(
         if (!node.path.startsWith(`${current.target}/`)) continue;
         const relative = node.path.slice(current.inspection.candidate.path.length + 1);
         if (relative.split("/")[0] === "trash") continue;
+        if (input.scope === "folder" && node.path.slice(current.target.length + 1).includes("/")) continue;
         if (current.inspection.candidate.area === "freeipa") {
           const parts = node.path.slice(current.target.length + 1).split("/");
           let allowed = await readable(node.path, node.directory ? 5 : 4);
@@ -407,7 +408,7 @@ export function createFilesService(
         }
         items.push(fileEntry(relative, node));
       }
-      return { base: current.inspection.summary, path: current.relative, query: input.q, items, next: page.next ?? null };
+      return { base: current.inspection.summary, path: current.relative, query: input.q, scope: input.scope ?? "tree", items, next: page.next ?? null };
     },
     async mkdir(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
       const current = await writableParent(actor, input.baseId, input.path);

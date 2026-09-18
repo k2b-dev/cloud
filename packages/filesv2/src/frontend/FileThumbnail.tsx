@@ -4,7 +4,7 @@ import { apiClient } from "../api/client";
 import type { FileEntry } from "../contracts";
 import { fileIcon, previewKind } from "./file-preview";
 
-export default function FileThumbnail(props: { baseId: string; entry: FileEntry; large?: boolean }) {
+export default function FileThumbnail(props: { baseId: string; entry: FileEntry; large?: boolean; hero?: boolean }) {
   const [visible, setVisible] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   let host: HTMLSpanElement | undefined;
@@ -14,7 +14,7 @@ export default function FileThumbnail(props: { baseId: string; entry: FileEntry;
     enabled: () => visible() && previewKind(props.entry) === "image",
     load: async (key, { abortSignal }) => {
       const response = await apiClient.bases[":baseId"].thumbnail.$post(
-        { param: { baseId: props.baseId }, json: { path: props.entry.path, size: "small" } },
+        { param: { baseId: props.baseId }, json: { path: props.entry.path, size: props.hero ? "large" : "small" } },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error("thumbnail_unavailable");
@@ -41,7 +41,7 @@ export default function FileThumbnail(props: { baseId: string; entry: FileEntry;
   });
   const url = () => (!failed() && !thumbnail.error() && thumbnail.data()?.key === source() ? thumbnail.data()?.lease.url : null);
   return (
-    <span ref={host} class={props.large ? "filesv2-thumbnail filesv2-thumbnail--large" : "filesv2-thumbnail"} aria-hidden="true">
+    <span ref={host} class={`filesv2-thumbnail ${props.large ? "filesv2-thumbnail--large" : ""} ${props.hero ? "filesv2-thumbnail--hero" : ""}`} aria-hidden="true">
       <Show when={url()} fallback={<i class={fileIcon(props.entry)} />}>
         {(href) => (
           <img

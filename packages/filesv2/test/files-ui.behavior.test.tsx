@@ -11,7 +11,15 @@ if (!isServer) {
     new Promise<Response>((resolve) => requests.push({ kind, input: structuredClone(input), signal: options.init.signal, resolve }));
   mock.module("../src/api/client", () => ({
     apiClient: {
-      bases: { ":baseId": { download: { $post: request("download") } } },
+      bases: {
+        ":baseId": {
+          download: { $post: request("download") },
+          entry: {
+            $get: async (input: { query: { path: string } }) =>
+              Response.json({ base: directory.base, entry: directory.items.find((item) => item.path === input.query.path) }),
+          },
+        },
+      },
       admin: { configuration: { $put: request("configuration") }, adopt: { $post: request("adopt") } },
     },
   }));
@@ -129,33 +137,47 @@ describe("Files v2 interactions", () => {
   test("downloads ask Cloud for an exact path once and preserve the directory on failure", async () => {
     const dom = createDomTestHarness();
     const { default: Browser } = await import("../src/frontend/Browser");
-    const dispose = render(() => createComponent(Browser, { directory, onNavigate: async () => {} }), dom.root);
+    let opened = "";
+    const dispose = render(
+      () =>
+        createComponent(Browser, {
+          directory,
+          bases: [directory.base],
+          cloudUrl: "https://cloud.test",
+          onNavigate: async () => {},
+          onOpenDirectory: (path) => (opened = path),
+        }),
+      dom.root,
+    );
     cleanup = () => {
       dispose();
       dom.cleanup();
     };
-    const link = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((entry) =>
-      entry.getAttribute("aria-label")?.includes("Final ?"),
-    )!;
-    expect(new URL(link.href, "https://cloud.test").searchParams.get("path")).toBe("Budget #1/Final ?");
+    const rows = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")];
+    rows[0]!.click();
+    expect(opened).toBe("Budget #1/Final ?");
     const next = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((entry) => entry.textContent?.includes("Next page"))!;
     expect(new URL(next.href, "https://cloud.test").searchParams.get("after")).toBe("next/+=");
-    const download = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Download: report.txt"]')!;
+    rows[1]!.click();
+    await flush();
+    const download = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Download")!;
+    // The inspector preview already asked for a lease; only the explicit download is counted here.
+    const before = requests.length;
     download.click();
     download.click();
     await flush();
-    expect(requests).toHaveLength(1);
-    expect(requests[0]!.input).toEqual({ param: { baseId: "base-1" }, json: { path: "Budget #1/report.txt" } });
-    requests[0]!.resolve(Response.json({ code: "forbidden", message: "Access changed." }, { status: 403 }));
+    expect(requests).toHaveLength(before + 1);
+    expect(requests[before]!.input).toEqual({ param: { baseId: "base-1" }, json: { path: "Budget #1/report.txt" } });
+    requests[before]!.resolve(Response.json({ code: "forbidden", message: "Access changed." }, { status: 403 }));
     await flush();
-    expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain("Access changed");
+    expect(dom.document.body.textContent).toContain("Access changed");
     expect(dom.root.textContent).toContain("report.txt");
     expect(download.disabled).toBe(false);
     download.click();
     await flush();
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(before + 2);
     dispose();
-    expect(requests[1]!.signal.aborted).toBe(true);
+    expect(requests[before + 1]!.signal.aborted).toBe(true);
     cleanup = () => dom.cleanup();
   });
 });

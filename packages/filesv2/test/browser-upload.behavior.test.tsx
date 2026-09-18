@@ -60,7 +60,7 @@ test("uploads stream to the session lease without Cloud credentials, then commit
   const dom = createDomTestHarness();
   const { default: Browser } = await import("../src/frontend/Browser");
   let created = "";
-  const dispose = render(() => <Browser directory={initial} onNavigate={async () => {}} onCreated={(path) => (created = path)} />, dom.root);
+  const dispose = render(() => <Browser directory={initial} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} onChanged={(path) => (created = path ?? "")} />, dom.root);
   cleanup = () => { dispose(); dom.cleanup(); };
   const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
   Object.defineProperty(input, "files", { configurable: true, value: [new File(["abcdef"], "notes.txt")] });
@@ -77,7 +77,7 @@ test("an existing name asks before replacing and skipping leaves the file untouc
   const dom = createDomTestHarness();
   const { default: Browser } = await import("../src/frontend/Browser");
   let created = "";
-  const dispose = render(() => <Browser directory={initial} onNavigate={async () => {}} onCreated={(path) => (created = path)} />, dom.root);
+  const dispose = render(() => <Browser directory={initial} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} onChanged={(path) => (created = path ?? "")} />, dom.root);
   cleanup = () => { dispose(); dom.cleanup(); };
   const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
   Object.defineProperty(input, "files", { configurable: true, value: [new File([], "notes.txt")] });

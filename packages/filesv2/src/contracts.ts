@@ -41,7 +41,7 @@ export type DownloadLease = { url: string; method: "GET"; expires: string };
 export type EntryResult = { base: BaseSummary; entry: FileEntry };
 export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
 export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
-export type SearchResult = DirectoryResult & { query: string };
+export type SearchResult = DirectoryResult & { query: string; scope: "folder" | "tree" };
 export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export const UploadInputSchema = z.object({
   path: z.string().min(1).max(4096),
@@ -104,7 +104,11 @@ export type AdminResult = {
 };
 export const BrowseQuerySchema = z.object({ path: z.string().max(4096).default(""), after: z.string().max(4096).optional() });
 export const DownloadInputSchema = z.object({ path: z.string().min(1).max(4096) });
-export const SearchQuerySchema = BrowseQuerySchema.extend({ q: z.string().trim().min(1).max(256) });
+export const SearchQuerySchema = BrowseQuerySchema.extend({
+  q: z.string().trim().min(1).max(256),
+  /** Filegate always searches the subtree; "folder" keeps only direct children of the searched folder. */
+  scope: z.enum(["folder", "tree"]).default("tree"),
+});
 export const AdminQuerySchema = z.object({
   area: AreaSchema.default("cloud"),
   kind: KindSchema.default("users"),
