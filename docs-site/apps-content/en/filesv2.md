@@ -5,7 +5,7 @@ section: Work
 order: 151
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-09-17
+updated: 2026-09-18
 ---
 
 # Filesv2
@@ -22,6 +22,35 @@ without reloading the whole page. Navigation and pagination stay in the URL,
 so reloads and browser Back and Forward preserve your location.
 Missing or inaccessible storage appears with its status rather than as an
 empty directory.
+
+## Browse, select, and preview
+
+Choose **List** or **Grid** without losing your selection. Display options change
+list density or tile size; the browser remembers these settings. Click an item
+to select it and show its details. Double-click or press Enter to open a folder
+or a larger preview. Folder action links also support opening in another tab.
+On touchscreens, tap to open or enable **Select items** for multiple selection.
+
+Use checkboxes, Ctrl/Cmd-click, or Shift-click to select several entries. Arrow
+keys move through entries; Space toggles selection and Escape clears it.
+Ctrl/Cmd-A selects the loaded page. Selecting several items shows their file
+count and known file sizes; folder contents are not included in that total.
+Selection is scoped to the current folder and page. A single selected item's
+path is included in the URL and can be bookmarked with its details.
+
+The detail panel shows the full name, location, size, modification time, and
+storage area. Images, PDFs, text, and supported audio/video formats have previews.
+Unsupported formats retain their metadata and download action. Previews and
+thumbnails obtain a short-lived Cloud-authorized lease and load their bytes
+directly from Filegate. Retry a failed preview to obtain a fresh lease.
+
+Use **Download** for one or several individual files. Multiple downloads may need
+browser permission. Folder downloads and file mutations are not offered in this
+browser yet. Listings retain Filegate's name order and explicit pagination.
+
+The CLI provides `filesv2 stat <base-id> <path> --json` for the same current
+metadata and `filesv2 thumbnail <base-id> <path> --out <file>` for a direct preview
+download. Use `--size small|large` to select the thumbnail size.
 
 ## Configure storage
 

@@ -5,12 +5,13 @@ import { For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { ErrorSchema } from "../contracts";
 import Browser from "./Browser";
+import type { BrowserPreferences } from "./browser-preferences";
 import { IssueMessage } from "./feedback";
 import { useFilesMessages } from "./messages";
 import { filesUrl } from "./urls";
 import { createWorkspaceState, type WorkspaceSnapshot } from "./workspace-state";
 
-export default function Workspace(props: { initial: WorkspaceSnapshot }) {
+export default function Workspace(props: { initial: WorkspaceSnapshot; preferences?: BrowserPreferences }) {
   const t = useFilesMessages();
   const apiError = async (response: { json: () => Promise<unknown> }) => {
     const parsed = ErrorSchema.safeParse(await response.json().catch(() => null));
@@ -120,88 +121,111 @@ export default function Workspace(props: { initial: WorkspaceSnapshot }) {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
-          <Show
-            when={!workspace.pending()}
-            fallback={
-              <div class="flex min-h-0 flex-1 items-center justify-center">
-                <Placeholder state="loading" variant="panel" description={t().loadingFiles} />
-              </div>
-            }
-          >
-            <Show
-              when={!problem()}
-              fallback={
-                <div class="flex min-h-0 flex-1 items-center justify-center">
-                  <Placeholder
-                    state="error"
-                    variant="panel"
-                    title={t().loadFailed}
-                    description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />}
-                    action={retry()}
-                  />
-                </div>
-              }
-            >
+        <Show
+          when={snapshot().directory}
+          fallback={
+            <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
               <Show
-                when={selected()}
+                when={!workspace.pending()}
                 fallback={
                   <div class="flex min-h-0 flex-1 items-center justify-center">
-                    <Placeholder
-                      variant="panel"
-                      icon="ti ti-folder-off"
-                      title={t().noStorage}
-                      description={
-                        <div class="flex flex-col gap-2">
-                          <p>{t().noStorageDescription}</p>
-                          <For each={snapshot().bases.issues}>
-                            {(issue) => (
-                              <p>
-                                <strong>{t()[issue.area]}: </strong>
-                                <IssueMessage code={issue.code} />
-                              </p>
-                            )}
-                          </For>
-                        </div>
-                      }
-                      action={retry()}
-                    />
+                    <Placeholder state="loading" variant="panel" description={t().loadingFiles} />
                   </div>
                 }
               >
-                {(base) => (
+                <Show
+                  when={!problem()}
+                  fallback={
+                    <div class="flex min-h-0 flex-1 items-center justify-center">
+                      <Placeholder
+                        state="error"
+                        variant="panel"
+                        title={t().loadFailed}
+                        description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />}
+                        action={retry()}
+                      />
+                    </div>
+                  }
+                >
                   <Show
-                    when={base().status === "existing"}
+                    when={selected()}
                     fallback={
                       <div class="flex min-h-0 flex-1 items-center justify-center">
                         <Placeholder
                           variant="panel"
-                          state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
                           icon="ti ti-folder-off"
-                          title={t()[base().status]}
-                          description={<IssueMessage code={base().reason ?? base().status} />}
+                          title={t().noStorage}
+                          description={
+                            <div class="flex flex-col gap-2">
+                              <p>{t().noStorageDescription}</p>
+                              <For each={snapshot().bases.issues}>
+                                {(issue) => (
+                                  <p>
+                                    <strong>{t()[issue.area]}: </strong>
+                                    <IssueMessage code={issue.code} />
+                                  </p>
+                                )}
+                              </For>
+                            </div>
+                          }
                           action={retry()}
                         />
                       </div>
                     }
                   >
-                    <For each={snapshot().bases.issues}>
-                      {(issue) => (
-                        <InlineGuidance tone="info">
-                          <strong>{t()[issue.area]}: </strong>
-                          <IssueMessage code={issue.code} />
-                        </InlineGuidance>
-                      )}
-                    </For>
-                    <Show when={snapshot().directory}>
-                      {(directory) => <Browser directory={directory()} after={after()} onNavigate={onNavigate} />}
-                    </Show>
+                    {(base) => (
+                      <Show
+                        when={base().status === "existing"}
+                        fallback={
+                          <div class="flex min-h-0 flex-1 items-center justify-center">
+                            <Placeholder
+                              variant="panel"
+                              state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
+                              icon="ti ti-folder-off"
+                              title={t()[base().status]}
+                              description={<IssueMessage code={base().reason ?? base().status} />}
+                              action={retry()}
+                            />
+                          </div>
+                        }
+                      >
+                        <For each={snapshot().bases.issues}>
+                          {(issue) => (
+                            <InlineGuidance tone="info">
+                              <strong>{t()[issue.area]}: </strong>
+                              <IssueMessage code={issue.code} />
+                            </InlineGuidance>
+                          )}
+                        </For>
+                      </Show>
+                    )}
                   </Show>
-                )}
+                </Show>
               </Show>
-            </Show>
-          </Show>
-        </AppWorkspace.Main>
+            </AppWorkspace.Main>
+          }
+        >
+          {(directory) => (
+            <Browser
+              directory={directory()}
+              after={after()}
+              source={snapshot().source}
+              detail={snapshot().detail}
+              preferences={props.preferences}
+              issues={snapshot().bases.issues}
+              onSelectionSource={workspace.rememberSource}
+              pending={workspace.pending()}
+              error={workspace.failure()?.message}
+              onRetry={() => void workspace.navigate(retryHref(), () => commitHistory(retryHref(), { replace: true, scroll: "manual" }))}
+              onOpenDirectory={(path) =>
+                void workspace.navigate(filesUrl(directory().base.id, path), () =>
+                  commitHistory(filesUrl(directory().base.id, path), { scroll: "manual" }),
+                )
+              }
+              onNavigate={onNavigate}
+            />
+          )}
+        </Show>
       </AppWorkspace.Content>
     </AppWorkspace>
   );

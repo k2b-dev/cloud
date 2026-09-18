@@ -11,6 +11,8 @@ cld filesv2 bases list --json
 cld filesv2 list <base-id> --json
 cld filesv2 list <base-id> --path Documents --json
 cld filesv2 list <base-id> --path Documents --after '<next>' --json
+cld filesv2 stat <base-id> Documents/report.pdf --json
+cld filesv2 thumbnail <base-id> Photos/team.jpg --size small --out ./team-preview.png --json
 cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf --json
 ```
 
@@ -32,6 +34,12 @@ Filegate or print the lease. Success returns `{path, bytes}`. `--out` is require
 existing files and symlinks are never overwritten. Failed or interrupted
 transfers leave no completed output file. Retry by running the command again.
 Binary content is saved to disk, not stdout.
+
+`stat` returns `{base, entry}` after checking current access, even when the entry
+is outside the current listing page. `thumbnail` saves a generated image preview;
+`--size` accepts `small` (320 px) or `large` (1024 px). It uses the same private
+transfer and safe output-file rules as `download`. Unsupported images return an
+error rather than an invented preview.
 
 ## Administer storage
 

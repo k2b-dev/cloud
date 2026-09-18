@@ -1,184 +1,497 @@
-import type { LinkNavigateEvent } from "@k2b/ssr/nav";
+import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
+import { cookies } from "@k2b/stdlib/browser";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, DataTable, Format, InlineGuidance, Placeholder } from "@k2b/ui";
-import { For, onCleanup, Show } from "solid-js";
-import { apiClient } from "../api/client";
-import { type DirectoryResult, ErrorSchema, type FileEntry } from "../contracts";
+import {
+  AppWorkspace,
+  Button,
+  ButtonLink,
+  Checkbox,
+  ContextMenu,
+  createCollectionSelection,
+  DataTable,
+  Dropdown,
+  FileGrid,
+  Format,
+  IconButton,
+  InlineGuidance,
+  Placeholder,
+  prompts,
+  ScrollArea,
+  SegmentedControl,
+} from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import type { BasesResult, DirectoryResult, EntryResult, FileEntry } from "../contracts";
+import { useBrowserMessages } from "./browser-messages";
+import { type BrowserPreferences, defaultPreferences, preferencesCookie } from "./browser-preferences";
+import FileInspector from "./FileInspector";
+import FilePreview from "./FilePreview";
+import FileThumbnail from "./FileThumbnail";
+import { IssueMessage } from "./feedback";
+import { contentLease } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { filesUrl, pathCrumbs } from "./urls";
 
 export default function Browser(props: {
   directory: DirectoryResult;
   after?: string;
+  source?: string;
+  detail?: EntryResult | null;
+  preferences?: BrowserPreferences;
+  pending?: boolean;
+  error?: string;
+  issues?: BasesResult["issues"];
+  onSelectionSource?: (source: string) => void;
+  onRetry?: () => void;
+  onOpenDirectory?: (path: string) => void;
   onNavigate: (event: LinkNavigateEvent) => Promise<void>;
 }) {
   const t = useFilesMessages();
-  const download = mutation.create({
-    mutation: async (path: string, { abortSignal }) => {
-      const response = await apiClient.bases[":baseId"].download.$post(
-        { param: { baseId: props.directory.base.id }, json: { path } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) {
-        const error = ErrorSchema.safeParse(await response.json());
-        throw new Error(error.success ? error.data.message : t().downloadFailed);
-      }
-      return response.json();
+  const b = useBrowserMessages();
+  const [preferences, setPreferences] = createSignal(props.preferences ?? defaultPreferences);
+  const updatePreferences = (next: Partial<BrowserPreferences>) => {
+    const value = { ...preferences(), ...next };
+    setPreferences(value);
+    cookies.writeJsonCookie(preferencesCookie, value);
+  };
+  const requestedFile = () => (props.source ? new URL(props.source, "https://files.invalid").searchParams.get("file") : null);
+  const [externalPath, setExternalPath] = createSignal(requestedFile());
+  const [touch, setTouch] = createSignal(false);
+  const [selectMode, setSelectMode] = createSignal(false);
+  let mounted = false;
+  let syncing = false;
+  let location = `${props.directory.base.id}:${props.directory.path}:${props.after ?? ""}`;
+  let lastSource = props.source;
+  const ids = () => [...new Set([...props.directory.items.map((item) => item.path), ...(externalPath() ? [externalPath()!] : [])])];
+  const selection = createCollectionSelection({
+    ids,
+    initial: requestedFile() ? [requestedFile()!] : [],
+    onChange: (paths) => {
+      if (!mounted || syncing || location !== `${props.directory.base.id}:${props.directory.path}:${props.after ?? ""}`) return;
+      const source = filesUrl(props.directory.base.id, props.directory.path, props.after, paths.length === 1 ? paths[0] : null);
+      commitHistory(source, {
+        replace: true,
+        scroll: "manual",
+        viewTransition: false,
+      });
+      props.onSelectionSource?.(source);
     },
-    onSuccess: (lease) => {
-      window.location.assign(lease.url);
+  });
+  onMount(() => {
+    mounted = true;
+    const media = window.matchMedia("(pointer: coarse)");
+    const change = () => setTouch(media.matches);
+    change();
+    media.addEventListener("change", change);
+    onCleanup(() => media.removeEventListener("change", change));
+  });
+  createEffect(() => {
+    const next = `${props.directory.base.id}:${props.directory.path}:${props.after ?? ""}`;
+    const source = props.source;
+    if (next !== location || source !== lastSource) {
+      syncing = true;
+      setExternalPath(requestedFile());
+      selection.replace(requestedFile() ? [requestedFile()!] : []);
+      syncing = false;
+      location = next;
+      lastSource = source;
+    }
+  });
+  // In touch selection mode a plain tap toggles membership instead of replacing the selection.
+  const rowSelection = {
+    ...selection,
+    select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) =>
+      touch() && selectMode() ? selection.toggle(id) : selection.select(id, modifiers),
+  };
+  const selectedPaths = createMemo(() => [...selection.selected()]);
+  const selected = createMemo(() => props.directory.items.filter((item) => selection.selected().has(item.path)));
+  const [progress, setProgress] = createSignal({ done: 0, total: 0 });
+  const download = mutation.create({
+    mutation: async (entries: readonly FileEntry[], { abortSignal }) => {
+      const baseId = props.directory.base.id;
+      setProgress({ done: 0, total: entries.length });
+      for (let index = 0; index < entries.length; index++) {
+        const entry = entries[index]!;
+        const lease = await contentLease(baseId, entry.path, abortSignal, t().downloadFailed);
+        abortSignal.throwIfAborted();
+        const link = document.createElement("a");
+        link.href = lease.url;
+        link.download = entry.name;
+        link.rel = "noreferrer";
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setProgress({ done: index + 1, total: entries.length });
+      }
     },
   });
   onCleanup(() => download.abort());
-  const startDownload = (path: string) => {
-    if (!download.loading()) void download.mutate(path);
+  const startDownload = (entries: readonly FileEntry[]) => {
+    if (!props.pending && !download.loading() && entries.length && entries.every((entry) => !entry.directory))
+      void download.mutate(entries);
   };
-  const columns = () => [
-    { id: "name", header: t().name, value: "name" as const },
-    { id: "size", header: t().size, align: "right" as const },
-    { id: "modified", header: t().modified },
-    { id: "actions", header: t().actions, align: "right" as const },
+  const open = (entry: FileEntry) => {
+    if (props.pending) return;
+    if (entry.directory) {
+      // The click that precedes opening selected the folder; history must not return to that selection.
+      selection.clear();
+      props.onOpenDirectory?.(entry.path);
+      return;
+    }
+    void prompts.dialog(() => <FilePreview baseId={props.directory.base.id} entry={entry} onDownload={() => startDownload([entry])} />, {
+      title: entry.name,
+      size: "large",
+    });
+  };
+  const focusContext = (entry: FileEntry) => {
+    if (!selection.selected().has(entry.path)) selection.select(entry.path);
+  };
+  const canDownload = () => selected().length > 0 && selected().every((entry) => !entry.directory) && !download.loading() && !props.pending;
+  const menuItems = () => [
+    ...(selected().length === 1 ? [{ label: b().open, icon: "ti ti-external-link", action: () => open(selected()[0]!) }] : []),
+    { label: b().downloadSelection, icon: "ti ti-download", disabled: !canDownload(), action: () => startDownload(selected()) },
+    { label: b().selectAll, icon: "ti ti-checks", action: () => selection.replace(props.directory.items.map((entry) => entry.path)) },
+    { label: b().clear, icon: "ti ti-x", action: selection.clear },
   ];
-  return (
-    <section class="flex min-h-0 min-w-0 flex-1 flex-col gap-3" aria-label={props.directory.base.name}>
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <nav aria-label={t().breadcrumbs}>
-          <ol class="flex flex-wrap items-center gap-1">
-            <li>
-              <ButtonLink
-                navigation="enhanced"
-                onNavigate={props.onNavigate}
-                size="sm"
-                variant="text"
-                href={filesUrl(props.directory.base.id)}
-                aria-current={!props.directory.path ? "page" : undefined}
-              >
-                {props.directory.base.name}
-              </ButtonLink>
-            </li>
-            <For each={pathCrumbs(props.directory.path)}>
-              {(crumb) => (
-                <li class="flex min-w-0 items-center gap-1">
-                  <span aria-hidden="true" class="text-dimmed">
-                    /
-                  </span>
-                  <ButtonLink
-                    navigation="enhanced"
-                    onNavigate={props.onNavigate}
-                    size="sm"
-                    variant="text"
-                    wrap
-                    href={filesUrl(props.directory.base.id, crumb.path)}
-                    aria-current={crumb.path === props.directory.path ? "page" : undefined}
-                  >
-                    {crumb.name}
-                  </ButtonLink>
-                </li>
-              )}
-            </For>
-          </ol>
-        </nav>
+  const rowActions = (entry: FileEntry) => (
+    <div class="flex items-center gap-1">
+      <Show
+        when={entry.directory}
+        fallback={
+          <IconButton
+            size="sm"
+            variant="ghost"
+            label={`${t().download}: ${entry.name}`}
+            disabled={props.pending || download.loading()}
+            onClick={() => startDownload([entry])}
+          >
+            <i class="ti ti-download" aria-hidden="true" />
+          </IconButton>
+        }
+      >
         <ButtonLink
+          href={filesUrl(props.directory.base.id, entry.path)}
           navigation="enhanced"
           onNavigate={props.onNavigate}
           size="sm"
-          variant="secondary"
-          href={filesUrl(props.directory.base.id, props.directory.path, props.after)}
+          variant="ghost"
+          aria-label={`${b().open}: ${entry.name}`}
         >
-          <i class="ti ti-refresh" aria-hidden="true" />
-          {t().refresh}
+          <i class="ti ti-folder-open" aria-hidden="true" />
         </ButtonLink>
-      </div>
-      <Show when={download.error()}>
-        {(error) => (
-          <InlineGuidance tone="danger" role="alert">
-            {error().message}
-          </InlineGuidance>
-        )}
       </Show>
-      <Show
-        when={props.directory.items.length > 0}
-        fallback={
-          <div class="flex min-h-0 flex-1 items-center justify-center">
-            <Placeholder variant="panel" icon="ti ti-folder" description={t().empty} />
-          </div>
-        }
+      <Dropdown.Root
+        items={[
+          { label: b().open, icon: "ti ti-external-link", action: () => open(entry) },
+          { label: b().details, icon: "ti ti-info-circle", action: () => selection.select(entry.path) },
+        ]}
       >
-        <DataTable<FileEntry>
-          rows={props.directory.items}
-          columns={columns()}
-          ariaLabel={t().files}
-          getRowId={(row) => row.path}
-          empty={<Placeholder icon="ti ti-folder" description={t().empty} />}
-          renderCell={({ row, col }) => {
-            if (col.id === "name")
-              return row.directory ? (
-                <ButtonLink
-                  navigation="enhanced"
-                  onNavigate={props.onNavigate}
-                  variant="text"
-                  size="sm"
-                  wrap
-                  href={filesUrl(props.directory.base.id, row.path)}
-                >
-                  <i class="ti ti-folder" aria-hidden="true" />
-                  {row.name}
-                </ButtonLink>
-              ) : (
-                <span class="flex items-center gap-2">
-                  <i class="ti ti-file" aria-hidden="true" />
-                  <span class="break-all">{row.name}</span>
-                </span>
-              );
-            if (col.id === "size") return row.directory ? "—" : <Format.Bytes value={row.size} />;
-            if (col.id === "modified") return <Format.DateTime value={row.modified} />;
-            return (
-              <Show when={!row.directory}>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={download.loading()}
-                  onClick={() => startDownload(row.path)}
-                  aria-label={`${t().download}: ${row.name}`}
-                >
-                  <i class="ti ti-download" aria-hidden="true" />
-                  {t().download}
+        <Dropdown.Trigger iconOnly label={`${t().actions}: ${entry.name}`} size="sm" variant="ghost">
+          <i class="ti ti-dots" aria-hidden="true" />
+        </Dropdown.Trigger>
+      </Dropdown.Root>
+    </div>
+  );
+  const checkbox = (entry: FileEntry) => (
+    <Checkbox
+      value={selection.selected().has(entry.path)}
+      label={
+        <span class="sr-only">
+          {b().select}: {entry.name}
+        </span>
+      }
+      onValueChange={() => {
+        if (touch()) setSelectMode(true);
+        selection.toggle(entry.path);
+      }}
+    />
+  );
+  const columns = () => [
+    {
+      id: "select",
+      header: (
+        <Checkbox
+          value={selected().length === props.directory.items.length && selected().length > 0}
+          indeterminate={selected().length > 0 && selected().length < props.directory.items.length}
+          label={<span class="sr-only">{b().selectAll}</span>}
+          onValueChange={(value) => (value ? selection.replace(props.directory.items.map((entry) => entry.path)) : selection.clear())}
+        />
+      ),
+      class: "w-10",
+    },
+    { id: "name", header: t().name },
+    { id: "size", header: t().size, align: "right" as const },
+    { id: "modified", header: t().modified, class: "filesv2-modified-column" },
+    { id: "actions", header: <span class="sr-only">{t().actions}</span>, align: "right" as const },
+  ];
+  const refreshHref = () =>
+    filesUrl(props.directory.base.id, props.directory.path, props.after, selectedPaths().length === 1 ? selectedPaths()[0] : null);
+  const pageKey = () => `filesv2:${props.directory.base.id}:${props.directory.path}:${props.after ?? ""}:${preferences().view}`;
+  return (
+    <>
+      <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
+        <header class="filesv2-browser__header">
+          <div class="flex min-w-0 items-center justify-between gap-3">
+            <nav aria-label={t().breadcrumbs} class="min-w-0">
+              <ol class="flex min-w-0 flex-wrap items-center gap-1 text-base font-semibold text-primary">
+                <li>
+                  <ButtonLink
+                    href={filesUrl(props.directory.base.id)}
+                    navigation="enhanced"
+                    onNavigate={props.onNavigate}
+                    variant="text"
+                    size="sm"
+                    aria-current={props.directory.path ? undefined : "page"}
+                  >
+                    {props.directory.base.name}
+                  </ButtonLink>
+                </li>
+                <For each={pathCrumbs(props.directory.path)}>
+                  {(crumb) => (
+                    <li class="flex min-w-0 items-center gap-1">
+                      <span aria-hidden="true" class="text-dimmed">
+                        /
+                      </span>
+                      <ButtonLink
+                        href={filesUrl(props.directory.base.id, crumb.path)}
+                        navigation="enhanced"
+                        onNavigate={props.onNavigate}
+                        variant="text"
+                        size="sm"
+                        wrap
+                        aria-current={crumb.path === props.directory.path ? "page" : undefined}
+                      >
+                        {crumb.name}
+                      </ButtonLink>
+                    </li>
+                  )}
+                </For>
+              </ol>
+            </nav>
+            <div class="flex shrink-0 items-center gap-1">
+              <Show when={touch()}>
+                <Button size="xs" variant="secondary" onClick={() => setSelectMode(!selectMode())}>
+                  {selectMode() ? b().endSelect : b().selectMode}
                 </Button>
               </Show>
-            );
-          }}
-        />
-      </Show>
-      <Show when={download.loading()}>
-        <InlineGuidance loading>{t().preparingDownload}</InlineGuidance>
-      </Show>
-      <nav class="flex flex-wrap gap-2" aria-label={t().files}>
-        <Show when={props.after}>
-          <ButtonLink
-            navigation="enhanced"
-            onNavigate={props.onNavigate}
-            size="sm"
-            variant="secondary"
-            href={filesUrl(props.directory.base.id, props.directory.path)}
-          >
-            {t().first}
-          </ButtonLink>
+              <SegmentedControl
+                label={b().view}
+                size="sm"
+                value={preferences().view}
+                options={[
+                  { value: "list", label: b().list, icon: "ti ti-list" },
+                  { value: "grid", label: b().grid, icon: "ti ti-grid-dots" },
+                ]}
+                onValueChange={(view) => updatePreferences({ view })}
+              />
+              <Dropdown.Root
+                items={
+                  preferences().view === "list"
+                    ? [
+                        {
+                          label: b().normal,
+                          icon: preferences().density === "normal" ? "ti ti-check" : "ti ti-layout-rows",
+                          action: () => updatePreferences({ density: "normal" }),
+                        },
+                        {
+                          label: b().compact,
+                          icon: preferences().density === "compact" ? "ti ti-check" : "ti ti-layout-rows",
+                          action: () => updatePreferences({ density: "compact" }),
+                        },
+                      ]
+                    : [
+                        { label: b().small, action: () => updatePreferences({ size: "sm" }) },
+                        { label: b().medium, action: () => updatePreferences({ size: "md" }) },
+                        { label: b().large, action: () => updatePreferences({ size: "lg" }) },
+                      ]
+                }
+              >
+                <Dropdown.Trigger iconOnly label={b().options} size="sm" variant="ghost">
+                  <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+                </Dropdown.Trigger>
+              </Dropdown.Root>
+              <ButtonLink
+                href={refreshHref()}
+                navigation="enhanced"
+                onNavigate={props.onNavigate}
+                size="sm"
+                variant="ghost"
+                aria-label={t().refresh}
+              >
+                <i class="ti ti-refresh" aria-hidden="true" />
+              </ButtonLink>
+            </div>
+          </div>
+          <div class="filesv2-selection-bar">
+            <span class="text-xs text-dimmed">{b().pageItems(props.directory.items.length)}</span>
+            <Show when={selectedPaths().length}>
+              <span aria-hidden="true" class="text-xs text-dimmed">
+                ·
+              </span>
+              <span class="text-xs font-medium" role="status">
+                {b().selected(selectedPaths().length)}
+              </span>
+              <Button size="xs" variant="secondary" disabled={!canDownload()} onClick={() => startDownload(selected())}>
+                <i class="ti ti-download" aria-hidden="true" />
+                {t().download}
+              </Button>
+              <Button size="xs" variant="ghost" onClick={selection.clear}>
+                {b().clear}
+              </Button>
+            </Show>
+          </div>
+          <For each={props.issues}>
+            {(issue) => (
+              <InlineGuidance tone="info">
+                <strong>{t()[issue.area]}: </strong>
+                <IssueMessage code={issue.code} />
+              </InlineGuidance>
+            )}
+          </For>
+          <Show when={props.pending}>
+            <InlineGuidance loading>{t().loadingFiles}</InlineGuidance>
+          </Show>
+          <Show when={props.error}>
+            <InlineGuidance tone="danger" role="alert">
+              {props.error}{" "}
+              <Button size="xs" variant="text" onClick={props.onRetry}>
+                {b().retry}
+              </Button>
+            </InlineGuidance>
+          </Show>
+          <Show when={download.error()}>
+            {(error) => (
+              <InlineGuidance tone="danger" role="alert">
+                {error().message}
+              </InlineGuidance>
+            )}
+          </Show>
+          <Show when={download.loading()}>
+            <InlineGuidance loading>
+              {b().downloadProgress(progress())}{" "}
+              <Button size="xs" variant="text" onClick={() => download.abort()}>
+                {b().cancel}
+              </Button>
+            </InlineGuidance>
+          </Show>
+          <Show when={progress().total > 1}>
+            <InlineGuidance tone="info">{b().downloadNotice}</InlineGuidance>
+          </Show>
+        </header>
+        <Show
+          when={props.directory.items.length}
+          fallback={
+            <Placeholder class="flex-1" variant="panel" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
+          }
+        >
+          <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={menuItems()} label={t().actions} disabled={props.pending}>
+            <Show
+              when={preferences().view === "list"}
+              fallback={
+                <ScrollArea class="h-full" scrollPreserveKey={pageKey()}>
+                  <FileGrid
+                    rows={props.directory.items}
+                    getRowId={(row) => row.path}
+                    selection={rowSelection}
+                    label={t().files}
+                    size={preferences().size}
+                    onOpen={open}
+                    onContextMenu={focusContext}
+                    onRowClick={(row) => {
+                      if (touch() && !selectMode() && row.directory) open(row);
+                    }}
+                    renderPreview={(row) => <FileThumbnail baseId={props.directory.base.id} entry={row} large />}
+                    renderLabel={(row) => <span title={row.name}>{row.name}</span>}
+                    renderMeta={(row) => (row.directory ? b().folder : <Format.Bytes value={row.size} />)}
+                    renderActions={(row) => (
+                      <>
+                        {checkbox(row)}
+                        {rowActions(row)}
+                      </>
+                    )}
+                  />
+                </ScrollArea>
+              }
+            >
+              <DataTable
+                rows={props.directory.items}
+                columns={columns()}
+                getRowId={(row) => row.path}
+                selection={rowSelection}
+                onRowDoubleClick={open}
+                onRowContextMenu={focusContext}
+                onRowClick={(row) => {
+                  if (touch() && !selectMode() && row.directory) open(row);
+                }}
+                ariaLabel={t().files}
+                class="h-full"
+                surface="plain"
+                density={preferences().density}
+                highlightColumns={false}
+                scrollPreserveKey={pageKey()}
+                renderCell={({ row, col }) => {
+                  if (col.id === "select") return checkbox(row);
+                  if (col.id === "name")
+                    return (
+                      <div class="flex min-w-0 items-center gap-2">
+                        <FileThumbnail baseId={props.directory.base.id} entry={row} />
+                        <span class="filesv2-filename" title={row.name}>
+                          {row.name}
+                        </span>
+                      </div>
+                    );
+                  if (col.id === "size") return row.directory ? "—" : <Format.Bytes value={row.size} />;
+                  if (col.id === "modified") return <Format.DateTime value={row.modified} />;
+                  return rowActions(row);
+                }}
+              />
+            </Show>
+          </ContextMenu>
         </Show>
-        <Show when={props.directory.next}>
-          {(next) => (
+        <nav class="filesv2-browser__pagination" aria-label={t().files}>
+          <Show when={props.after}>
             <ButtonLink
+              href={filesUrl(props.directory.base.id, props.directory.path)}
               navigation="enhanced"
               onNavigate={props.onNavigate}
               size="sm"
               variant="secondary"
-              href={filesUrl(props.directory.base.id, props.directory.path, next())}
             >
-              {t().next}
-              <i class="ti ti-chevron-right" aria-hidden="true" />
+              {t().first}
             </ButtonLink>
-          )}
+          </Show>
+          <Show when={props.directory.next}>
+            {(next) => (
+              <ButtonLink
+                href={filesUrl(props.directory.base.id, props.directory.path, next())}
+                navigation="enhanced"
+                onNavigate={props.onNavigate}
+                size="sm"
+                variant="secondary"
+              >
+                {t().next}
+                <i class="ti ti-chevron-right" aria-hidden="true" />
+              </ButtonLink>
+            )}
+          </Show>
+        </nav>
+      </AppWorkspace.Main>
+      <AppWorkspace.Detail id="filesv2-inspector" open={selectedPaths().length > 0 && !(touch() && selectMode())} width="md">
+        <Show when={selectedPaths().length > 0 && !(touch() && selectMode())}>
+          <FileInspector
+            base={props.directory.base}
+            paths={selectedPaths()}
+            selected={selected()}
+            initial={props.detail}
+            onClose={() => {
+              const focused = selection.focused();
+              selection.clear();
+              if (focused) selection.focus(focused);
+            }}
+            onOpen={open}
+            onDownload={startDownload}
+          />
         </Show>
-      </nav>
-    </section>
+      </AppWorkspace.Detail>
+    </>
   );
 }

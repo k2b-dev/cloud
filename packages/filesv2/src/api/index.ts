@@ -30,8 +30,10 @@ import {
   DirectoryIdentitySchema,
   DirectoryTargetSchema,
   DownloadInputSchema,
+  EntryQuerySchema,
   ErrorSchema,
   RootActionSchema,
+  ThumbnailInputSchema,
 } from "../contracts";
 import { FilesError, filesService } from "../service";
 import { errorMessage } from "./messages";
@@ -73,6 +75,19 @@ const api = new Hono<AuthContext>()
     v("json", DownloadInputSchema),
     async (c) =>
       respond(c, ok(await filesService.download(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .get(
+    "/bases/:baseId/entry",
+    middleware.openapi({ summary: "Read authorized current file or folder metadata", ...requiresAuth }),
+    v("query", EntryQuerySchema),
+    async (c) => respond(c, ok(await filesService.entry(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+  )
+  .post(
+    "/bases/:baseId/thumbnail",
+    middleware.openapi({ summary: "Issue a direct thumbnail lease", ...requiresAuth }),
+    v("json", ThumbnailInputSchema),
+    async (c) =>
+      respond(c, ok(await filesService.thumbnail(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .use("/admin/*", auth.requireRole("admin"))
   .get(

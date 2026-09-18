@@ -2,3 +2,93 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+.filesv2-browser {
+  container-type: inline-size;
+  container-name: files-browser;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.filesv2-browser__header {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.5rem;
+}
+@media (min-width: 640px) {
+  .filesv2-browser__header {
+    padding-inline: 1rem;
+  }
+}
+.filesv2-browser__collection {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.filesv2-browser__collection .k2b-file-grid {
+  padding: var(--ui-space-shell);
+}
+.filesv2-selection-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+}
+.filesv2-browser__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.filesv2-browser__pagination:has(a) {
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+.filesv2-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.filesv2-thumbnail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  font-size: 1.5rem;
+  color: var(--k2b-text-secondary);
+}
+.filesv2-thumbnail img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 0.25rem;
+}
+.filesv2-thumbnail--large {
+  width: 100%;
+  height: 100%;
+  flex-basis: auto;
+  font-size: 3rem;
+}
+.filesv2-preview {
+  min-width: 0;
+  max-width: 100%;
+}
+.filesv2-preview img,
+.filesv2-preview video {
+  max-height: 50vh;
+  object-fit: contain;
+}
+
+.filesv2-modified-column {
+  display: none;
+}
+@container files-browser (min-width: 45rem) {
+  .filesv2-modified-column {
+    display: table-cell;
+  }
+}

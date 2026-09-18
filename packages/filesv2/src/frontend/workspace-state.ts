@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
-import type { BasesResult, DirectoryResult } from "../contracts";
+import type { BasesResult, DirectoryResult, EntryResult } from "../contracts";
 
 export type WorkspaceSnapshot = {
   source: string;
@@ -8,6 +8,7 @@ export type WorkspaceSnapshot = {
   selectedId: string | null;
   directory: DirectoryResult | null;
   errorCode: string | null;
+  detail?: EntryResult | null;
 };
 
 type Transition = {
@@ -88,5 +89,9 @@ export function createWorkspaceState<T extends { source: string }>(options: {
     failure,
     navigate,
     committedSource: () => committedSource,
+    // Selection may replace the URL without loading a different directory.
+    rememberSource: (target: string) => {
+      committedSource = target;
+    },
   };
 }

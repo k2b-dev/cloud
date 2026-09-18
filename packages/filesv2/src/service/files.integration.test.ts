@@ -61,7 +61,7 @@ suite("Files service and durable bindings", () => {
           available: 1000,
           capacity: 2000,
         });
-      if (operation === "downloads") {
+      if (operation === "downloads" || operation === "thumbnail") {
         leases++;
         return Response.json({ method: "GET", url: "http://localhost:4000/signed", expires: "2099-01-01T00:00:00Z" });
       }
@@ -261,6 +261,23 @@ suite("Files service and durable bindings", () => {
     expect(leases).toBe(1);
     directory("freeipa", "users/alice", 1001, 2001, "0600");
     await expect(service.download(actor, { baseId, path: "report" })).rejects.toMatchObject({ code: "forbidden" });
+  });
+  test("detail and thumbnails enforce current leaf rights, traversal and trash before any lease", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/photo.png", 1001, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    expect((await service.entry(actor, { baseId, path: "photo.png" })).entry.name).toBe("photo.png");
+    expect((await service.thumbnail(actor, { baseId, path: "photo.png", size: "small" })).method).toBe("GET");
+    expect(leases).toBe(1);
+    directory("freeipa", "users/alice/photo.png", 999, 999, "0600", false);
+    await expect(service.entry(actor, { baseId, path: "photo.png" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.thumbnail(actor, { baseId, path: "photo.png", size: "large" })).rejects.toMatchObject({ code: "forbidden" });
+    for (const path of ["trash/photo.png", "../other", ""]) {
+      await expect(service.entry(actor, { baseId, path })).rejects.toThrow();
+      await expect(service.thumbnail(actor, { baseId, path, size: "small" })).rejects.toThrow();
+    }
+    expect(leases).toBe(1);
   });
   test("Cloud adoption remains stable after POSIX allocation, provider off/on, and hides top-level trash", async () => {
     const admin = await user("admin", "local", true);

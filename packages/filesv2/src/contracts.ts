@@ -38,6 +38,9 @@ export type FileEntry = { name: string; path: string; directory: boolean; size: 
 export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[] };
 export type DirectoryResult = { base: BaseSummary; path: string; items: FileEntry[]; next: string | null };
 export type DownloadLease = { url: string; method: "GET"; expires: string };
+export type EntryResult = { base: BaseSummary; entry: FileEntry };
+export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
+export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
 export type RootSummary = {
   name: string;
   indexEnabled: boolean;

@@ -777,3 +777,35 @@ describe("Filesv2 CLI integration", () => {
     expect(help.stdout).toContain("--yes");
   }, 20_000);
 });
+
+test("stat and thumbnail use the same authenticated base and keep transfer credentials private", async () => {
+  const transfer = serve((request) => {
+    expect(request.headers.get("authorization")).toBeNull();
+    expect(request.headers.get("cookie")).toBeNull();
+    return new Response("thumbnail-bytes");
+  });
+  const seen: string[] = [];
+  const cloud = serve(async (request) => {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+    const url = new URL(request.url);
+    seen.push(url.pathname);
+    if (url.pathname.endsWith("/entry")) {
+      expect(url.searchParams.get("path")).toBe(entry.path);
+      return Response.json({ base, entry });
+    }
+    expect(await request.json()).toEqual({ path: entry.path, size: "large" });
+    return Response.json({ method: "GET", url: `${transfer.url}?lease=${leaseSecret}`, expires: "2030-01-01T00:00:00Z" });
+  });
+  const metadata = await run(["--json", "filesv2", "stat", base.id, entry.path], { server: cloud.url.href });
+  expect(metadata.exitCode, metadata.stderr).toBe(0);
+  expect(JSON.parse(metadata.stdout)).toEqual({ base, entry });
+  const out = join(await directory(), "thumbnail.png");
+  const result = await run(["--json", "filesv2", "thumbnail", base.id, entry.path, "--out", out, "--size", "large"], {
+    server: cloud.url.href,
+  });
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ path: out, bytes: 15 });
+  expect(await readFile(out, "utf8")).toBe("thumbnail-bytes");
+  expect(result.stdout + result.stderr).not.toContain(leaseSecret);
+  expect(seen).toEqual([`/api/filesv2/bases/${base.id}/entry`, `/api/filesv2/bases/${base.id}/thumbnail`]);
+});

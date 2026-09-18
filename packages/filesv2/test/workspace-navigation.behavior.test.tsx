@@ -112,6 +112,28 @@ describe("Files v2 progressive navigation", () => {
     expect(commits).toBe(1);
   });
 
+  test("selection-only URLs are retained for a failed history traversal without triggering a read", async () => {
+    const { controller, requests } = setup();
+    const selected = `${initial.source}&file=report.txt`;
+    controller.rememberSource(selected);
+    await flush();
+    expect(requests).toHaveLength(0);
+    let rollback = "";
+    const navigation = controller.navigate(
+      "/app/filesv2?base=gone",
+      () => {},
+      () => {
+        rollback = controller.committedSource();
+      },
+    );
+    await flush();
+    requests[0]!.reject(new Error("Unavailable"));
+    await navigation;
+    expect(rollback).toBe(selected);
+    expect(controller.snapshot()).toEqual(initial);
+    expect(requests).toHaveLength(1);
+  });
+
   test("same-target refresh reads again and failed history traversal invokes URL rollback", async () => {
     const { controller, requests } = setup();
     await flush();
@@ -189,7 +211,9 @@ describe("Files v2 progressive navigation", () => {
     await flush();
     expect(apiRequests).toHaveLength(0);
     const link = (text: string) =>
-      [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((entry) => entry.textContent?.includes(text))!;
+      [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find(
+        (entry) => entry.textContent?.includes(text) || entry.getAttribute("aria-label")?.includes(text),
+      )!;
     const missingLink = link("Missing group");
     expect(missingLink.getAttribute("href")).toBe("/app/filesv2?base=missing");
     missingLink.click();

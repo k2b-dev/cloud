@@ -12,6 +12,7 @@ import type {
   ConfigurationInput,
   DirectoryResult,
   DownloadLease,
+  EntryResult,
   InventoryEntry,
   InventoryState,
   RootSummary,
@@ -219,7 +220,7 @@ export function createFilesService(
       if (!permits(node, acl, unix, i === parts.length ? leafRights : 1)) throw new FilesError("forbidden", 403);
     }
   }
-  async function authorized(actor: RequestActor, baseId: string, path: string, directory: boolean) {
+  async function authorized(actor: RequestActor, baseId: string, path: string, directory?: boolean) {
     const state = await context(actor);
     const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === baseId);
     if (!item) throw new FilesError("not_found", 404);
@@ -235,10 +236,10 @@ export function createFilesService(
     if (inspection.summary.status !== "existing") throw new FilesError(inspection.summary.reason ?? "forbidden", 403);
     const relative = userPath(path);
     const target = joinPath(item.path, relative);
-    if (item.area === "freeipa") await checkUnix(root, target, state.unix, directory ? 5 : 4);
     const node = await root.stat(target);
-    if (node.directory !== directory) throw new FilesError(directory ? "not_directory" : "not_file", 400);
-    return { root, inspection, target, relative, state };
+    if (item.area === "freeipa") await checkUnix(root, target, state.unix, node.directory ? 5 : 4);
+    if (directory !== undefined && node.directory !== directory) throw new FilesError(directory ? "not_directory" : "not_file", 400);
+    return { root, inspection, target, relative, state, node };
   }
   async function requireAdmin(actor: RequestActor) {
     // The public inventory contract performs the canonical admin check.
@@ -299,6 +300,27 @@ export function createFilesService(
         });
       }
       return { base: current.inspection.summary, path: current.relative, items, next: page.next ?? null };
+    },
+    async entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
+      if (!input.path) throw new FilesError("invalid_path");
+      const current = await authorized(actor, input.baseId, input.path);
+      return {
+        base: current.inspection.summary,
+        entry: {
+          name: current.relative.split("/").at(-1)!,
+          path: current.relative,
+          directory: current.node.directory,
+          size: current.node.size,
+          modified: current.node.modified,
+        },
+      };
+    },
+    async thumbnail(actor: RequestActor, input: { baseId: string; path: string; size: "small" | "large" }): Promise<DownloadLease> {
+      if (!input.path) throw new FilesError("invalid_path");
+      const current = await authorized(actor, input.baseId, input.path, false);
+      const dimension = input.size === "large" ? 1024 : 320;
+      const lease = await current.root.directThumbnail(current.target, { width: dimension, height: dimension, expiresIn: 60 });
+      return { url: lease.url, method: "GET", expires: lease.expires };
     },
     async download(actor: RequestActor, input: { baseId: string; path: string }): Promise<DownloadLease> {
       if (!input.path) throw new FilesError("not_file");

@@ -21,6 +21,7 @@ import {
   ConfigurationInputSchema,
   type DirectoryResult,
   type DownloadLease,
+  type EntryResult,
   type InventoryState,
   InventoryStateSchema,
 } from "./contracts";
@@ -139,6 +140,35 @@ function filesCommands(locale?: string) {
             ),
           );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Saved", de: "Gespeichert" })}: ${result.path} (${result.bytes} bytes)`);
+        },
+      }),
+      command("stat", {
+        summary: t({ en: "Inspect a file or folder", de: "Datei oder Ordner prüfen" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "Path relative to the base", de: "Pfad relativ zur Ablage" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<EntryResult>(
+            await api(ctx).bases[":baseId"].entry.$get({ param: { baseId: args.base }, query: { path: args.path } }),
+          );
+          if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result.entry, null, 2));
+        },
+      }),
+      command("thumbnail", {
+        summary: t({ en: "Save a generated thumbnail directly from Filegate", de: "Generierte Vorschau direkt von Filegate speichern" }),
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "Image path relative to the base", de: "Bildpfad relativ zur Ablage" }) }),
+        },
+        flags: { out: flag.string({ required: true }), size: flag.enum(["small", "large"], { default: "small" }) },
+        async run({ ctx, args, flags }) {
+          const result = await downloadFile(ctx, flags.out!, async (signal) =>
+            ctx.readJson<DownloadLease>(
+              await api(ctx).bases[":baseId"].thumbnail.$post(
+                { param: { baseId: args.base }, json: { path: args.path, size: flags.size } },
+                { init: { signal } },
+              ),
+            ),
+          );
+          if (!printStructured(ctx, result)) ctx.print(`${result.path} (${result.bytes} bytes)`);
         },
       }),
       command("admin inventory", {

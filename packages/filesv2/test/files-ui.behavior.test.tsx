@@ -134,7 +134,9 @@ describe("Files v2 interactions", () => {
       dispose();
       dom.cleanup();
     };
-    const link = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((entry) => entry.textContent?.includes("Final ?"))!;
+    const link = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((entry) =>
+      entry.getAttribute("aria-label")?.includes("Final ?"),
+    )!;
     expect(new URL(link.href, "https://cloud.test").searchParams.get("path")).toBe("Budget #1/Final ?");
     const next = [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((entry) => entry.textContent?.includes("Next page"))!;
     expect(new URL(next.href, "https://cloud.test").searchParams.get("after")).toBe("next/+=");
