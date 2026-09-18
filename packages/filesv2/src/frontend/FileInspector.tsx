@@ -152,6 +152,7 @@ export default function FileInspector(props: {
                 />
                 <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
                   <Show when={!item().directory && previewKind(item())}>
+                    <DetailPanel.Group label={t().preview}>
                     <DetailPanel.Section
                       title={t().preview}
                       actions={
@@ -174,6 +175,7 @@ export default function FileInspector(props: {
                         </button>
                       </Show>
                     </DetailPanel.Section>
+                    </DetailPanel.Group>
                   </Show>
                   <DetailPanel.Summary title={t().info}>
                     <DescriptionList

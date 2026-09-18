@@ -71,7 +71,7 @@ function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: 
               </label>
               <div class="flex flex-wrap gap-2">
                 <CopyButton text={created()!.url} label={b().copyLink} copiedLabel={b().copiedLink} />
-                <Button variant="secondary" size="sm" onClick={() => window.open(created()!.url, "_blank", "noopener")}>
+                <Button variant="ghost" size="sm" onClick={() => window.open(created()!.url, "_blank", "noopener")}>
                   <i class="ti ti-external-link" aria-hidden="true" />
                   {b().openLink}
                 </Button>

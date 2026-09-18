@@ -29,6 +29,9 @@ export const adminMessages = i18n.define({
       archives: "Archive",
       settings: "Settings",
       overviewDescription: "Storage health, capacity and available functions.",
+      modelTitle: "How storage locations work",
+      modelDetail:
+        "Every user gets one home directory and every POSIX-enabled group one group directory, all side by side below the configured prefixes. Nested group directories are not created. Read and write rights inside a directory follow the file system; the file browser shows only what a user may read. Public shares belong to one location and are visible to everyone who can read the folder that contains the shared entries.",
       directoriesDescription: "Inspect current directories and manage their assignment and lifecycle.",
       archiveDescription: "Browse archived directories and restore or permanently delete them.",
       archivePurpose: "Archived homes and group folders",
@@ -117,6 +120,9 @@ export const adminMessages = i18n.define({
       archives: "Archiv",
       settings: "Einstellungen",
       overviewDescription: "Verbindung, Speicherkapazität und verfügbare Funktionen.",
+      modelTitle: "So funktionieren Ablagen",
+      modelDetail:
+        "Jede Person erhält ein Home-Verzeichnis und jede POSIX-aktivierte Gruppe ein Gruppenverzeichnis, alle nebeneinander unterhalb der konfigurierten Präfixe. Verschachtelte Gruppenverzeichnisse werden nicht angelegt. Lese- und Schreibrechte innerhalb eines Verzeichnisses folgen dem Dateisystem; der Dateibrowser zeigt nur, was eine Person lesen darf. Öffentliche Freigaben gehören zu einer Ablage und sind für alle sichtbar, die den Ordner mit den geteilten Einträgen lesen können.",
       directoriesDescription: "Aktuelle Verzeichnisse prüfen und Zuordnung sowie Lebenszyklus verwalten.",
       archiveDescription: "Archivierte Verzeichnisse ansehen, wiederherstellen oder endgültig löschen.",
       archivePurpose: "Archivierte Nutzer- und Gruppenablagen",

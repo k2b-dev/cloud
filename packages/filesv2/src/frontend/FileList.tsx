@@ -1,10 +1,11 @@
-import { type CollectionSelection, Format, IconButton } from "@k2b/ui";
+import { Checkbox, type CollectionSelection, Format, IconButton } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { FileEntry } from "../contracts";
 import FileThumbnail from "./FileThumbnail";
 
 /** One flat row list; tree mode adds depth and disclosure, search mode shows the path below the folder. */
 export type FileRow = FileEntry & { depth?: number; expanded?: boolean; loading?: boolean; more?: boolean };
+export type VirtualRow = { key: "up" | "trash"; label: string; icon: string; onClick: () => void; depth?: number };
 export default function FileList(props: {
   baseId: string;
   rows: readonly FileRow[];
@@ -16,9 +17,14 @@ export default function FileList(props: {
   showModified: boolean;
   /** Folder currently being opened; its icon becomes a spinner instead of a separate loader. */
   opening?: string | null;
-  /** Present when the listing has a parent folder; rendered as the first row. */
-  onUp?: () => void;
-  messages: { name: string; size: string; modified: string; details: (name: string) => string; toggle: (name: string) => string; more: string; up: string };
+  /** In tree mode the folder whose contents actions target. */
+  currentPath?: string | null;
+  /** Checkboxes are shown only while the user is selecting. */
+  selecting?: boolean;
+  /** Rows that lead somewhere instead of representing an entry: parent folder before, trash after the entries. */
+  before?: readonly VirtualRow[];
+  after?: readonly VirtualRow[];
+  messages: { name: string; size: string; modified: string; details: (name: string) => string; toggle: (name: string) => string; select: (name: string) => string; more: string };
   onOpen: (row: FileRow) => void;
   onToggle?: (row: FileRow) => void;
   onLoadMore?: (row: FileRow) => void;
@@ -35,9 +41,44 @@ export default function FileList(props: {
     if (props.tree && row.directory) return <i class={row.expanded ? "ti ti-folder-open" : "ti ti-folder"} aria-hidden="true" />;
     return <FileThumbnail baseId={props.baseId} entry={row} />;
   };
+  const virtual = (row: VirtualRow) => (
+    <div
+      role="row"
+      class={`filesv2-list__row filesv2-list__row--virtual filesv2-list__row--${row.key}`}
+      style={{ "--depth": row.depth ?? 0 }}
+      tabIndex={-1}
+      onClick={row.onClick}
+      onKeyDown={(event) => event.key === "Enter" && row.onClick()}
+    >
+      <Show when={props.selecting}>
+        <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check" />
+      </Show>
+      <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
+        <i class={props.opening === row.key ? "ti ti-loader-2 animate-spin" : row.icon} aria-hidden="true" />
+      </span>
+      <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
+        <span class="filesv2-list__name">{row.label}</span>
+      </span>
+      <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--size" />
+      <Show when={props.showModified}>
+        <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--modified" />
+      </Show>
+      <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--info" />
+    </div>
+  );
   return (
-    <div class="filesv2-list" role="grid" aria-label={props.label} aria-multiselectable="true" data-tree={props.tree ? "true" : undefined}>
+    <div
+      class="filesv2-list"
+      role="grid"
+      aria-label={props.label}
+      aria-multiselectable="true"
+      data-tree={props.tree ? "true" : undefined}
+      data-selecting={props.selecting ? "true" : undefined}
+    >
       <div role="row" class="filesv2-list__head">
+        <Show when={props.selecting}>
+          <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--check" />
+        </Show>
         <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--icon" />
         <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--name">
           {props.messages.name}
@@ -52,28 +93,16 @@ export default function FileList(props: {
         </Show>
         <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--info" />
       </div>
-      <Show when={props.onUp}>
-        <div role="row" class="filesv2-list__row filesv2-list__row--up" tabIndex={-1} onClick={() => props.onUp?.()} onKeyDown={(event) => event.key === "Enter" && props.onUp?.()}>
-          <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
-            <i class={props.opening === ".." ? "ti ti-loader-2 animate-spin" : "ti ti-folder-up"} aria-hidden="true" />
-          </span>
-          <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
-            <span class="filesv2-list__name">..</span>
-            <span class="sr-only">{props.messages.up}</span>
-          </span>
-          <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--size" />
-          <Show when={props.showModified}>
-            <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--modified" />
-          </Show>
-          <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--info" />
-        </div>
-      </Show>
+      <For each={props.before ?? []}>{virtual}</For>
       <For each={props.rows}>
         {(row) => (
           <Show
             when={!row.more}
             fallback={
               <div role="row" class="filesv2-list__row filesv2-list__row--more" style={{ "--depth": row.depth ?? 0 }}>
+                <Show when={props.selecting}>
+                  <span class="filesv2-list__cell filesv2-list__cell--check" />
+                </Show>
                 <span class="filesv2-list__cell filesv2-list__cell--icon" />
                 <span class="filesv2-list__cell filesv2-list__cell--name">
                   <button type="button" class="filesv2-list__more" onClick={() => props.onLoadMore?.(row)}>
@@ -89,6 +118,7 @@ export default function FileList(props: {
               style={{ "--depth": row.depth ?? 0 }}
               aria-selected={props.selection.selected().has(row.path)}
               aria-expanded={props.tree && row.directory ? !!row.expanded : undefined}
+              aria-current={props.tree && props.currentPath === row.path ? "location" : undefined}
               ref={(element) => props.selection.register(row.path, element)}
               tabIndex={props.selection.focused() === row.path ? 0 : -1}
               onFocus={() => props.selection.markFocused(row.path)}
@@ -119,6 +149,15 @@ export default function FileList(props: {
                 }
               }}
             >
+              <Show when={props.selecting}>
+                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check">
+                  <Checkbox
+                    value={props.selection.selected().has(row.path)}
+                    label={<span class="sr-only">{props.messages.select(row.name)}</span>}
+                    onValueChange={() => props.selection.toggle(row.path)}
+                  />
+                </span>
+              </Show>
               <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
                 <Show when={props.tree && row.directory} fallback={icon(row)}>
                   <button type="button" class="filesv2-list__disclosure" aria-label={props.messages.toggle(row.name)} aria-expanded={!!row.expanded} onClick={() => props.onToggle?.(row)}>
@@ -150,6 +189,7 @@ export default function FileList(props: {
           </Show>
         )}
       </For>
+      <For each={props.after ?? []}>{virtual}</For>
     </div>
   );
 }

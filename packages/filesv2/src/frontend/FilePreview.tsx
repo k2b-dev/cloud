@@ -85,6 +85,7 @@ export default function FilePreview(props: { baseId: string; entry: FileEntry; o
         <Match when={kind()}>
           <FileView
             file={previewFile(props.entry)}
+            previewPreferencesKey="filesv2-preview"
             load={async () => ({
               encoding: "utf8",
               content: await (

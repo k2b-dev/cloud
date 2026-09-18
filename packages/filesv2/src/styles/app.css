@@ -320,20 +320,64 @@
 .filesv2-nav-spinner {
   display: none;
 }
+.k2b-app-workspace__nav-tree-row:has(.filesv2-nav-spinner) > .k2b-app-workspace__sidebar-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .k2b-app-workspace__nav-tree-row:has(.filesv2-nav-spinner) > .k2b-app-workspace__sidebar-item-icon i {
   display: none;
 }
 .k2b-app-workspace__nav-tree-row:has(.filesv2-nav-spinner) > .k2b-app-workspace__sidebar-item-icon::after {
   content: "";
-  width: 0.8em;
-  height: 0.8em;
+  display: block;
+  box-sizing: border-box;
+  width: 0.875rem;
+  height: 0.875rem;
   border: 2px solid currentColor;
   border-right-color: transparent;
-  border-radius: 50%;
+  border-radius: 9999px;
   animation: filesv2-spin 0.8s linear infinite;
 }
 @keyframes filesv2-spin {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Selection mode: a checkbox column in lists, a floating checkbox on tiles. */
+.filesv2-list__cell--check {
+  flex: 0 0 2rem;
+  justify-content: center;
+  padding: 0;
+}
+.filesv2-list__row--virtual {
+  color: var(--k2b-text-secondary);
+}
+.filesv2-list__row[aria-current="location"] .filesv2-list__name {
+  font-weight: 600;
+  color: var(--k2b-action);
+}
+.filesv2-grid-check {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 1;
+}
+.filesv2-grid-wrap .k2b-file-grid {
+  padding-bottom: 0;
+}
+.filesv2-grid-wrap .k2b-file-grid__name {
+  font-size: 0.8125rem;
+  color: var(--k2b-text-secondary);
+}
+.filesv2-grid-wrap .k2b-file-grid__item[aria-selected="true"] .k2b-file-grid__name {
+  color: var(--k2b-text);
+}
+.filesv2-thumbnail--virtual {
+  color: var(--k2b-text-muted);
+}
+.filesv2-picker__tile {
+  color: var(--k2b-text-secondary);
+  font-size: 0.6875rem;
 }

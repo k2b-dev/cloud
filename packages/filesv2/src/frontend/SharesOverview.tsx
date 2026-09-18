@@ -1,4 +1,4 @@
-import { AppWorkspace, Button, ButtonLink, CopyButton, DataTable, Format, Placeholder, prompts, StatusBadge, toast } from "@k2b/ui";
+import { AppWorkspace, Button, ButtonLink, CopyButton, DataTable, Format, Placeholder, prompts, StatusBadge, Tag, toast, Tooltip } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { ShareView } from "../contracts";
@@ -48,9 +48,9 @@ export default function SharesOverview(props: { shares: ShareView[] }) {
       </header>
       <Show when={shares().length} fallback={<Placeholder class="mx-3 flex-1" variant="panel" icon="ti ti-world-share" title={b().sharesTitle} description={b().noShares} />}>
         <DataTable
+          class="mx-3 mb-3"
           rows={shares()}
           getRowId={(share) => share.id}
-          surface="plain"
           density="compact"
           highlightColumns={false}
           ariaLabel={b().sharesTitle}
@@ -74,10 +74,9 @@ export default function SharesOverview(props: { shares: ShareView[] }) {
               );
             if (col.id === "kind")
               return (
-                <span class="inline-flex items-center gap-1">
-                  <i class={row.kind === "inbox" ? "ti ti-inbox" : "ti ti-download"} aria-hidden="true" />
+                <Tag size="sm" icon={row.kind === "inbox" ? "ti ti-inbox" : "ti ti-download"}>
                   {row.kind === "inbox" ? b().inboxShare : b().downloadShare}
-                </span>
+                </Tag>
               );
             if (col.id === "scope")
               return (
@@ -91,13 +90,19 @@ export default function SharesOverview(props: { shares: ShareView[] }) {
             return (
               <div class="flex items-center justify-end gap-1">
                 <Show when={row.state === "active"}>
-                  <CopyButton text={row.url} label={b().copyLink} copiedLabel={b().copiedLink} iconOnly />
-                  <ButtonLink size="sm" variant="ghost" href={row.url} navigation="document" target="_blank" rel="noopener" aria-label={b().openLink}>
-                    <i class="ti ti-external-link" aria-hidden="true" />
-                  </ButtonLink>
-                  <Button size="sm" variant="ghost" class="hover:text-danger" loading={busy() === row.id} onClick={() => void revoke(row)} aria-label={b().revoke}>
-                    <i class="ti ti-link-off" aria-hidden="true" />
-                  </Button>
+                  <Tooltip.Anchor content={b().copyLink}>
+                    <CopyButton text={row.url} label={b().copyLink} copiedLabel={b().copiedLink} iconOnly />
+                  </Tooltip.Anchor>
+                  <Tooltip.Anchor content={b().openLink}>
+                    <ButtonLink size="sm" variant="ghost" href={row.url} navigation="document" target="_blank" rel="noopener" aria-label={b().openLink}>
+                      <i class="ti ti-external-link" aria-hidden="true" />
+                    </ButtonLink>
+                  </Tooltip.Anchor>
+                  <Tooltip.Anchor content={b().revoke}>
+                    <Button size="sm" variant="ghost" class="hover:text-danger" loading={busy() === row.id} onClick={() => void revoke(row)} aria-label={b().revoke}>
+                      <i class="ti ti-link-off" aria-hidden="true" />
+                    </Button>
+                  </Tooltip.Anchor>
                 </Show>
               </div>
             );

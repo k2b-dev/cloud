@@ -12,7 +12,7 @@ Files v2 brings your accessible Cloud and FreeIPA directories into one view. The
 
 The sidebar lists your storage locations and their folders as a tree; the current folder is highlighted and a folder you open shows a spinner in place of its icon. Click a folder in the list to open it; the first row **..** leads back to the parent folder. Click a file to open its details panel on the right, or use the small info button at the end of any row for folders too. Close the panel with the X; that also clears the selection.
 
-Choose **List**, **Grid**, or **Tree** above the list. Tree shows the whole storage location from its root, expanded down to the current folder; click a folder icon to expand or collapse it, several at once. Grid adds a tile size control. The browser remembers view and size per folder. **Next page** and **First page** move through long folders; storage, folder, page, and a single selected file stay in the address bar so you can reload or bookmark.
+Choose **List**, **Grid**, or **Tree** above the list. Tree shows the whole storage location from its root with the current folder highlighted; click a folder name to make it the current folder, click its icon to expand or collapse it, several at once. New entries and uploads always go into the current folder, which every name dialog shows. Grid adds a tile size control. The browser remembers view and size per folder. **Next page** and **First page** move through long folders; storage, folder, page, and a single selected file stay in the address bar so you can reload or bookmark.
 
 ## Search
 
@@ -20,19 +20,19 @@ The search field at the top searches names everywhere below the current folder; 
 
 ## Select and act
 
-Ctrl/Cmd-click adds entries to the selection, Shift-click selects a range, and Ctrl/Cmd-A selects the loaded page. Arrow keys move, Space toggles, Escape clears. With a selection, **n selected** and an **Actions** menu appear below the search field: download (one file directly, several entries or folders as one ZIP), move into a new folder, move to another folder, copy to this or another storage, share publicly, or move to the trash. Right-click a row for the same actions.
+**Select** next to the entry count shows checkboxes in every view; a click then toggles an entry, and **Done** hides them again. Without checkboxes, Ctrl/Cmd-click adds entries, Shift-click selects a range, and Ctrl/Cmd-A selects the loaded page. Arrow keys move, Space toggles, Escape clears. With a selection, **n selected** and an **Actions** menu appear below the search field: download (one file directly, several entries or folders as one ZIP), move into a new folder, move to another folder, copy to this or another storage, share publicly, or move to the trash. Right-click a row for the same actions.
 
 Moving stays inside one storage location. Copying can target another storage location; the originals stay where they are, so a group file can never disappear into a private home by accident.
 
 ## Add, upload, and change entries
 
-The plus button next to the search field offers **Upload**, **Upload folder**, **New folder**, and **New file**. You can also drop files from your computer onto the list. Each file is transferred directly to the file server after Cloud has checked your access, and it is published only when the whole transfer has arrived. If a name already exists you decide whether to replace or skip. Names cannot contain slashes.
+The plus button next to the search field offers **Upload**, **Upload folder**, **New folder**, and **New file**. You can also drop files from your computer onto the list. Each file is transferred directly to the file server after Cloud has checked your access, and it is published only when the whole transfer has arrived. Progress appears in a notification with a progress bar. If names already exist you decide once per upload whether to replace them or upload only the new files. Names cannot contain slashes.
 
 The details panel of an entry offers **Open in new tab**, **Rename**, **Duplicate**, **Move to**, **Copy to**, **Share publicly**, and **Move to trash**. Folders additionally offer **Share as upload inbox**. The copy button in the panel header copies a Cloud reference to the clipboard that other apps understand.
 
 ## Trash
 
-Deleting never removes anything permanently: entries move into the trash of their storage location. Open the trash from the sidebar to see what you deleted and **Restore** puts an entry back to its original place. Only an administrator can empty the trash.
+Deleting never removes anything permanently: entries move into the trash of their storage location, which appears as **Trash** at the end of the root folder and in the sidebar. Open it to see what you deleted; **Restore** puts an entry back to its original place. Only an administrator can empty the trash.
 
 ## Versions
 

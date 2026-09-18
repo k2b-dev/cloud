@@ -267,6 +267,9 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                 </Show>
               }
             >
+              <Show when={location().view === "overview"}>
+                <NoticeCard tone="info" title={a().modelTitle} detail={a().modelDetail} />
+              </Show>
               <Show when={location().view === "overview" || snapshot().browse || result().issue}>
                 <Select
                   label={a().area}

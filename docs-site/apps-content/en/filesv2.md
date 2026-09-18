@@ -25,13 +25,17 @@ empty directory.
 
 ## Browse, select, and preview
 
-The sidebar is a folder tree per storage location with global file search at
-the top and the trash and **Shares** below. The list is a flat striped list;
+The sidebar is a folder tree per storage location with global file search and
+**Shares** at the top; after every navigation exactly the current path is
+expanded and each storage location ends with its **Trash** entry. The list is a flat striped list;
 folders open on click (the opened folder's icon becomes a spinner, a leading
 `..` row goes up), files open the details panel, and every row ends with an
-info button. **List**, **Grid**, and **Tree** views (tree starts at the storage
-root and is expanded down to the current folder) and the grid tile size are
-remembered per folder in a cookie.
+info button. **List**, **Grid**, and **Tree** views and the grid tile size are remembered
+per folder in a cookie. Tree shows the storage from its root with the current
+folder highlighted; clicking a folder name makes it current, clicking its icon
+expands or collapses it. **Select** next to the entry count switches on
+checkboxes in every view. Thumbnails are requested with bounded concurrency and
+retried, because Filegate rejects parallel renders beyond its capacity.
 Storage, folder, page, single selection, search query, and scope stay in the
 URL.
 
@@ -52,8 +56,9 @@ facts including the storage area, an action list, and, where the root keeps
 versions, a versions section with comments (stored as version metadata),
 download, restore in place, restore as a new file, and delete.
 
-Uploads, folder uploads and new files open a Filegate upload session per
-file: Cloud authorizes the target, the browser streams segments to the
+Uploads report progress in one toast and resolve name conflicts once per
+batch (replace existing or upload only new). Uploads, folder uploads and new
+files open a Filegate upload session per file: Cloud authorizes the target, the browser streams segments to the
 session lease and renews it through Cloud, and Cloud commits after re-checking
 the target. Existing names ask before being replaced.
 

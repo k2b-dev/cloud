@@ -2,7 +2,7 @@ import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
 import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry } from "../contracts";
 import Browser from "./Browser";
@@ -62,8 +62,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     },
   });
   const snapshot = workspace.snapshot;
-  // Every load returns fresh base objects; reusing the previous ones keeps the sidebar tree from re-rendering.
-  // The tree re-renders every row when its item array changes, so the array itself is reused while nothing changed.
+  // Every load returns fresh base objects; the sidebar tree only re-renders when a base really changed.
   const bases = createMemo<WorkspaceSnapshot["bases"]["items"]>((previous = []) => {
     const next = snapshot().bases.items.map((base) => {
       const known = previous.find((item) => item.id === base.id);
@@ -115,13 +114,15 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     ),
   );
 
-  // The sidebar tree loads subfolders on demand and only ever replaces a list once its fresh data arrived.
+  /*
+   * Sidebar tree: subfolders are loaded on demand and lists are swapped only once fresh data arrived.
+   * After every navigation exactly the current path is expanded; the user may then open or close
+   * any branch until the next navigation.
+   */
   const [folders, setFolders] = createSignal<Record<string, FileEntry[]>>({});
-  const [expanded, setExpanded] = createSignal<readonly string[]>(
-    props.initial.selectedId ? [props.initial.selectedId, ...ancestors(props.initial.directory?.path ?? "").map((path) => `${props.initial.selectedId}:${path}`)] : [],
-  );
   const treeId = (baseId: string, path: string) => (path ? `${baseId}:${path}` : baseId);
-  // Reuse the previous entry objects so the tree only re-renders rows that actually changed.
+  const pathIds = (baseId: string | null, path: string) => (baseId ? [baseId, ...ancestors(path).map((item) => `${baseId}:${item}`)] : []);
+  const [expanded, setExpanded] = createSignal<readonly string[]>(pathIds(props.initial.selectedId, props.initial.directory?.path ?? ""));
   const mergeFolders = (key: string, dirs: FileEntry[]) =>
     setFolders((current) => {
       const previous = current[key] ?? [];
@@ -156,20 +157,23 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   createEffect(() => {
     const directory = snapshot().directory;
     if (!directory || directory.query) return;
-    const key = treeId(directory.base.id, directory.path);
-    mergeFolders(key, directory.items.filter((entry) => entry.directory));
+    mergeFolders(treeId(directory.base.id, directory.path), directory.items.filter((entry) => entry.directory));
   });
-  createEffect(() => {
-    const path = currentPath();
-    const baseId = snapshot().selectedId;
-    if (!baseId || !snapshot().directory) return;
-    const needed = [baseId, ...ancestors(path).map((item) => `${baseId}:${item}`)];
-    if (needed.some((id) => !expanded().includes(id))) setExpanded((current) => [...new Set([...current, ...needed])]);
-    // The current folder is seeded from the listing above; only its ancestors need their own request.
-    ensureLoaded(needed.filter((id) => id !== treeId(baseId, path)));
-  });
+  createEffect(
+    on(
+      () => `${snapshot().selectedId ?? ""}:${currentPath()}:${currentView() ?? ""}`,
+      () => {
+        const baseId = snapshot().selectedId;
+        if (!baseId || !snapshot().directory) return;
+        const needed = pathIds(baseId, currentPath());
+        setExpanded(needed);
+        ensureLoaded(needed.filter((id) => id !== treeId(baseId, currentPath())));
+      },
+      { defer: true },
+    ),
+  );
   onMount(() => ensureLoaded(expanded()));
-  // The tree folder being navigated to shows a spinner until the workspace has moved there.
+  // The tree row being navigated to shows a spinner until the workspace has moved there.
   const [navigating, setNavigating] = createSignal<string | null>(null);
   const withSpinner = async (id: string, run: () => Promise<void>) => {
     setNavigating(id);
@@ -180,11 +184,11 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     }
   };
   const goTree = (id: string, target: string) => void withSpinner(id, () => go(target));
-  // Item props are read once by the tree; the spinner lives inside the label so only this row updates.
+  // Item props are read once by the tree; the spinner marker lives inside the label so only this row updates.
   const treeLabel = (id: string, name: string) => (
     <span class="filesv2-nav-label">
       <Show when={navigating() === id}>
-        <i class="filesv2-nav-spinner ti ti-loader-2 animate-spin" aria-hidden="true" />
+        <i class="filesv2-nav-spinner" aria-hidden="true" />
       </Show>
       {name}
     </span>
@@ -217,6 +221,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     </ButtonLink>
   );
   const centered = (content: () => ReturnType<typeof Placeholder>) => <div class="flex min-h-0 flex-1 items-center justify-center">{content()}</div>;
+  const trashId = (baseId: string) => `${baseId}:trash`;
   return (
     <AppWorkspace mobileSurface="flush">
       <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
@@ -228,12 +233,13 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
               label={b().globalSearch}
               onClick={() => openGlobalSearch({ query: "", scope: { appId: "filesv2", tag: "file", label: t().files, icon: "ti ti-folders" } })}
             />
-            <AppWorkspace.SidebarIconAction icon="ti ti-trash" label={b().trashNav} active={currentView() === "trash"} href={viewUrl(snapshot().selectedId, "trash")} />
           </AppWorkspace.SidebarIconGrid>
           <AppWorkspace.SidebarBody scrollPreserveKey="filesv2-storage">
             <AppWorkspace.NavTree
               ariaLabel={t().storage}
-              selectedId={snapshot().selectedId && !currentView() ? treeId(snapshot().selectedId!, currentPath()) : null}
+              selectedId={
+                snapshot().selectedId && currentView() === "trash" ? trashId(snapshot().selectedId!) : snapshot().selectedId && !currentView() ? treeId(snapshot().selectedId!, currentPath()) : null
+              }
               expandedIds={expanded()}
               onExpandedIdsChange={(ids) => {
                 setExpanded(ids);
@@ -251,8 +257,16 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                     title={`${base.name} (${t()[base.area]})`}
                     onNavigate={(event) => withSpinner(base.id, () => onNavigate(event))}
                   >
-                    <Show when={folders()[base.id]?.length}>
-                      <For each={folders()[base.id]}>{(entry) => <Folder baseId={base.id} entry={entry} />}</For>
+                    <Show when={base.status === "existing"}>
+                      <For each={folders()[base.id] ?? []}>{(entry) => <Folder baseId={base.id} entry={entry} />}</For>
+                      <AppWorkspace.NavTree.Item
+                        id={trashId(base.id)}
+                        label={treeLabel(trashId(base.id), b().trashTitle)}
+                        icon="ti ti-trash"
+                        href={viewUrl(base.id, "trash")}
+                        navigation="enhanced"
+                        onNavigate={(event) => withSpinner(trashId(base.id), () => onNavigate(event))}
+                      />
                     </Show>
                   </AppWorkspace.NavTree.Item>
                 )}
@@ -269,7 +283,10 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
         <Show when={currentView() !== "shares"} fallback={<SharesOverview shares={snapshot().shares ?? []} />}>
-          <Show when={!(currentView() === "trash" && selected()?.status === "existing")} fallback={<TrashView base={selected()!} onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))} />}>
+          <Show
+            when={!(currentView() === "trash" && selected()?.status === "existing")}
+            fallback={<TrashView base={selected()!} onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))} />}
+          >
             <Show
               when={snapshot().directory}
               fallback={
@@ -350,6 +367,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                   error={workspace.failure()?.message}
                   onRetry={() => void go(retryHref(), true)}
                   onOpenDirectory={(path) => goTree(treeId(directory().base.id, path), filesUrl(directory().base.id, path))}
+                  onOpenTrash={() => goTree(trashId(directory().base.id), viewUrl(directory().base.id, "trash"))}
                   onSearch={(query) => void go(filesUrl(directory().base.id, directory().path, null, null, query))}
                   onChanged={(selectPath) => {
                     // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
