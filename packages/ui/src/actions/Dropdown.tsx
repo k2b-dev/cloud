@@ -15,6 +15,9 @@ import { Tooltip, type TooltipPlacement } from "../feedback/Tooltip";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./Button";
 
+// Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
+const selectAction = (item: { action?: () => void }) => item.action;
+
 export type DropdownPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left" | "right-start";
 
 export type DropdownActionBase = {
@@ -289,7 +292,7 @@ export function DropdownItems(props: { items: readonly DropdownItem[]; close: (r
         class={item.class}
         href={"href" in item ? item.href : undefined}
         external={"external" in item ? item.external : undefined}
-        onSelect={"action" in item ? item.action : undefined}
+        onSelect={selectAction(item)}
       >
         {item.label}
       </DropdownItem>

@@ -1008,8 +1008,9 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
     element?.focus({ preventScroll: true });
   };
 
-  const renderItems = (value: unknown, depth: number, parentId?: string): JSX.Element => (
-    <For each={navTreeItems(value)}>
+  // Items arrive through an accessor so a changed nested list reconciles rows by identity instead of rebuilding the list.
+  const renderItems = (value: () => unknown, depth: number, parentId?: string): JSX.Element => (
+    <For each={navTreeItems(value())}>
       {(item) => {
         const nested = createMemo(() => navTreeItems(item.children));
         const hasChildren = () => nested().length > 0;
@@ -1163,7 +1164,7 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
             {row()}
             <Show when={hasChildren() && isExpanded(item.id)}>
               <div class="k2b-app-workspace__nav-tree-group" role="group">
-                {renderItems(nested(), depth + 1, item.id)}
+                {renderItems(nested, depth + 1, item.id)}
               </div>
             </Show>
           </div>
@@ -1174,7 +1175,7 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
 
   return (
     <div ref={root} class={`k2b-app-workspace__nav-tree ${props.class ?? ""}`} role="tree" aria-label={props.ariaLabel}>
-      {renderItems(roots(), 0)}
+      {renderItems(roots, 0)}
     </div>
   );
 }) as AppWorkspaceNavTreeComponent;
