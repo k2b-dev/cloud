@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { FileEntry } from "../contracts";
+import { editableExtension } from "../documents";
 import { fileIcon, previewKind } from "./file-preview";
 
 /**
@@ -42,11 +43,31 @@ const loadImage = (url: string, signal: AbortSignal) =>
     image.src = url;
   });
 
-export default function FileThumbnail(props: { baseId: string; entry: FileEntry; large?: boolean; hero?: boolean }) {
+/** PDF and office documents get a first-page image from Cloud (via Collabora) when the editor is configured. */
+export const documentPreviewable = (entry: FileEntry) => !entry.directory && (previewKind(entry) === "pdf" || !!editableExtension(entry.name));
+export default function FileThumbnail(props: { baseId: string; entry: FileEntry; large?: boolean; hero?: boolean; documents?: boolean }) {
   const [url, setUrl] = createSignal<string | null>(null);
   let host: HTMLSpanElement | undefined;
   const controller = new AbortController();
-  onCleanup(() => controller.abort());
+  let objectUrl: string | null = null;
+  onCleanup(() => {
+    controller.abort();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  });
+  const loadDocument = async () => {
+    const signal = controller.signal;
+    await acquire();
+    try {
+      const response = await apiClient.bases[":baseId"].preview.$post({ param: { baseId: props.baseId }, json: { path: props.entry.path } }, { init: { signal } });
+      if (!response.ok) return;
+      objectUrl = URL.createObjectURL(await response.blob());
+      setUrl(objectUrl);
+    } catch {
+      // The icon stays; previews are a convenience, not content.
+    } finally {
+      release();
+    }
+  };
   const load = async () => {
     const signal = controller.signal;
     for (const [attempt, delay] of [0, ...RETRY_DELAYS].entries()) {
@@ -73,16 +94,19 @@ export default function FileThumbnail(props: { baseId: string; entry: FileEntry;
     }
   };
   onMount(() => {
-    if (!host || previewKind(props.entry) !== "image") return;
+    const image = previewKind(props.entry) === "image";
+    const document = !image && !!props.documents && documentPreviewable(props.entry);
+    if (!host || (!image && !document)) return;
+    const start = image ? load : loadDocument;
     if (typeof IntersectionObserver === "undefined") {
-      void load();
+      void start();
       return;
     }
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
           observer.disconnect();
-          void load();
+          void start();
         }
       },
       { rootMargin: "120px" },

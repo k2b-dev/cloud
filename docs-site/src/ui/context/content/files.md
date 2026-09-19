@@ -279,7 +279,8 @@ Click selects, Ctrl/Cmd-click toggles, and Shift-click selects a range. Arrow ke
 Home, and End navigate; Space toggles, Ctrl/Cmd-A selects the supplied collection,
 and Escape clears it. Enter and double-click call `onOpen` (or
 `DataTable.onRowDoubleClick`). Nested controls retain their own behavior.
-`renderActions` accepts host-owned buttons or checkboxes. The host owns data,
+`renderActions` accepts host-owned buttons or checkboxes; `itemProps` adds
+host attributes such as drag-and-drop handlers to each tile. The host owns data,
 context menus, authorization, previews, and navigation; `onContextMenu` can align
 selection before opening a menu. Use `sm`, `md`, or `lg` for tile size. `FileGrid`
 has no scroll owner; place it in `ScrollArea`. A `DataTable` already owns scrolling.

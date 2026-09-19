@@ -98,4 +98,16 @@ export async function migrate(): Promise<void> {
     last_accessed_at TIMESTAMPTZ
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_shares_base ON filesv2.shares(base_id,created_at)`.simple();
+  // Per-user pointers: recently opened entries and favorites. They name a binding so a reused path never leaks.
+  for (const table of ["recent", "favorites"]) {
+    await sql.unsafe(`CREATE TABLE IF NOT EXISTS filesv2.${table} (
+      user_id UUID NOT NULL,
+      base_id UUID NOT NULL REFERENCES filesv2.bases(id) ON DELETE CASCADE,
+      path TEXT NOT NULL,
+      name TEXT NOT NULL,
+      directory BOOLEAN NOT NULL DEFAULT false,
+      marked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, base_id, path)
+    )`);
+  }
 }

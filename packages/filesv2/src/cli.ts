@@ -25,6 +25,7 @@ import {
   type DirectoryResult,
   type ArchiveDownload,
   type DownloadLease,
+  type MarkedEntry,
   type EntriesResult,
   type EntryResult,
   type FileVersion,
@@ -88,6 +89,7 @@ function filesCommands(locale?: string) {
       trash: t({ en: "List and restore entries in the trash", de: "Einträge im Papierkorb anzeigen und wiederherstellen" }),
       versions: t({ en: "Inspect, comment, download, restore or delete file versions", de: "Dateiversionen prüfen, kommentieren, herunterladen, wiederherstellen oder löschen" }),
       shares: t({ en: "Create, list and revoke public shares and inboxes", de: "Öffentliche Freigaben und Eingänge anlegen, auflisten und widerrufen" }),
+      favorites: t({ en: "Keep quick access to favorite entries", de: "Schnellzugriff auf Favoriten pflegen" }),
     },
     commands: [
       command("bases list", {
@@ -236,6 +238,43 @@ function filesCommands(locale?: string) {
             },
           });
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Uploaded", de: "Hochgeladen" })}: ${result.entry.path} (${result.entry.size} bytes)`);
+        },
+      }),
+      command("recent", {
+        summary: t({ en: "List recently opened entries", de: "Zuletzt geöffnete Einträge auflisten" }),
+        async run({ ctx }) {
+          const items = await ctx.readJson<MarkedEntry[]>(await api(ctx).recent.$get());
+          printRows(ctx, items, items.map((item) => ({ base: item.base.name, baseId: item.base.id, path: item.entry.path, markedAt: item.markedAt })), [
+            { key: "base", label: t({ en: "Base", de: "Ablage" }) },
+            { key: "path", label: t({ en: "Path", de: "Pfad" }) },
+            { key: "markedAt", label: t({ en: "Opened", de: "Geöffnet" }) },
+          ]);
+        },
+      }),
+      command("favorites list", {
+        summary: t({ en: "List favorite entries", de: "Favoriten auflisten" }),
+        async run({ ctx }) {
+          const items = await ctx.readJson<MarkedEntry[]>(await api(ctx).favorites.$get());
+          printRows(ctx, items, items.map((item) => ({ base: item.base.name, baseId: item.base.id, path: item.entry.path })), [
+            { key: "base", label: t({ en: "Base", de: "Ablage" }) },
+            { key: "path", label: t({ en: "Path", de: "Pfad" }) },
+          ]);
+        },
+      }),
+      command("favorites add", {
+        summary: t({ en: "Mark an entry as favorite", de: "Eintrag als Favorit markieren" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "Entry path relative to the base", de: "Eintragspfad relativ zur Ablage" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: true } }));
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Favorite", de: "Favorit" })}: ${result.entry.path}`);
+        },
+      }),
+      command("favorites remove", {
+        summary: t({ en: "Remove an entry from the favorites", de: "Eintrag aus den Favoriten entfernen" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "Entry path relative to the base", de: "Eintragspfad relativ zur Ablage" }) }) },
+        async run({ ctx, args }) {
+          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: false } }));
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Removed from favorites", de: "Aus Favoriten entfernt" })}: ${result.entry.path}`);
         },
       }),
       command("documents create", {

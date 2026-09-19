@@ -1,5 +1,7 @@
 import { Checkbox, type CollectionSelection, Format, IconButton } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
+
+export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-${string}`]: string | undefined };
 import type { FileEntry } from "../contracts";
 import FileThumbnail from "./FileThumbnail";
 
@@ -24,7 +26,15 @@ export default function FileList(props: {
   /** Rows that lead somewhere instead of representing an entry: parent folder before, trash after the entries. */
   before?: readonly VirtualRow[];
   after?: readonly VirtualRow[];
+  /** Host attributes per row, for example drag-and-drop handlers and the attributes their styling reads. */
+  rowProps?: (row: FileRow) => RowAttributes;
+  virtualProps?: (row: VirtualRow) => RowAttributes;
+  /** Ask Cloud for document previews (needs the editor); images are always previewed. */
+  documents?: boolean;
   messages: { name: string; size: string; modified: string; details: (name: string) => string; toggle: (name: string) => string; select: (name: string) => string; more: string; up: string };
+  /** Current order; clicking a column header asks the host to sort by it. */
+  sort?: { key: "name" | "modified" | "size" | "type"; direction: "asc" | "desc" };
+  onSort?: (key: "name" | "modified" | "size") => void;
   onOpen: (row: FileRow) => void;
   onToggle?: (row: FileRow) => void;
   onLoadMore?: (row: FileRow) => void;
@@ -39,10 +49,24 @@ export default function FileList(props: {
     const busy = row.loading || props.opening === row.path;
     if (busy) return <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />;
     if (props.tree && row.directory) return <i class={row.expanded ? "ti ti-folder-open" : "ti ti-folder"} aria-hidden="true" />;
-    return <FileThumbnail baseId={props.baseId} entry={row} />;
+    return <FileThumbnail baseId={props.baseId} entry={row} documents={props.documents} />;
   };
+  const ariaSort = (key: "name" | "modified" | "size") => (props.sort?.key === key ? (props.sort.direction === "asc" ? "ascending" : "descending") : undefined);
+  const header = (key: "name" | "modified" | "size", label: string) => (
+    <span role="columnheader" aria-sort={ariaSort(key)} class={`filesv2-list__cell filesv2-list__cell--${key}`}>
+      <Show when={props.onSort} fallback={label}>
+        <button type="button" class="filesv2-list__sort" onClick={() => props.onSort?.(key)}>
+          {label}
+          <Show when={ariaSort(key)}>
+            <i class={props.sort?.direction === "asc" ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
+          </Show>
+        </button>
+      </Show>
+    </span>
+  );
   const virtual = (row: VirtualRow) => (
     <div
+      {...props.virtualProps?.(row)}
       role="row"
       class={`filesv2-list__row filesv2-list__row--virtual filesv2-list__row--${row.key}`}
       style={{ "--depth": row.depth ?? 0 }}
@@ -81,17 +105,9 @@ export default function FileList(props: {
           <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--check" />
         </Show>
         <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--icon" />
-        <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--name">
-          {props.messages.name}
-        </span>
-        <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--size">
-          {props.messages.size}
-        </span>
-        <Show when={props.showModified}>
-          <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--modified">
-            {props.messages.modified}
-          </span>
-        </Show>
+        {header("name", props.messages.name)}
+        {header("size", props.messages.size)}
+        <Show when={props.showModified}>{header("modified", props.messages.modified)}</Show>
         <span role="columnheader" class="filesv2-list__cell filesv2-list__cell--info" />
       </div>
       <For each={props.before ?? []}>{virtual}</For>
@@ -114,6 +130,7 @@ export default function FileList(props: {
             }
           >
             <div
+              {...props.rowProps?.(row)}
               role="row"
               class="filesv2-list__row"
               style={{ "--depth": row.depth ?? 0 }}

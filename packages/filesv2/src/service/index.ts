@@ -26,6 +26,7 @@ import type {
   ArchiveDownload,
   EntriesResult,
   FileVersion,
+  MarkedEntry,
   TrashEntry,
   PublicShare,
   ShareView,
@@ -36,6 +37,7 @@ import { entryRefId, parseEntryRefId } from "../resource-ref";
 import { operations } from "../data/operations";
 import { type ShareRow, shares } from "../data/shares";
 import { trash } from "../data/trash";
+import { favorites, MARK_LIMITS, recent } from "../data/marks";
 import { uploads } from "../data/uploads";
 import { discoverEditor, signEditorToken, verifyEditorToken } from "./collabora";
 import { readConfiguration, writeConfiguration } from "./configuration";
@@ -61,6 +63,12 @@ const EDITOR_TRANSFER_TIMEOUT_MS = 5 * 60 * 1000;
 const SLOW_CALL_TIMEOUT_MS = 10 * 60 * 1000;
 /** Anonymous inbox visitors may hold this many transfers open at once per link; Filegate expires abandoned sessions. */
 const INBOX_OPEN_SESSIONS = 20;
+/** Document previews render through Collabora's convert-to; whole files travel there, so they are bounded and cached briefly. */
+const PREVIEW_MAX_BYTES = 20 * 1024 * 1024;
+const PREVIEW_CACHE_ENTRIES = 100;
+const PREVIEW_TIMEOUT_MS = 30_000;
+const previewCache = new Map<string, ArrayBuffer>();
+const PREVIEW_EXTENSIONS = new Set(["pdf"]);
 const withWopiSrc = (action: string, wopiSrc: string) =>
   `${action}${action.endsWith("?") || action.endsWith("&") ? "" : action.includes("?") ? "&" : "?"}WOPISrc=${encodeURIComponent(wopiSrc)}`;
 /** Filesystem scans without an index stop here; Filegate answers 413 beyond it. */
@@ -456,6 +464,34 @@ export function createFilesService(
     editorConfig(current.state.config);
     return { ...current, actor };
   }
+  /** Pointers name a binding; only bases the user can still reach are returned, under their current name. */
+  async function markedEntries(actor: RequestActor, rows: { base_id: string; path: string; name: string; directory: boolean; marked_at: Date }[]): Promise<MarkedEntry[]> {
+    const state = await context(actor);
+    const known = new Map<string, { id: string; name: string; area: Area } | null>();
+    const output: MarkedEntry[] = [];
+    for (const row of rows) {
+      if (!known.has(row.base_id)) {
+        const binding = await deps.bindings.byId(row.base_id);
+        const live = binding && !["retired", "archived", "deleted"].includes(binding.lifecycle) ? binding : null;
+        const item = live && state.candidates.find((candidate) => candidate.root === live.root && candidate.path === live.path);
+        const issue = item ? issueFor(state.config, item.area, state.self.availability) : "not_found";
+        known.set(row.base_id, item && !issue ? { id: `${item.area}:${item.kind}:${item.identity_id}`, name: item.name, area: item.area } : null);
+      }
+      const base = known.get(row.base_id);
+      if (!base) continue;
+      output.push({ base, entry: { name: row.name, path: row.path, directory: row.directory, size: 0, modified: row.marked_at.toISOString() }, markedAt: row.marked_at.toISOString() });
+    }
+    return output;
+  }
+  const rememberOpened = (current: Awaited<ReturnType<typeof authorized>>) =>
+    recent
+      .touch({ user_id: current.state.self.user.id, base_id: current.inspection.binding!.id, path: current.relative, name: current.relative.split("/").at(-1)!, directory: current.node.directory })
+      .catch(() => {});
+  const forgetMarks = async (current: { state: { self: { user: { id: string } } }; inspection: Inspection }, relative: string) => {
+    const binding = current.inspection.binding;
+    if (!binding) return;
+    await Promise.all([recent.forget(current.state.self.user.id, binding.id, relative), favorites.remove(current.state.self.user.id, binding.id, relative)]).catch(() => {});
+  };
   const UPLOAD_LEASE_SECONDS = 300;
   /** A commit whose response was lost is recognised from Filegate's session record; repeats are idempotent. */
   async function commitSession(root: RootClient, row: Awaited<ReturnType<typeof uploads.get>> & object): Promise<FileEntry> {
@@ -657,6 +693,7 @@ export function createFilesService(
         move: true,
         onConflict: "error",
       });
+      await forgetMarks(source, source.relative);
       return { base: source.inspection.summary, entry: fileEntry(relative, node) };
     },
     async move(actor: RequestActor, input: { baseId: string; paths: string[]; folder: string }): Promise<EntriesResult> {
@@ -675,6 +712,7 @@ export function createFilesService(
           move: true,
           onConflict: "error",
         });
+        await forgetMarks(source, source.relative);
         entries.push(fileEntry(relative, node));
       }
       return { base: destination.inspection.summary, entries };
@@ -711,6 +749,7 @@ export function createFilesService(
           if (!(error instanceof FilegateError && error.status === 409)) throw error;
         }
         const node = await source.root.transfer(source.target, candidate.root, joinPath(trashTarget, source.name), { move: true, onConflict: "rename" });
+        await forgetMarks(source, source.relative);
         const row = await trash.create({
           base_id: binding!.id,
           user_id: source.state.self.user.id,
@@ -825,6 +864,7 @@ export function createFilesService(
       );
       const id = entryRefId(input.baseId, current.relative);
       if (!id) throw new FilesError("invalid_path");
+      void rememberOpened(current);
       const wopiSrc = `${collabora.wopiOrigin || (await deps.publicOrigin())}/api/filesv2/wopi/files/${id}`;
       const expiresAt = Date.now() + EDITOR_TOKEN_TTL_MS;
       return {
@@ -1053,7 +1093,54 @@ export function createFilesService(
     async entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
       if (!input.path) throw new FilesError("invalid_path");
       const current = await authorized(actor, input.baseId, input.path);
-      return { base: current.inspection.summary, entry: fileEntry(current.relative, current.node) };
+      const favorite = await favorites.has(current.state.self.user.id, current.inspection.binding!.id, current.relative);
+      return { base: current.inspection.summary, entry: fileEntry(current.relative, current.node), favorite };
+    },
+    async recent(actor: RequestActor): Promise<MarkedEntry[]> {
+      const self = await deps.identities.self(actor);
+      return markedEntries(actor, await recent.list(self.user.id));
+    },
+    async favorites(actor: RequestActor): Promise<MarkedEntry[]> {
+      const self = await deps.identities.self(actor);
+      return markedEntries(actor, await favorites.list(self.user.id));
+    },
+    async setFavorite(actor: RequestActor, input: { baseId: string; path: string; favorite: boolean }): Promise<EntryResult> {
+      const current = await authorized(actor, input.baseId, input.path);
+      const mark = { user_id: current.state.self.user.id, base_id: current.inspection.binding!.id, path: current.relative };
+      if (input.favorite) {
+        if ((await favorites.count(mark.user_id)) >= MARK_LIMITS.favorites) throw new FilesError("favorites_full", 409);
+        await favorites.add({ ...mark, name: current.relative.split("/").at(-1)!, directory: current.node.directory });
+      } else await favorites.remove(mark.user_id, mark.base_id, mark.path);
+      return { base: current.inspection.summary, entry: fileEntry(current.relative, current.node), favorite: input.favorite };
+    },
+    /** First page of a PDF or office document as PNG through Collabora; nothing is stored beyond a small process cache. */
+    async documentPreview(actor: RequestActor, input: { baseId: string; path: string }): Promise<ArrayBuffer> {
+      const current = await authorized(actor, input.baseId, input.path, false);
+      const collabora = editorConfig(current.state.config);
+      const extension = current.relative.split(".").at(-1)?.toLowerCase() ?? "";
+      if (!(editableExtension(current.relative) || PREVIEW_EXTENSIONS.has(extension))) throw new FilesError("preview_unsupported", 400);
+      if (current.node.size > PREVIEW_MAX_BYTES) throw new FilesError("preview_too_large", 400);
+      const key = `${input.baseId}\n${current.relative}\n${current.node.modified}`;
+      const cached = previewCache.get(key);
+      if (cached) {
+        previewCache.delete(key);
+        previewCache.set(key, cached);
+        return cached;
+      }
+      const source = await current.root.contentRaw(current.target, AbortSignal.timeout(PREVIEW_TIMEOUT_MS));
+      if (!source.ok) throw new FilesError("unavailable", 503);
+      const form = new FormData();
+      form.set("data", new Blob([await source.arrayBuffer()]), current.relative.split("/").at(-1)!);
+      const converted = await deps.transfer(`${(collabora.internalUrl || collabora.url).replace(/\/$/, "")}/cool/convert-to/png`, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(PREVIEW_TIMEOUT_MS),
+      });
+      if (!converted.ok) throw new FilesError("unavailable", 503);
+      const bytes = await converted.arrayBuffer();
+      previewCache.set(key, bytes);
+      while (previewCache.size > PREVIEW_CACHE_ENTRIES) previewCache.delete(previewCache.keys().next().value!);
+      return bytes;
     },
     async thumbnail(actor: RequestActor, input: { baseId: string; path: string; size: "small" | "large" }): Promise<DownloadLease> {
       if (!input.path) throw new FilesError("invalid_path");
@@ -1065,6 +1152,7 @@ export function createFilesService(
     async download(actor: RequestActor, input: { baseId: string; path: string }): Promise<DownloadLease> {
       if (!input.path) throw new FilesError("not_file");
       const current = await authorized(actor, input.baseId, input.path, false);
+      void rememberOpened(current);
       const lease = await current.root.directDownload(current.target, 60);
       return { url: lease.url, method: "GET", expires: lease.expires };
     },

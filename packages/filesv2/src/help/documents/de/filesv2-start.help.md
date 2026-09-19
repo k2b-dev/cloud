@@ -14,6 +14,14 @@ Die Seitenleiste zeigt deine Ablagen mit ihren Ordnern als Baum; der aktuelle Or
 
 Über der Liste wählst du **Liste**, **Grid** oder **Baum**. Der Baum zeigt die ganze Ablage ab ihrer Wurzel mit hervorgehobenem aktuellen Ordner; ein Klick auf einen Ordnernamen macht ihn zum aktuellen Ordner, ein Klick auf sein Symbol klappt auf oder zu, mehrere gleichzeitig. Neue Einträge und Uploads landen immer im aktuellen Ordner, den jeder Namensdialog anzeigt. Im Grid erscheint zusätzlich die Kachelgröße. Ansicht und Größe merkt sich der Browser pro Ablage. **Nächste Seite** und **Erste Seite** blättern in großen Ordnern; Ablage, Ordner, Seite und eine einzeln ausgewählte Datei bleiben in der Adresse, sodass du neu laden oder ein Lesezeichen setzen kannst.
 
+## Sortieren, filtern und ziehen
+
+**Sortieren** und **Typ** über der Liste ordnen die Einträge nach Name, Datum, Größe oder Typ und beschränken sie auf Ordner, Dokumente, Bilder oder Medien. Ordner stehen immer zuerst. Auch die Spaltenköpfe der Liste sortieren. Die Ablage liefert nach Name; andere Reihenfolgen gelten innerhalb der geladenen Seite, was die Zählung anzeigt, sobald es weitere Seiten gibt.
+
+Ziehe einen Eintrag auf einen Ordner, um ihn dorthin zu verschieben; eine hervorgehobene oder angehakte Auswahl wandert gemeinsam. Die Zeile **..** verschiebt in den übergeordneten Ordner. Verweile kurz auf einem Ordner, dann öffnet er sich (Liste und Grid) oder klappt auf (Baum), sodass du tiefer ablegen kannst, ohne loszulassen. Dateien von deinem Gerät werden beim Ablegen weiterhin hochgeladen.
+
+Dateien, die du öffnest oder herunterlädst, erscheinen unter **Zuletzt** in der Seitenleiste; **Favoriten** sammelt Einträge, die du im Detailpanel markierst. Beides öffnet den Ordner des Eintrags mit ausgewähltem Eintrag. Ist der Dokumenteditor konfiguriert, zeigen PDF- und Office-Dateien im Grid, in der Liste und im Detailpanel eine Vorschau der ersten Seite.
+
 ## Suchen
 
 Das Suchfeld oben durchsucht Namen überall unterhalb des aktuellen Ordners; Treffer zeigen ihren Pfad relativ zum Ordner. Enter startet die Suche, das Leeren des Feldes führt zurück zur Auflistung. Ablagen ohne Suchindex werden bei Bedarf durchsucht; enthält ein Ordner dafür zu viele Einträge, suche in einem kleineren Ordner. Die Lupe oben in der Seitenleiste öffnet die globale Cloud-Suche nur für Dateien über alle deine Ablagen; ein Treffer führt in seinen Ordner mit ausgewählter Datei.

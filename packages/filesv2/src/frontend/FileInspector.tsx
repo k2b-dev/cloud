@@ -9,6 +9,7 @@ import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, fileIcon, previewKind } from "./file-preview";
+import { documentPreviewable } from "./FileThumbnail";
 import { useFilesMessages } from "./messages";
 import { filesUrl } from "./urls";
 
@@ -34,9 +35,23 @@ export default function FileInspector(props: {
   onShare?: (entry: FileEntry) => void;
   onShareInbox?: (entry: FileEntry) => void;
   onChanged: (selectPath?: string | null) => void;
+  /** Document previews are possible when the editor is configured. */
+  documents?: boolean;
 }) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
+  // The favorite flag comes with the entry; a toggle overrides it locally until the next load.
+  const [favoriteOverride, setFavoriteOverride] = createSignal<{ path: string; favorite: boolean } | null>(null);
+  const toggleFavorite = async (entry: FileEntry, favorite: boolean) => {
+    try {
+      const response = await apiClient.bases[":baseId"].favorite.$post({ param: { baseId: props.base.id }, json: { path: entry.path, favorite } });
+      if (!response.ok) await apiFailure(response, f().unavailable);
+      setFavoriteOverride({ path: entry.path, favorite: (await response.json()).favorite ?? favorite });
+      toast.success(favorite ? t().favoriteAdded : t().favoriteRemoved);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : f().unavailable);
+    }
+  };
   const locale = useLocale();
   const source = () => JSON.stringify([props.base.id, props.paths.length === 1 ? props.paths[0] : null, props.selected.find((entry) => entry.path === props.paths[0])?.modified]);
   const initial =
@@ -154,7 +169,7 @@ export default function FileInspector(props: {
                   }
                 />
                 <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
-                  <Show when={!item().directory && previewKind(item())}>
+                  <Show when={!item().directory && (previewKind(item()) || (props.documents && documentPreviewable(item())))}>
                     <DetailPanel.Group label={t().preview}>
                     <DetailPanel.Section
                       title={t().preview}
@@ -166,7 +181,7 @@ export default function FileInspector(props: {
                     >
                       <Show
                         keyed
-                        when={previewKind(item()) === "image" ? `${props.base.id}:${item().path}:${item().modified}` : null}
+                        when={previewKind(item()) === "image" || (props.documents && !previewKind(item()) && documentPreviewable(item())) ? `${props.base.id}:${item().path}:${item().modified}` : null}
                         fallback={
                           <Show keyed when={`${props.base.id}:${item().path}:${item().modified}`}>
                             <FilePreview baseId={props.base.id} entry={item()} onDownload={() => props.onDownload([item()])} />
@@ -174,7 +189,7 @@ export default function FileInspector(props: {
                         }
                       >
                         <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
-                          <FileThumbnail baseId={props.base.id} entry={item()} large hero />
+                          <FileThumbnail baseId={props.base.id} entry={item()} large hero documents={props.documents} />
                         </button>
                       </Show>
                     </DetailPanel.Section>
@@ -197,6 +212,10 @@ export default function FileInspector(props: {
                     <DetailPanel.Section title={t().actions}>
                       <div class="flex flex-col gap-1">
                         <Show when={!item().directory}>{actionRow(t().openInTab, "ti ti-external-link", () => void openInTab(item()))}</Show>
+                        {(() => {
+                          const favorite = () => (favoriteOverride()?.path === item().path ? favoriteOverride()!.favorite : (details.data()?.result.favorite ?? false));
+                          return actionRow(favorite() ? t().removeFavorite : t().addFavorite, favorite() ? "ti ti-star-filled" : "ti ti-star", () => void toggleFavorite(item(), !favorite()));
+                        })()}
                         {actionRow(t().rename, "ti ti-pencil", () => props.onRename(item()))}
                         {actionRow(t().duplicate, "ti ti-copy", () => props.onDuplicate(item()))}
                         {actionRow(t().moveTo, "ti ti-arrow-move-right", () => props.onMove(item()))}

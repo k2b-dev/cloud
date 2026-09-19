@@ -28,7 +28,7 @@ export default ssr<AuthContext>(async (c) => {
   const trashView = view === "trash";
   const editView = view === "edit" && !!requestedFile;
   const source = new URL(filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope), "https://files.invalid");
-  if (view === "trash" || view === "shares" || editView) source.searchParams.set("view", view);
+  if (view === "trash" || view === "shares" || view === "recent" || view === "favorites" || editView) source.searchParams.set("view", view);
   const initial: WorkspaceSnapshot = {
     source: `${source.pathname}${source.search}`,
     bases: { items: [], issues: [], editor: null },
@@ -44,6 +44,8 @@ export default ssr<AuthContext>(async (c) => {
     if (requestedBase && !selected) throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
     if (view === "shares") initial.shares = await filesService.listShares(actor);
+    else if (view === "recent") initial.marks = await filesService.recent(actor);
+    else if (view === "favorites") initial.marks = await filesService.favorites(actor);
     else if (editView && selected?.status === "existing") initial.editor = await filesService.editor(actor, { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
       initial.directory = search

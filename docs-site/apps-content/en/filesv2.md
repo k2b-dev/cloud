@@ -37,7 +37,14 @@ expands or collapses it. **Select** next to the entry count switches on
 checkboxes in every view. Thumbnails are requested with bounded concurrency and
 retried, because Filegate rejects parallel renders beyond its capacity.
 Storage, folder, page, single selection, search query, and scope stay in the
-URL.
+URL. Entries can be sorted by name, date, size or type and filtered by type
+within the loaded page (Filegate lists by name), dragged onto folders or the
+`..` row to move them (resting on a folder opens or expands it), and marked as
+favorites; recently opened entries and favorites have their own sidebar
+views. The current page is polled while the tab is visible so changes by
+others appear without a reload. With Collabora configured, PDF and office
+files get first-page previews rendered through Collabora's convert-to
+endpoint and cached briefly in the application.
 
 Search always covers the subtree below the current folder; hits show their
 path relative to it. Filesv2 also answers the universal
@@ -228,6 +235,8 @@ cld filesv2 list <base-id> --path Documents --json
 cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf --json
 cld filesv2 documents create <base-id> Documents/Minutes --kind text --json
 cld filesv2 edit-url <base-id> Documents/Minutes.odt
+cld filesv2 recent --json
+cld filesv2 favorites add <base-id> Documents --json
 cld filesv2 admin inventory --area freeipa --kind groups --json
 cld filesv2 admin configuration get --json
 cld filesv2 admin configuration set --input-file ./filesv2.json --json

@@ -14,6 +14,14 @@ The sidebar lists your storage locations and their folders as a tree; the curren
 
 Choose **List**, **Grid**, or **Tree** above the list. Tree shows the whole storage location from its root with the current folder highlighted; click a folder name to make it the current folder, click its icon to expand or collapse it, several at once. New entries and uploads always go into the current folder, which every name dialog shows. Grid adds a tile size control. The browser remembers view and size per storage location. **Next page** and **First page** move through long folders; storage, folder, page, and a single selected file stay in the address bar so you can reload or bookmark.
 
+## Sort, filter, and drag
+
+**Sort** and **Type** above the list order the entries by name, date, size or type and narrow them to folders, documents, images or media. Folders always come first. Column headers in the list sort as well. Storage lists by name, so other orders apply within the loaded page; the count says so when more pages exist.
+
+Drag an entry onto a folder to move it there; a highlighted or checked selection moves together. The **..** row moves entries to the parent folder. Rest on a folder for a moment and it opens (list and grid) or expands (tree), so you can drop deeper without letting go. Dropping files from your computer still uploads them.
+
+Files you open or download appear under **Recent** in the sidebar, and **Favorites** collects entries you mark in their details panel. Both open the entry's folder with the entry selected. When the document editor is configured, PDF and office files show a first-page preview in the grid, the list and the details panel.
+
 ## Search
 
 The search field at the top searches names everywhere below the current folder; results show each hit with its path relative to the folder. Press Enter to search and clear the field to return to the listing. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search in a smaller folder. The magnifier at the top of the sidebar opens the global Cloud search restricted to files across all your storage locations; opening a result jumps to its folder with the file selected.

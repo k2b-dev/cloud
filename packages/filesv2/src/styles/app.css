@@ -409,3 +409,47 @@
   justify-content: center;
   background: var(--k2b-surface);
 }
+
+/* Sortable list headers keep the column look; the chevron marks the active order. */
+.filesv2-list__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.filesv2-list__cell--size .filesv2-list__sort {
+  justify-content: flex-end;
+}
+.filesv2-list__sort:hover {
+  color: var(--k2b-text);
+}
+
+/* Drag-and-drop: the source fades, the folder under the pointer lights up, the drag image names the count. */
+.filesv2-list__row[data-dragging="true"],
+.k2b-file-grid__item[data-dragging="true"] {
+  opacity: 0.45;
+}
+.filesv2-list__row[data-drop-target="true"],
+.k2b-file-grid__item[data-drop-target="true"] {
+  outline: 2px solid var(--k2b-action);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--k2b-action) 12%, transparent);
+}
+.filesv2-drag-image {
+  position: fixed;
+  top: -100px;
+  left: -100px;
+  z-index: 1;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-action-solid);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}

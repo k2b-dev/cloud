@@ -33,6 +33,7 @@ import {
   DownloadInputSchema,
   EntryQuerySchema,
   ErrorSchema,
+  FavoriteInputSchema,
   RootActionSchema,
   SearchQuerySchema,
   ThumbnailInputSchema,
@@ -93,6 +94,27 @@ const api = new Hono<AuthContext>()
     v("json", DownloadInputSchema),
     async (c) =>
       respond(c, ok(await filesService.download(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .get("/recent", middleware.openapi({ summary: "Recently opened entries of the user", ...requiresAuth }), async (c) =>
+    respond(c, ok(await filesService.recent(c.get("actor")))),
+  )
+  .get("/favorites", middleware.openapi({ summary: "Favorite entries of the user", ...requiresAuth }), async (c) =>
+    respond(c, ok(await filesService.favorites(c.get("actor")))),
+  )
+  .post(
+    "/bases/:baseId/favorite",
+    middleware.openapi({ summary: "Mark or unmark an entry as favorite", ...requiresAuth }),
+    v("json", FavoriteInputSchema),
+    async (c) => respond(c, ok(await filesService.setFavorite(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/preview",
+    middleware.openapi({ summary: "Render the first page of a PDF or office document as PNG", ...requiresAuth }),
+    v("json", EntryQuerySchema),
+    async (c) => {
+      const bytes = await filesService.documentPreview(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") });
+      return new Response(bytes, { headers: { "content-type": "image/png", "cache-control": "private, max-age=300" } });
+    },
   )
   .get(
     "/bases/:baseId/entry",

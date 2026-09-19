@@ -30,7 +30,18 @@ cld filesv2 thumbnail <base-id> Photos/team.jpg --size small --out ./team-previe
 cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf --json
 cld filesv2 documents create <base-id> Documents/Minutes --kind text --json
 cld filesv2 edit-url <base-id> Documents/Minutes.odt
+cld filesv2 archive <base-id> Documents Photos/team.jpg --out ./selection.zip --json
+cld filesv2 versions download <base-id> Documents/report.pdf <version-id> --out ./report-v1.pdf --json
+cld filesv2 recent --json
+cld filesv2 favorites list --json
+cld filesv2 favorites add <base-id> Documents/report.pdf --json
+cld filesv2 favorites remove <base-id> Documents/report.pdf --json
 ```
+
+`recent` lists entries the user opened or downloaded (newest first, at most
+30); `favorites` are explicit marks. Both resolve their base on every read and
+omit bases the user can no longer reach. `search --scope folder` limits hits to
+direct children of `--path`.
 
 `documents create` needs Collabora configured by an administrator; it appends
 the extension of the configured format (`odt`/`ods`/`odp` or

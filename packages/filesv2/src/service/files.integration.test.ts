@@ -61,6 +61,7 @@ suite("Files service and durable bindings", () => {
       const parts = req.pathname.split("/");
       // Direct leases: bytes bypass the API and land on the storage node itself.
       if (req.pathname === "/hosting/discovery") return new Response(DISCOVERY);
+      if (req.pathname === "/cool/convert-to/png") return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { headers: { "content-type": "image/png" } });
       if (parts[1] === "signed") {
         const key = `${parts[2]}:${decodeURIComponent(parts.slice(3).join("/"))}`;
         return nodes.has(key) ? new Response(contents.get(key) ?? "") : new Response("", { status: 404 });
@@ -385,7 +386,7 @@ suite("Files service and durable bindings", () => {
     config.collabora = { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
     archives.length = 0;
     lostCommitResponse = false;
-    await sql`TRUNCATE filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
+    await sql`TRUNCATE filesv2.recent,filesv2.favorites,filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await set(
       "linux.identity_config",
       JSON.stringify({ enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
@@ -699,6 +700,35 @@ suite("Files service and durable bindings", () => {
     // A shared file that alice may only read cannot have its versions rewritten by her.
     await expect(service.restoreVersion(actor, { baseId, path: "Docs/shared.txt", id: "v1" })).rejects.toMatchObject({ code: "forbidden" });
     await expect(service.versions(actor, { baseId, path: "Docs/shared.txt" })).resolves.toEqual([]);
+  });
+  test("recent and favorites point at bindings the user can still reach, and document previews render through Collabora", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    directory("freeipa", "users/alice/Docs/plan.odt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Docs/notes.txt", 1001, 2001, "0640", false);
+    contents.set("freeipa:users/alice/Docs/plan.odt", "odt bytes");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    expect(await service.recent(actor)).toEqual([]);
+    await service.download(actor, { baseId, path: "Docs/plan.odt" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await service.recent(actor)).map((item) => item.entry.path)).toEqual(["Docs/plan.odt"]);
+    expect((await service.setFavorite(actor, { baseId, path: "Docs", favorite: true })).favorite).toBe(true);
+    expect((await service.entry(actor, { baseId, path: "Docs" })).favorite).toBe(true);
+    expect((await service.favorites(actor)).map((item) => `${item.base.name}:${item.entry.path}:${item.entry.directory}`)).toEqual(["alice:Docs:true"]);
+    await service.rename(actor, { baseId, path: "Docs/plan.odt", name: "plan2.odt" });
+    expect(await service.recent(actor)).toEqual([]);
+    expect((await service.setFavorite(actor, { baseId, path: "Docs", favorite: false })).favorite).toBe(false);
+    expect(await service.favorites(actor)).toEqual([]);
+    await expect(service.documentPreview(actor, { baseId, path: "Docs/plan2.odt" })).rejects.toMatchObject({ code: "editor_disabled" });
+    config.collabora = { url: "http://localhost:9980", internalUrl: "http://collabora:9980", wopiOrigin: "", documentFormat: "odf" };
+    expect(new Uint8Array(await service.documentPreview(actor, { baseId, path: "Docs/plan2.odt" }))[1]).toBe(0x50);
+    await expect(service.documentPreview(actor, { baseId, path: "Docs/notes.txt" })).rejects.toMatchObject({ code: "preview_unsupported" });
+    // Favorites of a base the user lost are hidden, not shown as reachable entries.
+    await service.setFavorite(actor, { baseId, path: "Docs/notes.txt", favorite: true });
+    await sql`UPDATE filesv2.bases SET lifecycle='archived' WHERE root='freeipa' AND path='users/alice'`;
+    directory("freeipa", "users/alice", 999, 999, "0700");
+    expect(await service.favorites(actor)).toEqual([]);
   });
   test("share scopes stop at the first differing folder and shares end with their binding", async () => {
     const actor = await user("alice", "ipa");

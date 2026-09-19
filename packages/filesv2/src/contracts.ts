@@ -51,7 +51,10 @@ export type EditorInfo = { documentFormat: DocumentFormat };
 export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[]; editor: EditorInfo | null };
 export type DirectoryResult = { base: BaseSummary; path: string; items: FileEntry[]; next: string | null };
 export type DownloadLease = { url: string; method: "GET"; expires: string };
-export type EntryResult = { base: BaseSummary; entry: FileEntry };
+export type EntryResult = { base: BaseSummary; entry: FileEntry; favorite?: boolean };
+/** A recent or favorite pointer the user may still reach; the base is resolved fresh on every read. */
+export type MarkedEntry = { base: { id: string; name: string; area: Area }; entry: FileEntry; markedAt: string };
+export const FavoriteInputSchema = z.object({ path: z.string().min(1).max(4096), favorite: z.boolean() });
 export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
 export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
 export type SearchResult = DirectoryResult & { query: string; scope: "folder" | "tree" };

@@ -26,6 +26,12 @@ export const bindings = {
       ON CONFLICT DO NOTHING`;
     return this.find(candidate);
   },
+  async byId(id: string): Promise<Binding | null> {
+    const [row] = await sql<
+      Binding[]
+    >`SELECT id,lifecycle,area,kind,identity_id,identity_name,root,path,uid_number::double precision AS uid_number,gid_number::double precision AS gid_number FROM filesv2.bases WHERE id=${id}::uuid`;
+    return row ?? null;
+  },
   async path(root: string, path: string): Promise<Binding | null> {
     const rows = await sql<
       Binding[]

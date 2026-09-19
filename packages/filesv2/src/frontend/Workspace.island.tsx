@@ -4,8 +4,9 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
 import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import MarkedList from "./MarkedList";
 import { apiClient } from "../api/client";
-import { ErrorSchema, type FileEntry } from "../contracts";
+import { ErrorSchema, type FileEntry, type MarkedEntry } from "../contracts";
 import Browser from "./Browser";
 import Editor from "./Editor";
 import { useBrowserMessages } from "./browser-messages";
@@ -23,7 +24,10 @@ const ancestors = (path: string) => {
   return parts.map((_, index) => parts.slice(0, index + 1).join("/"));
 };
 const viewOf = (source: string) => new URL(source, "https://files.invalid").searchParams.get("view");
-const viewUrl = (baseId: string | null | undefined, view: "trash" | "shares") => `${filesUrl(baseId ?? undefined)}${baseId ? "&" : "?"}view=${view}`;
+const viewUrl = (baseId: string | null | undefined, view: "trash" | "shares" | "recent" | "favorites") => `${filesUrl(baseId ?? undefined)}${baseId ? "&" : "?"}view=${view}`;
+/** Listings are polled while the tab is visible; Filegate has no change feed yet. */
+const LIVE_REFRESH_MS = 20_000;
+const fingerprint = (items: readonly FileEntry[]) => items.map((item) => `${item.path}|${item.size}|${item.modified}`).join("\n");
 
 export default function Workspace(props: { initial: WorkspaceSnapshot; preferences?: Record<string, ViewPreference>; cloudUrl: string }) {
   const t = useFilesMessages();
@@ -49,10 +53,15 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       let directory: WorkspaceSnapshot["directory"] = null;
       let shares: WorkspaceSnapshot["shares"];
       let editor: WorkspaceSnapshot["editor"];
+      let marks: WorkspaceSnapshot["marks"];
       if (view === "shares") {
         const response = await apiClient.shares.$get({}, { init: { signal } });
         if (!response.ok) throw await apiError(response);
         shares = await response.json();
+      } else if (view === "recent" || view === "favorites") {
+        const response = view === "recent" ? await apiClient.recent.$get({}, { init: { signal } }) : await apiClient.favorites.$get({}, { init: { signal } });
+        if (!response.ok) throw await apiError(response);
+        marks = await response.json();
       } else if (view === "edit" && file && selected?.status === "existing") {
         const response = await apiClient.bases[":baseId"].editor.$post({ param: { baseId: selected.id }, json: { path: file } }, { init: { signal } });
         if (!response.ok) throw await apiError(response);
@@ -66,7 +75,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         if (!response.ok) throw await apiError(response);
         directory = await response.json();
       }
-      return { source, bases, selectedId: selected?.id ?? null, directory, errorCode: null, shares, editor };
+      return { source, bases, selectedId: selected?.id ?? null, directory, errorCode: null, shares, editor, marks };
     },
   });
   const snapshot = workspace.snapshot;
@@ -181,6 +190,23 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     ),
   );
   onMount(() => ensureLoaded(expanded()));
+  // Other users and Collabora change folders without telling this tab; the current page is compared every few seconds.
+  onMount(() => {
+    const timer = setInterval(async () => {
+      const directory = snapshot().directory;
+      if (document.visibilityState !== "visible" || workspace.pending() || !directory || directory.query || currentView()) return;
+      const after = new URL(snapshot().source, window.location.origin).searchParams.get("after") ?? undefined;
+      const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId: directory.base.id }, query: { path: directory.path, after } }).catch(() => null);
+      if (!response?.ok || snapshot().directory !== directory) return;
+      const page = await response.json();
+      if (fingerprint(page.items) === fingerprint(directory.items)) return;
+      ensureLoaded(Object.keys(folders()), true);
+      void go(snapshot().source, true);
+    }, LIVE_REFRESH_MS);
+    onCleanup(() => clearInterval(timer));
+  });
+  const openMarked = (item: MarkedEntry) =>
+    void go(item.entry.directory ? filesUrl(item.base.id, item.entry.path) : filesUrl(item.base.id, item.entry.path.split("/").slice(0, -1).join("/"), null, item.entry.path));
   // The tree row being navigated to shows a spinner until the workspace has moved there.
   const [navigating, setNavigating] = createSignal<string | null>(null);
   const withSpinner = async (id: string, run: () => Promise<void>) => {
@@ -319,6 +345,14 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
             </AppWorkspace.NavTree>
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter>
+            <AppWorkspace.SidebarItem href={viewUrl(snapshot().selectedId, "recent")} navigation="enhanced" onNavigate={onNavigate} active={currentView() === "recent"}>
+              <AppWorkspace.SidebarItemIcon icon="ti ti-history" />
+              <AppWorkspace.SidebarItemLabel>{b().recent}</AppWorkspace.SidebarItemLabel>
+            </AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem href={viewUrl(snapshot().selectedId, "favorites")} navigation="enhanced" onNavigate={onNavigate} active={currentView() === "favorites"}>
+              <AppWorkspace.SidebarItemIcon icon="ti ti-star" />
+              <AppWorkspace.SidebarItemLabel>{b().favorites}</AppWorkspace.SidebarItemLabel>
+            </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem href={viewUrl(snapshot().selectedId, "shares")} navigation="enhanced" onNavigate={onNavigate} active={currentView() === "shares"}>
               <AppWorkspace.SidebarItemIcon icon="ti ti-world-share" />
               <AppWorkspace.SidebarItemLabel>{b().shares}</AppWorkspace.SidebarItemLabel>
@@ -327,6 +361,10 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
+        <Show
+          when={currentView() !== "recent" && currentView() !== "favorites"}
+          fallback={<MarkedList kind={currentView() === "recent" ? "recent" : "favorites"} items={snapshot().marks ?? []} onOpen={openMarked} />}
+        >
         <Show when={currentView() !== "shares"} fallback={<SharesOverview shares={snapshot().shares ?? []} />}>
           <Show
             when={!(currentView() === "trash" && selected()?.status === "existing")}
@@ -435,6 +473,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
               )}
             </Show>
           </Show>
+        </Show>
         </Show>
       </AppWorkspace.Content>
     </AppWorkspace>

@@ -11,6 +11,8 @@ import {
   createCollectionSelection,
   Dropdown,
   FileGrid,
+  FilterChip,
+  IconButton,
   InlineGuidance,
   Placeholder,
   prompts,
@@ -25,13 +27,13 @@ import { apiClient } from "../api/client";
 import type { BaseSummary, BasesResult, DirectoryResult, EditorInfo, EntryResult, FileEntry } from "../contracts";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { useBrowserMessages } from "./browser-messages";
-import { folderKey, parsePreferences, preferencesCookie, type ViewPreference, viewFor, withView } from "./browser-preferences";
+import { folderKey, parsePreferences, preferencesCookie, SORT_KEYS, type SortKey, type ViewPreference, viewFor, withView } from "./browser-preferences";
 import FileInspector from "./FileInspector";
-import FileList, { type FileRow, type VirtualRow } from "./FileList";
+import FileList, { type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
-import { apiFailure, contentLease } from "./file-preview";
+import { apiFailure, contentLease, previewKind } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { openDestinationDialog } from "./MoveDialog";
 import { filesUrl } from "./urls";
@@ -84,6 +86,32 @@ export default function Browser(props: {
     setPreferences(value);
     cookies.writeJsonCookie(preferencesCookie, value);
   };
+  /*
+   * Order and type filter apply to what is loaded: Filegate lists by name, so other orders hold within
+   * the current page (the toolbar says so when more pages exist). Folders always come first.
+   */
+  type TypeFilter = "all" | "folders" | "documents" | "images" | "media" | "other";
+  const [typeFilter, setTypeFilter] = createSignal<TypeFilter>("all");
+  const extensionOf = (entry: FileEntry) => (entry.directory ? "" : (entry.name.split(".").length > 1 ? entry.name.split(".").at(-1)!.toLowerCase() : ""));
+  const kindOf = (entry: FileEntry): TypeFilter => {
+    if (entry.directory) return "folders";
+    const kind = previewKind(entry);
+    if (kind === "image") return "images";
+    if (kind === "video" || kind === "audio") return "media";
+    if (kind === "pdf" || editableExtension(entry.name)) return "documents";
+    return "other";
+  };
+  const byName = (a: FileEntry, b: FileEntry) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  const compare = (a: FileEntry, b: FileEntry) => {
+    if (a.directory !== b.directory) return a.directory ? -1 : 1;
+    const key = view().sort;
+    const order =
+      key === "modified" ? a.modified.localeCompare(b.modified) : key === "size" ? a.size - b.size : key === "type" ? extensionOf(a).localeCompare(extensionOf(b)) || byName(a, b) : byName(a, b);
+    return view().direction === "desc" ? -order : order;
+  };
+  const arrange = (items: readonly FileEntry[]) => (typeFilter() === "all" ? [...items] : items.filter((entry) => kindOf(entry) === typeFilter())).sort(compare);
+  const visibleItems = createMemo(() => arrange(props.directory.items));
+  const filtered = () => typeFilter() !== "all" && !visibleItems().length && props.directory.items.length > 0;
   const requestedFile = () => (props.source ? new URL(props.source, "https://files.invalid").searchParams.get("file") : null);
   const [externalPath, setExternalPath] = createSignal(requestedFile());
   // Checkboxes appear only while selecting; a plain click then toggles instead of opening.
@@ -142,7 +170,7 @@ export default function Browser(props: {
   // Rows keep their identity across recomputes so open thumbnails are not re-requested on every expand.
   let previousRows = new Map<string, FileRow>();
   const rows = createMemo<FileRow[]>(() => {
-    if (view().view !== "tree" || searching()) return props.directory.items;
+    if (view().view !== "tree" || searching()) return visibleItems();
     const out: FileRow[] = [];
     const reuse = new Map<string, FileRow>();
     const push = (row: FileRow) => {
@@ -162,7 +190,7 @@ export default function Browser(props: {
       out.push(value);
     };
     const walk = (items: readonly FileEntry[], depth: number) => {
-      for (const item of items) {
+      for (const item of arrange(items)) {
         const open = item.directory && expandedFolders().has(item.path) ? branch(item.path) : undefined;
         push({ ...item, depth, expanded: !!open, loading: open?.loading });
         if (open) {
@@ -474,6 +502,119 @@ export default function Browser(props: {
       refresh((await response.json()).entries[0]?.path ?? null);
     });
 
+  /*
+   * Drag-and-drop moves inside the base: dragging a highlighted or checked entry takes the whole
+   * selection along. Folders and the ".." row accept drops; resting on a folder opens it (list, grid)
+   * or expands it (tree). The drag state lives here so it survives the navigation a hover triggers.
+   */
+  const HOVER_OPEN_MS = 900;
+  const DRAG_TYPE = "application/x-filesv2-entries";
+  const [dragging, setDragging] = createSignal<readonly string[] | null>(null);
+  const [dropTarget, setDropTarget] = createSignal<string | null>(null);
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastDragSeen = 0;
+  let dragWatch: ReturnType<typeof setInterval> | undefined;
+  const clearHover = () => {
+    if (hoverTimer) clearTimeout(hoverTimer);
+    hoverTimer = undefined;
+  };
+  const endDrag = () => {
+    setDragging(null);
+    setDropTarget(null);
+    clearHover();
+    if (dragWatch) clearInterval(dragWatch);
+    dragWatch = undefined;
+  };
+  onMount(() => {
+    // A drag source that navigated away never fires dragend; the window stops seeing dragover instead.
+    const seen = () => {
+      lastDragSeen = Date.now();
+    };
+    window.addEventListener("dragover", seen);
+    window.addEventListener("drop", endDrag);
+    onCleanup(() => {
+      window.removeEventListener("dragover", seen);
+      window.removeEventListener("drop", endDrag);
+      endDrag();
+    });
+  });
+  const beginDrag = (paths: readonly string[]) => {
+    setDragging(paths);
+    lastDragSeen = Date.now();
+    dragWatch = setInterval(() => {
+      if (Date.now() - lastDragSeen > 400) endDrag();
+    }, 200);
+  };
+  const draggedPaths = (row: FileEntry) => (selection.selected().has(row.path) ? selectedPaths() : [row.path]);
+  const dragImage = (paths: readonly string[], name: string) => {
+    const element = document.createElement("div");
+    element.className = "filesv2-drag-image";
+    element.textContent = paths.length > 1 ? b().dragCount(paths.length) : name;
+    document.body.append(element);
+    return element;
+  };
+  const dragProps = (row: FileEntry): RowAttributes =>
+    searching() || virtualOf(row)
+      ? {}
+      : {
+          draggable: true,
+          onDragStart: (event) => {
+            const paths = draggedPaths(row);
+            event.dataTransfer?.setData(DRAG_TYPE, JSON.stringify({ baseId: baseId(), paths }));
+            if (event.dataTransfer) {
+              event.dataTransfer.effectAllowed = "move";
+              const image = dragImage(paths, row.name);
+              event.dataTransfer.setDragImage(image, 12, 12);
+              setTimeout(() => image.remove(), 0);
+            }
+            beginDrag(paths);
+          },
+          onDragEnd: endDrag,
+          "data-dragging": dragging()?.includes(row.path) ? "true" : undefined,
+        };
+  const canDrop = (target: string) => {
+    const paths = dragging();
+    return !!paths && !paths.includes(target) && !paths.some((path) => target.startsWith(`${path}/`)) && !paths.every((path) => parentPath(path) === target);
+  };
+  const dropProps = (target: string, hover?: () => void): RowAttributes => ({
+    onDragOver: (event) => {
+      if (!canDrop(target)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      if (dropTarget() !== target) {
+        setDropTarget(target);
+        clearHover();
+        if (hover) hoverTimer = setTimeout(hover, HOVER_OPEN_MS);
+      }
+    },
+    onDragLeave: (event) => {
+      if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+      if (dropTarget() === target) {
+        setDropTarget(null);
+        clearHover();
+      }
+    },
+    onDrop: (event) => {
+      if (!canDrop(target)) return;
+      event.preventDefault();
+      const paths = dragging()!;
+      endDrag();
+      void movePaths(paths, target);
+    },
+    "data-drop-target": dropTarget() === target && dragging() ? "true" : undefined,
+  });
+  const folderDrop = (row: FileEntry): RowAttributes =>
+    row.directory && !searching() && !virtualOf(row) ? dropProps(row.path, () => (view().view === "tree" ? expandFolder(row.path, true) : openFolder(row.path))) : {};
+  const upDrop = (): RowAttributes => (folder() ? dropProps(parentPath(folder()), goUp) : {});
+  const movePaths = (paths: readonly string[], target: string) =>
+    runAction(async () => {
+      const response = await apiClient.bases[":baseId"].move.$post({ param: { baseId: baseId() }, json: { paths: [...paths], folder: target } });
+      if (!response.ok) await apiFailure(response, t().unavailable);
+      selection.clear();
+      toast.success(b().moved(paths.length));
+      refresh();
+    });
+
   const open = (entry: FileEntry) => {
     if (busy()) return;
     if (entry.directory) {
@@ -578,7 +719,7 @@ export default function Browser(props: {
   const virtualKey = (row: VirtualRow) => `\u0000${row.key}`;
   const gridRows = createMemo<FileEntry[]>(() => [
     ...virtualBefore().map((row) => ({ name: row.label, path: virtualKey(row), directory: true, size: 0, modified: "" })),
-    ...props.directory.items,
+    ...visibleItems(),
     ...virtualAfter().map((row) => ({ name: row.label, path: virtualKey(row), directory: true, size: 0, modified: "" })),
   ]);
   const virtualOf = (row: FileEntry) => [...virtualBefore(), ...virtualAfter()].find((item) => virtualKey(item) === row.path);
@@ -601,12 +742,15 @@ export default function Browser(props: {
       return selection.keyDown(event, id, columns);
     },
   };
+  const sortLabel = (key: SortKey) => (key === "modified" ? b().sortModified : key === "size" ? b().sortSize : key === "type" ? b().sortType : b().sortName);
+  const filterLabel = (key: TypeFilter) =>
+    key === "folders" ? b().filterFolders : key === "documents" ? b().filterDocuments : key === "images" ? b().filterImages : key === "media" ? b().filterMedia : key === "other" ? b().filterOther : b().filterAll;
   const listMessages = () => ({ name: t().name, size: t().size, modified: t().modified, details: b().detailsFor, toggle: b().toggleFolder, select: b().selectEntry, more: b().more, up: b().parentFolderUp });
   return (
     <>
       <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
-        <div class="filesv2-browser__surface" data-dragging={drop.isDragging() && !searching() ? "true" : undefined} {...drop.handlers}>
-          <Show when={drop.isDragging() && !searching()}>
+        <div class="filesv2-browser__surface" data-dragging={drop.isDragging() && !dragging() && !searching() ? "true" : undefined} {...(dragging() ? {} : drop.handlers)}>
+          <Show when={drop.isDragging() && !dragging() && !searching()}>
             <div class="filesv2-browser__drop" aria-hidden="true">
               <i class="ti ti-upload" />
               {b().dropHere}
@@ -644,6 +788,10 @@ export default function Browser(props: {
                 fallback={
                   <span class="flex items-center gap-2 text-xs text-dimmed">
                     {searching() ? b().searchResults(props.directory.items.length) : b().pageItems(props.directory.items.length)}
+                    <Show when={props.directory.next && view().sort !== "name"}>
+                      <span aria-hidden="true">·</span>
+                      <span>{b().sortPageOnly}</span>
+                    </Show>
                     <Show when={props.directory.items.length}>
                       <span aria-hidden="true">·</span>
                       <Button size="xs" variant="text" onClick={() => toggleSelecting(true)}>
@@ -668,6 +816,36 @@ export default function Browser(props: {
               </Show>
               <span class="flex-1" />
               <span class="flex shrink-0 items-center gap-1">
+                <FilterChip
+                  label={`${b().sort}: ${sortLabel(view().sort)}`}
+                  icon="ti ti-arrows-sort"
+                  value={[view().sort]}
+                  defaultValue={["name"]}
+                  isActive={view().sort !== "name"}
+                  onValueChange={(values) => {
+                    const key = values[0];
+                    if (key && (SORT_KEYS as readonly string[]).includes(key)) updateView({ sort: key as SortKey });
+                  }}
+                  options={[{ options: SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })) }]}
+                />
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  label={view().direction === "asc" ? b().sortAscending : b().sortDescending}
+                  aria-pressed={view().direction === "desc"}
+                  onClick={() => updateView({ direction: view().direction === "asc" ? "desc" : "asc" })}
+                >
+                  <i class={view().direction === "asc" ? "ti ti-sort-ascending" : "ti ti-sort-descending"} aria-hidden="true" />
+                </IconButton>
+                <FilterChip
+                  label={`${b().filter}: ${filterLabel(typeFilter())}`}
+                  icon="ti ti-filter"
+                  value={[typeFilter()]}
+                  defaultValue={["all"]}
+                  isActive={typeFilter() !== "all"}
+                  onValueChange={(values) => setTypeFilter((values[0] as TypeFilter | undefined) ?? "all")}
+                  options={[{ options: (["all", "folders", "documents", "images", "media", "other"] as const).map((key) => ({ value: key, label: filterLabel(key) })) }]}
+                />
                 <Show when={view().view === "grid"}>
                   <SegmentedControl
                     label={b().viewSize}
@@ -743,7 +921,12 @@ export default function Browser(props: {
                         selecting={selecting()}
                         before={virtualBefore()}
                         after={virtualAfter()}
+                        rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row) })}
+                        virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
+                        documents={!!props.editor}
                         messages={listMessages()}
+                        sort={{ key: view().sort, direction: view().direction }}
+                        onSort={(key) => updateView(view().sort === key ? { direction: view().direction === "asc" ? "desc" : "asc" } : { sort: key, direction: "asc" })}
                         onOpen={open}
                         onToggle={toggleBranch}
                         onLoadMore={(row) => {
@@ -757,6 +940,9 @@ export default function Browser(props: {
                       <Show when={!props.directory.items.length && view().view !== "tree"}>
                         <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
                       </Show>
+                      <Show when={filtered()}>
+                        <Placeholder class="mx-2" icon="ti ti-filter-off" title={b().noMatches} />
+                      </Show>
                     </>
                   }
                 >
@@ -768,6 +954,7 @@ export default function Browser(props: {
                       label={t().files}
                       size={view().size}
                       onOpen={(row) => (virtualOf(row) ? virtualOf(row)!.onClick() : open(row))}
+                      itemProps={(row) => (virtualOf(row) ? (virtualOf(row)!.key === "up" ? upDrop() : {}) : { ...dragProps(row), ...folderDrop(row) })}
                       onContextMenu={(row) => !virtualOf(row) && focusContext(row)}
                       onRowClick={(row) => {
                         const virtual = virtualOf(row);
@@ -785,7 +972,7 @@ export default function Browser(props: {
                         return (
                           <>
                             {gridCheck(row)}
-                            {opening() === row.path ? <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" /> : <FileThumbnail baseId={baseId()} entry={row} large />}
+                            {opening() === row.path ? <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" /> : <FileThumbnail baseId={baseId()} entry={row} large documents={!!props.editor} />}
                           </>
                         );
                       }}
@@ -794,6 +981,9 @@ export default function Browser(props: {
                     />
                     <Show when={!props.directory.items.length}>
                       <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
+                    </Show>
+                    <Show when={filtered()}>
+                      <Placeholder class="mx-2" icon="ti ti-filter-off" title={b().noMatches} />
                     </Show>
                   </div>
                 </Show>
@@ -842,6 +1032,7 @@ export default function Browser(props: {
             onShare={props.onShare ? (item) => props.onShare?.([item.path]) : undefined}
             onShareInbox={props.onShareInbox ? (item) => props.onShareInbox?.(item.path) : undefined}
             onChanged={refresh}
+            documents={!!props.editor}
           />
         </Show>
       </AppWorkspace.Detail>

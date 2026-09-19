@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-const viewSchema = z.object({ view: z.enum(["list", "grid", "tree"]).default("list"), size: z.enum(["sm", "md", "lg"]).default("md") });
+export const SORT_KEYS = ["name", "modified", "size", "type"] as const;
+export type SortKey = (typeof SORT_KEYS)[number];
+const viewSchema = z.object({
+  view: z.enum(["list", "grid", "tree"]).default("list"),
+  size: z.enum(["sm", "md", "lg"]).default("md"),
+  sort: z.enum(SORT_KEYS).default("name"),
+  direction: z.enum(["asc", "desc"]).default("asc"),
+});
 export type ViewPreference = z.infer<typeof viewSchema>;
 export const defaultView: ViewPreference = viewSchema.parse({});
 /** One cookie keeps the view per storage base; the newest bases win so the cookie stays small. */

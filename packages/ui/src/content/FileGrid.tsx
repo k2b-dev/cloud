@@ -14,6 +14,8 @@ export type FileGridProps<T> = {
   onRowClick?: (row: T) => void;
   onOpen: (row: T) => void;
   onContextMenu?: (row: T) => void;
+  /** Extra attributes for one tile, for example drag-and-drop handlers or data attributes the host styles. */
+  itemProps?: (row: T) => JSX.HTMLAttributes<HTMLDivElement>;
   class?: string;
 };
 
@@ -39,6 +41,7 @@ export function FileGrid<T>(props: FileGridProps<T>) {
           return (
             <div role="row" class="k2b-file-grid__row">
               <div
+                {...props.itemProps?.(row)}
                 role="gridcell"
                 class="k2b-file-grid__item"
                 aria-selected={props.selection.selected().has(id())}
