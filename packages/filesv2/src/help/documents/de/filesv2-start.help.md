@@ -26,7 +26,7 @@ Verschieben bleibt innerhalb einer Ablage. Kopieren kann in eine andere Ablage z
 
 ## Dokumente gemeinsam bearbeiten
 
-Hat deine Administration Collabora Online angebunden, öffnen sich Textdokumente, Tabellen und Präsentationen (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) in einem Editor, der den Hauptbereich füllt: Doppelklick auf die Datei oder **Bearbeiten** im Detailpanel. Mehrere Personen können gleichzeitig im selben Dokument arbeiten und sehen die Änderungen der anderen. Die Kopfzeile zeigt den Dateinamen und ob Collabora deine Änderungen gespeichert hat; der Pfeil links führt zurück in den Ordner mit ausgewählter Datei. Darfst du eine Datei nur lesen, öffnet sie sich schreibgeschützt. Jedes Speichern wird zur aktuellen Datei; die Versionsgeschichte bleibt im Detailpanel.
+Hat deine Administration Collabora Online angebunden, öffnen sich Textdokumente, Tabellen und Präsentationen (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) in einem Editor, der den Hauptbereich füllt: Doppelklick auf die Datei oder **Bearbeiten** im Detailpanel. Mehrere Personen können gleichzeitig im selben Dokument arbeiten und sehen die Änderungen der anderen. Der Dokumentname steht in der oberen Leiste; Collabora zeigt, wann es zuletzt gespeichert hat, und sein Schließen-Button (X) führt zurück in den Ordner mit ausgewählter Datei. Darfst du eine Datei nur lesen, öffnet sie sich schreibgeschützt. Jedes Speichern wird zur aktuellen Datei; die Versionsgeschichte bleibt im Detailpanel.
 
 Das Plus-Menü bietet dann zusätzlich **Neues Textdokument**, **Neue Tabelle** und **Neue Präsentation**. Du gibst einen Namen ein, die Dateiendung wird ergänzt, und das neue Dokument öffnet sich im Editor.
 

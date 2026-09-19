@@ -1,4 +1,5 @@
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
+import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
 import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder } from "@k2b/ui";
@@ -231,6 +232,19 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   const trashId = (baseId: string) => `${baseId}:trash`;
   const editorBack = (launch: NonNullable<WorkspaceSnapshot["editor"]>) =>
     filesUrl(launch.base.id, launch.entry.path.split("/").slice(0, -1).join("/"), null, launch.entry.path);
+  // The shell's title follows the open document; the app name returns once the editor is left.
+  createEffect(
+    on(
+      () => (currentView() === "edit" ? (snapshot().editor?.entry.path ?? "") : null),
+      (path) => {
+        const launch = snapshot().editor;
+        layout.update({
+          breadcrumbs: path && launch ? [{ title: t().files, href: editorBack(launch) }, { title: launch.entry.name }] : [{ title: t().files }],
+        });
+      },
+      { defer: true },
+    ),
+  );
   const editorView = () => (
     <AppWorkspace mobileSurface="flush">
       <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
@@ -247,7 +261,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
             </AppWorkspace.Main>
           }
         >
-          {(launch) => <Editor launch={launch()} backHref={editorBack(launch())} onNavigate={onNavigate} />}
+          {(launch) => <Editor launch={launch()} backHref={editorBack(launch())} />}
         </Show>
       </AppWorkspace.Content>
     </AppWorkspace>

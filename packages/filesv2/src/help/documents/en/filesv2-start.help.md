@@ -26,7 +26,7 @@ Moving stays inside one storage location. Copying can target another storage loc
 
 ## Edit documents together
 
-When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The header shows the file name and whether Collabora has saved your changes; the arrow on the left returns to the folder with the file selected. If you may only read a file, it opens read-only. Every save becomes the current file; the file's version history stays in its details panel.
+When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The document name appears in the top bar; Collabora shows when it last saved, and its close button (X) returns to the folder with the file selected. If you may only read a file, it opens read-only. Every save becomes the current file; the file's version history stays in its details panel.
 
 The plus menu then also offers **New text document**, **New spreadsheet** and **New presentation**. You enter a name, the file extension is added for you, and the new document opens in the editor.
 

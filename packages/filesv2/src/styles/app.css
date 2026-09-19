@@ -382,29 +382,16 @@
   font-size: 0.6875rem;
 }
 
-/* Editor view: Collabora fills the main area inside a Cloud surface; nothing else is restyled. */
+/* Editor view: Collabora fills the whole main area; the workspace surface already clips and rounds it. */
 .filesv2-editor {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.filesv2-editor__header {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  padding: 0.5rem 0.75rem;
-}
 .filesv2-editor__frame {
   position: relative;
   flex: 1;
   min-height: 0;
-  margin: 0 0.75rem 0.75rem;
-  overflow: hidden;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
 }
 .filesv2-editor__frame iframe {
   display: block;

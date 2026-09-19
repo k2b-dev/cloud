@@ -62,8 +62,14 @@ export default ssr<AuthContext>(async (c) => {
     } else throw error;
   }
   const cloudUrl = publicCloudOrigin(await coreSettings.get<string>("app.url"));
+  const title = initial.editor
+    ? [
+        { title: t.files, href: filesUrl(initial.editor.base.id, initial.editor.entry.path.split("/").slice(0, -1).join("/"), null, initial.editor.entry.path) },
+        { title: initial.editor.entry.name },
+      ]
+    : t.files;
   return () => (
-    <Layout c={c} title={t.files} fullWidth fullPage>
+    <Layout c={c} title={title} fullWidth fullPage>
       <Workspace initial={initial} preferences={parsePreferences(c.req.header("cookie"))} cloudUrl={cloudUrl} />
     </Layout>
   );

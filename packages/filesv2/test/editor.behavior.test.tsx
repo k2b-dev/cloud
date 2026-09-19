@@ -94,7 +94,7 @@ describe("Files v2 office editing", () => {
     expect(edited).toEqual(["Minutes.odt", "Budget.ods"]);
   });
 
-  test("the editor hands Collabora the token, follows Collabora's save state and hides comments", async () => {
+  test("the editor hands Collabora the token, asks for its close button and hides comments", async () => {
     const dom = createDomTestHarness();
     const submitted: string[] = [];
     const submit = dom.window.HTMLFormElement.prototype.submit;
@@ -102,20 +102,19 @@ describe("Files v2 office editing", () => {
       submitted.push(this.action);
     };
     const { default: Editor } = await import("../src/frontend/Editor");
-    const dispose = render(() => createComponent(Editor, { launch, backHref: "/app/filesv2?base=cloud%3Agroups%3Ademo&file=Minutes.odt", onNavigate: async () => {} }), dom.root);
+    const dispose = render(() => createComponent(Editor, { launch, backHref: "/app/filesv2?base=cloud%3Agroups%3Ademo&file=Minutes.odt" }), dom.root);
     cleanup = () => {
       dispose();
       dom.window.HTMLFormElement.prototype.submit = submit;
       dom.cleanup();
     };
     await flush();
-    expect(submitted).toEqual([launch.action]);
+    expect(submitted).toEqual([`${launch.action}&closebutton=1`]);
     const form = dom.root.querySelector("form")!;
     expect(form.querySelector<HTMLInputElement>('input[name="access_token"]')!.value).toBe("body.signature");
     expect(form.querySelector<HTMLInputElement>('input[name="ui_defaults"]')!.value).toContain("UITheme=light");
     expect(form.querySelector<HTMLInputElement>('input[name="css_variables"]')!.value).toContain("--co-primary-element=");
     expect(dom.root.textContent).toContain("Loading editor");
-    expect(dom.root.querySelector('a[aria-label="Back to folder"]')?.getAttribute("href")).toContain("file=Minutes.odt");
     const frame = dom.root.querySelector("iframe")!;
     const posted: string[] = [];
     if (frame.contentWindow) frame.contentWindow.postMessage = ((message: string) => posted.push(JSON.parse(message).MessageId)) as typeof postMessage;
@@ -125,13 +124,6 @@ describe("Files v2 office editing", () => {
     message({ MessageId: "App_LoadingStatus", Values: { Status: "Document_Loaded" } });
     await flush();
     expect(dom.root.textContent).not.toContain("Loading editor");
-    expect(dom.root.textContent).toContain("Saved");
     if (frame.contentWindow) expect(posted).toEqual(["Host_PostmessageReady", "Hide_Command", "Hide_Command"]);
-    message({ MessageId: "Doc_ModifiedStatus", Values: { Modified: true } });
-    await flush();
-    expect(dom.root.textContent).toContain("Unsaved changes");
-    message({ MessageId: "Doc_ModifiedStatus", Values: { Modified: false } });
-    await flush();
-    expect(dom.root.textContent).toContain("Saved");
   });
 });
