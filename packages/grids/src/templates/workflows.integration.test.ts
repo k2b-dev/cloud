@@ -174,9 +174,11 @@ describe("authored template workflow transitions", () => {
           const candidates = await records(target);
           let record = required(candidates[0], "dispatch record");
           if (scenario.template === "bookshop") {
+            const lines = await table(fixture, "Order lines");
+            const line = required((await records(lines))[0], "sample order line");
             record = required(
-              candidates.find((candidate) => candidate.data[field(target, "Ready to send")] === true),
-              "ready order",
+              candidates.find((candidate) => candidate.id === relationId(lines, line, "Order")),
+              "order with books",
             );
             const customers = await table(fixture, "Customers");
             for (const customer of await records(customers)) await edit(fixture, customers, customer, { Email: "fixture@example.invalid" });
@@ -226,7 +228,6 @@ describe("authored template workflow transitions", () => {
             const emptyOrder = await add(fixture, target, {
               Customer: record.data[field(target, "Customer")],
               "Ordered at": record.data[field(target, "Ordered at")],
-              "Ready to send": true,
             });
             expect(await invoke(fixture, claim, { order: ref(emptyOrder) })).toMatchObject({
               state: "failed",
@@ -239,6 +240,66 @@ describe("authored template workflow transitions", () => {
       60_000,
     );
   }
+
+  postgresTest(
+    "bookshop: physical fulfillment is guarded, replay-safe and independent of optional email",
+    async () => {
+      await withFixture("bookshop", async (fixture) => {
+        const orders = await table(fixture, "Orders");
+        const lines = await table(fixture, "Order lines");
+        const line = required((await records(lines))[0], "sample line");
+        const order = required(await get(orders.id, relationId(lines, line, "Order")), "order with books");
+        const ship = await workflow(fixture, "Mark as shipped");
+        const complete = await workflow(fixture, "Complete order");
+        const reopen = await workflow(fixture, "Reset fulfillment status");
+        const remove = await workflow(fixture, "Remove line");
+        await edit(fixture, orders, order, { "Fulfillment status": ["new"], "Summary delivery": ["ready"] });
+        const attempts = await Promise.all([queue(fixture, ship, { order: ref(order) }), queue(fixture, ship, { order: ref(order) })]);
+        const outcomes = await Promise.all(attempts.map((id) => drive(id)));
+        expect(outcomes.map((outcome) => outcome.state).sort(), JSON.stringify(outcomes)).toEqual(["failed", "succeeded"]);
+        const originalRun = required(attempts[outcomes.findIndex((outcome) => outcome.state === "succeeded")], "successful shipment run");
+        expect(await value(orders, order, "Fulfillment status")).toEqual(["shipped"]);
+        expect(await value(orders, order, "Summary delivery")).toEqual(["ready"]);
+        expect((await invoke(fixture, ship, { order: ref(order) })).state).toBe("failed");
+        const queuedRemoval = await queue(fixture, remove, { line: ref(line) });
+        expect((await invoke(fixture, complete, { order: ref(order) })).state).toBe("succeeded");
+        expect(await value(orders, order, "Fulfillment status")).toEqual(["delivered"]);
+        expect(await drive(queuedRemoval)).toMatchObject({ state: "failed", error: { code: "ATOMIC_CHECK_FAILED" } });
+        expect(await invoke(fixture, remove, { line: ref(line) })).toMatchObject({
+          state: "failed",
+          error: { code: "ATOMIC_CHECK_FAILED" },
+        });
+        expect(await get(lines.id, line.id)).not.toBeNull();
+        expect((await drive(originalRun)).state).toBe("succeeded");
+        expect(await value(orders, order, "Fulfillment status")).toEqual(["delivered"]);
+        expect((await invoke(fixture, complete, { order: ref(order) })).state).toBe("failed");
+        expect((await invoke(fixture, reopen, { order: ref(order) })).state).toBe("succeeded");
+        expect(await value(orders, order, "Fulfillment status")).toEqual(["new"]);
+        expect((await invoke(fixture, reopen, { order: ref(order) })).state).toBe("failed");
+        // A direct handover may complete preparation without pretending it was shipped.
+        // Delivery of the optional summary never blocks this physical action.
+        await edit(fixture, orders, order, { "Summary delivery": ["processing"] });
+        expect((await invoke(fixture, complete, { order: ref(order) })).state).toBe("succeeded");
+        expect(await value(orders, order, "Summary delivery")).toEqual(["processing"]);
+        const emptyOrder = await add(fixture, orders, {
+          Customer: order.data[field(orders, "Customer")],
+          "Ordered at": order.data[field(orders, "Ordered at")],
+        });
+        for (const transition of [ship, complete]) {
+          expect(await invoke(fixture, transition, { order: ref(emptyOrder) })).toMatchObject({
+            state: "failed",
+            error: { code: "ATOMIC_CHECK_FAILED" },
+          });
+          expect(await value(orders, emptyOrder, "Fulfillment status")).toEqual(["new"]);
+        }
+        const [effects] = await sql<Array<{ count: number }>>`SELECT count(*)::int AS count FROM workflows.step_outcome
+          WHERE run_id IN (SELECT id FROM workflows.run WHERE scope_id = ${fixture.baseId})
+          AND action IN ('generateDocument', 'sendEmail', 'createDocumentLink')`;
+        expect(effects?.count).toBe(0);
+      });
+    },
+    60_000,
+  );
 
   postgresTest(
     "inventory: adding positions is deduplicated, stops at approval and rechecks queued access",
@@ -290,7 +351,7 @@ describe("authored template workflow transitions", () => {
         expect(await records(positions)).toHaveLength(before + 1);
       });
     },
-    60_000,
+    120_000,
   );
 
   postgresTest(

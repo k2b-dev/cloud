@@ -550,7 +550,7 @@ describe("built-in grid templates", () => {
     }
   });
 
-  test("bookshop models itemized orders and invoices as business-safe resources", () => {
+  test("bookshop separates physical fulfillment from optional summary delivery", () => {
     const template = templates.find((item) => item.id === "bookshop");
     expect(template).toBeDefined();
     if (!template) return;
@@ -560,7 +560,7 @@ describe("built-in grid templates", () => {
     const lines = template.tables.find((table) => table.key === "order_lines");
     expect(customers?.fields.find((item) => item.key === "email")?.required).toBe(true);
     expect(orders?.fields.some((item) => item.key === "book")).toBe(false);
-    expect(orders?.fields.find((item) => item.key === "invoice_ready")?.defaultValue).toBe(false);
+    expect(orders?.fields.some((item) => item.key === "invoice_ready")).toBe(false);
     expect(orders?.fields.find((item) => item.key === "invoice_sent")?.defaultValue).toEqual(["ready"]);
     expect(lines?.fields.find((item) => item.key === "unit_price")?.required).toBe(true);
     expect((lines?.fields.find((item) => item.key === "line_total")?.config as { expression?: unknown })?.expression).toEqual(
@@ -583,7 +583,7 @@ describe("built-in grid templates", () => {
     expect(invoiceSource).not.toContain("limit 1");
 
     const workflow = template.workflows?.find((item) => item.key === "send_order_invoice")?.source ?? "";
-    expect(workflow).toContain("Ready to send");
+    expect(workflow).not.toContain("Ready to send");
     expect(workflow).toContain("Summary delivery");
     expect(workflow).toContain("Replace the sample customer email");
     expect(workflow).toContain("Summary delivery: [sent]");
@@ -603,9 +603,20 @@ describe("built-in grid templates", () => {
     if (!template) return;
 
     const loans = template.tables.find((table) => table.key === "loans");
-    for (const key of ["requester_email", "kits", "start_date", "due_date"]) {
+    for (const key of ["requester_email", "start_date", "due_date"]) {
       expect(loans?.fields.find((item) => item.key === key)?.required, `inventory loans.${key} required`).toBe(true);
     }
+    for (const key of ["kits", "requested_items"]) {
+      expect(loans?.fields.find((item) => item.key === key)?.required).not.toBe(true);
+      expect(loans?.fields.find((item) => item.key === key)?.config).toMatchObject({ cardinality: "multiple" });
+    }
+    expect(template.forms?.find((item) => item.key === "request_loan")?.config.validations).toContainEqual({
+      leftFieldId: field("loans.kits"),
+      operator: "anyPresent",
+      rightFieldId: field("loans.requested_items"),
+      errorFieldId: field("loans.kits"),
+      message: expect.any(String),
+    });
     expect(loans?.fields.find((item) => item.key === "availability_confirmed")?.defaultValue).toBe(false);
     expect(loans?.fields.find((item) => item.key === "agreement_sent")?.defaultValue).toEqual(["ready"]);
     expect((loans?.fields.find((item) => item.key === "schedule_valid")?.config as { expression?: unknown })?.expression).toEqual(
@@ -1095,62 +1106,59 @@ describe("built-in grid templates", () => {
           checkedDefinition.success,
           `${template.id}.${app.key} canonical Grids App definition: ${checkedDefinition.success ? "" : checkedDefinition.error.message}`,
         ).toBe(true);
-        const page = app.definition.pages[0]!;
-        assertUnique(
-          page.rows.map((row) => row.id as string),
-          `${template.id}.${app.key} Grids App row ids`,
-        );
-        assertUnique(
-          page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks.map((block) => block.id as string))),
-          `${template.id}.${app.key} Grids App block ids`,
-        );
-        for (const row of page.rows) {
-          expect(
-            row.columns.reduce((total, column) => total + column.span, 0),
-            `${template.id}.${app.key}.${row.id} spans`,
-          ).toBeLessThanOrEqual(12);
-          for (const column of row.columns) {
-            expect(column.span, `${template.id}.${app.key}.${column.id} span`).toBeGreaterThanOrEqual(1);
-            expect(column.span, `${template.id}.${app.key}.${column.id} span`).toBeLessThanOrEqual(12);
-            resolveTestValue(column, ctx);
+        for (const page of app.definition.pages) {
+          assertUnique(
+            page.rows.map((row) => row.id as string),
+            `${template.id}.${app.key} Grids App row ids`,
+          );
+          assertUnique(
+            page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks.map((block) => block.id as string))),
+            `${template.id}.${app.key} Grids App block ids`,
+          );
+          for (const row of page.rows) {
+            expect(
+              row.columns.reduce((total, column) => total + column.span, 0),
+              `${template.id}.${app.key}.${row.id} spans`,
+            ).toBeLessThanOrEqual(12);
+            for (const column of row.columns) {
+              expect(column.span, `${template.id}.${app.key}.${column.id} span`).toBeGreaterThanOrEqual(1);
+              expect(column.span, `${template.id}.${app.key}.${column.id} span`).toBeLessThanOrEqual(12);
+              resolveTestValue(column, ctx);
 
-            for (const block of column.blocks) {
-              if (
-                "source" in block &&
-                block.source &&
-                typeof block.source === "object" &&
-                (block.source as { kind?: unknown }).kind === "gql"
-              ) {
-                const gql = resolveTemplateGqlValue((block.source as { query?: unknown }).query, templateNamesForGql(template));
-                expect(typeof gql, `${template.id}.${app.key}.${block.id} Grids App GQL`).toBe("string");
-                if (typeof gql !== "string") continue;
-                const parsed = parseGridsQueryDsl(gql);
-                expect(parsed.ok, `${template.id}.${app.key}.${block.id} Grids App GQL parses`).toBe(true);
-                if (!parsed.ok) continue;
-                const bound = bindDslQueryContext(parsed.ast, {
-                  "auth.id": testUuid(20_000),
-                  "auth.subjects": [testUuid(20_000)],
-                  "time.today": "2026-06-15",
-                  "time.now": "2026-06-15T12:00:00.000Z",
-                  "time.timeZone": "UTC",
-                  ...Object.fromEntries(
-                    Object.keys(app.definition.pages.find((page) => page.id === app.definition.startPageId)?.parameters ?? {}).map(
-                      (key) => [`params.${key}`, testUuid(20_001)],
-                    ),
-                  ),
-                });
-                expect(bound.ok, `${template.id}.${app.key}.${block.id} Grids App GQL context`).toBe(true);
-                if (!bound.ok) continue;
-                const resolved = resolveDslQueryToQueryPlan(
-                  bound.ast,
-                  templateResolverContext(template, template.tables[0]?.key ?? "", ctx),
-                );
-                expect(
-                  resolved.ok,
-                  `${template.id}.${app.key}.${block.id} Grids App GQL resolves: ${
-                    resolved.ok ? "" : resolved.diagnostics.map((diagnostic) => diagnostic.message).join("; ")
-                  }`,
-                ).toBe(true);
+              for (const block of column.blocks) {
+                if (
+                  "source" in block &&
+                  block.source &&
+                  typeof block.source === "object" &&
+                  (block.source as { kind?: unknown }).kind === "gql"
+                ) {
+                  const gql = resolveTemplateGqlValue((block.source as { query?: unknown }).query, templateNamesForGql(template));
+                  expect(typeof gql, `${template.id}.${app.key}.${block.id} Grids App GQL`).toBe("string");
+                  if (typeof gql !== "string") continue;
+                  const parsed = parseGridsQueryDsl(gql);
+                  expect(parsed.ok, `${template.id}.${app.key}.${block.id} Grids App GQL parses`).toBe(true);
+                  if (!parsed.ok) continue;
+                  const bound = bindDslQueryContext(parsed.ast, {
+                    "auth.id": testUuid(20_000),
+                    "auth.subjects": [testUuid(20_000)],
+                    "time.today": "2026-06-15",
+                    "time.now": "2026-06-15T12:00:00.000Z",
+                    "time.timeZone": "UTC",
+                    ...Object.fromEntries(Object.keys(page.parameters ?? {}).map((key) => [`params.${key}`, "REC001"])),
+                  });
+                  expect(bound.ok, `${template.id}.${app.key}.${block.id} Grids App GQL context`).toBe(true);
+                  if (!bound.ok) continue;
+                  const resolved = resolveDslQueryToQueryPlan(
+                    bound.ast,
+                    templateResolverContext(template, template.tables[0]?.key ?? "", ctx),
+                  );
+                  expect(
+                    resolved.ok,
+                    `${template.id}.${app.key}.${block.id} Grids App GQL resolves: ${
+                      resolved.ok ? "" : resolved.diagnostics.map((diagnostic) => diagnostic.message).join("; ")
+                    }`,
+                  ).toBe(true);
+                }
               }
             }
           }

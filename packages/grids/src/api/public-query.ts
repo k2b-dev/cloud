@@ -48,7 +48,7 @@ const RecursivePublicFilterTreeSchema: z.ZodType<PublicFilterTree, PublicFilterT
   ]),
 );
 
-const PublicFilterTreeSchema = z
+export const PublicFilterTreeSchema = z
   .custom<PublicFilterTree>(publicFilterWithinBounds, "filter is too large or deeply nested")
   .pipe(RecursivePublicFilterTreeSchema) as z.ZodType<PublicFilterTree>;
 

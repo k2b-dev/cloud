@@ -10,7 +10,7 @@ import { migrate } from "../migrate";
 import { grantAccess, revokeAccess } from "../service/access";
 import { listByBase } from "../service/custom-apps";
 import { projectPublicId, resolvePublicId, type PublicResourceType } from "../service/public-resources";
-import { get as getRecord } from "../service/records";
+import { create as createRecord, get as getRecord, update as updateRecord } from "../service/records";
 import { instantiate } from "../service/templates";
 import { runGridsWorkflowRun } from "../service/workflow-runtime";
 import { deleteTestWorkflowScope } from "../service/workflow-test-fixture";
@@ -51,12 +51,13 @@ beforeAll(async () => {
 
 describe("published template user journeys", () => {
   for (const scenario of [
-    { template: "bookshop", form: "add_order_line" },
-    { template: "finance", form: "log_expense" },
-    { template: "inventory", form: "request_loan" },
+    { template: "bookshop", form: "add_order_line", locale: "en" },
+    { template: "finance", form: "log_expense", locale: "en" },
+    { template: "inventory", form: "request_loan", locale: "en" },
+    { template: "inventory", form: "request_loan", locale: "de" },
   ]) {
     postgresTest(
-      `${scenario.template}: app readers can read pages and finish the primary form without Base access`,
+      `${scenario.template}/${scenario.locale}: app readers can read pages and finish the primary form without Base access`,
       async () => {
         const actorId = testUuid();
         const secondActorId = testUuid();
@@ -66,7 +67,7 @@ describe("published template user journeys", () => {
         }
         let baseId: string | undefined;
         try {
-          const installed = await instantiate(scenario.template, { withSampleData: true }, actorId, "en");
+          const installed = await instantiate(scenario.template, { withSampleData: true }, actorId, scenario.locale);
           if (!installed.ok) throw new Error(installed.error.message);
           baseId = installed.data.id;
           const baseGrants = await sql<
@@ -88,7 +89,7 @@ describe("published template user journeys", () => {
             createCustomAppsApi({ loadOptionalActor: async (_c, next) => next(), requireAuthenticated: async (_c, next) => next() }),
           );
           const apps = await listByBase(baseId);
-          const definition = getTemplates("en").find((template) => template.id === scenario.template)!;
+          const definition = getTemplates(scenario.locale).find((template) => template.id === scenario.template)!;
           const formSpec = definition.forms!.find((form) => form.key === scenario.form)!;
           const [formRow] = await sql<Array<{ short_id: string; config: unknown; table_id: string }>>`
           SELECT f.short_id, f.config, f.table_id::text FROM grids.forms f JOIN grids.tables t ON t.id = f.table_id
@@ -127,13 +128,64 @@ describe("published template user journeys", () => {
             payload[installedField("quantity").short_id] = "2";
             payload[installedField("unit_price").short_id] = "19.90";
           }
+          const equipment: Record<
+            string,
+            { tableId: string; statusFieldId: string; allowed: Array<{ id: string; publicId: string }>; denied: string[] }
+          > = {};
+          if (scenario.template === "inventory") {
+            for (const key of ["kits", "items"]) {
+              const spec = definition.tables.find((table) => table.key === key)!;
+              const [targetTable] = await sql<
+                Array<{ id: string }>
+              >`SELECT id::text FROM grids.tables WHERE base_id = ${baseId}::uuid AND name = ${spec.name}`;
+              if (!targetTable) throw new Error(`Missing equipment table ${key}`);
+              const fields = await sql<
+                Array<{ id: string; name: string }>
+              >`SELECT id::text, name FROM grids.fields WHERE table_id = ${targetTable.id}::uuid`;
+              const field = (key: string) => {
+                const found = fields.find((field) => field.name === spec.fields.find((value) => value.key === key)?.name);
+                if (!found) throw new Error(`Missing equipment field ${key}`);
+                return found.id;
+              };
+              const entry = {
+                tableId: targetTable.id,
+                statusFieldId: field("status"),
+                allowed: [] as Array<{ id: string; publicId: string }>,
+                denied: [] as string[],
+              };
+              equipment[key] = entry;
+              for (const [name, requestable, status] of [
+                ["First", true, "available"],
+                ["Second", true, "available"],
+                ["Private", false, "available"],
+                ["Reserved", true, "reserved"],
+              ] as const) {
+                const created = await createRecord(
+                  targetTable.id,
+                  { [field("name")]: `${key} ${name}`, [field("requestable")]: requestable, [field("status")]: [status] },
+                  actorId,
+                  "workflow",
+                );
+                if (!created.ok) throw new Error(created.error.message);
+                const publicId = await requiredPublicId("record", created.data.id);
+                if (requestable && status === "available") entry.allowed.push({ id: created.data.id, publicId });
+                else entry.denied.push(publicId);
+              }
+            }
+            payload[installedField("kits").short_id] = equipment.kits!.allowed.map((record) => record.publicId);
+            payload[installedField("requested_items").short_id] = equipment.items!.allowed.map((record) => record.publicId);
+          }
           let submitted = false;
           for (const app of apps) {
             if (!app.publishedDefinition) throw new Error("Unpublished template app");
             if (scenario.template === "inventory" && app.publishedDefinition.pages.some((page) => page.id === "catalog")) {
+              const itemsSpec = definition.tables.find((table) => table.key === "items")!;
+              const privateNames = itemsSpec.fields
+                .filter((field) => ["notes", "replacement_value"].includes(field.key))
+                .map((field) => field.name);
               const privateFields = await sql<Array<{ id: string }>>`
               SELECT f.id::text FROM grids.fields f JOIN grids.tables t ON t.id = f.table_id
-              WHERE t.base_id = ${baseId}::uuid AND t.name = 'Items' AND f.name IN ('Notes', 'Replacement value')`;
+              WHERE t.base_id = ${baseId}::uuid AND t.name = ${itemsSpec.name} AND f.name = ANY(${sql.array(privateNames, "TEXT")})`;
               expect(privateFields).toHaveLength(2);
               const exposedFields = app.publishedCapabilities!.records.flatMap((capability) => capability.fieldIds);
               for (const field of privateFields) expect(exposedFields).not.toContain(field.id);
@@ -196,8 +248,58 @@ describe("published template user journeys", () => {
               const endpoint = primary
                 ? `/runtime/${app.shortId}/${page.id}/${primary.id}/submit?${params}`
                 : `/runtime/${app.shortId}/sidebar/forms/${sidebar!.id}/submit`;
-              const post = () =>
-                api.request(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) });
+              const post = (data: Record<string, unknown> = values) =>
+                api.request(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
+              if (scenario.template === "inventory") {
+                const kits = installedField("kits").short_id;
+                const items = installedField("requested_items").short_id;
+                const [before] = await sql<
+                  Array<{ count: number }>
+                >`SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${formRow.table_id}::uuid`;
+                for (const [key, fieldId] of [
+                  ["kits", kits],
+                  ["items", items],
+                ] as const) {
+                  const lookup = new URL(endpoint.replace("/submit", `/relations/${fieldId}/lookup`), "http://localhost");
+                  lookup.searchParams.set("_limit", "50");
+                  const response = await api.request(lookup.pathname + lookup.search);
+                  expect(response.status, await response.clone().text()).toBe(200);
+                  const body = await response.json();
+                  const offered = body.items.map((item: { id: string }) => item.id);
+                  for (const record of equipment[key]!.allowed) expect(offered).toContain(record.publicId);
+                  for (const recordId of equipment[key]!.denied) {
+                    expect(offered).not.toContain(recordId);
+                    const forged = await post({ ...values, [fieldId]: [recordId] });
+                    expect(forged.status, await forged.clone().text()).toBe(400);
+                  }
+                }
+                const empty = await post({ ...values, [kits]: [], [items]: [] });
+                expect(empty.status, await empty.clone().text()).toBe(400);
+                // A choice can become unavailable after lookup. Submission must recheck it.
+                const selected = equipment.items!.allowed[0]!;
+                const reserve = await updateRecord(
+                  equipment.items!.tableId,
+                  selected.id,
+                  { [equipment.items!.statusFieldId]: ["reserved"] },
+                  actorId,
+                  "workflow",
+                );
+                if (!reserve.ok) throw new Error(reserve.error.message);
+                const stale = await post();
+                expect(stale.status, await stale.clone().text()).toBe(400);
+                const restore = await updateRecord(
+                  equipment.items!.tableId,
+                  selected.id,
+                  { [equipment.items!.statusFieldId]: ["available"] },
+                  actorId,
+                  "workflow",
+                );
+                if (!restore.ok) throw new Error(restore.error.message);
+                const [after] = await sql<
+                  Array<{ count: number }>
+                >`SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${formRow.table_id}::uuid`;
+                expect(after?.count).toBe(before?.count);
+              }
               const created = await post();
               expect(created.status, await created.clone().text()).toBe(201);
               const result = await created.json();
@@ -215,6 +317,20 @@ describe("published template user journeys", () => {
               if (scenario.template === "inventory") {
                 expect(record?.data[installedField("status").id]).toEqual(["requested"]);
                 expect(record?.data[installedField("availability_confirmed").id]).toBe(false);
+                for (const [field, key] of [
+                  ["kits", "kits"],
+                  ["requested_items", "items"],
+                ] as const) {
+                  expect(record?.data[installedField(field).id]).toEqual(
+                    expect.arrayContaining(equipment[key]!.allowed.map((record) => record.id)),
+                  );
+                  expect(record?.data[installedField(field).id]).toHaveLength(2);
+                }
+                // Either selection may stand alone; neither must be padded with an irrelevant item.
+                for (const emptyField of ["kits", "requested_items"]) {
+                  const singleKind = await post({ ...values, [installedField(emptyField).short_id]: [] });
+                  expect(singleKind.status, await singleKind.clone().text()).toBe(201);
+                }
               }
               const detail = app.publishedDefinition.pages.find((candidate) => candidate.record?.tableId === requiredTablePublicId);
               if (!detail?.record) throw new Error("Created record has no reachable detail page");

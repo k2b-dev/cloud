@@ -114,10 +114,13 @@ describe("built-in template instantiation", () => {
       emailName: "Order summary ready",
       workflows: [
         { name: "Remove line", steps: 1 },
-        { name: "Send order summary", steps: 10 },
+        { name: "Send order summary", steps: 9 },
+        { name: "Mark as shipped", steps: 1 },
+        { name: "Complete order", steps: 1 },
+        { name: "Reset fulfillment status", steps: 1 },
       ],
-      launchers: ["Remove line", "Choose order to send summary"],
-      workflowCapabilities: 2,
+      launchers: ["Remove line", "Choose order to send summary", "Mark as shipped", "Complete order", "Reset fulfillment status"],
+      workflowCapabilities: 5,
       scannerCapabilities: 0,
     },
     {
@@ -256,7 +259,9 @@ describe("built-in template instantiation", () => {
             blocks.some((block) => block.type === "actions"),
             `${expected.templateId} workflow actions`,
           ).toBe(true);
-          expect(capabilities.flatMap((item) => item.workflowLaunchers)).toHaveLength(expected.workflowCapabilities);
+          expect(new Set(capabilities.flatMap((item) => item.workflowLaunchers.map((launcher) => launcher.launcherId))).size).toBe(
+            expected.workflowCapabilities,
+          );
           expect(capabilities.flatMap((item) => item.scannerLaunchers)).toHaveLength(expected.scannerCapabilities);
           expect(documentAudit?.action).toBe("document_template.created");
           await verifyRuntimeSurfaces(created.data.id, true);

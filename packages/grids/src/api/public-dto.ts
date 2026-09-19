@@ -1,5 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
+import { PublicFilterTreeSchema } from "./public-query";
 import { PublicFederatedDraftInputSchema, PublicFederatedMappingSchema } from "./public-federated-contracts";
 
 export { PublicFederatedDraftInputSchema } from "./public-federated-contracts";
@@ -305,6 +306,7 @@ const PublicFormFieldEntrySchema = z.discriminatedUnion("kind", [
     required: z.boolean().optional(),
     defaultValue: z.unknown().optional(),
     inlineCreate: z.object({ enabled: z.boolean().optional(), fields: z.array(PublicInlineCreateFieldSchema).optional() }).optional(),
+    relationFilter: PublicFilterTreeSchema.optional(),
   }),
   z.object({ kind: z.literal("form_value"), fieldId: ShortIdSchema, value: z.unknown() }),
 ]);
@@ -320,7 +322,7 @@ export const PublicFormConfigSchema = z.object({
     .array(
       z.object({
         leftFieldId: ShortIdSchema,
-        operator: z.enum(["eq", "neq", "lt", "lte", "gt", "gte"]),
+        operator: z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "anyPresent"]),
         rightFieldId: ShortIdSchema,
         message: z.string(),
         errorFieldId: ShortIdSchema.optional(),

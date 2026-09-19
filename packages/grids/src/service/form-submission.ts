@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { type DateContext, err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import { getRecordWritableFieldType } from "../field-types";
+import { compileFilter, renderClause } from "./filter-compiler";
+import { storedLocalCalculationSqlMap } from "./local-calculation-storage";
+import { liveRecordParentJoinSql } from "./parent-checks";
+import { get as getTable } from "./tables";
 import { evaluateFormValidations, formValidationFieldsCompatible } from "../form-validations";
 import { lockDurableHistoryMutationBoundary } from "./durable-history";
 import { listByTable as listFields, materializeFieldDefault } from "./fields";
@@ -173,7 +178,13 @@ export const submitForm = async (params: {
   for (const rule of params.form.config.validations ?? []) {
     const left = fieldsById.get(rule.leftFieldId);
     const right = fieldsById.get(rule.rightFieldId);
-    if (!left || !right || !userInputIds.has(left.id) || !userInputIds.has(right.id) || !formValidationFieldsCompatible(left, right)) {
+    if (
+      !left ||
+      !right ||
+      !userInputIds.has(left.id) ||
+      !userInputIds.has(right.id) ||
+      !formValidationFieldsCompatible(left, right, rule.operator)
+    ) {
       return fail({ ...err.conflict("Form validation"), message: t.validationChanged });
     }
   }
@@ -228,6 +239,43 @@ export const submitForm = async (params: {
         `;
         const current = locked.find((row) => row.id === params.record!.id && row.table_id === params.form.tableId);
         if (!current || current.version !== params.record.version) throw { ...err.conflict("Form record"), message: t.recordChanged };
+      }
+      const selections = [];
+      for (const entry of formFields) {
+        if (entry.kind !== "user_input" || !entry.relationFilter) continue;
+        const field = fieldsById.get(entry.fieldId);
+        const targetId = field?.type === "relation" ? field.config.targetTableId : null;
+        const source = await getTable(params.form.tableId, { client: tx });
+        const target = typeof targetId === "string" ? await getTable(targetId, { client: tx }) : null;
+        if (!field || !target || target.kind !== "stored" || target.baseId !== source?.baseId || entry.inlineCreate?.enabled) {
+          throw err.badInput(t.relationFilterTarget);
+        }
+        const normalized = getRecordWritableFieldType("relation")!.validate(payload[field.id], field.config, false);
+        if (!normalized.ok) throw err.badInput(t.relationSelectionUnavailable({ field: fieldName(field.id) }));
+        const ids = Array.isArray(normalized.value) ? normalized.value.filter((id): id is string => typeof id === "string") : [];
+        const targetFields = await listFields(target.id, false, tx);
+        const filter = compileFilter(entry.relationFilter, targetFields, { timeZone: params.dateConfig.timeZone });
+        if (!filter.ok) throw err.badInput(t.relationFilterInvalid({ field: fieldName(field.id) }));
+        selections.push({ fieldId: field.id, tableId: target.id, ids: [...new Set(ids)], filter: filter.clause, fields: targetFields });
+      }
+      const selectedIds = [...new Set(selections.flatMap((selection) => selection.ids))].sort();
+      if (selectedIds.length) {
+        // Serialize eligibility checks with target changes; an old picker result is never authorization.
+        const selectedTables = [...new Set(selections.map((selection) => selection.tableId))];
+        await tx`SELECT id FROM grids.records WHERE id = ANY(${tx.array(selectedIds, "UUID")}::uuid[])
+          AND table_id = ANY(${tx.array(selectedTables, "UUID")}::uuid[]) ORDER BY id FOR UPDATE`;
+      }
+      for (const selection of selections) {
+        if (!selection.ids.length) continue;
+        const predicate = renderClause(selection.filter, { computedFieldSql: storedLocalCalculationSqlMap(selection.fields) });
+        const available = await tx<{ id: string }[]>`
+          SELECT r.id FROM grids.records r ${liveRecordParentJoinSql("r", "rt", "rb")}
+          WHERE r.table_id = ${selection.tableId}::uuid AND r.id = ANY(${tx.array(selection.ids, "UUID")}::uuid[])
+            AND r.deleted_at IS NULL AND (${predicate})
+        `;
+        if (available.length !== selection.ids.length) {
+          throw err.badInput(t.relationSelectionUnavailable({ field: fieldName(selection.fieldId) }));
+        }
       }
       const updatedIds = new Set<string>();
       for (const [relationFieldId, drafts] of Object.entries(groups)) {

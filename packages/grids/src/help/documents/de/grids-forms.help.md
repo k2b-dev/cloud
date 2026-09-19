@@ -72,9 +72,17 @@ Formular-`config` verwendet folgende Schlüssel. Öffentliche APIs nehmen öffen
 | `redirectUrl` | Optionales Ziel nach erfolgreicher Übermittlung; null bedeutet keine Weiterleitung |
 | `titleImage` | Optionale Bild-Data-URL, bis 1.000.000 Zeichen |
 
-Eine sichtbare Eingabe lautet `{kind:"user_input", fieldId, label?, helpText?, required?, defaultValue?, width?, inlineCreate?}`. Ein verborgenes Feld lautet `{kind:"form_value", fieldId, value}`: Der Server setzt den festen Wert, statt einen mitgesendeten Wert zu übernehmen.
+Eine sichtbare Eingabe lautet `{kind:"user_input", fieldId, label?, helpText?, required?, defaultValue?, width?, inlineCreate?, relationFilter?}`. Ein verborgenes Feld lautet `{kind:"form_value", fieldId, value}`: Der Server setzt den festen Wert, statt einen mitgesendeten Wert zu übernehmen.
 
-Eine Regel lautet `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. Operatoren: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. Die Meldung hat 1–240 Zeichen. Vergleiche kompatible Zahlen-, Dauer- oder Datumseingaben. `errorFieldId` bestimmt das Feld für die Fehlermeldung.
+Eine Regel lautet `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. Operatoren: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. Die Meldung hat 1–240 Zeichen. Vergleiche kompatible Zahlen-, Dauer- oder Datumseingaben. `errorFieldId` bestimmt das Feld für die Fehlermeldung. Für zwei Relationsfelder verlangt `anyPresent` mindestens eine Auswahl in einem der beiden Felder. Der Formulareditor bietet diese Regel an; Browser und Server zeigen dieselbe konfigurierte Meldung.
+
+Für ein Relationsfeld nimmt `relationFilter` den vorhandenen Datensatz-Filterbaum an, beschränkt auf Felder seiner Zieltabelle. Kombiniere beispielsweise `{fieldId:"PUBLIC",op:"=",value:true}` und `{fieldId:"STATUS",op:"is",value:"available"}` unter `{op:"AND",filters:[...]}`. Ersetze die Beispiel-IDs durch öffentliche IDs der Zielfelder.
+
+Auswahlfilter werden per API oder Vorlage konfiguriert; der Formulareditor bewahrt sie, bietet dafür aber keinen Filtereditor. Gefilterte Eingaben benötigen eine gespeicherte Zieltabelle derselben Base und erlauben kein `inlineCreate`. Die Auswahl zeigt nur passende Einträge. Beim Speichern prüft der Server jeden ausgewählten Datensatz erneut unter Sperre. Gelöschte, vom Filter ausgeschlossene oder inzwischen nicht mehr verfügbare Einträge verhindern die gesamte Übermittlung. Eine Auswahl reserviert noch kein Gerät. Nutze für Reservierung oder Ausgabe einen Workflow.
+
+Der Filter gilt in veröffentlichten Grids Apps, im angemeldeten Base-Formular und im Formular mit aktivem öffentlichem Token. Ein öffentlicher Link zeigt damit die Anzeigetexte der passenden Datensätze: Aktiviere ihn nur, wenn das gewünscht ist. Es wird keine Berechtigung für die gesamte Zieltabelle vergeben. Nach Änderungen am Filter oder an der Konfiguration seiner Zielfelder muss eine betroffene Grids App erneut veröffentlicht werden. In der Vorschau ohne autorisierten Auswahl-Endpunkt bleibt die gefilterte Auswahl deaktiviert.
+
+Gefilterte Auswahlen verwenden `GET /api/grids/forms/:formId/relations/:fieldId/lookup` mit Base Write oder `/api/grids/forms/public/:token/relations/:fieldId/lookup` mit aktivem öffentlichem Token. Parameter: `_search` (bis 200 Zeichen), `_limit` (1–50, Standard 10) und `_exclude` (kommagetrennte öffentliche Datensatz-IDs, höchstens 1.000). Antwort: `{items:[{id,label}]}`. Custom Apps verwenden weiterhin ihren veröffentlichten Formular-Endpunkt.
 
 Bei geeigneten Relationsfeldern wählt `inlineCreate: {enabled:true, fields:[...]}` die Zieleingaben. Jede hat `fieldId` und optional `label`, `helpText`, `width`, `required`, `defaultValue`. Inline-Erstellung ist eine Ebene tief: keine weiteren verschachtelten Relationen, Datei-Uploads, Systemwerte oder berechneten Eingaben.
 

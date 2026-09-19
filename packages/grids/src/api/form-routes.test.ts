@@ -186,3 +186,9 @@ describe("authenticated form routes", () => {
     expect(await response.json()).toEqual([expect.objectContaining({ id: formPublicId, tableId: tablePublicId, name: "Intake" })]);
   });
 });
+
+test("filtered relation lookup keeps public tokens and Base grants as entry gates", async () => {
+  const publicRoutes = createPublicFormRoutes({ getByPublicToken: async () => null });
+  expect((await publicRoutes.request("/public/missing/relations/FIELD1/lookup")).status).toBe(404);
+  expect((await formsRoutes.request("/FORM01/relations/FIELD1/lookup")).status).toBe(401);
+});

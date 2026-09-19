@@ -613,6 +613,8 @@ const lookupPublishedFormRelation = async (c: Context<AuthContext>, sidebar = fa
   const ids = await resolvePublicIds("record", query.data._exclude);
   const result = await gridsService.relations.lookup({
     targetTableId: target.tableId,
+    filter: target.filter,
+    timeZone: getDateConfig(c).timeZone,
     q: query.data._search,
     limit: query.data._limit,
     excludeIds: [...ids.values()],

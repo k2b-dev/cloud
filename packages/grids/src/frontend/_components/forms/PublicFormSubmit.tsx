@@ -117,7 +117,7 @@ export default function FormSubmit(props: Props) {
     return failures;
   });
   const validationFailures = createMemo(() =>
-    validationAttempted() ? allValidationFailures() : evaluateFormValidations(props.form.config.validations, values(), fieldsById),
+    validationAttempted() ? allValidationFailures() : [],
   );
   const validationErrors = createMemo(() =>
     Object.fromEntries(validationFailures().map((failure) => [failure.errorFieldId, failure.message])),
@@ -305,7 +305,9 @@ export default function FormSubmit(props: Props) {
                         relationLookupUrl={
                           props.relationLookupFields?.includes(entry.fieldId)
                             ? props.submitUrl?.replace(/\/submit(?=\?|$)/, `/relations/${entry.fieldId}/lookup`)
-                            : undefined
+                            : entry.relationFilter && props.publicToken
+                              ? `/api/grids/forms/public/${props.publicToken}/relations/${entry.fieldId}/lookup`
+                              : undefined
                         }
                         onChange={(v) => setValue(entry.fieldId, v)}
                         error={() => validationErrors()[entry.fieldId]}

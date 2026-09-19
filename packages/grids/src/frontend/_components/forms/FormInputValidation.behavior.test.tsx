@@ -443,3 +443,53 @@ domTest("German decimal entry submits exact canonical text for fields and object
     dom.cleanup();
   }
 });
+
+domTest("either relation selection is required before any submit request", async () => {
+  const dom = createDomTestHarness();
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = Object.assign(
+    async () => {
+      calls++;
+      return Response.json({});
+    },
+    { preconnect: original.preconnect },
+  );
+  const { default: Form } = await import("./PublicFormSubmit.island");
+  const message = "Choose at least one set or item.";
+  const dispose = render(
+    () =>
+      createComponent(Form, {
+        submitUrl: "/save",
+        form: {
+          id: "FORM01",
+          name: "Loan",
+          config: {
+            fields: [
+              { kind: "user_input", fieldId: "FIELD1" },
+              { kind: "user_input", fieldId: "FIELD2" },
+            ],
+            validations: [{ leftFieldId: "FIELD1", rightFieldId: "FIELD2", operator: "anyPresent", message }],
+          },
+        },
+        fields: [
+          field("relation", { targetTableId: "TABLE2", cardinality: "multiple" }),
+          { ...field("relation", { targetTableId: "TABLE3", cardinality: "multiple" }), id: "FIELD2" },
+        ],
+      }),
+    dom.root,
+  );
+  try {
+    expect(dom.root.textContent).not.toContain(message);
+    expect(dom.root.querySelector('[aria-invalid="true"]')).toBeNull();
+    dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await Bun.sleep(5);
+    expect(calls).toBe(0);
+    expect(dom.root.querySelector('[data-grids-form-field="FIELD1"]')!.textContent).toContain(message);
+    expect(dom.root.querySelector("fieldset")!.disabled).toBe(false);
+  } finally {
+    dispose();
+    globalThis.fetch = original;
+    dom.cleanup();
+  }
+});

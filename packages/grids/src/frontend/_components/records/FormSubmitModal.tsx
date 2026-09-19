@@ -204,6 +204,11 @@ function FormSubmitBody(props: {
                   <FieldInput
                     field={field}
                     entry={entry}
+                    relationLookupUrl={
+                      entry.relationFilter && props.form.id
+                        ? `/api/grids/forms/${props.form.id}/relations/${entry.fieldId}/lookup`
+                        : undefined
+                    }
                     value={values()[entry.fieldId]}
                     onChange={(v) => setValue(entry.fieldId, v)}
                     error={() => validationErrors()[entry.fieldId]}

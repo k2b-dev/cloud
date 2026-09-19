@@ -15,6 +15,7 @@ import {
   submitFormResponse,
   UpdateFormSchema,
 } from "./form-api-shared";
+import { formRelationLookupDescription, lookupFilteredFormRelation } from "./form-relation-lookup";
 import { apiMessages } from "./messages";
 import { currentActorUserId, currentActorViewer, gateAt } from "./permissions";
 import { toPublicForm, toPublicForms } from "./public-dto";
@@ -41,6 +42,16 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
   const projectForms = deps.projectForms ?? toPublicForms;
 
   return new Hono<AuthContext>()
+    .get("/:formId/relations/:fieldId/lookup", formRelationLookupDescription, async (context) => {
+      const formId = await resolveId(context, "formId", "form");
+      const form = formId ? await service.form.get(formId) : null;
+      if (!form || !form.isActive) return context.json({ message: apiMessages(context).formNotFound }, 404);
+      const table = await service.table.get(form.tableId);
+      if (!table) return context.json({ message: apiMessages(context).formNotFound }, 404);
+      const gate = await gateAtTarget(context, { baseId: table.baseId }, "write");
+      if (!gate.ok) return respond(context, () => Promise.resolve(gate));
+      return lookupFilteredFormRelation(context, form);
+    })
     .post(
       "/:formId/records/:recordId",
       describeRoute({

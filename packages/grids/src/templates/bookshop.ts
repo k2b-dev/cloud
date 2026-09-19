@@ -1,9 +1,8 @@
-import { i18n } from "@k2b/stdlib";
 import { createMockCover } from "@k2b/cloud/shared";
-import { currentMonthDate, documentTemplate, field, form, formula, type GridTemplate, record, table } from "./types";
-
+import { i18n } from "@k2b/stdlib";
 import { bookshopApp } from "./bookshop-app";
 import { bookshopSummary } from "./bookshop-summary";
+import { currentMonthDate, field, formula, type GridTemplate, record, table } from "./types";
 
 const bookshopMessages = i18n.define({
   baseLocale: "en",
@@ -11,7 +10,7 @@ const bookshopMessages = i18n.define({
     en: {
       removeLine: "Remove line",
       removeLineConfirm: "Remove this book from the order?",
-      removeLineError: "This line cannot be removed because summary delivery has already started.",
+      removeLineError: "This line cannot be removed: the order is completed or summary delivery has already started.",
       editOrder: "Edit order",
 
       total: "Total",
@@ -31,18 +30,40 @@ const bookshopMessages = i18n.define({
       noBooks: "Your catalog is empty. Add a book to make it available for orders.",
       orderValue: "Order value",
       orderValueHelp: "Sum of captured sale prices. This is not a payment balance.",
-      workbenchHelp: "Open an order to add books, check its summary and update fulfillment. New orders remain here until delivered.",
+      workbenchHelp: "Prepare books for dispatch or collection. Orders remain here until you confirm delivery or handover.",
       catalogHelp:
         "Find a title, check availability and maintain its sale price. Availability is a manual flag, not a counted stock balance.",
       customerPageHelp: "Contact details used for orders. Open a customer to update their address and see their orders.",
-      reviewInvoice: "Review and send",
+      nextStep: "Next step",
+      prepareOrder: "Prepare the books",
+      prepareOrderHelp:
+        "Add at least one book, check titles and quantities, then pack the order. Mark it shipped after dispatch, or confirm handover for collection in store.",
+      onTheWay: "On the way",
+      onTheWayHelp:
+        "The books have been dispatched. Confirm completion once delivery is known. This records fulfillment; it does not arrange shipping or send email.",
+      fulfillmentDone: "Order completed",
+      fulfillmentDoneHelp:
+        "The books have reached the customer. You can find this order under Completed orders. Sending a summary by email is optional.",
+      markShipped: "Mark as shipped",
+      confirmHandover: "Confirm handover",
+      confirmDelivery: "Confirm delivery",
+      completeOrder: "Complete order",
+      shippedConfirm:
+        "Have the books been dispatched? This only updates the fulfillment status; it does not arrange shipping or send email.",
+      handoverConfirm: "Have all books been handed to the customer or delivered? This completes the order without sending email.",
+      reopenOrder: "Reset fulfillment status",
+      reopenConfirm:
+        "Move this order back to preparation? This only corrects the fulfillment status; it does not undo a shipment or resend the summary.",
+      fulfillmentChanged: "The fulfillment status has changed. Reload the order before trying again.",
+      fulfillmentNeedsBooks: "Add at least one book before marking this order shipped or completed.",
+      reviewInvoice: "Optional: summary by email",
       invoiceHelp:
-        "Check the books, quantities, agreed prices and customer email. Then mark ready and send the summary. This is not a tax invoice; use the Billing template for invoices.",
+        "Check the books, quantities, agreed prices and customer email, then send the summary if needed. This is not a tax invoice; use the Billing template for invoices.",
       sampleHelp: "Demo email addresses end in .test and cannot receive summaries. Replace the customer email before a real send.",
       invoiceAccepted: "Summary delivery requested. You can continue working; status and the PDF appear here.",
       invoiceConfirm: "Create the order summary and email a private download link to this customer?",
       deliveryHelp:
-        "Delivery has started or finished. Inspect the original workflow run before retrying an interrupted delivery; email may already have been sent.",
+        "Email delivery has started or finished. Inspect the original workflow run before retrying an interrupted delivery; email may already have been sent.",
       salesHelp: "Order values from captured line prices, including open orders. These figures do not track received payments.",
       backOrders: "All orders",
       backCatalog: "Back to catalog",
@@ -50,11 +71,9 @@ const bookshopMessages = i18n.define({
       backOrder: "Back to order",
       editLine: "Edit order line",
       lineDetails: "Book and agreed price",
-      fulfillment: "Fulfillment",
       contact: "Contact",
       optionalDetails: "More details",
       newOrderHelp: "Create the order first, then add its books on the order page.",
-      shippingHelp: "Update the status after dispatch or handover. This does not send an email.",
       noLinesInvoice: "Add at least one order line before sending the summary.",
       templateName: "Bookshop",
       templateDescription: "Manage a book catalog, customers, orders, fulfillment, and order summaries.",
@@ -135,17 +154,15 @@ const bookshopMessages = i18n.define({
       customerDescription: "Customer who placed the order.",
       orderedAt: "Ordered at",
       orderedAtDescription: "Date the order was placed.",
-      status: "Status",
+      status: "Fulfillment status",
       statusDescription: "Current fulfillment status.",
-      statusNew: "New",
+      statusNew: "Preparing",
       statusShipped: "Shipped",
-      statusDelivered: "Delivered",
-      readyToInvoice: "Ready to send",
-      readyToInvoiceDescription: "Confirm that the books, quantities, prices and customer email have been reviewed.",
+      statusDelivered: "Completed",
       invoiceSent: "Summary delivery",
       invoiceSentDescription:
-        "Ready, in progress, or sent. Inspect the original run before resetting an interrupted delivery; it may already have sent email.",
-      deliveryReady: "Ready",
+        "Not sent, in progress, or sent. Inspect the original run before resetting an interrupted delivery; it may already have sent email.",
+      deliveryReady: "Not sent",
       deliveryProcessing: "In progress",
       deliverySent: "Sent",
       customerName: "Customer name",
@@ -227,7 +244,6 @@ const bookshopMessages = i18n.define({
       invoiceAlreadySent: "Summary delivery is not ready. Inspect the original workflow run and existing documents before retrying.",
       addCustomerEmail: "Add a customer email address before sending the summary.",
       replaceSampleEmail: "Replace the sample customer email before sending a real order summary.",
-      completeOrderLines: "Review the books and agreed prices, then mark the order ready to send.",
       invoiceSentMessage: ({ orderNumber, customerEmail }: { orderNumber: string; customerEmail: string }) =>
         `Order summary ${orderNumber} sent to ${customerEmail}.`,
       chooseOrderToSendInvoice: "Choose order to send summary",
@@ -237,7 +253,8 @@ const bookshopMessages = i18n.define({
     de: {
       removeLine: "Position entfernen",
       removeLineConfirm: "Dieses Buch aus der Bestellung entfernen?",
-      removeLineError: "Die Position kann nicht entfernt werden, weil der Versand der Übersicht bereits gestartet wurde.",
+      removeLineError:
+        "Die Position kann nicht entfernt werden: Die Bestellung ist abgeschlossen oder der Versand der Übersicht wurde bereits gestartet.",
       editOrder: "Bestellung bearbeiten",
 
       total: "Summe",
@@ -257,20 +274,41 @@ const bookshopMessages = i18n.define({
       noBooks: "Dein Katalog ist leer. Füge ein Buch hinzu, um es in Bestellungen zu verwenden.",
       orderValue: "Bestellwert",
       orderValueHelp: "Summe der vereinbarten Verkaufspreise. Das ist kein Zahlungssaldo.",
-      workbenchHelp:
-        "Öffne eine Bestellung, um Bücher hinzuzufügen, die Bestellübersicht zu prüfen und den Versand zu aktualisieren. Bis zur Übergabe bleibt sie hier.",
+      workbenchHelp: "Bereite Bücher für Versand oder Abholung vor. Bestellungen bleiben hier, bis du Zustellung oder Übergabe bestätigst.",
       catalogHelp:
         "Finde Titel, prüfe die Verfügbarkeit und pflege Verkaufspreise. Die Verfügbarkeit wird manuell gepflegt; sie zählt keinen Lagerbestand.",
       customerPageHelp: "Kontaktdaten für Bestellungen. Öffne einen Kunden, um seine Adresse zu ändern und seine Bestellungen zu sehen.",
-      reviewInvoice: "Prüfen und versenden",
+      nextStep: "Nächster Schritt",
+      prepareOrder: "Bücher vorbereiten",
+      prepareOrderHelp:
+        "Füge mindestens ein Buch hinzu, prüfe Titel und Mengen und packe die Bestellung. Markiere sie nach dem Versand als versendet oder bestätige bei Abholung die Übergabe.",
+      onTheWay: "Unterwegs zum Kunden",
+      onTheWayHelp:
+        "Die Bücher wurden versendet. Bestätige den Abschluss, sobald die Zustellung feststeht. Das dokumentiert den Verlauf; es beauftragt keinen Versand und versendet keine E-Mail.",
+      fulfillmentDone: "Bestellung abgeschlossen",
+      fulfillmentDoneHelp:
+        "Die Bücher sind beim Kunden. Du findest die Bestellung unter Abgeschlossene Bestellungen. Eine Bestellübersicht per E-Mail ist optional.",
+      markShipped: "Als versendet markieren",
+      confirmHandover: "Übergabe bestätigen",
+      confirmDelivery: "Zustellung bestätigen",
+      completeOrder: "Bestellung abschließen",
+      shippedConfirm:
+        "Wurden die Bücher versendet? Damit dokumentierst du nur den Status; es wird kein Versand beauftragt und keine E-Mail gesendet.",
+      handoverConfirm: "Wurden alle Bücher übergeben oder zugestellt? Damit schließt du die Bestellung ab. Es wird keine E-Mail gesendet.",
+      reopenOrder: "Versandstatus zurücksetzen",
+      reopenConfirm:
+        "Bestellung wieder zur Vorbereitung öffnen? Das korrigiert nur den Status; es macht keinen Versand rückgängig und versendet die Übersicht nicht erneut.",
+      fulfillmentChanged: "Der Versandstatus hat sich geändert. Lade die Bestellung neu, bevor du es erneut versuchst.",
+      fulfillmentNeedsBooks: "Füge mindestens ein Buch hinzu, bevor du die Bestellung als versendet oder abgeschlossen markierst.",
+      reviewInvoice: "Optional: Bestellübersicht per E-Mail",
       invoiceHelp:
-        "Prüfe Bücher, Mengen, vereinbarte Preise und Kunden-E-Mail. Markiere die Bestellung dann als bereit und versende die Übersicht. Sie ist keine steuerliche Rechnung; nutze dafür die Rechnungsvorlage.",
+        "Prüfe Bücher, Mengen, vereinbarte Preise und Kunden-E-Mail und sende bei Bedarf die Übersicht. Sie ist keine steuerliche Rechnung; nutze dafür die Rechnungsvorlage.",
       sampleHelp:
         "Demo-Adressen enden auf .test und können keine Bestellübersichten empfangen. Ersetze die Kunden-E-Mail vor einem echten Versand.",
       invoiceAccepted: "Versand der Bestellübersicht beantragt. Du kannst weiterarbeiten; Status und PDF erscheinen hier.",
       invoiceConfirm: "Bestellübersicht erstellen und einen privaten Download-Link an diesen Kunden senden?",
       deliveryHelp:
-        "Der Versand wurde gestartet oder abgeschlossen. Prüfe bei einer Unterbrechung zuerst den ursprünglichen Workflow-Lauf; die E-Mail kann bereits versendet worden sein.",
+        "Der E-Mail-Versand wurde gestartet oder abgeschlossen. Prüfe bei einer Unterbrechung zuerst den ursprünglichen Workflow-Lauf; die E-Mail kann bereits versendet worden sein.",
       salesHelp:
         "Bestellwerte aus vereinbarten Positionspreisen, einschließlich offener Bestellungen. Zahlungseingänge werden hier nicht erfasst.",
       backOrders: "Alle Bestellungen",
@@ -279,11 +317,9 @@ const bookshopMessages = i18n.define({
       backOrder: "Zurück zur Bestellung",
       editLine: "Position bearbeiten",
       lineDetails: "Buch und vereinbarter Preis",
-      fulfillment: "Versand und Übergabe",
       contact: "Kontakt",
       optionalDetails: "Weitere Angaben",
       newOrderHelp: "Erstelle zuerst die Bestellung. Füge ihre Bücher anschließend auf der Bestellseite hinzu.",
-      shippingHelp: "Aktualisiere den Status nach Versand oder Übergabe. Dabei wird keine E-Mail versendet.",
       noLinesInvoice: "Füge mindestens eine Position hinzu, bevor du die Bestellübersicht versendest.",
       templateName: "Buchhandlung",
       templateDescription: "Verwalte Buchkatalog, Kunden, Bestellungen, Versand und Bestellübersichten.",
@@ -364,17 +400,15 @@ const bookshopMessages = i18n.define({
       customerDescription: "Kunde, der die Bestellung aufgegeben hat.",
       orderedAt: "Bestelldatum",
       orderedAtDescription: "Datum der Bestellung.",
-      status: "Status",
+      status: "Versandstatus",
       statusDescription: "Aktueller Versandstatus.",
-      statusNew: "Neu",
+      statusNew: "In Vorbereitung",
       statusShipped: "Versendet",
-      statusDelivered: "Zugestellt",
-      readyToInvoice: "Bereit zum Versenden",
-      readyToInvoiceDescription: "Bestätige, dass Bücher, Mengen, Preise und Kunden-E-Mail geprüft sind.",
+      statusDelivered: "Abgeschlossen",
       invoiceSent: "Versand der Übersicht",
       invoiceSentDescription:
-        "Bereit, in Bearbeitung oder gesendet. Prüfe vor dem Zurücksetzen eines unterbrochenen Versands den ursprünglichen Lauf; die E-Mail könnte bereits gesendet worden sein.",
-      deliveryReady: "Bereit",
+        "Noch nicht gesendet, in Bearbeitung oder gesendet. Prüfe vor dem Zurücksetzen eines unterbrochenen Versands den ursprünglichen Lauf; die E-Mail könnte bereits gesendet worden sein.",
+      deliveryReady: "Noch nicht gesendet",
       deliveryProcessing: "In Bearbeitung",
       deliverySent: "Gesendet",
       customerName: "Kundenname",
@@ -457,7 +491,6 @@ const bookshopMessages = i18n.define({
         "Der Versand ist nicht bereit. Prüfe vor einem erneuten Versuch den ursprünglichen Workflow-Lauf und die vorhandenen Dokumente.",
       addCustomerEmail: "Ergänze vor dem Versand die E-Mail-Adresse des Kunden.",
       replaceSampleEmail: "Ersetze vor einem echten Versand die Demo-E-Mail-Adresse des Kunden.",
-      completeOrderLines: "Prüfe Bücher und vereinbarte Preise und markiere die Bestellung dann als bereit zum Versenden.",
       invoiceSentMessage: ({ orderNumber, customerEmail }) => `Bestellübersicht ${orderNumber} an ${customerEmail} gesendet.`,
       chooseOrderToSendInvoice: "Bestellung für den Versand auswählen",
       monthlyRevenue: "Bestellwert pro Monat",
@@ -470,6 +503,12 @@ export type BookshopText = ReturnType<typeof bookshopMessages.resolve>["t"];
 
 export const createBookshopTemplate = (locale?: string): GridTemplate => {
   const { t } = bookshopMessages.resolve(locale ? [locale] : []);
+
+  const fulfillmentTransitions = [
+    { key: "mark_order_shipped", name: t.markShipped, from: ["new"], to: "shipped" },
+    { key: "complete_order", name: t.completeOrder, from: ["new", "shipped"], to: "delivered" },
+    { key: "reopen_order", name: t.reopenOrder, from: ["shipped", "delivered"], to: "new" },
+  ];
 
   return {
     id: "bookshop",
@@ -833,14 +872,6 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
             defaultValue: ["new"],
           },
           {
-            key: "invoice_ready",
-            name: t.readyToInvoice,
-            description: t.readyToInvoiceDescription,
-            type: "boolean",
-            defaultValue: false,
-            icon: "ti ti-file-check",
-          },
-          {
             key: "invoice_sent",
             name: t.invoiceSent,
             description: t.invoiceSentDescription,
@@ -1126,7 +1157,6 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
           customer: [record("customers.alice")],
           ordered_at: currentMonthDate(3),
           status: ["delivered"],
-          invoice_ready: false,
           invoice_sent: ["sent"],
         },
       },
@@ -1137,7 +1167,6 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
           customer: [record("customers.bob")],
           ordered_at: currentMonthDate(8),
           status: ["shipped"],
-          invoice_ready: false,
           invoice_sent: ["sent"],
         },
       },
@@ -1148,7 +1177,6 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
           customer: [record("customers.alice")],
           ordered_at: currentMonthDate(13),
           status: ["new"],
-          invoice_ready: true,
           invoice_sent: ["ready"],
         },
       },
@@ -1263,8 +1291,6 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
           ", ",
           field("orders.status"),
           ", ",
-          field("orders.invoice_ready"),
-          ", ",
           field("orders.invoice_sent"),
           "\nsort ",
           field("orders.ordered_at"),
@@ -1276,7 +1302,6 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
             { fieldId: field("orders.ordered_at") },
             { fieldId: field("orders.customer") },
             { fieldId: field("orders.status") },
-            { fieldId: field("orders.invoice_ready") },
             { fieldId: field("orders.invoice_sent") },
           ],
           displayConfig: {
@@ -1522,11 +1547,6 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
             },
             {
               kind: "form_value",
-              fieldId: field("orders.invoice_ready"),
-              value: false,
-            },
-            {
-              kind: "form_value",
               fieldId: field("orders.invoice_sent"),
               value: ["ready"],
             },
@@ -1647,6 +1667,45 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
       },
     ],
     workflows: [
+      ...fulfillmentTransitions.map(({ key, name, from, to }) => ({
+        key,
+        name,
+        enabled: true,
+        source: `inputs:
+  order: {type: record, table: ${JSON.stringify(t.orders)}, required: true}
+steps:
+  - atomicRecords:
+      locks: [inputs.order]
+      checks:
+        - query:
+            source: |
+              from table ${JSON.stringify(t.orders)}
+              where record.id = @params.order and (${from.map((status) => `${JSON.stringify(t.status)} = '${status}'`).join(" or ")})
+              limit 1
+            parameters:
+              order: {type: record, value: "\${{ inputs.order }}"}
+          assert: notEmpty
+          message: ${JSON.stringify(t.fulfillmentChanged)}
+${
+  to === "new"
+    ? ""
+    : `        - query:
+            source: |
+              from table ${JSON.stringify(t.orderLines)}
+              where ${JSON.stringify(t.order)} = @params.order
+              limit 1
+            parameters:
+              order: {type: record, value: "\${{ inputs.order }}"}
+          assert: notEmpty
+          message: ${JSON.stringify(t.fulfillmentNeedsBooks)}
+`
+}      changes:
+        - updateRecord:
+            record: inputs.order
+            set:
+              ${JSON.stringify(t.status)}: [${to}]
+`,
+      })),
       {
         key: "remove_order_line",
         name: t.removeLine,
@@ -1662,7 +1721,7 @@ steps:
               from table ${JSON.stringify(t.orderLines)} as line
               join table ${JSON.stringify(t.orders)} as parent on line.${JSON.stringify(t.order)} = parent.id
               select line.${JSON.stringify(t.lineNumber)}
-              where record.id = @params.line and ${JSON.stringify(t.order)} = @params.order and parent.${JSON.stringify(t.invoiceSent)} = 'ready'
+              where record.id = @params.line and ${JSON.stringify(t.order)} = @params.order and parent.${JSON.stringify(t.invoiceSent)} = 'ready' and parent.${JSON.stringify(t.status)} != 'delivered'
               limit 1
             parameters:
               line: {type: record, value: "\${{ inputs.line }}"}
@@ -1704,13 +1763,6 @@ steps:
     then:
       - fail:
           message: ${t.replaceSampleEmail}
-  - if:
-      notEquals:
-        - \${{ inputs.order.${t.readyToInvoice} }}
-        - true
-    then:
-      - fail:
-          message: ${t.completeOrderLines}
   - atomicRecords:
       locks: [inputs.order]
       checks:
@@ -1722,9 +1774,6 @@ steps:
             - field: ${t.invoiceSent}
               op: is
               value: ready
-            - field: ${t.readyToInvoice}
-              op: '='
-              value: true
           assert: notEmpty
           message: ${t.invoiceAlreadySent}
         - query:
@@ -1770,6 +1819,13 @@ steps:
       },
     ],
     workflowLaunchers: [
+      ...fulfillmentTransitions.map(({ key, name }) => ({
+        key,
+        workflow: key,
+        name,
+        config: { kind: "customApp" as const, inputMode: "prompt" as const },
+        enabled: true,
+      })),
       {
         key: "remove_order_line",
         workflow: "remove_order_line",

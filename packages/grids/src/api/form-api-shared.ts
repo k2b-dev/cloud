@@ -10,6 +10,7 @@ import type { Form } from "../service/forms";
 import { fromPublicRecordValues, fromPublicRelationValues, projectPublicId, resolvePublicId } from "../service/public-resources";
 import type { ExpansionViewer } from "../service/relation-access";
 import { apiMessages } from "./messages";
+import { fromPublicRecordQuery } from "./public-query";
 import {
   PublicFormSchema as AuthenticatedPublicFormSchema,
   type PublicForm,
@@ -57,7 +58,15 @@ export const fromPublicFormConfig = async (tableId: string, config: PublicFormCo
       if (inlineFields?.some((inlineField) => !inlineField)) return null;
       inlineCreate = { ...entry.inlineCreate, fields: inlineFields?.filter((item): item is NonNullable<typeof item> => Boolean(item)) };
     }
-    entries.push({ ...entry, fieldId: field.id, inlineCreate, ...(raw !== undefined ? { defaultValue: value } : {}) });
+    let relationFilter: Extract<Form["config"]["fields"][number], { kind: "user_input" }>["relationFilter"];
+    if (entry.relationFilter) {
+      const targetTableId = field.type === "relation" ? field.config.targetTableId : null;
+      if (typeof targetTableId !== "string") return null;
+      const converted = await fromPublicRecordQuery(targetTableId, { filter: entry.relationFilter });
+      if (!converted.ok) return null;
+      relationFilter = converted.data.filter;
+    }
+    entries.push({ ...entry, fieldId: field.id, inlineCreate, relationFilter, ...(raw !== undefined ? { defaultValue: value } : {}) });
   }
   const validations = config.validations?.map((rule) => {
     const leftFieldId = byPublicId.get(rule.leftFieldId)?.id;

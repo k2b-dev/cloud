@@ -79,3 +79,26 @@ describe("Form cross-field validation", () => {
     ).toEqual([{ ...durationRule, errorFieldId: duration.id }]);
   });
 });
+
+test("anyPresent requires a selection in either relation input, in both server and public-ID forms", () => {
+  for (const prefix of ["", "public-"]) {
+    const left = field(`${prefix}kits`, "Sets", "relation");
+    const right = field(`${prefix}items`, "Items", "relation");
+    const pair: FormValidationRule = {
+      leftFieldId: left.id,
+      rightFieldId: right.id,
+      operator: "anyPresent",
+      message: "Choose a set or item.",
+    };
+    const fields = new Map([left, right].map((item) => [item.id, item]));
+    expect(formValidationFieldsCompatible(left, right, "anyPresent")).toBe(true);
+    expect(formValidationFieldsCompatible(left, amount, "anyPresent")).toBe(false);
+    expect(formValidationFieldsCompatible(left, right, "eq")).toBe(false);
+    for (const values of [{}, { [left.id]: [], [right.id]: [] }, { [left.id]: null, [right.id]: "" }]) {
+      expect(evaluateFormValidations([pair], values, fields)).toEqual([{ ...pair, errorFieldId: left.id }]);
+    }
+    for (const values of [{ [left.id]: ["KIT001"] }, { [right.id]: ["ITEM01"] }, { [left.id]: ["KIT001"], [right.id]: ["ITEM01"] }]) {
+      expect(evaluateFormValidations([pair], values, fields)).toEqual([]);
+    }
+  }
+});

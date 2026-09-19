@@ -13,7 +13,12 @@ export const formValidationComparableKind = (field: Pick<Field, "type" | "config
   return (field.config as { includeTime?: boolean }).includeTime ? "dateTime" : "date";
 };
 
-export const formValidationFieldsCompatible = (left: Pick<Field, "type" | "config">, right: Pick<Field, "type" | "config">): boolean => {
+export const formValidationFieldsCompatible = (
+  left: Pick<Field, "type" | "config">,
+  right: Pick<Field, "type" | "config">,
+  operator?: FormValidationRule["operator"],
+): boolean => {
+  if (operator === "anyPresent") return left.type === "relation" && right.type === "relation";
   const leftKind = formValidationComparableKind(left);
   return leftKind !== null && leftKind === formValidationComparableKind(right);
 };
@@ -42,7 +47,11 @@ const comparableValue = (kind: ComparableKind, value: unknown): ComparableValue 
   return Number.isFinite(timestamp) ? new Decimal(timestamp) : null;
 };
 
-const compare = (left: ComparableValue, operator: FormValidationRule["operator"], right: ComparableValue): boolean => {
+const compare = (
+  left: ComparableValue,
+  operator: Exclude<FormValidationRule["operator"], "anyPresent">,
+  right: ComparableValue,
+): boolean => {
   if (left instanceof Decimal && right instanceof Decimal) {
     switch (operator) {
       case "eq":
@@ -86,6 +95,13 @@ export const evaluateFormValidations = (
     const leftField = fieldsById.get(rule.leftFieldId);
     const rightField = fieldsById.get(rule.rightFieldId);
     if (!leftField || !rightField) return [];
+    if (rule.operator === "anyPresent") {
+      if (!formValidationFieldsCompatible(leftField, rightField, rule.operator)) return [];
+      const present = (value: unknown) => (Array.isArray(value) ? value.length > 0 : typeof value === "string" && value.trim().length > 0);
+      return present(values[rule.leftFieldId]) || present(values[rule.rightFieldId])
+        ? []
+        : [{ ...rule, errorFieldId: rule.errorFieldId ?? rule.leftFieldId }];
+    }
     const kind = formValidationComparableKind(leftField);
     if (!kind || kind !== formValidationComparableKind(rightField)) return [];
     const leftNormalized = getRecordWritableFieldType(leftField.type)?.validate(values[rule.leftFieldId], leftField.config, false);

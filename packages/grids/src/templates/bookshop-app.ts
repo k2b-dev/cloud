@@ -68,6 +68,17 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
       "\nlimit 1",
     ),
   });
+  const editableOrder = {
+    query: formula(
+      "from table ",
+      table("orders"),
+      "\nwhere record.id = @params.order_id and ",
+      field("orders.invoice_sent"),
+      " = 'ready' and ",
+      field("orders.status"),
+      " != 'delivered'\nlimit 1",
+    ),
+  };
   const detail = (id: string, key: string) => ({
     parameters: { [id]: { type: "record" as const, tableId: table(key), required: true as const } },
     record: { tableId: table(key), id: { source: "PARAMS" as const, path: id } },
@@ -82,12 +93,40 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
       field("order_lines.order"),
       " = order.id\nselect line.",
       field("order_lines.line_no"),
-      "\nwhere record.id = @params.line_id and order.",
+      "\nwhere record.id = @params.line_id and (order.",
       field("orders.invoice_sent"),
-      editable ? " = 'ready'\nlimit 1" : " != 'ready'\nlimit 1",
+      editable ? " = 'ready' and order." : " != 'ready' or order.",
+      field("orders.status"),
+      editable ? " != 'delivered')\nlimit 1" : " = 'delivered')\nlimit 1",
     ),
   });
   const editableLine = lineWhen(true);
+  const fulfillmentWhen = (status: "new" | "shipped" | "delivered") => ({
+    query: formula(
+      "from table ",
+      table("orders"),
+      "\nwhere record.id = @params.order_id and ",
+      field("orders.status"),
+      ` = '${status}'\nlimit 1`,
+    ),
+  });
+  const fulfillmentAction = (id: string, label: string, icon: string, confirm: string, variant: "primary" | "secondary") => ({
+    id: id.replaceAll("_", "-"),
+    kind: "workflow" as const,
+    label,
+    icon,
+    variant,
+    launcherId: launcher(id),
+    inputs: { order: { source: "RECORD" as const, path: "id" as const } },
+    confirm,
+    ...(id !== "reopen_order"
+      ? {
+          availableWhen: {
+            query: formula("from table ", table("order_lines"), "\nwhere ", field("order_lines.order"), " = @params.order_id\nlimit 1"),
+          },
+        }
+      : {}),
+  });
   return [
     {
       key: "sales",
@@ -150,14 +189,15 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
                 columns: [
                   {
                     id: "main",
-                    span: 12,
+                    span: 8,
                     blocks: [
                       back("overview", t.backOrders),
                       {
                         id: "identity",
                         type: "record",
                         layout: "compact",
-                        fieldIds: [field("orders.order_no"), field("orders.customer"), field("orders.customer_email")],
+                        fieldIds: [field("orders.order_no"), field("orders.customer"), field("orders.status"), field("orders.ordered_at")],
+                        relativeDates: [field("orders.ordered_at")],
                         editableFieldIds: [],
                         heading: { fieldId: field("orders.order_no") },
                         documents: { templateIds: [documentTemplate("order_invoice")] },
@@ -169,7 +209,57 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
                         mode: "edit",
                         fixedValues: {},
                         presentation: { kind: "dialog", label: t.editOrder, icon: "pencil" },
-                        availableWhen: ready(true),
+                        availableWhen: editableOrder,
+                      },
+                    ],
+                  },
+                  {
+                    id: "next-step",
+                    span: 4,
+                    blocks: [
+                      {
+                        id: "prepare-help",
+                        type: "markdown",
+                        title: t.nextStep,
+                        markdown: `**${t.prepareOrder}**\n\n${t.prepareOrderHelp}`,
+                        availableWhen: fulfillmentWhen("new"),
+                      },
+                      {
+                        id: "prepare-actions",
+                        type: "actions",
+                        actions: [
+                          fulfillmentAction("mark_order_shipped", t.markShipped, "truck-delivery", t.shippedConfirm, "primary"),
+                          fulfillmentAction("complete_order", t.confirmHandover, "check", t.handoverConfirm, "secondary"),
+                        ],
+                        availableWhen: fulfillmentWhen("new"),
+                      },
+                      {
+                        id: "shipped-help",
+                        type: "markdown",
+                        title: t.nextStep,
+                        markdown: `**${t.onTheWay}**\n\n${t.onTheWayHelp}`,
+                        availableWhen: fulfillmentWhen("shipped"),
+                      },
+                      {
+                        id: "shipped-actions",
+                        type: "actions",
+                        actions: [
+                          fulfillmentAction("complete_order", t.confirmDelivery, "check", t.handoverConfirm, "primary"),
+                          fulfillmentAction("reopen_order", t.reopenOrder, "arrow-back-up", t.reopenConfirm, "secondary"),
+                        ],
+                        availableWhen: fulfillmentWhen("shipped"),
+                      },
+                      {
+                        id: "completed-help",
+                        type: "markdown",
+                        markdown: `:::success ${t.fulfillmentDone}\n${t.fulfillmentDoneHelp}\n:::`,
+                        availableWhen: fulfillmentWhen("delivered"),
+                      },
+                      {
+                        id: "completed-actions",
+                        type: "actions",
+                        actions: [fulfillmentAction("reopen_order", t.reopenOrder, "arrow-back-up", t.reopenConfirm, "secondary")],
+                        availableWhen: fulfillmentWhen("delivered"),
                       },
                     ],
                   },
@@ -225,7 +315,7 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
                             launcherId: launcher("remove_order_line"),
                             inputs: { line: { source: "ROW", path: "id" } },
                             confirm: t.removeLineConfirm,
-                            availableWhen: ready(true),
+                            availableWhen: editableOrder,
                           },
                         ],
                         rowNavigate: {
@@ -243,7 +333,7 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
                         formId: form("add_order_line"),
                         fixedValues: { [fieldKey("order_lines.order")]: { source: "RECORD", path: "id" } },
                         presentation: { kind: "dialog", label: t.addOrderLine, icon: "plus", variant: "primary" },
-                        availableWhen: ready(true),
+                        availableWhen: editableOrder,
                       },
                       {
                         id: "value",
@@ -272,19 +362,10 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
                     span: 4,
                     blocks: [
                       {
-                        id: "shipping",
-                        type: "record",
-                        title: t.fulfillment,
-                        layout: "rows",
-                        fieldIds: [field("orders.ordered_at"), field("orders.status")],
-                        relativeDates: [field("orders.ordered_at")],
-                        editableFieldIds: [field("orders.status")],
-                      },
-                      { id: "shipping-help", type: "markdown", markdown: t.shippingHelp },
-                      {
                         id: "invoice-help",
                         type: "markdown",
-                        markdown: `:::info ${t.reviewInvoice}\n${t.invoiceHelp}\n:::`,
+                        title: t.reviewInvoice,
+                        markdown: t.invoiceHelp,
                         availableWhen: ready(true),
                       },
                       {
@@ -306,8 +387,8 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
                         type: "record",
                         title: t.invoiceSent,
                         layout: "rows",
-                        fieldIds: [field("orders.invoice_ready"), field("orders.invoice_sent")],
-                        editableFieldIds: [field("orders.invoice_ready")],
+                        fieldIds: [field("orders.customer_email"), field("orders.invoice_sent")],
+                        editableFieldIds: [],
                         availableWhen: ready(true),
                       },
                       {
@@ -319,7 +400,7 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
                             kind: "workflow",
                             label: t.sendInvoice,
                             icon: "mail",
-                            variant: "primary",
+                            variant: "secondary",
                             launcherId: launcher("send_order_invoice_custom_app"),
                             inputs: { order: { source: "RECORD", path: "id" } },
                             confirm: t.invoiceConfirm,
@@ -328,17 +409,7 @@ export const bookshopApp = (t: BookshopText): NonNullable<GridTemplate["customAp
                               documentBlockId: "identity",
                               documentTemplateId: documentTemplate("order_invoice"),
                             },
-                            availableWhen: {
-                              query: formula(
-                                "from table ",
-                                table("orders"),
-                                "\nwhere record.id = @params.order_id and ",
-                                field("orders.invoice_ready"),
-                                " = true and ",
-                                field("orders.invoice_sent"),
-                                " = 'ready'\nlimit 1",
-                              ),
-                            },
+                            availableWhen: ready(true),
                           },
                         ],
                       },

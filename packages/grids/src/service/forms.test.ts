@@ -159,3 +159,20 @@ describe("form render DTOs", () => {
     ]);
   });
 });
+
+test("relation filters survive persisted configuration normalization and fail closed when malformed", () => {
+  const config = {
+    fields: [
+      {
+        kind: "user_input",
+        fieldId: "00000000-0000-0000-0000-000000000003",
+        relationFilter: {
+          op: "AND",
+          filters: [{ fieldId: "00000000-0000-0000-0000-000000000007", op: "=", value: true }],
+        },
+      },
+    ],
+  };
+  expect(normalizeFormConfig(config).fields[0]).toMatchObject(config.fields[0]!);
+  expect(() => normalizeFormConfig({ fields: [{ ...config.fields[0], relationFilter: { op: "AND", filters: "invalid" } }] })).toThrow();
+});

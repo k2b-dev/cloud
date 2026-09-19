@@ -135,6 +135,9 @@ export const gridsFormMessages = i18n.define({
       operatorGt: "is after / greater than",
       operatorEq: "equals",
       operatorNeq: "does not equal",
+      operatorAnyPresent: "at least one has a selection",
+      defaultAnyPresentValidation: ({ left, right }: { left: string; right: string }) =>
+        `Choose at least one entry in ${left} or ${right}.`,
       defaultValidation: ({ left, right }: { left: string; right: string }) => `${left} must be on or before ${right}.`,
       newForm: "New form",
       formNameExample: "Example: Public sign-up",
@@ -319,6 +322,9 @@ export const gridsFormMessages = i18n.define({
       operatorGt: "liegt danach / ist größer als",
       operatorEq: "ist gleich",
       operatorNeq: "ist nicht gleich",
+      operatorAnyPresent: "mindestens eines enthält eine Auswahl",
+      defaultAnyPresentValidation: ({ left, right }: { left: string; right: string }) =>
+        `Wähle mindestens einen Eintrag in ${left} oder ${right}.`,
       defaultValidation: ({ left, right }) => `${left} muss vor oder auf ${right} liegen.`,
       newForm: "Neues Formular",
       formNameExample: "Beispiel: Öffentliche Anmeldung",

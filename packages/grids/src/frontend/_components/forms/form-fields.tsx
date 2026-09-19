@@ -460,6 +460,7 @@ export function FieldInput(props: {
                 <RelationPicker
                   targetTableId={cfg.targetTableId}
                   lookupUrl={props.relationLookupUrl}
+                  saving={() => !!props.entry.relationFilter && !props.relationLookupUrl}
                   multi={multi}
                   value={existingRelationIds}
                   labels={() => props.relationLabels ?? {}}

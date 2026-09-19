@@ -1,7 +1,7 @@
 import type { InventoryText } from "./inventory";
-import { documentTemplate, field, fieldKey, form, formula, type GridTemplate, launcher, table } from "./types";
+import { documentTemplate, field, form, formula, type GridTemplate, launcher, table } from "./types";
 
-/** Borrowers request kits; the desk owns individual handovers and returns. */
+/** Requests express equipment needs; the desk owns physical handovers and returns. */
 export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["customApps"]> => {
   const loanParams = { loan_id: { type: "record" as const, tableId: table("loans"), required: true as const } };
   const loanRecord = { tableId: table("loans"), id: { source: "PARAMS" as const, path: "loan_id" as const } };
@@ -73,16 +73,96 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
     type: "record" as const,
     heading: { fieldId: field("loans.loan_no") },
     layout: "compact" as const,
-    fieldIds: [
-      field("loans.loan_no"),
-      field("loans.requester_name"),
-      field("loans.status"),
-      field("loans.start_date"),
-      field("loans.due_date"),
-    ],
+    fieldIds: [field("loans.loan_no"), field("loans.requester_name"), field("loans.status")],
+    editableFieldIds: [],
+  };
+  const requestForm = {
+    id: "request",
+    type: "form" as const,
+    formId: form("request_loan"),
+    fixedValues: {},
+    presentation: { kind: "dialog" as const, label: t.newLoan, icon: "plus" },
+    onSuccessNavigate: navigateLoan,
+  };
+  const requestedEquipment = {
+    id: "requested-equipment",
+    type: "record" as const,
+    title: t.requestedEquipment,
+    layout: "context" as const,
+    fieldIds: [field("loans.kits"), field("loans.requested_items"), field("loans.purpose")],
+    editableFieldIds: [],
+  };
+  const loanDates = {
+    id: "dates",
+    type: "record" as const,
+    title: t.loanDates,
+    layout: "summary" as const,
+    fieldIds: [field("loans.start_date"), field("loans.due_date")],
     relativeDates: [field("loans.due_date")],
     editableFieldIds: [],
-    documents: { templateIds: [documentTemplate("loan_agreement")], preview: true },
+  };
+  const loanDocuments = (preview: boolean) => ({
+    id: "documents",
+    type: "record" as const,
+    title: t.loanDocuments,
+    layout: "context" as const,
+    fieldIds: [field("loans.loan_no")],
+    editableFieldIds: [],
+    documents: { templateIds: [documentTemplate("loan_agreement")], ...(preview ? { preview: true } : {}) },
+    availableWhen: preview
+      ? loanWhen(["approved", "active", "returned"])
+      : {
+          query: formula(
+            "from table ",
+            table("loans"),
+            "\nwhere record.id = @params.loan_id and ",
+            field("loans.agreement_sent"),
+            " = 'sent'\nlimit 1",
+          ),
+        },
+    disclosure: { label: t.loanDocuments },
+  });
+  const statusHelp = (desk: boolean) =>
+    [
+      { status: "requested", markdown: desk ? t.prepareHelp : t.requestedHelp },
+      { status: "approved", markdown: desk ? t.handoverReadyHelp : t.approvedHelp },
+      { status: "active", markdown: desk ? t.activeHelp : t.borrowedHelp },
+      { status: "returned", markdown: t.returnedHelp },
+      { status: "rejected", markdown: t.rejectedHelp },
+      { status: "cancelled", markdown: t.cancelledHelp },
+    ].map(({ status, markdown }) => ({
+      id: `status-${status}`,
+      type: "markdown" as const,
+      markdown,
+      availableWhen: loanWhen([status]),
+    }));
+  const requestedKitContents = {
+    id: "requested-kit-contents",
+    type: "records" as const,
+    title: t.requestedKitContents,
+    source: {
+      kind: "gql" as const,
+      query: formula(
+        "from table ",
+        table("loans"),
+        "\njoin table ",
+        table("kits"),
+        " as kit on ",
+        field("loans.kits"),
+        " = kit.id\nwhere record.id = @params.loan_id\nselect kit.",
+        field("kits.name"),
+        ` as ${t.name}, kit.`,
+        field("kits.items"),
+        ` as ${t.kitContentsColumn}`,
+      ),
+    },
+    display: { kind: "table" as const, columnIds: [], mobile: { titleColumnId: t.name, detailColumnIds: [t.kitContentsColumn] } },
+    searchable: false,
+    pageSize: 10,
+    availableWhen: {
+      query: formula("from table ", table("loans"), "\nwhere record.id = @params.loan_id and ", field("loans.kits"), " != null\nlimit 1"),
+    },
+    disclosure: { label: t.requestedKitContents },
   };
   const stock = {
     id: "stock",
@@ -132,6 +212,20 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
         name: t.equipmentLoans,
         icon: "package",
         startPageId: "home",
+        sidebar: {
+          actions: [
+            {
+              id: "new-loan",
+              kind: "form",
+              tone: "success",
+              label: t.newLoan,
+              icon: "plus",
+              formId: form("request_loan"),
+              fixedValues: {},
+              onSuccessNavigate: navigateLoan,
+            },
+          ],
+        },
         pages: [
           {
             id: "home",
@@ -147,22 +241,7 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
                     span: 12,
                     blocks: [
                       { id: "guidance", type: "markdown" as const, markdown: t.equipmentLoansGuidance },
-                      {
-                        id: "new-loan",
-                        type: "actions" as const,
-                        actions: [
-                          {
-                            id: "catalog",
-                            kind: "navigate" as const,
-                            history: "push",
-                            label: t.newLoan,
-                            variant: "primary",
-                            icon: "plus",
-                            pageId: "catalog",
-                            params: {},
-                          },
-                        ],
-                      },
+                      requestForm,
                       loanList("my-loans", t.myLoans, t.noEquipmentLoans, ["requested", "approved", "active"], true),
                       {
                         ...loanList("past-loans", t.loanArchive, t.emptyArchive, ["returned", "rejected", "cancelled"], true),
@@ -188,6 +267,7 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
                     span: 12,
                     blocks: [
                       { id: "guidance", type: "markdown" as const, markdown: t.catalogHelp },
+                      requestForm,
                       {
                         id: "kits",
                         type: "records" as const,
@@ -226,6 +306,39 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
                           pageId: "kit",
                           params: { kit_id: { source: "ROW" as const, path: "id" as const } },
                         },
+                      },
+                      {
+                        id: "items",
+                        type: "records",
+                        title: t.individualItems,
+                        emptyText: t.noAvailableEquipment,
+                        source: {
+                          kind: "gql",
+                          query: formula(
+                            "from table ",
+                            table("items"),
+                            "\nwhere ",
+                            field("items.requestable"),
+                            " = true and ",
+                            field("items.status"),
+                            " = 'available'\nselect ",
+                            field("items.name"),
+                            ", ",
+                            field("items.asset_id"),
+                            ", ",
+                            field("items.category"),
+                            "\nsort ",
+                            field("items.name"),
+                            " asc",
+                          ),
+                        },
+                        display: {
+                          kind: "table",
+                          columnIds: [],
+                          mobile: { titleColumnId: t.name, detailColumnIds: [t.assetId, t.category] },
+                        },
+                        searchable: true,
+                        pageSize: 25,
                       },
                     ],
                   },
@@ -266,14 +379,7 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
                         fieldIds: [field("kits.name"), field("kits.description"), field("kits.items")],
                         editableFieldIds: [],
                       },
-                      {
-                        id: "request",
-                        type: "form" as const,
-                        formId: form("request_loan"),
-                        fixedValues: { [fieldKey("loans.kits")]: { source: "RECORD" as const, path: "id" as const } },
-                        presentation: { kind: "dialog" as const, label: t.requestKitLoan, icon: "plus" },
-                        onSuccessNavigate: navigateLoan,
-                      },
+                      requestForm,
                     ],
                   },
                 ],
@@ -291,58 +397,99 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
             },
             rows: [
               {
-                id: "detail",
+                id: "identity",
+                columns: [
+                  { id: "content", span: 8, blocks: [identity, ...statusHelp(false)] },
+                  { id: "schedule", span: 4, blocks: [loanDates] },
+                ],
+              },
+              {
+                id: "overview",
                 columns: [
                   {
-                    id: "content",
+                    id: "request",
                     span: 8,
                     blocks: [
-                      { ...identity, documents: { templateIds: [documentTemplate("loan_agreement")] } },
+                      requestedEquipment,
+                      requestedKitContents,
+                      {
+                        id: "assigned-equipment",
+                        type: "records",
+                        title: t.allocatedEquipment,
+                        source: {
+                          kind: "gql",
+                          query: formula(
+                            "from table ",
+                            table("loan_positions"),
+                            "\nwhere ",
+                            field("loan_positions.loan"),
+                            " = @params.loan_id and ",
+                            field("loan_positions.status"),
+                            " != 'cancelled'\nselect ",
+                            field("loan_positions.item"),
+                            ", ",
+                            field("loan_positions.status"),
+                            ", ",
+                            field("loan_positions.returned_at"),
+                          ),
+                        },
+                        display: {
+                          kind: "table",
+                          columnIds: [],
+                          mobile: { titleColumnId: t.positionItem, detailColumnIds: [t.status, t.returnedAt] },
+                        },
+                        searchable: false,
+                        pageSize: 25,
+                        availableWhen: loanWhen(["approved", "active", "returned"]),
+                      },
                       {
                         id: "rejection",
-                        type: "record" as const,
+                        type: "record",
+                        title: t.rejectionReason,
+                        layout: "context",
                         fieldIds: [field("loans.rejection_reason")],
                         editableFieldIds: [],
                         availableWhen: loanWhen(["rejected"]),
                       },
                       {
-                        id: "request-help",
-                        type: "markdown" as const,
-                        markdown: t.requestedHelp,
-                        availableWhen: loanWhen(["requested", "approved"]),
-                      },
-                      {
-                        id: "details",
-                        type: "record" as const,
-                        layout: "rows" as const,
-                        fieldIds: [
-                          field("loans.kits"),
-                          field("loans.purpose"),
-                          field("loans.requester_email"),
-                          field("loans.organization"),
-                        ],
-                        editableFieldIds: [],
-                      },
-                      {
                         id: "actions",
-                        type: "actions" as const,
+                        type: "actions",
                         actions: [
                           {
                             id: "cancel",
                             label: t.cancelRequest,
                             variant: "secondary",
-                            kind: "workflow" as const,
+                            kind: "workflow",
                             launcherId: launcher("cancel_loan_custom_app"),
-                            inputs: { loan: { source: "RECORD" as const, path: "id" as const } },
+                            inputs: { loan: { source: "RECORD", path: "id" } },
                             confirm: t.cancelRequestConfirm,
                             availableWhen: loanWhen(["requested"]),
                           },
                         ],
                       },
-                      { id: "comments", type: "comments" as const, title: t.questionsAndUpdates },
+                    ],
+                  },
+                  {
+                    id: "context",
+                    span: 4,
+                    blocks: [
+                      {
+                        id: "details",
+                        type: "record",
+                        title: t.contactDetails,
+                        layout: "rows",
+                        fieldIds: [field("loans.requester_email"), field("loans.organization")],
+                        editableFieldIds: [],
+                        disclosure: { label: t.contactDetails },
+                      },
+                      loanDocuments(false),
                     ],
                   },
                 ],
+              },
+              {
+                id: "updates",
+                columns: [{ id: "content", span: 8, blocks: [{ id: "comments", type: "comments", title: t.questionsAndUpdates }] }],
               },
             ],
           },
@@ -577,7 +724,13 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
             parameters: loanParams,
             record: loanRecord,
             rows: [
-              { id: "identity", columns: [{ id: "content", span: 12, blocks: [identity] }] },
+              {
+                id: "identity",
+                columns: [
+                  { id: "content", span: 8, blocks: [identity, ...statusHelp(true)] },
+                  { id: "schedule", span: 4, blocks: [loanDates] },
+                ],
+              },
               {
                 id: "next-actions",
                 columns: [
@@ -670,17 +823,12 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
                     id: "positions",
                     span: 8,
                     blocks: [
-                      { id: "prepare-help", type: "markdown" as const, markdown: t.prepareHelp, availableWhen: loanWhen(["requested"]) },
-                      {
-                        id: "active-help",
-                        type: "markdown" as const,
-                        markdown: t.activeHelp,
-                        availableWhen: loanWhen(["approved", "active"]),
-                      },
+                      requestedEquipment,
+                      requestedKitContents,
                       {
                         id: "loan-positions",
                         type: "records" as const,
-                        title: t.loanPositions,
+                        title: t.allocatedEquipment,
                         emptyText: t.emptyPositions,
                         source: {
                           kind: "gql" as const,
@@ -764,18 +912,21 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
                       {
                         id: "details",
                         type: "record" as const,
+                        title: t.deskContact,
                         layout: "rows" as const,
-                        fieldIds: [
-                          field("loans.kits"),
-                          field("loans.purpose"),
-                          field("loans.requester_name"),
-                          field("loans.requester_email"),
-                          field("loans.organization"),
-                          field("loans.availability_confirmed"),
-                          field("loans.agreement_sent"),
-                        ],
+                        fieldIds: [field("loans.requester_name"), field("loans.requester_email"), field("loans.organization")],
                         editableFieldIds: [field("loans.requester_name"), field("loans.requester_email"), field("loans.organization")],
                       },
+                      {
+                        id: "checks",
+                        type: "record",
+                        title: t.loanSchedule,
+                        layout: "rows",
+                        fieldIds: [field("loans.availability_confirmed"), field("loans.agreement_sent")],
+                        editableFieldIds: [],
+                        disclosure: { label: t.loanSchedule },
+                      },
+                      loanDocuments(true),
                       {
                         id: "notes",
                         type: "record" as const,
@@ -995,7 +1146,13 @@ export const inventoryApps = (t: InventoryText): NonNullable<GridTemplate["custo
                         id: "details",
                         type: "record" as const,
                         layout: "rows" as const,
-                        fieldIds: [field("items.serial_no"), field("items.category"), field("items.files"), field("items.notes")],
+                        fieldIds: [
+                          field("items.requestable"),
+                          field("items.serial_no"),
+                          field("items.category"),
+                          field("items.files"),
+                          field("items.notes"),
+                        ],
                         editableFieldIds: [],
                       },
                     ],

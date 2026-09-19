@@ -72,9 +72,17 @@ Form `config` uses the following keys. Public APIs accept public field IDs, not 
 | `redirectUrl` | Optional destination after successful submission; null means no redirect |
 | `titleImage` | Optional image data URL, at most 1,000,000 characters |
 
-A visible entry is `{kind:"user_input", fieldId, label?, helpText?, required?, defaultValue?, width?, inlineCreate?}`. A hidden entry is `{kind:"form_value", fieldId, value}`: the server applies that fixed value instead of trusting submitted data.
+A visible entry is `{kind:"user_input", fieldId, label?, helpText?, required?, defaultValue?, width?, inlineCreate?, relationFilter?}`. A hidden entry is `{kind:"form_value", fieldId, value}`: the server applies that fixed value instead of trusting submitted data.
 
-A rule is `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. Operators: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. The message is 1–240 characters. Compare compatible number/duration/date inputs; `errorFieldId` chooses the input showing the error.
+A rule is `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. Operators: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. The message is 1–240 characters. Compare compatible number/duration/date inputs; `errorFieldId` chooses the input showing the error. For two Relation inputs, `anyPresent` requires at least one selection across the pair. The Form editor offers this rule; the browser and server show the same configured error.
+
+For a Relation input, `relationFilter` accepts the existing record filter tree, scoped to fields of its target table. For example, combine `{fieldId:"PUBLIC",op:"=",value:true}` and `{fieldId:"STATUS",op:"is",value:"available"}` under `{op:"AND",filters:[...]}`. Replace these example IDs with public IDs of the target fields.
+
+Configure selection filters through the API or a template; the Form editor preserves them but has no filter editor. Filtered inputs require a stored target table in the same Base and cannot enable `inlineCreate`. Their picker returns only eligible labels. Submission checks every selected record again under a lock; deleted, hidden-by-filter, or newly unavailable selections reject the whole submission. Selection does not reserve an item. Use a Workflow for reservation or handover.
+
+The filter applies in a published Grids App, the authenticated Base form, and the active public-token form. A public token therefore exposes the matching records' presentable labels: only enable public access when intended. The existing Form permission is sufficient; no target-table grant is added. Changing the filter or its referenced field configuration requires republishing an affected Grids App. Preview mode without an authorized lookup disables filtered selection.
+
+Filtered form pickers use `GET /api/grids/forms/:formId/relations/:fieldId/lookup` with Base Write, or `/api/grids/forms/public/:token/relations/:fieldId/lookup` with an active share token. Query options are `_search` (up to 200 characters), `_limit` (1–50, default 10), and `_exclude` (comma-separated public record IDs, at most 1,000). The response is `{items:[{id,label}]}`. Custom Apps use their existing published Form endpoint.
 
 For an eligible Relation input, `inlineCreate: {enabled:true, fields:[...]}` selects the target inputs. Each entry has `fieldId` and optional `label`, `helpText`, `width`, `required`, `defaultValue`. Inline creation is one level deep; it cannot nest further relations, upload file fields, or accept system/calculated values.
 

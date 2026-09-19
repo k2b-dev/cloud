@@ -238,6 +238,8 @@ const preparePublishedForm = async (
     for (let offset = 0; offset < ids.length; offset += 50) {
       const result = await lookupRecords({
         targetTableId: target.tableId,
+        filter: target.filter,
+        timeZone: dateConfig.timeZone,
         recordIds: ids.slice(offset, offset + 50),
         limit: 50,
         labelSnapshot: {

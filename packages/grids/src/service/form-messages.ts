@@ -57,6 +57,10 @@ const formServiceMessages = i18n.define({
       inlineRequiresRelation: ({ field }: { field: string }) =>
         `Field “${field}” cannot create related records because it is not a relation.`,
       invalidConfig: "The Form configuration is invalid.",
+      relationFilterTarget: "Filtered relation inputs require a stored target table in the same Base and cannot use inline creation.",
+      relationFilterInvalid: ({ field }: { field: string }) => `The selection filter for “${field}” is invalid or has changed.`,
+      relationSelectionUnavailable: ({ field }: { field: string }) =>
+        `An entry selected in “${field}” is no longer available. Choose an available entry.`,
       unknownConfigField: "The Form references an unknown field.",
       duplicateConfigField: ({ field }: { field: string }) => `The Form references field “${field}” more than once.`,
       configFieldUnsupported: ({ field }: { field: string }) => `Field “${field}” cannot be used in a Form.`,
@@ -119,6 +123,11 @@ const formServiceMessages = i18n.define({
       invalidInlineValue: ({ field, detail }) => `Der Inline-Formularwert für „${field}“ ist ungültig: ${detail}`,
       inlineRequiresRelation: ({ field }) => `Das Feld „${field}“ kann keine verknüpften Datensätze erstellen, weil es keine Relation ist.`,
       invalidConfig: "Die Formularkonfiguration ist ungültig.",
+      relationFilterTarget:
+        "Gefilterte Verknüpfungen benötigen eine gespeicherte Zieltabelle derselben Base und erlauben kein direktes Anlegen.",
+      relationFilterInvalid: ({ field }: { field: string }) => `Der Auswahlfilter für „${field}“ ist ungültig oder wurde geändert.`,
+      relationSelectionUnavailable: ({ field }: { field: string }) =>
+        `Ein ausgewählter Eintrag in „${field}“ ist nicht mehr verfügbar. Wähle einen verfügbaren Eintrag.`,
       unknownConfigField: "Das Formular verweist auf ein unbekanntes Feld.",
       duplicateConfigField: ({ field }) => `Das Formular verweist mehrfach auf das Feld „${field}“.`,
       configFieldUnsupported: ({ field }) => `Das Feld „${field}“ kann nicht in einem Formular verwendet werden.`,

@@ -3,6 +3,8 @@ import { stableCustomAppValue } from "../custom-apps/stable-value";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
 import { normalizeRefKey } from "../ref-syntax";
+import type { FilterTree } from "../contracts";
+import { compileFilter } from "./filter-compiler";
 import { listByTable } from "./fields";
 import type { Form } from "./forms";
 import { relationLabelFields } from "./relation-targets";
@@ -24,9 +26,21 @@ export const customAppFormRelationScope = async (form: Pick<Form, "config" | "ta
       const table = await getTable(id);
       if (!table || table.baseId !== source.baseId) return null;
       const targetFields = await listByTable(id);
+      const entry = form.config.fields.find((entry) => entry.fieldId === field.id);
+      const filter = entry?.kind === "user_input" ? entry.relationFilter : undefined;
+      if (
+        filter &&
+        (table.kind !== "stored" || entry?.kind !== "user_input" || entry.inlineCreate?.enabled || !compileFilter(filter, targetFields).ok)
+      )
+        return null;
       const labels = relationLabelFields(targetFields);
       const recordSource = table.kind === "federated" ? await buildDslSqlRecordSource(id, { [id]: targetFields }) : null;
       const dependencies = new Set(labels.map((label) => label.id));
+      const filterDependencies = (tree: FilterTree): void => {
+        if ("filters" in tree) for (const item of tree.filters) filterDependencies(item);
+        else dependencies.add(tree.fieldId);
+      };
+      if (filter) filterDependencies(filter);
       const bindings: Record<string, string[]> = {};
       let invalid = false;
       const visit = (dependency: Field): void => {
@@ -53,16 +67,17 @@ export const customAppFormRelationScope = async (form: Pick<Form, "config" | "ta
           }
         }
       };
-      for (const label of labels) visit(label);
+      for (const dependency of targetFields.filter((field) => dependencies.has(field.id))) visit(dependency);
       if (invalid) return null;
       return {
         field,
+        filter,
         tableId: id,
         tableKind: table.kind,
         recordSource,
         labels,
         // Runtime signatures cover the full table; publication identity only
-        // depends on the label fields and their transitive references.
+        // depends on label/filter fields and their transitive references.
         targetFields,
         dependencyFieldIds: dependencies,
         bindings,
@@ -77,8 +92,9 @@ export const customAppFormRelationScope = async (form: Pick<Form, "config" | "ta
         stableCustomAppValue(
           [...selected]
             .sort((a, b) => (a.field.id < b.field.id ? -1 : 1))
-            .map(({ field, tableId, tableKind, recordSource, labels, targetFields, dependencyFieldIds, bindings }) => ({
+            .map(({ field, filter, tableId, tableKind, recordSource, labels, targetFields, dependencyFieldIds, bindings }) => ({
               fieldId: field.id,
+              ...(filter ? { filter } : {}),
               config: field.config,
               tableId,
               tableKind,

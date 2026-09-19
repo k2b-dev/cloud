@@ -5,6 +5,8 @@ import { inspectFormComputedFields } from "../form-computed-fields";
 import { formComputedDiagnosticMessage } from "../form-computed-messages";
 import { formValidationFieldsCompatible } from "../form-validations";
 import { listByTable as listFields, validateDefaultValue } from "./fields";
+import { compileFilter } from "./filter-compiler";
+import { get as getTable } from "./tables";
 import { formMessagesFor } from "./form-messages";
 import type { FormConfig, FormFieldEntry } from "./forms";
 import type { Field } from "./types";
@@ -96,6 +98,16 @@ export const validateFormConfig = async (tableId: string, config: unknown, local
       normalizedFields.push(configuredValue.data);
       continue;
     }
+    if (configuredValue.data.relationFilter) {
+      const targetId = field.type === "relation" ? field.config.targetTableId : null;
+      const source = await getTable(tableId);
+      const target = typeof targetId === "string" ? await getTable(targetId) : null;
+      if (!source || !target || target.baseId !== source.baseId || target.kind !== "stored" || configuredValue.data.inlineCreate?.enabled) {
+        return fail(err.badInput(t.relationFilterTarget));
+      }
+      const filter = compileFilter(configuredValue.data.relationFilter, await listFields(target.id));
+      if (!filter.ok) return fail(err.badInput(t.relationFilterInvalid({ field: field.name })));
+    }
     const inlineCreate = await normalizeInlineCreate(field, configuredValue.data, locale);
     if (!inlineCreate.ok) return inlineCreate;
     normalizedFields.push(inlineCreate.data);
@@ -117,7 +129,7 @@ export const validateFormConfig = async (tableId: string, config: unknown, local
       return fail(err.badInput(t.validationFieldsVisible));
     }
     if (left.id === right.id) return fail(err.badInput(t.validationFieldsDistinct));
-    if (!formValidationFieldsCompatible(left, right)) {
+    if (!formValidationFieldsCompatible(left, right, rule.operator)) {
       return fail(err.badInput(t.validationFieldsIncompatible({ left: left.name, right: right.name })));
     }
     if (rule.errorFieldId && rule.errorFieldId !== left.id && rule.errorFieldId !== right.id) {

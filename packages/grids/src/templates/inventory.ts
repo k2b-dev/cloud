@@ -7,6 +7,32 @@ const inventoryMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      requestedEquipment: "Requested equipment",
+      individualItems: "Individual items",
+      individualItemsHelp: "Choose extra items not already included in your selected kits.",
+      itemRequestable: "Offer individually in the catalog",
+      itemRequestableHelp: "Borrowers can request this item individually when it is available. Internal notes and locations stay private.",
+      equipmentSelectionHelp:
+        "Combine several kits and individual items in one request. This does not reserve equipment; the loan desk confirms availability.",
+      chooseEquipment: "Choose at least one kit or individual item.",
+      approvedHelp:
+        ":::success Approved · arrange collection\nYour request is approved. Contact the loan desk to collect the assigned equipment. It becomes an active loan when items are handed over.\n:::",
+      borrowedHelp:
+        ":::info Equipment handed over\nReturn the issued items by the due date. The loan desk records each return; use the messages below if plans change.\n:::",
+      returnedHelp:
+        ":::success Loan completed\nThe loan desk has recorded all returns and closed this loan. No further action is needed.\n:::",
+      rejectedHelp:
+        ":::warning Request declined\nSee the reason below. You can discuss alternatives in the messages or submit a new request.\n:::",
+      cancelledHelp:
+        ":::info Request cancelled\nNo equipment will be handed over for this request. Create a new request when you need equipment again.\n:::",
+      allocatedEquipment: "Assigned equipment",
+      requestedKitContents: "What the selected kits contain",
+      kitContentsColumn: "Contents",
+      loanDocuments: "Agreement and documents",
+      loanDates: "Loan period",
+      deskContact: "Borrower contact",
+      handoverReadyHelp:
+        ":::success Ready for handover\nOpen each assigned item when handing it over and choose Issue loan position. Sending the agreement is optional and does not mark items as handed over.\n:::",
       completeRepair: "Mark repaired",
       completeRepairHelp: "Confirm that this item was checked and is ready to use again.",
       repairCompleted: "Item available again.",
@@ -23,7 +49,7 @@ const inventoryMessages = i18n.define({
       kitCatalogHelp:
         "Maintain the sets offered to borrowers. Only requestable kits with Available status appear in their catalog. Check individual items before every handover.",
       catalogHelp:
-        ":::info Choose a kit\nOpen a kit to see what is included and request your dates. A request is not a reservation; the loan desk checks availability before approval.\n:::",
+        ":::info Choose equipment\nBrowse kits and individual items. Open **New loan** to combine your selection in one request. A request is not a reservation; the loan desk checks availability before approval.\n:::",
       deskHelp:
         ":::info Your next handover\nReview requests, assign individual items, then confirm availability and approve. Issue each item when handing it over. Sending an agreement is optional. Record returns before closing the loan.\n:::",
       returnHelp:
@@ -159,22 +185,22 @@ const inventoryMessages = i18n.define({
       loanNumber: "Loan number",
       loanNumberDescription: "Generated loan request number.",
       requesterName: "Requester name",
-      requesterNameDescription: "Person requesting or borrowing the kit.",
+      requesterNameDescription: "Person requesting or borrowing the equipment.",
       requesterEmail: "Requester email",
       requesterEmailDescription: "Email address for loan communication.",
       organization: "Organization",
       organizationDescription: "Optional team, department, or external organization.",
-      loanKitsDescription: "Kits requested or borrowed in this loan.",
+      loanKitsDescription: "Kits requested for this loan. Actual handovers are tracked separately.",
       loanedItems: "Loaned items",
       loanedItemsDescription: "Specific inventory records handed out under this loan.",
       requestedFrom: "Requested from",
       requestedFromDescription: "Requested start date for the loan.",
       dueDate: "Due date",
-      dueDateDescription: "Expected return date for borrowed kits.",
+      dueDateDescription: "Expected return date for borrowed equipment.",
       scheduleValid: "Schedule valid",
       scheduleValidDescription: "Whether the return date is on or after the requested start date.",
       returnedAt: "Returned at",
-      returnedAtDescription: "Actual date when the kits were returned.",
+      returnedAtDescription: "Actual date when the equipment was returned.",
       loanStatusDescription: "Current approval and return status.",
       requested: "Requested",
       approved: "Approved",
@@ -183,7 +209,7 @@ const inventoryMessages = i18n.define({
       rejected: "Rejected",
       cancelled: "Cancelled",
       availabilityConfirmed: "Availability confirmed",
-      availabilityConfirmedDescription: "An admin has checked the selected kits, their items, and the requested dates before approval.",
+      availabilityConfirmedDescription: "The loan desk has checked the requested equipment and dates before approval.",
       agreementSent: "Agreement delivery",
       agreementSentDescription:
         "Ready, in progress, or sent. Inspect the original run before resetting an interrupted delivery; it may already have sent email.",
@@ -230,11 +256,11 @@ const inventoryMessages = i18n.define({
       replacementValueHelp: "Cost to replace one unit.",
       notesHelp: "Extra context for admins.",
       requestLoan: "Request loan",
-      requestKitLoan: "Request kit loan",
+      requestKitLoan: "Request equipment",
       requestKitLoanDescription: "Enter your contact details and dates. The loan desk checks availability before approving your request.",
       loanRequested: "Loan requested.",
       requesterFormName: "Name",
-      requesterNameHelp: "Who should receive the kit.",
+      requesterNameHelp: "Who will collect the equipment.",
       email: "Email",
       emailHelp: "Contact address for questions and approval.",
       organizationHelp: "Team, company, or project.",
@@ -242,11 +268,12 @@ const inventoryMessages = i18n.define({
       startDate: "Start date",
       startDateHelp: "First planned day of use.",
       dueDateHelp: "Planned return date.",
-      purposeHelp: "What the kit will be used for.",
+      purposeHelp: "What the equipment will be used for.",
       equipmentLoans: "Equipment loans",
       newLoan: "New loan",
       myEquipmentLoans: "My equipment loans",
-      equipmentLoansGuidance: "Request a kit with **New loan**. Open an existing loan to see its status or send a message.",
+      equipmentLoansGuidance:
+        "Combine kits and individual items with **New loan**. Open an existing loan to see its status or send a message.",
       myLoans: "My loans",
       noEquipmentLoans: "You do not have any equipment loans yet.",
       equipmentCatalog: "Equipment catalog",
@@ -323,6 +350,33 @@ const inventoryMessages = i18n.define({
       returnItemsForLoan: "Scan returned inventory item",
     },
     de: {
+      requestedEquipment: "Angefragte Ausrüstung",
+      individualItems: "Einzelgeräte",
+      individualItemsHelp: "Wähle zusätzliche Geräte, die nicht bereits in deinen Sets enthalten sind.",
+      itemRequestable: "Einzeln im Katalog anbieten",
+      itemRequestableHelp:
+        "Dieses Gerät kann bei verfügbarem Bestand einzeln angefragt werden. Interne Notizen und Lagerorte bleiben privat.",
+      equipmentSelectionHelp:
+        "Kombiniere mehrere Sets und Einzelgeräte in einer Anfrage. Das reserviert noch keine Geräte; die Ausleihe bestätigt die Verfügbarkeit.",
+      chooseEquipment: "Wähle mindestens ein Set oder Einzelgerät.",
+      approvedHelp:
+        ":::success Freigegeben · Abholung vereinbaren\nDeine Anfrage ist freigegeben. Vereinbare die Abholung mit der Ausleihe. Sobald Geräte übergeben werden, beginnt die aktive Ausleihe.\n:::",
+      borrowedHelp:
+        ":::info Geräte übergeben\nGib die ausgegebenen Geräte bis zum Rückgabedatum zurück. Die Ausleihe erfasst jede Rückgabe. Wenn sich deine Pläne ändern, nutze die Nachrichten unten.\n:::",
+      returnedHelp:
+        ":::success Ausleihe abgeschlossen\nAlle Rückgaben sind erfasst und die Ausleihe ist abgeschlossen. Du musst nichts mehr tun.\n:::",
+      rejectedHelp:
+        ":::warning Anfrage abgelehnt\nDen Grund findest du unten. Besprich Alternativen in den Nachrichten oder stelle eine neue Anfrage.\n:::",
+      cancelledHelp:
+        ":::info Anfrage storniert\nFür diese Anfrage werden keine Geräte ausgegeben. Erstelle bei Bedarf eine neue Anfrage.\n:::",
+      allocatedEquipment: "Zugeordnete Geräte",
+      requestedKitContents: "Inhalt der ausgewählten Sets",
+      kitContentsColumn: "Inhalt",
+      loanDocuments: "Vereinbarung und Dokumente",
+      loanDates: "Ausleihzeitraum",
+      deskContact: "Kontakt zur ausleihenden Person",
+      handoverReadyHelp:
+        ":::success Bereit zur Übergabe\nÖffne bei der Übergabe jedes zugeordnete Gerät und wähle Ausleihposition ausgeben. Der optionale Versand der Vereinbarung erfasst noch keine Übergabe.\n:::",
       completeRepair: "Reparatur abschließen",
       completeRepairHelp: "Bestätige, dass dieses Gerät geprüft wurde und wieder einsatzbereit ist.",
       repairCompleted: "Gerät wieder verfügbar.",
@@ -339,7 +393,7 @@ const inventoryMessages = i18n.define({
       kitCatalogHelp:
         "Pflege die angebotenen Sets. Im Katalog erscheinen nur anfragbare Sets mit Status Verfügbar. Prüfe vor jeder Übergabe die einzelnen Geräte.",
       catalogHelp:
-        ":::info Wähle ein Set\nÖffne ein Set, prüfe den Inhalt und frage deinen Zeitraum an. Eine Anfrage ist keine Reservierung: Die Ausleihe prüft die Verfügbarkeit vor der Freigabe.\n:::",
+        ":::info Ausrüstung auswählen\nEntdecke Sets und Einzelgeräte. Kombiniere sie über **Neue Ausleihe** in einer gemeinsamen Anfrage. Eine Anfrage ist keine Reservierung: Die Ausleihe prüft die Verfügbarkeit vor der Freigabe.\n:::",
       deskHelp:
         ":::info Die nächste Übergabe\nPrüfe Anfragen und ordne einzelne Geräte zu. Bestätige die Verfügbarkeit und gib die Ausleihe frei. Gib jedes Gerät bei der Übergabe aus. Der Versand einer Vereinbarung ist optional. Erfasse alle Rückgaben vor dem Abschluss.\n:::",
       returnHelp:
@@ -478,18 +532,18 @@ const inventoryMessages = i18n.define({
       loanNumber: "Ausleihnummer",
       loanNumberDescription: "Erzeugte Nummer der Ausleihanfrage.",
       requesterName: "Name der anfragenden Person",
-      requesterNameDescription: "Person, die das Set anfragt oder ausleiht.",
+      requesterNameDescription: "Person, die die Ausrüstung anfragt oder ausleiht.",
       requesterEmail: "E-Mail der anfragenden Person",
       requesterEmailDescription: "E-Mail-Adresse für die Kommunikation zur Ausleihe.",
       organization: "Organisation",
       organizationDescription: "Optionales Team, Abteilung oder externe Organisation.",
-      loanKitsDescription: "Sets, die mit dieser Ausleihe angefragt oder ausgeliehen werden.",
+      loanKitsDescription: "Angefragte Sets. Tatsächliche Übergaben werden separat erfasst.",
       loanedItems: "Ausgeliehene Gegenstände",
       loanedItemsDescription: "Konkrete Inventardatensätze, die für diese Ausleihe ausgegeben wurden.",
       requestedFrom: "Angefragt ab",
       requestedFromDescription: "Gewünschtes Startdatum der Ausleihe.",
       dueDate: "Rückgabedatum",
-      dueDateDescription: "Erwartetes Rückgabedatum der ausgeliehenen Sets.",
+      dueDateDescription: "Erwartetes Rückgabedatum der ausgeliehenen Ausrüstung.",
       scheduleValid: "Zeitraum gültig",
       scheduleValidDescription: "Gibt an, ob das Rückgabedatum am oder nach dem gewünschten Startdatum liegt.",
       returnedAt: "Zurückgegeben am",
@@ -502,8 +556,7 @@ const inventoryMessages = i18n.define({
       rejected: "Abgelehnt",
       cancelled: "Storniert",
       availabilityConfirmed: "Verfügbarkeit bestätigt",
-      availabilityConfirmedDescription:
-        "Eine Person mit Admin-Rechten hat die ausgewählten Sets, deren Gegenstände und den angefragten Zeitraum vor der Freigabe geprüft.",
+      availabilityConfirmedDescription: "Die Ausleihe hat die angefragte Ausrüstung und den Zeitraum vor der Freigabe geprüft.",
       agreementSent: "Vereinbarungsversand",
       agreementSentDescription:
         "Bereit, in Bearbeitung oder gesendet. Prüfe vor dem Zurücksetzen eines unterbrochenen Versands den ursprünglichen Lauf; die E-Mail könnte bereits gesendet worden sein.",
@@ -550,11 +603,11 @@ const inventoryMessages = i18n.define({
       replacementValueHelp: "Kosten für den Ersatz einer Einheit.",
       notesHelp: "Zusätzlicher Kontext für Personen mit Admin-Rechten.",
       requestLoan: "Ausleihe anfragen",
-      requestKitLoan: "Set-Ausleihe anfragen",
+      requestKitLoan: "Ausrüstung anfragen",
       requestKitLoanDescription: "Ergänze Kontaktdaten und Zeitraum. Die Ausleihe prüft die Verfügbarkeit vor der Freigabe.",
       loanRequested: "Ausleihe angefragt.",
       requesterFormName: "Name",
-      requesterNameHelp: "Person, die das Set erhalten soll.",
+      requesterNameHelp: "Person, die die Ausrüstung abholt.",
       email: "E-Mail",
       emailHelp: "Kontaktadresse für Rückfragen und die Freigabe.",
       organizationHelp: "Team, Unternehmen oder Projekt.",
@@ -562,12 +615,12 @@ const inventoryMessages = i18n.define({
       startDate: "Startdatum",
       startDateHelp: "Erster geplanter Nutzungstag.",
       dueDateHelp: "Geplantes Rückgabedatum.",
-      purposeHelp: "Geplanter Verwendungszweck des Sets.",
+      purposeHelp: "Geplanter Verwendungszweck der Ausrüstung.",
       equipmentLoans: "Geräteausleihen",
       newLoan: "Neue Ausleihe",
       myEquipmentLoans: "Meine Geräteausleihen",
       equipmentLoansGuidance:
-        "Frage über **Neue Ausleihe** ein Set an. Öffne eine bestehende Ausleihe, um den Status zu sehen oder eine Nachricht zu schreiben.",
+        "Kombiniere über **Neue Ausleihe** Sets und Einzelgeräte in einer Anfrage. Öffne eine bestehende Ausleihe, um den Status zu sehen oder eine Nachricht zu schreiben.",
       myLoans: "Meine Ausleihen",
       noEquipmentLoans: "Du hast noch keine Geräteausleihen.",
       equipmentCatalog: "Gerätekatalog",
@@ -852,6 +905,14 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             config: { targetTableId: table("locations"), cardinality: "single" },
           },
           {
+            key: "requestable",
+            name: t.itemRequestable,
+            description: t.itemRequestableHelp,
+            type: "boolean",
+            defaultValue: false,
+            icon: "ti ti-world-check",
+          },
+          {
             key: "status",
             name: t.status,
             description: t.itemStatusDescription,
@@ -1099,9 +1160,16 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             name: t.kits,
             description: t.loanKitsDescription,
             type: "relation",
-            required: true,
             icon: "ti ti-box",
             config: { targetTableId: table("kits"), cardinality: "multiple" },
+          },
+          {
+            key: "requested_items",
+            name: t.individualItems,
+            description: t.individualItemsHelp,
+            type: "relation",
+            icon: "ti ti-package",
+            config: { targetTableId: table("items"), cardinality: "multiple" },
           },
           {
             key: "start_date",
@@ -1316,6 +1384,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           category: [record("categories.cameras")],
           location: [record("locations.studio")],
           status: ["available"],
+          requestable: true,
           condition: ["good"],
           serial_no: "A7-001",
           tags: ["fragile", "portable"],
@@ -1344,6 +1413,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           category: [record("categories.audio")],
           location: [record("locations.studio")],
           status: ["available"],
+          requestable: true,
           condition: ["good"],
           tags: ["portable", "shared"],
           quantity: "1",
@@ -1370,6 +1440,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           category: [record("categories.cables")],
           location: [record("locations.storage")],
           status: ["available"],
+          requestable: true,
           condition: ["used"],
           tags: ["shared"],
           quantity: "1",
@@ -1653,6 +1724,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
               label: t.replacementValue,
               helpText: t.replacementValueHelp,
             },
+            { kind: "user_input", fieldId: field("items.requestable"), helpText: t.itemRequestableHelp },
             {
               kind: "user_input",
               fieldId: field("items.notes"),
@@ -1674,6 +1746,13 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           successMessage: t.loanRequested,
           validations: [
             {
+              leftFieldId: field("loans.kits"),
+              operator: "anyPresent",
+              rightFieldId: field("loans.requested_items"),
+              errorFieldId: field("loans.kits"),
+              message: t.chooseEquipment,
+            },
+            {
               leftFieldId: field("loans.start_date"),
               operator: "lte",
               rightFieldId: field("loans.due_date"),
@@ -1682,6 +1761,56 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             },
           ],
           fields: [
+            {
+              kind: "user_input",
+              section: { title: t.requestedEquipment, description: t.equipmentSelectionHelp },
+              fieldId: field("loans.kits"),
+              label: t.kits,
+              helpText: t.kitsHelp,
+              relationFilter: {
+                op: "AND",
+                filters: [
+                  { fieldId: field("kits.requestable"), op: "=", value: true },
+                  { fieldId: field("kits.status"), op: "is", value: "available" },
+                ],
+              },
+            },
+            {
+              kind: "user_input",
+              fieldId: field("loans.requested_items"),
+              helpText: t.individualItemsHelp,
+              relationFilter: {
+                op: "AND",
+                filters: [
+                  { fieldId: field("items.requestable"), op: "=", value: true },
+                  { fieldId: field("items.status"), op: "is", value: "available" },
+                ],
+              },
+            },
+            {
+              kind: "user_input",
+              section: { title: t.loanDates },
+              fieldId: field("loans.start_date"),
+              width: "compact",
+              label: t.startDate,
+              helpText: t.startDateHelp,
+              required: true,
+            },
+            {
+              kind: "user_input",
+              fieldId: field("loans.due_date"),
+              width: "compact",
+              label: t.dueDate,
+              helpText: t.dueDateHelp,
+              required: true,
+            },
+            {
+              kind: "user_input",
+              fieldId: field("loans.purpose"),
+              label: t.purpose,
+              helpText: t.purposeHelp,
+            },
+
             {
               kind: "user_input",
               section: { title: t.contactDetails },
@@ -1704,36 +1833,6 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
               fieldId: field("loans.organization"),
               label: t.organization,
               helpText: t.organizationHelp,
-            },
-            {
-              kind: "user_input",
-              section: { title: t.loanSchedule },
-              fieldId: field("loans.kits"),
-              label: t.kits,
-              helpText: t.kitsHelp,
-              required: true,
-            },
-            {
-              kind: "user_input",
-              fieldId: field("loans.start_date"),
-              width: "compact",
-              label: t.startDate,
-              helpText: t.startDateHelp,
-              required: true,
-            },
-            {
-              kind: "user_input",
-              fieldId: field("loans.due_date"),
-              width: "compact",
-              label: t.dueDate,
-              helpText: t.dueDateHelp,
-              required: true,
-            },
-            {
-              kind: "user_input",
-              fieldId: field("loans.purpose"),
-              label: t.purpose,
-              helpText: t.purposeHelp,
             },
             {
               kind: "form_value",
@@ -1790,6 +1889,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             { kind: "user_input", fieldId: field("items.name"), required: true },
             { kind: "user_input", fieldId: field("items.location"), width: "compact" },
             { kind: "user_input", fieldId: field("items.serial_no"), width: "compact" },
+            { kind: "user_input", fieldId: field("items.requestable"), helpText: t.itemRequestableHelp },
             { kind: "user_input", fieldId: field("items.notes") },
           ],
         },

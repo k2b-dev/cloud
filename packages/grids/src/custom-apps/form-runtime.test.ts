@@ -333,4 +333,30 @@ describe("Grids App Form runtime capability", () => {
       }),
     );
   });
+  test("changing a relation selection filter invalidates its published Form capability", () => {
+    const config = {
+      fields: [
+        {
+          kind: "user_input" as const,
+          fieldId: relationFieldId,
+          relationFilter: {
+            fieldId: uuid(40),
+            op: "=",
+            value: true,
+          },
+        },
+      ],
+    };
+    const current = customAppFormSecurityHash({ tableId, config, fields });
+    expect(
+      customAppFormSecurityHash({ tableId, fields, config: { fields: [{ ...config.fields[0]!, relationFilter: undefined }] } }),
+    ).not.toBe(current);
+    expect(
+      customAppFormSecurityHash({
+        tableId,
+        fields,
+        config: { fields: [{ ...config.fields[0]!, relationFilter: { fieldId: uuid(40), op: "=", value: false } }] },
+      }),
+    ).not.toBe(current);
+  });
 });

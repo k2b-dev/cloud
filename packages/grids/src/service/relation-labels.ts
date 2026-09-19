@@ -1,4 +1,6 @@
 import { sql } from "bun";
+import type { FilterTree } from "../contracts";
+import { compileFilter, renderClause } from "./filter-compiler";
 import type { DslSqlFederatedRecordSource } from "../query-dsl/sql-compiler-types";
 import { assertFederatedPublication, buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";
@@ -125,6 +127,8 @@ export const lookupRecords = async (params: {
   /** Internal publication snapshot: do not reload mutable label configuration after authorization. */
   labelSnapshot?: { fields: Field[]; presentable: Field[]; tableKind: string; recordSource: DslSqlFederatedRecordSource | null };
   recordIds?: string[];
+  filter?: FilterTree;
+  timeZone?: string;
   untitledLabel?: string;
 }): Promise<{ items: { id: string; label: string }[] }> => {
   const limit = Math.min(Math.max(params.limit ?? 10, 1), 50);
@@ -155,6 +159,11 @@ export const lookupRecords = async (params: {
     computedFieldSql: sourceFieldSql,
   }).filter((projection) => presentableIds.has(projection.fieldId) && projection.expr);
   const conditions: any[] = [sql`TRUE`];
+  if (params.filter) {
+    const filter = compileFilter(params.filter, fields, { timeZone: params.timeZone });
+    if (!filter.ok) throw new Error("Invalid relation selection filter");
+    conditions.push(renderClause(filter.clause, { computedFieldSql: sourceFieldSql }));
+  }
   if (!params.includeDeleted) conditions.push(sql`r.deleted_at IS NULL`);
   if (!recordSource) conditions.push(sql`r.table_id = ${params.targetTableId}::uuid`);
   const query = params.q?.trim();

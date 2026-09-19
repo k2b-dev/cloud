@@ -6,7 +6,7 @@ import { formValidationComparableKind, formValidationFieldsCompatible } from "..
 import type { FormFieldEntry } from "../../../service/forms";
 import { gridsFormMessages } from "./messages";
 
-const OPERATOR_IDS: FormValidationRule["operator"][] = ["lte", "lt", "gte", "gt", "eq", "neq"];
+const OPERATOR_IDS: FormValidationRule["operator"][] = ["lte", "lt", "gte", "gt", "eq", "neq", "anyPresent"];
 const isOperator = (value: string): value is FormValidationRule["operator"] => OPERATOR_IDS.some((operator) => operator === value);
 
 export function FormValidationsEditor(props: {
@@ -17,38 +17,54 @@ export function FormValidationsEditor(props: {
 }) {
   const locale = useLocale();
   const t = () => gridsFormMessages.resolve([locale()]).t;
-  const operators = () => [
-    { id: "lte" as const, label: t().operatorLte },
-    { id: "lt" as const, label: t().operatorLt },
-    { id: "gte" as const, label: t().operatorGte },
-    { id: "gt" as const, label: t().operatorGt },
-    { id: "eq" as const, label: t().operatorEq },
-    { id: "neq" as const, label: t().operatorNeq },
-  ];
+  const operators = (fieldId: string) =>
+    fieldsById().get(fieldId)?.type === "relation"
+      ? [{ id: "anyPresent" as const, label: t().operatorAnyPresent }]
+      : [
+          { id: "lte" as const, label: t().operatorLte },
+          { id: "lt" as const, label: t().operatorLt },
+          { id: "gte" as const, label: t().operatorGte },
+          { id: "gt" as const, label: t().operatorGt },
+          { id: "eq" as const, label: t().operatorEq },
+          { id: "neq" as const, label: t().operatorNeq },
+        ];
   const fieldsById = () => new Map(props.fields.map((field) => [field.id, field]));
   const comparableFields = () => {
     const visibleIds = new Set(props.entries.filter((entry) => entry.kind === "user_input").map((entry) => entry.fieldId));
-    return props.fields.filter((field) => visibleIds.has(field.id) && !field.deletedAt && formValidationComparableKind(field));
+    return props.fields.filter(
+      (field) => visibleIds.has(field.id) && !field.deletedAt && (field.type === "relation" || formValidationComparableKind(field)),
+    );
   };
   const options = () => comparableFields().map((field) => ({ id: field.id, label: field.name }));
   const compatibleOptions = (fieldId: string) => {
     const left = fieldsById().get(fieldId);
-    return left ? comparableFields().filter((field) => field.id !== fieldId && formValidationFieldsCompatible(left, field)) : [];
+    return left
+      ? comparableFields().filter(
+          (field) =>
+            field.id !== fieldId && formValidationFieldsCompatible(left, field, left.type === "relation" ? "anyPresent" : undefined),
+        )
+      : [];
   };
   const update = (index: number, patch: Partial<FormValidationRule>) =>
     props.onChange(props.rules.map((rule, current) => (current === index ? { ...rule, ...patch } : rule)));
   const add = () => {
     const [left, right] = comparableFields();
     if (!left) return;
-    const compatible = right && formValidationFieldsCompatible(left, right) ? right : compatibleOptions(left.id)[0];
+    const compatible =
+      right && formValidationFieldsCompatible(left, right, left.type === "relation" ? "anyPresent" : undefined)
+        ? right
+        : compatibleOptions(left.id)[0];
     if (!compatible) return;
     props.onChange([
       ...props.rules,
       {
         leftFieldId: left.id,
-        operator: "lte",
+        operator: left.type === "relation" ? "anyPresent" : "lte",
         rightFieldId: compatible.id,
-        message: t().defaultValidation({ left: left.name, right: compatible.name }),
+        message:
+          left.type === "relation"
+            ? t().defaultAnyPresentValidation({ left: left.name, right: compatible.name })
+            : t().defaultValidation({ left: left.name, right: compatible.name }),
         errorFieldId: left.id,
       },
     ]);
@@ -73,6 +89,12 @@ export function FormValidationsEditor(props: {
                   update(index(), {
                     leftFieldId,
                     rightFieldId,
+                    operator:
+                      fieldsById().get(leftFieldId)?.type === "relation"
+                        ? "anyPresent"
+                        : rule.operator === "anyPresent"
+                          ? "lte"
+                          : rule.operator,
                     errorFieldId: rule.errorFieldId === rule.rightFieldId ? rightFieldId : leftFieldId,
                   });
                 }}
@@ -80,7 +102,7 @@ export function FormValidationsEditor(props: {
               <Select
                 label={t().rule}
                 value={() => rule.operator}
-                options={operators()}
+                options={operators(rule.leftFieldId)}
                 onValueChange={(operator) => {
                   if (operator && isOperator(operator)) update(index(), { operator });
                 }}

@@ -1,6 +1,8 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import {
+  type FilterTree,
+  FilterTreeSchema,
   FormConfigSchema,
   FormFieldWidthSchema,
   type FormSection,
@@ -51,6 +53,7 @@ export type FormFieldEntry =
       /** Tightens the field's own required flag for THIS form (cannot loosen). */
       required?: boolean;
       defaultValue?: unknown;
+      relationFilter?: FilterTree;
       inlineCreate?: {
         enabled?: boolean;
         fields?: Array<{
@@ -164,6 +167,7 @@ const normalizeFieldEntry = (raw: unknown): FormFieldEntry | null => {
     width: FormFieldWidthSchema.safeParse(obj.width).data,
     required: typeof obj.required === "boolean" ? obj.required : undefined,
     defaultValue: obj.defaultValue,
+    ...(obj.relationFilter !== undefined ? { relationFilter: FilterTreeSchema.parse(obj.relationFilter) } : {}),
     inlineCreate:
       obj.inlineCreate && typeof obj.inlineCreate === "object"
         ? {

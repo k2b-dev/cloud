@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
 import { FormSubmitSchema, PublicFormSchema, type SubmitFormDeps, submitFormResponse, toPublicForm } from "./form-api-shared";
+import { formRelationLookupDescription, lookupFilteredFormRelation } from "./form-relation-lookup";
 import { apiMessages } from "./messages";
 import { v } from "./validator";
 
@@ -16,6 +17,11 @@ type PublicFormRoutesDeps = SubmitFormDeps & {
 
 export const createPublicFormRoutes = (deps: PublicFormRoutesDeps = {}) =>
   new Hono<AuthContext>()
+    .get("/public/:token/relations/:fieldId/lookup", formRelationLookupDescription, async (context) => {
+      const form = await (deps.getByPublicToken ?? gridsService.form.getByPublicToken)(context.req.param("token"));
+      if (!form) return context.json({ message: apiMessages(context).formNotFound }, 404);
+      return lookupFilteredFormRelation(context, form);
+    })
     .get(
       "/public/:token",
       describeRoute({

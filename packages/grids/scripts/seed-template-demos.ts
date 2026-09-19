@@ -408,7 +408,6 @@ async function seedBookshop(d: Demo) {
       customer: [customers[i % customers.length]],
       ordered_at: date(-i),
       status: [["new", "shipped", "delivered"][i % 3]],
-      invoice_ready: i % 3 !== 0,
       invoice_sent: ["ready"],
     })),
   );
@@ -509,6 +508,8 @@ async function seedInventory(d: Demo) {
       name,
       category: [categories[i % 5]],
       location: [locations[i % 5]],
+      // Each kit's third item is never issued by the scenarios below.
+      requestable: i < 24 && i % 3 === 2,
       status: [i >= 36 ? "maintenance" : "available"],
       condition: [i >= 36 ? "repair" : i % 3 === 0 ? "new" : "good"],
       serial_no: `DEMO-${String(i + 1).padStart(4, "0")}`,
@@ -546,6 +547,8 @@ async function seedInventory(d: Demo) {
       requester_email: `ausleihe-${i + 1}@example.test`,
       organization: `${names[i]} Team`,
       kits: [kits[i % 12]],
+      // Pending mixed requests include an extra item outside the selected kit.
+      requested_items: i >= 14 && i < 18 ? [items[(i - 14) * 3 + 2]] : [],
       start_date: date(i < 12 ? -15 : 2 + i),
       due_date: date(i < 4 ? -i - 1 : i < 12 ? 4 + i : 6 + i),
       status: [i === 24 ? "rejected" : i > 21 ? "cancelled" : "requested"],

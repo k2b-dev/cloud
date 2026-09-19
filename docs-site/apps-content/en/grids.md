@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-09-19
+updated: 2026-09-20
 ---
 
 # Grids
@@ -62,17 +62,28 @@ before sending an order summary. Catalog prices can change without rewriting
 those prices or an existing Document. Use Billing for invoices; Bookshop does
 not collect payments.
 
+The order header shows its fulfillment status. **Next step** offers the action
+for that state: mark the books as shipped, confirm collection, or complete a
+shipped order after delivery. These actions require at least one order line.
+Sending an order summary by email is a separate optional task and does not
+change fulfillment. A mistaken fulfillment status can be reset with confirmation.
+Completed orders must be reopened before editing their details or lines. Sending
+the summary still locks the agreed prices independently of fulfillment.
+
 Finance distinguishes checking a transaction against the bank from sending its
 receipt. Receipt email is optional until you choose to send it. Monthly income,
 spending, and budget figures use the same period; transfers do not count as income
 or spending. The template records financial activity without making transfers or
 claiming to synchronize bank balances.
 
-Inventory borrowers browse kits and follow their own requests. The loan desk
-prepares individual items and handles approval, issue, and return. Handing over an
-item starts the loan; emailing an agreement does not. Staff can record a return
-from its detail page without a scanner. Kits describe requested equipment, not a
-guaranteed future reservation.
+Inventory borrowers can select multiple kits and individual items in one request.
+Choose at least one kit or item; the selectors show equipment currently open for
+requests. Staff explicitly enable individual items for the borrower catalog.
+The loan detail keeps status, dates, and requested equipment together, with
+contact details secondary. The loan desk prepares individual items and handles
+approval, issue, and return. Handing over an item starts the loan; emailing an
+agreement does not. Staff can record a return from its detail page without a
+scanner. A request does not guarantee a future reservation.
 
 Share the appropriate App with each audience. App access does not require Base
 access; Base Read exposes all records. Bookshop and Finance use one App because

@@ -531,7 +531,7 @@ const RecursiveFilterTreeSchema: z.ZodType<FilterTree, FilterTree> = z.lazy(() =
   ]),
 );
 
-const FilterTreeSchema = z
+export const FilterTreeSchema = z
   .custom<FilterTree>(filterTreeWithinBounds, "filter is too large or deeply nested")
   .pipe(RecursiveFilterTreeSchema) as z.ZodType<FilterTree>;
 
@@ -1448,6 +1448,7 @@ const UserInputFormFieldEntrySchema = z.object({
   required: z.boolean().optional(),
   defaultValue: z.unknown().optional(),
   inlineCreate: InlineCreateConfigSchema.optional(),
+  relationFilter: FilterTreeSchema.optional(),
 });
 
 const FormValueFieldEntrySchema = z.object({
@@ -1461,7 +1462,7 @@ const FormFieldEntrySchema = z.discriminatedUnion("kind", [UserInputFormFieldEnt
 export const FormValidationRuleSchema = z
   .object({
     leftFieldId: z.string().uuid(),
-    operator: z.enum(["eq", "neq", "lt", "lte", "gt", "gte"]),
+    operator: z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "anyPresent"]),
     rightFieldId: z.string().uuid(),
     message: z.string().trim().min(1).max(240),
     errorFieldId: z.string().uuid().optional(),

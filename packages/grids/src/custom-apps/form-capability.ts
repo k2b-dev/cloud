@@ -116,6 +116,7 @@ export const customAppFormSecurityHash = (input: {
             fieldId: entry.fieldId,
             required: entry.required === true,
             defaultValue: configuredDefault(entry.defaultValue),
+            ...(entry.relationFilter ? { relationFilter: stableCustomAppValue(entry.relationFilter) } : {}),
             inlineCreate: entry.inlineCreate?.enabled
               ? {
                   enabled: true,
@@ -144,7 +145,11 @@ export const customAppFormSecurityHash = (input: {
           fields: fieldsConfig,
           validations,
           ...(input.config.computedFields?.length
-            ? { computedFields: input.config.computedFields.map((entry) => entry.fieldId), validComputedFields: !!computed, computedBindings }
+            ? {
+                computedFields: input.config.computedFields.map((entry) => entry.fieldId),
+                validComputedFields: !!computed,
+                computedBindings,
+              }
             : {}),
         },
         fields: fieldSnapshots,
