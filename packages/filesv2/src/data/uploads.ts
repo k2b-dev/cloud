@@ -29,6 +29,10 @@ export const uploads = {
   async get(id: string, userId: string): Promise<Upload | null> {
     return (await sql<Upload[]>`SELECT * FROM filesv2.uploads WHERE id=${id} AND user_id=${userId}::uuid`)[0] ?? null;
   },
+  async openCountForShare(shareId: string): Promise<number> {
+    const [row] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM filesv2.uploads WHERE share_id=${shareId}::uuid AND state='open'`;
+    return row?.count ?? 0;
+  },
   async finish(id: string, state: "committed" | "aborted", result: Node | null): Promise<void> {
     await sql`UPDATE filesv2.uploads SET state=${state}, result=${result ?? null}, updated_at=now() WHERE id=${id}`;
   },

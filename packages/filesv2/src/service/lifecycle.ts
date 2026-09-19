@@ -236,7 +236,6 @@ export function createDirectoryLifecycle(deps: Dependencies) {
             : undefined;
         if (!node) {
           if (!allowCreate) return result(operation);
-          await ensureParents(root, operation.source.split("/").slice(0, -1).join("/"), operation.area === "cloud" ? "0700" : "0755");
           try {
             node = await root.mkdir(operation.source, creationOptions(base, daemonUid));
           } catch (error) {
@@ -756,7 +755,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     },
     async refreshRoot(actor: RequestActor, area: Area): Promise<RootSummary> {
       const state = await admin(actor, area);
-      await state.root.refreshStats(100_000);
+      await state.root.refreshStats(100_000, AbortSignal.timeout(10 * 60 * 1000));
       await audit.recordResultAfterSideEffect({
         action: "filesv2.refresh_statistics",
         actor: { userId: state.actorId, uid: state.actorName },
@@ -768,7 +767,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     async rebuildRoot(actor: RequestActor, area: Area): Promise<RootSummary> {
       const state = await admin(actor, area);
       if (!(await state.root.info()).index.enabled) throw new FilesError("index_disabled", 409);
-      await state.root.rebuild();
+      await state.root.rebuild(AbortSignal.timeout(10 * 60 * 1000));
       await audit.recordResultAfterSideEffect({
         action: "filesv2.rebuild_index",
         actor: { userId: state.actorId, uid: state.actorName },

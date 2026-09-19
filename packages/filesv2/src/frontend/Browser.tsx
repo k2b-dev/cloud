@@ -20,12 +20,12 @@ import {
   toast,
   type ToastHandle,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, BasesResult, DirectoryResult, EditorInfo, EntryResult, FileEntry } from "../contracts";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { useBrowserMessages } from "./browser-messages";
-import { folderKey, preferencesCookie, type ViewPreference, viewFor, withView } from "./browser-preferences";
+import { folderKey, parsePreferences, preferencesCookie, type ViewPreference, viewFor, withView } from "./browser-preferences";
 import FileInspector from "./FileInspector";
 import FileList, { type FileRow, type VirtualRow } from "./FileList";
 import FilePreview from "./FilePreview";
@@ -76,11 +76,11 @@ export default function Browser(props: {
   const baseId = () => props.directory.base.id;
   const folder = () => props.directory.path;
   const searching = () => !!props.directory.query;
-  // View settings belong to one folder; a cookie remembers the latest folders.
+  // View settings belong to one storage base; a cookie remembers the latest bases.
   const [preferences, setPreferences] = createSignal(props.preferences ?? {});
-  const view = createMemo(() => (searching() ? { ...viewFor(preferences(), baseId(), folder()), view: "list" as const } : viewFor(preferences(), baseId(), folder())));
+  const view = createMemo(() => (searching() ? { ...viewFor(preferences(), baseId()), view: "list" as const } : viewFor(preferences(), baseId())));
   const updateView = (next: Partial<ViewPreference>) => {
-    const value = withView(preferences(), baseId(), folder(), { ...viewFor(preferences(), baseId(), folder()), ...next });
+    const value = withView(preferences(), baseId(), { ...viewFor(preferences(), baseId()), ...next });
     setPreferences(value);
     cookies.writeJsonCookie(preferencesCookie, value);
   };
@@ -130,24 +130,52 @@ export default function Browser(props: {
   createEffect(() => {
     if (view().view !== "tree" || searching()) return;
     const current = folder();
-    setBranch(current, { items: props.directory.items, next: props.directory.next, loading: false, error: false });
-    setExpandedFolders((set) => new Set<string>([...set, ...ancestors(current), current]));
-    for (const path of ["", ...ancestors(current)]) if (path !== current && !branch(path)) void loadBranch(path);
+    const { items, next } = props.directory;
+    // Only navigation and a fresh listing touch the tree; branch loads must not re-run this and undo the user's collapses.
+    untrack(() => {
+      const existing = branch(current);
+      if (!existing || existing.items !== items || existing.next !== next) setBranch(current, { items, next, loading: false, error: false });
+      setExpandedFolders((set) => new Set<string>([...set, ...ancestors(current), current]));
+      for (const path of ["", ...ancestors(current)]) if (path !== current && !branch(path)) void loadBranch(path);
+    });
   });
+  // Rows keep their identity across recomputes so open thumbnails are not re-requested on every expand.
+  let previousRows = new Map<string, FileRow>();
   const rows = createMemo<FileRow[]>(() => {
     if (view().view !== "tree" || searching()) return props.directory.items;
     const out: FileRow[] = [];
+    const reuse = new Map<string, FileRow>();
+    const push = (row: FileRow) => {
+      const known = previousRows.get(row.path);
+      const same =
+        known &&
+        known.name === row.name &&
+        known.size === row.size &&
+        known.modified === row.modified &&
+        known.directory === row.directory &&
+        known.depth === row.depth &&
+        known.expanded === row.expanded &&
+        known.loading === row.loading &&
+        known.more === row.more;
+      const value = same ? known : row;
+      reuse.set(row.path, value);
+      out.push(value);
+    };
     const walk = (items: readonly FileEntry[], depth: number) => {
       for (const item of items) {
         const open = item.directory && expandedFolders().has(item.path) ? branch(item.path) : undefined;
-        out.push({ ...item, depth, expanded: !!open, loading: open?.loading });
+        push({ ...item, depth, expanded: !!open, loading: open?.loading });
         if (open) {
           walk(open.items, depth + 1);
-          if (open.next) out.push({ ...item, path: `${item.path} more`, name: "", more: true, depth: depth + 1 });
+          if (open.next) push({ ...item, path: `${item.path} more`, name: "", more: true, depth: depth + 1 });
         }
       }
     };
-    walk(folder() ? (branch("")?.items ?? []) : props.directory.items, 0);
+    // A failed root listing still shows the current folder instead of nothing.
+    const root = folder() ? branch("") : undefined;
+    walk(folder() ? (root?.error ? props.directory.items : (root?.items ?? [])) : props.directory.items, 0);
+    if (root?.next && !root.error) push({ name: "", path: " more", directory: true, size: 0, modified: "", more: true, depth: 0 });
+    previousRows = reuse;
     return out;
   });
   const entries = createMemo(() => rows().filter((row) => !row.more));
@@ -157,6 +185,7 @@ export default function Browser(props: {
     initial: requestedFile() ? [requestedFile()!] : [],
     onChange: (paths) => {
       if (!mounted || syncing || location !== locationKey()) return;
+      if (externalPath() && !paths.includes(externalPath()!)) setExternalPath(null);
       const source = filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, props.directory.query);
       commitHistory(source, { replace: true, scroll: "manual", viewTransition: false });
       props.onSelectionSource?.(source);
@@ -164,6 +193,8 @@ export default function Browser(props: {
   });
   onMount(() => {
     mounted = true;
+    // The SSR seed may be older than a view change made before visiting trash or shares.
+    setPreferences(parsePreferences(document.cookie));
   });
   createEffect(() => {
     const next = locationKey();
@@ -193,12 +224,6 @@ export default function Browser(props: {
   const busy = () => !!props.pending || download.loading() || upload.loading() || action.loading();
   const refresh = (selectPath?: string | null) => props.onChanged?.(selectPath);
   const openFolder = (path: string) => {
-    // Moving inside the tree keeps the tree: the target folder inherits the current view setting.
-    if (view().view === "tree") {
-      const value = withView(preferences(), baseId(), path, view());
-      setPreferences(value);
-      cookies.writeJsonCookie(preferencesCookie, value);
-    }
     setOpening(path);
     selection.clear();
     props.onOpenDirectory?.(path);
@@ -235,6 +260,7 @@ export default function Browser(props: {
    * from the current listing, later ones with the same answer.
    */
   const upload = mutation.create({
+    onError: (error) => toast.error(error.message),
     mutation: async (files: readonly File[], { abortSignal }) => {
       const base = baseId();
       const root = folder();
@@ -309,7 +335,12 @@ export default function Browser(props: {
         }
         handle.update(b().uploadSummary({ uploaded, skipped, failed }), { variant: failed ? "error" : "success", progress: null, duration: 5000, action: null });
       } catch (error) {
-        handle.update(uploaded ? b().uploadSummary({ uploaded, skipped, failed }) : b().uploadCancelled, { progress: null, duration: 4000, action: null });
+        handle.update(uploaded ? b().uploadSummary({ uploaded, skipped, failed }) : abortSignal.aborted ? b().uploadCancelled : b().uploadFailed(files[0]?.name ?? ""), {
+          progress: null,
+          duration: 4000,
+          action: null,
+          variant: abortSignal.aborted ? undefined : "error",
+        });
         if (!abortSignal.aborted) throw error;
       } finally {
         if (uploaded) refresh(last);
@@ -318,7 +349,12 @@ export default function Browser(props: {
   });
   onCleanup(() => upload.abort());
   const startUpload = (files: readonly File[]) => {
-    if (files.length && !busy() && !searching()) void upload.mutate(files);
+    if (!files.length) return;
+    if (busy() || searching()) {
+      toast(b().uploadUnavailable);
+      return;
+    }
+    void upload.mutate(files);
   };
   let filePicker: HTMLInputElement | undefined;
   let folderPicker: HTMLInputElement | undefined;
@@ -450,10 +486,15 @@ export default function Browser(props: {
     }
     void prompts.dialog(() => <FilePreview baseId={baseId()} entry={entry} onDownload={() => startDownload([entry])} />, { title: entry.name, size: "large" });
   };
+  // Entering or leaving select mode starts clean; outside it a click only highlights one entry for its details.
+  const toggleSelecting = (on: boolean) => {
+    selection.clear();
+    setSelecting(on);
+  };
   const rowClick = (row: FileRow, event: MouseEvent) => {
-    if (selecting() || event.shiftKey || event.ctrlKey || event.metaKey) {
-      if (selecting() && !event.shiftKey) selection.toggle(row.path);
-      else selection.select(row.path, event);
+    if (selecting()) {
+      if (event.shiftKey) selection.select(row.path, event);
+      else selection.toggle(row.path);
       return;
     }
     if (row.directory && !searching()) {
@@ -490,6 +531,7 @@ export default function Browser(props: {
   };
   const contextItems = () => {
     const items = selected();
+    if (!items.length) return addItems();
     if (items.length !== 1) return selectionItems();
     const item = items[0]!;
     return [
@@ -548,12 +590,18 @@ export default function Browser(props: {
     </Show>
   );
   // Tiles select on click through the grid itself; while selecting, that click toggles instead of replacing.
-  const gridSelection = {
+  // Ranges, toggles and select-all exist only with checkboxes; otherwise clicks and keys move the single highlight.
+  const interactiveSelection = {
     ...selection,
     select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) =>
-      selecting() && !modifiers?.shiftKey ? selection.toggle(id) : selection.select(id, modifiers),
+      selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id),
+    keyDown: (event: KeyboardEvent, id: string, columns?: number) => {
+      const multi = event.key === " " || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a");
+      if (multi && !selecting()) return false;
+      return selection.keyDown(event, id, columns);
+    },
   };
-  const listMessages = () => ({ name: t().name, size: t().size, modified: t().modified, details: b().detailsFor, toggle: b().toggleFolder, select: b().selectEntry, more: b().more });
+  const listMessages = () => ({ name: t().name, size: t().size, modified: t().modified, details: b().detailsFor, toggle: b().toggleFolder, select: b().selectEntry, more: b().more, up: b().parentFolderUp });
   return (
     <>
       <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
@@ -592,14 +640,14 @@ export default function Browser(props: {
             </div>
             <div class="filesv2-toolbar">
               <Show
-                when={selectedPaths().length}
+                when={selecting()}
                 fallback={
                   <span class="flex items-center gap-2 text-xs text-dimmed">
                     {searching() ? b().searchResults(props.directory.items.length) : b().pageItems(props.directory.items.length)}
                     <Show when={props.directory.items.length}>
                       <span aria-hidden="true">·</span>
-                      <Button size="xs" variant="text" aria-pressed={selecting()} onClick={() => setSelecting(!selecting())}>
-                        {selecting() ? b().endSelect : b().select}
+                      <Button size="xs" variant="text" onClick={() => toggleSelecting(true)}>
+                        {b().select}
                       </Button>
                     </Show>
                   </span>
@@ -609,16 +657,14 @@ export default function Browser(props: {
                   {b().selectedActions(selectedPaths().length)}
                 </span>
                 <Dropdown.Root items={selectionItems()}>
-                  <Dropdown.Trigger size="sm" variant="secondary" disabled={busy()}>
+                  <Dropdown.Trigger size="sm" variant="secondary" disabled={busy() || !selectedPaths().length}>
                     {b().actions}
                     <i class="ti ti-chevron-down" aria-hidden="true" />
                   </Dropdown.Trigger>
                 </Dropdown.Root>
-                <Show when={selecting()}>
-                  <Button size="xs" variant="text" onClick={() => setSelecting(false)}>
-                    {b().endSelect}
-                  </Button>
-                </Show>
+                <Button size="xs" variant="text" onClick={() => toggleSelecting(false)}>
+                  {b().endSelect}
+                </Button>
               </Show>
               <span class="flex-1" />
               <span class="flex shrink-0 items-center gap-1">
@@ -687,7 +733,7 @@ export default function Browser(props: {
                       <FileList
                         baseId={baseId()}
                         rows={rows()}
-                        selection={selection}
+                        selection={interactiveSelection}
                         label={t().files}
                         tree={view().view === "tree"}
                         pathBase={searching() ? folder() : null}
@@ -718,7 +764,7 @@ export default function Browser(props: {
                     <FileGrid
                       rows={gridRows()}
                       getRowId={(row) => row.path}
-                      selection={gridSelection}
+                      selection={interactiveSelection}
                       label={t().files}
                       size={view().size}
                       onOpen={(row) => (virtualOf(row) ? virtualOf(row)!.onClick() : open(row))}
@@ -746,6 +792,9 @@ export default function Browser(props: {
                       renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
                       renderMeta={(row) => (searching() && !virtualOf(row) ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null)}
                     />
+                    <Show when={!props.directory.items.length}>
+                      <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
+                    </Show>
                   </div>
                 </Show>
               </ScrollArea>
@@ -773,7 +822,7 @@ export default function Browser(props: {
           <FileInspector
             base={props.directory.base}
             cloudUrl={props.cloudUrl}
-            paths={selectedPaths()}
+            paths={selectedPaths().length > 1 ? selected().map((row) => row.path) : selectedPaths()}
             selected={selected()}
             initial={props.detail}
             busy={busy()}

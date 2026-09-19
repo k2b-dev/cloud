@@ -51,7 +51,7 @@ A result of **In progress** means completion has not yet been confirmed. Refresh
 
 ## Restore or remove an Archive
 
-The archive view shows original paths and archive dates. Open an archived directory to inspect its contents. **Restore** moves it back to its original path after confirmation; that destination must be available. Permanent deletion of an archive or an individual file requires its exact path. These destructive actions exist only in the administrator interface.
+The archive view shows original paths and archive dates. Open an archived directory to inspect its contents. **Restore** moves it back to its original path after confirmation; that destination must be available. Permanent deletion of an archive or an individual file requires its exact path. These destructive actions exist only in the administrator interface and the administrator CLI.
 
 ## Use the terminal
 

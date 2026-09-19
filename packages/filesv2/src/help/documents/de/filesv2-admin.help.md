@@ -51,7 +51,7 @@ Jede Zeile bietet nur aktuell verfügbare Aktionen:
 
 ## Archiv wiederherstellen oder entfernen
 
-Das Archiv zeigt ursprüngliche Pfade und Archivierungszeitpunkte. Öffne ein archiviertes Verzeichnis, um seinen Inhalt zu prüfen. **Wiederherstellen** verschiebt es nach Bestätigung an den ursprünglichen Ort; das Ziel muss frei sein. Endgültiges Löschen eines Archivs oder einer einzelnen Datei erfordert den exakten Pfad. Diese Löschaktionen gibt es ausschließlich in der Administratoroberfläche.
+Das Archiv zeigt ursprüngliche Pfade und Archivierungszeitpunkte. Öffne ein archiviertes Verzeichnis, um seinen Inhalt zu prüfen. **Wiederherstellen** verschiebt es nach Bestätigung an den ursprünglichen Ort; das Ziel muss frei sein. Endgültiges Löschen eines Archivs oder einer einzelnen Datei erfordert den exakten Pfad. Diese Löschaktionen gibt es ausschließlich in der Administratoroberfläche und der Administrator-CLI.
 
 ## Terminal verwenden
 

@@ -81,7 +81,8 @@ export function createWorkspaceState<T extends { source: string }>(options: {
         setEnabled(true);
         setPending({ source: target, commit, rollback, resolve });
       });
-      if (sameSource && wasEnabled) void state.refresh();
+      // After a failed load the query is disabled; a same-source retry must still refresh or the transition never settles.
+      if (sameSource) void state.refresh();
     });
   };
   onCleanup(() => pending()?.resolve());

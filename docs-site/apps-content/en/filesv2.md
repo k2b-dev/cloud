@@ -31,7 +31,7 @@ expanded and each storage location ends with its **Trash** entry. The list is a 
 folders open on click (the opened folder's icon becomes a spinner, a leading
 `..` row goes up), files open the details panel, and every row ends with an
 info button. **List**, **Grid**, and **Tree** views and the grid tile size are remembered
-per folder in a cookie. Tree shows the storage from its root with the current
+per storage location in a cookie. Tree shows the storage from its root with the current
 folder highlighted; clicking a folder name makes it current, clicking its icon
 expands or collapses it. **Select** next to the entry count switches on
 checkboxes in every view. Thumbnails are requested with bounded concurrency and
@@ -279,5 +279,6 @@ The existing Files application remains independent and uses its older Filegate
 API. There is no automatic migration of its settings or storage. Operators map
 existing storage to the ordinary root and relative-path configuration.
 
-For the local Filegate test instance, see
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+the Filegate and Collabora prerequisites. For the local test instances, see
 [Monorepo development](/en/docs/operations/monorepo-development#test-filegate-locally).

@@ -206,7 +206,7 @@ export type ArchiveEntry = {
   name: string;
   originalPath: string;
   path: string;
-  state: "pending" | "archived" | "restored" | "deleted";
+  state: "pending" | "archived";
   createdAt: string;
   operationId: string | null;
   canRetry: boolean;

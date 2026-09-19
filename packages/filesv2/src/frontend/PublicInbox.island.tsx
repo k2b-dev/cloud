@@ -48,7 +48,10 @@ export default function PublicInbox(props: { token: string }) {
             throw error;
           }
         } catch (error) {
-          if (abortSignal.aborted) throw error;
+          if (abortSignal.aborted) {
+            setProgress(null);
+            throw error;
+          }
           toast.error(error instanceof Error ? error.message : b().uploadFailed(file.name));
         }
       }

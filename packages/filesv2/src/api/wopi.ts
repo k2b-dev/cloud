@@ -29,11 +29,17 @@ export const wopiApi = new Hono<AuthContext>()
     return new Response(upstream.body, { headers });
   })
   .post("/files/:id/contents", wopiRoute("Store the document bytes Collabora saved"), async (c) => {
-    const declared = Number(c.req.header("content-length") ?? "");
-    if (!Number.isFinite(declared) || declared > EDITOR_DOCUMENT_LIMIT) return c.json({ code: "too_large" }, 413);
-    const body = await c.req.blob();
-    if (body.size > EDITOR_DOCUMENT_LIMIT) return c.json({ code: "too_large" }, 413);
-    const result = await filesService.editorSave(token(c), c.req.param("id") ?? "", { body, timestamp: c.req.header("x-cool-wopi-timestamp") ?? null });
+    const declared = c.req.header("content-length");
+    if (!declared || !/^\d+$/.test(declared)) return c.json({ code: "length_required" }, 411);
+    if (Number(declared) > EDITOR_DOCUMENT_LIMIT) return c.json({ code: "too_large" }, 413);
+    const result = await filesService.editorSave(token(c), c.req.param("id") ?? "", {
+      read: async () => {
+        const body = await c.req.blob();
+        if (body.size > EDITOR_DOCUMENT_LIMIT) throw new FilesError("too_large", 400);
+        return body;
+      },
+      timestamp: c.req.header("x-cool-wopi-timestamp") ?? null,
+    });
     // Collabora shows its own "document changed" dialog for this status and code.
     if ("conflict" in result) return c.json({ COOLStatusCode: 1010 }, 409);
     return c.json({ LastModifiedTime: result.modified });

@@ -3,10 +3,10 @@ import { link, lstat, mkdtemp, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { type CloudCliContext, cliText } from "@k2b/cloud/cli";
-import type { DownloadLease } from "./contracts";
+import type { ArchiveDownload, DownloadLease } from "./contracts";
 
 /** Only the lease request uses Cloud authentication; file bytes go directly to disk. */
-export async function downloadFile(ctx: CloudCliContext, output: string, requestLease: (signal: AbortSignal) => Promise<DownloadLease>) {
+export async function downloadFile(ctx: CloudCliContext, output: string, requestLease: (signal: AbortSignal) => Promise<DownloadLease | ArchiveDownload>) {
   const path = resolve(output);
   const exists = () => new Error(cliText(ctx, { en: "The output path already exists.", de: "Der Zielpfad existiert bereits." }));
   const existing = await lstat(path).catch((error: NodeJS.ErrnoException) => {
@@ -25,9 +25,11 @@ export async function downloadFile(ctx: CloudCliContext, output: string, request
     let bytes: number;
     try {
       const url = new URL(lease.url);
-      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || lease.method !== "GET") throw new Error();
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || (lease.method !== "GET" && lease.method !== "POST")) throw new Error();
+      // Archive leases are POSTed with their signed manifest; single files are plain GETs.
       const response = await fetch(url, {
-        method: "GET",
+        method: lease.method,
+        body: lease.method === "POST" ? new URLSearchParams({ manifest: lease.manifest }) : undefined,
         credentials: "omit",
         redirect: "error",
         headers: { "Accept-Encoding": "identity" },

@@ -102,7 +102,8 @@ describe("Files v2 office editing", () => {
       submitted.push(this.action);
     };
     const { default: Editor } = await import("../src/frontend/Editor");
-    const dispose = render(() => createComponent(Editor, { launch, backHref: "/app/filesv2?base=cloud%3Agroups%3Ademo&file=Minutes.odt" }), dom.root);
+    const backs: number[] = [];
+    const dispose = render(() => createComponent(Editor, { launch, onBack: () => backs.push(1) }), dom.root);
     cleanup = () => {
       dispose();
       dom.window.HTMLFormElement.prototype.submit = submit;
@@ -125,5 +126,7 @@ describe("Files v2 office editing", () => {
     await flush();
     expect(dom.root.textContent).not.toContain("Loading editor");
     if (frame.contentWindow) expect(posted).toEqual(["Host_PostmessageReady", "Hide_Command", "Hide_Command"]);
+    message({ MessageId: "UI_Close", Values: { EverModified: false } });
+    expect(backs).toEqual([1]);
   });
 });

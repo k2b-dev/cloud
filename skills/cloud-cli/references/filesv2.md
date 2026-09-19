@@ -234,5 +234,5 @@ Saving replaces both areas' configuration; preserve unrelated settings.
 
 Cloud storage requires local Linux identities. Only POSIX groups have group
 storage. FreeIPA storage requires enabled FreeIPA and works independently.
-Paths and prerequisites are validated by the server. Uploads, user trash
-operations, public sharing, and inbox commands are not implemented yet.
+Paths and prerequisites are validated by the server. Public share and inbox
+pages have no CLI: anonymous visitors use the browser links that `shares create` prints.

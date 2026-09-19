@@ -52,11 +52,15 @@ type Identity = { id: string; name: string; uid: number | null; gid: number | nu
 type Candidate = NewBinding & { name: string };
 type Inspection = { summary: BaseSummary; candidate: Candidate; binding: Binding | null };
 const PAGE_SIZE = 50;
-/** A working day; every WOPI call re-checks permissions, the token only names user and file. */
-const EDITOR_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+/** Covers a tab left open overnight; every WOPI call re-checks permissions, the token only names user and file. */
+const EDITOR_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 /** Collabora hands over whole documents; Cloud holds one in memory while forwarding it to Filegate. */
 export const EDITOR_DOCUMENT_LIMIT = 256 * 1024 * 1024;
 const EDITOR_TRANSFER_TIMEOUT_MS = 5 * 60 * 1000;
+/** Tree moves, recursive removes, index rebuilds and statistics walk whole roots. */
+const SLOW_CALL_TIMEOUT_MS = 10 * 60 * 1000;
+/** Anonymous inbox visitors may hold this many transfers open at once per link; Filegate expires abandoned sessions. */
+const INBOX_OPEN_SESSIONS = 20;
 const withWopiSrc = (action: string, wopiSrc: string) =>
   `${action}${action.endsWith("?") || action.endsWith("&") ? "" : action.includes("?") ? "&" : "?"}WOPISrc=${encodeURIComponent(wopiSrc)}`;
 /** Filesystem scans without an index stop here; Filegate answers 413 beyond it. */
@@ -69,7 +73,7 @@ const fileEntry = (relative: string, node: Node): FileEntry => ({
   modified: node.modified,
 });
 const filesystemCursor = z.tuple([
-  z.string().max(4096).nullable(),
+  z.string().max(8192).nullable(),
   z
     .number()
     .int()
@@ -135,8 +139,12 @@ export function createFilesService(
         baseUrl: config.url,
         token: config.token,
         fetch: Object.assign(
-          (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-            fetch(input, { ...init, signal: AbortSignal.timeout(10_000) }),
+          // API calls get a short timeout; transfers and recursive removes may walk whole trees, byte streams bring their own signal.
+          (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+            const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+            const slow = init?.method === "DELETE" || /\/transfers(\?|$)/.test(url);
+            return fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(slow ? SLOW_CALL_TIMEOUT_MS : 10_000) });
+          },
           { preconnect: fetch.preconnect },
         ),
       }),
@@ -275,7 +283,15 @@ export function createFilesService(
     if (inspection.summary.status !== "existing") throw new FilesError(inspection.summary.reason ?? "forbidden", 403);
     const relative = userPath(path);
     const target = joinPath(item.path, relative);
-    const node = await root.stat(target);
+    let node: Node;
+    try {
+      node = await root.stat(target);
+    } catch (error) {
+      // A missing leaf must not reveal itself to users who may not even traverse its parent.
+      if (error instanceof FilegateError && error.status === 404 && item.area === "freeipa" && relative)
+        await checkUnix(root, joinPath(item.path, relative.split("/").slice(0, -1).join("/")), state.unix, 1);
+      throw error;
+    }
     if (item.area === "freeipa") await checkUnix(root, target, state.unix, node.directory ? 5 : 4);
     if (directory !== undefined && node.directory !== directory) throw new FilesError(directory ? "not_directory" : "not_file", 400);
     return { root, inspection, target, relative, state, node, info };
@@ -329,7 +345,11 @@ export function createFilesService(
   async function activeShare(token: string, kind: ShareRow["kind"]) {
     const row = token.length >= 16 ? await shares.byToken(token) : null;
     if (!row || row.kind !== kind || shareState(row) !== "active") throw new FilesError("not_found", 404);
+    // A share follows its binding: an archived base or a re-provisioned identity at the same path ends it.
+    const binding = await deps.bindings.path(row.root, row.base_path);
+    if (!binding || binding.id !== row.base_id || ["retired", "archived", "deleted"].includes(binding.lifecycle)) throw new FilesError("not_found", 404);
     const config = await deps.readConfiguration();
+    if (!config[binding.area].enabled || config[binding.area].root !== row.root) throw new FilesError("not_found", 404);
     const root = deps.connect(config).root(row.root);
     return { row, root, config };
   }
@@ -356,6 +376,7 @@ export function createFilesService(
   async function versionFile(actor: RequestActor, baseId: string, path: string, write: boolean) {
     const current = write ? await movable(actor, baseId, path) : await authorized(actor, baseId, path, false);
     if (current.node.directory) throw new FilesError("not_file");
+    if (write && current.inspection.candidate.area === "freeipa") await checkUnix(current.root, current.target, current.state.unix, 2);
     if (!current.info.versioning.enabled) throw new FilesError("versioning_disabled");
     return current;
   }
@@ -388,7 +409,10 @@ export function createFilesService(
   /** Whole-document writes from Cloud: a direct lease, one PUT, and the resulting node. */
   async function writeBytes(current: Awaited<ReturnType<typeof authorized>> & { target: string }, body: Blob, onConflict: "error" | "overwrite"): Promise<Node> {
     if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
-    const capability = await current.root.directUpload(current.target, body.size, { onConflict, ownership: ownershipFor(current, false) });
+    const capability = await current.root.directUpload(current.target, body.size, {
+      onConflict,
+      ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
+    });
     const response = await deps.transfer(backendLease(current.state.config, capability.url), {
       method: "PUT",
       body,
@@ -396,6 +420,25 @@ export function createFilesService(
     });
     if (!response.ok) throw new FilesError(response.status === 409 ? "path_conflict" : "unavailable", response.status === 409 ? 409 : 503);
     return current.root.stat(current.target);
+  }
+  /** Filegate builds archives as the daemon, so FreeIPA subtrees are checked here before any lease exists. */
+  async function assertReadableTree(current: Awaited<ReturnType<typeof authorized>>) {
+    if (current.inspection.candidate.area !== "freeipa" || !current.node.directory) return;
+    let scanned = 0;
+    const walk = async (path: string) => {
+      let after: string | undefined;
+      do {
+        const page = await current.root.list(path, { after, limit: PAGE_SIZE });
+        for (const node of page.items) {
+          if (++scanned > SEARCH_SCAN_LIMIT) throw new FilesError("archive_limited", 409);
+          const acl = await current.root.getACL(node.path, "access");
+          if (!permits(node, acl, current.state.unix!, node.directory ? 5 : 4)) throw new FilesError("forbidden", 403);
+          if (node.directory) await walk(node.path);
+        }
+        after = page.next ?? undefined;
+      } while (after);
+    };
+    await walk(current.target);
   }
   const editorConfig = (config: Config) => {
     if (!config.collabora.url) throw new FilesError("editor_disabled", 403);
@@ -526,7 +569,10 @@ export function createFilesService(
               const node = await current.root.stat(path);
               const acl = await current.root.getACL(path, "access");
               return permits(node, acl, current.state.unix!, rights);
-            })().catch(() => false),
+            })().catch((error: unknown) => {
+              if (error instanceof FilegateError && (error.status === 403 || error.status === 404)) return false;
+              throw error;
+            }),
           );
         return checked.get(key)!;
       };
@@ -571,7 +617,8 @@ export function createFilesService(
       if (input.size > current.info.available) throw new FilesError("insufficient_space", 409);
       const created = await current.root.createSession(target, input.size, {
         onConflict: input.onConflict,
-        ownership: ownershipFor(current, false),
+        // Replacing keeps the file's owner and mode; only new files take the uploader's ownership.
+        ownership: existing ? undefined : ownershipFor(current, false),
         expiresIn: UPLOAD_LEASE_SECONDS,
         allowAbort: true,
       });
@@ -619,7 +666,7 @@ export function createFilesService(
       for (const path of input.paths) {
         const source = await movable(actor, input.baseId, path);
         if (destination.target === source.target || destination.target.startsWith(`${source.target}/`)) throw new FilesError("move_into_self", 409);
-        const relative = destination.relative ? `${destination.relative}/${source.name}` : source.name;
+        const relative = userPath(destination.relative ? `${destination.relative}/${source.name}` : source.name);
         if (relative === source.relative) {
           entries.push(fileEntry(relative, source.node));
           continue;
@@ -640,6 +687,7 @@ export function createFilesService(
         const source = await authorized(actor, input.baseId, path);
         if (destination.target === source.target || destination.target.startsWith(`${source.target}/`)) throw new FilesError("move_into_self", 409);
         const name = source.relative.split("/").at(-1)!;
+        userPath(joinPath(destination.relative.split("/").slice(0, -1).join("/"), name));
         const sameFolder = destination.target === source.target.slice(0, -(name.length + 1)) && input.targetBaseId === input.baseId;
         const node = await source.root.transfer(source.target, destination.inspection.candidate.root, joinPath(destination.target, name), {
           move: false,
@@ -657,7 +705,8 @@ export function createFilesService(
         const { candidate, binding } = source.inspection;
         const trashTarget = joinPath(candidate.path, "trash");
         try {
-          await source.root.mkdir(trashTarget, { ownership: ownershipFor(source, true) });
+          const baseNode = await source.root.stat(candidate.path);
+          await source.root.mkdir(trashTarget, { ownership: ownershipFor({ ...source, node: baseNode }, true) });
         } catch (error) {
           if (!(error instanceof FilegateError && error.status === 409)) throw error;
         }
@@ -712,6 +761,7 @@ export function createFilesService(
       const items: { root: string; path: string; archivePath: string }[] = [];
       for (const path of input.paths) {
         const current = await authorized(actor, input.baseId, path);
+        await assertReadableTree(current);
         items.push({ root: current.inspection.candidate.root, path: current.target, archivePath: current.relative });
       }
       const lease = await deps.connect(state.config).archiveLease(items, 300);
@@ -742,9 +792,10 @@ export function createFilesService(
       const current = await versionFile(actor, input.baseId, input.path, true);
       const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
       if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative) throw new FilesError("invalid_path");
-      const keep = await current.root.snapshot(current.target, { metadata: { reason: "restore-as-copy" } });
-      await current.root.restore(current.target, input.id);
+      // The safety snapshot is pinned so retention cannot prune it; it is removed only once the file is back.
+      const keep = await current.root.snapshot(current.target, { pinned: true, metadata: { reason: "restore-as-copy" } });
       try {
+        await current.root.restore(current.target, input.id);
         const node = await current.root.transfer(current.target, current.inspection.candidate.root, joinPath(current.inspection.candidate.path, relative), {
           move: false,
           onConflict: "error",
@@ -831,11 +882,12 @@ export function createFilesService(
       return response;
     },
     /** Every save overwrites the file in place; Filegate's own versioning policy decides what becomes a version. */
-    async editorSave(token: string, id: string, input: { body: Blob; timestamp: string | null }): Promise<{ modified: string } | { conflict: true }> {
+    async editorSave(token: string, id: string, input: { read: () => Promise<Blob>; timestamp: string | null }): Promise<{ modified: string } | { conflict: true }> {
       const current = await wopiFile(token, id);
       if (!current.canWrite) throw new FilesError("forbidden", 403);
       if (input.timestamp && new Date(input.timestamp).getTime() !== new Date(current.node.modified).getTime()) return { conflict: true };
-      const node = await writeBytes(current, input.body, "overwrite");
+      // The body is read only for an authorized writer, so anonymous requests never buffer a document.
+      const node = await writeBytes(current, await input.read(), "overwrite");
       return { modified: node.modified };
     },
     async createShare(
@@ -852,9 +904,17 @@ export function createFilesService(
       } else {
         if (!input.paths.length) throw new FilesError("invalid_path");
         const relatives: string[] = [];
-        for (const path of input.paths) relatives.push((await authorized(actor, input.baseId, path)).relative);
+        for (const path of input.paths) {
+          const item = await authorized(actor, input.baseId, path);
+          // Anonymous visitors get the daemon's view of a shared folder; the sharer must be able to read all of it now.
+          await assertReadableTree(item);
+          relatives.push(item.relative);
+        }
         const segments = relatives.map((path) => path.split("/").slice(0, -1));
-        scope = segments[0]!.filter((segment, index) => segments.every((other) => other[index] === segment)).join("/");
+        const first = segments[0]!;
+        let depth = 0;
+        while (depth < first.length && segments.every((other) => other[depth] === first[depth])) depth++;
+        scope = first.slice(0, depth).join("/");
         current = await authorized(actor, input.baseId, scope, true);
         items = [...new Set(relatives)];
       }
@@ -944,6 +1004,7 @@ export function createFilesService(
       if (relative.split("/").length !== row.scope.split("/").filter(Boolean).length + 1) throw new FilesError("invalid_path");
       const info = await root.info();
       if (input.size > info.available) throw new FilesError("insufficient_space", 409);
+      if ((await uploads.openCountForShare(row.id)) >= INBOX_OPEN_SESSIONS) throw new FilesError("inbox_busy", 409);
       const created = await root.createSession(shareTarget(row, relative), input.size, {
         onConflict: "rename",
         ownership: row.owner_uid !== null ? { uid: row.owner_uid, gid: row.owner_gid ?? undefined, mode: "0660" } : { mode: "0600" },
@@ -1238,7 +1299,11 @@ export function createFilesService(
           break;
         }
       }
-      if (cursor === undefined) throw new FilesError("unavailable", 503);
+      // Nothing consumed before the deadline: hand the same position back instead of failing the page.
+      if (cursor === undefined) {
+        output.issue ??= "unavailable";
+        cursor = input.after ?? "";
+      }
       output.next = cursor;
       return output;
     },

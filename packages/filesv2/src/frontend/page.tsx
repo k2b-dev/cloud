@@ -27,8 +27,10 @@ export default ssr<AuthContext>(async (c) => {
   const view = c.req.query("view");
   const trashView = view === "trash";
   const editView = view === "edit" && !!requestedFile;
+  const source = new URL(filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope), "https://files.invalid");
+  if (view === "trash" || view === "shares" || editView) source.searchParams.set("view", view);
   const initial: WorkspaceSnapshot = {
-    source: `${filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope)}${view === "trash" || view === "shares" || editView ? `${requestedBase || query.data.path ? "&" : "?"}view=${view}` : ""}`,
+    source: `${source.pathname}${source.search}`,
     bases: { items: [], issues: [], editor: null },
     selectedId: null,
     directory: null,

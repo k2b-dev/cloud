@@ -112,15 +112,6 @@
   object-fit: contain;
 }
 
-.filesv2-modified-column {
-  display: none;
-}
-@container files-browser (min-width: 45rem) {
-  .filesv2-modified-column {
-    display: table-cell;
-  }
-}
-
 .filesv2-search {
   flex: 1 1 12rem;
   min-width: 0;
@@ -154,8 +145,8 @@
   color: var(--k2b-text);
   cursor: default;
 }
-/* Zebra uses :where() so hover and selection below keep winning at equal specificity. */
-.filesv2-list__row:nth-child(even of :where(.filesv2-list__row)) {
+/* Zebra uses :where() so hover and selection below keep winning at equal specificity; the tree relies on indentation instead. */
+.filesv2-list:not([data-tree]) .filesv2-list__row:nth-child(even of :where(.filesv2-list__row)) {
   background: color-mix(in srgb, var(--k2b-surface-muted) 55%, transparent);
 }
 .filesv2-list__row:hover {
@@ -233,6 +224,17 @@
 .filesv2-list__cell--modified {
   flex: 0 0 11rem;
   color: var(--k2b-text-secondary);
+}
+/* Narrow browsers keep the name readable: dates go first, sizes next. */
+@container files-browser (max-width: 40rem) {
+  .filesv2-list__cell--modified {
+    display: none;
+  }
+}
+@container files-browser (max-width: 26rem) {
+  .filesv2-list__cell--size {
+    display: none;
+  }
 }
 .filesv2-list__more {
   padding: 0.25rem 0;

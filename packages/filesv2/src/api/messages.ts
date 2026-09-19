@@ -59,10 +59,12 @@ const messages: Record<string, [string, string]> = {
   editor_disabled: ["Document editing is not configured for this Cloud.", "Die Dokumentbearbeitung ist in dieser Cloud nicht konfiguriert."],
   editor_unsupported: ["This file type cannot be edited in the browser.", "Dieser Dateityp kann nicht im Browser bearbeitet werden."],
   editor_unavailable: ["The document editor is not reachable. Try again later.", "Der Dokumenteditor ist nicht erreichbar. Bitte später erneut versuchen."],
-  document_changed: [
-    "The file changed on the server while it was open. Reload to see the latest version.",
-    "Die Datei wurde zwischenzeitlich auf dem Server geändert. Neu laden, um den aktuellen Stand zu sehen.",
+  archive_limited: [
+    "This folder holds too many entries to check for a download. Download smaller folders instead.",
+    "Dieser Ordner enthält zu viele Einträge für eine Download-Prüfung. Lade kleinere Ordner herunter.",
   ],
+  inbox_busy: ["This inbox is receiving too many uploads at once. Try again in a moment.", "Dieser Eingang erhält gerade zu viele Uploads gleichzeitig. Bitte gleich erneut versuchen."],
+  invalid_cursor: ["The page cursor is not valid. Start again from the first page.", "Der Seiten-Cursor ist ungültig. Beginne wieder bei der ersten Seite."],
   area_disabled: ["This storage area is disabled.", "Dieser Dateibereich ist deaktiviert."],
   forbidden: ["You do not have permission to read this path.", "Du hast keine Leseberechtigung für diesen Pfad."],
   reserved_path: [

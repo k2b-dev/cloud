@@ -24,7 +24,7 @@ export default function FileList(props: {
   /** Rows that lead somewhere instead of representing an entry: parent folder before, trash after the entries. */
   before?: readonly VirtualRow[];
   after?: readonly VirtualRow[];
-  messages: { name: string; size: string; modified: string; details: (name: string) => string; toggle: (name: string) => string; select: (name: string) => string; more: string };
+  messages: { name: string; size: string; modified: string; details: (name: string) => string; toggle: (name: string) => string; select: (name: string) => string; more: string; up: string };
   onOpen: (row: FileRow) => void;
   onToggle?: (row: FileRow) => void;
   onLoadMore?: (row: FileRow) => void;
@@ -46,9 +46,10 @@ export default function FileList(props: {
       role="row"
       class={`filesv2-list__row filesv2-list__row--virtual filesv2-list__row--${row.key}`}
       style={{ "--depth": row.depth ?? 0 }}
-      tabIndex={-1}
+      tabIndex={0}
+      aria-label={row.key === "up" ? props.messages.up : row.label}
       onClick={row.onClick}
-      onKeyDown={(event) => event.key === "Enter" && row.onClick()}
+      onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && (event.preventDefault(), row.onClick())}
     >
       <Show when={props.selecting}>
         <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check" />
@@ -101,10 +102,10 @@ export default function FileList(props: {
             fallback={
               <div role="row" class="filesv2-list__row filesv2-list__row--more" style={{ "--depth": row.depth ?? 0 }}>
                 <Show when={props.selecting}>
-                  <span class="filesv2-list__cell filesv2-list__cell--check" />
+                  <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check" />
                 </Show>
-                <span class="filesv2-list__cell filesv2-list__cell--icon" />
-                <span class="filesv2-list__cell filesv2-list__cell--name">
+                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon" />
+                <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
                   <button type="button" class="filesv2-list__more" onClick={() => props.onLoadMore?.(row)}>
                     {props.messages.more}
                   </button>

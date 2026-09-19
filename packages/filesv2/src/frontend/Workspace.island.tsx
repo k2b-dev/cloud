@@ -261,7 +261,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
             </AppWorkspace.Main>
           }
         >
-          {(launch) => <Editor launch={launch()} backHref={editorBack(launch())} />}
+          {(launch) => <Editor launch={launch()} onBack={() => void go(editorBack(launch()))} />}
         </Show>
       </AppWorkspace.Content>
     </AppWorkspace>
@@ -417,7 +417,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                   onChanged={(selectPath) => {
                     // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
                     ensureLoaded(Object.keys(folders()), true);
-                    void go(filesUrl(directory().base.id, directory().path, null, selectPath ?? null, directory().query), true);
+                    void go(filesUrl(directory().base.id, directory().path, after(), selectPath ?? null, directory().query), true);
                   }}
                   onShare={(paths) =>
                     void openShareDialog({

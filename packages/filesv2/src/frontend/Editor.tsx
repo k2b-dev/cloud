@@ -1,4 +1,4 @@
-import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { EditorLaunch } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
@@ -38,11 +38,13 @@ function cloudTheme(): string {
   }
 }
 const isDark = () => document.documentElement.classList.contains("dark");
+const EDITOR_LOAD_TIMEOUT_MS = 60_000;
 
-export default function Editor(props: { launch: EditorLaunch; backHref: string }) {
+export default function Editor(props: { launch: EditorLaunch; onBack: () => void }) {
   const b = useBrowserMessages();
   const locale = useLocale();
   const [loaded, setLoaded] = createSignal(false);
+  const [failed, setFailed] = createSignal(false);
   const [theme, setTheme] = createSignal("");
   const [dark, setDark] = createSignal(false);
   const frameName = `filesv2-editor-${Math.random().toString(36).slice(2)}`;
@@ -50,14 +52,7 @@ export default function Editor(props: { launch: EditorLaunch; backHref: string }
   let form!: HTMLFormElement;
   const post = (message: { MessageId: string; Values?: Record<string, unknown> }) =>
     frame.contentWindow?.postMessage(JSON.stringify({ ...message, SendTime: Date.now() }), new URL(props.launch.action).origin);
-  const back = () => {
-    const link = document.createElement("a");
-    link.href = props.backHref;
-    link.hidden = true;
-    document.body.append(link);
-    link.click();
-    link.remove();
-  };
+  const back = () => props.onBack();
   onMount(() => {
     setTheme(cloudTheme());
     setDark(isDark());
@@ -81,6 +76,9 @@ export default function Editor(props: { launch: EditorLaunch; backHref: string }
     };
     window.addEventListener("message", onMessage);
     onCleanup(() => window.removeEventListener("message", onMessage));
+    // Collabora never reports failures to the host; a document that has not loaded by then gets a way back.
+    const timer = setTimeout(() => setFailed(!loaded()), EDITOR_LOAD_TIMEOUT_MS);
+    onCleanup(() => clearTimeout(timer));
     queueMicrotask(() => form.submit());
   });
   // Collabora shows its own close button for this parameter and reports the click as UI_Close.
@@ -91,7 +89,9 @@ export default function Editor(props: { launch: EditorLaunch; backHref: string }
         <iframe ref={frame} name={frameName} title={props.launch.entry.name} allow="clipboard-read; clipboard-write" />
         <Show when={!loaded()}>
           <div class="filesv2-editor__loading">
-            <Placeholder state="loading" variant="panel" description={b().editorLoading} />
+            <Show when={!failed()} fallback={<Placeholder state="error" variant="panel" title={b().editorFailed} action={<Button size="sm" variant="secondary" onClick={back}>{b().backToFolder}</Button>} />}>
+              <Placeholder state="loading" variant="panel" description={b().editorLoading} />
+            </Show>
           </div>
         </Show>
       </div>

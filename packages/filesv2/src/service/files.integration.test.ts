@@ -650,11 +650,19 @@ suite("Files service and durable bindings", () => {
     const info = await service.editorFileInfo(launch.token, fileId);
     expect(info).toMatchObject({ BaseFileName: "Minutes.odt", UserCanWrite: true, UserFriendlyName: "alice", PostMessageOrigin: "https://cloud.test", EnableShare: false, UserCanNotWriteRelative: true });
     expect(await (await service.editorContent(launch.token, fileId)).text()).toBe(contents.get("freeipa:users/alice/Docs/Minutes.odt") ?? "");
-    const saved = await service.editorSave(launch.token, fileId, { body: new Blob(["edited"]), timestamp: info.LastModifiedTime });
+    const saved = await service.editorSave(launch.token, fileId, { read: async () => new Blob(["edited"]), timestamp: info.LastModifiedTime });
     expect(saved).toMatchObject({ modified: expect.any(String) });
     expect(contents.get("freeipa:users/alice/Docs/Minutes.odt")).toBe("edited");
-    expect(await service.editorSave(launch.token, fileId, { body: new Blob(["stale"]), timestamp: info.LastModifiedTime })).toEqual({ conflict: true });
-    expect(contents.get("freeipa:users/alice/Docs/Minutes.odt")).toBe("edited");
+    expect(nodes.get("freeipa:users/alice/Docs/Minutes.odt")).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
+    // Saving a group-writable file owned by someone else keeps that owner and mode.
+    directory("freeipa", "users/alice/Docs/Minutes.odt", 999, 2001, "0664", false);
+    const shared = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    expect(shared.canWrite).toBe(true);
+    await service.editorSave(shared.token, fileId, { read: async () => new Blob(["group edit"]), timestamp: null });
+    expect(nodes.get("freeipa:users/alice/Docs/Minutes.odt")).toMatchObject({ uid: 999, gid: 2001, mode: "0664" });
+    directory("freeipa", "users/alice/Docs/Minutes.odt", 1001, 2001, "0600", false);
+    expect(await service.editorSave(launch.token, fileId, { read: async () => new Blob(["stale"]), timestamp: info.LastModifiedTime })).toEqual({ conflict: true });
+    expect(contents.get("freeipa:users/alice/Docs/Minutes.odt")).toBe("group edit");
     await expect(service.editorFileInfo(`${launch.token}x`, fileId)).rejects.toMatchObject({ code: "forbidden", status: 403 });
     await expect(service.editorFileInfo(launch.token, entryRefId(baseId, "Docs/notes.txt")!)).rejects.toMatchObject({ code: "forbidden" });
     // Rights are read at call time: a file that becomes group-readable only opens read-only and refuses saves.
@@ -662,11 +670,52 @@ suite("Files service and durable bindings", () => {
     const readOnly = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
     expect(readOnly.canWrite).toBe(false);
     expect((await service.editorFileInfo(readOnly.token, fileId)).UserCanWrite).toBe(false);
-    await expect(service.editorSave(readOnly.token, fileId, { body: new Blob(["x"]), timestamp: null })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.editorSave(readOnly.token, fileId, { read: async () => new Blob(["x"]), timestamp: null })).rejects.toMatchObject({ code: "forbidden" });
     directory("freeipa", "users/alice/Docs/Minutes.odt", 999, 999, "0600", false);
     await expect(service.editorFileInfo(launch.token, fileId)).rejects.toMatchObject({ code: "forbidden" });
     users.delete(id(actor));
     await expect(service.editorFileInfo(readOnly.token, fileId)).rejects.toMatchObject({ code: "forbidden" });
+  });
+  test("moves and copies never land in trash, archives and shares check whole FreeIPA subtrees, and version writes need file rights", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    directory("freeipa", "users/alice/Docs/trash");
+    directory("freeipa", "users/alice/Docs/trash/keep.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Docs/hr", 999, 999, "0700");
+    directory("freeipa", "users/alice/Docs/hr/salaries.txt", 999, 999, "0600", false);
+    directory("freeipa", "users/alice/Docs/plan.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Docs/shared.txt", 999, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    await expect(service.move(actor, { baseId, paths: ["Docs/trash"], folder: "" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.copy(actor, { baseId, paths: ["Docs/trash"], targetBaseId: baseId, folder: "" })).rejects.toMatchObject({ code: "reserved_path" });
+    expect(nodes.has("freeipa:users/alice/trash")).toBe(false);
+    await expect(service.bundle(actor, { baseId, paths: ["Docs"] })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.createShare(actor, { baseId, kind: "download", paths: ["Docs"], folder: "", title: "Docs", expiresIn: "7d" })).rejects.toMatchObject({ code: "forbidden" });
+    expect((await service.bundle(actor, { baseId, paths: ["Docs/plan.txt", "Docs/shared.txt"] })).method).toBe("POST");
+    directory("freeipa", "users/alice/Docs/hr", 999, 2001, "0750");
+    directory("freeipa", "users/alice/Docs/hr/salaries.txt", 999, 2001, "0640", false);
+    expect((await service.bundle(actor, { baseId, paths: ["Docs"] })).method).toBe("POST");
+    // A shared file that alice may only read cannot have its versions rewritten by her.
+    await expect(service.restoreVersion(actor, { baseId, path: "Docs/shared.txt", id: "v1" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.versions(actor, { baseId, path: "Docs/shared.txt" })).resolves.toEqual([]);
+  });
+  test("share scopes stop at the first differing folder and shares end with their binding", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    for (const path of ["A", "A/B", "A/B/C", "A/X", "A/X/C", "A/C"]) directory("freeipa", `users/alice/${path}`);
+    directory("freeipa", "users/alice/A/B/C/f1.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/A/X/C/f2.txt", 1001, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const share = await service.createShare(actor, { baseId, kind: "download", paths: ["A/B/C/f1.txt", "A/X/C/f2.txt"], folder: "", title: "Both", expiresIn: "7d" });
+    expect(share.scope).toBe("A");
+    const token = share.url.split("/").at(-1)!;
+    expect((await service.publicShare(token, "download")).items).toHaveLength(2);
+    config.freeipa.enabled = false;
+    await expect(service.publicShare(token, "download")).rejects.toMatchObject({ code: "not_found" });
+    config.freeipa.enabled = true;
+    await sql`UPDATE filesv2.bases SET lifecycle='archived' WHERE root='freeipa' AND path='users/alice'`;
+    await expect(service.publicShare(token, "download")).rejects.toMatchObject({ code: "not_found" });
   });
   test("shares stay inside one base, are visible to everyone who may read their scope, and serve leases only while active", async () => {
     const actor = await user("alice", "ipa");

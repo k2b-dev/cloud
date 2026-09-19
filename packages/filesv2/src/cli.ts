@@ -23,6 +23,7 @@ import {
   type BasesResult,
   ConfigurationInputSchema,
   type DirectoryResult,
+  type ArchiveDownload,
   type DownloadLease,
   type EntriesResult,
   type EntryResult,
@@ -84,6 +85,9 @@ function filesCommands(locale?: string) {
       "admin root": t({ en: "Refresh statistics and rebuild the root index", de: "Statistiken aktualisieren und Root-Index neu aufbauen" }),
       "admin operations": t({ en: "Resume pending directory operations", de: "Ausstehende Verzeichnisaktionen fortsetzen" }),
       documents: t({ en: "Create office documents for the browser editor", de: "Office-Dokumente für den Browser-Editor anlegen" }),
+      trash: t({ en: "List and restore entries in the trash", de: "Einträge im Papierkorb anzeigen und wiederherstellen" }),
+      versions: t({ en: "Inspect, comment, download, restore or delete file versions", de: "Dateiversionen prüfen, kommentieren, herunterladen, wiederherstellen oder löschen" }),
+      shares: t({ en: "Create, list and revoke public shares and inboxes", de: "Öffentliche Freigaben und Eingänge anlegen, auflisten und widerrufen" }),
     },
     commands: [
       command("bases list", {
@@ -153,18 +157,33 @@ function filesCommands(locale?: string) {
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Saved", de: "Gespeichert" })}: ${result.path} (${result.bytes} bytes)`);
         },
       }),
+      command("archive", {
+        summary: t({ en: "Download several entries or folders as one ZIP directly from Filegate", de: "Mehrere Einträge oder Ordner als ein ZIP direkt von Filegate herunterladen" }),
+        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Entry paths relative to the base (1-100)", de: "Eintragspfade relativ zur Ablage (1-100)" }) }) },
+        flags: { out: flag.string({ required: true, description: t({ en: "New local ZIP file; existing paths are never overwritten", de: "Neue lokale ZIP-Datei; bestehende Pfade werden nie überschrieben" }) }) },
+        examples: ["cld filesv2 archive <base-id> Documents Photos/team.jpg --out ./selection.zip"],
+        async run({ ctx, args, flags }) {
+          if (!flags.out) throw new Error(t({ en: "Pass --out with a new file path.", de: "Gib mit --out einen neuen Dateipfad an." }));
+          if (!args.paths.length) throw new Error(t({ en: "Pass at least one path.", de: "Gib mindestens einen Pfad an." }));
+          const result = await downloadFile(ctx, flags.out, async (signal) =>
+            ctx.readJson<ArchiveDownload>(await api(ctx).bases[":baseId"].archive.$post({ param: { baseId: args.base }, json: { paths: args.paths } }, { init: { signal } })),
+          );
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Saved", de: "Gespeichert" })}: ${result.path} (${result.bytes} bytes)`);
+        },
+      }),
       command("search", {
         summary: t({ en: "Search names below a folder", de: "Namen unterhalb eines Ordners suchen" }),
         args: { ...baseArgs, query: arg.required({ description: t({ en: "Name fragment", de: "Namensbestandteil" }) }) },
         flags: {
           path: flag.string({ default: "", description: t({ en: "Folder to search below", de: "Ordner, unterhalb dessen gesucht wird" }) }),
+          scope: flag.enum(["tree", "folder"], { default: "tree", description: t({ en: "tree searches all levels below the folder, folder only its direct entries", de: "tree durchsucht alle Ebenen unter dem Ordner, folder nur seine direkten Einträge" }) }),
           after,
         },
         async run({ ctx, args, flags }) {
           const result = await ctx.readJson<SearchResult>(
             await api(ctx).bases[":baseId"].search.$get({
               param: { baseId: args.base },
-              query: { q: args.query, path: flags.path, after: flags.after },
+              query: { q: args.query, path: flags.path, scope: flags.scope ?? "tree", after: flags.after },
             }),
           );
           printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
@@ -317,6 +336,21 @@ function filesCommands(locale?: string) {
             { key: "size", label: "Bytes" },
             { key: "comment", label: t({ en: "Comment", de: "Kommentar" }) },
           ]);
+        },
+      }),
+      command("versions download", {
+        summary: t({ en: "Download one historical version directly from Filegate", de: "Eine frühere Version direkt von Filegate herunterladen" }),
+        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }), id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }) },
+        flags: { out: flag.string({ required: true, description: t({ en: "New local output file; existing paths are never overwritten", de: "Neue lokale Zieldatei; bestehende Pfade werden nie überschrieben" }) }) },
+        examples: ["cld filesv2 versions download <base-id> Documents/report.pdf <version-id> --out ./report-v1.pdf"],
+        async run({ ctx, args, flags }) {
+          if (!flags.out) throw new Error(t({ en: "Pass --out with a new file path.", de: "Gib mit --out einen neuen Dateipfad an." }));
+          const result = await downloadFile(ctx, flags.out, async (signal) =>
+            ctx.readJson<DownloadLease>(
+              await api(ctx).bases[":baseId"].versions.download.$post({ param: { baseId: args.base }, json: { path: args.path, id: args.id } }, { init: { signal } }),
+            ),
+          );
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Saved", de: "Gespeichert" })}: ${result.path} (${result.bytes} bytes)`);
         },
       }),
       command("versions restore", {

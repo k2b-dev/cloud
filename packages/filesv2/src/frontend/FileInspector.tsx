@@ -76,7 +76,7 @@ export default function FileInspector(props: {
   const kindLabel = (item: FileEntry) => {
     if (item.directory) return t().kindFolder;
     const kind = previewKind(item);
-    return kind === "image" ? "Bild" : kind === "pdf" ? "PDF" : kind === "video" ? "Video" : kind === "audio" ? "Audio" : t().kindFile;
+    return kind === "image" ? t().kindImage : kind === "pdf" ? "PDF" : kind === "video" ? "Video" : kind === "audio" ? "Audio" : t().kindFile;
   };
   const close = (
     <IconButton size="sm" variant="ghost" label={t().close} onClick={props.onClose}>

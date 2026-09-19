@@ -37,19 +37,29 @@ function DestinationPicker(props: {
     () => location(),
     async ({ baseId, folder }) => {
       if (!baseId) return [] as FileEntry[];
-      const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId }, query: { path: folder } });
-      if (!response.ok) await apiFailure(response, t().unavailable);
-      const page = await response.json();
-      return page.items.filter((entry: FileEntry) => entry.directory && !(baseId === props.sourceBaseId && props.sourcePaths.includes(entry.path)));
+      // Every subfolder must be reachable as a target, so all pages are read (bounded by the listing pages of one folder).
+      const items: FileEntry[] = [];
+      let after: string | undefined;
+      for (let page = 0; page < 20; page++) {
+        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId }, query: { path: folder, after } });
+        if (!response.ok) await apiFailure(response, t().unavailable);
+        const result = await response.json();
+        items.push(...result.items.filter((entry: FileEntry) => entry.directory && !(baseId === props.sourceBaseId && props.sourcePaths.includes(entry.path))));
+        if (!result.next) break;
+        after = result.next;
+      }
+      return items;
     },
   );
   const copy = () => props.copyOnly || location().baseId !== props.sourceBaseId;
   const crumbs = () => location().folder.split("/").filter(Boolean);
+  // Inside the source base nothing may land in its own subtree; a move additionally needs a different parent.
   const invalid = () =>
     !location().baseId ||
     (location().baseId === props.sourceBaseId &&
-      !copy() &&
-      props.sourcePaths.some((path) => location().folder === path || location().folder.startsWith(`${path}/`) || location().folder === path.split("/").slice(0, -1).join("/")));
+      props.sourcePaths.some(
+        (path) => location().folder === path || location().folder.startsWith(`${path}/`) || (!copy() && location().folder === path.split("/").slice(0, -1).join("/")),
+      ));
   const tile = (icon: string, label: string, onClick: () => void) => (
     <button type="button" class="filesv2-picker__tile" onClick={onClick}>
       <i class={icon} aria-hidden="true" />

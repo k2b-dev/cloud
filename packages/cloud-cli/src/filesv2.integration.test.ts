@@ -84,6 +84,7 @@ const configuration = {
   url: "https://files.example.test",
   cloud: { ...area, autoCreate: false, autoArchive: true },
   freeipa: { ...area, enabled: false, root: "freeipa" },
+  collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
   tokenConfigured: true,
 };
 const base = {
@@ -217,7 +218,7 @@ describe("Filesv2 CLI integration", () => {
     expect(saved.exitCode, saved.stderr).toBe(0);
     expect(JSON.parse(saved.stdout)).toEqual({ saved: true });
     expect(saved.stdout + saved.stderr).not.toContain(secret);
-    expect(payloads[0]).toEqual({ ...input, token: secret });
+    expect(payloads[0]).toEqual({ ...input, collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" }, token: secret });
     for (const value of [input, { ...input, token: "" }, { ...input, cloud: { ...input.cloud, autoCreate: true, autoArchive: false } }]) {
       const result = await run(["--jsonl", "filesv2", "admin", "configuration", "set", "--stdin"], {
         server: server.url.href,
@@ -916,7 +917,7 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
   ]);
 });
 
-test("documents create and edit-url reach the editor API and print the Cloud address", async () => {
+test("documents create calls the API and edit-url prints the Cloud address locally", async () => {
   const seen: string[] = [];
   const cloud = serve(async (request) => {
     expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
