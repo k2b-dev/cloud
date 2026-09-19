@@ -2974,6 +2974,74 @@ steps:
     }
   });
 
+  for (const mode of ["direct", "rollback", "fourEyes"] as const) {
+    postgresTest(`atomicRecords creates and finalizes together (${mode})`, async () => {
+      const fixture = createFixture();
+      const groupId = uuid();
+      try {
+        await insertFixture(fixture);
+        const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+        if (!history.ok) throw history.error;
+        const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+        if (!activation.ok) throw activation.error;
+        if (mode === "fourEyes") {
+          await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`workflow-approvers-${groupId}`}, 'local', 'Workflow approvers')`;
+          const policy = await setFinalizationPolicy(fixture.tableId, { mode: "fourEyes", approverGroupId: groupId }, fixture.actorId);
+          if (!policy.ok) throw policy.error;
+        }
+        const runId = await queueRun(fixture, {
+          plan: boundPlan(
+            [
+              actionStep(0, "atomicRecords", {
+                locks: ["inputs.record"],
+                checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+                changes: [
+                  { createRecord: { table: "Tasks", values: { Name: "Completed capture" }, finalize: true } },
+                  ...(mode === "rollback"
+                    ? [{ updateRecord: { record: "inputs.record", set: { Status: "Rejected" }, ifVersion: 999 } }]
+                    : []),
+                ],
+              }),
+            ],
+            {
+              "steps.0.atomicRecords.checks.0.table": fixture.tableId,
+              "steps.0.atomicRecords.checks.0.where.0.field": fixture.statusFieldId,
+              "steps.0.atomicRecords.changes.0.createRecord.table": fixture.tableId,
+              "steps.0.atomicRecords.changes.0.createRecord.values.Name.$target": fixture.nameFieldId,
+              ...(mode === "rollback" ? { "steps.0.atomicRecords.changes.1.updateRecord.set.Status.$target": fixture.statusFieldId } : {}),
+            },
+          ),
+          inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+        });
+        expect(await drive(runId)).toBe(mode === "direct" ? "succeeded" : "failed");
+        if (mode === "direct") {
+          await reopenForReplay(runId);
+          expect(await drive(runId)).toBe("succeeded");
+        }
+        const records = await sql<Array<{ id: string; finalized_at: Date | null }>>`
+          SELECT id::text AS id, finalized_at FROM grids.records
+          WHERE table_id = ${fixture.tableId}::uuid AND id <> ${fixture.recordId}::uuid
+        `;
+        expect(records).toHaveLength(mode === "direct" ? 1 : 0);
+        if (mode === "direct") {
+          expect(records[0]?.finalized_at).toBeTruthy();
+          const revisions = await listRecordRevisions({ tableId: fixture.tableId, recordId: records[0]!.id });
+          expect(revisions.ok && revisions.data.items.filter((revision) => revision.action === "finalized")).toHaveLength(1);
+        }
+        const audits = await sql`
+          SELECT action FROM grids.audit_log WHERE base_id = ${fixture.baseId}::uuid
+          AND action IN ('workflow.record.created', 'workflow.record.finalized')
+        `;
+        expect(audits).toHaveLength(mode === "direct" ? 2 : 0);
+        const events = await sql`SELECT id FROM grids.record_event_outbox WHERE base_id = ${fixture.baseId}::uuid`;
+        expect(events).toHaveLength(mode === "direct" ? 2 : 0);
+      } finally {
+        await cleanupFixture(fixture);
+        if (mode === "fourEyes") await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+      }
+    });
+  }
+
   postgresTest("atomicRecords commits its checks, update, create, audits, outbox, and outcome together", async () => {
     const fixture = createFixture();
     try {

@@ -3,6 +3,8 @@ import {
   Button,
   DataTable,
   type DataTableColumn,
+  type DataTableRenderCell,
+  Format,
   IconButton,
   Placeholder,
   prompts,
@@ -15,7 +17,7 @@ import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-j
 import type { PublicField, PublicGridRecord } from "../../api/public-dto";
 import type { DslQueryPreviewResponse, RecordDisplayConfig } from "../../contracts";
 import type { BackgroundDocumentState } from "../../custom-apps/background-state";
-import type { CustomAppRowNavigation } from "../../custom-apps/contracts";
+import type { CustomAppRowNavigation, CustomAppTablePresentation } from "../../custom-apps/contracts";
 import { customAppRowHref } from "../../custom-apps/routing";
 import type { GridFilePreview } from "../../service";
 import { RecordCardsView } from "../_components/records-view/RecordCardsView";
@@ -23,6 +25,7 @@ import { FieldValue } from "../_components/table/FieldValue";
 import { fieldDisplayFormat } from "../_components/table/field-value-format";
 import { formatCell } from "../_components/table/format-cell";
 import { openFinancialExportDialog } from "../_components/workflows/FinancialExportDialog";
+import { createCalendarDateBase } from "./calendar-date-base";
 import { customAppCardFileUrl } from "./records-card-url";
 import { customAppRecordsResultColumns } from "./records-table-model";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
@@ -75,6 +78,9 @@ export default function RecordsTable(props: {
   endpoint?: string;
   searchable?: boolean;
   selectedColumnIds?: string[];
+  tablePresentation?: CustomAppTablePresentation;
+  columnReference?: "field" | "label";
+  relativeDateBase?: string;
   result: CustomAppRecordsSuccess;
   rowNavigate?: CustomAppRowNavigation;
   rowActions?: CustomAppRenderedRowAction[];
@@ -82,6 +88,10 @@ export default function RecordsTable(props: {
 }) {
   const messages = useCustomAppRuntimeMessages();
   const locale = useLocale();
+  const calendarBase =
+    props.relativeDateBase && props.tablePresentation?.relativeDateColumnIds?.length
+      ? createCalendarDateBase(props.relativeDateBase, props.dateConfig?.timeZone)
+      : () => props.relativeDateBase;
   const [result, setResult] = createSignal(props.result);
   const [query, setQuery] = createSignal("");
   const [appliedQuery, setAppliedQuery] = createSignal("");
@@ -169,7 +179,15 @@ export default function RecordsTable(props: {
 
   const resultColumns = createMemo(() => customAppRecordsResultColumns(result().columns, props.selectedColumnIds));
   const emptyTable = () =>
-    !result().cards && result().rows.length === 0 && resultColumns().length > 0 && !query().trim() && !appliedQuery() && !loading();
+    !result().cards &&
+    result().rows.length === 0 &&
+    resultColumns().length > 0 &&
+    !query().trim() &&
+    !appliedQuery() &&
+    !loading() &&
+    history().length === 0 &&
+    !cursor() &&
+    !result().page?.nextCursor;
   const presentationFields = createMemo(() => new Map((result().presentation?.fields ?? []).map((field) => [field.id, field])));
   const rows = createMemo(() =>
     result().rows.map((row, index) => ({
@@ -296,212 +314,313 @@ export default function RecordsTable(props: {
     }
   };
 
-  return (
-    <DataTable.Panel class="overflow-hidden">
-      <DataTable.Header title={props.title} as="h2" size="md" />
-      <Show when={!props.preview && props.searchable && !emptyTable()}>
-        <DataTable.Controls>
-          <Show when={props.searchable}>
-            <TextInput
-              type="search"
-              aria-label={messages().searchTitle({ title: props.title })}
-              placeholder={messages().searchTitlePlaceholder({ title: props.title })}
-              icon="ti ti-search"
-              activeIcon="ti ti-search"
-              value={query}
-              onValueChange={onSearch}
-              clearable
-              onClear={() => onSearch("")}
-            />
+  const renderCell: DataTableRenderCell<ReturnType<typeof rows>[number]> = ({ row, col, value }) => {
+    if (col.id === "__workflowStatus") {
+      const state = row.recordId ? result().workflowStates?.[row.recordId] : undefined;
+      const label =
+        state?.status === "ready"
+          ? messages().documentReady
+          : state?.status === "running"
+            ? messages().documentCreating
+            : state?.status === "failed" || state?.status === "attention"
+              ? messages().documentFailed
+              : state?.status === "missing"
+                ? messages().documentMissing
+                : messages().documentDraft;
+      const tone =
+        state?.status === "ready"
+          ? "ok"
+          : state?.status === "running"
+            ? "running"
+            : state?.status === "failed" || state?.status === "attention" || state?.status === "missing"
+              ? "warning"
+              : "neutral";
+      return (
+        <span class="flex flex-col items-start gap-1">
+          <Show when={state?.status === "ready" && state.document?.number}>
+            {(number) => <span class="font-medium tabular-nums text-primary">{number()}</span>}
           </Show>
-        </DataTable.Controls>
-      </Show>
-      <Show
-        when={result().cards}
-        fallback={
-          <Show
-            when={resultColumns().length > 0}
-            fallback={
-              <Placeholder
-                state="error"
-                variant="compact"
-                align="left"
-                title={messages().recordsUnavailable}
-                description={messages().fieldsMissingFromView}
-              />
-            }
-          >
-            <Show when={!emptyTable()} fallback={<Placeholder variant="compact" align="left" description={props.emptyText} />}>
-              <DataTable
-                ariaLabel={props.title}
-                rows={rows()}
-                columns={columns()}
-                getRowId={(row) => row.rowKey}
-                density="compact"
-                surface="plain"
-                class="overflow-x-auto"
-                hoverRows={Boolean(props.rowNavigate)}
-                rowClass={(row) => (row.href ? "cursor-pointer" : undefined)}
-                onRowClick={
-                  props.rowNavigate
-                    ? (row) => {
-                        if (!row.href) return;
-                        if (props.rowNavigate?.history === "replace") window.location.replace(row.href);
-                        else window.location.assign(row.href);
-                      }
-                    : undefined
+          <StatusBadge tone={tone} label={label} variant="dot" />
+        </span>
+      );
+    }
+    if (col.id === "__actions") {
+      if (!row.recordId) return null;
+      return (
+        <div class="flex flex-wrap items-center gap-1">
+          <For each={props.rowActions ?? []}>
+            {(action) => (
+              <Show
+                when={action.showLabel}
+                fallback={
+                  <IconButton
+                    label={actionLabel(row.recordId!, action)}
+                    size="xs"
+                    variant={action.variant ?? "secondary"}
+                    loading={pendingKey() === `${row.recordId}:${action.id}`}
+                    loadingLabel={`${action.label}…`}
+                    disabled={props.preview || Boolean(pendingKey())}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void invoke(row.recordId!, action);
+                    }}
+                  >
+                    <i class={`ti ti-${action.icon}`} aria-hidden="true" />
+                  </IconButton>
                 }
-                empty={<span>{appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}</span>}
-                renderCell={({ row, col, value }) => {
-                  if (col.id === "__workflowStatus") {
-                    const state = row.recordId ? result().workflowStates?.[row.recordId] : undefined;
-                    const label =
-                      state?.status === "ready"
-                        ? messages().documentReady
-                        : state?.status === "running"
-                          ? messages().documentCreating
-                          : state?.status === "failed" || state?.status === "attention"
-                            ? messages().documentFailed
-                            : state?.status === "missing"
-                              ? messages().documentMissing
-                              : messages().documentDraft;
-                    const tone =
-                      state?.status === "ready"
-                        ? "ok"
-                        : state?.status === "running"
-                          ? "running"
-                          : state?.status === "failed" || state?.status === "attention" || state?.status === "missing"
-                            ? "warning"
-                            : "neutral";
-                    return (
-                      <span class="flex flex-col items-start gap-1">
-                        <Show when={state?.status === "ready" && state.document?.number}>
-                          {(number) => <span class="font-medium tabular-nums text-primary">{number()}</span>}
-                        </Show>
-                        <StatusBadge tone={tone} label={label} variant="dot" />
-                      </span>
-                    );
-                  }
-                  if (col.id === "__actions") {
-                    if (!row.recordId) return null;
-                    return (
-                      <div class="flex min-w-max flex-wrap items-center gap-1">
-                        <For each={props.rowActions ?? []}>
-                          {(action) => (
-                            <Show
-                              when={action.showLabel}
-                              fallback={
-                                <IconButton
-                                  label={actionLabel(row.recordId!, action)}
-                                  size="xs"
-                                  variant={action.variant ?? "secondary"}
-                                  loading={pendingKey() === `${row.recordId}:${action.id}`}
-                                  loadingLabel={`${action.label}…`}
-                                  disabled={props.preview || Boolean(pendingKey())}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void invoke(row.recordId!, action);
-                                  }}
-                                >
-                                  <i class={`ti ti-${action.icon}`} aria-hidden="true" />
-                                </IconButton>
-                              }
-                            >
-                              <Button
-                                size="xs"
-                                variant={action.variant ?? "secondary"}
-                                loading={pendingKey() === `${row.recordId}:${action.id}`}
-                                loadingLabel={`${action.label}…`}
-                                disabled={props.preview || Boolean(pendingKey())}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void invoke(row.recordId!, action);
-                                }}
-                              >
-                                <Show when={action.icon}>
-                                  <i class={`ti ti-${action.icon}`} aria-hidden="true" />
-                                </Show>
-                                {actionLabel(row.recordId!, action)}
-                              </Button>
-                            </Show>
-                          )}
-                        </For>
-                      </div>
-                    );
-                  }
-                  const resultColumn = resultColumns().find((column) => column.key === col.id);
-                  const field = resultColumn?.fieldId ? presentationFields().get(resultColumn.fieldId) : undefined;
-                  const rendered = field ? (
-                    <FieldValue
-                      field={field}
-                      value={value}
-                      record={rowRecord(row)}
-                      baseId={props.baseId}
-                      dateConfig={props.dateConfig}
-                      format={
-                        field.type === "date"
-                          ? (fieldDisplayFormat(field) ?? { kind: "date", format: "short", includeTime: field.config.includeTime === true })
-                          : undefined
-                      }
-                      mode="table"
-                      relationValueMode={field.type === "relation" ? "labels" : undefined}
-                    />
-                  ) : resultColumn?.type === "date" || resultColumn?.sqlType === "date" ? (
-                    formatCell(value, "date", undefined, { kind: "date", format: "short" }, props.dateConfig, locale())
-                  ) : resultColumn?.type === "number" || resultColumn?.sqlType === "numeric" ? (
-                    formatCell(value, "number", undefined, undefined, props.dateConfig, locale()) || "—"
-                  ) : (
-                    displayValue(value)
-                  );
-                  return row.href && col.id === firstColumnId() ? (
-                    <a href={row.href} class="group font-medium text-primary" onClick={(event) => event.stopPropagation()}>
-                      <span class="whitespace-pre-wrap break-words underline-offset-2 group-hover:underline group-focus-visible:underline">
-                        {rendered}
-                      </span>{" "}
-                      <i class="ti ti-external-link inline-block text-[10px] text-dimmed" aria-hidden="true" />
-                    </a>
-                  ) : (
-                    <div class={field?.type === "date" ? "whitespace-nowrap tabular-nums" : "whitespace-pre-wrap break-words"}>
-                      {rendered}
-                    </div>
-                  );
-                }}
+              >
+                <Button
+                  size="xs"
+                  variant={action.variant ?? "secondary"}
+                  loading={pendingKey() === `${row.recordId}:${action.id}`}
+                  loadingLabel={`${action.label}…`}
+                  disabled={props.preview || Boolean(pendingKey())}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void invoke(row.recordId!, action);
+                  }}
+                >
+                  <Show when={action.icon}>
+                    <i class={`ti ti-${action.icon}`} aria-hidden="true" />
+                  </Show>
+                  {actionLabel(row.recordId!, action)}
+                </Button>
+              </Show>
+            )}
+          </For>
+        </div>
+      );
+    }
+    const resultColumn = resultColumns().find((column) => column.key === col.id);
+    const field = resultColumn?.fieldId ? presentationFields().get(resultColumn.fieldId) : undefined;
+    const rendered = field ? (
+      <FieldValue
+        field={field}
+        value={value}
+        record={rowRecord(row)}
+        baseId={props.baseId}
+        dateConfig={props.dateConfig}
+        format={
+          field.type === "date"
+            ? (fieldDisplayFormat(field) ?? { kind: "date", format: "short", includeTime: field.config.includeTime === true })
+            : undefined
+        }
+        mode="table"
+        relationValueMode={field.type === "relation" ? "labels" : undefined}
+      />
+    ) : resultColumn?.type === "date" || resultColumn?.sqlType === "date" ? (
+      formatCell(value, "date", undefined, { kind: "date", format: "short" }, props.dateConfig, locale())
+    ) : resultColumn?.type === "number" || resultColumn?.sqlType === "numeric" ? (
+      formatCell(value, "number", undefined, undefined, props.dateConfig, locale()) || "—"
+    ) : (
+      displayValue(value)
+    );
+    const presentationId = props.columnReference === "field" ? resultColumn?.fieldId : resultColumn?.label;
+    const calendarValue =
+      resultColumn?.sqlType === "date" && typeof value === "string" ? value.replace(/T00:00:00(?:\.000)?Z$/, "") : value;
+    const relative =
+      props.relativeDateBase &&
+      presentationId &&
+      props.tablePresentation?.relativeDateColumnIds?.includes(presentationId) &&
+      typeof calendarValue === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(calendarValue);
+    const content = (
+      <>
+        {rendered}
+        <Show when={relative}>
+          <span class="block mt-0.5 text-xs text-dimmed">
+            <Format.RelativeDate value={String(calendarValue)} base={calendarBase()} timeZone={props.dateConfig?.timeZone} />
+          </span>
+        </Show>
+      </>
+    );
+    return row.href && col.id === firstColumnId() ? (
+      <a href={row.href} class="group font-medium text-primary" onClick={(event) => event.stopPropagation()}>
+        <span class="whitespace-pre-wrap break-words underline-offset-2 group-hover:underline group-focus-visible:underline">
+          {content}
+        </span>{" "}
+        <i class="ti ti-external-link inline-block text-[10px] text-dimmed" aria-hidden="true" />
+      </a>
+    ) : (
+      <div class={field?.type === "date" ? "whitespace-nowrap tabular-nums" : "whitespace-pre-wrap break-words"}>{content}</div>
+    );
+  };
+
+  const mobileColumn = (id: string) =>
+    resultColumns().find((column) => (props.columnReference === "field" ? column.fieldId : column.label) === id);
+  const mobileCell = (row: ReturnType<typeof rows>[number], key: string) => {
+    const col = columns().find((column) => column.id === key);
+    return col ? renderCell({ row, col, value: row.values[key], render: () => null }) : null;
+  };
+
+  return (
+    <Show
+      when={!emptyTable()}
+      fallback={
+        <section aria-label={props.title} class="flex flex-wrap items-baseline gap-x-2 gap-y-1 py-1">
+          <h2 class="text-sm font-medium text-secondary">{props.title}</h2>
+          <p class="text-sm text-dimmed">{props.emptyText}</p>
+        </section>
+      }
+    >
+      <DataTable.Panel class="overflow-hidden">
+        <DataTable.Header title={props.title} as="h2" size="md" />
+        <Show when={!props.preview && props.searchable && !emptyTable()}>
+          <DataTable.Controls>
+            <Show when={props.searchable}>
+              <TextInput
+                type="search"
+                aria-label={messages().searchTitle({ title: props.title })}
+                placeholder={messages().searchTitlePlaceholder({ title: props.title })}
+                icon="ti ti-search"
+                activeIcon="ti ti-search"
+                value={query}
+                onValueChange={onSearch}
+                clearable
+                onClear={() => onSearch("")}
               />
             </Show>
-          </Show>
-        }
-      >
-        {(cards) => (
-          <RecordCardsView
-            items={cardRecords()}
-            fields={cards().fields}
-            displayConfig={cards().displayConfig}
-            filePreviews={cards().filePreviews}
-            baseId={props.baseId}
-            tableId={cardRecords()[0]?.tableId ?? ""}
-            dateConfig={props.dateConfig}
-            relationLabels={cards().relationLabels}
-            emptyText={appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}
-            onRecordClick={
-              props.rowNavigate
-                ? (record) => {
-                    const href = customAppRowHref(props.appId, props.rowNavigate!, record.id, result().rowNavigationParams?.[record.id]);
-                    if (!href) return;
-                    if (props.rowNavigate!.history === "replace") window.location.replace(href);
-                    else window.location.assign(href);
-                  }
-                : undefined
-            }
-            renderActions={
-              (props.rowActions?.length ?? 0) > 0
-                ? (record) => (
-                    <For each={props.rowActions ?? []}>
-                      {(action) => (
-                        <Show
-                          when={action.showLabel}
-                          fallback={
-                            <IconButton
-                              label={actionLabel(record.id, action)}
+          </DataTable.Controls>
+        </Show>
+        <Show
+          when={result().cards}
+          fallback={
+            <Show
+              when={resultColumns().length > 0}
+              fallback={
+                <Placeholder
+                  state="error"
+                  variant="compact"
+                  align="left"
+                  title={messages().recordsUnavailable}
+                  description={messages().fieldsMissingFromView}
+                />
+              }
+            >
+              <Show when={!emptyTable()} fallback={<Placeholder variant="compact" align="left" description={props.emptyText} />}>
+                <div class={props.tablePresentation?.mobile ? "hidden md:block" : undefined}>
+                  <DataTable
+                    ariaLabel={props.title}
+                    rows={rows()}
+                    columns={columns()}
+                    getRowId={(row) => row.rowKey}
+                    density="compact"
+                    surface="plain"
+                    class="overflow-x-auto"
+                    hoverRows={Boolean(props.rowNavigate)}
+                    rowClass={(row) => (row.href ? "cursor-pointer" : undefined)}
+                    onRowClick={
+                      props.rowNavigate
+                        ? (row) => {
+                            if (!row.href) return;
+                            if (props.rowNavigate?.history === "replace") window.location.replace(row.href);
+                            else window.location.assign(row.href);
+                          }
+                        : undefined
+                    }
+                    empty={<span>{appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}</span>}
+                    renderCell={renderCell}
+                  />
+                </div>
+                <Show when={props.tablePresentation?.mobile}>
+                  {(mobile) => (
+                    <div class="md:hidden">
+                      <Show
+                        when={rows().length > 0}
+                        fallback={
+                          <Placeholder
+                            variant="compact"
+                            align="left"
+                            description={appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}
+                          />
+                        }
+                      >
+                        <ul aria-label={props.title} class="m-0 list-none p-3 flex flex-col gap-2">
+                          <For each={rows()}>
+                            {(row) => (
+                              <li class="rounded-lg bg-[var(--k2b-surface-muted)] p-3 flex flex-col gap-3">
+                                <Show when={mobileColumn(mobile().titleColumnId)}>
+                                  {(column) => (
+                                    <div class="font-semibold text-primary">
+                                      <Show when={row.href && column().key !== firstColumnId()} fallback={mobileCell(row, column().key)}>
+                                        <a href={row.href!} class="underline-offset-2 hover:underline">
+                                          {mobileCell(row, column().key)}
+                                        </a>
+                                      </Show>
+                                    </div>
+                                  )}
+                                </Show>
+                                <dl class="m-0 grid grid-cols-2 gap-x-4 gap-y-2">
+                                  <For each={mobile().detailColumnIds}>
+                                    {(id) => (
+                                      <Show when={mobileColumn(id)}>
+                                        {(column) => (
+                                          <div class="min-w-0">
+                                            <dt class="text-xs text-dimmed">{column().label}</dt>
+                                            <dd class="m-0 mt-0.5 text-sm">{mobileCell(row, column().key)}</dd>
+                                          </div>
+                                        )}
+                                      </Show>
+                                    )}
+                                  </For>
+                                </dl>
+                                <Show when={result().workflowStates}>{mobileCell(row, "__workflowStatus")}</Show>
+                                <Show when={props.rowActions?.length}>{mobileCell(row, "__actions")}</Show>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+                    </div>
+                  )}
+                </Show>
+              </Show>
+            </Show>
+          }
+        >
+          {(cards) => (
+            <RecordCardsView
+              items={cardRecords()}
+              fields={cards().fields}
+              displayConfig={cards().displayConfig}
+              filePreviews={cards().filePreviews}
+              baseId={props.baseId}
+              tableId={cardRecords()[0]?.tableId ?? ""}
+              dateConfig={props.dateConfig}
+              relationLabels={cards().relationLabels}
+              emptyText={appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}
+              onRecordClick={
+                props.rowNavigate
+                  ? (record) => {
+                      const href = customAppRowHref(props.appId, props.rowNavigate!, record.id, result().rowNavigationParams?.[record.id]);
+                      if (!href) return;
+                      if (props.rowNavigate!.history === "replace") window.location.replace(href);
+                      else window.location.assign(href);
+                    }
+                  : undefined
+              }
+              renderActions={
+                (props.rowActions?.length ?? 0) > 0
+                  ? (record) => (
+                      <For each={props.rowActions ?? []}>
+                        {(action) => (
+                          <Show
+                            when={action.showLabel}
+                            fallback={
+                              <IconButton
+                                label={actionLabel(record.id, action)}
+                                size="xs"
+                                variant={action.variant ?? "secondary"}
+                                loading={pendingKey() === `${record.id}:${action.id}`}
+                                loadingLabel={`${action.label}…`}
+                                disabled={props.preview || Boolean(pendingKey())}
+                                onClick={() => void invoke(record.id, action)}
+                              >
+                                <i class={`ti ti-${action.icon}`} aria-hidden="true" />
+                              </IconButton>
+                            }
+                          >
+                            <Button
                               size="xs"
                               variant={action.variant ?? "secondary"}
                               loading={pendingKey() === `${record.id}:${action.id}`}
@@ -509,61 +628,50 @@ export default function RecordsTable(props: {
                               disabled={props.preview || Boolean(pendingKey())}
                               onClick={() => void invoke(record.id, action)}
                             >
-                              <i class={`ti ti-${action.icon}`} aria-hidden="true" />
-                            </IconButton>
-                          }
-                        >
-                          <Button
-                            size="xs"
-                            variant={action.variant ?? "secondary"}
-                            loading={pendingKey() === `${record.id}:${action.id}`}
-                            loadingLabel={`${action.label}…`}
-                            disabled={props.preview || Boolean(pendingKey())}
-                            onClick={() => void invoke(record.id, action)}
-                          >
-                            <Show when={action.icon}>{(icon) => <i class={`ti ti-${icon()}`} aria-hidden="true" />}</Show>
-                            {actionLabel(record.id, action)}
-                          </Button>
-                        </Show>
-                      )}
-                    </For>
-                  )
-                : undefined
-            }
-            coverUrl={(preview) => appFileUrl(preview as GridFilePreview & { contentToken?: string })}
-          />
-        )}
-      </Show>
-      <Show when={!props.preview && (history().length > 0 || Boolean(result().page?.nextCursor))}>
-        <DataTable.Footer>
-          <div class="flex w-full items-center justify-between gap-2">
-            <span class="text-sm text-dimmed">
-              {result().page ? `${result().page!.start + 1}–${result().page!.start + result().page!.returned}` : ""}
-            </span>
-            <div class="flex gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={loading() || history().length === 0}
-                onClick={() => {
-                  const nextHistory = history().slice(0, -1);
-                  void loadPage(history().at(-1) ?? null, appliedQuery(), nextHistory);
-                }}
-              >
-                {messages().previous}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={loading() || !result().page?.nextCursor}
-                onClick={() => void loadPage(result().page?.nextCursor ?? null, appliedQuery(), [...history(), cursor()])}
-              >
-                {messages().next}
-              </Button>
+                              <Show when={action.icon}>{(icon) => <i class={`ti ti-${icon()}`} aria-hidden="true" />}</Show>
+                              {actionLabel(record.id, action)}
+                            </Button>
+                          </Show>
+                        )}
+                      </For>
+                    )
+                  : undefined
+              }
+              coverUrl={(preview) => appFileUrl(preview as GridFilePreview & { contentToken?: string })}
+            />
+          )}
+        </Show>
+        <Show when={!props.preview && (history().length > 0 || Boolean(result().page?.nextCursor))}>
+          <DataTable.Footer>
+            <div class="flex w-full items-center justify-between gap-2">
+              <span class="text-sm text-dimmed">
+                {result().page?.returned ? `${result().page!.start + 1}–${result().page!.start + result().page!.returned}` : ""}
+              </span>
+              <div class="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={loading() || history().length === 0}
+                  onClick={() => {
+                    const nextHistory = history().slice(0, -1);
+                    void loadPage(history().at(-1) ?? null, appliedQuery(), nextHistory);
+                  }}
+                >
+                  {messages().previous}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={loading() || !result().page?.nextCursor}
+                  onClick={() => void loadPage(result().page?.nextCursor ?? null, appliedQuery(), [...history(), cursor()])}
+                >
+                  {messages().next}
+                </Button>
+              </div>
             </div>
-          </div>
-        </DataTable.Footer>
-      </Show>
-    </DataTable.Panel>
+          </DataTable.Footer>
+        </Show>
+      </DataTable.Panel>
+    </Show>
   );
 }

@@ -17,15 +17,35 @@ Under **Route parameters**, choose a parameter ID and its table. Adding a Record
 
 Pages contain rows, columns and blocks: width 12 for one task, 8 + 4 for main content and context, 6 + 6 for peers. Columns stack on narrow screens; check both widths before publishing.
 
+Keep the next action beside the information needed to perform it. Use a dialog for a short task opened by a button; leave a Form embedded when readers should work in it alongside the page's context.
+
+For secondary information, give any block `disclosure: { label: "More details" }`. Readers open its heading to see the content; `defaultOpen: true` starts it expanded. In the Builder, configure this under **Progressive disclosure**. Collapsing a block does not defer loading or change permissions. Use `availableWhen` to control availability.
+
 ## Configure resource-backed blocks {icon="blocks"}
 
 ### Markdown
 
-Markdown renders headings, lists, links, and safe images. It does not run HTML, scripts, styles, or embedded application code. The inline and large editors autocomplete the current page's `@auth`, `@params`, `@page`, `@app`, `@base`, and `@time` placeholders. For example, `Hello @auth.name` inserts the signed-in display name on the server; anonymous auth values become empty text. Inserted values are escaped before Markdown rendering, and there are no Liquid conditions or loops.
+Markdown renders headings, lists, links, and safe images. It does not run scripts or embedded application code. The inline and large editors autocomplete the current page's `@auth`, `@params`, `@page`, `@app`, `@base`, and `@time` placeholders. For example, `Hello @auth.name` inserts the signed-in display name on the server; anonymous auth values become empty text. Inserted values are escaped before Markdown rendering, and there are no Liquid conditions or loops.
+
+In a published App, use Cloud notice cards for short explanations or warnings. Add them inside an ordinary Markdown block; no new block type is needed:
+
+```markdown
+:::info Payments to confirm
+Check the entries against your bank transactions. Only confirmed payments change the outstanding amount.
+:::
+```
+
+Supported tones are `note`, `info`, `success`, `warning`, and `danger`. Write the title after the tone in the App's language. Published Markdown is sanitized on the server; scripts and unsafe links are removed. The editor keeps the Markdown source and context-placeholder highlighting.
 
 ### Records
 
 Records reads either an existing saved view or an inline GQL query. A saved View can use an explicit table field selection or reuse that View's existing Cards configuration, including its file cover. Cards may be read-only, navigate to a row page, or expose row actions, and are pinned with the saved View when the App is published. Inline GQL displays its selected ordinary-record columns, including aliases. A non-empty table `columnIds` list may keep selected field columns available to behavior while showing only the listed field IDs. Use Metrics or Chart for aggregate results. Both Records sources support empty copy, optional row navigation, and optional server-side search.
+
+An empty table result shows the block title and empty text inline. Empty search results keep the table and search controls so readers can change the search. Loading and error states remain distinct from an empty result.
+
+For table presentation, `display.relativeDateColumnIds` adds “today”, “tomorrow”, or a calendar-day distance beside the absolute date. Only date-only columns qualify. Labels use the configured time zone; they do not classify an entry as overdue.
+
+Use `display.mobile: { titleColumnId, detailColumnIds }` to choose a row heading and its supporting values on narrow screens. Wider screens retain the table. Both presentations use the same row links, workflow actions, search, and pagination. Presentation references must point to visible columns: public field IDs for a saved View, unique output labels from the query preview for GQL. Each reference must be unique within its date list or mobile configuration.
 
 `pageSize` controls how many rows the server returns at once. Readers move through protected cursor pages; search and pagination run on the server and never load the full result into the browser. A GQL `limit` caps the complete result when the author intentionally wants only the first N matching rows. Shared query budgets remain enforced independently.
 
@@ -51,19 +71,64 @@ The published capability records the exact tables and fields behind the block. A
 
 Form owns inputs, validation, defaults, and creation. App readers can select related records without Base access: search exposes only IDs and published presentable labels from the configured target. Changing those labels or their formula dependencies requires republishing.
 
+A Form is embedded by default. Set `presentation.kind` to `dialog` and choose a button label to open it over the current page. The same defaults, fixed values, validation, and permissions apply. Readers must confirm before discarding unsaved input and cannot close the dialog while it is saving.
+
+Dialog buttons fit their content. Choose `presentation.variant: primary` for the main next action or `secondary` (the default) for a supporting action.
+
+For example, on a page bound to a bill, this block opens a payment form with the bill already assigned. Replace the example IDs with your Form and relation field IDs:
+
+```yaml
+id: record-payment
+type: form
+formId: PayFrm
+presentation:
+  kind: dialog
+  label: Record payment
+  icon: plus
+  variant: primary
+fixedValues:
+  BillFk:
+    source: RECORD
+    path: id
+```
+
 Choose **Form action → Edit this page's record** to edit an existing draft. The page must bind a record from the Form's table. The server loads its inputs and configured inline rows before rendering; saving checks the versions of the parent and edited rows together. Removing an inline row detaches it from the parent, but does not delete the underlying record. Shared rows and finalized records cannot be edited this way. Related tables must belong to the same Base. Existing Form blocks keep creating new records unless you change this action and publish the App again.
 
 The block may supply trusted values to any user-input field. Use `LITERAL` for a validated fixed value. Compatible relation fields may use a declared Record `PARAMS` value or the current page `RECORD.id`. A Principal field may use `AUTH.currentUser` to assign the signed-in person without displaying another picker. Supplied inputs are omitted from the rendered Form, resolved again by the server, and cannot be overridden by the browser. This supports flows such as “add another article to this list” without asking for the same relation again.
 
-After success, the block may stay on the page or replace-navigate inside the same app. Navigation parameters may preserve declared `PARAMS` values or use the created Form record's `RESULT.recordId`.
+Forms linked to saved-state actions through `actionsBlockId` must stay embedded, so workflow status remains visible. They cannot use dialog presentation.
+
+After success, an embedded Form may stay on the page. A dialog closes and refreshes its originating page. An explicit `onSuccessNavigate` takes precedence and replace-navigates inside the same app. Navigation parameters may preserve declared `PARAMS` values or use the created Form record's `RESULT.recordId`.
 
 One app may publish up to 24 Form blocks. Each referenced Form may expose up to 100 inputs, of which up to 30 may be supplied by the page.
+
+#### Forms with context
+
+A form linked through `actionsBlockId` shows its inputs beside the live summary
+and next actions. Both use the same draft. The final configured computed field is
+shown first as the headline value. Missing inputs can be focused directly; primary
+actions stay disabled until inputs are valid and saved. Saving reloads the confirmed
+record. Server-side checks remain authoritative.
+
+The optional `workspace` object accepts `summaryTitle`, `summaryDescription`,
+`helpTitle`, and `helpText`. Put infrequent background information in the help
+section. This option requires an Actions block and cannot be used in a dialog.
+
+A record heading may use `heading.title` while the record is editable. Its heading
+field becomes the subtitle. An issued document number takes precedence, and
+finalized records never use the draft title.
 
 ### Record
 
 Record requires a page record. It renders the explicit `fieldIds` list and may allow direct editing through an explicit `editableFieldIds` subset. Every editable field must also be displayed and must be a writable stored field; computed and system fields fail publication.
 
-Use `heading: { fieldId }` to identify a record with one of its displayed fields, such as a customer or subject. The field moves into the heading instead of appearing twice. With `heading: { fieldId, documentNumber: true }` and a `documents` template allowlist, an existing document number becomes the heading and the field stays visible below it. Drafts keep their field heading. Document downloads stay visible as labeled buttons.
+Choose `layout: grid` (the default), `rows` for paired labels and values, or `compact` for short metadata. Use `summary` for totals: values align to the end and the final row is emphasized. Put the total last in `fieldIds`.
+
+Read-only Object lists occupy a framed, rounded table within the block. The field name and row count share its toolbar. Secondary columns remain under additional details and longer lists are split into pages.
+
+Add a subset of the displayed field IDs to `relativeDates` to annotate date-only values, for example `17.09.2026 (today)`. The absolute value remains visible. Date-time fields are not supported; duplicate fields or fields outside `fieldIds` fail validation.
+
+Use `heading: { fieldId }` to identify a record with one of its displayed fields, such as a customer or subject. The field moves into the heading instead of appearing twice. With `heading: { fieldId, documentNumber: true }` and a `documents` template allowlist, an existing document number becomes the heading and the field stays visible below it. Drafts keep their field heading unless `heading.title` provides a task heading. Document downloads stay visible as labeled buttons.
 
 The Edit action appears only when the publication includes that writable field and the block is available. Submission rechecks the app grant, immutable field allowlist, `availableWhen`, live field type, table audit questions, and current record version. Fields outside the block's editable subset remain read-only.
 
@@ -85,7 +150,7 @@ Comments inherit record visibility. They do not introduce a separate audience or
 
 ### Actions
 
-Actions contains buttons that either navigate inside the same Grids App or start an existing enabled Grids App workflow launcher. A workflow action may bind JSON `LITERAL` values, declared Record `PARAMS`, or the current page `RECORD.id` to compatible workflow inputs. Fixed launchers use their stored bindings and do not accept action inputs.
+Actions contains buttons that either navigate inside the same Grids App or start an existing enabled Grids App workflow launcher. A workflow action may bind JSON `LITERAL` values, declared Record `PARAMS`, or the current page `RECORD.id` to compatible workflow inputs. Fixed launchers use their stored bindings and do not accept action inputs. For a short task, choose **Ask in dialog** for unbound scalar inputs. The dialog uses workflow labels and validation, submits once, and refreshes the page after success. Keep the current record bound by the server. On an uncertain response, check the same operation again rather than submitting a new one. Optional guidance and a success message describe the task in user terms.
 
 The block cannot call arbitrary URLs, update records directly, or invoke a workflow that was not included in the published capability set.
 Starting a workflow is asynchronous. The button follows its scoped run and reports the sanitized workflow result message when it succeeds or fails. It never exposes generic workflow history or raw errors. Navigation after a workflow belongs in the workflow or a later page-state transition; Actions does not bind arbitrary workflow results.
@@ -101,7 +166,9 @@ background document page has one result template; several actions may create it.
 The configured message appears after acceptance, and the user can keep working.
 
 The action recovers its status after navigation or reload and opens the stored
-file when ready. Concurrent requests for the same published action, page records,
+file when ready. If the exact ready document is already shown in an authorized,
+visible Record block, the duplicate completion action is omitted. Otherwise, the
+ready action stays available. Concurrent requests for the same published action, page records,
 and inputs join the active run, including requests from another authorized App
 reader. Readers see document state, not another user's workflow inputs, outputs,
 or raw errors. Administrator attention disables another start.
@@ -152,3 +219,5 @@ The first release has no app-global variables, general expression graph, reusabl
 Compose repeated flows from typed page parameters, fixed Form values, bounded sources, navigation, and existing Workflows. If those primitives cannot express a process safely, extend the owning Grids resource rather than adding application-specific behavior to the page runtime.
 
 Continue with [Publish & permissions](/app/grids/help/grids-publish-custom-app) before making the app available to others.
+
+Use `layout: "context"` on a Record block for a compact related-record surface, such as the original document.

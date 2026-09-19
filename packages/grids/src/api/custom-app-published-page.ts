@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import type { DateContext } from "@k2b/stdlib";
 import { projectPublishedRecords } from "../api/custom-app-public-dto";
@@ -291,6 +292,10 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
   if (!runtime) return null;
   const { app, definition, capabilities, base, page, pageParams, publicPageParams, dateConfig, runtimeContext, authSubjectIds, viewer } =
     runtime;
+  const principal = currentWorkflowPrincipal(c);
+  const operationScope = createHash("sha256")
+    .update(JSON.stringify([principal.userId, principal.serviceAccountId, principal.actorServiceAccountId ?? null]))
+    .digest("hex");
   const availabilityCapability = (pageId: string, target: "page" | "block" | "action", blockId?: string, actionId?: string) =>
     capabilities.availability.find(
       (candidate) =>
@@ -811,7 +816,14 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
           icon: action.icon,
           variant: action.variant,
           endpoint: customAppActionUrl(app.shortId, page.id, block.id, action.id, publicPageParams),
+          launcherId: action.launcherId,
           confirm: action.confirm,
+          prompt: action.prompt,
+          ...(action.prompt
+            ? {
+                operationScope,
+              }
+            : {}),
           ...(action.background && pageRecord
             ? {
                 background: {
@@ -912,6 +924,8 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
     definition: runtimeDefinition,
     page: runtimePage,
     shortId: app.shortId,
+    operationScope,
+    pagePath: customAppPageHref(app.shortId, page.id, publicPageParams),
     results,
     metrics,
     charts,

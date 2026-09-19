@@ -25,13 +25,15 @@ import { customAppRecordsDisplayFieldHash } from "../custom-apps/records-display
 import { referencedRecordsGqlSource } from "../custom-apps/referenced-records";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
 import { stableCustomAppStringify } from "../custom-apps/stable-value";
+import { customAppTablePresentationIssues } from "../custom-apps/table-presentation";
 import { customAppBindingRecordTableId } from "../custom-apps/value-bindings";
 import { getRecordWritableFieldType, isRecordWritableFieldType } from "../field-types";
 import { planFormComputedFields } from "../form-computed-fields";
+import { buildDslComputedSqlInputs } from "../query-dsl/computed-sql-inputs";
 import type { DslQueryContextValues } from "../query-dsl/parameters";
 import { isDslAggregateOnlyPlan } from "../query-dsl/resolver";
 import { collectDslPlanTableIds } from "../query-dsl/source-plan";
-import { compileDslQueryPlanToSql } from "../query-dsl/sql-compiler";
+import { compileDslDerivedViewSourcePlanToSql, compileDslQueryPlanToSql } from "../query-dsl/sql-compiler";
 import { logAudit, type SqlClient } from "./audit";
 import { customAppDocumentPreviewFingerprint } from "./custom-app-document-preview";
 import { customAppFormRelationScope } from "./custom-app-form-relations";
@@ -552,6 +554,27 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
         for (const [rowIndex, row] of page.rows.entries()) {
           for (const [columnIndex, column] of row.columns.entries()) {
             for (const [blockIndex, block] of column.blocks.entries()) {
+              if (block.type === "record") {
+                for (const [dateIndex, id] of (block.relativeDates ?? []).entries()) {
+                  const field = fieldsById.get(fieldId(id));
+                  if (field && (field.type !== "date" || field.config.includeTime === true)) {
+                    diagnostics.push(
+                      customAppDiagnostic(locale, "record.relative_date_type", [
+                        "pages",
+                        pageIndex,
+                        "rows",
+                        rowIndex,
+                        "columns",
+                        columnIndex,
+                        "blocks",
+                        blockIndex,
+                        "relativeDates",
+                        dateIndex,
+                      ]),
+                    );
+                  }
+                }
+              }
               if (block.type !== "html") continue;
               const field = fieldsById.get(fieldId(block.fieldId));
               if (!field || field.type !== "html_template") {
@@ -726,6 +749,38 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
       if (tableIds.length > 24) {
         diagnostics.push(customAppDiagnostic(locale, "query.table_limit.records", ["pages", page.id, "blocks", block.id, "source"]));
         continue;
+      }
+      if (
+        block.type === "records" &&
+        block.display.kind === "table" &&
+        (block.display.relativeDateColumnIds?.length || block.display.mobile)
+      ) {
+        const sqlInputs = {
+          fieldsByTableId: compiled.data.fieldsByTableId,
+          ...(await buildDslComputedSqlInputs(plan, { fieldsByTableId: compiled.data.fieldsByTableId, client })),
+        };
+        const output = plan.derivedViewSource
+          ? compileDslDerivedViewSourcePlanToSql(plan, sqlInputs)
+          : compileDslQueryPlanToSql(plan, sqlInputs);
+        if (!output.ok) {
+          diagnostics.push(
+            customAppDiagnostic(locale, "query.invalid", ["pages", page.id, "blocks", block.id, "source"], { detail: output.error }),
+          );
+          continue;
+        }
+        const publicFields = new Map(
+          resourceRows.filter((resource) => resource.kind === "field").map((resource) => [resource.id, resource.short_id]),
+        );
+        const visible = new Set(block.display.columnIds);
+        const columns = output.query.columns
+          .map((column) => ({
+            ...column,
+            fieldId: column.fieldId ? publicFields.get(column.fieldId) : undefined,
+          }))
+          .filter((column) => visible.size === 0 || (column.fieldId !== undefined && visible.has(column.fieldId)));
+        for (const issue of customAppTablePresentationIssues(block.display, columns, source.kind === "view" ? "field" : "label")) {
+          diagnostics.push(customAppDiagnostic(locale, issue.code, ["pages", page.id, "blocks", block.id, "display", ...issue.path]));
+        }
       }
       const primaryTableId = plan.tableId;
       recordsPrimaryTableIds.set(`${page.id}\0${block.id}`, primaryTableId);
@@ -1305,7 +1360,12 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
         diagnostics.push(customAppDiagnostic(locale, "workflow_launcher.revision_invalid", [...actionPath, "launcherId"]));
         continue;
       }
-      if (launcher.config.inputMode === "fixed" && Object.keys(action.inputs).length > 0) {
+      const prompt = "prompt" in action ? action.prompt : undefined;
+      if (prompt && (("background" in action && action.background) || action.confirm)) {
+        diagnostics.push(customAppDiagnostic(locale, "workflow_prompt.invalid", [...actionPath, "prompt"]));
+        continue;
+      }
+      if (launcher.config.inputMode === "fixed" && (Object.keys(action.inputs).length > 0 || prompt)) {
         diagnostics.push(customAppDiagnostic(locale, "workflow_launcher.fixed_inputs", [...actionPath, "inputs"]));
         continue;
       }
@@ -1318,7 +1378,18 @@ export const compile = async (input: unknown, client: SqlClient = sql, locale?: 
             );
           }
         }
+        for (const name of prompt?.inputs ?? []) {
+          const input = inputsByName.get(name);
+          if (
+            !input ||
+            !["text", "number", "decimal", "date", "dateTime", "boolean", "select"].includes(input.type) ||
+            name in action.inputs
+          ) {
+            diagnostics.push(customAppDiagnostic(locale, "workflow_prompt.invalid", [...actionPath, "prompt", "inputs"], { name }));
+          }
+        }
         for (const input of workflow.plan.inputs) {
+          if (prompt?.inputs.includes(input.name)) continue;
           const value = action.inputs[input.name];
           if (!value) {
             const message = workflowInputShapeError(input, undefined);

@@ -10,6 +10,7 @@ import { migrate } from "../../migrate";
 import { gridsService } from "../../service";
 import { grantAccess } from "../../service/access";
 import { apply, plan, publish } from "../../service/custom-apps";
+import { refreshLocalCalculations } from "../../service/local-calculation-storage";
 import "../_components/ssr-test-plugin";
 
 const { default: customAppPage } = await import("./page");
@@ -73,6 +74,7 @@ describe("published App SSR availability", () => {
         }}::jsonb, 4)`;
       await sql`UPDATE grids.records SET data = data || ${{ [listFieldId]: [{ Amount: "0.10", Total1: "0.2" }] }}::jsonb
         WHERE id IN (${recordId}::uuid, ${childId}::uuid)`;
+      await refreshLocalCalculations(sql, tableId);
       await sql`INSERT INTO grids.views (id, short_id, table_id, name, source) VALUES
         (${viewId}::uuid, ${viewPublicId}, ${tableId}::uuid, 'Requests', ${`from table {${tablePublicId}}`}),
         (${metricViewId}::uuid, ${metricViewPublicId}, ${tableId}::uuid, 'Count', ${`from table {${tablePublicId}}\naggregate count(*) as Requests`})`;
@@ -127,6 +129,12 @@ describe("published App SSR availability", () => {
                     id: "main",
                     span: 12,
                     blocks: [
+                      {
+                        id: "guidance",
+                        type: "markdown",
+                        markdown:
+                          ":::info Before confirming\nCheck **amount and date** against your bank transactions.\n:::\n<script>alert('unsafe-notice')</script>\n[Unsafe](javascript:alert(1))",
+                      },
                       { id: "record", type: "record", fieldIds: [fieldPublicId], editableFieldIds: [] },
                       {
                         id: "records",
@@ -137,7 +145,13 @@ describe("published App SSR availability", () => {
                         display: { kind: "table", columnIds: [fieldPublicId] },
                       },
                       { id: "metric", type: "metrics", source: { kind: "view", viewId: metricViewPublicId } },
-                      { id: "form", type: "form", formId: formPublicId, fixedValues: {} },
+                      {
+                        id: "form",
+                        type: "form",
+                        formId: formPublicId,
+                        fixedValues: {},
+                        presentation: { kind: "dialog", label: "Open contextual request" },
+                      },
                       { id: "edit-form", type: "form", formId: formPublicId, mode: "edit", fixedValues: {} },
                       {
                         id: "actions",
@@ -183,10 +197,17 @@ describe("published App SSR availability", () => {
       expect(response.status).toBe(200);
       const html = await response.text();
       expect(html).toContain("Public binding survives SSR");
+      expect(html).toContain('data-tone="info"');
+      expect(html).toContain("Before confirming");
+      expect(html).toContain("Check <strong>amount and date</strong> against your bank transactions.");
+      expect(html).not.toContain(":::info");
+      expect(html).not.toContain("unsafe-notice");
+      expect(html).not.toContain('href="javascript:');
       expect(html).toContain(`request_id=${recordPublicId}`);
       expect(html).toContain(formPublicId);
       expect(html).toContain(fieldPublicId);
       expect(html).toContain("edit-form/submit");
+      expect(html).toContain("Open contextual request");
       expect(html).toContain('value="Public binding survives SSR"');
       expect(html).toContain('value="Existing line"');
       expect(html).not.toContain(childId);

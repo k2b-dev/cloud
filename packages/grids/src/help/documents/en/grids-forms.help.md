@@ -14,9 +14,15 @@ Unsaved or submitting forms warn before leaving the page.
 
 **Calculated values** shows up to 20 read-only formulas from visible inputs. Labels allow 200 characters, hints 2,000. Incomplete values show a dash; empty lists hide the summary. Errors remain visible.
 
-**Field width** sets `width: "fullWidth"` (default) or `"compact"` on `user_input`, `computedFields`, `inlineCreate.fields`, and object-list columns. Consecutive compact fields share space and wrap in order; full width starts a full row. Calculated columns use the same layout. `detailsOnly` calculations appear on demand, only with existing rows.
+**Field width** sets `width: "fullWidth"` (default) or `"compact"` on `user_input`, `computedFields`, `inlineCreate.fields`, and object-list columns. Consecutive compact fields share space and wrap in order; full width starts a full row. Object-list tables use widths to budget space for inline controls; the entry dialog uses the form layout. `detailsOnly` calculations appear in the entry dialog.
 
 For object-list columns, **Rules and calculation → Default value** suggests a value only when adding an entry. Existing values stay unchanged. In configuration, set a literal `defaultValue` on the column, using option IDs for selects. It must satisfy the column's rules; calculated columns cannot have defaults. API writes do not fill missing cells from these suggestions.
+
+## Edit object lists
+
+Object lists show compact rows. Switching to editing keeps row heights and column widths stable. Long display values are shortened; open the entry editor to read them in full. Validation messages appear below the table and identify the entry and field. Click a value to edit that row; new entries open directly for input. Tab moves between fields and rows. In single-line text and numeric inputs, Enter finishes the row, Escape undoes its edits, and Ctrl/Cmd+Enter adds another entry.
+
+If the available space is too narrow, click an entry summary to open its editor. Simple text lists can stay inline on a phone. **Edit entry** also opens long text, multiple selections, additional details, and move/remove actions. **Apply** returns to the form; **Apply & add another** keeps entry going. Cancel discards changes to this entry only. All entries are saved together with the form.
 
 ## Create a focused form {icon="forms"}
 

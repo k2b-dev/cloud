@@ -59,7 +59,7 @@ The **Billing** template provides invoices, corrections and commission self-bill
 1. Ask a Base admin to complete **Base settings → Documents** with real company and bank details. Sample records are drafts.
 2. Create an invoice, choose or create its partner, and enter Object-list positions. Check totals, service date and due date before issuing.
 3. Choose **Issue invoice** on the saved document page. You can keep working while the PDF is created. After a rendering failure, choose **Continue creation**: it keeps the same Document, company details and number. `REF-…` is an internal reference, not the invoice number.
-4. Record money actually received or paid out, then **Confirm payment**. Only confirmed payments affect balances; confirmation locks the payment. No bank transfer is executed.
+4. Choose **Record payment received**, **Record payout**, or **Record refund** on the bill. Enter the actual date and amount in the dialog and submit once. Recording and locking happen together; the balance updates immediately. This does not execute a bank transfer. Existing unreviewed entries still need review and confirmation; they do not affect the balance beforehand.
 
 **Open payments** groups overdue payments, payments due today or later, and credit balances to review. Open an amount due to record a payment. Credit balances open the original document for review. Only confirmed payments affect these lists.
 

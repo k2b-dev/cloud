@@ -44,9 +44,10 @@ domTest("accepted document work stays nonblocking and recovers its result on foc
     issue.click();
     await Bun.sleep(10);
     expect(calls).toEqual(["POST"]);
-    expect(issue.disabled).toBe(true);
+    expect(issue.isConnected).toBe(false);
+    expect(dom.root.querySelector('[role="status"]')?.getAttribute("aria-busy")).toBe("true");
     expect(dom.root.textContent).toContain("Creation requested; you can keep working.");
-    dom.root.querySelectorAll("button")[1]!.click();
+    otherButton.click();
     expect(otherClicks).toBe(1);
     dom.window.dispatchEvent(new dom.window.Event("focus"));
     await Bun.sleep(10);

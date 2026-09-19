@@ -592,6 +592,7 @@ steps:
               Status: Reserved
         - createRecord:
             table: Archive
+            finalize: true
             values:
               Name: "\${{ inputs.item.Name }}"
         - finalizeRecord:

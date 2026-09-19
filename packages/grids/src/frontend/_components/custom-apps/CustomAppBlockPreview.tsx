@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
+import { Button, InlineGuidance, MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { createEffect, createMemo, createResource, For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse as DslQueryPreviewResponse } from "../../../api/gql-public";
@@ -130,6 +130,9 @@ function SourcePreview(props: {
               baseId={props.baseId}
               dateConfig={props.dateConfig}
               appId={props.appId}
+              columnReference={props.block.source.kind === "view" ? "field" : "label"}
+              tablePresentation={props.block.display.kind === "table" ? props.block.display : undefined}
+              relativeDateBase={new Date().toISOString()}
               selectedColumnIds={
                 props.block.display.kind === "table" && props.block.display.columnIds.length > 0 ? props.block.display.columnIds : undefined
               }
@@ -261,15 +264,39 @@ export default function CustomAppBlockPreview(props: {
       }
     >
       {(selected) => (
-        <FormSubmit
-          preview
-          form={renderableForm(selected(), Object.keys(props.block.type === "form" ? props.block.fixedValues : {}))}
-          fields={formFields()}
-          dateConfig={props.dateConfig}
-          surface="bare"
-          showTitle={!props.block.title}
-          titleAs="h2"
-        />
+        <Show
+          when={props.block.type === "form" && props.block.presentation}
+          fallback={
+            <FormSubmit
+              preview
+              renderContext={
+                props.block.type === "form" && props.block.actionsBlockId
+                  ? (state) => (
+                      <>
+                        {state.summary}
+                        <InlineGuidance>{text({ value: "Actions using the saved form" })}</InlineGuidance>
+                      </>
+                    )
+                  : undefined
+              }
+              summaryTitle={props.block.type === "form" ? props.block.workspace?.summaryTitle : undefined}
+              summaryDescription={props.block.type === "form" ? props.block.workspace?.summaryDescription : undefined}
+              form={renderableForm(selected(), Object.keys(props.block.type === "form" ? props.block.fixedValues : {}))}
+              fields={formFields()}
+              dateConfig={props.dateConfig}
+              surface="bare"
+              showTitle={!props.block.title}
+              titleAs="h2"
+            />
+          }
+        >
+          {(presentation) => (
+            <Button size="sm" class="self-start" variant={presentation().variant ?? "secondary"} disabled>
+              <i class={`ti ti-${presentation().icon ?? "forms"}`} />
+              {presentation().label}
+            </Button>
+          )}
+        </Show>
       )}
     </Show>
   ) : props.block.type === "actions" ? (

@@ -5,10 +5,13 @@ import { FormulaConfigSchema } from "../../../field-types/formula";
 import { type FormComputedField, planFormComputedFields, previewFormComputedFields } from "../../../form-computed-fields";
 import type { FormConfig } from "../../../service/forms";
 import { formatCell } from "../table/format-cell";
-import { gridsFormMessages } from "./messages";
 import { formFieldClass, formLayoutClass } from "./field-layout";
+import { gridsFormMessages } from "./messages";
 
 export function FormComputedSummary(props: {
+  prominent?: boolean;
+  title?: string;
+  description?: string;
   config: FormConfig;
   fields: FormComputedField[];
   values: Record<string, unknown>;
@@ -17,6 +20,7 @@ export function FormComputedSummary(props: {
   const locale = useLocale();
   const t = () => gridsFormMessages.resolve([locale()]).t;
   const entries = () => props.config.computedFields ?? [];
+  const displayEntries = () => (props.prominent && entries().length ? [entries().at(-1)!, ...entries().slice(0, -1)] : entries());
   const plan = createMemo(() =>
     planFormComputedFields(
       entries().map((entry) => entry.fieldId),
@@ -46,17 +50,21 @@ export function FormComputedSummary(props: {
   return (
     <Show when={entries().length && plan() && !hasEmptyList()}>
       <section
-        class="flex w-full min-w-0 max-w-2xl flex-col gap-3 rounded-lg bg-input p-4"
+        class={
+          props.prominent
+            ? "grids-form-summary flex min-w-0 flex-col gap-3"
+            : "flex w-full min-w-0 max-w-2xl flex-col gap-3 rounded-lg bg-input p-4"
+        }
         aria-label={t().computedSummary}
         aria-live="polite"
       >
-        <h3 class="text-sm font-medium text-dimmed">{t().computedSummary}</h3>
-        <dl class={formLayoutClass}>
-          <For each={entries()}>
+        <h3 class="text-sm font-medium text-secondary">{props.title ?? t().computedSummary}</h3>
+        <dl class={props.prominent ? "grids-form-summary-values" : formLayoutClass}>
+          <For each={displayEntries()}>
             {(entry) => {
               const field = () => props.fields.find((field) => field.id === entry.fieldId);
               return (
-                <div class={`${formFieldClass(entry.width)} flex flex-col gap-1`}>
+                <div class={props.prominent ? "grids-form-summary-value" : `${formFieldClass(entry.width)} flex flex-col gap-1`}>
                   <dt class="min-w-0 break-words text-sm text-dimmed">
                     <span>{entry.label || field()?.name}</span>
                     <Show when={entry.helpText}>
@@ -84,6 +92,9 @@ export function FormComputedSummary(props: {
             }}
           </For>
         </dl>
+        <Show when={props.description}>
+          <p class="text-sm text-secondary">{props.description}</p>
+        </Show>
         <Show when={result().kind !== "values" && result().kind !== "error"}>
           <p class="text-sm text-dimmed">{t().calculationPending}</p>
         </Show>

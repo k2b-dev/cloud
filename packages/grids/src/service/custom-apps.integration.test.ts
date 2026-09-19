@@ -26,6 +26,7 @@ import {
   unpublish,
 } from "./custom-apps";
 import type { FormConfig } from "./forms";
+import { refreshLocalCalculations } from "./local-calculation-storage";
 import { canExecuteWorkflow } from "./workflow-action-scope";
 import { getWorkflow } from "./workflow-definitions";
 import { createLauncher } from "./workflow-launchers";
@@ -39,6 +40,107 @@ beforeAll(async () => {
 });
 
 describe("Grids App lifecycle", () => {
+  postgresTest("publishes scalar prompts and rejects private bindings, unsupported inputs, and extra confirmations", async () => {
+    const baseId = testUuid();
+    const baseShortId = testShortId("B");
+    const workflowId = testUuid();
+    try {
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Workflow prompt')`;
+      await insertTestWorkflow({
+        baseId,
+        id: workflowId,
+        enabled: true,
+        plan: {
+          schemaVersion: 2,
+          languageId: "grids",
+          languageVersion: 1,
+          sourceHash: "a".repeat(64),
+          manifestHash: "b".repeat(64),
+          catalogHash: "c".repeat(64),
+          actionPolicies: {},
+          inputs: [
+            { name: "private", type: "text", config: { required: true } },
+            { name: "amount", type: "decimal", config: { required: true } },
+            { name: "related", type: "record", config: {} },
+          ],
+          triggers: [],
+          steps: [],
+          bindings: {},
+        },
+      });
+      const workflow = await getWorkflow(workflowId);
+      if (!workflow) throw new Error("Missing workflow");
+      const result = await createLauncher(
+        workflow,
+        { name: "Record amount", config: { kind: "customApp", inputMode: "prompt" }, enabled: true },
+        null,
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      const definition = CustomAppDefinitionSchema.parse({
+        schemaVersion: 5,
+        kind: "grids.custom-app",
+        id: testShortId("A"),
+        baseId: baseShortId,
+        name: "Prompt",
+        startPageId: "home",
+        pages: [
+          {
+            id: "home",
+            title: "Home",
+            rows: [
+              {
+                id: "row",
+                columns: [
+                  {
+                    id: "main",
+                    span: 12,
+                    blocks: [
+                      {
+                        id: "actions",
+                        type: "actions",
+                        actions: [
+                          {
+                            id: "record",
+                            kind: "workflow",
+                            label: "Record amount",
+                            launcherId: result.data.shortId,
+                            inputs: { private: { source: "LITERAL", value: "secret" } },
+                            prompt: { inputs: ["amount"] },
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      const block = definition.pages[0]!.rows[0]!.columns[0]!.blocks[0]!;
+      if (block.type !== "actions" || block.actions[0]?.kind !== "workflow") throw new Error("Missing action");
+      const action = block.actions[0];
+      expect((await compile(definition)).ok).toBe(true);
+      for (const names of [["unknown"], ["related"], ["private", "amount"]]) {
+        action.prompt = { inputs: names };
+        expect((await compile(definition)).ok).toBe(false);
+      }
+      action.prompt = { inputs: ["amount"] };
+      delete action.inputs.private;
+      expect((await compile(definition)).ok).toBe(false);
+      action.inputs.private = { source: "LITERAL", value: "secret" };
+      action.confirm = "Confirm again";
+      expect((await compile(definition)).ok).toBe(false);
+      delete action.confirm;
+      action.inputs = {};
+      await sql`UPDATE grids.workflow_launchers SET config = ${{ kind: "customApp", inputMode: "fixed", inputBindings: { private: "secret", amount: "10" } }}::jsonb WHERE id = ${result.data.id}::uuid`;
+      expect((await compile(definition)).ok).toBe(false);
+    } finally {
+      await deleteTestWorkflowScope(baseId);
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+    }
+  });
+
   postgresTest("compiles referenced records through the pinned record query capability", async () => {
     const baseId = testUuid();
     const baseShortId = testShortId("B");
@@ -194,12 +296,34 @@ describe("Grids App lifecycle", () => {
         pageParams: {},
         block: navigationBlock,
         capabilities: navigationCompiled.compiled.capabilities,
+        viewer: { userId: testUuid(), userGroups: [], isAdmin: false },
       });
       expect(navigated?.rowNavigationParams).toEqual({ [orderRecordId]: { customer_id: customerRecordId } });
       if (!navigated) throw new Error("Relation navigation failed");
+      // An App-only reader can see the published relation label without Base
+      // access. Label authority must not widen the underlying query capability.
+      expect(navigationCompiled.compiled.capabilities.recordQueries[0]!.tableIds).toEqual([orderTableId]);
+      if (!navigated.response.ok) throw new Error("Relation query failed");
+      expect(navigated.response.rows[0]?.values.q_col_1).toEqual(["Customer"]);
       const projected = await projectPublishedRecords(navigated);
       expect(projected.rowNavigationParams).toEqual({ [orderRecordShortId]: { customer_id: customerRecordShortId } });
       expect(projected.ok && projected.rows[0]?.recordId).toBe(orderRecordShortId);
+
+      const privateFieldId = testUuid();
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable)
+        VALUES (${privateFieldId}::uuid, ${testShortId("F")}, ${customerTableId}::uuid, 'Private label', 'text', '{}'::jsonb, 1, TRUE)`;
+      const changedLabels = await executePublishedCustomAppRecords({
+        ...runtime,
+        page: navigationPage,
+        pageParams: {},
+        block: navigationBlock,
+        capabilities: navigationCompiled.compiled.capabilities,
+        viewer: { userId: testUuid(), userGroups: [], isAdmin: false },
+      });
+      expect(changedLabels?.response.ok).toBe(false);
+      if (changedLabels?.response.ok === false)
+        expect(changedLabels.response.diagnostics[0]?.message).toContain("query plan capability snapshot");
+      await sql`DELETE FROM grids.fields WHERE id = ${privateFieldId}::uuid`;
 
       // Public references must be resolved in the owning Base, never passed on
       // to a UUID query or accepted merely because the ShortID exists globally.
@@ -371,6 +495,206 @@ describe("Grids App lifecycle", () => {
       `;
       expect(stored?.draft_definition).toEqual(legacyDefinition);
       expect(stored?.published_definition).toEqual(legacyDefinition);
+    } finally {
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+    }
+  });
+
+  postgresTest("publishes table presentation only for available date columns and unique result labels", async () => {
+    const baseId = testUuid();
+    const baseShortId = testShortId("B");
+    const tableId = testUuid();
+    const tableShortId = testShortId("T");
+    const dueId = testUuid();
+    const dueShortId = testShortId("F");
+    const changedId = testUuid();
+    const changedShortId = testShortId("F");
+    const viewId = testUuid();
+    const viewShortId = testShortId("V");
+    try {
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Presentation validation')`;
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
+        VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Tasks')`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES
+        (${dueId}::uuid, ${dueShortId}, ${tableId}::uuid, 'Due', 'date', '{}'::jsonb, 0),
+        (${changedId}::uuid, ${changedShortId}, ${tableId}::uuid, 'Changed', 'date', '{"includeTime":true}'::jsonb, 1)`;
+      await sql`INSERT INTO grids.views (id, short_id, table_id, name, source)
+        VALUES (${viewId}::uuid, ${viewShortId}, ${tableId}::uuid, 'Dates', ${`from table {${tableShortId}}\nselect {${dueShortId}}, {${changedShortId}}`})`;
+      const definition: CustomAppDefinition = {
+        schemaVersion: 5,
+        kind: "grids.custom-app",
+        id: testShortId("A"),
+        baseId: baseShortId,
+        name: "Tasks",
+        startPageId: "home",
+        pages: [
+          {
+            id: "home",
+            title: "Tasks",
+            navigation: { visible: true },
+            parameters: {},
+            rows: [
+              {
+                id: "main",
+                columns: [
+                  {
+                    id: "main",
+                    span: 12,
+                    blocks: [
+                      {
+                        id: "alias",
+                        type: "records",
+                        searchable: true,
+                        pageSize: 25,
+                        source: {
+                          kind: "gql",
+                          query: `from table {${tableShortId}}\nselect {${dueShortId}} as deadline, {${changedShortId}} as updated_at`,
+                        },
+                        display: {
+                          kind: "table",
+                          columnIds: [],
+                          relativeDateColumnIds: ["deadline"],
+                          mobile: { titleColumnId: "deadline", detailColumnIds: ["updated_at"] },
+                        },
+                      },
+                      {
+                        id: "field",
+                        type: "records",
+                        searchable: true,
+                        pageSize: 25,
+                        source: { kind: "gql", query: `from table {${tableShortId}}\nselect {${dueShortId}}, {${changedShortId}}` },
+                        display: {
+                          kind: "table",
+                          columnIds: [dueShortId, changedShortId],
+                          relativeDateColumnIds: ["Due"],
+                          mobile: { titleColumnId: "Due", detailColumnIds: ["Changed"] },
+                        },
+                      },
+                      {
+                        id: "view",
+                        type: "records",
+                        searchable: true,
+                        pageSize: 25,
+                        source: { kind: "view", viewId: viewShortId },
+                        display: {
+                          kind: "table",
+                          columnIds: [dueShortId, changedShortId],
+                          relativeDateColumnIds: [dueShortId],
+                          mobile: { titleColumnId: dueShortId, detailColumnIds: [changedShortId] },
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      definition.pages.push({
+        id: "task",
+        title: "Task",
+        navigation: { visible: false },
+        parameters: { id: { type: "record", tableId: tableShortId, required: true } },
+        record: { tableId: tableShortId, id: { source: "PARAMS", path: "id" } },
+        rows: [
+          {
+            id: "details",
+            columns: [
+              {
+                id: "main",
+                span: 12,
+                blocks: [
+                  {
+                    id: "dates",
+                    type: "record",
+                    fieldIds: [dueShortId, changedShortId],
+                    editableFieldIds: [],
+                    relativeDates: [dueShortId],
+                    layout: "rows",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      const valid = await compile(definition);
+      if (!valid.ok) throw new Error(JSON.stringify(valid.diagnostics));
+      const applied = await apply(definition);
+      if (!applied.ok) throw new Error(JSON.stringify(applied));
+      const published = await publish(applied.data.id);
+      if (!published.ok) throw new Error(JSON.stringify(published));
+      expect(published.data.publishedDefinition).toMatchObject(definition);
+      const page = definition.pages[0]!;
+      const block = page.rows[0]!.columns[0]!.blocks[0]!;
+      if (block.type !== "records") throw new Error("Expected GQL records");
+      const result = await executePublishedCustomAppRecords({
+        baseId,
+        customAppId: applied.data.id,
+        publishedAt: published.data.publishedAt!,
+        page,
+        pageParams: {},
+        block,
+        capabilities: valid.compiled.capabilities,
+        context: canonicalCustomAppQueryContext({}),
+        signal: new AbortController().signal,
+        timeZone: "UTC",
+        viewer: { userId: null, userGroups: [], isAdmin: true },
+        viewerUserId: null,
+        viewerServiceAccountId: null,
+      });
+      if (!result?.response.ok) throw new Error("Published presentation query failed");
+      const projected = await projectPublishedRecords(result);
+      if (!projected.ok) throw new Error("Published projection failed");
+      expect(projected.columns).toEqual([
+        expect.objectContaining({ key: "q_col_0", label: "deadline", fieldId: dueShortId, sqlType: "date" }),
+        expect.objectContaining({ key: "q_col_1", label: "updated_at", fieldId: changedShortId, sqlType: "datetime" }),
+      ]);
+      for (const [relativeDateColumnIds, code] of [
+        [["updated_at"], "records.relative_date_type"],
+        [["q_col_0"], "records.presentation_column"],
+        [["absent"], "records.presentation_column"],
+      ] as const) {
+        const invalid = structuredClone(definition);
+        const block = invalid.pages[0]!.rows[0]!.columns[0]!.blocks[0]!;
+        if (block.type !== "records" || block.display.kind !== "table") throw new Error("Expected table");
+        block.display.relativeDateColumnIds = [...relativeDateColumnIds];
+        const saved = await saveDraft(applied.data.id, invalid);
+        expect(saved.ok).toBe(true);
+        const rejected = await publish(applied.data.id);
+        expect(rejected.ok).toBe(false);
+        const compiled = await compile(invalid);
+        if (compiled.ok) throw new Error("Invalid presentation compiled");
+        expect(compiled.diagnostics.some((diagnostic) => diagnostic.code === code)).toBe(true);
+        expect((await get(applied.data.id))?.publishedDefinition).toEqual(published.data.publishedDefinition);
+      }
+      const invalidRecord = structuredClone(definition);
+      const dateRecord = invalidRecord.pages[1]!.rows[0]!.columns[0]!.blocks[0]!;
+      if (dateRecord.type !== "record") throw new Error("Expected Record block");
+      dateRecord.relativeDates = [changedShortId];
+      const recordResult = await compile(invalidRecord);
+      if (recordResult.ok) throw new Error("Timestamp relative date compiled");
+      expect(recordResult.diagnostics.some((diagnostic) => diagnostic.code === "record.relative_date_type")).toBe(true);
+      const hidden = structuredClone(definition);
+      const hiddenBlock = hidden.pages[0]!.rows[0]!.columns[0]!.blocks[0]!;
+      if (hiddenBlock.type !== "records" || hiddenBlock.display.kind !== "table") throw new Error("Expected table");
+      hiddenBlock.display.columnIds = [dueShortId];
+      const compiled = await compile(hidden);
+      expect(compiled.ok).toBe(false);
+      if (compiled.ok) throw new Error("Hidden presentation column compiled");
+      expect(compiled.diagnostics.some((diagnostic) => diagnostic.code === "records.presentation_column")).toBe(true);
+      // Repeated selected columns need an explicit distinct alias when used
+      // by presentation; never choose whichever matching label comes last.
+      const duplicate = structuredClone(definition);
+      const fieldBlock = duplicate.pages[0]!.rows[0]!.columns[0]!.blocks[1]!;
+      if (fieldBlock.type !== "records" || fieldBlock.display.kind !== "table") throw new Error("Expected table");
+      fieldBlock.source = { kind: "gql", query: `from table {${tableShortId}}\nselect {${dueShortId}}, {${dueShortId}}` };
+      fieldBlock.display.mobile = { titleColumnId: "Due", detailColumnIds: [] };
+      duplicate.pages[0]!.rows[0]!.columns[0]!.blocks = [fieldBlock];
+      const ambiguous = await compile(duplicate);
+      if (ambiguous.ok) throw new Error("Ambiguous output label compiled");
+      expect(ambiguous.diagnostics.some((diagnostic) => diagnostic.code === "records.presentation_column")).toBe(true);
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
@@ -1034,6 +1358,7 @@ describe("Grids App lifecycle", () => {
         INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES (${requestRecordId}::uuid, ${requestRecordShortId}, ${tableId}::uuid, ${JSON.stringify({ [fieldId]: authUser.id })}::text::jsonb)
       `;
+      await refreshLocalCalculations(sql, tableId);
       const publishedAt = firstPublish.data.publishedAt!;
       const appGrant = await grantAccess({
         resourceType: "customApp",

@@ -420,6 +420,8 @@ domTest("German decimal entry submits exact canonical text for fields and object
   );
   try {
     const amount = dom.root.querySelector<HTMLInputElement>('input[name="FIELD1"]')!;
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Price · Eintrag 1"]')!.click();
+    await Promise.resolve();
     const price = dom.root.querySelector<HTMLInputElement>('input[name="FIELD2-0-Price1"]')!;
     expect(amount.value).toBe("10,5");
     price.focus();

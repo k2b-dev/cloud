@@ -34,7 +34,7 @@ Eine App hat 1–12 Seiten. Spaltenbreiten ergeben je Zeile höchstens 12. Die S
 
 ## Sämtliche Blockoptionen {icon="blocks"}
 
-Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–160 Zeichen) und `availableWhen:{query}`. Abfragen haben 1–20.000 Zeichen. Optionale Werte weglassen statt `null` einzutragen. `emptyText` (1–240 Zeichen) unterstützen nur `records`, `referenced_records` und `record`.
+Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–160 Zeichen) und `availableWhen:{query}` und `disclosure:{label,defaultOpen?}`. Abfragen haben 1–20.000 Zeichen. Optionale Werte weglassen statt `null` einzutragen. `emptyText` (1–240 Zeichen) unterstützen nur `records`, `referenced_records` und `record`.
 
 | `type` | Weitere Pflichtfelder | Optional und Standardwerte |
 | --- | --- | --- |
@@ -43,10 +43,10 @@ Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–
 | `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (bis 6) |
 | `metrics` | `source` | `valueFormat` (gemeinsames Format für alle Werte dieses Blocks) |
 | `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (je 1–60) |
-| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (bis 30), `heading:{fieldId,documentNumber?}`, `documents:{templateIds:[…]}` (1–12) |
+| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (bis 30), `layout:grid\|rows\|compact\|summary\|context`, `relativeDates`, `heading:{fieldId,documentNumber?,title?}`, `documents:{templateIds:[…]}` (1–12) |
 | `html` | `fieldId` | `height:normal` (`compact\|normal\|large`) |
 | `comments` | keine | keine |
-| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate` |
+| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate`, `actionsBlockId`, `workspace:{summaryTitle?,summaryDescription?,helpTitle?,helpText?}`, `presentation:{kind:dialog,label,icon?,variant?}` |
 | `actions` | `actions` (1–12) | keine |
 | `scanner` | `launcherId` | keine |
 
@@ -63,10 +63,12 @@ Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–
 Aktionen im `actions`-Block benötigen `id`, `label` (1–120) und `kind`. Beide Arten unterstützen `icon` und `availableWhen`.
 
 - `kind:navigate` benötigt zusätzlich `pageId` und `params`; `history` ist standardmäßig `push`, alternativ `replace`.
-- `kind:workflow` benötigt `launcherId`; `inputs` ist standardmäßig `{}`. `confirm` ist optionaler Bestätigungstext (1–240 Zeichen). Binde alle erforderlichen Workflow-Eingaben. Ein Prompt-Launcher öffnet innerhalb der App kein Eingabeformular.
+- `kind:workflow` benötigt `launcherId`; `inputs` ist standardmäßig `{}`. `confirm` ist optionaler Bestätigungstext (1–240 Zeichen). Binde alle erforderlichen Workflow-Eingaben oder frage sie über `prompt: { inputs: ["date", "amount"], description?, successMessage? }` ab. Die Namen wählen ungebundene skalare Workflow-Eingaben (text, decimal, number, date, dateTime, boolean oder select); Beschriftungen und Validierung stammen aus dem veröffentlichten Workflow. Diese Aktionen öffnen einen kompakten Dialog. Bei unklarem Ausgang bleiben Eingaben und Vorgangsschlüssel für Wiederholungen erhalten. Ein Prompt ist nicht mit `confirm`, `background`, festen Launchern oder Zeilenaktionen kombinierbar. Browser-Eingaben überschreiben niemals Server-Bindungen.
 - Zeilenaktionen erlauben nur `kind:workflow`, mit denselben Feldern und zusätzlich `showLabel:true`. `false` benötigt ein Icon; die Beschriftung bleibt für Barrierefreiheit erforderlich.
 - `rowNavigate` enthält `kind:navigate`, `pageId`, `params` und optional `history:push|replace`, keine Beschriftung oder Aktions-ID.
 - `onSuccessNavigate` enthält `kind:navigate`, `pageId` und `params`. Nach Erfolg wird die Navigation ersetzt; eine `history`-Option gibt es hier nicht.
+
+Dialog-Vorgänge mit unklarem Ausgang bleiben in diesem Browser-Tab auch nach dem Neuladen erhalten. Auf der ursprünglichen Seite kannst du ihren Status prüfen, auch wenn der ursprüngliche Button nicht mehr angezeigt wird. Wiederholungen bleiben an den ursprünglichen Workflow-Starter gebunden; eine neu veröffentlichte Aktion leitet einen vorhandenen Versuch nicht auf einen anderen Workflow um. Prüfe den Status vor einer weiteren Erfassung. Beim Schließen des Tabs oder Löschen des Browser-Speichers geht diese lokale Wiederaufnahme verloren; prüfe dann die vorhandenen Einträge vor einer erneuten Erfassung.
 
 Bindungen sind Objekte, keine Ausdrücke. Erlaubte Quellen hängen von ihrer Position ab:
 

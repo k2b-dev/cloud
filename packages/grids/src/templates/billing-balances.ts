@@ -5,7 +5,11 @@ import { field, formula, type GridTemplate, table, view } from "./types";
 export const billingBalanceSource = (
   t: BillingText,
   oneRecord = false,
-  options: { metrics?: boolean; group?: "overdue" | "upcoming" | "credits" } = {},
+  options: {
+    metrics?: "outstanding" | "credit";
+    group?: "overdue" | "upcoming" | "credits" | "open" | "settled" | "nonpositive";
+    invoiceOnly?: boolean;
+  } = {},
 ) => {
   const paid = "IF(ISBLANK(payments_summary.summed_amount), 0, payments_summary.summed_amount)";
   const corrected = "IF(ISBLANK(credited.summed_amount), 0, credited.summed_amount)";
@@ -19,20 +23,27 @@ export const billingBalanceSource = (
     view("correction_totals"),
     " as credited on credited.gk_0 = bill.id\nselect ",
     ...(options.metrics ? [] : [field("bills.party_name"), ", ", field("bills.kind"), ", ", field("bills.due_date"), ", "]),
-    ...(options.group ? [] : [field("bills.gross"), `, formula(${paid}) as ${t.paid}, formula(${corrected}) as ${t.corrected}, `]),
+    ...(options.group || options.metrics
+      ? []
+      : [field("bills.gross"), `, formula(${paid}) as ${t.paid}, formula(${corrected}) as ${t.corrected}, `]),
     "formula(",
+    ...(options.metrics === "credit" ? ["0 - ("] : []),
     ...outstanding,
-    `) as ${t.outstanding}`,
+    ...(options.metrics === "credit" ? [")"] : []),
+    `) as ${options.metrics === "credit" ? t.creditBalance : t.outstanding}`,
     "\nwhere record.finalizationState = 'finalized'",
     oneRecord ? " and record.id = @params.bill_id" : "",
+    ...(options.invoiceOnly ? [" and ", field("bills.kind"), " = 'invoice'"] : []),
     ...(options.group
       ? [
           " and ",
+          field("bills.kind"),
+          " != 'creditNote' and ",
           ...outstanding,
-          options.group === "credits" ? " < 0" : " > 0",
-          ...(options.group === "credits"
-            ? []
-            : [" and ", field("bills.due_date"), options.group === "overdue" ? " < TODAY()" : " >= TODAY()"]),
+          options.group === "credits" ? " < 0" : options.group === "settled" ? " = 0" : options.group === "nonpositive" ? " <= 0" : " > 0",
+          ...(options.group === "overdue" || options.group === "upcoming"
+            ? [" and ", field("bills.due_date"), options.group === "overdue" ? " < TODAY()" : " >= TODAY()"]
+            : []),
         ]
       : []),
     ...(oneRecord ? ["\nlimit 1"] : ["\nsort ", field("bills.due_date"), " asc, record.createdAt desc"]),

@@ -24,6 +24,7 @@ import {
 } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import { GRIDS_EVENT } from "../workflows/events";
 import type {
   GridsWorkflowChannel,
   GridsWorkflowLauncherKind,
@@ -91,6 +92,7 @@ export type GridsWorkflowAuthorization =
       actionId: string;
       recordId?: string;
       background?: true;
+      requestFingerprint?: string;
       search?: string;
       cursor?: string;
       revision: number;
@@ -380,6 +382,26 @@ export const getWorkflowRunScope = async (runId: string, client?: SqlClient): Pr
     authorization: snapshot.authorization,
     launcherId: (row.launcher_id as string | null) ?? snapshot.launcherId,
   };
+};
+
+/** Find an accepted action receipt; callers must recheck current App access and ownership. */
+export const findCustomAppActionRun = async (input: {
+  baseId: string;
+  workflowId: string;
+  launcherId: string;
+  operationId: string;
+}): Promise<string | null> => {
+  const [row] = await sql<Array<{ id: string }>>`
+    SELECT r.id::text FROM workflows.event e
+    JOIN workflows.run r ON r.event_id = e.id AND r.workflow_id = ${input.workflowId}::uuid
+    JOIN grids.workflow_run_profile p ON p.run_id = r.id AND p.base_id = ${input.baseId}::uuid
+    WHERE e.app_id = ${GRIDS_APP_ID} AND e.scope_id = ${input.baseId}
+      AND e.type = ${GRIDS_EVENT.launcherPressed}
+      AND e.dedupe_key = ${`${input.workflowId}:launcher:${input.launcherId}:${input.operationId}`}
+      AND r.mode = 'execute'
+    LIMIT 1
+  `;
+  return row?.id ?? null;
 };
 
 // ─── Cancelling ──────────────────────────────────────────────────────────────

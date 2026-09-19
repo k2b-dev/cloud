@@ -108,6 +108,8 @@ export function FieldInput(props: {
   /** Render an inline error string. Reactive on purpose. */
   error?: () => string | undefined;
   validate?: boolean;
+  /** Hide repeated field labels inside a labelled object-list table cell. */
+  compact?: boolean;
   /** Required for relation rendering — drives RelationPicker chip
    *  deep-links. Omitted for the field designer's default-value editor;
    *  RelationPicker degrades to a non-deep-linkable picker there. */
@@ -126,7 +128,8 @@ export function FieldInput(props: {
   const t = () => gridsFormMessages.resolve([locale()]).t;
   const label = props.entry.label || props.field.name;
   const required = props.entry.required ?? props.field.required;
-  const helpText = props.entry.helpText;
+  const inputLabel = () => (props.compact ? undefined : label);
+  const helpText = props.compact ? undefined : props.entry.helpText;
   const error = () => props.error?.();
 
   // Helpers narrowing the unknown value to a usable shape per input
@@ -150,8 +153,9 @@ export function FieldInput(props: {
           error={error()}
           dateConfig={props.dateConfig}
           onChange={props.onChange}
-          renderCell={(column, name, value, onChange, error) => (
+          renderCell={(column, name, value, onChange, error, compact) => (
             <FieldInput
+              compact={compact}
               field={{ ...column, id: name }}
               entry={{ kind: "user_input", fieldId: name, helpText: column.description }}
               value={value()}
@@ -167,7 +171,8 @@ export function FieldInput(props: {
       return (
         <TextInput
           name={props.field.id}
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           markdown={markdown || undefined}
@@ -188,7 +193,8 @@ export function FieldInput(props: {
       return (
         <TextInput
           name={props.field.id}
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           multiline
@@ -222,7 +228,8 @@ export function FieldInput(props: {
       return (
         <TextInput
           name={props.field.id}
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           value={() => (editing() ? draft() : compactNumberText())}
@@ -236,7 +243,7 @@ export function FieldInput(props: {
             props.onChange(normalizeNumberInput(v, locale()));
           }}
           inputMode={decimalPlaces === 0 ? "numeric" : "decimal"}
-          icon="ti ti-number"
+          icon={props.compact ? undefined : "ti ti-number"}
           prefix={unit && unitPosition === "prefix" ? <span class="font-mono">{unit}</span> : undefined}
           suffix={unit && unitPosition !== "prefix" ? <span class="font-mono">{unit}</span> : undefined}
           clearable={!required}
@@ -248,7 +255,8 @@ export function FieldInput(props: {
     case "percent":
       return (
         <NumberInput
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           min={0}
@@ -269,7 +277,8 @@ export function FieldInput(props: {
       return (
         <TextInput
           name={props.field.id}
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           placeholder={t().durationPlaceholder}
@@ -282,7 +291,8 @@ export function FieldInput(props: {
     case "boolean":
       return (
         <Checkbox
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           value={boolValue}
@@ -297,7 +307,8 @@ export function FieldInput(props: {
       const onPickerChange = (v: string | null) => props.onChange(v ?? "");
       return includeTime ? (
         <DateTimePicker
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           dateConfig={props.dateConfig}
@@ -308,7 +319,8 @@ export function FieldInput(props: {
         />
       ) : (
         <DatePicker
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           dateConfig={props.dateConfig}
@@ -323,7 +335,8 @@ export function FieldInput(props: {
     case "datetime":
       return (
         <DateTimePicker
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           dateConfig={props.dateConfig}
@@ -379,7 +392,8 @@ export function FieldInput(props: {
       }
       return (
         <Select
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           options={optionCards.map((o) => ({ id: o.id, label: o.label, description: o.description }))}
@@ -506,7 +520,8 @@ export function FieldInput(props: {
       return (
         <TextInput
           name={props.field.id}
-          label={label}
+          label={inputLabel()}
+          aria-label={props.compact ? label : undefined}
           description={helpText}
           required={required}
           value={stringValue}

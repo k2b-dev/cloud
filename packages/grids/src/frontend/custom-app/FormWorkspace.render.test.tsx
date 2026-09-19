@@ -3,7 +3,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../_components/ssr-test-plugin";
 
-const { default: FormWorkspace } = await import("./FormWorkspace.island");
+const { default: FormWorkspace } = await import("./FormWorkspace.island.tsx");
 test("the complete form workspace renders through the real island serialization boundary", () => {
   const html = renderToString(() =>
     createComponent(FormWorkspace, {
@@ -21,6 +21,7 @@ test("the complete form workspace renders through the real island serialization 
         {
           id: "issue",
           kind: "workflow",
+          launcherId: "ISSUE1",
           label: "Issue invoice",
           endpoint: "/issue",
           background: { acceptedMessage: "Requested", state: { status: "running" } },

@@ -90,7 +90,7 @@ Die Veröffentlichung von neuem YAML erstellt eine unveränderliche Revision. Di
 
 ## Eingabereferenz {icon="book-2"}
 
-Jede Eingabe besitzt `type`. Optionale Texte `label` und `description` erscheinen in generierten Steuerelementen. `required: true` lehnt einen fehlenden Wert ab. Ohne `required` ist die Eingabe optional.
+Jede Eingabe besitzt `type`. Optionale Texte `label` und `description` erscheinen in generierten Steuerelementen. `required: true` lehnt einen fehlenden Wert ab. Ohne `required` ist die Eingabe optional. Fehlende oder mit `null` übergebene optionale skalare Eingaben ergeben in Workflow-Ausdrücken `null`; `false`, `0` und leerer Text bleiben unverändert.
 
 | Typ | Ausführungswert | Zusätzliche Deklaration |
 | --- | --- | --- |
@@ -98,10 +98,13 @@ Jede Eingabe besitzt `type`. Optionale Texte `label` und `description` erscheine
 | `recordList` | Geordnete Liste öffentlicher Datensatz-IDs, höchstens 10.000 | Erforderlicher exakter Tabellenname oder öffentliche ID unter `table` |
 | `text` | Zeichenfolge | Keine |
 | `number` | Endliche Zahl | Keine |
+| `decimal` | Exakter Dezimalstring, etwa `"12.50"` | Keine |
 | `boolean` | `true` oder `false` | Keine |
 | `date` | Datum im Format `YYYY-MM-DD` | Keine |
 | `dateTime` | ISO-Datum mit Uhrzeit | Keine |
 | `select` | Zeichenfolge, die einer konfigurierten Option entspricht | Erforderliche Liste `options` mit 1 bis 200 Werten |
+
+Dezimalfelder akzeptieren das Dezimaltrennzeichen der Sprache, ohne Tausendertrennzeichen. Der Lauf erhält normalisierte Dezimalstrings ohne Gleitkommakonvertierung im unterstützten Wertebereich gewöhnlicher Zahlenfelder. Verwende `decimal` für exakte Beträge.
 
 Datensatzeingaben werden vor der Schrittausführung gegen die gebundene Tabelle und aktuelle Leseberechtigung geprüft. Unbekannte Eingaben, fehlende Datensätze, unzugängliche Tabellen, falsche Werttypen und Werte außerhalb der Optionen einer Auswahl lehnen den Aufruf ab.
 
@@ -352,7 +355,7 @@ Das Ergebnis von `generateDocument` enthält `business`, den gespeicherten Unter
 :::reference
 - **locks:** Datensatz- oder Listenreferenzen wie `inputs.item` oder `inputs.items`, vor Prüfungen in stabiler Reihenfolge gesperrt. Duplikate zählen einmal; explizite Sperren, Änderungsziele und `validateDocuments`-Ziele dürfen zusammen höchstens 100 verschiedene Datensätze umfassen. Leere Listen sperren nichts. Jeder konkurrierende Workflow muss denselben Koordinationsdatensatz für dieselbe fachliche Entscheidung sperren.
 - **checks:** Wähle `query: {source, parameters}` oder `table` mit 1–20 AND-verknüpften `where`-Prädikaten (`field`, `op`, optional `value`/`caseInsensitive`). `assert: empty|notEmpty` prüft Zeilenexistenz; optional erklärt `message` den Fehler.
-- **changes:** Geordnete Liste aus Einträgen `createRecord`, `updateRecord` oder `finalizeRecord`. Erstellen verwendet `table` und nicht leere `values`. Aktualisieren verwendet `record`, nicht leeres `set`, optional `ifVersion` und optionale `audit`-Antworten. Finalisieren verwendet `record` und benötigt aktivierte direkte Finalisierung; die Vier-Augen-Freigabe wird nicht umgangen. Finalisiere nach den nötigen Aktualisierungen. Eine später abgelehnte Änderung nimmt auch die Finalisierung zurück.
+- **changes:** Geordnete Liste aus Einträgen `createRecord`, `updateRecord` oder `finalizeRecord`. Erstellen verwendet `table` und nicht leere `values`; optionales `finalize: true` erstellt und finalisiert den neuen Datensatz in dieser Transaktion. Dafür muss direkte Finalisierung aktiviert sein. Bei fehlgeschlagener Finalisierung bleibt kein Entwurf zurück. Aktualisieren verwendet `record`, nicht leeres `set`, optional `ifVersion` und optionale `audit`-Antworten. Finalisieren verwendet `record` und benötigt aktivierte direkte Finalisierung; die Vier-Augen-Freigabe wird nicht umgangen. Finalisiere nach den nötigen Aktualisierungen. Eine später abgelehnte Änderung nimmt auch die Finalisierung zurück.
 - **transaction:** Berechtigungen und Zeilenbereich werden erneut geprüft. Datensätze, Relationen, Audit, Outbox und Ergebnis werden gemeinsam festgeschrieben oder zurückgerollt.
 :::
 

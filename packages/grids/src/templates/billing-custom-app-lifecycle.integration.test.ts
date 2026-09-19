@@ -317,13 +317,15 @@ postgresTest(
       expect(render).toHaveBeenCalledTimes(2);
 
       // The published copy action works for an App reader without Base access.
-      const copyRun = await start("bill", "reuse", "reuse-invoice", { bill_id: draft.data.id }, { bill: draft.data.shortId });
+      const copyRun = await start("bill", "other-actions", "reuse-invoice", { bill_id: draft.data.id }, { bill: draft.data.shortId });
       await finish(copyRun);
       const [copy] = await sql`SELECT id::text, short_id FROM grids.records WHERE table_id = ${bills.id}::uuid AND finalized_at IS NULL`;
       expect(copy).toBeDefined();
       const copiedPage = await api.request(`/runtime/${app.shortId}/bill?bill_id=${copy.short_id}`);
       expect(copiedPage.status, await copiedPage.clone().text()).toBe(200);
-      const repeated = await start("bill", "reuse", "reuse-invoice", { bill_id: copy.id }, { bill: copy.short_id }).catch(() => null);
+      const repeated = await start("bill", "other-actions", "reuse-invoice", { bill_id: copy.id }, { bill: copy.short_id }).catch(
+        () => null,
+      );
       expect(repeated).toBeNull();
 
       // The real app reader receives the single-record numeric snapshot,
@@ -336,11 +338,7 @@ postgresTest(
             id: "balance",
             metrics: {
               ok: true,
-              cells: expect.arrayContaining([
-                expect.objectContaining({ label: "Paid", value: "0" }),
-                expect.objectContaining({ label: "Corrected", value: "0" }),
-                expect.objectContaining({ label: "Outstanding", value: "119" }),
-              ]),
+              cells: expect.arrayContaining([expect.objectContaining({ label: "Outstanding", value: "119" })]),
             },
           }),
         ]),
@@ -357,20 +355,16 @@ postgresTest(
       expect((await get(payments.id, payment.data.id))?.finalizedAt).not.toBeNull();
       const summaryAfterPayment = await api.request(`/runtime/${app.shortId}/bill?bill_id=${draft.data.shortId}`);
       expect(summaryAfterPayment.status).toBe(200);
-      expect(await summaryAfterPayment.json()).toMatchObject({
+      const settledPage = await summaryAfterPayment.json();
+      expect(settledPage).toMatchObject({
         blocks: expect.arrayContaining([
-          expect.objectContaining({
-            id: "balance",
-            metrics: {
-              ok: true,
-              cells: expect.arrayContaining([
-                expect.objectContaining({ label: "Paid", value: "119" }),
-                expect.objectContaining({ label: "Outstanding", value: "0" }),
-              ]),
-            },
-          }),
+          expect.objectContaining({ id: "settled-balance", markdown: "Fully settled." }),
+          expect.objectContaining({ id: "secondary-payment-entry", type: "actions" }),
         ]),
       });
+      for (const id of ["balance", "credit-balance", "due-date", "payment-entry", "refund-entry"]) {
+        expect(settledPage.blocks).not.toEqual(expect.arrayContaining([expect.objectContaining({ id })]));
+      }
       const discarded = await create(bills.id, draftData, null, "form");
       if (!discarded.ok) throw new Error(discarded.error.message);
       await finish(await start("bill", "issue-actions", "discard", { bill_id: discarded.data.id }, { bill: discarded.data.shortId }));

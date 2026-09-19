@@ -6,7 +6,7 @@ import { decimalStringToCanonical } from "../formula/numeric";
 import { normalizeRefKey } from "../ref-syntax";
 import type { SqlClient } from "../service/audit";
 import { runBoundedQuery } from "../service/bounded-query";
-import { buildComputedFieldSqlMap, readableComputedTargetTableIds } from "../service/computed-projections";
+import { readableComputedTargetTableIds } from "../service/computed-projections";
 import { getGridsCrudMessages } from "../service/crud-messages";
 import { type FederatedRevisionScope, verifyRevisionScope } from "../service/federated-tables";
 import { isMultiSelectField, storageOf } from "../service/field-storage";
@@ -18,7 +18,7 @@ import { buildRelationLabelCacheForIds, type ExpansionViewer } from "../service/
 import { compileSearchClause } from "../service/search";
 import type { DocumentTemplateAppData } from "../service/template-context";
 import type { Field } from "../service/types";
-import { dslQueryCalculationFieldIds } from "./plan-dependencies";
+import { buildDslComputedSqlInputs } from "./computed-sql-inputs";
 import { type DslResolvedSqlQueryPlan, isDslAggregateOnlyPlan } from "./resolver";
 import { type DslResultCursor, encodeDslResultCursor } from "./result-cursor";
 import { collectDslPlanTableIds } from "./source-plan";
@@ -32,7 +32,7 @@ import {
   dslJoinRecordAlias,
 } from "./sql-compiler";
 import type { DslSqlRecordSource } from "./sql-compiler-types";
-import { buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "./sql-record-source";
+import { buildDslSqlRecordSource } from "./sql-record-source";
 
 type DslQueryPreviewSuccess = Extract<DslQueryPreviewResponse, { ok: true }>;
 type DslQueryPreviewRow = DslQueryPreviewSuccess["rows"][number];
@@ -63,6 +63,8 @@ type DslQueryPreviewOptions = {
   /** Records-table consumers need raw relation ids and build their existing
    * label cache separately. Query-style consumers default to display labels. */
   labelRelationValues?: boolean;
+  /** Published Apps pin the exact relation-label fields during compilation. */
+  relationLabelFieldIdsByTableId?: ReadonlyMap<string, readonly string[]>;
   /** Pins multi-page/internal consumers to the exact Combined revisions used
    * by their first statement. */
   expectedFederatedRevisionScope?: FederatedRevisionScope;
@@ -412,7 +414,12 @@ const labelRelationPreviewValues = async (
   }
 
   if (idsByTargetTable.size === 0) return { rows, labeledColumnKeys: relationColumnKeys };
-  const labels = await buildRelationLabelCacheForIds(idsByTargetTable, options.viewer, options.client);
+  const labels = await buildRelationLabelCacheForIds(
+    idsByTargetTable,
+    options.viewer,
+    options.client,
+    options.relationLabelFieldIdsByTableId,
+  );
 
   return {
     rows: rows.map((row) => {
@@ -747,106 +754,16 @@ export const previewDslQuery = async (
         [...authorizedComputedTableIds].filter((tableId) => options.viewer!.readableTableIds!.has(tableId)),
       );
     }
-    const computedDateConfig = options.timeZone ? { timeZone: options.timeZone } : undefined;
-    const calculationFieldIds = dslQueryCalculationFieldIds(plan, options.fieldsByTableId);
-    const computedFieldSql = await buildComputedFieldSqlMap(options.fieldsByTableId[plan.tableId] ?? [], {
-      sourceFieldSql: buildFederatedFieldSqlMap(recordSource, options.fieldsByTableId[plan.tableId] ?? []),
-      fieldIds: calculationFieldIds,
+    const computedSqlInputs = await buildDslComputedSqlInputs(plan, {
       fieldsByTableId: options.fieldsByTableId,
-      requireCapturedValues: true,
-      useFinalizedFormulaValues: recordSource?.kind !== "federated",
-      useStoredLocalValues: recordSource?.kind !== "federated",
-      finalizedOnly:
-        !plan.derivedViewSource &&
-        plan.query.recordMeta?.finalizationStates?.length === 1 &&
-        plan.query.recordMeta.finalizationStates[0] === "finalized",
-      dateConfig: computedDateConfig,
+      recordSourcesByTableId,
+      timeZone: options.timeZone,
       client: options.client,
       authorizedTableIds: authorizedComputedTableIds,
     });
-    const computedFieldSqlByJoinAlias = new Map<string, Awaited<ReturnType<typeof buildComputedFieldSqlMap>>>();
-    for (const join of plan.summaryJoins ?? []) {
-      const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
-        sourceFieldSql: buildFederatedFieldSqlMap(
-          recordSourcesByTableId.get(join.tableId),
-          options.fieldsByTableId[join.tableId] ?? [],
-          "r",
-        ),
-        fieldIds: calculationFieldIds,
-        fieldsByTableId: options.fieldsByTableId,
-        requireCapturedValues: true,
-        useFinalizedFormulaValues: true,
-        useStoredLocalValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
-        finalizedOnly:
-          join.source.query.recordMeta?.finalizationStates?.length === 1 &&
-          join.source.query.recordMeta.finalizationStates[0] === "finalized",
-        dateConfig: computedDateConfig,
-        client: options.client,
-        authorizedTableIds: authorizedComputedTableIds,
-      });
-      computedFieldSqlByJoinAlias.set(join.alias, map);
-    }
-    for (const [index, join] of (plan.joins ?? []).entries()) {
-      const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
-        sourceFieldSql: buildFederatedFieldSqlMap(
-          recordSourcesByTableId.get(join.tableId),
-          options.fieldsByTableId[join.tableId] ?? [],
-          dslJoinRecordAlias(index),
-        ),
-        fieldIds: calculationFieldIds,
-        fieldsByTableId: options.fieldsByTableId,
-        requireCapturedValues: true,
-        useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
-        useStoredLocalValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
-        dateConfig: computedDateConfig,
-        client: options.client,
-        recordAlias: dslJoinRecordAlias(index),
-        authorizedTableIds: authorizedComputedTableIds,
-      });
-      if (map.size > 0) computedFieldSqlByJoinAlias.set(join.alias, map);
-    }
-    for (const [index, join] of (plan.derivedViewSource?.joins ?? []).entries()) {
-      const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
-        sourceFieldSql: buildFederatedFieldSqlMap(
-          recordSourcesByTableId.get(join.tableId),
-          options.fieldsByTableId[join.tableId] ?? [],
-          dslDerivedJoinRecordAlias(index),
-        ),
-        fieldIds: calculationFieldIds,
-        fieldsByTableId: options.fieldsByTableId,
-        requireCapturedValues: true,
-        useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
-        useStoredLocalValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
-        dateConfig: computedDateConfig,
-        client: options.client,
-        recordAlias: dslDerivedJoinRecordAlias(index),
-        authorizedTableIds: authorizedComputedTableIds,
-      });
-      if (map.size > 0) computedFieldSqlByJoinAlias.set(join.alias, map);
-    }
-    for (const [index, join] of (plan.derivedViewSource?.relationJoins ?? []).entries()) {
-      const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
-        sourceFieldSql: buildFederatedFieldSqlMap(
-          recordSourcesByTableId.get(join.tableId),
-          options.fieldsByTableId[join.tableId] ?? [],
-          dslJoinRecordAlias(index),
-        ),
-        fieldIds: calculationFieldIds,
-        fieldsByTableId: options.fieldsByTableId,
-        requireCapturedValues: true,
-        useFinalizedFormulaValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
-        useStoredLocalValues: recordSourcesByTableId.get(join.tableId)?.kind !== "federated",
-        dateConfig: computedDateConfig,
-        client: options.client,
-        recordAlias: dslJoinRecordAlias(index),
-        authorizedTableIds: authorizedComputedTableIds,
-      });
-      if (map.size > 0) computedFieldSqlByJoinAlias.set(join.alias, map);
-    }
     const compileInputs = {
       searchClause,
-      computedFieldSql,
-      computedFieldSqlByJoinAlias,
+      ...computedSqlInputs,
       viewSourceSearchClause,
       recordSourcesByTableId,
       ...(recordSource ? { recordSource } : {}),

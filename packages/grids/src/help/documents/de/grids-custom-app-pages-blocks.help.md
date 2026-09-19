@@ -17,15 +17,35 @@ Wähle unter **Routenparameter** eine Parameter-ID und ihre Tabelle. Ein Datensa
 
 Seiten enthalten Zeilen, Spalten und Blöcke. Nutze Breite 12 für eine Aufgabe, 8 + 4 für Hauptinhalt und Kontext oder 6 + 6 für gleichrangige Inhalte. Auf schmalen Bildschirmen stehen Spalten in derselben Reihenfolge untereinander. Prüfe beide Breiten vor dem Veröffentlichen; separate mobile Layouts sind nicht nötig.
 
+Platziere die nächste Aktion neben den Informationen, die dafür nötig sind. Nutze einen Dialog für kurze Aufgaben, die über eine Schaltfläche beginnen. Ein Formular bleibt direkt eingebettet, wenn es zusammen mit dem Kontext auf der Seite bearbeitet werden soll.
+
+Für ergänzende Informationen kannst du jedem Block `disclosure: { label: "Weitere Angaben" }` geben. Ein Klick auf die Überschrift öffnet den Inhalt; mit `defaultOpen: true` startet er aufgeklappt. Das Einklappen verzögert das Laden nicht und verändert keine Berechtigungen. Für die Verfügbarkeit nutzt du `availableWhen`.
+
 ## Ressourcenbasierte Blöcke konfigurieren {icon="blocks"}
 
 ### Markdown
 
-Markdown stellt Überschriften, Listen, Links und sichere Bilder dar. Es führt weder HTML, Skripte oder Stile noch eingebetteten Anwendungscode aus. Der Inline- und der große Editor vervollständigen Platzhalter für `@auth`, `@params`, `@page`, `@app`, `@base` und `@time` der aktuellen Seite. `Hello @auth.name` fügt zum Beispiel den Anzeigenamen der angemeldeten Person auf dem Server ein. Anonyme Authentifizierungswerte werden zu leerem Text. Eingefügte Werte werden vor dem Rendern von Markdown maskiert. Liquid-Bedingungen oder -Schleifen gibt es nicht.
+Markdown stellt Überschriften, Listen, Links und sichere Bilder dar. Es führt weder Skripte noch eingebetteten Anwendungscode aus. Der Inline- und der große Editor vervollständigen Platzhalter für `@auth`, `@params`, `@page`, `@app`, `@base` und `@time` der aktuellen Seite. `Hello @auth.name` fügt zum Beispiel den Anzeigenamen der angemeldeten Person auf dem Server ein. Anonyme Authentifizierungswerte werden zu leerem Text. Eingefügte Werte werden vor dem Rendern von Markdown maskiert. Liquid-Bedingungen oder -Schleifen gibt es nicht.
+
+Nutze in einer veröffentlichten App Hinweisboxen für kurze Erklärungen oder Warnungen. Füge sie in einen gewöhnlichen Markdown-Block ein; ein eigener Blocktyp ist nicht nötig:
+
+```markdown
+:::info Zahlungen bestätigen
+Gleiche die Einträge mit deinen Bankumsätzen ab. Erst bestätigte Zahlungen ändern den offenen Betrag.
+:::
+```
+
+Unterstützte Varianten sind `note`, `info`, `success`, `warning` und `danger`. Schreibe den Titel nach der Variante in der Sprache der App. Veröffentlichtes Markdown wird auf dem Server bereinigt; Skripte und unsichere Links werden entfernt. Der Editor behält den Markdown-Quelltext und die Hervorhebung der Kontextplatzhalter bei.
 
 ### Datensätze
 
 Datensätze liest entweder eine vorhandene gespeicherte Ansicht oder eine Inline-GQL-Abfrage. Eine gespeicherte Ansicht kann eine ausdrückliche Auswahl von Tabellenfeldern verwenden oder die vorhandene Kartenkonfiguration dieser Ansicht einschließlich ihres Dateicovers wiederverwenden. Karten können schreibgeschützt sein, zu einer Zeilenseite navigieren oder Zeilenaktionen anbieten und werden bei der Veröffentlichung mit der gespeicherten Ansicht festgeschrieben. Inline-GQL zeigt die ausgewählten gewöhnlichen Datensatzspalten einschließlich Aliasnamen. Eine nicht leere Tabellenliste `columnIds` kann ausgewählte Feldspalten für Verhalten verfügbar halten, während nur die aufgeführten Feld-IDs sichtbar sind. Nutze Kennzahlen oder Diagramm für Aggregatergebnisse. Beide Datensatzquellen unterstützen einen Leertext, optionale Zeilennavigation und optionale serverseitige Suche.
+
+Eine leere Ergebnistabelle zeigt nur Blocktitel und Leertext. Eine erfolglose Suche behält Tabelle und Suchfeld, damit du die Suche ändern kannst. Lade- und Fehlerzustände bleiben von einem leeren Ergebnis unterscheidbar.
+
+In der Tabellendarstellung ergänzt `display.relativeDateColumnIds` das absolute Datum um „heute“, „morgen“ oder einen Abstand in Kalendertagen. Das ist nur für reine Datumsspalten möglich. Die Angaben verwenden die konfigurierte Zeitzone; sie stufen einen Eintrag nicht als überfällig ein.
+
+Mit `display.mobile: { titleColumnId, detailColumnIds }` wählst du eine Überschrift und ergänzende Werte pro Zeile für schmale Bildschirme. Auf breiteren Bildschirmen bleibt die Tabelle sichtbar. Zeilenlinks, Workflow-Aktionen, Suche und Seitennavigation funktionieren in beiden Darstellungen gleich. Referenziere sichtbare Spalten: öffentliche Feld-IDs bei gespeicherten Ansichten, die eindeutigen Spaltenbeschriftungen aus der Abfragevorschau bei GQL. Innerhalb der Datumsliste beziehungsweise der mobilen Konfiguration darf jede Referenz nur einmal vorkommen.
 
 `pageSize` legt fest, wie viele Zeilen der Server auf einmal zurückgibt. Lesende Personen bewegen sich durch geschützte Cursor-Seiten. Suche und Seitennavigation laufen auf dem Server und laden nie das vollständige Ergebnis in den Browser. Ein GQL-`limit` begrenzt das vollständige Ergebnis, wenn die verfassende Person bewusst nur die ersten N passenden Zeilen benötigt. Gemeinsame Abfragebudgets werden unabhängig davon durchgesetzt.
 
@@ -51,19 +71,66 @@ Die veröffentlichte Capability zeichnet die exakten Tabellen und Felder hinter 
 
 Formulare bestimmen Eingaben, Validierung und Standardwerte. App-Lesende können ohne Base-Zugriff verknüpfte Datensätze wählen: Die Suche zeigt nur IDs und veröffentlichte Anzeigefelder der Zieltabelle. Änderungen daran oder an ihren Formelabhängigkeiten erfordern erneutes Veröffentlichen.
 
+Ein Formular ist standardmäßig direkt eingebettet. Mit `presentation.kind: dialog` und einer Schaltflächenbeschriftung öffnet es sich über der aktuellen Seite. Standardwerte, feste Werte, Validierung und Berechtigungen gelten unverändert. Ungespeicherte Eingaben werden erst nach Bestätigung verworfen; während des Speicherns lässt sich der Dialog nicht schließen.
+
+Dialog-Schaltflächen sind nur so breit wie ihr Inhalt. Wähle `presentation.variant: primary` für die wichtigste nächste Aktion oder `secondary` (Standard) für eine ergänzende Aktion.
+
+Dieses Beispiel öffnet auf einer Rechnungsseite ein Zahlungsformular, dem die aktuelle Rechnung bereits zugewiesen ist. Ersetze die Beispiel-IDs durch die IDs deines Formulars und Relationsfelds:
+
+```yaml
+id: record-payment
+type: form
+formId: PayFrm
+presentation:
+  kind: dialog
+  label: Zahlung erfassen
+  icon: plus
+  variant: primary
+fixedValues:
+  BillFk:
+    source: RECORD
+    path: id
+```
+
 Wähle **Formularaktion → Datensatz dieser Seite bearbeiten**, um einen vorhandenen Entwurf zu bearbeiten. Die Seite muss einen Datensatz aus der Tabelle des Formulars binden. Der Server lädt die Eingaben und konfigurierten zugehörigen Zeilen vor der Darstellung; beim Speichern werden ihre Versionen gemeinsam geprüft. Eine entfernte Zeile wird vom übergeordneten Datensatz getrennt, aber nicht gelöscht. Gemeinsam genutzte Zeilen und festgeschriebene Datensätze lassen sich hier nicht bearbeiten. Verknüpfte Tabellen müssen zur selben Base gehören. Bestehende Formular-Blöcke legen weiterhin neue Datensätze an, bis du die Aktion änderst und die App erneut veröffentlichst.
 
 Der Block kann vertrauenswürdige Werte für jedes Eingabefeld bereitstellen. Nutze `LITERAL` für einen validierten festen Wert. Kompatible Relationsfelder können einen deklarierten Record-Wert aus `PARAMS` oder `RECORD.id` des aktuellen Seitendatensatzes verwenden. Ein Principal-Feld kann mit `AUTH.currentUser` die angemeldete Person zuweisen, ohne einen weiteren Picker anzuzeigen. Bereitgestellte Eingaben fehlen im dargestellten Formular, werden erneut vom Server aufgelöst und können im Browser nicht überschrieben werden. Dies unterstützt Abläufe wie „weiteren Artikel zu dieser Liste hinzufügen“, ohne erneut nach derselben Relation zu fragen.
 
-Nach Erfolg kann der Block auf der Seite bleiben oder innerhalb derselben App mit Ersetzen navigieren. Navigationsparameter können deklarierte `PARAMS`-Werte beibehalten oder `RESULT.recordId` des erstellten Formulardatensatzes verwenden.
+Formulare mit über `actionsBlockId` verknüpften Aktionen bleiben eingebettet, damit der Workflow-Status sichtbar bleibt. Die Dialogdarstellung ist für sie nicht zulässig.
+
+Nach erfolgreichem Speichern kann ein eingebettetes Formular auf der Seite bleiben. Ein Dialog schließt sich und aktualisiert seine Ausgangsseite. Ein explizites `onSuccessNavigate` hat Vorrang und navigiert innerhalb derselben App mit Ersetzen. Navigationsparameter können deklarierte `PARAMS`-Werte beibehalten oder `RESULT.recordId` des erstellten Formulardatensatzes verwenden.
 
 Eine App darf bis zu 24 Formularblöcke veröffentlichen. Jedes referenzierte Formular darf bis zu 100 Eingaben bereitstellen, von denen die Seite bis zu 30 vorgeben darf.
+
+#### Formulare mit Kontext
+
+Ein über `actionsBlockId` verbundenes Formular zeigt Eingaben neben der aktuellen
+Zusammenfassung und den nächsten Aktionen. Beide verwenden denselben Entwurf.
+Das letzte konfigurierte berechnete Feld erscheint zuerst als hervorgehobener Wert.
+Fehlende Angaben lassen sich direkt anspringen. Primäre Aktionen bleiben gesperrt,
+bis die Eingaben gültig und gespeichert sind. Nach dem Speichern wird der bestätigte
+Datensatz neu geladen. Die serverseitigen Prüfungen bleiben maßgeblich.
+
+Das optionale Objekt `workspace` erlaubt `summaryTitle`, `summaryDescription`,
+`helpTitle` und `helpText`. Selten benötigtes Hintergrundwissen gehört in den
+aufklappbaren Hinweis. Die Option setzt einen Aktionsblock voraus und ist in einem
+Dialog nicht verfügbar.
+
+Mit `heading.title` kann ein Datensatzblock einen bearbeitbaren Entwurf benennen.
+Das Überschriftsfeld wird dann zum Untertitel. Eine ausgestellte Belegnummer hat
+Vorrang; festgeschriebene Datensätze verwenden die Entwurfsüberschrift nicht.
 
 ### Datensatz
 
 Datensatz erfordert einen Seitendatensatz. Der Block stellt die ausdrückliche Liste `fieldIds` dar und kann direkte Bearbeitung über eine ausdrückliche Teilmenge `editableFieldIds` erlauben. Jedes bearbeitbare Feld muss auch angezeigt werden und ein beschreibbares gespeichertes Feld sein. Berechnete und Systemfelder verhindern die Veröffentlichung.
 
-Mit `heading: { fieldId }` wird ein angezeigtes Feld zur Überschrift, etwa Kunde oder Betreff. Es erscheint dann nicht nochmals in der Feldliste. Mit `heading: { fieldId, documentNumber: true }` und einer `documents`-Vorlagenliste wird die vorhandene Dokumentnummer zur Überschrift; das gewählte Feld bleibt darunter sichtbar. Entwürfe behalten die Feldüberschrift. Dokumente lassen sich über dauerhaft sichtbare, beschriftete Schaltflächen herunterladen.
+Wähle `layout: grid` (Standard), `rows` für nebeneinanderstehende Bezeichnungen und Werte oder `compact` für kurze Metadaten. Nutze `summary` für Summen: Werte werden am Zeilenende ausgerichtet, die letzte Zeile wird hervorgehoben. Setze die Gesamtsumme in `fieldIds` an die letzte Stelle.
+
+Schreibgeschützte Objektlisten erhalten innerhalb des Blocks eine gerahmte Tabelle mit abgerundeten Ecken. Feldname und Zeilenanzahl stehen gemeinsam in ihrer Kopfzeile. Ergänzende Spalten stehen unter weiteren Angaben; längere Listen werden in Seiten unterteilt.
+
+Mit `relativeDates` ergänzt du ausgewählte angezeigte Datumsfelder um einen Abstand in Kalendertagen, etwa `17.09.2026 (heute)`. Das absolute Datum bleibt sichtbar. Felder mit Uhrzeit werden nicht unterstützt; doppelte oder nicht angezeigte Feld-IDs verhindern die Validierung.
+
+Mit `heading: { fieldId }` wird ein angezeigtes Feld zur Überschrift, etwa Kunde oder Betreff. Es erscheint dann nicht nochmals in der Feldliste. Mit `heading: { fieldId, documentNumber: true }` und einer `documents`-Vorlagenliste wird die vorhandene Dokumentnummer zur Überschrift; das gewählte Feld bleibt darunter sichtbar. Entwürfe behalten die Feldüberschrift, sofern `heading.title` keine Aufgabenüberschrift vorgibt. Dokumente lassen sich über dauerhaft sichtbare, beschriftete Schaltflächen herunterladen.
 
 Die Aktion Bearbeiten erscheint nur, wenn die Veröffentlichung dieses beschreibbare Feld enthält und der Block verfügbar ist. Beim Absenden prüft Grids erneut App-Freigabe, unveränderliche Feld-Erlaubnisliste, `availableWhen`, aktiven Feldtyp, Audit-Fragen der Tabelle und aktuelle Datensatzversion. Felder außerhalb der bearbeitbaren Teilmenge des Blocks bleiben schreibgeschützt.
 
@@ -101,7 +168,9 @@ Eine solche Seite hat eine Ergebnisvorlage; mehrere Aktionen dürfen sie erzeuge
 Nach Annahme erscheint die konfigurierte Nachricht. Du kannst weiterarbeiten.
 
 Nach Navigation oder Neuladen bleibt der Status sichtbar. Sobald die gespeicherte
-Datei vorhanden ist, öffnet die Aktion das Dokument. Gleichzeitige Aufrufe derselben
+Datei vorhanden ist, öffnet die Aktion das Dokument. Zeigt ein berechtigter,
+sichtbarer Datensatzblock bereits genau dieses fertige Dokument, entfällt die
+doppelte Abschlussaktion. Andernfalls bleibt sie verfügbar. Gleichzeitige Aufrufe derselben
 veröffentlichten Aktion mit denselben Seitendatensätzen und Eingaben verwenden den
 laufenden Auftrag, auch bei verschiedenen berechtigten App-Lesern. Sichtbar ist nur
 der Dokumentstatus, nicht die Eingaben, Ergebnisse oder internen Fehler anderer
@@ -112,7 +181,9 @@ diese Zustände pro Zeile. Dafür muss seine Zeilennavigation direkt mit `ROW.id
 auf die uneingeschränkt verfügbare Dokumentseite zeigen. Die Liste bleibt suchbar
 und in Seiten unterteilt. Sichtbare laufende Einträge werden aktualisiert.
 
-### Scanner
+#Skalare Workflow-Eingaben können über `prompt.inputs` direkt im Aktionsdialog abgefragt werden. Beschriftungen und Validierung stammen aus dem Workflow. Binde den aktuellen Datensatz weiterhin serverseitig. Ein Abschluss führt den Vorgang aus und aktualisiert nach Erfolg die Seite. Bei unklarem Ausgang prüft eine Wiederholung denselben Vorgang; sie startet keinen zweiten. `description` und `successMessage` erklären Aufgabe und Ergebnis.
+
+## Scanner
 
 Scanner bettet eine vorhandene aktivierte Scanner-Ausführungsoption ein. Angemeldete lesende Personen der App können mit der Kamera scannen oder einen Code manuell eingeben. Öffentliche anonyme Personen sehen stattdessen eine Aufforderung zur Anmeldung. Sitzungswerte werden einmal beim Öffnen des Scanners abgefragt, Werte nach dem Scan für jeden Code.
 
@@ -153,3 +224,5 @@ Die erste Version besitzt keine appweiten Variablen, keinen allgemeinen Ausdruck
 Setze wiederholte Abläufe aus typisierten Seitenparametern, festen Formularwerten, begrenzten Quellen, Navigation und vorhandenen Workflows zusammen. Wenn sich ein Prozess mit diesen Bausteinen nicht sicher ausdrücken lässt, erweitere die zuständige Grids-Ressource, statt appspezifisches Verhalten in die Seitenlaufzeit aufzunehmen.
 
 Lies vor der Freigabe der App für andere Personen [Veröffentlichen und Berechtigungen](/app/grids/help/grids-publish-custom-app).
+
+Mit `layout: "context"` erscheint ein Datensatzblock als kompakter Bezug, etwa zum ursprünglichen Beleg.

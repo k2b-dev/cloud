@@ -1,4 +1,5 @@
 import type { AuthContext, getDateConfig } from "@k2b/cloud/server";
+import { markdown } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import {
@@ -17,7 +18,7 @@ import {
 } from "../../api/custom-app-published-page";
 import { gridsAccessContext } from "../../api/permissions";
 import { ssr } from "../../config";
-import type { CustomAppDefinition, CustomAppPage } from "../../custom-apps/contracts";
+import type { CustomAppDefinition, CustomAppPage as PageDefinition } from "../../custom-apps/contracts";
 import { renderCustomAppMarkdown } from "../../custom-apps/markdown-context";
 import { customAppNavigationHref } from "../../custom-apps/routing";
 import type { DslQueryContextValues } from "../../query-dsl/parameters";
@@ -27,6 +28,7 @@ import type { WorkflowScannerState } from "../_components/workflows/WorkflowScan
 import Actions, { type CustomAppRenderedAction } from "./Actions.island";
 import CustomAppChart from "./Chart";
 import CustomAppNavigation from "./CustomAppNavigation.island";
+import FormDialog from "./FormDialog.island";
 import FormWorkspace from "./FormWorkspace.island";
 import { customAppPageNeedsLogin } from "./login";
 import { CustomAppPageLayout } from "./PageLayout";
@@ -37,6 +39,7 @@ import { useCustomAppRuntimeMessages } from "./runtime-messages";
 import Scanner from "./Scanner.island";
 import SidebarActions, { type CustomAppRenderedSidebarAction } from "./SidebarActions.island";
 import { formatCustomAppValue } from "./value-format";
+import WorkflowActionRecovery from "./WorkflowActionRecovery.island";
 
 const Records = (props: {
   block: RecordsLikeBlock;
@@ -46,6 +49,7 @@ const Records = (props: {
   shortId: string;
   endpoint: string;
   rowActions: CustomAppRenderedRowAction[];
+  relativeDateBase?: string;
 }) => {
   const messages = useCustomAppRuntimeMessages();
   if (!props.data.ok) {
@@ -70,6 +74,9 @@ const Records = (props: {
           ? props.block.display.columnIds
           : undefined
       }
+      columnReference={props.block.type === "records" && props.block.source.kind === "gql" ? "label" : "field"}
+      tablePresentation={props.block.type === "records" && props.block.display.kind === "table" ? props.block.display : undefined}
+      relativeDateBase={props.relativeDateBase}
       result={props.data.result}
       endpoint={props.endpoint}
       searchable={props.block.searchable}
@@ -121,6 +128,7 @@ const Record = (props: {
   documents: CustomAppDocument[];
   documentPreviews: CustomAppDocumentPreview[];
   dateConfig: ReturnType<typeof getDateConfig>;
+  relativeDateBase?: string;
 }) => {
   const messages = useCustomAppRuntimeMessages();
   if (!props.pageRecord) {
@@ -148,6 +156,7 @@ const Record = (props: {
       documents={props.documents}
       documentPreviews={props.documentPreviews}
       dateConfig={props.dateConfig}
+      relativeDateBase={props.relativeDateBase}
     />
   );
 };
@@ -162,8 +171,19 @@ const Form = (props: {
   if (!props.data.ok) {
     return <Placeholder variant="compact" align="left" title={messages().formUnavailable} description={props.data.message} />;
   }
+  if (props.block.presentation?.kind === "dialog") {
+    return <FormDialog presentation={props.block.presentation} data={props.data} dateConfig={props.dateConfig} />;
+  }
   if (props.block.actionsBlockId) {
-    return <FormWorkspace data={props.data} actions={props.actions} dateConfig={props.dateConfig} showTitle={!props.block.title} />;
+    return (
+      <FormWorkspace
+        data={props.data}
+        actions={props.actions}
+        dateConfig={props.dateConfig}
+        showTitle={!props.block.title}
+        workspace={props.block.workspace}
+      />
+    );
   }
   return (
     <FormSubmit
@@ -182,9 +202,9 @@ const Form = (props: {
   );
 };
 
-const CustomAppPage = (props: {
+export const CustomAppPage = (props: {
   definition: CustomAppDefinition;
-  page: CustomAppPage;
+  page: PageDefinition;
   shortId: string;
   results: Map<string, BlockResult>;
   metrics: Map<string, MetricsBlockData>;
@@ -204,8 +224,11 @@ const CustomAppPage = (props: {
   scanners: Map<string, { state: WorkflowScannerState; endpoint: string }>;
   sidebarActions: CustomAppRenderedSidebarAction[];
   signedIn: boolean;
+  operationScope?: string;
+  pagePath?: string;
 }) => {
   const messages = useCustomAppRuntimeMessages();
+  const relativeDateBase = typeof props.markdownContext["time.now"] === "string" ? props.markdownContext["time.now"] : undefined;
   const formActionIds = new Set(
     props.page.rows.flatMap((row) =>
       row.columns.flatMap((column) =>
@@ -213,6 +236,19 @@ const CustomAppPage = (props: {
       ),
     ),
   );
+  // A ready document already exposed by its authorized Record block owns its
+  // affordance. Retain background actions when that document is not on the page,
+  // especially during creation, recovery, and permission-dependent rendering.
+  const visibleActions = (blockId: string) =>
+    (props.actions.get(blockId) ?? []).filter((action) => {
+      if (action.kind !== "workflow" || action.background?.state.status !== "ready") return true;
+      const document = action.background.state.document;
+      return (
+        !document ||
+        !props.pageRecords.has(document.blockId) ||
+        !(props.documents.get(document.blockId) ?? []).some((item) => item.id === document.id)
+      );
+    });
   const layoutPage = {
     ...props.page,
     rows: props.page.rows
@@ -221,7 +257,9 @@ const CustomAppPage = (props: {
         columns: row.columns
           .map((column) => ({
             ...column,
-            blocks: column.blocks.filter((block) => !formActionIds.has(block.id)),
+            blocks: column.blocks.filter(
+              (block) => !formActionIds.has(block.id) && (block.type !== "actions" || visibleActions(block.id).length > 0),
+            ),
           }))
           .filter((column) => column.blocks.length > 0),
       }))
@@ -249,9 +287,17 @@ const CustomAppPage = (props: {
         appId={props.shortId}
         hasSidebarActions={props.sidebarActions.length > 0}
         sidebarActions={<SidebarActions actions={props.sidebarActions} />}
+        beforeContent={
+          props.signedIn && props.operationScope && props.pagePath ? (
+            <WorkflowActionRecovery operationScope={props.operationScope} pagePath={props.pagePath} />
+          ) : undefined
+        }
         renderBlock={(block) =>
           block.type === "markdown" ? (
-            <MarkdownView markdown={renderCustomAppMarkdown(block.markdown, props.markdownContext)} headingScale="large" />
+            <MarkdownView
+              trustedHtml={markdown.render(renderCustomAppMarkdown(block.markdown, props.markdownContext))}
+              headingScale="large"
+            />
           ) : block.type === "records" || block.type === "referenced_records" ? (
             <Records
               block={block}
@@ -261,6 +307,7 @@ const CustomAppPage = (props: {
               shortId={props.shortId}
               endpoint={props.recordEndpoints.get(block.id) ?? ""}
               rowActions={props.rowActions.get(block.id) ?? []}
+              relativeDateBase={relativeDateBase}
             />
           ) : block.type === "metrics" ? (
             <Metrics
@@ -281,6 +328,7 @@ const CustomAppPage = (props: {
               updateEndpoint={props.recordUpdateEndpoints.get(block.id)}
               documents={props.documents.get(block.id) ?? []}
               documentPreviews={props.documentPreviews.get(block.id) ?? []}
+              relativeDateBase={relativeDateBase}
               dateConfig={props.dateConfig}
             />
           ) : block.type === "html" ? (
@@ -298,7 +346,7 @@ const CustomAppPage = (props: {
             />
           ) : block.type === "actions" ? (
             formActionIds.has(block.id) ? null : (
-              <Actions actions={props.actions.get(block.id) ?? []} />
+              <Actions actions={visibleActions(block.id)} />
             )
           ) : block.type === "form" ? (
             <Form

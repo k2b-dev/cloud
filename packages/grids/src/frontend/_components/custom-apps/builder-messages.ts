@@ -3,6 +3,38 @@ import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
 const deCopy = {
+  "Ask in dialog": "Im Dialog abfragen",
+  "Dialog guidance": "Hinweis im Dialog",
+  "Success message": "Erfolgsmeldung",
+  "Workspace context": "Formularkontext",
+  "Summary title": "Titel der Zusammenfassung",
+  "Summary explanation": "Erklärung der Zusammenfassung",
+  "Additional context title": "Titel der weiteren Hinweise",
+  "Additional context": "Weitere Hinweise",
+  "Draft heading": "Entwurfsüberschrift",
+  "Optional heading before a document number exists. The selected field becomes its subtitle.":
+    "Optionale Überschrift, solange keine Belegnummer vorliegt. Das gewählte Feld erscheint als Untertitel.",
+  Primary: "Primär",
+  Secondary: "Sekundär",
+  Summary: "Zusammenfassung",
+  Context: "Kontext",
+  "Button style": "Button-Stil",
+  "Compact mobile rows": "Kompakte Zeilen auf schmalen Bildschirmen",
+  "Choose the heading and facts shown on narrow screens. Row actions stay available.":
+    "Wähle Überschrift und Angaben für schmale Bildschirme. Zeilenaktionen bleiben verfügbar.",
+  "Mobile row heading": "Überschrift der mobilen Zeile",
+  "Mobile row details": "Angaben der mobilen Zeile",
+  "Progressive disclosure": "Aufklappbarer Inhalt",
+  "Collapsed heading": "Überschrift zum Aufklappen",
+  "Initially expanded": "Anfangs aufgeklappt",
+  "Leave empty to show the block directly. Hidden content keeps its permissions and loads normally.":
+    "Leer lassen, um den Block direkt anzuzeigen. Zugeklappte Inhalte behalten ihre Berechtigungen und werden regulär geladen.",
+  Rows: "Zeilen",
+  Grid: "Raster",
+  "Field layout": "Felddarstellung",
+  "Relative dates": "Relativer Datumsabstand",
+  "Show today, tomorrow, or the calendar-day distance beside date-only values.":
+    "Zeige heute, morgen oder den Abstand in Kalendertagen neben Datumswerten ohne Uhrzeit.",
   "Actions using the saved form": "Aktionen für den gespeicherten Stand",
   "Keep these actions disabled until changes are saved.": "Diese Aktionen bleiben gesperrt, bis Änderungen gespeichert sind.",
   "Heading field": "Feld für die Überschrift",
@@ -373,6 +405,14 @@ const deCopy = {
     "Angemeldete App-Benutzer können Workflows für ausgewählte Tabellenzeilen oder Karten ausführen.",
   "Records blocks support up to 6 row actions.": "Datensatzblöcke unterstützen bis zu 6 Zeilenaktionen.",
   "Form settings": "Formulareinstellungen",
+  "Form placement": "Formularplatzierung",
+  "Button label": "Schaltflächentext",
+  "Open short forms in a dialog. Forms with saved-state actions stay embedded so their status remains visible.":
+    "Öffne kurze Formulare im Dialog. Formulare mit Aktionen für den gespeicherten Stand bleiben eingebettet, damit ihr Status sichtbar bleibt.",
+  "Keep these actions disabled until changes are saved. Available only for embedded forms.":
+    "Diese Aktionen bleiben gesperrt, bis Änderungen gespeichert sind. Nur für eingebettete Formulare verfügbar.",
+  Embedded: "Eingebettet",
+  Dialog: "Dialog",
   "Choose the active Form rendered by this block.": "Wähle das aktive Formular aus, das dieser Block rendert.",
   "Only active forms you can use in this Base are listed.":
     "Es werden nur aktive Formulare aufgeführt, die du in dieser Base verwenden kannst.",

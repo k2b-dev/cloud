@@ -1,6 +1,7 @@
 import type { BillingText } from "./billing";
 import { billingIssueOrRetrieveSource } from "./billing-issuance";
 import { billingAmountFields } from "./billing-lines";
+import { billingPaymentEntryWorkflows } from "./billing-payment-entry";
 import { billingSettlementWorkflow } from "./billing-settlement";
 import type { GridTemplate } from "./types";
 
@@ -76,6 +77,7 @@ export const billingWorkflows = (t: BillingText, locale?: string): NonNullable<G
     required: true
 `;
   return [
+    ...billingPaymentEntryWorkflows(t, amountFields.find((entry) => entry.key === "gross")!.name),
     {
       key: "reuse_invoice",
       name: t.reuseInvoice,

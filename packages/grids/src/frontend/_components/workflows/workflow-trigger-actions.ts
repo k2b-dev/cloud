@@ -1,4 +1,6 @@
 import type { WorkflowIrInput, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { parseWorkflowDecimalInput } from "../../../workflows/decimal-input";
+import { normalizeNumberInput } from "../forms/number-input";
 import { workflowMessages } from "./messages";
 
 export type WorkflowRunInputDraftValue = string | number | boolean | string[] | null | undefined;
@@ -60,6 +62,12 @@ export const buildWorkflowRunInput = (inputs: WorkflowIrInput[], draft: Workflow
       continue;
     }
 
+    if (definition.type === "decimal") {
+      const decimal = parseWorkflowDecimalInput(typeof value === "string" ? normalizeNumberInput(value, locale) : value);
+      if (decimal === null) errors[name] = t.inputNumber({ label: workflowInputLabel(definition) });
+      else result[name] = decimal;
+      continue;
+    }
     if (definition.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) {
       errors[name] = t.inputNumber({ label: workflowInputLabel(definition) });
       continue;

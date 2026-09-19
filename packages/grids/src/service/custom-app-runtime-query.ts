@@ -1,6 +1,7 @@
 import { runWithQueryAdmissionSignal } from "../api/query-admission";
 import type { DslQueryPreviewResponse } from "../contracts";
 import { customAppViewSourceHash } from "../custom-apps/insight-source";
+import { customAppQueryPlanRelationTargetTableIds } from "../custom-apps/query-plan-hash";
 import type { DslQueryContextValues } from "../query-dsl/parameters";
 import { previewDslQuery } from "../query-dsl/preview";
 import type { DslResultCursor } from "../query-dsl/result-cursor";
@@ -8,6 +9,7 @@ import { collectDslPlanTableIds } from "../query-dsl/source-plan";
 import { compileCustomAppQuery } from "./custom-app-query";
 import type { SqlClient } from "./audit";
 import type { ExpansionViewer } from "./relations";
+import { relationLabelFields } from "./relation-targets";
 
 type PublishedQueryCapability = {
   sourceHash?: string;
@@ -68,6 +70,14 @@ export const executePublishedCustomAppQuery = async (params: {
   }
 
   const authorizedTableIds = new Set(params.capability.tableIds);
+  // The verified plan hash also pins relation targets and their label fields.
+  // Allow that presentation read without granting arbitrary query access to
+  // the related tables or falling back to the reader's Base permissions.
+  const labelTableIds = customAppQueryPlanRelationTargetTableIds(compiled.data.plan, compiled.data.fieldsByTableId);
+  const presentationTableIds = new Set([...authorizedTableIds, ...labelTableIds]);
+  const relationLabelFieldIdsByTableId = new Map(
+    labelTableIds.map((tableId) => [tableId, relationLabelFields(compiled.data.fieldsByTableId[tableId] ?? []).map((field) => field.id)]),
+  );
   const allowedFieldIds = params.search?.allowedFieldIds ? new Set(params.search.allowedFieldIds) : null;
   const selected = compiled.data.plan.outputColumns ?? [];
   const selectedPrimaryFieldIds = [
@@ -116,11 +126,12 @@ export const executePublishedCustomAppQuery = async (params: {
       maxResultBytes: params.maxResultBytes,
       signal,
       labelRelationValues: params.labelRelationValues,
+      relationLabelFieldIdsByTableId,
       viewer: {
         ...params.viewer,
         isAdmin: false,
-        readableTableIds: authorizedTableIds,
-        tableReadAccess: new Map([...authorizedTableIds].map((tableId) => [tableId, true])),
+        readableTableIds: presentationTableIds,
+        tableReadAccess: new Map([...presentationTableIds].map((tableId) => [tableId, true])),
       },
       authorizedTableIds,
       primaryTableAuthorized: true,

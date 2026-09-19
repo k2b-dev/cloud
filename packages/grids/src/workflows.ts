@@ -1361,6 +1361,30 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               tx,
             );
             created.push({ kind: "record", tableId, recordId: result.record.id });
+            if (change.createRecord.finalize) {
+              const finalized = requireOk(
+                await finalizeRecordInTransaction(tx, {
+                  tableId,
+                  recordId: result.record.id,
+                  actorId: actorId(scope),
+                  origin: "workflow",
+                  dateConfig: dates,
+                  locale: dates.locale,
+                }),
+              );
+              if (finalized.outboxId)
+                await logAudit(
+                  {
+                    baseId: scope.baseId,
+                    tableId,
+                    recordId: result.record.id,
+                    userId: actorId(scope),
+                    action: "workflow.record.finalized",
+                    diff: { workflowRecordFinalization: { old: null, new: workflowAuditMeta(scope) } },
+                  },
+                  tx,
+                );
+            }
             continue;
           }
 

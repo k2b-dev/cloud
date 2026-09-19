@@ -1,9 +1,9 @@
 import type { BillingText } from "./billing";
 import { billingBalanceSource } from "./billing-balances";
-import { documentTemplate, field, fieldKey, form, formula, type GridTemplate, launcher, table } from "./types";
+import { documentTemplate, field, form, formula, type GridTemplate, launcher, table } from "./types";
 
 /** A document keeps one workspace from editable draft to issued document. */
-export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps"]> => {
+export const billingApp = (t: BillingText, totalLabel: string): NonNullable<GridTemplate["customApps"]> => {
   const billParams = { bill_id: { type: "record" as const, tableId: table("bills"), required: true as const } };
   const billRecord = { tableId: table("bills"), id: { source: "PARAMS" as const, path: "bill_id" } };
   const billNavigation = { kind: "navigate" as const, pageId: "bill", params: { bill_id: { source: "PARAMS" as const, path: "bill_id" } } };
@@ -35,6 +35,8 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
       " != 'creditNote'\nlimit 1",
     ),
   };
+  const openBalance = billingBalanceSource(t, true, { metrics: "outstanding", group: "open" });
+  const creditBalance = billingBalanceSource(t, true, { metrics: "credit", group: "credits" });
   const paymentWhen = (state: "draft" | "finalized") => ({
     query: formula(
       "from table ",
@@ -66,6 +68,30 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
       confirm: t.discardPaymentConfirm,
     },
   ];
+  const paymentEntryActions = (variant: "primary" | "secondary") => [
+    {
+      id: "receive",
+      kind: "workflow" as const,
+      label: t.paymentForm,
+      icon: "plus",
+      variant,
+      launcherId: launcher("record_payment"),
+      inputs: { bill: { source: "RECORD" as const, path: "id" as const } },
+      prompt: { inputs: ["date", "amount", "reference"], description: t.paymentHelp, successMessage: t.paymentRecorded },
+      availableWhen: billWhen("finalized", "invoice"),
+    },
+    {
+      id: "payout",
+      kind: "workflow" as const,
+      label: t.payoutForm,
+      icon: "arrow-up-right",
+      variant,
+      launcherId: launcher("record_payout"),
+      inputs: { bill: { source: "RECORD" as const, path: "id" as const } },
+      prompt: { inputs: ["date", "amount", "reference"], description: t.payoutHelp, successMessage: t.payoutRecorded },
+      availableWhen: billWhen("finalized", "selfBilling"),
+    },
+  ];
   const payments = (confirmed: boolean, oneBill: boolean) => ({
     id: confirmed ? "payments" : "pending-payments",
     type: "records" as const,
@@ -76,8 +102,9 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
       query: formula(
         "from table ",
         table("payments"),
+        ...(!oneBill ? ["\nleft join table ", table("bills"), " as bill on ", field("payments.bill"), " = bill.id"] : []),
         "\nselect ",
-        ...(!oneBill ? [field("payments.bill"), ", "] : []),
+        ...(!oneBill ? [field("payments.bill"), ", bill.", field("bills.party_name"), ", "] : []),
         field("payments.date"),
         ", ",
         field("payments.amount"),
@@ -90,7 +117,14 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
         `record.finalizationState = '${confirmed ? "finalized" : "draft"}'\nsort record.createdAt desc`,
       ),
     },
-    display: { kind: "table" as const, columnIds: [] },
+    display: {
+      kind: "table" as const,
+      columnIds: [],
+      mobile: {
+        titleColumnId: oneBill ? t.date : t.bills,
+        detailColumnIds: [t.amount, t.refund, t.reference],
+      },
+    },
     searchable: !oneBill,
     pageSize: 25,
     rowNavigate: {
@@ -100,7 +134,23 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
       params: { payment_id: { source: "ROW" as const, path: "id" as const } },
     },
     ...(!confirmed ? { rowActions: paymentActions("ROW").map((action) => ({ ...action, showLabel: true })) } : {}),
-    ...(oneBill ? { availableWhen: billPaymentWhen } : {}),
+    ...(oneBill
+      ? {
+          availableWhen: confirmed
+            ? billPaymentWhen
+            : {
+                query: formula(
+                  "from table ",
+                  table("payments"),
+                  "\nselect ",
+                  field("payments.amount"),
+                  "\nwhere ",
+                  field("payments.bill"),
+                  " = @params.bill_id and record.finalizationState = 'draft'\nlimit 1",
+                ),
+              },
+        }
+      : {}),
   });
   const issueKinds = [
     { kind: "invoice", form: "edit_draft", id: "issue", launcher: "issue_invoice", label: t.issueInvoiceAction, confirm: t.issueConfirm },
@@ -137,24 +187,9 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
     type: "record" as const,
     fieldIds: [field("bills.party_name"), field("bills.party_number"), field("bills.kind")],
     editableFieldIds: [],
-    heading: { fieldId: field("bills.party_name"), documentNumber: true },
+    layout: "compact" as const,
+    heading: { fieldId: field("bills.party_name"), documentNumber: true, title: t.draftWorkspaceTitle },
     documents: { templateIds: [documentTemplate("billing")], preview: true },
-  };
-  const backToBill = {
-    id: "back",
-    type: "actions" as const,
-    actions: [
-      {
-        id: "back",
-        kind: "navigate" as const,
-        label: t.backToBill,
-        icon: "arrow-left",
-        variant: "secondary" as const,
-        pageId: "bill",
-        history: "push" as const,
-        params: { bill_id: { source: "PARAMS" as const, path: "bill_id" } },
-      },
-    ],
   };
   return [
     {
@@ -226,7 +261,14 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                             `\nwhere record.finalizationState = '${issued ? "finalized" : "draft"}'\nsort record.createdAt desc`,
                           ),
                         },
-                        display: { kind: "table" as const, columnIds: [] },
+                        display: {
+                          kind: "table" as const,
+                          columnIds: [],
+                          mobile: {
+                            titleColumnId: t.recipientSection,
+                            detailColumnIds: [t.kind, t.invoiceDate, totalLabel],
+                          },
+                        },
                         searchable: true,
                         pageSize: 25,
                         rowNavigate: {
@@ -250,30 +292,16 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
             record: billRecord,
             rows: [
               {
-                id: "workspace",
+                id: "identity",
+                columns: [{ id: "identity-main", span: 12, blocks: [identity] }],
+              },
+              {
+                id: "editing",
                 columns: [
                   {
-                    id: "main",
+                    id: "editor",
                     span: 12,
                     blocks: [
-                      identity,
-                      {
-                        id: "reuse",
-                        type: "actions",
-                        availableWhen: billWhen("finalized", "invoice"),
-                        actions: [
-                          {
-                            id: "reuse-invoice",
-                            kind: "workflow",
-                            label: t.reuseInvoice,
-                            icon: "copy",
-                            variant: "secondary",
-                            launcherId: launcher("reuse_invoice"),
-                            inputs: { bill: { source: "RECORD", path: "id" } },
-                            onSuccessNavigate: resultNavigation,
-                          },
-                        ],
-                      },
                       {
                         id: "reuse-help",
                         type: "markdown",
@@ -292,25 +320,15 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           ),
                         },
                       },
-                      { id: "setup-help", type: "markdown", markdown: t.startHelp, availableWhen: billWhen("draft") },
-                      {
-                        id: "correction-help",
-                        type: "markdown",
-                        markdown: t.correctionHelp,
-                        availableWhen: billWhen("draft", "creditNote"),
-                      },
                       {
                         id: "correction-origin",
                         type: "record",
-                        fieldIds: [field("bills.original_number")],
+                        title: t.originalContext,
+                        heading: { fieldId: field("bills.original_number") },
+                        layout: "context",
+                        fieldIds: [field("bills.original_number"), field("bills.original_date")],
                         editableFieldIds: [],
                         availableWhen: billWhen(undefined, "creditNote"),
-                      },
-                      {
-                        id: "settlement-help",
-                        type: "markdown",
-                        markdown: t.settlementHelp,
-                        availableWhen: billWhen("draft", "selfBilling"),
                       },
                       {
                         id: "correction-reason",
@@ -327,6 +345,22 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           mode: "edit" as const,
                           fixedValues: {},
                           actionsBlockId: `${entry.id}-actions`,
+                          workspace: {
+                            summaryTitle:
+                              entry.kind === "creditNote"
+                                ? t.correctionSummary
+                                : entry.kind === "selfBilling"
+                                  ? t.settlementSummary
+                                  : t.invoiceSummary,
+                            summaryDescription:
+                              entry.kind === "creditNote"
+                                ? t.correctionSummaryHelp
+                                : entry.kind === "selfBilling"
+                                  ? t.settlementSummaryHelp
+                                  : t.invoiceSummaryHelp,
+                            helpTitle: t.inheritedDetails,
+                            helpText: t.startHelp,
+                          },
                           onSuccessNavigate: billNavigation,
                           availableWhen: billWhen("draft", entry.kind),
                         },
@@ -353,60 +387,113 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                           ],
                         },
                       ]),
+                    ],
+                  },
+                ],
+              },
+              {
+                id: "details",
+                columns: [
+                  {
+                    id: "main",
+                    span: 8,
+                    blocks: [
                       {
                         id: "balance",
                         type: "metrics",
                         valueFormat: { style: "number", decimalPlaces: 2, unit: "EUR" },
-                        source: { kind: "gql", query: billingBalanceSource(t, true, { metrics: true }) },
-                        availableWhen: billWhen("finalized"),
+                        source: { kind: "gql", query: openBalance },
+                        availableWhen: { query: openBalance },
                       },
                       {
-                        id: "payment-action",
+                        id: "credit-balance",
+                        type: "metrics",
+                        valueFormat: { style: "number", decimalPlaces: 2, unit: "EUR" },
+                        source: { kind: "gql", query: creditBalance },
+                        availableWhen: { query: creditBalance },
+                      },
+                      {
+                        id: "refund-entry",
                         type: "actions",
-                        availableWhen: billPaymentWhen,
                         actions: [
                           {
-                            id: "payment",
-                            kind: "navigate",
-                            label: t.paymentForm,
-                            icon: "plus",
+                            id: "refund",
+                            kind: "workflow",
+                            label: t.refundForm,
+                            icon: "arrow-back-up",
                             variant: "primary",
-                            pageId: "payment-new",
-                            history: "push",
-                            params: { bill_id: { source: "RECORD", path: "id" } },
-                            availableWhen: {
-                              query: formula(
-                                "from table ",
-                                table("bills"),
-                                "\nselect ",
-                                field("bills.reference"),
-                                "\nwhere record.id = @params.bill_id and ",
-                                field("bills.kind"),
-                                " != 'creditNote'\nlimit 1",
-                              ),
+                            launcherId: launcher("record_refund"),
+                            inputs: { bill: { source: "RECORD", path: "id" } },
+                            prompt: {
+                              inputs: ["date", "amount", "reference"],
+                              description: t.refundHelp,
+                              successMessage: t.refundRecorded,
                             },
                           },
                         ],
+                        availableWhen: {
+                          query: billingBalanceSource(t, true, { metrics: "outstanding", group: "credits", invoiceOnly: true }),
+                        },
+                      },
+                      {
+                        id: "settled-balance",
+                        type: "markdown",
+                        markdown: t.settledBalance,
+                        availableWhen: { query: billingBalanceSource(t, true, { metrics: "outstanding", group: "settled" }) },
+                      },
+                      {
+                        id: "due-date",
+                        type: "record",
+                        layout: "compact",
+                        fieldIds: [field("bills.due_date")],
+                        relativeDates: [field("bills.due_date")],
+                        editableFieldIds: [],
+                        availableWhen: { query: openBalance },
+                      },
+                      {
+                        id: "payment-entry",
+                        type: "actions",
+                        actions: paymentEntryActions("primary"),
+                        availableWhen: { query: openBalance },
+                      },
+                      {
+                        id: "secondary-payment-entry",
+                        type: "actions",
+                        actions: paymentEntryActions("secondary"),
+                        availableWhen: { query: billingBalanceSource(t, true, { metrics: "outstanding", group: "nonpositive" }) },
                       },
                       payments(false, true),
                       {
                         id: "frozen",
                         type: "record",
-                        title: t.frozen,
-                        fieldIds: [
-                          field("bills.invoice_date"),
-                          field("bills.service_date"),
-                          field("bills.due_date"),
-                          field("bills.buyer_reference"),
-                          field("bills.positions"),
-                          field("bills.net"),
-                          field("bills.tax"),
-                          field("bills.gross"),
-                        ],
+                        fieldIds: [field("bills.positions")],
+                        editableFieldIds: [],
+                        availableWhen: billWhen("finalized"),
+                      },
+                      {
+                        id: "totals",
+                        type: "record",
+                        layout: "summary",
+                        fieldIds: [field("bills.net"), field("bills.tax"), field("bills.gross")],
                         editableFieldIds: [],
                         availableWhen: billWhen("finalized"),
                       },
                       payments(true, true),
+                    ],
+                  },
+                  {
+                    id: "context",
+                    span: 4,
+                    blocks: [
+                      {
+                        id: "invoice-facts",
+                        type: "record",
+                        title: t.frozen,
+                        layout: "rows",
+                        fieldIds: [field("bills.invoice_date"), field("bills.service_date"), field("bills.buyer_reference")],
+                        editableFieldIds: [],
+                        availableWhen: billWhen("finalized"),
+                      },
                       {
                         id: "other-actions",
                         type: "actions",
@@ -423,23 +510,34 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                             onSuccessNavigate: resultNavigation,
                           },
                           {
-                            id: "refund",
-                            kind: "navigate",
-                            label: t.refundForm,
-                            icon: "arrow-back-up",
+                            id: "reuse-invoice",
+                            kind: "workflow",
+                            label: t.reuseInvoice,
+                            icon: "copy",
                             variant: "secondary",
-                            pageId: "refund-new",
-                            history: "push",
-                            params: { bill_id: { source: "RECORD", path: "id" } },
+                            launcherId: launcher("reuse_invoice"),
+                            inputs: { bill: { source: "RECORD", path: "id" } },
+                            onSuccessNavigate: resultNavigation,
                           },
                         ],
                       },
                       {
                         id: "notes",
                         type: "record",
+                        layout: "rows",
                         fieldIds: [field("bills.notes")],
                         editableFieldIds: [],
-                        availableWhen: billWhen("finalized"),
+                        availableWhen: {
+                          query: formula(
+                            "from table ",
+                            table("bills"),
+                            "\nselect ",
+                            field("bills.reference"),
+                            "\nwhere record.id = @params.bill_id and record.finalizationState = 'finalized' and not ISBLANK(",
+                            field("bills.notes"),
+                            ")\nlimit 1",
+                          ),
+                        },
                       },
                     ],
                   },
@@ -447,57 +545,6 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
               },
             ],
           },
-          ...([false, true] as const).map((refund) => ({
-            id: refund ? "refund-new" : "payment-new",
-            title: refund ? t.refundForm : t.paymentForm,
-            navigation: { visible: false },
-            parameters: billParams,
-            record: billRecord,
-            availableWhen: refund
-              ? billWhen("finalized", "invoice")
-              : {
-                  query: formula(
-                    "from table ",
-                    table("bills"),
-                    "\nselect ",
-                    field("bills.reference"),
-                    "\nwhere record.id = @params.bill_id and record.finalizationState = 'finalized' and ",
-                    field("bills.kind"),
-                    " != 'creditNote'\nlimit 1",
-                  ),
-                },
-            rows: [
-              {
-                id: "entry",
-                columns: [
-                  {
-                    id: "main",
-                    span: 12,
-                    blocks: [
-                      backToBill,
-                      {
-                        id: "identity",
-                        type: "record" as const,
-                        fieldIds: [field("bills.party_name"), field("bills.gross")],
-                        heading: { fieldId: field("bills.party_name"), documentNumber: true },
-                        documents: { templateIds: [documentTemplate("billing")] },
-                        editableFieldIds: [],
-                      },
-                      { id: "help", type: "markdown" as const, markdown: refund ? t.refundHelp : t.paymentHelp },
-                      {
-                        id: "form",
-                        type: "form" as const,
-                        formId: form(refund ? "refund" : "payment"),
-                        mode: "create" as const,
-                        fixedValues: { [fieldKey("payments.bill")]: { source: "RECORD" as const, path: "id" as const } },
-                        onSuccessNavigate: billNavigation,
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          })),
           {
             id: "balances",
             title: t.balances,
@@ -511,30 +558,42 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                     id: "main",
                     span: 12,
                     blocks: [
+                      {
+                        id: "pending-payments-help",
+                        type: "markdown",
+                        markdown: `:::info ${t.pendingPayments}\n${t.pendingPaymentsHelp}\n:::`,
+                      },
                       payments(false, false),
-                      { id: "balance-help", type: "markdown", markdown: t.balanceHelp },
                       ...(
                         [
-                          { group: "overdue", title: t.overdue, emptyText: t.noOverdue },
-                          { group: "upcoming", title: t.upcoming, emptyText: t.noUpcoming },
-                          { group: "credits", title: t.credits, emptyText: t.noCredits },
+                          { group: "overdue", title: t.overdue, emptyText: t.noOverdue, help: t.overdueHelp },
+                          { group: "upcoming", title: t.upcoming, emptyText: t.noUpcoming, help: t.upcomingHelp },
+                          { group: "credits", title: t.credits, emptyText: t.noCredits, help: t.creditsHelp },
                         ] as const
-                      ).map(({ group, title, emptyText }) => ({
-                        id: group,
-                        type: "records" as const,
-                        title,
-                        emptyText,
-                        source: { kind: "gql" as const, query: billingBalanceSource(t, false, { group }) },
-                        display: { kind: "table" as const, columnIds: [] },
-                        searchable: true,
-                        pageSize: 25,
-                        rowNavigate: {
-                          kind: "navigate" as const,
-                          pageId: group === "credits" ? "bill" : "payment-new",
-                          history: "push" as const,
-                          params: { bill_id: { source: "ROW" as const, path: "id" as const } },
+                      ).flatMap(({ group, title, emptyText, help }) => [
+                        { id: `${group}-help`, type: "markdown" as const, markdown: `:::info ${title}\n${help}\n:::` },
+                        {
+                          id: group,
+                          type: "records" as const,
+                          title,
+                          emptyText,
+                          source: { kind: "gql" as const, query: billingBalanceSource(t, false, { group }) },
+                          display: {
+                            kind: "table" as const,
+                            columnIds: [],
+                            relativeDateColumnIds: [t.dueDate],
+                            mobile: { titleColumnId: t.recipientSection, detailColumnIds: [t.dueDate, t.outstanding] },
+                          },
+                          searchable: true,
+                          pageSize: 25,
+                          rowNavigate: {
+                            kind: "navigate" as const,
+                            pageId: "bill",
+                            history: "push" as const,
+                            params: { bill_id: { source: "ROW" as const, path: "id" as const } },
+                          },
                         },
-                      })),
+                      ]),
                     ],
                   },
                 ],
@@ -715,23 +774,30 @@ export const billingApp = (t: BillingText): NonNullable<GridTemplate["customApps
                       {
                         id: "payment-context",
                         type: "record",
-                        fieldIds: [field("payments.bill"), field("payments.refund")],
+                        layout: "compact",
+                        fieldIds: [
+                          field("payments.bill"),
+                          field("payments.date"),
+                          field("payments.amount"),
+                          field("payments.refund"),
+                          field("payments.reference"),
+                        ],
                         editableFieldIds: [],
                         availableWhen: paymentWhen("draft"),
                       },
-                      { id: "pending", type: "markdown", markdown: t.paymentPendingHelp, availableWhen: paymentWhen("draft") },
+                      {
+                        id: "pending",
+                        type: "markdown",
+                        markdown: `:::info ${t.pendingPayments}\n${t.paymentPendingHelp}\n:::`,
+                        availableWhen: paymentWhen("draft"),
+                      },
                       {
                         id: "edit",
                         type: "form",
                         formId: form("edit_payment"),
                         mode: "edit",
                         fixedValues: {},
-                        actionsBlockId: "actions",
-                        onSuccessNavigate: {
-                          kind: "navigate",
-                          pageId: "payment",
-                          params: { payment_id: { source: "PARAMS", path: "payment_id" } },
-                        },
+                        presentation: { kind: "dialog", label: t.editPayment, icon: "pencil", variant: "secondary" },
                         availableWhen: paymentWhen("draft"),
                       },
                       {

@@ -1,7 +1,8 @@
-import { DatePicker, DateTimePicker, MultiSelectInput, NoticeCard, NumberInput, Select, TextInput, useLocale } from "@k2b/ui";
 import type { WorkflowBoundPlan, WorkflowIrInput } from "@k2b/cloud/workflows";
+import { DatePicker, DateTimePicker, MultiSelectInput, NoticeCard, NumberInput, Select, TextInput, useLocale } from "@k2b/ui";
 import { For, Match, Show, Switch } from "solid-js";
 import type { PublicTable } from "../../../api/public-dto";
+import { displayNumberInput, normalizeNumberInput } from "../forms/number-input";
 import RecordPicker from "../records/RecordPicker";
 import { fetchRecordLookup } from "../records/record-lookup";
 import { workflowMessages } from "./messages";
@@ -88,6 +89,18 @@ export function WorkflowInputFields(props: Props) {
                 <NoticeCard tone="danger" icon={false}>
                   {t().inputTableUnavailable({ label })}
                 </NoticeCard>
+              </Match>
+              <Match when={input.type === "decimal"}>
+                <TextInput
+                  label={label}
+                  description={description}
+                  required={required}
+                  clearable={!required}
+                  inputMode="decimal"
+                  value={() => displayNumberInput(typeof value(name) === "string" ? (value(name) as string) : "", locale())}
+                  onValueChange={(next) => props.onValueChange(name, normalizeNumberInput(next, locale()))}
+                  error={errorFor(name)}
+                />
               </Match>
               <Match when={input.type === "number"}>
                 <NumberInput

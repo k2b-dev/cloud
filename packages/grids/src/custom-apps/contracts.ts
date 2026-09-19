@@ -170,6 +170,19 @@ const CustomAppActionSchema = z.discriminatedUnion("kind", [
       launcherId: CustomAppResourceIdSchema,
       inputs: z.record(z.string().trim().min(1).max(120), CustomAppValueBindingSchema).default({}),
       confirm: z.string().trim().min(1).max(240).optional(),
+      prompt: z
+        .object({
+          // Same input budget as the Grids workflow manifest.
+          inputs: z
+            .array(z.string().trim().min(1).max(120))
+            .min(1)
+            .max(100)
+            .refine((names) => new Set(names).size === names.length, "Prompt inputs must be unique"),
+          description: z.string().trim().min(1).max(1000).optional(),
+          successMessage: z.string().trim().min(1).max(400).optional(),
+        })
+        .strict()
+        .optional(),
       background: z
         .object({
           acceptedMessage: z.string().trim().min(1).max(400),
@@ -241,6 +254,16 @@ const CustomAppSidebarActionSchema = z
   })
   .strict();
 
+const CustomAppBlockPresentationShape = {
+  disclosure: z
+    .object({
+      label: z.string().trim().min(1).max(160),
+      defaultOpen: z.boolean().optional(),
+    })
+    .strict()
+    .optional(),
+};
+
 const CustomAppMarkdownBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
@@ -248,8 +271,25 @@ const CustomAppMarkdownBlockSchema = z
     title: z.string().trim().min(1).max(160).optional(),
     markdown: z.string().max(20_000),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict();
+
+/** Presentation references use public field IDs for Views, unique output labels for GQL. */
+const CustomAppResultColumnIdSchema = z.string().trim().min(1).max(160);
+export const CustomAppTablePresentationSchema = z
+  .object({
+    relativeDateColumnIds: z.array(CustomAppResultColumnIdSchema).max(30).optional(),
+    mobile: z
+      .object({
+        titleColumnId: CustomAppResultColumnIdSchema,
+        detailColumnIds: z.array(CustomAppResultColumnIdSchema).max(30),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type CustomAppTablePresentation = z.infer<typeof CustomAppTablePresentationSchema>;
 
 const CustomAppRecordsBlockSchema = z
   .object({
@@ -262,7 +302,13 @@ const CustomAppRecordsBlockSchema = z
       CustomAppGqlSourceSchema,
     ]),
     display: z.discriminatedUnion("kind", [
-      z.object({ kind: z.literal("table"), columnIds: z.array(CustomAppResourceIdSchema).max(30) }).strict(),
+      z
+        .object({
+          kind: z.literal("table"),
+          columnIds: z.array(CustomAppResourceIdSchema).max(30),
+          ...CustomAppTablePresentationSchema.shape,
+        })
+        .strict(),
       z.object({ kind: z.literal("cards") }).strict(),
     ]),
     searchable: z.boolean().default(true),
@@ -271,6 +317,7 @@ const CustomAppRecordsBlockSchema = z
     workflowStatus: z.boolean().optional(),
     rowActions: z.array(CustomAppRowActionSchema).max(6).optional(),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict()
   .superRefine((block, ctx) => {
@@ -283,6 +330,19 @@ const CustomAppRecordsBlockSchema = z
         message: "Saved-view Records blocks require at least one displayed column",
         path: ["display", "columnIds"],
       });
+    }
+    if (block.display.kind === "table") {
+      const display = block.display;
+      for (const [key, ids] of [
+        ["relativeDateColumnIds", display.relativeDateColumnIds ?? []],
+        ["mobile", display.mobile ? [display.mobile.titleColumnId, ...display.mobile.detailColumnIds] : []],
+      ] as const) {
+        if (new Set(ids).size !== ids.length)
+          ctx.addIssue({ code: "custom", message: "Presentation columns must be unique", path: ["display", key] });
+        if (block.source.kind === "view" && ids.some((id) => !display.columnIds.includes(id))) {
+          ctx.addIssue({ code: "custom", message: "Presentation columns must be displayed columns", path: ["display", key] });
+        }
+      }
     }
     const actionIds = new Set<string>();
     for (const [index, action] of (block.rowActions ?? []).entries()) {
@@ -307,6 +367,7 @@ const CustomAppReferencedRecordsBlockSchema = z
     pageSize: z.number().int().min(5).max(100).default(25),
     rowActions: z.array(CustomAppRowActionSchema).max(6).optional(),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict()
   .superRefine((block, ctx) => {
@@ -339,6 +400,7 @@ const CustomAppMetricsBlockSchema = z
     source: CustomAppInsightSourceSchema,
     valueFormat: CustomAppValueFormatSchema.optional(),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict();
 
@@ -355,6 +417,7 @@ const CustomAppChartBlockSchema = z
     xAxisLabel: z.string().trim().min(1).max(60).optional(),
     yAxisLabel: z.string().trim().min(1).max(60).optional(),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict();
 
@@ -366,7 +429,16 @@ const CustomAppRecordBlockSchema = z
     emptyText: z.string().trim().min(1).max(240).optional(),
     fieldIds: z.array(CustomAppResourceIdSchema).min(1).max(30),
     editableFieldIds: z.array(CustomAppResourceIdSchema).max(30).default([]),
-    heading: z.object({ fieldId: CustomAppResourceIdSchema, documentNumber: z.boolean().optional() }).strict().optional(),
+    layout: z.enum(["grid", "rows", "compact", "summary", "context"]).optional(),
+    relativeDates: z.array(CustomAppResourceIdSchema).max(30).optional(),
+    heading: z
+      .object({
+        fieldId: CustomAppResourceIdSchema,
+        documentNumber: z.boolean().optional(),
+        title: z.string().trim().min(1).max(160).optional(),
+      })
+      .strict()
+      .optional(),
     documents: z
       .object({
         templateIds: z.array(CustomAppResourceIdSchema).min(1).max(12),
@@ -375,10 +447,22 @@ const CustomAppRecordBlockSchema = z
       .strict()
       .optional(),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict()
   .superRefine((block, ctx) => {
     const displayed = new Set(block.fieldIds);
+    const relativeDates = new Set<string>();
+    for (const [index, fieldId] of (block.relativeDates ?? []).entries()) {
+      if (!displayed.has(fieldId) || relativeDates.has(fieldId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Relative dates must be a unique subset of displayed fields",
+          path: ["relativeDates", index],
+        });
+      }
+      relativeDates.add(fieldId);
+    }
     if (block.heading && !displayed.has(block.heading.fieldId)) {
       ctx.addIssue({ code: "custom", message: "The heading field must be displayed by the Record block", path: ["heading", "fieldId"] });
     }
@@ -428,6 +512,7 @@ export const CustomAppHtmlBlockSchema = z
     fieldId: CustomAppResourceIdSchema,
     height: z.enum(["compact", "normal", "large"]).default("normal"),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict();
 
@@ -437,6 +522,7 @@ export const CustomAppCommentsBlockSchema = z
     type: z.literal("comments"),
     title: z.string().trim().min(1).max(160).optional(),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict();
 
@@ -448,11 +534,48 @@ const CustomAppFormBlockSchema = z
     formId: CustomAppResourceIdSchema,
     mode: z.enum(["create", "edit"]).optional(),
     actionsBlockId: CustomAppLocalIdSchema.optional(),
+    workspace: z
+      .object({
+        summaryTitle: z.string().trim().min(1).max(160).optional(),
+        summaryDescription: z.string().trim().min(1).max(600).optional(),
+        helpTitle: z.string().trim().min(1).max(160).optional(),
+        helpText: z.string().trim().min(1).max(1200).optional(),
+      })
+      .strict()
+      .optional(),
+    presentation: z
+      .object({
+        kind: z.literal("dialog"),
+        label: z.string().trim().min(1).max(160),
+        variant: z.enum(["primary", "secondary"]).optional(),
+        icon: z
+          .string()
+          .trim()
+          .min(1)
+          .max(120)
+          .regex(/^[a-z0-9-]+$/, "Use a Tabler icon slug")
+          .optional(),
+      })
+      .strict()
+      .optional(),
     fixedValues: z.record(CustomAppResourceIdSchema, CustomAppFormValueBindingSchema).default({}),
     onSuccessNavigate: CustomAppFormSuccessNavigationSchema.optional(),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
-  .strict();
+  .strict()
+  .superRefine((block, ctx) => {
+    if (block.workspace && !block.actionsBlockId) {
+      ctx.addIssue({ code: "custom", message: "Workspace context requires a linked Actions block", path: ["workspace"] });
+    }
+    if (block.presentation?.kind === "dialog" && block.actionsBlockId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Forms with saved-state actions must remain embedded so their status stays visible",
+        path: ["presentation"],
+      });
+    }
+  });
 
 const CustomAppActionsBlockSchema = z
   .object({
@@ -461,6 +584,7 @@ const CustomAppActionsBlockSchema = z
     title: z.string().trim().min(1).max(160).optional(),
     actions: z.array(CustomAppActionSchema).min(1).max(12),
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict()
   .superRefine((block, ctx) => {
@@ -479,6 +603,7 @@ const CustomAppScannerBlockSchema = z
     title: z.string().trim().min(1).max(160).optional(),
     launcherId: CustomAppResourceIdSchema,
     ...CustomAppAvailabilityShape,
+    ...CustomAppBlockPresentationShape,
   })
   .strict();
 
@@ -1303,12 +1428,20 @@ export const CUSTOM_APP_REFERENCE = {
       "@time.*",
     ],
   },
+  blockPresentation: {
+    disclosure:
+      "Optional { label, defaultOpen? } on any block. Collapsing changes presentation only; content still loads and authorization is unchanged",
+  },
   blocks: {
     markdown: { required: ["id", "type", "markdown"] },
     records: {
       required: ["id", "type", "source", "display"],
       source: "Saved view or inline GQL with implicit typed request context",
       display: "Use an explicit App table projection or inherit the existing Cards configuration from a saved View",
+      relativeDateColumnIds:
+        "Optional date-only columns annotated with calendar-day distance; Views use public field IDs, GQL uses exact unique output labels, as shown in the query preview",
+      mobile:
+        "Optional { titleColumnId, detailColumnIds } renders the same authorized table rows as a compact mobile list; references follow the same View/GQL rule",
       search: "Optional server-side PostgreSQL search over displayed result fields",
       pagination: "Cursor-paged from 5 to 100 rows per request; a GQL limit caps the complete result",
       rowNavigate: "Optionally navigate a row id or selected single relation into a target page record parameter",
@@ -1339,8 +1472,11 @@ export const CUSTOM_APP_REFERENCE = {
     record: {
       required: ["id", "type", "fieldIds"],
       heading:
-        "Optionally promote a displayed field with heading:{fieldId}. documentNumber:true promotes an existing allowed document number, retaining the field as subtitle; requires documents.",
+        "Optionally promote a displayed field with heading:{fieldId}. title optionally names an editable draft with the field as subtitle; finalized records ignore title. documentNumber:true promotes an existing allowed document number, retaining the field as subtitle; requires documents.",
       editableFieldIds: "Optional writable or attachable subset of fieldIds",
+      layout:
+        "grid (default), rows, compact facts, context (a compact related-record surface), or summary (end-aligned values with the last row emphasized); object lists use framed tables with optional details",
+      relativeDates: "Optional date-only field subset annotated with today, tomorrow, or calendar-day distance",
       documents:
         "Show existing documents from templateIds (1–12). Optional preview:true grants saved draft PDF previews and the templates' queried data; source interpolation is limited to record.id/record.shortId, and template/schema changes require republishing. Does not issue documents.",
       note: "Displays allowlisted fields from the current page record and may edit values or attachments from an explicit subset",
@@ -1354,6 +1490,11 @@ export const CUSTOM_APP_REFERENCE = {
     form: {
       required: ["id", "type", "formId"],
       mode: "create (default) or edit; edit requires a Record page for the Form's table",
+      workspace:
+        "Optional { summaryTitle?, summaryDescription?, helpTitle?, helpText? } on Forms with actionsBlockId. Inputs, live computed summary and saved-state actions share one draft. The last computed field is the headline value. Missing inputs can be focused; primary actions stay disabled until valid and saved. Successful saves reload canonical data",
+      presentation:
+        "Embedded by default; { kind: dialog, label, icon?, variant? } opens the same contextual Form in a guarded dialog. Variant is primary or secondary (default). Dialog forms cannot link actionsBlockId",
+      completion: "Dialog success refreshes its origin unless onSuccessNavigate is configured",
       fixedValues: "Optionally supply trusted typed LITERAL values, compatible PARAMS or page RECORD relations, or AUTH.currentUser",
       onSuccessNavigate: "Optionally replace-navigate using PARAMS and RESULT.recordId",
     },

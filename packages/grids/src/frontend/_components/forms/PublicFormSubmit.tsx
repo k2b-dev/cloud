@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, NoticeCard, PanelHeader, prompts, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { evaluateFormValidations } from "../../../form-validations";
 import type { PublicRenderableForm } from "../../../service/forms";
@@ -21,7 +21,17 @@ import type { FormEditState } from "./form-submit-payload";
 import { gridsFormMessages } from "./messages";
 import { normalizeNumberInput } from "./number-input";
 
+export type FormContextState = {
+  summary: JSX.Element;
+  failures: Accessor<Array<{ errorFieldId: string; message: string; label: string }>>;
+  focusField: (fieldId: string) => void;
+};
+
 type Props = {
+  /** Context stays inside the same draft owner; no second calculation/state. */
+  renderContext?: (state: FormContextState) => JSX.Element;
+  summaryTitle?: string;
+  summaryDescription?: string;
   /** Form config (fields, labels, defaults) — server-trusted. */
   form: PublicRenderableForm;
   /** Resolved table fields so we know each entry's type + options. */
@@ -38,6 +48,8 @@ type Props = {
   formRef?: (form: HTMLFormElement) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onSubmittingChange?: (submitting: boolean) => void;
+  /** Called after a saved submission when the server did not request navigation. */
+  onSuccess?: () => void;
 } & (
   | { publicToken: string; submitUrl?: never; preview?: never }
   | { publicToken?: never; submitUrl: string; preview?: never }
@@ -73,13 +85,12 @@ export default function FormSubmit(props: Props) {
   const [done, setDone] = createSignal(false);
   const [clientReady, setClientReady] = createSignal(false);
   const [validationAttempted, setValidationAttempted] = createSignal(false);
-  const validationFailures = createMemo(() => {
+  const allValidationFailures = createMemo(() => {
     const failures: Array<{ errorFieldId: string; message: string }> = evaluateFormValidations(
       props.form.config.validations,
       values(),
       fieldsById,
     );
-    if (!validationAttempted()) return failures;
     const context = { locale: locale(), dateConfig: props.dateConfig };
     for (const entry of entries) {
       const field = fieldsById.get(entry.fieldId);
@@ -105,6 +116,9 @@ export default function FormSubmit(props: Props) {
     }
     return failures;
   });
+  const validationFailures = createMemo(() =>
+    validationAttempted() ? allValidationFailures() : evaluateFormValidations(props.form.config.validations, values(), fieldsById),
+  );
   const validationErrors = createMemo(() =>
     Object.fromEntries(validationFailures().map((failure) => [failure.errorFieldId, failure.message])),
   );
@@ -200,22 +214,23 @@ export default function FormSubmit(props: Props) {
         setError(await errorMessage(res, t().submitFailed));
         return;
       }
+      // A successful status with an unreadable receipt is still uncertain.
+      // Keep saved-state actions locked until the complete response is known.
+      const result: { navigateTo?: unknown } | null = props.submitUrl ? await res.json() : null;
+      setDone(true);
       setDirty(false);
       setSubmitting(false);
       props.onDirtyChange?.(false);
-      if (props.submitUrl) {
-        const result = (await res.json()) as { navigateTo?: unknown };
-        if (typeof result.navigateTo === "string") {
-          window.location.replace(result.navigateTo);
-          return;
-        }
+      if (typeof result?.navigateTo === "string") {
+        window.location.replace(result.navigateTo);
+        return;
       }
       const redirect = props.publicToken ? props.form.config.redirectUrl : null;
       if (redirect) {
         window.location.href = redirect;
         return;
       }
-      setDone(true);
+      props.onSuccess?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : t().submitFailed);
     } finally {
@@ -258,96 +273,144 @@ export default function FormSubmit(props: Props) {
           </NoticeCard>
         }
       >
-        <form
-          ref={(element) => {
-            formRef = element;
-            props.formRef?.(element);
-          }}
-          class="flex flex-col gap-3"
-          data-grids-public-form-ready={clientReady() ? "true" : "false"}
-          noValidate
-          onSubmit={handleSubmit}
-        >
-          <fieldset disabled={props.disabled || submitting() || pendingSubmission() !== null} class={formLayoutClass}>
-            <Show when={hasInlineCreate()}>
-              <NoticeCard class="basis-full" tone="info" icon={false} bodyClass="flex items-start gap-2">
-                <i class="ti ti-info-circle mt-0.5 shrink-0" />
-                <span>{t().linkedRecordsWarning}</span>
-              </NoticeCard>
-            </Show>
-            <FormSections state={sections}>
-              {(entry) => {
-                const field = fieldsById.get(entry.fieldId);
-                if (!field || field.deletedAt) return null;
-                return (
-                  <div class={formFieldClass(entry.width)} data-grids-form-field={entry.fieldId}>
-                    <FieldInput
-                      field={field}
-                      entry={entry}
-                      value={values()[entry.fieldId]}
-                      relationLabels={props.relationLabels}
-                      relationLookupUrl={
-                        props.relationLookupFields?.includes(entry.fieldId)
-                          ? props.submitUrl?.replace(/\/submit(?=\?|$)/, `/relations/${entry.fieldId}/lookup`)
-                          : undefined
-                      }
-                      onChange={(v) => setValue(entry.fieldId, v)}
-                      error={() => validationErrors()[entry.fieldId]}
-                      validate={validationAttempted()}
-                      inlineCreates={inlineCreates}
-                      onInlineCreatesChange={setInlineDrafts}
-                      inlineTargetFields={props.inlineTargetFields}
-                      dateConfig={props.dateConfig}
-                    />
-                  </div>
-                );
-              }}
-            </FormSections>
-          </fieldset>
-
-          <Show when={error()}>
-            <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
-              <i class="ti ti-alert-circle mt-0.5 shrink-0" />
-              <span>{error()}</span>
-            </NoticeCard>
-            <Show when={pendingSubmission() && !confirmedConflict()}>
-              <p class="text-sm text-dimmed">{t().retrySubmission}</p>
-            </Show>
-            <Show when={confirmedConflict()}>
-              <Button
-                variant="input"
-                type="button"
-                onClick={async () => {
-                  if (
-                    await prompts.confirm(t().reloadEditWarning, { title: t().reloadCurrentValues, confirmText: t().reloadCurrentValues })
-                  ) {
-                    window.location.reload();
-                  }
+        <div class={props.renderContext ? "grids-form-workspace" : undefined}>
+          <form
+            ref={(element) => {
+              formRef = element;
+              props.formRef?.(element);
+            }}
+            class="grids-form-workspace-main flex min-w-0 flex-col gap-3"
+            data-grids-public-form-ready={clientReady() ? "true" : "false"}
+            noValidate
+            onSubmit={handleSubmit}
+          >
+            <fieldset disabled={props.disabled || submitting() || pendingSubmission() !== null} class={formLayoutClass}>
+              <Show when={hasInlineCreate()}>
+                <NoticeCard class="basis-full" tone="info" icon={false} bodyClass="flex items-start gap-2">
+                  <i class="ti ti-info-circle mt-0.5 shrink-0" />
+                  <span>{t().linkedRecordsWarning}</span>
+                </NoticeCard>
+              </Show>
+              <FormSections state={sections}>
+                {(entry) => {
+                  const field = fieldsById.get(entry.fieldId);
+                  if (!field || field.deletedAt) return null;
+                  return (
+                    <div class={formFieldClass(entry.width)} data-grids-form-field={entry.fieldId}>
+                      <FieldInput
+                        field={field}
+                        entry={entry}
+                        value={values()[entry.fieldId]}
+                        relationLabels={props.relationLabels}
+                        relationLookupUrl={
+                          props.relationLookupFields?.includes(entry.fieldId)
+                            ? props.submitUrl?.replace(/\/submit(?=\?|$)/, `/relations/${entry.fieldId}/lookup`)
+                            : undefined
+                        }
+                        onChange={(v) => setValue(entry.fieldId, v)}
+                        error={() => validationErrors()[entry.fieldId]}
+                        validate={validationAttempted()}
+                        inlineCreates={inlineCreates}
+                        onInlineCreatesChange={setInlineDrafts}
+                        inlineTargetFields={props.inlineTargetFields}
+                        dateConfig={props.dateConfig}
+                      />
+                    </div>
+                  );
                 }}
-              >
-                {t().reloadCurrentValues}
-              </Button>
-            </Show>
-          </Show>
+              </FormSections>
+            </fieldset>
 
-          <FormComputedSummary config={props.form.config} fields={props.fields} values={values()} dateConfig={props.dateConfig} />
-          {/* Wrap the button so it sizes to its content rather than
+            <Show when={error()}>
+              <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
+                <i class="ti ti-alert-circle mt-0.5 shrink-0" />
+                <span>{error()}</span>
+              </NoticeCard>
+              <Show when={pendingSubmission() && !confirmedConflict()}>
+                <p class="text-sm text-dimmed">{t().retrySubmission}</p>
+              </Show>
+              <Show when={confirmedConflict()}>
+                <Button
+                  variant="input"
+                  type="button"
+                  onClick={async () => {
+                    if (
+                      await prompts.confirm(t().reloadEditWarning, { title: t().reloadCurrentValues, confirmText: t().reloadCurrentValues })
+                    ) {
+                      window.location.reload();
+                    }
+                  }}
+                >
+                  {t().reloadCurrentValues}
+                </Button>
+              </Show>
+            </Show>
+
+            <Show when={!props.renderContext}>
+              <FormComputedSummary config={props.form.config} fields={props.fields} values={values()} dateConfig={props.dateConfig} />
+            </Show>
+            {/* Wrap the button so it sizes to its content rather than
               stretching the full form width (flex-column children are
               `align-items: stretch` by default). */}
-          <div class="mt-2 flex items-center justify-end">
-            <Button
-              variant="primary"
-              size="sm"
-              type="submit"
-              disabled={props.disabled || props.preview || submitting() || confirmedConflict()}
+            <div
+              class={
+                props.renderContext
+                  ? "grids-form-save flex flex-wrap items-center justify-between gap-3"
+                  : "mt-2 flex items-center justify-end"
+              }
             >
-              <Show when={submitting()} fallback={<i class="ti ti-send" />}>
-                <i class="ti ti-loader-2 animate-spin" />
+              <Show when={props.renderContext}>
+                <span class="text-xs text-secondary" role="status">
+                  {dirty() ? t().unsavedChanges : t().saved}
+                </span>
               </Show>
-              {props.form.config.submitLabel ?? (props.initialRecord ? t().saveChanges : t().submit)}
-            </Button>
-          </div>
-        </form>
+              <Button
+                variant="primary"
+                size="sm"
+                type="submit"
+                disabled={props.disabled || props.preview || submitting() || confirmedConflict()}
+              >
+                <Show when={submitting()} fallback={<i class="ti ti-send" />}>
+                  <i class="ti ti-loader-2 animate-spin" />
+                </Show>
+                {props.form.config.submitLabel ?? (props.initialRecord ? t().saveChanges : t().submit)}
+              </Button>
+            </div>
+          </form>
+          <Show when={props.renderContext}>
+            {(renderContext) => (
+              <aside class="grids-form-workspace-context">
+                {renderContext()({
+                  get summary() {
+                    return (
+                      <FormComputedSummary
+                        config={props.form.config}
+                        fields={props.fields}
+                        values={values()}
+                        dateConfig={props.dateConfig}
+                        prominent
+                        title={props.summaryTitle}
+                        description={props.summaryDescription}
+                      />
+                    );
+                  },
+                  failures: () =>
+                    allValidationFailures().map((failure) => ({
+                      ...failure,
+                      label:
+                        entries.find((entry) => entry.fieldId === failure.errorFieldId)?.label ||
+                        fieldsById.get(failure.errorFieldId)?.name ||
+                        failure.errorFieldId,
+                    })),
+                  focusField: (fieldId) => {
+                    setValidationAttempted(true);
+                    focusFormField(formRef, fieldId, sections);
+                  },
+                })}
+              </aside>
+            )}
+          </Show>
+        </div>
       </Show>
     </div>
   );

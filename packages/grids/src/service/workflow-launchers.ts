@@ -114,7 +114,7 @@ export const validateLauncherConfig = (workflow: GridsWorkflow, config: GridsWor
       }
       if (
         (source.kind === "session" || source.kind === "afterScan") &&
-        !["record", "recordList", "text", "number", "boolean", "date", "dateTime", "select"].includes(input.type)
+        !["record", "recordList", "text", "number", "decimal", "boolean", "date", "dateTime", "select"].includes(input.type)
       ) {
         add("launcher.input.type", `Scanner prompts do not support workflow input type "${input.type}"`, sourcePath(name));
       }

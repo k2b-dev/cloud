@@ -1,4 +1,4 @@
-import { Button, ButtonLink, prompts } from "@k2b/ui";
+import { Button, ButtonLink, InlineGuidance, prompts } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { BackgroundDocumentState } from "../../custom-apps/background-state";
 import { useCustomAppRuntimeMessages } from "./runtime-messages";
@@ -10,6 +10,7 @@ export default function BackgroundAction(props: {
   onCompleted?: () => void;
   variant?: "primary" | "secondary" | "danger";
   endpoint: string;
+  launcherId?: string;
   confirm?: string;
   acceptedMessage: string;
   state: BackgroundDocumentState;
@@ -109,7 +110,7 @@ export default function BackgroundAction(props: {
       const response = await fetch(props.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ operationId }),
+        body: JSON.stringify({ operationId, launcherId: props.launcherId }),
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -157,37 +158,31 @@ export default function BackgroundAction(props: {
             : state().status === "missing"
               ? t().documentCreationMissing
               : state().status === "ready"
-                ? t().documentReady
+                ? ""
                 : accepted()
                   ? props.acceptedMessage
                   : "";
   return (
-    <div class="flex flex-col gap-2">
+    <div class="flex min-w-0 max-w-full flex-col items-start gap-2">
       <Show
         when={state().status === "ready" && state().downloadUrl}
         fallback={
-          <Button
-            variant={props.variant ?? "secondary"}
-            size="sm"
-            loading={pending()}
-            disabled={
-              (props.disabled && !unavailable()) ||
-              pending() ||
-              state().status === "attention" ||
-              (state().status === "running" && !unavailable())
-            }
-            onClick={() => void start()}
-          >
-            {unavailable()
-              ? t().checkWorkflowStatus
-              : state().status === "attention"
-                ? t().documentFailed
-                : state().status === "running"
-                  ? t().documentCreating
-                  : state().status === "missing" || state().status === "failed"
-                    ? t().documentCreationRetry
-                    : props.label}
-          </Button>
+          <Show when={unavailable() || !["running", "attention"].includes(state().status)}>
+            <Button
+              variant={props.variant ?? "secondary"}
+              size="sm"
+              loading={pending()}
+              loadingLabel={t().starting}
+              disabled={(props.disabled && !unavailable()) || pending()}
+              onClick={() => void start()}
+            >
+              {unavailable()
+                ? t().checkWorkflowStatus
+                : state().status === "missing" || state().status === "failed"
+                  ? t().documentCreationRetry
+                  : props.label}
+            </Button>
+          </Show>
         }
       >
         <ButtonLink href={state().downloadUrl!} target="_blank" variant={props.variant ?? "secondary"} size="sm">
@@ -195,12 +190,13 @@ export default function BackgroundAction(props: {
         </ButtonLink>
       </Show>
       <Show when={message()}>
-        <p
-          role={state().status === "failed" ? "alert" : "status"}
-          class={`text-sm ${state().status === "failed" || state().status === "attention" ? "text-danger" : "text-secondary"}`}
+        <InlineGuidance
+          loading={state().status === "running" && !unavailable()}
+          role={state().status === "failed" || state().status === "attention" ? "alert" : "status"}
+          tone={state().status === "failed" || state().status === "attention" ? "danger" : "neutral"}
         >
           {message()}
-        </p>
+        </InlineGuidance>
       </Show>
     </div>
   );

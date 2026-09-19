@@ -90,7 +90,7 @@ Publishing new YAML creates an immutable revision, so the revision number counts
 
 ## Inputs reference {icon="book-2"}
 
-Every input has `type`. Optional `label` and `description` text appears in generated controls. `required: true` rejects a missing value; omitting `required` makes the input optional.
+Every input has `type`. Optional `label` and `description` text appears in generated controls. `required: true` rejects a missing value; omitting `required` makes the input optional. Omitted or `null` optional scalar inputs resolve to `null` in workflow expressions; `false`, `0`, and empty text remain unchanged.
 
 | Type | Run value | Additional declaration |
 | --- | --- | --- |
@@ -98,10 +98,13 @@ Every input has `type`. Optional `label` and `description` text appears in gener
 | `recordList` | Ordered list of record public IDs, at most 10,000 | Required `table` exact name or public ID |
 | `text` | String | None |
 | `number` | Finite number | None |
+| `decimal` | Exact decimal string, such as `"12.50"` | None |
 | `boolean` | `true` or `false` | None |
 | `date` | Date in `YYYY-MM-DD` format | None |
 | `dateTime` | ISO date-time | None |
 | `select` | String equal to one configured option | Required `options` list with 1–200 values |
+
+Decimal controls accept the locale’s decimal separator, without grouping separators. Runs receive normalized decimal strings without floating-point conversion, within the ordinary Number field’s supported range. Use `decimal` for exact amounts.
 
 Record inputs are checked against the bound table and current read permission before steps start. Unknown inputs, missing records, inaccessible tables, wrong value types, and values outside a select's options reject the invocation.
 
@@ -351,7 +354,7 @@ The `generateDocument` result includes `business`, the stored company context of
 :::reference
 - **locks:** Record or record-list references, such as `inputs.item` or `inputs.items`, acquired in stable order before checks. Duplicates count once; explicit locks, change targets and `validateDocuments` targets together may include at most 100 distinct records. Empty lists add no locks. Every competing workflow must lock the same coordination record for the same business decision.
 - **checks:** Choose `query: {source, parameters}` or `table` with 1–20 AND-combined `where` predicates (`field`, `op`, optional `value`/`caseInsensitive`). `assert: empty|notEmpty` tests row existence; optional `message` explains failure.
-- **changes:** An ordered list of `createRecord`, `updateRecord`, or `finalizeRecord` entries. Create uses `table` and non-empty `values`. Update uses `record`, non-empty `set`, optional `ifVersion`, and optional `audit` answers. Finalize uses `record` and requires enabled direct Finalization; it does not bypass Four-eyes approval. Finalize after the required updates. A later rejected change rolls back the finalization too.
+- **changes:** An ordered list of `createRecord`, `updateRecord`, or `finalizeRecord` entries. Create uses `table` and non-empty `values`; optional `finalize: true` creates and finalizes the new Record in this transaction. It requires enabled direct Finalization. A failed finalization leaves no draft behind. Update uses `record`, non-empty `set`, optional `ifVersion`, and optional `audit` answers. Finalize uses `record` and requires enabled direct Finalization; it does not bypass Four-eyes approval. Finalize after the required updates. A later rejected change rolls back the finalization too.
 - **transaction:** Permissions and row scope are rechecked. Records, relations, audit, outbox and outcome commit together or roll back together.
 :::
 

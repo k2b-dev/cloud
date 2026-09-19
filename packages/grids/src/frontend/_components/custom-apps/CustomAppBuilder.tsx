@@ -73,6 +73,7 @@ import {
 import { createCustomAppBuilderState, customAppDiagnosticSelection } from "./custom-app-builder-state";
 import type { CustomAppCatalog } from "./custom-app-catalog";
 import { createCustomAppNavigationGuard } from "./custom-app-navigation";
+import { RecordsPresentationEditor } from "./RecordsPresentationEditor";
 
 type PublicCustomAppDraftSave = { app: PublicCustomApp; valid: boolean; diagnostics: CustomAppDiagnostic[] };
 
@@ -667,6 +668,27 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
   const selectedRecordsUsesTable = createMemo(() => {
     const block = selectedBlock()?.block;
     return block?.type === "records" && block.display.kind === "table";
+  });
+  const recordsPresentationColumns = createMemo(() => {
+    const block = selectedRecordsBlock();
+    if (!block || block.display.kind !== "table") return [];
+    if (block.source.kind === "view") {
+      const selected = new Set(block.display.columnIds);
+      return selectedRecordsFields()
+        .filter((field) => selected.has(field.id))
+        .map((field) => ({
+          id: field.id,
+          label: field.name,
+          dateOnly: field.type === "date" && field.config.includeTime !== true,
+        }));
+    }
+    const preview = previewResults()[block.id];
+    if (!preview?.ok) return [];
+    const labelCounts = new Map<string, number>();
+    for (const column of preview.columns) labelCounts.set(column.label, (labelCounts.get(column.label) ?? 0) + 1);
+    return preview.columns
+      .filter((column) => labelCounts.get(column.label) === 1)
+      .map((column) => ({ id: column.label, label: column.label, dateOnly: column.sqlType === "date" }));
   });
   const referencedRecordsCandidates = createMemo(() => {
     const targetTableId = selectedPage().record?.tableId;
@@ -2603,6 +2625,34 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </div>
                   </DetailPanel.Summary>
                   <DetailPanel.Group label={text("Block behavior")}>
+                    <DetailPanel.Section title={text("Progressive disclosure")} icon="ti ti-fold" collapsible defaultOpen={false}>
+                      <TextInput
+                        label={text("Collapsed heading")}
+                        description={text(
+                          "Leave empty to show the block directly. Hidden content keeps its permissions and loads normally.",
+                        )}
+                        value={() => selected().block.disclosure?.label ?? ""}
+                        onValueChange={(label) =>
+                          updateSelectedBlock((block) => ({
+                            ...block,
+                            disclosure: label.trim() ? { ...block.disclosure, label } : undefined,
+                          }))
+                        }
+                        clearable
+                      />
+                      <Show when={selected().block.disclosure}>
+                        <Switch
+                          label={text("Initially expanded")}
+                          value={() => selected().block.disclosure?.defaultOpen === true}
+                          onValueChange={(defaultOpen) =>
+                            updateSelectedBlock((block) => ({
+                              ...block,
+                              disclosure: block.disclosure ? { ...block.disclosure, defaultOpen } : undefined,
+                            }))
+                          }
+                        />
+                      </Show>
+                    </DetailPanel.Section>
                     <CustomAppAvailabilitySection
                       baseId={draft.draft().baseId}
                       contextKeys={contextKeys()}
@@ -3149,13 +3199,51 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                     onValueChange={(columnIds) =>
                                       updateSelectedBlock((block) =>
                                         block.type === "records"
-                                          ? { ...block, display: { kind: "table", columnIds: columnIds.slice(0, 30) } }
+                                          ? {
+                                              ...block,
+                                              display: {
+                                                kind: "table",
+                                                columnIds: columnIds.slice(0, 30),
+                                                ...(block.display.kind === "table"
+                                                  ? {
+                                                      relativeDateColumnIds: block.display.relativeDateColumnIds?.filter((id) =>
+                                                        columnIds.includes(id),
+                                                      ),
+                                                      mobile:
+                                                        block.display.mobile && columnIds.includes(block.display.mobile.titleColumnId)
+                                                          ? {
+                                                              ...block.display.mobile,
+                                                              detailColumnIds: block.display.mobile.detailColumnIds.filter((id) =>
+                                                                columnIds.includes(id),
+                                                              ),
+                                                            }
+                                                          : undefined,
+                                                    }
+                                                  : {}),
+                                              },
+                                            }
                                           : block,
                                       )
                                     }
                                   />
                                 </Show>
                               </Show>
+                            </Show>
+                            <Show when={selectedRecordsUsesTable()}>
+                              <RecordsPresentationEditor
+                                value={(() => {
+                                  const block = selectedRecordsBlock();
+                                  return block?.display.kind === "table" ? block.display : {};
+                                })()}
+                                columns={recordsPresentationColumns()}
+                                onChange={(presentation) =>
+                                  updateSelectedBlock((block) =>
+                                    block.type === "records" && block.display.kind === "table"
+                                      ? { ...block, display: { ...block.display, ...presentation } }
+                                      : block,
+                                  )
+                                }
+                              />
                             </Show>
                             <Show
                               when={recordsNavigationPageOptions().length > 0}
@@ -3322,6 +3410,72 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           }}
                         />
                         <Select
+                          label={text("Form placement")}
+                          description={text(
+                            "Open short forms in a dialog. Forms with saved-state actions stay embedded so their status remains visible.",
+                          )}
+                          value={() => selectedFormBlock()?.presentation?.kind ?? "embedded"}
+                          options={[
+                            { id: "embedded", label: text("Embedded") },
+                            { id: "dialog", label: text("Dialog"), disabled: Boolean(selectedFormBlock()?.actionsBlockId) },
+                          ]}
+                          onValueChange={(placement) => {
+                            if (placement !== "embedded" && placement !== "dialog") return;
+                            if (placement === "dialog" && selectedFormBlock()?.actionsBlockId) return;
+                            updateSelectedBlock((block) =>
+                              block.type === "form"
+                                ? {
+                                    ...block,
+                                    presentation:
+                                      placement === "dialog"
+                                        ? { kind: "dialog", label: block.title ?? selectedForm()?.name ?? text("Form") }
+                                        : undefined,
+                                  }
+                                : block,
+                            );
+                          }}
+                        />
+                        <Show when={selectedFormBlock()?.presentation}>
+                          <TextInput
+                            label={text("Button label")}
+                            value={selectedFormBlock()?.presentation?.label ?? ""}
+                            onValueChange={(label) =>
+                              updateSelectedBlock((block) =>
+                                block.type === "form" && block.presentation
+                                  ? { ...block, presentation: { ...block.presentation, label } }
+                                  : block,
+                              )
+                            }
+                          />
+                          <Select
+                            label={text("Button style")}
+                            value={() => selectedFormBlock()?.presentation?.variant ?? "secondary"}
+                            options={[
+                              { id: "primary", label: text("Primary") },
+                              { id: "secondary", label: text("Secondary") },
+                            ]}
+                            onValueChange={(variant) => {
+                              if (variant !== "primary" && variant !== "secondary") return;
+                              updateSelectedBlock((block) =>
+                                block.type === "form" && block.presentation
+                                  ? { ...block, presentation: { ...block.presentation, variant } }
+                                  : block,
+                              );
+                            }}
+                          />
+                          <TextInput
+                            label={text("Icon")}
+                            value={selectedFormBlock()?.presentation?.icon ?? ""}
+                            onValueChange={(icon) =>
+                              updateSelectedBlock((block) =>
+                                block.type === "form" && block.presentation
+                                  ? { ...block, presentation: { ...block.presentation, icon: icon || undefined } }
+                                  : block,
+                              )
+                            }
+                          />
+                        </Show>
+                        <Select
                           label={text("Form action")}
                           error={() => diagnosticFor(selected().block.id, "mode")}
                           description={text("Editing uses the record bound to this page and saves its related rows together.")}
@@ -3339,7 +3493,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       <Show when={selectedForm()}>
                         <Select
                           label={text("Actions using the saved form")}
-                          description={text("Keep these actions disabled until changes are saved.")}
+                          description={text("Keep these actions disabled until changes are saved. Available only for embedded forms.")}
+                          disabled={selectedFormBlock()?.presentation?.kind === "dialog"}
                           clearable
                           value={() => selectedFormBlock()?.actionsBlockId ?? null}
                           options={selected()
@@ -3347,10 +3502,51 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             .map((block) => ({ id: block.id, label: block.title ?? block.id }))}
                           onValueChange={(actionsBlockId) =>
                             updateSelectedBlock((block) =>
-                              block.type === "form" ? { ...block, actionsBlockId: actionsBlockId || undefined } : block,
+                              block.type === "form" && !block.presentation
+                                ? {
+                                    ...block,
+                                    actionsBlockId: actionsBlockId || undefined,
+                                    workspace: actionsBlockId ? block.workspace : undefined,
+                                  }
+                                : block,
                             )
                           }
                         />
+                        <Show when={selectedFormBlock()?.actionsBlockId}>
+                          <DetailPanel.Section
+                            title={text("Workspace context")}
+                            collapsible
+                            defaultOpen={Boolean(selectedFormBlock()?.workspace)}
+                          >
+                            <For
+                              each={
+                                [
+                                  { key: "summaryTitle" as const, label: "Summary title" },
+                                  { key: "summaryDescription" as const, label: "Summary explanation" },
+                                  { key: "helpTitle" as const, label: "Additional context title" },
+                                  { key: "helpText" as const, label: "Additional context" },
+                                ] as const
+                              }
+                            >
+                              {(entry) => (
+                                <TextInput
+                                  label={text(entry.label)}
+                                  value={selectedFormBlock()?.workspace?.[entry.key] ?? ""}
+                                  onValueChange={(value) =>
+                                    updateSelectedBlock((block) =>
+                                      block.type === "form"
+                                        ? {
+                                            ...block,
+                                            workspace: { ...block.workspace, [entry.key]: value || undefined },
+                                          }
+                                        : block,
+                                    )
+                                  }
+                                />
+                              )}
+                            </For>
+                          </DetailPanel.Section>
+                        </Show>
                         <Show when={selectedFormBindingOptions().length > 0}>
                           <DetailPanel.Section
                             title={text("Values supplied by this page")}
@@ -3598,6 +3794,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       ...block,
                                       fieldIds: fieldIds.slice(0, 30),
                                       editableFieldIds: block.editableFieldIds.filter((id) => fieldIds.includes(id)),
+                                      relativeDates: block.relativeDates?.filter((id) => fieldIds.includes(id)),
                                       heading: block.heading && fieldIds.includes(block.heading.fieldId) ? block.heading : undefined,
                                     }
                                   : block,
@@ -3624,6 +3821,45 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                           <Select
+                            label={text("Field layout")}
+                            value={() => selectedRecordBlock()?.layout ?? "grid"}
+                            options={[
+                              { id: "grid", label: text("Grid") },
+                              { id: "rows", label: text("Rows") },
+                              { id: "compact", label: text("Compact") },
+                              { id: "summary", label: text("Summary") },
+                              { id: "context", label: text("Context") },
+                            ]}
+                            onValueChange={(layout) => {
+                              if (
+                                layout !== "grid" &&
+                                layout !== "rows" &&
+                                layout !== "compact" &&
+                                layout !== "summary" &&
+                                layout !== "context"
+                              )
+                                return;
+                              updateSelectedBlock((block) => (block.type === "record" ? { ...block, layout } : block));
+                            }}
+                          />
+                          <MultiSelectInput
+                            label={text("Relative dates")}
+                            description={text("Show today, tomorrow, or the calendar-day distance beside date-only values.")}
+                            clearable
+                            value={() => selectedRecordBlock()?.relativeDates ?? []}
+                            options={pageRecordFields()
+                              .filter(
+                                (field) =>
+                                  selectedRecordBlock()?.fieldIds.includes(field.id) &&
+                                  field.type === "date" &&
+                                  field.config.includeTime !== true,
+                              )
+                              .map((field) => ({ id: field.id, label: field.name }))}
+                            onValueChange={(relativeDates) =>
+                              updateSelectedBlock((block) => (block.type === "record" ? { ...block, relativeDates } : block))
+                            }
+                          />
+                          <Select
                             label={text("Heading field")}
                             description={text("Use a visible field to identify the record instead of repeating the table name.")}
                             value={() => selectedRecordBlock()?.heading?.fieldId ?? ""}
@@ -3643,6 +3879,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           />
                         </div>
                       </DetailPanel.Section>
+                      <Show when={selectedRecordBlock()?.heading}>
+                        <TextInput
+                          label={text("Draft heading")}
+                          description={text("Optional heading before a document number exists. The selected field becomes its subtitle.")}
+                          value={selectedRecordBlock()?.heading?.title ?? ""}
+                          onValueChange={(title) =>
+                            updateSelectedBlock((block) =>
+                              block.type === "record" && block.heading
+                                ? { ...block, heading: { ...block.heading, title: title || undefined } }
+                                : block,
+                            )
+                          }
+                        />
+                      </Show>
                       <DetailPanel.Section
                         title={text("Documents")}
                         icon="ti ti-files"
@@ -4011,7 +4261,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                         inputs: launcher ? defaultRowWorkflowInputs(launcher) : {},
                                       };
                                     }
-                                    return { ...action, launcherId, inputs: {} };
+                                    return { ...action, launcherId, inputs: {}, prompt: undefined };
                                   })
                                 }
                               />
@@ -4042,12 +4292,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       const value = workflow?.plan.bindings[`inputs.${input.name}.table`];
                                       return typeof value === "string" ? value : null;
                                     };
+                                    const prompted = () => {
+                                      const action = workflowAction();
+                                      return "prompt" in action && Boolean(action.prompt?.inputs.includes(input.name));
+                                    };
                                     const inputValue = () => workflowAction().inputs[input.name];
                                     const literalInputValue = () => {
                                       const value = inputValue();
                                       return value?.source === "LITERAL" ? value : null;
                                     };
                                     const sourceOptions = () => [
+                                      ...(selected().owner !== "rows" &&
+                                      ["text", "number", "decimal", "date", "dateTime", "boolean", "select"].includes(input.type)
+                                        ? [{ id: "PROMPT", label: text("Ask in dialog") }]
+                                        : []),
                                       { id: "LITERAL", label: text("Fixed value") },
                                       ...(input.type === "record" && selectedPage().record?.tableId === boundTableId()
                                         ? [{ id: "RECORD", label: text("Current page record") }]
@@ -4071,13 +4329,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                           placeholder={text("Not supplied")}
                                           clearable
                                           value={() => {
+                                            if (prompted()) return "PROMPT";
                                             const value = inputValue();
                                             if (!value) return null;
                                             return value.source === "PARAMS" ? `PARAMS:${value.path}` : value.source;
                                           }}
                                           options={sourceOptions()}
                                           error={() =>
-                                            !inputValue() && input.config.required
+                                            !inputValue() && !prompted() && input.config.required
                                               ? text("Choose where this required workflow input comes from.")
                                               : diagnosticFor(selected().action.id, input.name)
                                           }
@@ -4095,12 +4354,24 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                                 return { ...action, inputs };
                                               }
                                               const inputs: CustomAppWorkflowAction["inputs"] = { ...action.inputs };
+                                              const promptNames = action.prompt?.inputs.filter((name) => name !== input.name) ?? [];
+                                              if (source === "PROMPT") {
+                                                delete inputs[input.name];
+                                                return {
+                                                  ...action,
+                                                  inputs,
+                                                  confirm: undefined,
+                                                  background: undefined,
+                                                  prompt: { ...action.prompt, inputs: [...promptNames, input.name] },
+                                                };
+                                              }
+                                              const prompt = promptNames.length ? { ...action.prompt, inputs: promptNames } : undefined;
                                               if (!source) delete inputs[input.name];
                                               else if (source === "RECORD") inputs[input.name] = { source: "RECORD", path: "id" };
                                               else if (source.startsWith("PARAMS:")) {
                                                 inputs[input.name] = { source: "PARAMS", path: source.slice("PARAMS:".length) };
                                               } else inputs[input.name] = { source: "LITERAL", value: null };
-                                              return { ...action, inputs };
+                                              return { ...action, inputs, prompt };
                                             })
                                           }
                                         />
@@ -4226,17 +4497,58 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                   )}
                                 </For>
                               </Show>
-                              <TextInput
-                                label={text("Confirmation message")}
-                                description={text("Optional. Ask the user before invoking the workflow.")}
-                                clearable
-                                value={() => selectedWorkflowAction()?.confirm ?? ""}
-                                onValueChange={(confirm) =>
-                                  updateSelectedAction((action) =>
-                                    action.kind === "workflow" ? { ...action, confirm: confirm || undefined } : action,
-                                  )
-                                }
-                              />
+                              <Show
+                                when={(() => {
+                                  const action = selectedWorkflowAction();
+                                  return action && "prompt" in action ? action.prompt : undefined;
+                                })()}
+                              >
+                                {(prompt) => (
+                                  <>
+                                    <TextInput
+                                      multiline
+                                      label={text("Dialog guidance")}
+                                      value={() => prompt().description ?? ""}
+                                      onValueChange={(description) =>
+                                        updateSelectedAction((action) =>
+                                          action.kind === "workflow" && "prompt" in action && action.prompt
+                                            ? { ...action, prompt: { ...action.prompt, description: description || undefined } }
+                                            : action,
+                                        )
+                                      }
+                                    />
+                                    <TextInput
+                                      label={text("Success message")}
+                                      value={() => prompt().successMessage ?? ""}
+                                      onValueChange={(successMessage) =>
+                                        updateSelectedAction((action) =>
+                                          action.kind === "workflow" && "prompt" in action && action.prompt
+                                            ? { ...action, prompt: { ...action.prompt, successMessage: successMessage || undefined } }
+                                            : action,
+                                        )
+                                      }
+                                    />
+                                  </>
+                                )}
+                              </Show>
+                              <Show
+                                when={(() => {
+                                  const action = selectedWorkflowAction();
+                                  return !(action && "prompt" in action && action.prompt);
+                                })()}
+                              >
+                                <TextInput
+                                  label={text("Confirmation message")}
+                                  description={text("Optional. Ask the user before invoking the workflow.")}
+                                  clearable
+                                  value={() => selectedWorkflowAction()?.confirm ?? ""}
+                                  onValueChange={(confirm) =>
+                                    updateSelectedAction((action) =>
+                                      action.kind === "workflow" ? { ...action, confirm: confirm || undefined } : action,
+                                    )
+                                  }
+                                />
+                              </Show>
                             </div>
                           </DetailPanel.Section>
                         )}

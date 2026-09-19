@@ -6,6 +6,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import type { GridRecord } from "../contracts";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
+import { parseWorkflowDecimalInput } from "../workflows/decimal-input";
 import { type PublicResourceType, projectPublicId } from "./public-resources";
 import { listByTable as listFields } from "./field-read";
 import { createReader, publicIdsForRecords } from "./record-read";
@@ -73,6 +74,8 @@ const requiredInput = (config: Record<string, WorkflowJsonValue>): boolean => co
 
 const validateScalar = (type: string, value: WorkflowJsonValue, config: Record<string, WorkflowJsonValue>): string | null => {
   if (type === "text") return typeof value === "string" ? null : "must be text";
+  if (type === "decimal")
+    return parseWorkflowDecimalInput(value) === null ? "must be an exact decimal string within the supported numeric range" : null;
   if (type === "number") return typeof value === "number" && Number.isFinite(value) ? null : "must be a finite number";
   if (type === "boolean") return typeof value === "boolean" ? null : "must be true or false";
   if (type === "date") return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? null : "must be a date in YYYY-MM-DD format";
@@ -138,6 +141,7 @@ export const prepareWorkflowInputs = async (
         : null;
     if (shapeError) throw new WorkflowInputPreparationError(`workflow input "${input.name}" ${shapeError}`);
     if (value === undefined || value === null) {
+      if (input.type !== "record" && input.type !== "recordList") prepared[input.name] = null;
       continue;
     }
     if (input.type === "record" || input.type === "recordList") {
@@ -158,7 +162,7 @@ export const prepareWorkflowInputs = async (
       prepared[input.name] = input.type === "record" ? references[0]! : references;
       continue;
     }
-    prepared[input.name] = value;
+    prepared[input.name] = input.type === "decimal" ? parseWorkflowDecimalInput(value) : value;
   }
   return prepared;
 };

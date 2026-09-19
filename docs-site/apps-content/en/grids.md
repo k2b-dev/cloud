@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-09-15
+updated: 2026-09-17
 ---
 
 # Grids
@@ -57,17 +57,31 @@ sidebar. Saving opens the new draft.
 In the Billing App, new invoices and self-billing drafts suggest today's
 document date. Check it before saving; choose the service and due dates yourself.
 Editing a draft preserves its saved dates. Optional notes are at the end of
-the edit form; **Back to document** returns to the bill. The required
-buyer reference stays in the main form. After finalization, notes are read-only.
+the embedded edit form. The required buyer reference stays in the main form.
+After finalization, notes are read-only.
 
 New positions suggest quantity 1, Pieces, and 19% VAT. Change these when needed;
-descriptions and prices stay empty. New payments and refunds suggest today's
-date. Editing preserves the saved values. Short fields share a compact row,
+descriptions and prices stay empty. Choose the actual transfer date when recording
+payments, refunds, or payouts. Editing pending entries preserves their saved values.
+Short fields share a compact row,
 including in the embedded business-partner form.
 
-**Edit draft** opens a separate form. Saving returns to the document's saved
-positions and totals; preview and issuance run only there,
-never alongside unsaved inputs. **Record payment** also opens a separate form.
+The draft form stays on the bill detail page. Save changes before previewing
+or issuing the document; issuance is unavailable while edits are unsaved.
+**Record payment received**, **Record refund**, and **Record payout** open
+a compact dialog on the bill detail page. Submit once to record and lock the
+actual money movement together. Success closes the dialog and refreshes the balance.
+A failed transaction leaves no payment draft; uncertain responses retain the same
+submission for retry. The issued bill keeps its balance, due date
+and payment action together, followed by positions and totals. Supporting facts,
+**Prepare correction** and **Use as new invoice** remain directly accessible.
+The due date appears with a positive outstanding amount. A negative balance
+is shown as a positive **Credit**, and a zero balance as **Fully settled**.
+Credit notes do not show an outstanding balance. **Record refund** appears only
+for an invoice with credit, directly beside the credit amount. Recording a
+payment remains possible after settlement or overpayment, as a secondary action.
+Pending payments appear on the bill only when there are entries to confirm.
+Empty notes are omitted.
 
 1. Ask a Base admin to complete **Settings → Documents**: legal company name,
    address, postal code, city, country code, VAT ID, IBAN and account name.
@@ -85,14 +99,16 @@ never alongside unsaved inputs. **Record payment** also opens a separate form.
    captured at finalization, even if the Base settings change before the PDF is ready.
    A workflow requiring administrator
    attention cannot be restarted from this button.
-4. Record actual payments separately, review the saved entry, then choose
-   **Confirm payment**. Unconfirmed payments remain visible but do not affect
-   balances. Confirmation requires a finalized bill and freezes the payment;
-   it can no longer be edited, deleted or moved to another bill. The balance
-   combines confirmed payments and finalized corrections without multiplying
-   either through joins. Recording a payment does not initiate a bank transfer.
+4. Record actual money movements from the bill: payment received for invoices,
+   payout for self-billing, or refund against an invoice's available credit.
+   One submission validates, records and locks the payment atomically. It immediately
+   counts toward the balance and can no longer be edited or deleted. Concurrent
+   refunds cannot spend the same credit twice. No bank transfer is initiated.
+   Existing unreviewed entries remain separate: review their saved details,
+   optionally edit them in a dialog, then confirm them. They do not affect the
+   balance until confirmed.
 
-**Open payments** separates **Overdue**, **Due today or later**, and **Credit balances to review**. Payments due today are not overdue. Open an amount due to record a payment; open a credit balance to review its document and any refund. Pending payments stay separate until confirmed. Paid documents leave these lists automatically.
+**Open payments** separates **Overdue**, **Due today or later**, and **Overpayments to review**. Payments due today are not overdue. Open an entry to review the bill and record a payment or refund there. Due dates include their calendar-day distance, such as “today” or “3 days ago”. A negative balance on an invoice can require a customer refund; on self-billing it means too much commission was paid out, so agree repayment with the recipient. Contextual notice cards explain each list and the confirmation step. Pending payments stay separate until confirmed. Paid documents leave these lists automatically.
 
 App tables display calculated numeric results using the current locale without rounding away their precision.
 
@@ -334,11 +350,27 @@ Set a column's **Default value** there to suggest a value when adding an entry.
 Defaults follow the column's validation rules. Existing entries stay unchanged;
 API writes still need to supply their own values. Calculated columns have no defaults.
 
-The record editor shows 25 rows per page and preserves all edits when paging.
-Adding or moving a row opens the relevant page and keeps keyboard focus with
-that row. Only the edited row's calculation preview is recomputed; incomplete
-rows do not hide valid previews elsewhere. Saving still validates and replaces
-the entire list, including rows on other pages.
+Object lists use the same compact editor when creating or editing records.
+Display and inline editing keep the same row heights and column widths. Long
+values stay on one line; the entry dialog shows their full content. Validation
+messages below the table identify the entry and field without resizing cells.
+Click a cell to edit one row at a time. Tab moves through editable fields and
+rows; in single-line text and numeric inputs, Enter finishes the row, Escape
+restores it, and Ctrl/Cmd+Enter adds the next entry. New entries open for editing.
+
+The available container width and column types determine whether inline editing
+fits. A simple text list can stay inline on a phone. When columns need more
+space, compact summaries open an entry dialog instead. Long text and multiple
+selection fields are edited there as well. **Apply** stages the entry in the
+parent form; **Apply & add another** continues entry. Cancel discards the dialog's
+changes. Nested dialogs preserve the parent form. Nothing is persisted until
+the parent form is saved.
+
+The editor displays 25 rows per page and preserves edits when paging. Adding or
+moving an entry opens its page. Only the changed row's calculation preview is
+recomputed; incomplete rows do not hide valid previews elsewhere. Saving
+validates and replaces the entire list, including rows on other pages. Invalid
+fields are revealed for correction, including fields in the entry dialog.
 
 A calculated column references sibling columns in the same row. Use names
 (double-quoted when they contain spaces) or column IDs. Renaming a column
@@ -411,6 +443,47 @@ none. Combined-table file presence is not supported.
 
 ### Design a focused Custom App
 
+Put the next task and its context together. Use an 8 + 4 column layout for
+main content and supporting facts; columns stack on narrow screens. Keep one
+primary action and show less frequent details only when opened.
+
+Every block accepts `disclosure: { label, defaultOpen? }`. It starts collapsed
+unless `defaultOpen` is true. Use it for optional content, not to hide a single
+button behind another click. Collapsed content still loads and has the same
+permissions. Use `availableWhen` for availability, such as omitting blank notes.
+
+Forms with `actionsBlockId` stay embedded so workflow status remains visible; dialog presentation is rejected for them.
+
+A Form block stays embedded by default. Set
+`presentation: { kind: "dialog", label: "Record payment", icon: "plus" }` when
+an action should open a compact form over the current page. Fixed values can
+carry the current record into that form. Saving closes the dialog and refreshes
+the originating page, unless `onSuccessNavigate` selects another destination.
+Unsaved changes require confirmation before closing; saving blocks dismissal.
+Keep forms embedded when readers should work in them alongside visible context.
+Dialog buttons fit their content. Set `presentation.variant` to `primary` for
+the main next action or `secondary` (the default) for a supporting action.
+
+Record blocks accept `layout: "grid" | "rows" | "compact" | "summary"`
+(default `grid`). Use `rows` for paired labels and values in a context column,
+and `compact` for short metadata. `summary` aligns values to the end and
+emphasizes the final row; order selected fields so the total comes last.
+Read-only Object lists appear in a framed, rounded table with the field name
+and row count together. Secondary columns remain under additional details.
+Add displayed date-only field IDs to `relativeDates` to keep the absolute date
+and show “today”, “tomorrow”, or a calendar-day distance.
+
+For a table Records block, `display.relativeDateColumnIds` adds the same date
+context. `display.mobile: { titleColumnId, detailColumnIds }` selects a heading
+and supporting values for each row on narrow screens; the desktop table stays
+available at wider widths. Row links, actions, search, and pagination keep their
+behavior. These presentation references use public field IDs for saved Views
+and unique output labels from the query preview for GQL. Referenced columns must be
+visible; relative dates require date-only columns. Calendar-day labels use the
+configured time zone and do not classify records as overdue. An empty table
+result shows its title and empty text inline. An empty search result keeps the
+table and search controls so readers can change the search.
+
 Use a record block's `heading.fieldId` to promote one displayed field to its
 heading. With `heading.documentNumber: true`, an available document number
 becomes the heading and the field becomes its subtitle. Keep the relevant
@@ -430,8 +503,10 @@ A foreground workflow action can use `onSuccessNavigate` to return to a page
 using existing `PARAMS`, or open its created record with
 `{ source: "RESULT", path: "recordId" }`. Only a successful canonical record
 result is accepted; Grids checks the destination page and record again.
-Background actions retain their status surface instead. A record navigation
-binding can follow an exposed single relation with
+Background actions show progress and recovery in place. Once the exact ready
+document is already shown in an authorized, visible Record block, its duplicate
+completion action is omitted. Otherwise, the ready action remains available.
+A record navigation binding can follow an exposed single relation with
 `{ source: "RECORD", path: "relation", fieldId }` when its target table matches
 the destination parameter.
 
@@ -639,3 +714,19 @@ SEPA export is not evidence that a transfer was executed.
 For example, `where documentCount('sepa-xml') = 0` selects records without an
 associated SEPA export. Do not wrap `where` expressions in `formula(...)`.
 Generic `csv`/`xml` exclude financial profiles; `pdf` includes e-invoice PDFs.
+
+
+Forms with saved-state actions use a responsive workspace: inputs and save control
+alongside the live computed summary and next actions. The summary uses the same
+unsaved draft and calculation as the form; its last configured computed field is
+the headline value. Missing inputs are named and can be focused directly. Primary
+actions require locally valid, saved values. Server validation remains authoritative.
+After saving, the workspace reloads the canonical record before further actions.
+Use `workspace: { summaryTitle?, summaryDescription?, helpTitle?, helpText? }` on a
+Form block with `actionsBlockId` to explain its summary and optional context.
+Destructive actions remain available in the action menu with their confirmation.
+
+A record heading may set `heading.title` for an editable draft. The heading field
+becomes its subtitle; an issued document number still takes precedence. A finalized
+record without a document does not display the draft heading. Preview actions sit
+beside the identity heading and use saved values.

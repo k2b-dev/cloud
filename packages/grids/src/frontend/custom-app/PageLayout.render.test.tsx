@@ -49,14 +49,14 @@ describe("CustomAppPageLayout", () => {
     );
 
     expect(html).toContain('class="custom-app-page ');
-    expect(html).toContain("gap-10 p-5 sm:p-7 lg:p-8");
+    expect(html).toContain("gap-6 p-4 sm:p-6 lg:p-8");
     expect(html).not.toContain("min-h-full");
     expect(html).toContain("k2b-app-workspace__main");
-    expect(html.match(/max-w-\[96rem\]/g)).toHaveLength(1);
+    expect(html.match(/max-w-\[76rem\]/g)).toHaveLength(1);
     expect(html).not.toContain("Loan desk");
-    expect(html).not.toContain("Overview");
+    expect(html).toContain("Overview");
     expect(html).not.toContain("ti-package");
-    expect(html).not.toContain("<h1");
+    expect(html).toContain("<h1");
     expect(html).toContain('class="custom-app-row ');
     expect(html).toContain('class="custom-app-column ');
     expect(html).toContain('class="custom-app-block ');
@@ -68,6 +68,24 @@ describe("CustomAppPageLayout", () => {
     expect(html).not.toContain("custom-app-editor-label");
     expect(html).not.toContain("custom-app-drop-indicator");
     expect(html).not.toContain("custom-app-pair-indicator");
+  });
+
+  test("disclosure keeps content present while exposing a native labelled control", () => {
+    const page = structuredClone(definition.pages[0]!);
+    page.rows[0]!.columns[0]!.blocks[0]!.disclosure = { label: "More context" };
+    const html = renderToString(() =>
+      createComponent(CustomAppPageLayout, {
+        definition,
+        page,
+        appId: "APP001",
+        renderBlock: () => "Loaded authorized content",
+      }),
+    );
+    expect(html).toContain("<details");
+    expect(html).toContain("<summary");
+    expect(html).toContain("More context");
+    expect(html).toContain("Loaded authorized content");
+    expect(html).not.toMatch(/<details[^>]*\sopen(?:[=>\s])/);
   });
 
   test("uses AppWorkspace navigation only when another page or global action exists", () => {

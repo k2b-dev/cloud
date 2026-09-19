@@ -110,9 +110,10 @@ export const buildRelationLabelCacheForIds = async (
   idsByTargetTable: Map<string, Set<string>>,
   viewer?: ExpansionViewer,
   client?: SqlClient,
+  labelFieldIdsByTableId?: ReadonlyMap<string, readonly string[]>,
 ): Promise<Record<string, string>> => {
   const visible = await visibleTargets(idsByTargetTable, viewer, client);
-  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, undefined, client, viewer);
+  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, labelFieldIdsByTableId, client, viewer);
 };
 
 export const lookupRecords = async (params: {

@@ -1,10 +1,13 @@
 import { WorkflowPendingDocumentConfirmationSchema } from "../../workflows/query-contracts";
 
-type CustomAppWorkflowOutcome = {
+export type CustomAppWorkflowOutcome = {
   kind: "running" | "success" | "error";
   message: string;
   navigateTo?: string;
 };
+
+/** A rejected start has no committed workflow; its inputs may be corrected. */
+export class CustomAppWorkflowStartRejected extends Error {}
 
 /** Retain this handle while the outcome is unknown; retries must not create a second run. */
 export type CustomAppWorkflowOperation = { operationId: string; statusUrl?: string };
@@ -67,7 +70,11 @@ export const invokeCustomAppWorkflow = async (input: {
       body: JSON.stringify({ ...input.body, operationId: operation.operationId }),
       signal: input.signal,
     });
-    if (!response.ok) throw new Error(await responseMessage(response, messages.startFailed));
+    if (!response.ok) {
+      const message = await responseMessage(response, messages.startFailed);
+      if ([400, 401, 403, 404, 422].includes(response.status)) throw new CustomAppWorkflowStartRejected(message);
+      throw new Error(message);
+    }
     const started = (await response.json()) as { statusUrl?: unknown };
     if (typeof started.statusUrl !== "string") throw new Error(messages.statusUnavailable);
     operation.statusUrl = started.statusUrl;

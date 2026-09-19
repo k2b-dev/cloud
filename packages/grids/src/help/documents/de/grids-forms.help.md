@@ -14,9 +14,15 @@ Zahleingaben zeigen keine angehängten Nachkommanullen: `1.0000` erscheint als `
 
 **Berechnete Werte** zeigt bis zu 20 schreibgeschützte Formeln aus sichtbaren Eingaben. Beschriftungen erlauben 200 Zeichen, Hinweise 2.000. Unvollständige Werte zeigen einen Strich; leere Listen verbergen die Zusammenfassung. Fehler bleiben sichtbar.
 
-**Feldbreite** setzt `width: "fullWidth"` (Standard) oder `"compact"` an `user_input`, `computedFields`, `inlineCreate.fields` und Objektlisten-Unterspalten. Aufeinanderfolgende kompakte Felder teilen Platz und umbrechen in Reihenfolge; volle Breite beginnt eine ganze Zeile. Das gilt auch für berechnete Spalten. `detailsOnly`-Berechnungen erscheinen auf Nachfrage, nur bei vorhandenen Zeilen.
+**Feldbreite** setzt `width: "fullWidth"` (Standard) oder `"compact"` an `user_input`, `computedFields`, `inlineCreate.fields` und Objektlisten-Unterspalten. Aufeinanderfolgende kompakte Felder teilen Platz und umbrechen in Reihenfolge; volle Breite beginnt eine ganze Zeile. Objektlisten nutzen die Breiten für ihre Tabellenfelder; der Eintragsdialog verwendet das Formularlayout. `detailsOnly`-Berechnungen stehen im Eintragsdialog.
 
 Bei Objektlisten schlägt **Regeln und Berechnung → Standardwert** einen Wert nur beim Hinzufügen eines Eintrags vor. Vorhandene Werte bleiben unverändert. In der Konfiguration steht dafür ein fester `defaultValue` an der Unterspalte; Auswahlwerte verwenden Options-IDs. Der Wert muss die Spaltenregeln erfüllen. Berechnete Spalten haben keine Standardwerte. API-Schreibzugriffe ergänzen fehlende Zellen nicht aus diesen Vorschlägen.
+
+## Objektlisten bearbeiten
+
+Objektlisten zeigen kompakte Zeilen. Beim Wechsel zur Eingabe bleiben Zeilenhöhen und Spaltenbreiten gleich. Lange Anzeigewerte werden gekürzt; im Eintragseditor kannst du sie vollständig lesen. Fehlermeldungen stehen unter der Tabelle und nennen Eintrag und Feld. Klicke auf einen Wert, um die Zeile zu bearbeiten. Neue Einträge öffnen sich direkt zur Eingabe. Tab wechselt zwischen Feldern und Zeilen. In einzeiligen Text- und Zahleneingaben schließt Enter die Zeile ab, Escape setzt ihre Änderungen zurück und Strg/Cmd+Enter fügt einen weiteren Eintrag hinzu.
+
+Reicht der Platz nicht aus, öffnest du den Editor über die Zusammenfassung eines Eintrags. Einfache Textlisten bleiben auch auf dem Handy direkt bearbeitbar. **Eintrag bearbeiten** öffnet außerdem lange Texte, Mehrfachauswahl, Zusatzangaben und die Aktionen zum Verschieben oder Entfernen. **Übernehmen** führt zum Formular zurück; **Übernehmen & weitere** setzt die Eingabe fort. Abbrechen verwirft nur die Änderungen dieses Eintrags. Gespeichert werden alle Einträge gemeinsam mit dem Formular.
 
 ## Ein gezieltes Formular erstellen {icon="forms"}
 

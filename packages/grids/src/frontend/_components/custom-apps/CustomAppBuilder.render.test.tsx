@@ -979,3 +979,27 @@ describe("CustomAppBuilder", () => {
     expect(html).not.toContain('class="paper');
   });
 });
+
+test("dialog form preview shows its contextual action without mounting input controls", () => {
+  const formApp = app();
+  formApp.draftDefinition!.pages[0]!.rows[0]!.columns[0]!.blocks = [
+    {
+      id: "request-form",
+      type: "form",
+      formId: "FORM01",
+      fixedValues: {},
+      presentation: { kind: "dialog", label: "Capture payment", icon: "plus" },
+    },
+  ];
+  const html = renderToString(() =>
+    createComponent(CustomAppBuilder, {
+      app: formApp,
+      baseId: "BASE01",
+      catalog: catalogWithAuthoringResources(),
+      editMode: true,
+    }),
+  );
+  expect(html).toContain("Capture payment");
+  expect(html).not.toContain("data-grids-public-form-ready");
+  expect(html).toContain("ti ti-plus");
+});

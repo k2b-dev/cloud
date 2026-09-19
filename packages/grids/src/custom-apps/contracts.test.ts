@@ -49,6 +49,107 @@ const definition = () => ({
 });
 
 describe("Grids App definition contract", () => {
+  test("workflow prompts accept only a unique bounded input list", () => {
+    const source = CustomAppDefinitionSchema.parse(definition());
+    const blocks = source.pages[0]!.rows[0]!.columns[0]!.blocks;
+    blocks.splice(0, blocks.length, {
+      id: "actions",
+      type: "actions",
+      actions: [
+        {
+          id: "payment",
+          kind: "workflow",
+          label: "Record payment",
+          launcherId: "LAUNCH",
+          inputs: {},
+          prompt: { inputs: ["amount", "date"], description: "Already received", successMessage: "Payment recorded" },
+        },
+      ],
+    });
+    expect(CustomAppDefinitionSchema.safeParse(source).success).toBe(true);
+    for (const inputs of [[], ["amount", "amount"], Array.from({ length: 101 }, (_, i) => `input${i}`)]) {
+      const invalid = structuredClone(source);
+      const block = invalid.pages[0]!.rows[0]!.columns[0]!.blocks[0]!;
+      if (block.type !== "actions" || block.actions[0]?.kind !== "workflow") throw new Error("Missing action");
+      block.actions[0].prompt = { inputs };
+      expect(CustomAppDefinitionSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  test("dialog forms retain canonical form bindings and reject incomplete presentation", () => {
+    const source = CustomAppDefinitionSchema.parse(definition());
+    const blocks = source.pages[0]!.rows[0]!.columns[0]!.blocks;
+    blocks.splice(0, blocks.length, {
+      id: "form",
+      type: "form",
+      formId: "FORM01",
+      fixedValues: {},
+      presentation: { kind: "dialog", label: "Capture payment", icon: "plus" },
+    });
+    expect(CustomAppDefinitionSchema.parse(source).pages[0]!.rows[0]!.columns[0]!.blocks[0]).toMatchObject({
+      formId: "FORM01",
+      fixedValues: {},
+      presentation: { kind: "dialog", label: "Capture payment", icon: "plus" },
+    });
+    for (const presentation of [
+      { kind: "dialog", label: " " },
+      { kind: "dialog" },
+      { kind: "fullscreen", label: "Open" },
+      { kind: "dialog", label: "Open", icon: "plus extra-class" },
+    ]) {
+      const invalid = structuredClone(source);
+      Object.assign(invalid.pages[0]!.rows[0]!.columns[0]!.blocks[0]!, { presentation });
+      expect(CustomAppDefinitionSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  test("dialog forms cannot hide saved-state actions inside a dismissible surface", () => {
+    const source = CustomAppDefinitionSchema.parse(definition());
+    const blocks = source.pages[0]!.rows[0]!.columns[0]!.blocks;
+    blocks.splice(
+      0,
+      blocks.length,
+      { id: "form", type: "form", formId: "FORM01", fixedValues: {}, actionsBlockId: "actions" },
+      {
+        id: "actions",
+        type: "actions",
+        actions: [{ id: "home", kind: "navigate", label: "Home", pageId: "home", params: {}, history: "push" }],
+      },
+    );
+    expect(CustomAppDefinitionSchema.safeParse(source).success).toBe(true);
+    Object.assign(blocks[0]!, { presentation: { kind: "dialog", label: "Open form" } });
+    const invalid = CustomAppDefinitionSchema.safeParse(source);
+    expect(invalid.success).toBe(false);
+    if (!invalid.success) expect(invalid.error.issues.some((issue) => issue.message.includes("must remain embedded"))).toBe(true);
+  });
+
+  test("workspace context belongs to a linked form and roundtrips without resource privileges", () => {
+    const source = CustomAppDefinitionSchema.parse(definition());
+    const blocks = source.pages[0]!.rows[0]!.columns[0]!.blocks;
+    blocks.splice(
+      0,
+      blocks.length,
+      {
+        id: "form",
+        type: "form",
+        formId: "FORM01",
+        fixedValues: {},
+        actionsBlockId: "actions",
+        workspace: { summaryTitle: "Impact", summaryDescription: "Current draft", helpTitle: "Context", helpText: "Inherited settings" },
+      },
+      {
+        id: "actions",
+        type: "actions",
+        actions: [{ id: "home", kind: "navigate", label: "Home", pageId: "home", params: {}, history: "push" }],
+      },
+    );
+    expect(CustomAppDefinitionSchema.parse(source).pages[0]!.rows[0]!.columns[0]!.blocks[0]).toMatchObject({
+      workspace: { summaryTitle: "Impact" },
+    });
+    Object.assign(blocks[0]!, { actionsBlockId: undefined });
+    expect(CustomAppDefinitionSchema.safeParse(source).success).toBe(false);
+  });
+
   test("publication keeps the existing 24-query total instead of applying the four-per-page limit globally", () => {
     const query = { pageId: "page", blockId: "list", primaryTableId: uuid(1), planHash: "a".repeat(64), tableIds: [uuid(1)] };
     expect(
@@ -391,6 +492,21 @@ describe("Grids App definition contract", () => {
     const metric = blocks.at(-1)!;
     if (metric.type !== "metrics") throw new Error("Expected metrics");
     metric.valueFormat = { style: "integer", unit: "EUR" };
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(false);
+  });
+
+  test("record presentation accepts only supported layouts and a unique displayed date subset", () => {
+    const example = CustomAppDefinitionSchema.parse(structuredClone(CUSTOM_APP_REFERENCE.example));
+    const record = example.pages
+      .flatMap((page) => page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks)))
+      .find((block) => block.type === "record")!;
+    if (record.type !== "record") throw new Error("Expected Record block");
+    record.layout = "compact";
+    record.relativeDates = [record.fieldIds[0]!];
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(true);
+    record.relativeDates.push(record.fieldIds[0]!);
+    expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(false);
+    record.relativeDates = ["OTHER1"];
     expect(CustomAppDefinitionSchema.safeParse(example).success).toBe(false);
   });
 

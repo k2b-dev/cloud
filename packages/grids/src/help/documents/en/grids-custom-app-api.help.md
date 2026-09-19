@@ -34,7 +34,7 @@ There are 1–12 pages. Column spans total at most 12 per row. The start page ha
 
 ## Every block option {icon="blocks"}
 
-Every block requires `id` and `type`; all accept optional `title` (1–160 characters) and `availableWhen:{query}`. Queries have 1–20,000 characters. Omit optional values rather than writing `null`. `emptyText` is supported only by `records`, `referenced_records` and `record` (1–240 characters).
+Every block requires `id` and `type`; all accept optional `title` (1–160 characters) and `availableWhen:{query}` and `disclosure:{label,defaultOpen?}`. Queries have 1–20,000 characters. Omit optional values rather than writing `null`. `emptyText` is supported only by `records`, `referenced_records` and `record` (1–240 characters).
 
 | `type` | Additional required keys | Optional keys and defaults |
 | --- | --- | --- |
@@ -43,10 +43,10 @@ Every block requires `id` and `type`; all accept optional `title` (1–160 chara
 | `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (up to 6) |
 | `metrics` | `source` | `valueFormat` (common override for all values in this block) |
 | `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (each 1–60) |
-| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (up to 30), `heading:{fieldId,documentNumber?}`, `documents:{templateIds:[…]}` (1–12) |
+| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (up to 30), `layout:grid\|rows\|compact\|summary\|context`, `relativeDates`, `heading:{fieldId,documentNumber?,title?}`, `documents:{templateIds:[…]}` (1–12) |
 | `html` | `fieldId` | `height:normal` (`compact\|normal\|large`) |
 | `comments` | none | none |
-| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate` |
+| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate`, `actionsBlockId`, `workspace:{summaryTitle?,summaryDescription?,helpTitle?,helpText?}`, `presentation:{kind:dialog,label,icon?,variant?}` |
 | `actions` | `actions` (1–12) | none |
 | `scanner` | `launcherId` | none |
 
@@ -63,10 +63,12 @@ Every block requires `id` and `type`; all accept optional `title` (1–160 chara
 Actions in an `actions` block require `id`, `label` (1–120) and `kind`. Both kinds accept `icon` and `availableWhen`.
 
 - `kind:navigate` also requires `pageId` and `params`; `history` defaults to `push` and also accepts `replace`.
-- `kind:workflow` also requires `launcherId`; `inputs` defaults to `{}` and `confirm` optionally supplies confirmation text (1–240 characters). Bind every required workflow input. A prompt launcher does not open a prompt form inside an App.
+- `kind:workflow` also requires `launcherId`; `inputs` defaults to `{}` and `confirm` optionally supplies confirmation text (1–240 characters). Bind every required workflow input or expose it through `prompt: { inputs: ["date", "amount"], description?, successMessage? }`. Prompt names select unbound scalar workflow inputs (text, decimal, number, date, dateTime, boolean or select); labels and validation come from the published workflow. These actions open a compact dialog and retain the submitted values and operation key when the outcome is uncertain. A prompt cannot accompany `confirm`, `background`, fixed launchers or row actions. Browser input never overrides server bindings.
 - Row actions use only `kind:workflow`, with the same keys plus `showLabel:true`. Setting it to `false` requires an icon; the label remains required for accessibility.
 - `rowNavigate` has `kind:navigate`, `pageId`, `params` and optional `history:push|replace`. It has no label or action ID.
 - `onSuccessNavigate` has `kind:navigate`, `pageId` and `params`. Successful submission uses replacement navigation; there is no `history` option here.
+
+Prompt submissions awaiting an outcome stay in this browser tab across reloads. A status action on the original page remains available even if the original button disappears. Retries retain the original workflow launcher; republishing an action never redirects an existing attempt to another workflow. Use it before starting another submission. Closing the tab or clearing browser storage removes this local recovery handle; check existing entries before submitting again.
 
 Bindings are objects, not expressions. The accepted sources depend on their position:
 

@@ -317,6 +317,11 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
                     kind: "object",
                     properties: {
                       table: { kind: "string", minLength: 1, maxLength: 200, description: "Target table name or ID." },
+                      finalize: {
+                        kind: "boolean",
+                        optional: true,
+                        description: "Finalize the created record in the same transaction. Requires enabled direct Finalization.",
+                      },
                       values: {
                         kind: "record",
                         minProperties: 1,

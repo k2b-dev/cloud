@@ -20,8 +20,16 @@ test("background actions render all durable states without browser globals", () 
       }),
     );
     expect(html).not.toBeEmpty();
-    if (status === "running") expect(html).toContain("Creation requested; you can keep working.");
-    if (status === "ready") expect(html).toContain('href="/document.pdf"');
+    if (status === "running") {
+      expect(html).toContain("Creation requested; you can keep working.");
+      expect(html).toContain('aria-busy="true"');
+      expect(html).not.toContain("<button");
+    }
+    if (status === "attention") expect(html).not.toContain("<button");
+    if (status === "ready") {
+      expect(html).toContain('href="/document.pdf"');
+      expect(html).not.toContain('role="status"');
+    }
   }
 });
 

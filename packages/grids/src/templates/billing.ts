@@ -12,6 +12,18 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      draftWorkspaceTitle: "Prepare document",
+      correctionSummary: "This correction (EUR)",
+      correctionSummaryHelp:
+        "Reduces the original invoice by this amount. Payments and previous corrections are not included in this preview.",
+      invoiceSummary: "Invoice amount (EUR)",
+      invoiceSummaryHelp: "Calculated from the current positions. No document is issued when you save the draft.",
+      settlementSummary: "Commission amount (EUR)",
+      settlementSummaryHelp: "Amount payable to the recipient. Issuing the document does not transfer money.",
+      inheritedDetails: "Company and bank details",
+      originalContext: "Refers to invoice",
+      correctionPositionsHelp: "Keep only the positions and quantities you want to reverse. The original document stays unchanged.",
+      correctionDetails: "Reason for correction",
       recipientSection: "Recipient",
       positionsSection: "Services and prices",
       datesSection: "Dates and payment terms",
@@ -21,27 +33,32 @@ const messages = i18n.define({
       bankSection: "Bank account",
       bankHelp: "Needed for refunds and commission payouts.",
       paymentSection: "Payment details",
-      savePayment: "Save payment for confirmation",
+      savePayment: "Save changes",
       newPartner: "New business partner",
       noPartners: "No business partners yet. Add one here or while creating an invoice.",
       noDrafts: "All drafts completed. Create a new invoice when you are ready.",
       noIssued: "Your issued documents will appear here, with their number and PDF status.",
-      noPayments: "No confirmed payments yet.",
+      noPayments: "No payments recorded yet.",
       noPendingPayments: "No payments waiting for confirmation.",
-      balanceHelp:
-        "Open an amount due to record a payment. For self-billing, record the commission paid out. Review credit balances on the original document. Only confirmed payments affect these lists.",
+      pendingPaymentsHelp:
+        "Check these entries against your bank transactions. Open an entry to correct it, then confirm it. Only confirmed payments change the outstanding amount.",
+      overdueHelp:
+        "The due date has passed and an amount is still outstanding. Open a row to record money received for an invoice or a commission paid out for self-billing.",
+      upcomingHelp:
+        "These amounts are due today or later. Open a row to record an actual payment. Only confirmed payments change the outstanding amount.",
+      creditsHelp:
+        "A negative outstanding amount means the confirmed payments exceed the document amount after corrections. For an invoice, you may owe the customer a refund; open the invoice to review and record an actual refund. For self-billing, you paid out too much commission: contact the recipient about repayment.",
       overdue: "Overdue",
       upcoming: "Due today or later",
-      credits: "Credit balances to review",
+      credits: "Overpayments to review",
       noOverdue: "No overdue payments. You are up to date.",
       noUpcoming: "No payments due today or later.",
-      noCredits: "No credit balances to review.",
+      noCredits: "No overpayments to review.",
       reuseInvoice: "Use as new invoice",
       reuseHelp:
         "Check the recipient, buyer reference and prices in this draft. Choose a new service date and due date before issuing the invoice.",
       reuseError: "Choose a finalized invoice to reuse. Credit notes and self-billing cannot be used as a new invoice.",
-      refundHelp:
-        "Record an actual refund using a positive amount. Save it, then confirm it on the invoice. Recording a refund does not transfer money.",
+      refundHelp: "Record a refund that has already occurred. It is included in the balance immediately. This does not transfer money.",
       title: "Billing",
       examplePartner: "Example business partner (replace before issuing)",
       examplePosition: "Example service",
@@ -56,6 +73,8 @@ const messages = i18n.define({
       paid: "Paid",
       corrected: "Corrected",
       outstanding: "Outstanding",
+      creditBalance: "Credit",
+      settledBalance: "Fully settled.",
       balances: "Open payments",
       paymentTotals: "Payments per bill",
       correctionTotals: "Corrections per invoice",
@@ -99,18 +118,25 @@ const messages = i18n.define({
       savedDetails: "Saved draft details",
       documentDetails: "Document details",
       backToBill: "Back to document",
-      paymentForm: "Record payment",
+      paymentForm: "Record payment received",
+      payoutForm: "Record payout",
+      paymentRecorded: "Payment received recorded.",
+      paymentAmountHelp: "Actual amount in EUR, greater than zero.",
+      refundRecorded: "Refund recorded.",
+      payoutRecorded: "Payout recorded.",
+      payoutHelp: "Record a commission payout that has already occurred. This does not transfer money.",
+      editPayment: "Edit details",
       refundForm: "Record refund",
       refund: "Customer refund",
       balanceAmount: "Balance effect (EUR)",
       refundError: "Refunds belong to the original invoice and must not exceed its current credit balance. Reload and check the amount.",
-      pendingPayments: "Payments to confirm",
-      confirmedPayments: "Confirmed payments",
+      pendingPayments: "Unreviewed payment entries",
+      confirmedPayments: "Recorded payments",
       confirmPayment: "Confirm payment",
       confirmPaymentMessage:
         "Confirm that this payment actually occurred? Its amount, date and linked document will become immutable and count toward the balance.",
       paymentPendingHelp:
-        "Check the amount and date, save any changes, then confirm the payment. It counts toward the balance only after confirmation.",
+        "This entry has not been included in the balance yet. Check it against your bank transactions, correct details if needed, then confirm it.",
       paymentConfirmedHelp: "Confirmed payment. Its amount, date and linked document are immutable and included in the balance.",
       paymentError:
         "The payment must still be pending and unchanged, and its linked document must be finalized. Reload and review it before confirming.",
@@ -120,7 +146,7 @@ const messages = i18n.define({
       discardDraftConfirm:
         "Move this draft to the trash? It will no longer appear in the draft list. Finalized documents cannot be discarded.",
       paymentHelp:
-        "Enter the amount actually received or paid out. Save it, then confirm it on the document. Recording a payment does not transfer money.",
+        "Record a payment that has already been received. It is included in the balance immediately and cannot be edited afterwards. This does not transfer money.",
       partnerHelp:
         "Keep company details current. Issued documents retain their original details. Add the partner's bank account before a refund or self-billing.",
       refundBankError: "Add the recipient's refund IBAN and account holder under Business partners before issuing the credit note.",
@@ -152,6 +178,18 @@ const messages = i18n.define({
         "For a partial correction, reduce quantities or remove positions. Check the correction reason and choose a due date. The original company and recipient details are retained.",
     },
     de: {
+      draftWorkspaceTitle: "Beleg vorbereiten",
+      correctionSummary: "Diese Korrektur (EUR)",
+      correctionSummaryHelp:
+        "Mindert die ursprüngliche Rechnung um diesen Betrag. Zahlungen und frühere Korrekturen sind in dieser Vorschau nicht verrechnet.",
+      invoiceSummary: "Rechnungsbetrag (EUR)",
+      invoiceSummaryHelp: "Aus den aktuellen Positionen berechnet. Das Speichern des Entwurfs stellt noch keinen Beleg aus.",
+      settlementSummary: "Provisionsbetrag (EUR)",
+      settlementSummaryHelp: "Betrag für den Empfänger. Das Ausstellen des Belegs überweist kein Geld.",
+      inheritedDetails: "Unternehmens- und Bankdaten",
+      originalContext: "Bezieht sich auf Rechnung",
+      correctionPositionsHelp: "Lass nur die Positionen und Mengen stehen, die du zurücknehmen möchtest. Das Original bleibt unverändert.",
+      correctionDetails: "Grund der Korrektur",
       recipientSection: "Empfänger",
       positionsSection: "Leistungen und Preise",
       datesSection: "Datum und Zahlungsziel",
@@ -161,28 +199,33 @@ const messages = i18n.define({
       bankSection: "Bankverbindung",
       bankHelp: "Für Erstattungen und Provisionsauszahlungen erforderlich.",
       paymentSection: "Zahlungsangaben",
-      savePayment: "Zahlung zur Bestätigung speichern",
+      savePayment: "Änderungen speichern",
       newPartner: "Neuer Geschäftspartner",
       noPartners: "Noch keine Geschäftspartner. Lege hier oder beim Erstellen einer Rechnung einen an.",
       noDrafts: "Alle Entwürfe erledigt. Bei Bedarf kannst du eine neue Rechnung erstellen.",
       noIssued: "Ausgestellte Belege erscheinen hier mit ihrer Nummer und dem PDF-Status.",
-      noPayments: "Noch keine bestätigten Zahlungen.",
+      noPayments: "Noch keine Zahlungen erfasst.",
       noPendingPayments: "Keine Zahlungen warten auf Bestätigung.",
-      balanceHelp:
-        "Öffne einen fälligen Betrag, um eine Zahlung zu erfassen. Bei Provisionsgutschriften erfasst du die ausgezahlte Provision. Guthaben prüfst du am Originalbeleg. Nur bestätigte Zahlungen zählen hier.",
+      pendingPaymentsHelp:
+        "Gleiche diese Einträge mit deinen Bankumsätzen ab. Öffne einen Eintrag zum Korrigieren und bestätige ihn anschließend. Erst bestätigte Zahlungen ändern den offenen Betrag.",
+      overdueHelp:
+        "Das Zahlungsziel ist überschritten und ein Betrag bleibt offen. Öffne eine Zeile, um bei einer Rechnung einen Zahlungseingang oder bei einer Provisionsgutschrift eine Auszahlung zu erfassen.",
+      upcomingHelp:
+        "Diese Beträge sind heute oder später fällig. Öffne eine Zeile, um eine tatsächlich erfolgte Zahlung zu erfassen. Erst bestätigte Zahlungen ändern den offenen Betrag.",
+      creditsHelp:
+        "Ein negativer offener Betrag bedeutet: Die bestätigten Zahlungen übersteigen den Belegbetrag nach Korrekturen. Bei einer Rechnung schuldest du dem Kunden möglicherweise eine Erstattung; öffne die Rechnung zum Prüfen und Erfassen einer tatsächlich erfolgten Erstattung. Bei einer Provisionsgutschrift hast du zu viel Provision ausgezahlt: Kläre die Rückzahlung mit dem Empfänger.",
       overdue: "Überfällig",
       upcoming: "Heute oder später fällig",
-      credits: "Guthaben klären",
+      credits: "Überzahlungen prüfen",
       noOverdue: "Keine überfälligen Zahlungen. Alles im Blick.",
       noUpcoming: "Keine heute oder später fälligen Zahlungen.",
-      noCredits: "Keine Guthaben zu klären.",
+      noCredits: "Keine Überzahlungen zu prüfen.",
       reuseInvoice: "Als neue Rechnung übernehmen",
       reuseHelp:
         "Prüfe Empfänger, Kundenreferenz und Preise in diesem Entwurf. Ergänze Leistungsdatum und Fälligkeit, bevor du die Rechnung ausstellst.",
       reuseError:
         "Wähle eine festgeschriebene Rechnung. Korrekturen und Provisionsgutschriften können nicht als neue Rechnung übernommen werden.",
-      refundHelp:
-        "Erfasse eine tatsächlich erfolgte Erstattung als positiven Betrag. Speichere sie und bestätige sie danach an der Rechnung. Die Erfassung überweist kein Geld.",
+      refundHelp: "Erfasst eine bereits erfolgte Erstattung. Sie wird sofort im Saldo berücksichtigt. Löst keine Überweisung aus.",
       title: "Rechnungswesen",
       examplePartner: "Beispiel-Geschäftspartner (vor Ausstellung ersetzen)",
       examplePosition: "Beispielleistung",
@@ -197,6 +240,8 @@ const messages = i18n.define({
       paid: "Bezahlt",
       corrected: "Korrigiert",
       outstanding: "Offen",
+      creditBalance: "Guthaben",
+      settledBalance: "Vollständig ausgeglichen.",
       balances: "Offene Zahlungen",
       paymentTotals: "Zahlungen je Abrechnung",
       correctionTotals: "Korrekturen je Rechnung",
@@ -240,19 +285,26 @@ const messages = i18n.define({
       savedDetails: "Gespeicherter Entwurf",
       documentDetails: "Belegdetails",
       backToBill: "Zurück zum Beleg",
-      paymentForm: "Zahlung erfassen",
+      paymentForm: "Zahlungseingang erfassen",
+      payoutForm: "Auszahlung erfassen",
+      paymentRecorded: "Zahlungseingang erfasst.",
+      paymentAmountHelp: "Tatsächlicher Betrag in EUR, größer als null.",
+      refundRecorded: "Erstattung erfasst.",
+      payoutRecorded: "Auszahlung erfasst.",
+      payoutHelp: "Erfasst eine bereits erfolgte Provisionsauszahlung. Löst keine Überweisung aus.",
+      editPayment: "Angaben bearbeiten",
       refundForm: "Erstattung erfassen",
       refund: "Kundenerstattung",
       balanceAmount: "Saldowirkung (EUR)",
       refundError:
         "Erstattungen gehören zur ursprünglichen Rechnung und dürfen ihr aktuelles Guthaben nicht überschreiten. Lade neu und prüfe den Betrag.",
-      pendingPayments: "Zahlungen zum Bestätigen",
-      confirmedPayments: "Bestätigte Zahlungen",
+      pendingPayments: "Ungeprüfte Zahlungseinträge",
+      confirmedPayments: "Erfasste Zahlungen",
       confirmPayment: "Zahlung bestätigen",
       confirmPaymentMessage:
         "Bestätigen, dass diese Zahlung tatsächlich erfolgt ist? Betrag, Datum und zugeordneter Beleg werden unveränderlich und im Saldo berücksichtigt.",
       paymentPendingHelp:
-        "Prüfe Betrag und Datum, speichere Änderungen und bestätige dann die Zahlung. Erst die Bestätigung berücksichtigt sie im offenen Betrag.",
+        "Dieser Eintrag ist noch nicht im Saldo berücksichtigt. Gleiche ihn mit deinen Bankumsätzen ab, korrigiere bei Bedarf die Angaben und bestätige ihn anschließend.",
       paymentConfirmedHelp: "Bestätigte Zahlung. Betrag, Datum und zugeordneter Beleg sind unveränderlich und im Saldo berücksichtigt.",
       paymentError:
         "Die Zahlung muss noch unbestätigt und unverändert sein, ihr Beleg bereits festgeschrieben. Lade die Seite neu und prüfe die Angaben vor der Bestätigung.",
@@ -262,7 +314,7 @@ const messages = i18n.define({
       discardDraftConfirm:
         "Diesen Entwurf in den Papierkorb verschieben? Er erscheint danach nicht mehr in der Entwurfsliste. Festgeschriebene Belege können nicht verworfen werden.",
       paymentHelp:
-        "Erfasse den tatsächlich eingegangenen oder ausgezahlten Betrag. Speichere ihn und bestätige ihn danach am Beleg. Die Erfassung überweist kein Geld.",
+        "Erfasst einen bereits eingegangenen Betrag. Er wird sofort im Saldo berücksichtigt und ist danach unveränderlich. Löst keine Überweisung aus.",
       partnerHelp:
         "Pflege hier die Unternehmensangaben. Ausgestellte Dokumente behalten ihre ursprünglichen Angaben. Ergänze vor Rückzahlungen oder Provisionsgutschriften das Bankkonto des Geschäftspartners.",
       refundBankError:
@@ -366,7 +418,7 @@ export function createBillingTemplate(locale?: string): GridTemplate {
       ...((creating && key === "invoice_date") || (tableKey === "payments" && key === "date" && creating)
         ? { defaultValue: { kind: "now" } }
         : {}),
-      ...(["positions", "service_date", "due_date"].includes(key) ? { required: true } : {}),
+      ...(["positions", "service_date", "due_date", "reason"].includes(key) ? { required: true } : {}),
       helpText: fieldHelp(tableKey, key),
       ...(section(tableKey, key) ? { section: section(tableKey, key) } : {}),
       ...(inlineCreate && tableKey === "bills" && key === "party"
@@ -591,19 +643,15 @@ export function createBillingTemplate(locale?: string): GridTemplate {
         table: "bills",
         name: t.correction,
         config: {
-          fields: inputs("bills", ["positions", "reason", "invoice_date", "service_date", "due_date", "buyer_reference", "notes"]),
+          fields: inputs("bills", ["positions", "reason", "invoice_date", "service_date", "due_date", "buyer_reference", "notes"]).map(
+            (entry, index) => ({
+              ...entry,
+              ...(index === 0 ? { section: { title: t.positionsSection, description: t.correctionPositionsHelp } } : {}),
+              ...(index === 1 ? { section: { title: t.correctionDetails } } : {}),
+            }),
+          ),
           computedFields: ["net", "tax", "gross"].map((key) => ({ fieldId: field(`bills.${key}`), width: "compact" })),
           submitLabel: t.draft,
-        },
-      },
-      {
-        key: "payment",
-        table: "payments",
-        name: t.paymentForm,
-        config: {
-          fields: inputs("payments", ["bill", "date", "amount", "reference"], false, true),
-          submitLabel: t.savePayment,
-          successMessage: t.paymentPendingHelp,
         },
       },
       {
@@ -616,23 +664,21 @@ export function createBillingTemplate(locale?: string): GridTemplate {
           successMessage: t.paymentPendingHelp,
         },
       },
-      {
-        key: "refund",
-        table: "payments",
-        name: t.refundForm,
-        config: {
-          fields: [
-            ...inputs("payments", ["bill", "date", "amount", "reference"], false, true),
-            { kind: "form_value", fieldId: field("payments.refund"), value: true },
-          ],
-          submitLabel: t.savePayment,
-          successMessage: t.paymentPendingHelp,
-        },
-      },
     ],
     workflows: billingWorkflows(t, locale),
-    customApps: billingApp(t),
+    customApps: billingApp(t, amountFields.find((field) => field.key === "gross")!.name),
     workflowLaunchers: [
+      ...[
+        { key: "record_payment", name: t.paymentForm },
+        { key: "record_refund", name: t.refundForm },
+        { key: "record_payout", name: t.payoutForm },
+      ].map(({ key, name }) => ({
+        key,
+        workflow: key,
+        name,
+        config: { kind: "customApp" as const, inputMode: "prompt" as const },
+        enabled: true,
+      })),
       {
         key: "reuse_invoice",
         workflow: "reuse_invoice",

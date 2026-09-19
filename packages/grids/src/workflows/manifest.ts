@@ -49,11 +49,11 @@ export const gridsWorkflowManifest = createWorkflowManifest({
       valueType: "grids.recordList",
       config: object({ table: text("Table name or ID."), ...commonInputProperties }),
     },
-    ...(["text", "number", "boolean", "date", "dateTime"] as const).map((kind) => ({
+    ...(["text", "number", "decimal", "boolean", "date", "dateTime"] as const).map((kind) => ({
       kind,
       label: kind === "dateTime" ? "Date and time" : `${kind[0]!.toUpperCase()}${kind.slice(1)}`,
       description: `A ${kind} value supplied when the workflow starts.`,
-      valueType: `core.${kind}`,
+      valueType: kind === "decimal" ? "core.text" : `core.${kind}`,
       config: object(commonInputProperties),
     })),
     {

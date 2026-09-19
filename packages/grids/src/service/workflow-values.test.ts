@@ -36,6 +36,36 @@ const plan: WorkflowBoundPlan = {
 };
 
 describe("workflow kernel inputs", () => {
+  test("omitted and null optional scalar inputs resolve to null without changing false, zero or empty text", async () => {
+    const scalarPlan: WorkflowBoundPlan = {
+      ...plan,
+      inputs: ["text", "number", "decimal", "boolean", "date", "dateTime", "select"].map((type) => ({ name: type, type, config: {} })),
+    };
+    const deps = { canReadTable: async () => true, resolveRecordIds: async () => new Map<string, string>() };
+    const expected = Object.fromEntries(scalarPlan.inputs.map((input) => [input.name, null]));
+    expect(await prepareWorkflowInputs(scalarPlan, {}, deps)).toEqual(expected);
+    expect(await prepareWorkflowInputs(scalarPlan, expected, deps)).toEqual(expected);
+    expect(await prepareWorkflowInputs(scalarPlan, { text: "", number: 0, boolean: false }, deps)).toEqual({
+      ...expected,
+      text: "",
+      number: 0,
+      boolean: false,
+    });
+  });
+
+  test("prepares exact decimal strings within the number field range", async () => {
+    const decimalPlan: WorkflowBoundPlan = {
+      ...plan,
+      inputs: [{ name: "amount", type: "decimal", config: { required: true } }],
+    };
+    const deps = { canReadTable: async () => true, resolveRecordIds: async () => new Map<string, string>() };
+    expect(await prepareWorkflowInputs(decimalPlan, { amount: "9007199254740993.25" }, deps)).toEqual({ amount: "9007199254740993.25" });
+    expect(await prepareWorkflowInputs(decimalPlan, { amount: "01.2500" }, deps)).toEqual({ amount: "1.25" });
+    for (const amount of ["12,5", "NaN", "Infinity", "0x10", "1e131072", "1e-16384", 12.5]) {
+      await expect(prepareWorkflowInputs(decimalPlan, { amount }, deps)).rejects.toThrow("exact decimal string");
+    }
+  });
+
   test("preserves the preparation error identity and status", () => {
     const error = new WorkflowInputPreparationError("No access", 403);
     expect(error).toBeInstanceOf(Error);

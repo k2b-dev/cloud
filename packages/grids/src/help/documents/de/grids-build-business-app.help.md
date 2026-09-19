@@ -59,7 +59,7 @@ Die Vorlage **Rechnungswesen** bietet Rechnungen, Korrekturen und Provisionsguts
 1. Lass einen Base-Admin unter **Base-Einstellungen → Dokumente** die echten Unternehmens- und Bankdaten ergänzen. Beispieldatensätze sind Entwürfe.
 2. Erstelle eine Rechnung, wähle oder erstelle den Partner und erfasse Objektlistenpositionen. Prüfe Summen, Leistungs- und Fälligkeitsdatum vor der Ausstellung.
 3. Wähle **Rechnung ausstellen** auf der gespeicherten Detailseite. Während das PDF entsteht, kannst du weiterarbeiten. Nach einem Renderfehler wählst du **Erstellung fortsetzen**: Dokument, Unternehmensdaten und Nummer bleiben gleich. `REF-…` ist eine interne Referenz, keine Rechnungsnummer.
-4. Erfasse tatsächlich eingegangene oder ausgezahlte Beträge und wähle **Zahlung bestätigen**. Erst bestätigte Zahlungen zählen zum Saldo; danach sind sie unveränderlich. Es wird keine Überweisung ausgeführt.
+4. Wähle am Beleg **Zahlungseingang erfassen**, **Auszahlung erfassen** oder **Erstattung erfassen**. Trage das tatsächliche Datum und den Betrag im Dialog ein und bestätige einmal. Erfassen und Festschreiben geschehen gemeinsam; der Saldo aktualisiert sich sofort. Es wird keine Überweisung ausgeführt. Bereits vorhandene ungeprüfte Einträge müssen weiterhin geprüft und bestätigt werden; zuvor ändern sie den Saldo nicht.
 
 **Offene Zahlungen** trennt **Überfällig**, **Heute oder später fällig** und **Guthaben klären**. Öffne einen fälligen Betrag, um eine Zahlung zu erfassen. Guthaben öffnen den Originalbeleg zur Prüfung. Nur bestätigte Zahlungen zählen in diesen Listen.
 

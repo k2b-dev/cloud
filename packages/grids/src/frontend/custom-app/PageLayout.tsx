@@ -1,5 +1,5 @@
 import type { DndController } from "@k2b/stdlib/solid";
-import { AppWorkspace, PanelHeader } from "@k2b/ui";
+import { AppWorkspace, Disclosure, PanelHeader } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { CustomAppBlock, CustomAppDefinition, CustomAppPage } from "../../custom-apps/contracts";
 import { customAppNavigationHref } from "../../custom-apps/routing";
@@ -60,6 +60,7 @@ export function CustomAppPageLayout(props: {
   page: CustomAppPage;
   appId: string;
   renderBlock: (block: CustomAppBlock) => JSX.Element;
+  beforeContent?: JSX.Element;
   sidebarActions?: JSX.Element;
   hasSidebarActions?: boolean;
   showSidebar?: boolean;
@@ -198,13 +199,16 @@ export function CustomAppPageLayout(props: {
       <AppWorkspace.Content>
         <AppWorkspace.Main class="p-0" mobilePane="main">
           <div
-            class="custom-app-page flex w-full flex-col gap-10 p-5 sm:p-7 lg:p-8"
+            class="custom-app-page flex w-full flex-col gap-6 p-4 sm:p-6 lg:p-8"
             data-dnd-dragging={props.editor?.dnd.isDragging() ? "true" : undefined}
           >
-            <div class="mx-auto flex w-full max-w-[96rem] flex-col gap-10">
-              <Show when={!props.page.record}>
+            <div
+              class={`mx-auto flex w-full flex-col gap-6 ${props.page.rows.some((row) => row.columns.some((column) => column.blocks.some((block) => block.type === "form" && block.actionsBlockId))) ? "max-w-[84rem]" : "max-w-[76rem]"}`}
+            >
+              <Show when={!props.page.record} fallback={<h1 class="sr-only">{props.page.title}</h1>}>
                 <PanelHeader title={props.page.title} as="h1" size="md" />
               </Show>
+              {props.beforeContent}
               <For each={props.page.rows}>
                 {(row, rowIndex) => {
                   const multiColumnRow = row.columns.length > 1;
@@ -248,7 +252,10 @@ export function CustomAppPageLayout(props: {
                               activeBlockId(),
                             );
                           return (
-                            <section class="custom-app-column relative min-w-0 basis-80" style={{ flex: `${column.span} 1 20rem` }}>
+                            <section
+                              class="custom-app-column relative"
+                              style={{ flex: `${column.span} 1 0%`, "min-width": "min(100%, 20rem)" }}
+                            >
                               {props.editor && showColumnRange() ? (
                                 <>
                                   <DropZone
@@ -353,10 +360,29 @@ export function CustomAppPageLayout(props: {
                                               ) : null}
                                             </>
                                           ) : null}
-                                          {block.title && !blockOwnsHeading(block) ? (
-                                            <PanelHeader title={block.title} as="h2" size="md" />
-                                          ) : null}
-                                          {props.renderBlock(block)}
+                                          <Show
+                                            when={block.disclosure}
+                                            fallback={
+                                              <>
+                                                {block.title && !blockOwnsHeading(block) ? (
+                                                  <PanelHeader title={block.title} as="h2" size="md" />
+                                                ) : null}
+                                                {props.renderBlock(block)}
+                                              </>
+                                            }
+                                          >
+                                            {(disclosure) => (
+                                              <Disclosure
+                                                summary={disclosure().label}
+                                                defaultValue={props.editor ? true : disclosure().defaultOpen}
+                                              >
+                                                {block.title && !blockOwnsHeading(block) ? (
+                                                  <PanelHeader title={block.title} as="h2" size="md" />
+                                                ) : null}
+                                                {props.renderBlock(block)}
+                                              </Disclosure>
+                                            )}
+                                          </Show>
                                         </article>
                                         {props.editor && !multiColumnRow && nextBlock() ? (
                                           <>

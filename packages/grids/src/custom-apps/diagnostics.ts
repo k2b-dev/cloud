@@ -26,6 +26,7 @@ const customAppDiagnosticMessages = i18n.define({
               "query.invalid": v("detail") || "The GQL query is invalid.",
               "query.table_limit.availability": "An availability query may reference at most 24 tables.",
               "record_parameter.table_invalid": "The record parameter table is missing or belongs to another Base.",
+              "record.relative_date_type": "Relative dates require a date field without a time component.",
               "record_page.table_invalid": "The record page table is missing or belongs to another Base.",
               "navigation.record_invalid": "The navigation record is missing, deleted, or belongs to another table.",
               "field.missing": `Field ${v("fieldId")} is missing or belongs to another table.`,
@@ -69,6 +70,8 @@ const customAppDiagnosticMessages = i18n.define({
               "workflow_launcher.invalid": "The workflow launcher is missing, disabled, invalid, unsupported, or belongs to another Base.",
               "workflow_launcher.revision_invalid": "The workflow launcher does not reference a ready workflow revision.",
               "workflow_launcher.fixed_inputs": "Fixed workflow launchers do not accept Grids App inputs.",
+              "workflow_prompt.invalid":
+                "Prompt inputs must be unbound scalar workflow inputs; prompts cannot use a background action or a second confirmation.",
               "workflow_input.unknown": `Unknown workflow input “${v("name")}”.`,
               "workflow_input.invalid": `Workflow input “${v("name")}” is invalid.`,
               "workflow_input.record_binding_invalid": `Workflow input “${v("name")}” must be a record input bound to the referenced table.`,
@@ -98,6 +101,8 @@ const customAppDiagnosticMessages = i18n.define({
         return (
           (
             {
+              "records.presentation_column": "Die Darstellung muss eine sichtbare Ergebnisspalte referenzieren.",
+              "records.relative_date_type": "Relative Datumsangaben benötigen eine Datumsspalte ohne Uhrzeit.",
               "schema.invalid": "Die Definition der Grids-App enthält einen ungültigen Wert.",
               "base.missing": "Die Base wurde nicht gefunden.",
               "resource.missing": `${resourceKind} wurde nicht gefunden.`,
@@ -110,6 +115,7 @@ const customAppDiagnosticMessages = i18n.define({
               "query.invalid": "Die GQL-Abfrage ist ungültig.",
               "query.table_limit.availability": "Eine Verfügbarkeitsabfrage darf höchstens 24 Tabellen referenzieren.",
               "record_parameter.table_invalid": "Die Tabelle des Datensatzparameters fehlt oder gehört zu einer anderen Base.",
+              "record.relative_date_type": "Relative Datumsangaben benötigen ein Datumsfeld ohne Uhrzeit.",
               "record_page.table_invalid": "Die Tabelle der Datensatzseite fehlt oder gehört zu einer anderen Base.",
               "navigation.record_invalid": "Der Datensatz für die Navigation fehlt, ist gelöscht oder gehört zu einer anderen Tabelle.",
               "field.missing": `Das Feld ${v("fieldId")} fehlt oder gehört zu einer anderen Tabelle.`,
@@ -161,6 +167,8 @@ const customAppDiagnosticMessages = i18n.define({
                 "Die Workflow-Ausführungsoption verweist nicht auf eine einsatzbereite Workflow-Revision.",
               "workflow_launcher.fixed_inputs":
                 "Workflow-Ausführungsoptionen mit festen Eingaben akzeptieren keine Eingaben aus der Grids-App.",
+              "workflow_prompt.invalid":
+                "Dialogfelder müssen ungebundene skalare Workflow-Eingaben sein; Hintergrundaktionen und eine weitere Bestätigung sind nicht erlaubt.",
               "workflow_input.unknown": `Die Workflow-Eingabe „${v("name")}“ ist unbekannt.`,
               "workflow_input.invalid": `Die Workflow-Eingabe „${v("name")}“ ist ungültig.`,
               "workflow_input.record_binding_invalid": `Die Workflow-Eingabe „${v("name")}“ muss eine Datensatzeingabe sein, die an die referenzierte Tabelle gebunden ist.`,

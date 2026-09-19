@@ -18,7 +18,14 @@ import { apply, getPublishedByShortId, publish } from "../service/custom-apps";
 import { parseJsonbRow } from "../service/jsonb";
 import { resolvePublicId } from "../service/public-resources";
 import type { CustomAppLauncherInvocation, ScannerLauncherInvocation } from "../service/workflow-launcher-invocations";
-import type { GridsWorkflowAuthorization, GridsWorkflowRunScope } from "../service/workflow-runs";
+import {
+  findCustomAppActionRun,
+  startWorkflowRun,
+  type GridsWorkflowAuthorization,
+  type GridsWorkflowRunScope,
+} from "../service/workflow-runs";
+import { GRIDS_EVENT } from "../workflows/events";
+import { insertTestWorkflow } from "../service/workflow-test-fixture";
 import type { GridsWorkflowPrincipal, GridsWorkflowRun } from "../workflows/contracts";
 import { createCustomAppsApi } from "./custom-apps";
 import { apiMessagesForLocale } from "./messages";
@@ -479,10 +486,28 @@ describe("Grids App Form runtime", () => {
             'from table Requests', 'html', '<p>Internal</p>', 'INTERNAL-{{ document.id }}', '{{ document.number }}.pdf'
           )
       `;
-        await sql`
-          INSERT INTO grids.workflow_profile (id, short_id, base_id, position, owner_user_id, enabled)
-          VALUES (${workflowId}::uuid, ${workflowPublicId}, ${baseId}::uuid, 0, ${authUser.id}::uuid, TRUE)
-        `;
+        await insertTestWorkflow({
+          id: workflowId,
+          baseId,
+          shortId: workflowPublicId,
+          enabled: true,
+          plan: {
+            schemaVersion: 2,
+            languageId: "grids",
+            languageVersion: 1,
+            sourceHash: "a".repeat(64),
+            manifestHash: "b".repeat(64),
+            catalogHash: "c".repeat(64),
+            actionPolicies: {},
+            inputs: [
+              { name: "request", type: "record", config: { required: true } },
+              { name: "amount", type: "decimal", config: { label: "Amount", required: false } },
+            ],
+            steps: [],
+            triggers: [],
+            bindings: { "inputs.request.table": tableId },
+          },
+        });
         await sql`
           INSERT INTO grids.workflow_launchers (
             id, short_id, base_id, workflow_id, name, kind, config, enabled, validated_revision
@@ -493,7 +518,7 @@ describe("Grids App Form runtime", () => {
             ${workflowId}::uuid,
             'Approve request',
             'customApp',
-            ${JSON.stringify({ kind: "customApp", inputSchema: {} })}::text::jsonb,
+            ${JSON.stringify({ kind: "customApp", inputMode: "prompt" })}::text::jsonb,
             TRUE,
             1
           )
@@ -1177,6 +1202,7 @@ describe("Grids App Form runtime", () => {
               variant: "primary",
               onSuccessNavigate: { kind: "navigate", pageId: "request", params: { request_id: { source: "RESULT", path: "recordId" } } },
               inputs: { request: { source: "RECORD", path: "id" } },
+              prompt: { inputs: ["amount"] },
               availableWhen: { query: actionAvailability },
             },
           ],
@@ -1419,12 +1445,38 @@ describe("Grids App Form runtime", () => {
           ok: false,
           diagnostics: [{ message: "This published data source no longer matches its table capability snapshot." }],
         });
+        const promptUrl = `/apps/runtime/${applied.data.shortId}/request/actions/actions/approve?request_id=${body.recordId}`;
+        const promptResponse = await api.request(promptUrl);
+        expect(promptResponse.status).toBe(200);
+        expect(await promptResponse.json()).toEqual({
+          inputs: [{ name: "amount", type: "decimal", config: { label: "Amount", required: false } }],
+        });
+        await sql`UPDATE grids.workflow_launchers SET validated_revision = 2 WHERE id = ${launcherId}::uuid`;
+        expect((await api.request(promptUrl)).status).toBe(404);
+        await sql`UPDATE grids.workflow_launchers SET validated_revision = 1 WHERE id = ${launcherId}::uuid`;
+        const unpinnedPrompt = await api.request(promptUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ operationId: testUuid() }),
+        });
+        expect(unpinnedPrompt.status).toBe(409);
+        for (const inputs of [{ request: testShortId("X") }, { unknown: "50" }]) {
+          const invalidPrompt = await api.request(
+            `/apps/runtime/${applied.data.shortId}/request/actions/actions/approve?request_id=${body.recordId}`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ launcherId: launcherPublicId, operationId: testUuid(), inputs }),
+            },
+          );
+          expect(invalidPrompt.status).toBe(400);
+        }
         const actionResponse = await api.request(
           `/apps/runtime/${applied.data.shortId}/request/actions/actions/approve?request_id=${body.recordId}`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ operationId: testUuid() }),
+            body: JSON.stringify({ launcherId: launcherPublicId, operationId: testUuid() }),
           },
         );
         expect(actionResponse.status).toBe(202);
@@ -1444,9 +1496,23 @@ describe("Grids App Form runtime", () => {
             revision: 1,
           },
         });
+        const promptedInvocation = await api.request(promptUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ launcherId: launcherPublicId, operationId: testUuid(), inputs: { amount: "123456789012345.67" } }),
+        });
+        expect(promptedInvocation.status).toBe(202);
+        expect(actionInvocation).toMatchObject({ inputs: { request: recordId, amount: "123456789012345.67" } });
+        const oversizedPrompt = await api.request(promptUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ launcherId: launcherPublicId, operationId: testUuid(), inputs: { amount: "1".repeat(20_001) } }),
+        });
+        expect(oversizedPrompt.status).toBe(400);
         const statusRuns = new Map<
           string,
           {
+            operationId?: string;
             principal: GridsWorkflowPrincipal;
             authorization: GridsWorkflowAuthorization;
             launcherId: string;
@@ -1466,11 +1532,16 @@ describe("Grids App Form runtime", () => {
             "/apps",
             createCustomAppsApi({
               requireAuthenticated: authenticateAsDelegatedServiceAccount(authenticatedUser, serviceAccountId),
+              findCustomAppActionRun: async (input) =>
+                [...statusRuns].find(
+                  ([, accepted]) => accepted.operationId === input.operationId && accepted.launcherId === input.launcherId,
+                )?.[0] ?? null,
               invokeCustomAppLauncher: async (input) => {
                 const invocation = input as CustomAppLauncherInvocation;
                 const runId = testUuid();
                 if (!invocation.authorization) throw new Error("Grids App action authorization is missing");
                 statusRuns.set(runId, {
+                  operationId: invocation.operationId,
                   principal: invocation.principal,
                   authorization: invocation.authorization,
                   launcherId: invocation.launcherId,
@@ -1554,12 +1625,35 @@ describe("Grids App Form runtime", () => {
           );
         const firstServiceAccountApi = createStatusApi(testUuid());
         const secondServiceAccountApi = createStatusApi(testUuid());
+        // Exercise the production event dedupe key and indexed receipt lookup.
+        const lookupOperationId = testUuid();
+        const lookupRun = await startWorkflowRun({
+          workflow: { id: workflowId, baseId, revision: 1 },
+          mode: "execute",
+          channel: "customApp",
+          eventType: GRIDS_EVENT.launcherPressed,
+          inputs: { request: recordId },
+          context: {},
+          idempotencyKey: `launcher:${launcherId}:${lookupOperationId}`,
+          requestFingerprint: "lookup-test",
+          occurredAt: new Date().toISOString(),
+          principal: { userId: authUser.id, groupIds: [], serviceAccountId: null },
+          authorization: { kind: "workflow" },
+          launcherId,
+          launcherKind: "customApp",
+        });
+        if (!lookupRun.ok) throw new Error(lookupRun.error.message);
+        const lookup = { baseId, workflowId, launcherId, operationId: lookupOperationId };
+        expect(await findCustomAppActionRun(lookup)).toBe(lookupRun.data.runId);
+        expect(await findCustomAppActionRun({ ...lookup, operationId: testUuid() })).toBeNull();
+        expect(await findCustomAppActionRun({ ...lookup, baseId: testUuid() })).toBeNull();
+        const delegatedOperationId = testUuid();
         const delegatedActionResponse = await firstServiceAccountApi.request(
           `/apps/runtime/${applied.data.shortId}/request/actions/actions/approve?request_id=${body.recordId}`,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ operationId: testUuid() }),
+            body: JSON.stringify({ launcherId: launcherPublicId, operationId: delegatedOperationId }),
           },
         );
         expect(delegatedActionResponse.status).toBe(202);
@@ -1569,6 +1663,59 @@ describe("Grids App Form runtime", () => {
         expect(ownStatus.status).toBe(200);
         expect(await ownStatus.json()).toMatchObject({ status: "succeeded", message: "Approved", committedChanges: 0 });
         expect((await secondServiceAccountApi.request(statusPath)).status).toBe(404);
+        // A committed payment can hide its original action; republication must
+        // not hide the owned receipt or admit another write under the same key.
+        const [publication] = await sql`SELECT published_at FROM grids.custom_apps WHERE id = ${appId}::uuid`;
+        await sql`UPDATE grids.records SET data = data || ${{ [fieldId]: "Already approved" }}::jsonb WHERE id = ${recordId}::uuid`;
+        await sql`UPDATE grids.custom_apps SET published_at = published_at + interval '1 second' WHERE id = ${appId}::uuid`;
+        await sql`UPDATE grids.workflow_launchers SET validated_revision = 2 WHERE id = ${launcherId}::uuid`;
+        const acceptedCount = statusRuns.size;
+        const retry = (target: typeof firstServiceAccountApi, inputs: Record<string, string> = {}, query = body.recordId) =>
+          target.request(`/apps/runtime/${applied.data.shortId}/request/actions/actions/approve?request_id=${query}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ launcherId: launcherPublicId, operationId: delegatedOperationId, inputs }),
+          });
+        const recovered = await retry(firstServiceAccountApi);
+        expect(recovered.status).toBe(202);
+        expect(await recovered.json()).toMatchObject({ statusUrl: delegatedAction.statusUrl });
+        expect((await firstServiceAccountApi.request(statusPath)).status).toBe(200);
+        expect((await retry(firstServiceAccountApi, { amount: "999" })).status).toBe(409);
+        expect((await retry(firstServiceAccountApi, {}, testShortId("X"))).status).toBe(404);
+        expect((await retry(secondServiceAccountApi)).status).toBe(404);
+        const fresh = await firstServiceAccountApi.request(promptUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ launcherId: launcherPublicId, operationId: testUuid() }),
+        });
+        expect(fresh.status).toBe(404);
+        expect(statusRuns.size).toBe(acceptedCount);
+        await sql`UPDATE grids.workflow_launchers SET validated_revision = 1 WHERE id = ${launcherId}::uuid`;
+        await sql`UPDATE grids.custom_apps SET published_at = ${publication.published_at} WHERE id = ${appId}::uuid`;
+        await sql`UPDATE grids.records SET data = data || ${{ [fieldId]: "Certificate request updated" }}::jsonb WHERE id = ${recordId}::uuid`;
+        const [beforeRebind] =
+          await sql`SELECT published_definition, published_capabilities FROM grids.custom_apps WHERE id = ${appId}::uuid`;
+        const replacementLauncherId = testUuid();
+        const replacementLauncherPublicId = testShortId("L");
+        await sql`INSERT INTO grids.workflow_launchers (id, short_id, base_id, workflow_id, name, kind, config, enabled, validated_revision)
+          SELECT ${replacementLauncherId}::uuid, ${replacementLauncherPublicId}, base_id, workflow_id, 'Replacement', kind, config, enabled, validated_revision
+          FROM grids.workflow_launchers WHERE id = ${launcherId}::uuid`;
+        await sql`UPDATE grids.custom_apps
+          SET published_definition = replace(published_definition::text, ${launcherPublicId}, ${replacementLauncherPublicId})::jsonb,
+              published_capabilities = replace(published_capabilities::text, ${launcherId}, ${replacementLauncherId})::jsonb,
+              published_at = published_at + interval '1 second'
+          WHERE id = ${appId}::uuid`;
+        expect((await retry(firstServiceAccountApi)).status).toBe(202);
+        const staleBinding = await firstServiceAccountApi.request(promptUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ launcherId: launcherPublicId, operationId: testUuid() }),
+        });
+        expect(staleBinding.status).toBe(409);
+        expect(statusRuns.size).toBe(acceptedCount);
+        await sql`UPDATE grids.custom_apps SET published_definition = ${beforeRebind.published_definition}::jsonb,
+          published_capabilities = ${beforeRebind.published_capabilities}::jsonb, published_at = ${publication.published_at}
+          WHERE id = ${appId}::uuid`;
         workflowResult = { kind: "record", tableId, recordId };
         expect(await (await firstServiceAccountApi.request(statusPath)).json()).toMatchObject({
           status: "succeeded",
@@ -1864,7 +2011,8 @@ describe("Grids App Form runtime", () => {
               }}::jsonb
           WHERE id = ${appId}::uuid
         `;
-        expect((await firstServiceAccountApi.request(statusPath)).status).toBe(404);
+        // Page visibility cannot revoke the original actor's receipt.
+        expect((await firstServiceAccountApi.request(statusPath)).status).toBe(200);
 
         await sql`
         UPDATE grids.custom_apps

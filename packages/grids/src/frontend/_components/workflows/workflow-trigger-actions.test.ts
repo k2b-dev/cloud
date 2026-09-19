@@ -3,6 +3,19 @@ import type { WorkflowIrInput } from "@k2b/cloud/workflows";
 import { buildWorkflowRunInput, workflowInputDraftFromValues } from "./workflow-trigger-actions";
 
 describe("workflow run inputs", () => {
+  test("localizes exact decimal input without rounding and rejects malformed numbers", () => {
+    const inputs = [{ name: "amount", type: "decimal", config: { required: true } }];
+    expect(buildWorkflowRunInput(inputs, { amount: "9007199254740993,25" }, "de")).toEqual({
+      ok: true,
+      input: { amount: "9007199254740993.25" },
+    });
+    expect(buildWorkflowRunInput(inputs, { amount: ",5" }, "de")).toEqual({ ok: true, input: { amount: "0.5" } });
+    expect(buildWorkflowRunInput(inputs, { amount: "0012.50" }, "en")).toEqual({ ok: true, input: { amount: "12.5" } });
+    for (const amount of ["1.234,56", "1,234.56", "NaN", "Infinity", "0x10", "1e131072", "1e-16384", 12.5]) {
+      expect(buildWorkflowRunInput(inputs, { amount }, "de").ok).toBe(false);
+    }
+  });
+
   test("requires declared inputs and preserves typed values", () => {
     const inputs: WorkflowIrInput[] = [
       { name: "loan", type: "record", config: { table: "Loans", label: "Loan", required: true } },

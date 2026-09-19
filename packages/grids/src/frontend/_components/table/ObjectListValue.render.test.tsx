@@ -60,3 +60,32 @@ describe("ObjectListValue", () => {
     expect(value).toEqual([{ Amount: "1.0000", Total1: "10.2500" }]);
   });
 });
+
+test("object list tables retain exact snapshot values and disclose secondary columns", () => {
+  const value = Array.from({ length: 26 }, () => ({
+    Amount: "9007199254740993.25",
+    Total1: "18014398509481986.50",
+    Extra1: "secondary-value",
+  }));
+  const html = renderToString(() =>
+    createComponent(ObjectListValue, {
+      value,
+      detail: true,
+      layout: "table",
+      ariaLabel: "Positions",
+      config: { fields: [...config.fields, { id: "Extra1", name: "Extra", type: "text", detailsOnly: true }] },
+    }),
+  );
+  expect(html).toContain("<table");
+  expect(html).toContain('aria-label="Positions"');
+  expect(html).toContain('data-surface="paper"');
+  expect(html).toContain("k2b-paper k2b-table-shell");
+  expect(html.match(/>Positions(?:<| )/g)?.length).toBe(1);
+  expect(html).not.toContain("26 rows");
+  expect(html).toContain("18014398509481986.5");
+  expect(html).not.toContain("secondary-value");
+  expect(html).not.toContain("999");
+  expect(html).toContain("Show more rows");
+  expect(html.match(/<tr /g)?.length).toBe(26); // one header + bounded rows
+  expect(value[0]?.Total1).toBe("18014398509481986.50");
+});

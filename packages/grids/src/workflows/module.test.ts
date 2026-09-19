@@ -18,7 +18,7 @@ describe("Grids workflow manifest", () => {
   });
 
   test("pins the current manifest hash; older plans require republication", async () => {
-    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("b5828290b6f3d2a6b867bc88d513293937a2503fa6ae144a026f7b340cd016ad");
+    expect(await hashWorkflowJson(gridsWorkflowManifest)).toBe("dbde25ff748d310681e83e4a92ff3cb21c866b71ede6aee46b59dff85454eba7");
   });
 
   test("rejects removed actions at compilation", async () => {
