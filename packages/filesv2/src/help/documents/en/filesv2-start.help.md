@@ -16,11 +16,11 @@ Choose **List**, **Grid**, or **Tree** above the list. Tree shows the whole stor
 
 ## Sort, filter, and drag
 
-**Sort** and **Type** above the list order the entries by name, date, size or type and narrow them to folders, documents, images or media. Folders always come first. Column headers in the list sort as well. Storage lists by name, so other orders apply within the loaded page; the count says so when more pages exist.
+Open **Sort and filter** using the icon button to the right of search. Its three sections are **Sort by**, **Order**, and **Type**. Choose name, date, size or type; ascending or descending order; and all entries, folders, documents, images, audio and video, or other files. **Group folders** is on by default: folders come before files, each sorted by name. Turn it off to sort both together. The browser remembers grouping per storage location. **Reset** restores name ascending, all types, and grouping. The `..` row stays above the entries even when you change sorting or filter by type. Column headers in the list sort as well. Storage lists by name, so other orders apply within the loaded page; the count says so when more pages exist.
 
-Drag an entry onto a folder to move it there; a highlighted or checked selection moves together. The **..** row moves entries to the parent folder. Rest on a folder for a moment and it opens (list and grid) or expands (tree), so you can drop deeper without letting go. Dropping files from your computer still uploads them.
+Drag an entry onto a folder to move it there; a highlighted or checked selection moves together. The **..** row moves entries to the parent folder. Rest on a folder for a moment and it opens (list and grid) or expands (tree), so you can drop deeper without letting go. Dropping files or folders from your computer uploads them; folder uploads keep their structure. Large selections are bounded and can be cancelled.
 
-Files you open or download appear under **Recent** in the sidebar, and **Favorites** collects entries you mark in their details panel. Both open the entry's folder with the entry selected. When the document editor is configured, PDF and office files show a first-page preview in the grid, the list and the details panel.
+Files you open or download appear under **Recent** in the sidebar; **Favorites** collects your marked entries. On desktop these open compact menus on hover, focus, or click; on mobile they open dialogs from navigation. Recent shows relative times and favorites are alphabetical. Choose a folder to open it, or a file to open its details. The outline star beside Preview and Download marks a favorite: a gold outline means it is saved. Hover or keyboard focus shows an X to remove it; tapping the selected star also removes it. Missing or inaccessible entries are omitted when the menu refreshes. When the document editor is configured, PDF and office files show a first-page preview in the grid, the list and the details panel.
 
 ## Search
 
@@ -30,11 +30,11 @@ The search field at the top searches names everywhere below the current folder; 
 
 A click on a file only opens its details; nothing counts as selected until you choose **Select** next to the entry count. Checkboxes then appear in every view: a click toggles an entry, Shift-click selects a range, Ctrl/Cmd-A selects the loaded page, and **Done** ends the selection. Arrow keys move the highlight, Space toggles while selecting, Escape clears. With a selection, **n selected** and an **Actions** menu appear below the search field: download (one file directly, several entries or folders as one ZIP), move into a new folder, move to another folder, copy to this or another storage, share publicly, or move to the trash. Right-click a row for the same actions.
 
-Moving stays inside one storage location. Copying can target another storage location; the originals stay where they are, so a group file can never disappear into a private home by accident.
+Multi-entry actions can partly succeed. Completed items stay completed; the interface keeps failed items available to retry. Moving stays inside one storage location. Copying can target another storage location; the originals stay where they are, so a group file can never disappear into a private home by accident.
 
 ## Edit documents together
 
-When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The document name appears in the top bar; Collabora shows when it last saved, and its close button (X) returns to the folder with the file selected. If you may only read a file, it opens read-only. Every save becomes the current file; the file's version history stays in its details panel.
+When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The document name appears in the top bar; Collabora shows when it last saved, and its close button (X) returns to the folder with the file selected. If you may only read a file, it opens read-only. Every save becomes the current file; the file's version history stays in its details panel. Reopen the editor after changing theme to apply the new theme.
 
 The plus menu then also offers **New text document**, **New spreadsheet** and **New presentation**. You enter a name, the file extension is added for you, and the new document opens in the editor.
 
@@ -46,21 +46,25 @@ The details panel of an entry offers **Open in new tab**, **Rename**, **Duplicat
 
 ## Trash
 
-Deleting never removes anything permanently: entries move into the trash of their storage location, which appears as **Trash** at the end of the root folder and in the sidebar. Open it to see what you deleted; **Restore** puts an entry back to its original place. Only an administrator can empty the trash.
+Deleting never removes anything permanently: entries move into the trash of their storage location, which appears as **Trash** at the end of the root folder and in the sidebar. Open it to see what you deleted; **Restore** puts an entry back to its original place. An item without a recorded original location asks for a destination path including its name. Existing files are never overwritten. Pending moves remain visible until their outcome is confirmed. Use pagination for further entries. Only an administrator can empty the trash.
 
 ## Versions
 
-Where the storage keeps versions, the details panel lists earlier versions of a file at the bottom. For each version you can add a comment, download it, restore it in place, restore it as a new file next to the current one, or delete it. Restoring in place keeps the current state as a new version.
+Where the storage keeps versions, the details panel lists earlier versions of a file at the bottom. For each version you can add a comment, download it, restore it in place, or restore it as a new file next to the current one. Only administrators can permanently delete versions. Restoring in place keeps the current state as a new version.
 
 ## Share publicly
 
-Select entries and choose **Share publicly**, or share a folder as an **upload inbox** from its details. Give the share a name, choose how long the link stays valid, and optionally add an internal note. Everyone who can open the folder that contains the shared entries sees the share under **Shares** in the sidebar and can copy or revoke the link. A download share lets anyone with the link download the listed entries or everything as a ZIP; an upload inbox lets anyone with the link add files to that folder without seeing its contents. Existing files are never replaced by inbox uploads.
+Select entries and choose **Share publicly**, or share a folder as an **upload inbox** from its details. Name the share and choose 1, 7, 30 or 90 days, or no expiry. An internal note stays private; a separate public note is shown to visitors. Copy the link when it appears: it is shown only once and cannot be retrieved later. **Shares** lists your links and lets you revoke them, even if you can no longer access their files. Administrators can revoke any link. Changes in your access also prevent new public actions; already issued transfers can finish during their short lease lifetime.
+
+Download shares show the current contents. Visitors can open shared folders, download individual files or get a ZIP. Later changes and newly added files in shared folders become visible.
+
+An inbox accepts files without granting access to the destination's contents. Set a maximum per file and a cumulative total; defaults are 100 MiB and 1 GiB. Deleting received files does not free that total. In-progress uploads reserve space; uncertain transfers may keep space reserved until checked. Existing files are never replaced. By default visitors get only their upload confirmation. Enable the names option to let everyone with the inbox link see names of successful uploads through this inbox; it does not expose other files or offer downloads.
 
 ## Download a file
 
 Select **Download** beside a file. Cloud checks your current access and prepares a short-lived download directly from the file server. If preparing the download fails, the error appears above the list and you can try again.
 
-Select several individual files and use **Download** to download them together. Your browser may request permission for multiple downloads. Open folders to download their individual files.
+Select several entries or a folder and use **Download** to receive a ZIP.
 
 ## Use the terminal
 
@@ -68,7 +72,7 @@ After signing in with `cld login --server <Cloud URL>`, use `cld filesv2 bases l
 
 Download a file with `cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf`. The CLI downloads directly from Filegate to a new local file. Existing paths are never overwritten. Use `--json` for the saved path and byte count, or `cld filesv2 help` for all available commands.
 
-`cld filesv2 search <base-id> report --path Documents --json` searches names below a folder and `cld filesv2 mkdir <base-id> Documents/2026` creates a folder. `rename`, `move --to`, `copy --to [--target-base]`, `delete`, `trash list|restore`, `versions list|comment|restore|download|delete`, `shares list|create|revoke`, `archive --out` for a ZIP of several entries, and `documents create --kind` plus `edit-url` for office documents cover the remaining operations. `cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf` uploads a file directly to the file server; add `--replace` to replace an existing file. `cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
+`cld filesv2 search <base-id> report --path Documents --json` searches names below a folder and `cld filesv2 mkdir <base-id> Documents/2026` creates a folder. `rename`, `move --to`, `copy --to [--target-base]`, `delete`, `trash list|restore`, `versions list|comment|restore|download`, `shares list|create|revoke`, `archive --out` for a ZIP of several entries, and `documents create --kind` plus `edit-url` for office documents cover the remaining operations. `cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf` uploads a file directly to the file server; add `--replace` to replace an existing file. `cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
 
 ## When storage is unavailable
 

@@ -1,5 +1,6 @@
 import { createMemo, type JSX, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
+import type { ButtonVariant } from "./Button";
 import Dropdown, { type DropdownItem } from "./Dropdown";
 
 export type FilterChipOption = {
@@ -25,6 +26,8 @@ export type FilterChipProps = {
   position?: "bottom-left" | "bottom-right";
   defaultValue?: readonly string[];
   iconOnly?: boolean;
+  /** Use a standard button appearance instead of the default filter field. */
+  variant?: ButtonVariant;
   disabled?: boolean;
   class?: string;
 };
@@ -103,8 +106,11 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
   return (
     <Dropdown.Root disabled={props.disabled} items={items()} position={props.position ?? "bottom-left"} width="13rem" label={props.label}>
       <Dropdown.Trigger
-        appearance="plain"
-        class={`k2b-filter-chip ${props.class ?? ""}`}
+        appearance={props.variant ? "button" : "plain"}
+        variant={props.variant}
+        iconOnly={props.iconOnly}
+        tooltip={props.variant && props.iconOnly ? props.label : undefined}
+        class={props.variant ? props.class : `k2b-filter-chip ${props.class ?? ""}`}
         data-state={active() ? "active" : "idle"}
         data-active={active() ? "true" : undefined}
         data-icon-only={props.iconOnly ? "true" : undefined}

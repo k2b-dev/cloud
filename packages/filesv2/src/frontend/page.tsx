@@ -1,7 +1,6 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { coreSettings } from "@k2b/cloud/services";
+import { AccountIdentityError, coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { AccountIdentityError } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import { ssr } from "../config";
@@ -38,10 +37,10 @@ export default ssr<AuthContext>(async (c) => {
   };
   try {
     initial.bases = await filesService.bases(actor);
-    const selected = requestedBase
+    const selected = requestedBase && view !== "shares"
       ? initial.bases.items.find((base) => base.id === requestedBase)
       : (initial.bases.items.find((base) => base.status === "existing") ?? initial.bases.items[0]);
-    if (requestedBase && !selected) throw new FilesError("not_found", 404);
+    if (requestedBase && !selected && view !== "shares") throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
     if (view === "shares") initial.shares = await filesService.listShares(actor);
     else if (view === "recent") initial.marks = await filesService.recent(actor);

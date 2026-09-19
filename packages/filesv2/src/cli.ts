@@ -14,29 +14,30 @@ import {
 import type { ApiType } from "./api";
 import { adminLifecycleCommands } from "./cli-admin";
 import { downloadFile } from "./cli-download";
-import { DOCUMENT_KINDS } from "./documents";
-import { editorUrl } from "./frontend/urls";
 import { uploadFile } from "./cli-upload";
 import {
   type AdminResult,
   AdoptInputSchema,
+  type ArchiveDownload,
   type BasesResult,
   ConfigurationInputSchema,
   type DirectoryResult,
-  type ArchiveDownload,
   type DownloadLease,
-  type MarkedEntry,
   type EntriesResult,
   type EntryResult,
   type FileVersion,
-  type ShareView,
-  type TrashEntry,
-  type SearchResult,
-  type UploadLease,
-  type UploadSession,
   type InventoryState,
   InventoryStateSchema,
+  type MarkedEntry,
+  type SearchResult,
+  type SharePage,
+  type ShareView,
+  type TrashEntry,
+  type UploadLease,
+  type UploadSession,
 } from "./contracts";
+import { DOCUMENT_KINDS } from "./documents";
+import { editorUrl } from "./frontend/urls";
 
 function filesCommands(locale?: string) {
   const t = (text: CloudCliText) => localizeCloudCliText(locale, text);
@@ -83,11 +84,14 @@ function filesCommands(locale?: string) {
       }),
       "admin archives": t({ en: "Inspect, restore or delete archives", de: "Archive prüfen, wiederherstellen oder löschen" }),
       "admin files": t({ en: "Browse and manage files as administrator", de: "Dateien als Administrator durchsuchen und verwalten" }),
+      "admin shares": t({ en: "Inspect and revoke all public links", de: "Alle öffentlichen Links prüfen und sperren" }),
+      "admin uploads": t({ en: "Inspect unresolved inbox reservations", de: "Ungeklärte Eingangsreservierungen prüfen" }),
+      "admin versions": t({ en: "Inspect and permanently delete file versions", de: "Dateiversionen prüfen und endgültig löschen" }),
       "admin root": t({ en: "Refresh statistics and rebuild the root index", de: "Statistiken aktualisieren und Root-Index neu aufbauen" }),
       "admin operations": t({ en: "Resume pending directory operations", de: "Ausstehende Verzeichnisaktionen fortsetzen" }),
       documents: t({ en: "Create office documents for the browser editor", de: "Office-Dokumente für den Browser-Editor anlegen" }),
       trash: t({ en: "List and restore entries in the trash", de: "Einträge im Papierkorb anzeigen und wiederherstellen" }),
-      versions: t({ en: "Inspect, comment, download, restore or delete file versions", de: "Dateiversionen prüfen, kommentieren, herunterladen, wiederherstellen oder löschen" }),
+      versions: t({ en: "Inspect, comment, download or restore file versions", de: "Dateiversionen prüfen, kommentieren, herunterladen oder wiederherstellen" }),
       shares: t({ en: "Create, list and revoke public shares and inboxes", de: "Öffentliche Freigaben und Eingänge anlegen, auflisten und widerrufen" }),
       favorites: t({ en: "Keep quick access to favorite entries", de: "Schnellzugriff auf Favoriten pflegen" }),
     },
@@ -231,10 +235,10 @@ function filesCommands(locale?: string) {
                   { init: { signal } },
                 ),
               ),
-            renew: async (id) => ctx.readJson<UploadLease>(await api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...param, id } })),
-            commit: async (id) => ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...param, id } })),
-            abort: async (id) => {
-              await api(ctx).bases[":baseId"].uploads[":id"].abort.$post({ param: { ...param, id } });
+            renew: async (id, signal) => ctx.readJson<UploadLease>(await api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...param, id } }, { init: { signal } })),
+            commit: async (id, signal) => ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...param, id } }, { init: { signal } })),
+            abort: async (id, signal) => {
+              await api(ctx).bases[":baseId"].uploads[":id"].abort.$post({ param: { ...param, id } }, { init: { signal } });
             },
           });
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Uploaded", de: "Hochgeladen" })}: ${result.entry.path} (${result.entry.size} bytes)`);
@@ -265,16 +269,16 @@ function filesCommands(locale?: string) {
         summary: t({ en: "Mark an entry as favorite", de: "Eintrag als Favorit markieren" }),
         args: { ...baseArgs, path: arg.required({ description: t({ en: "Entry path relative to the base", de: "Eintragspfad relativ zur Ablage" }) }) },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: true } }));
-          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Favorite", de: "Favorit" })}: ${result.entry.path}`);
+          const result = await ctx.readJson<{ favorite: boolean }>(await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: true } }));
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Favorite", de: "Favorit" })}: ${args.path}`);
         },
       }),
       command("favorites remove", {
         summary: t({ en: "Remove an entry from the favorites", de: "Eintrag aus den Favoriten entfernen" }),
         args: { ...baseArgs, path: arg.required({ description: t({ en: "Entry path relative to the base", de: "Eintragspfad relativ zur Ablage" }) }) },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: false } }));
-          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Removed from favorites", de: "Aus Favoriten entfernt" })}: ${result.entry.path}`);
+          const result = await ctx.readJson<{ favorite: boolean }>(await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: false } }));
+          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Removed from favorites", de: "Aus Favoriten entfernt" })}: ${args.path}`);
         },
       }),
       command("documents create", {
@@ -316,7 +320,8 @@ function filesCommands(locale?: string) {
         flags: { to: flag.string({ required: true, description: t({ en: "Target folder relative to the base", de: "Zielordner relativ zur Ablage" }) }) },
         async run({ ctx, args, flags }) {
           const result = await ctx.readJson<EntriesResult>(await api(ctx).bases[":baseId"].move.$post({ param: { baseId: args.base }, json: { paths: args.paths, folder: flags.to! } }));
-          printRows(ctx, ctx.options.output === "jsonl" ? result.entries : result, result.entries, [{ key: "path", label: t({ en: "Path", de: "Pfad" }) }]);
+          printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [{ key: "path", label: t({ en: "Path", de: "Pfad" }) }, { key: "ok", label: "OK" }, { key: "error", label: t({ en: "Error", de: "Fehler" }) }]);
+          if (result.results.some(item => !item.ok)) return 1;
         },
       }),
       command("copy", {
@@ -330,25 +335,27 @@ function filesCommands(locale?: string) {
           const result = await ctx.readJson<EntriesResult>(
             await api(ctx).bases[":baseId"].copy.$post({ param: { baseId: args.base }, json: { paths: args.paths, targetBaseId: flags["target-base"] ?? args.base, folder: flags.to! } }),
           );
-          printRows(ctx, ctx.options.output === "jsonl" ? result.entries : result, result.entries, [{ key: "path", label: t({ en: "Path", de: "Pfad" }) }]);
+          printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [{ key: "path", label: t({ en: "Path", de: "Pfad" }) }, { key: "ok", label: "OK" }, { key: "error", label: t({ en: "Error", de: "Fehler" }) }]);
+          if (result.results.some(item => !item.ok)) return 1;
         },
       }),
       command("delete", {
         summary: t({ en: "Move entries to the trash", de: "Einträge in den Papierkorb verschieben" }),
         args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Paths relative to the base", de: "Pfade relativ zur Ablage" }) }) },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<TrashEntry[]>(await api(ctx).bases[":baseId"].delete.$post({ param: { baseId: args.base }, json: { paths: args.paths } }));
-          printRows(ctx, result, result, [
-            { key: "id", label: "ID" },
-            { key: "original", label: t({ en: "Original path", de: "Ursprünglicher Pfad" }) },
+          const result = await ctx.readJson<{ entries: TrashEntry[]; results: ({path:string;ok:true;entry:TrashEntry}|{path:string;ok:false;error:string})[] }>(await api(ctx).bases[":baseId"].delete.$post({ param: { baseId: args.base }, json: { paths: args.paths } }));
+          printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [
+            { key: "path", label: t({ en: "Path", de: "Pfad" }) }, { key: "ok", label: "OK" }, { key: "error", label: t({ en: "Error", de: "Fehler" }) },
           ]);
+          if (result.results.some(item => !item.ok)) return 1;
         },
       }),
       command("trash list", {
         summary: t({ en: "List trashed entries of a base", de: "Papierkorb einer Ablage auflisten" }),
-        args: baseArgs,
-        async run({ ctx, args }) {
-          const result = await ctx.readJson<{ entries: TrashEntry[] }>(await api(ctx).bases[":baseId"].trash.$get({ param: { baseId: args.base } }));
+        args: baseArgs, flags: { after },
+        async run({ ctx, args, flags }) {
+          const result = await ctx.readJson<{ entries: TrashEntry[]; next: string | null }>(await api(ctx).bases[":baseId"].trash.$get({ param: { baseId: args.base }, query: { after: flags.after } }));
+          next(ctx, result.next);
           printRows(ctx, ctx.options.output === "jsonl" ? result.entries : result, result.entries, [
             { key: "id", label: "ID" },
             { key: "original", label: t({ en: "Original path", de: "Ursprünglicher Pfad" }) },
@@ -359,8 +366,9 @@ function filesCommands(locale?: string) {
       command("trash restore", {
         summary: t({ en: "Restore a trashed entry to its original path", de: "Eintrag aus dem Papierkorb an den ursprünglichen Ort zurücklegen" }),
         args: { ...baseArgs, id: arg.required({ description: t({ en: "Trash entry ID", de: "Papierkorb-ID" }) }) },
-        async run({ ctx, args }) {
-          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].trash[":id"].restore.$post({ param: { baseId: args.base, id: args.id } }));
+        flags: { to: flag.string({ description: t({ en: "Restore target relative to the base; required when original path is unknown", de: "Wiederherstellungsziel relativ zur Ablage; bei unbekanntem Ursprung erforderlich" }) }) },
+        async run({ ctx, args, flags }) {
+          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].trash[":id"].restore.$post({ param: { baseId: args.base, id: args.id }, query: { path: flags.to } }));
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${result.entry.path}`);
         },
       }),
@@ -414,21 +422,13 @@ function filesCommands(locale?: string) {
           if (!printStructured(ctx, result)) ctx.print(`${result.id}: ${result.comment ?? ""}`);
         },
       }),
-      command("versions delete", {
-        summary: t({ en: "Delete a version", de: "Version löschen" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }), id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }) },
-        flags: { yes: flag.boolean({ description: t({ en: "Confirm this operation", de: "Diesen Vorgang bestätigen" }) }) },
-        async run({ ctx, args, flags }) {
-          if (!flags.yes) throw new Error(t({ en: "Pass --yes to delete a version permanently.", de: "Gib --yes an, um eine Version endgültig zu löschen." }));
-          const result = await ctx.readJson<{ deleted: boolean }>(await api(ctx).bases[":baseId"].versions.delete.$post({ param: { baseId: args.base }, json: { path: args.path, id: args.id } }));
-          if (!printStructured(ctx, result)) ctx.print(t({ en: "Version deleted.", de: "Version gelöscht." }));
-        },
-      }),
       command("shares list", {
         summary: t({ en: "List public shares visible to you", de: "Für dich sichtbare öffentliche Freigaben auflisten" }),
-        async run({ ctx }) {
-          const result = await ctx.readJson<ShareView[]>(await api(ctx).shares.$get());
-          printRows(ctx, result, result, [
+        flags: { after },
+        async run({ ctx, flags }) {
+          const result = await ctx.readJson<SharePage>(await api(ctx).shares.$get({ query: { after: flags.after } }));
+          next(ctx, result.next);
+          printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
             { key: "id", label: "ID" },
             { key: "kind", label: t({ en: "Kind", de: "Art" }) },
             { key: "title", label: t({ en: "Name", de: "Name" }) },
@@ -444,17 +444,21 @@ function filesCommands(locale?: string) {
         flags: {
           kind: flag.enum(["download", "inbox"], { default: "download" }),
           title: flag.string({ required: true, description: t({ en: "Name shown to visitors", de: "Name, den Besucher sehen" }) }),
-          "expires-in": flag.enum(["1d", "7d", "30d", "90d"], { default: "30d" }),
-          note: flag.string({ description: t({ en: "Internal note", de: "Interne Notiz" }) }),
+          "expires-in": flag.enum(["1d", "7d", "30d", "90d", "unlimited"], { default: "30d" }),
+          note: flag.string({ description: t({ en: "Private management note", de: "Private Verwaltungsnotiz" }) }),
+          "public-note": flag.string({ description: t({ en: "Public note for visitors", de: "Öffentlicher Hinweis für Besucher" }) }),
+          "max-file-size": flag.int({ default: 104857600, description: t({ en: "Inbox limit per file in bytes", de: "Eingangslimit pro Datei in Bytes" }) }),
+          "max-total-size": flag.int({ default: 1073741824, description: t({ en: "Cumulative inbox limit in bytes", de: "Kumulatives Eingangslimit in Bytes" }) }),
+          "show-upload-names": flag.boolean({ description: t({ en: "Show names of successful inbox uploads to visitors", de: "Namen erfolgreicher Eingangs-Uploads für Besucher anzeigen" }) }),
         },
         async run({ ctx, args, flags }) {
           const result = await ctx.readJson<ShareView>(
             await api(ctx).bases[":baseId"].shares.$post({
               param: { baseId: args.base },
-              json: { kind: flags.kind ?? "download", paths: (flags.kind ?? "download") === "download" ? args.paths : [], folder: flags.kind === "inbox" ? (args.paths[0] ?? "") : "", title: flags.title!, note: flags.note, expiresIn: flags["expires-in"] },
+              json: { kind: flags.kind ?? "download", paths: (flags.kind ?? "download") === "download" ? args.paths : [], folder: flags.kind === "inbox" ? (args.paths[0] ?? "") : "", title: flags.title!, note: flags.note, publicNote: flags["public-note"], expiresIn: flags["expires-in"], maxFileSize: flags["max-file-size"], maxTotalSize: flags["max-total-size"], showUploadNames: flags["show-upload-names"] },
             }),
           );
-          if (!printStructured(ctx, result)) ctx.print(result.url);
+          if (!printStructured(ctx, result)) ctx.print(result.url ?? "");
         },
       }),
       command("shares revoke", {

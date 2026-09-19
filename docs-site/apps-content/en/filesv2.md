@@ -5,7 +5,7 @@ section: Work
 order: 151
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-09-18
+updated: 2026-09-19
 ---
 
 # Filesv2
@@ -37,11 +37,20 @@ expands or collapses it. **Select** next to the entry count switches on
 checkboxes in every view. Thumbnails are requested with bounded concurrency and
 retried, because Filegate rejects parallel renders beyond its capacity.
 Storage, folder, page, single selection, search query, and scope stay in the
-URL. Entries can be sorted by name, date, size or type and filtered by type
-within the loaded page (Filegate lists by name), dragged onto folders or the
+URL. The **Sort and filter** icon button beside search groups **Sort by**,
+**Order**, and **Type** in one menu. The default is name ascending, with folders
+before files. **Group folders** is on by default; turn it off to sort files
+and folders together. Grouping and sorting are remembered per storage location;
+reset restores name ascending, all types, and grouping. The `..` row stays above
+the entries regardless of grouping, sorting, or type filter. Sorting and filtering apply within the loaded page (Filegate lists by
+name). Entries can be dragged onto folders or the
 `..` row to move them (resting on a folder opens or expands it), and marked as
-favorites; recently opened entries and favorites have their own sidebar
-views. The current page is polled while the tab is visible so changes by
+favorites. **Recent** and **Favorites** open compact sidebar menus on desktop
+and dialogs from mobile navigation. Recent shows the latest entries with relative
+times; favorites are alphabetical. Entries are checked against current access
+and file existence when the menu opens. The outline star beside Preview and
+Download in the details panel turns gold for a favorite; hover or keyboard focus
+shows an X for removal. Tapping the selected star removes the favorite too. The current page is polled while the tab is visible so changes by
 others appear without a reload. With Collabora configured, PDF and office
 files get first-page previews rendered through Collabora's convert-to
 endpoint and cached briefly in the application.
@@ -49,7 +58,9 @@ endpoint and cached briefly in the application.
 Search always covers the subtree below the current folder; hits show their
 path relative to it. Filesv2 also answers the universal
 search under the `file` tag through the `filesv2.entry` resource type, and
-each entry's Cloud reference can be copied from the details panel.
+each entry's Cloud reference can be copied from the details panel. A bounded or
+failed search is reported explicitly rather than presented as a complete empty
+result; narrow the folder or query when its search budget is exceeded.
 
 Selections act through one **Actions** menu: direct download for one file, a
 signed Filegate ZIP for several entries or folders, move into a new folder,
@@ -61,7 +72,8 @@ Renaming, duplicating and moving reuse Filegate transfers.
 The details panel shows a preview hero (images enlarge into a dialog),
 facts including the storage area, an action list, and, where the root keeps
 versions, a versions section with comments (stored as version metadata),
-download, restore in place, restore as a new file, and delete.
+download, restore in place, and restore as a new file. Permanent version
+deletion is available only through the administrator file browser and CLI.
 
 Uploads report progress in one toast and resolve name conflicts once per
 batch (replace existing or upload only new). Uploads, folder uploads and new
@@ -72,19 +84,51 @@ the target. Existing names ask before being replaced.
 ## Public shares
 
 A share is either a download bundle of entries or an upload inbox for one
-folder, always inside one base. Its scope is the common ancestor of the
-entries; everyone who can read that folder sees the share under **Shares** and
-may revoke it, so shares never cross a rights boundary. The overview lives inside the workspace at
-`/app/filesv2?view=shares`, the trash at `/app/filesv2?view=trash`. Links live under
-`/share/filesv2/s/<token>` and `/share/filesv2/inbox/<token>`, expire after
-1, 7, 30 or 90 days, and are served token-only with rate limiting. Visitors
-download through short leases or one signed archive; inbox uploads open
-sessions owned by the share creator and never replace existing files.
+folder, always inside one base. Download shares show the current contents,
+including later additions to shared folders. Visitors can browse those folders,
+download individual files, or request a ZIP.
+
+The creator manages their links under **Shares** at
+`/app/filesv2?view=shares`; administrators can manage all links separately.
+Reading a parent folder does not reveal someone else's shares. Creators can
+revoke their own links even after losing access to the files. Before each new
+public action, Cloud checks the creator's current account, membership, storage
+configuration, binding, and target permissions. Revocation prevents new actions;
+already issued leases retain their short remaining lifetime.
+
+Copy the public URL when creating a share: it is shown only once. Cloud stores
+a token hash and cannot recover the URL later. Existing URLs survive the token
+migration, but cannot be copied again from the overview. Link lifetimes are
+1, 7, 30 or 90 days, or **No expiry**; the default is 30 days. An internal note
+stays private. A separate public note appears to visitors.
+
+Inbox limits default to **100 MiB per file** and **1 GiB in total**. These defaults
+also apply to existing inbox links after upgrade. Total usage is cumulative for
+that link: deleting received files does not replenish it. Concurrent transfers
+reserve their declared size before starting. Confirmed aborted or expired
+sessions release their reservations; an uncertain outcome keeps its reservation
+until reconciled. The administrator view lists unresolved transfers, including
+after a link expires or is revoked.
+
+Finish active uploads before upgrading. Older open sessions have no stored
+backend address, so Cloud cannot safely match them to the currently configured
+Filegate server. After upgrade they remain listed as unresolved, and their bytes
+stay reserved even when the current server reports no matching session. They
+cannot be reconciled automatically without that evidence. Changing the configured
+address or deleting files does not release the reservation. If the remaining
+budget is insufficient, the owner can revoke the affected link and create a new
+inbox link with a fresh budget.
+
+Inboxes hide uploaded names by default and show only the visitor's immediate
+confirmation. Creators can opt to show the names of successful uploads through
+that inbox. This never exposes pre-existing folder contents or grants download
+access. Public uploads use short-lived Filegate sessions and never replace
+existing files. Share, trash, and public name lists provide explicit pagination.
 
 ## Configure storage
 
-Open `/admin/filesv2` for four administration views: **Overview**,
-**Directories**, **Archive**, and **Settings**. Overview shows the selected
+Open `/admin/filesv2` for **Overview**, **Directories**, **Archive**,
+**Shares**, and **Settings**. Overview shows the selected
 root's capabilities and available storage measurements. Directories lists
 identities and filesystem entries, with actions appropriate to each state.
 Archive keeps removed storage available for inspection and recovery. Settings
@@ -165,6 +209,17 @@ Directory operations keep durable progress so a lost response can be reconciled
 against the filesystem. An ambiguous or conflicting state remains visible for
 administrator investigation instead of overwriting another directory.
 
+User trash and restore operations also record their intent before moving data.
+Each trashed entry gets a unique destination. Entries found directly in `trash`
+remain visible after access checks even without a Cloud record; an unknown
+original location requires an explicit restore path. Restore never overwrites
+an existing destination. Pending or ambiguous moves remain visible for review.
+
+Multi-entry moves, copies, and trash actions report results per item. Selecting
+a folder and one of its children processes the folder once. Successful items
+remain completed when another item fails; retry only the failed items. A batch
+is not an atomic transaction.
+
 ## Understand the source of truth
 
 The filesystem determines which files and directories exist. Filegate's index
@@ -206,8 +261,10 @@ access ends a session at its next call and no instance keeps editor state.
 Document bytes move between Filegate and Collabora on the server side through
 the configured backend address; the Filegate token never leaves the backend.
 Every save replaces the file in Filegate, and the root's versioning policy
-decides which saves become versions. A save whose base timestamp no longer
-matches the stored file is refused so Collabora can show its conflict dialog.
+decides which saves become versions. The application rejects a save when its base timestamp already differs from
+the stored file. This check is not an atomic conditional write: simultaneous
+external writes still require the Filegate changes described below. An open
+Collabora editor keeps its initial theme; reopen it after a theme change.
 
 Several Collabora instances need sticky routing on the `WOPISrc` parameter,
 which is a Collabora deployment concern; Filesv2 scales horizontally
@@ -237,6 +294,10 @@ cld filesv2 documents create <base-id> Documents/Minutes --kind text --json
 cld filesv2 edit-url <base-id> Documents/Minutes.odt
 cld filesv2 recent --json
 cld filesv2 favorites add <base-id> Documents --json
+cld filesv2 shares list --after <next> --json
+cld filesv2 admin shares list --json
+cld filesv2 admin shares revoke <share-id> --json
+cld filesv2 admin uploads list --json
 cld filesv2 admin inventory --area freeipa --kind groups --json
 cld filesv2 admin configuration get --json
 cld filesv2 admin configuration set --input-file ./filesv2.json --json
@@ -275,6 +336,17 @@ means the action has not yet completed; inspect the current state and use
 Rebuild and statistics commands affect the entire Filegate
 root, including paths outside the configured prefix.
 
+Uploads read bounded file segments from disk and send them directly to Filegate,
+with bounded retries and lease renewal. Cancellation requests an abort before
+commit. If a commit response is lost, inspect the target before retrying: the
+file may already have been published.
+
+Document preview conversions accept at most 20 MiB input and 8 MiB output, with
+a 30-second deadline and two concurrent conversions per application process.
+The cache holds at most 64 MiB or 128 previews for five minutes; identical
+in-flight requests share one conversion. Current access is checked before a
+cached result is used. Busy, failed, or oversized previews leave download available.
+
 ## Current scope
 
 This version includes browsing, uploads, trash and restore, version history,
@@ -283,6 +355,13 @@ configuration, directory provisioning and reconciliation, and administrator
 archive, restore, and permanent deletion. Comments and AI assistance inside the
 editor are not part of this version. The reserved top-level `trash` directory
 is excluded from ordinary browsing and downloads.
+
+Production acceptance still depends on Filegate guarantees for recursive Unix
+execution, atomic conditional publishing (including WOPI), historical-version
+copies to a new target, transfer conflict handling, and sorting/filtering before
+pagination. Direct generated document-preview leases are also outstanding;
+the existing bounded conversion path remains server-side. Cloud access checks,
+recovery journals, and partial batch results do not supply those guarantees.
 
 The existing Files application remains independent and uses its older Filegate
 API. There is no automatic migration of its settings or storage. Operators map

@@ -24,6 +24,7 @@ import { apiClient } from "../api/client";
 import { ErrorSchema, InventoryStateSchema } from "../contracts";
 import AdminBrowser from "./AdminBrowser";
 import AdminIssue from "./AdminIssue";
+import AdminShares from "./AdminShares";
 import ArchiveTable from "./ArchiveTable";
 import { createAdminActions } from "./admin-actions";
 import { type AdminLocation, type AdminSnapshot, type AdminView, adminHref, parseAdminLocation } from "./admin-location";
@@ -87,6 +88,10 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
             { init: { signal } },
           ),
         );
+      if (location.view === "shares") {
+        snapshot.shares = await read(await apiClient.admin.shares.$get({ query: {} }, { init: { signal } }));
+        snapshot.uploads = await read(await apiClient.admin.uploads.$get({ query: {} }, { init: { signal } }));
+      }
       return snapshot;
     },
   });
@@ -145,11 +150,12 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
     { value: "overview" as const, label: a().overview, icon: "ti ti-chart-bar" },
     { value: "directories" as const, label: a().directories, icon: "ti ti-folders" },
     { value: "archive" as const, label: a().archives, icon: "ti ti-archive" },
+    { value: "shares" as const, label: a().shares, icon: "ti ti-world-share" },
     { value: "settings" as const, label: a().settings, icon: "ti ti-settings" },
   ];
   const title = () => (location().view === "archive" ? a().archives : a()[location().view]);
   const description = () =>
-    location().view === "archive"
+    location().view === "shares" ? a().sharesDescription : location().view === "archive"
       ? a().archiveDescription
       : location().view === "directories"
         ? a().directoriesDescription
@@ -270,7 +276,7 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
               <Show when={location().view === "overview"}>
                 <NoticeCard tone="info" title={a().modelTitle} detail={a().modelDetail} />
               </Show>
-              <Show when={location().view === "overview" || snapshot().browse || result().issue}>
+              <Show when={location().view !== "shares" && (location().view === "overview" || snapshot().browse || result().issue)}>
                 <Select
                   label={a().area}
                   value={location().area}
@@ -298,7 +304,7 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                 )}
               </Show>
               <Show
-                when={!result().issue}
+                when={!result().issue || location().view === "shares"}
                 fallback={
                   <Placeholder
                     state="error"
@@ -319,11 +325,13 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                 }
               >
                 <Switch>
+                  <Match when={location().view === "shares"}><AdminShares shares={snapshot().shares ?? { items: [], next: null }} uploads={snapshot().uploads ?? { items: [], next: null }} /></Match>
                   <Match when={snapshot().browse}>
                     {(browse) => (
                       <>
                         <AdminBrowser
                           browse={browse()}
+                          versioningEnabled={browse().versioningEnabled}
                           location={location()}
                           busy={actions.busy()}
                           onNavigate={onNavigate}

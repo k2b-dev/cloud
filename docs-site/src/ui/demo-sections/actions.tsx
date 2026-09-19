@@ -476,6 +476,8 @@ export const FilterDemo = () => {
 <FilterChip
   label="Baseline"
   icon="ti ti-filter"
+  iconOnly
+  variant="input"
   value={resetValue()}
   onValueChange={setResetValue}
   defaultValue={["open"]}
@@ -494,6 +496,8 @@ export const FilterDemo = () => {
         <FilterChip
           label="Baseline"
           icon="ti ti-filter"
+          iconOnly
+          variant="input"
           value={resetValue()}
           onValueChange={setResetValue}
           defaultValue={["open"]}

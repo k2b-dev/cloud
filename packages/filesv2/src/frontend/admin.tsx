@@ -42,6 +42,10 @@ export default ssr<AuthContext>(async (c) => {
         q: location.q,
         after: location.after,
       });
+    if (location.view === "shares") {
+      initial.shares = await filesService.listShares(actor, { admin: true });
+      initial.uploads = await filesService.adminUploadReservations(actor);
+    }
   } catch (error) {
     if (error instanceof FilesError || error instanceof AccountIdentityError)
       return ssr.error(c, error.status, { description: error.status === 404 ? a.missingHint : a.connectionHint });

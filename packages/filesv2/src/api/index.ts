@@ -26,6 +26,9 @@ import {
   BrowseQuerySchema,
   ConfigurationInputSchema,
   ConfirmPathSchema,
+  CopyInputSchema,
+  CreateDocumentInputSchema,
+  CreateShareInputSchema,
   DeleteDirectorySchema,
   DirectoryIdentitySchema,
   DirectoryInputSchema,
@@ -34,19 +37,17 @@ import {
   EntryQuerySchema,
   ErrorSchema,
   FavoriteInputSchema,
-  RootActionSchema,
-  SearchQuerySchema,
-  ThumbnailInputSchema,
-  UploadIdSchema,
-  UploadInputSchema,
-  CopyInputSchema,
-  CreateDocumentInputSchema,
-  CreateShareInputSchema,
-  ShareIdSchema,
   MoveInputSchema,
   PathsInputSchema,
   RenameInputSchema,
+  RootActionSchema,
+  SearchQuerySchema,
+  ShareIdSchema,
+  SharePageQuerySchema,
+  ThumbnailInputSchema,
   TrashIdSchema,
+  UploadIdSchema,
+  UploadInputSchema,
   VersionCommentSchema,
   VersionRefSchema,
   VersionRestoreAsSchema,
@@ -197,14 +198,15 @@ const api = new Hono<AuthContext>()
     v("json", PathsInputSchema),
     async (c) => respond(c, ok(await filesService.remove(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
-  .get("/bases/:baseId/trash", middleware.openapi({ summary: "List trashed entries", ...requiresAuth }), async (c) =>
-    respond(c, ok(await filesService.trash(c.get("actor"), { baseId: c.req.param("baseId") ?? "" }))),
+  .get("/bases/:baseId/trash", middleware.openapi({ summary: "List trashed entries", ...requiresAuth }), v("query", z.object({ after: z.string().max(16384).optional() })), async (c) =>
+    respond(c, ok(await filesService.trash(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
   )
   .post(
     "/bases/:baseId/trash/:id/restore",
     middleware.openapi({ summary: "Restore a trashed entry to its original path", ...requiresAuth }),
     v("param", TrashIdSchema.extend({ baseId: z.string() })),
-    async (c) => respond(c, ok(await filesService.restoreTrash(c.get("actor"), c.req.valid("param")))),
+    v("query", z.object({ path: z.string().min(1).max(4096).optional() })),
+    async (c) => respond(c, ok(await filesService.restoreTrash(c.get("actor"), { ...c.req.valid("param"), ...c.req.valid("query") }))),
   )
   .post(
     "/bases/:baseId/archive",
@@ -237,22 +239,13 @@ const api = new Hono<AuthContext>()
     async (c) => respond(c, ok(await filesService.restoreVersionAs(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
-    "/bases/:baseId/versions/delete",
-    middleware.openapi({ summary: "Delete a version", ...requiresAuth }),
-    v("json", VersionRefSchema),
-    async (c) => {
-      await filesService.deleteVersion(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") });
-      return respond(c, ok({ deleted: true }));
-    },
-  )
-  .post(
     "/bases/:baseId/versions/download",
     middleware.openapi({ summary: "Issue a direct download lease for a version", ...requiresAuth }),
     v("json", VersionRefSchema),
     async (c) => respond(c, ok(await filesService.versionDownload(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
-  .get("/shares", middleware.openapi({ summary: "List public shares visible to the user", ...requiresAuth }), async (c) =>
-    respond(c, ok(await filesService.listShares(c.get("actor")))),
+  .get("/shares", middleware.openapi({ summary: "List public shares owned by the user", ...requiresAuth }), v("query", SharePageQuerySchema), async (c) =>
+    respond(c, ok(await filesService.listShares(c.get("actor"), c.req.valid("query")))),
   )
   .post(
     "/bases/:baseId/shares",
@@ -274,6 +267,27 @@ const api = new Hono<AuthContext>()
       respond(c, ok(await filesService.thumbnail(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .use("/admin/*", auth.requireRole("admin"))
+  .get("/admin/shares", middleware.openapi({ summary: "List all public shares as administrator", ...requiresAdmin }), v("query", SharePageQuerySchema), async (c) =>
+    respond(c, ok(await filesService.listShares(c.get("actor"), { ...c.req.valid("query"), admin: true }))),
+  )
+  .post("/admin/shares/:id/revoke", middleware.openapi({ summary: "Revoke any public share as administrator", ...requiresAdmin }), v("param", ShareIdSchema), async (c) =>
+    respond(c, ok(await filesService.revokeShare(c.get("actor"), { ...c.req.valid("param"), admin: true }))),
+  )
+  .get("/admin/uploads", middleware.openapi({ summary: "Inspect unresolved inbox upload reservations", ...requiresAdmin }), v("query", z.object({ after: z.string().max(256).optional() })), async (c) =>
+    respond(c, ok(await filesService.adminUploadReservations(c.get("actor"), c.req.valid("query")))),
+  )
+  .get(
+    "/admin/versions",
+    middleware.openapi({ summary: "Read file versions as administrator", ...requiresAdmin }),
+    v("query", AdminLocatorSchema),
+    async (c) => respond(c, ok(await filesService.adminVersions(c.get("actor"), c.req.valid("query")))),
+  )
+  .delete(
+    "/admin/versions",
+    middleware.openapi({ summary: "Permanently delete a confirmed file version", ...requiresAdmin }),
+    v("json", AdminLocatorSchema.extend({ id: VersionRefSchema.shape.id, confirmPath: z.string().min(1).max(4096) })),
+    async (c) => respond(c, ok(await filesService.adminDeleteVersion(c.get("actor"), c.req.valid("json")))),
+  )
   .get(
     "/admin",
     auth.requireRole("admin"),

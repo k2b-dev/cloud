@@ -6,7 +6,11 @@ import { type CloudCliContext, cliText } from "@k2b/cloud/cli";
 import type { ArchiveDownload, DownloadLease } from "./contracts";
 
 /** Only the lease request uses Cloud authentication; file bytes go directly to disk. */
-export async function downloadFile(ctx: CloudCliContext, output: string, requestLease: (signal: AbortSignal) => Promise<DownloadLease | ArchiveDownload>) {
+export async function downloadFile(
+  ctx: Pick<CloudCliContext, "options">,
+  output: string,
+  requestLease: (signal: AbortSignal) => Promise<DownloadLease | ArchiveDownload>,
+) {
   const path = resolve(output);
   const exists = () => new Error(cliText(ctx, { en: "The output path already exists.", de: "Der Zielpfad existiert bereits." }));
   const existing = await lstat(path).catch((error: NodeJS.ErrnoException) => {
@@ -21,22 +25,44 @@ export async function downloadFile(ctx: CloudCliContext, output: string, request
   process.once("SIGINT", abort);
   process.once("SIGTERM", abort);
   try {
-    const lease = await requestLease(controller.signal);
     let bytes: number;
     try {
-      const url = new URL(lease.url);
-      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || (lease.method !== "GET" && lease.method !== "POST")) throw new Error();
-      // Archive leases are POSTed with their signed manifest; single files are plain GETs.
-      const response = await fetch(url, {
-        method: lease.method,
-        body: lease.method === "POST" ? new URLSearchParams({ manifest: lease.manifest }) : undefined,
-        credentials: "omit",
-        redirect: "error",
-        headers: { "Accept-Encoding": "identity" },
-        signal: controller.signal,
-      });
-      if (response.status !== 200 || !response.body) {
-        await response.body?.cancel();
+      let response: Response | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        controller.signal.throwIfAborted();
+        const requestSignal = AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]);
+        const lease = await requestLease(requestSignal);
+        const url = new URL(lease.url);
+        if (
+          !["http:", "https:"].includes(url.protocol) ||
+          url.username ||
+          url.password ||
+          (lease.method !== "GET" && lease.method !== "POST")
+        )
+          throw new Error();
+        const headersController = new AbortController();
+        const headersTimeout = setTimeout(() => headersController.abort(), 60_000);
+        try {
+          // Archive leases are POSTed with their signed manifest; single files are plain GETs.
+          response = await fetch(url, {
+            method: lease.method,
+            body: lease.method === "POST" ? new URLSearchParams({ manifest: lease.manifest }) : undefined,
+            credentials: "omit",
+            redirect: "error",
+            headers: { "Accept-Encoding": "identity" },
+            signal: AbortSignal.any([controller.signal, headersController.signal]),
+          });
+        } finally {
+          clearTimeout(headersTimeout);
+        }
+        if ([401, 403, 429, 502, 503, 504].includes(response.status) && attempt < 2) {
+          await response.body?.cancel();
+          continue;
+        }
+        break;
+      }
+      if (!response || response.status !== 200 || !response.body) {
+        await response?.body?.cancel();
         throw new Error();
       }
       await pipeline(response.body, createWriteStream(part, { flags: "wx", mode: 0o600 }), { signal: controller.signal });

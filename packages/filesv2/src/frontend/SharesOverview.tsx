@@ -1,18 +1,35 @@
-import { AppWorkspace, Button, ButtonLink, CopyButton, DataTable, Format, Placeholder, prompts, StatusBadge, Tag, toast, Tooltip } from "@k2b/ui";
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
+import { AppWorkspace, Button, ButtonLink, DataTable, Format, Placeholder, prompts, StatusBadge, Tag, Tooltip, toast } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "../api/client";
-import type { ShareView } from "../contracts";
+import type { SharePage, ShareView } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { filesUrl } from "./urls";
 
-/** Every share the user may see; visibility follows the scope folder, so group members manage each other's links. */
-export default function SharesOverview(props: { shares: ShareView[] }) {
+/** Owners retain access to their link management even after losing access to its former storage. */
+export default function SharesOverview(props: { shares: SharePage | ShareView[]; baseId?: string | null; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void> }) {
   const b = useBrowserMessages();
   const t = useFilesMessages();
-  const [shares, setShares] = createSignal(props.shares);
-  createEffect(() => setShares(props.shares));
+  const page = () => Array.isArray(props.shares) ? { items: props.shares, next: null } : props.shares;
+  const [shares, setShares] = createSignal(page().items);
+  const [next, setNext] = createSignal(page().next);
+  createEffect(() => { setShares(page().items); setNext(page().next); });
+  const [loading, setLoading] = createSignal(false);
+  const more = async () => {
+    const after = next();
+    if (!after || loading()) return;
+    setLoading(true);
+    try {
+      const response = await apiClient.shares.$get({ query: { after } });
+      if (!response.ok) await apiFailure(response, b().revokeFailed);
+      const result = await response.json();
+      setShares((current) => [...current, ...result.items]);
+      setNext(result.next);
+    } catch (error) { toast.error(error instanceof Error ? error.message : b().revokeFailed); }
+    finally { setLoading(false); }
+  };
   const [busy, setBusy] = createSignal<string | null>(null);
   const revoke = async (share: ShareView) => {
     const confirmed = await prompts.confirm(b().revokeQuestion, { title: b().revoke, icon: "ti ti-link-off", variant: "danger", confirmText: b().revoke });
@@ -45,6 +62,9 @@ export default function SharesOverview(props: { shares: ShareView[] }) {
           <h1 class="truncate text-base font-semibold text-primary">{b().sharesTitle}</h1>
           <p class="mt-0.5 text-xs text-dimmed">{b().sharesDescription}</p>
         </div>
+        <ButtonLink size="sm" variant="ghost" href={filesUrl(props.baseId ?? undefined)} navigation="enhanced" onNavigate={props.onNavigate}>
+          <i class="ti ti-arrow-left" aria-hidden="true" />{b().backToFiles}
+        </ButtonLink>
       </header>
       <Show when={shares().length} fallback={<Placeholder class="mx-3 flex-1" variant="panel" icon="ti ti-world-share" title={b().sharesTitle} description={b().noShares} />}>
         <DataTable
@@ -80,24 +100,16 @@ export default function SharesOverview(props: { shares: ShareView[] }) {
               );
             if (col.id === "scope")
               return (
-                <ButtonLink size="xs" variant="text" href={filesUrl(row.base.id, row.scope)}>
+                <ButtonLink size="xs" variant="text" href={filesUrl(row.base.id, row.scope)} navigation="enhanced" onNavigate={props.onNavigate}>
                   {row.base.name}
                   {row.scope ? ` / ${row.scope}` : ""}
                 </ButtonLink>
               );
-            if (col.id === "expires") return <Format.DateTime value={row.expiresAt} />;
+            if (col.id === "expires") return row.expiresAt ? <Format.DateTime value={row.expiresAt} /> : b().noExpiry;
             if (col.id === "state") return stateBadge(row);
             return (
               <div class="flex items-center justify-end gap-1">
                 <Show when={row.state === "active"}>
-                  <Tooltip.Anchor content={b().copyLink}>
-                    <CopyButton text={row.url} label={b().copyLink} copiedLabel={b().copiedLink} iconOnly />
-                  </Tooltip.Anchor>
-                  <Tooltip.Anchor content={b().openLink}>
-                    <ButtonLink size="sm" variant="ghost" href={row.url} navigation="document" target="_blank" rel="noopener" aria-label={b().openLink}>
-                      <i class="ti ti-external-link" aria-hidden="true" />
-                    </ButtonLink>
-                  </Tooltip.Anchor>
                   <Tooltip.Anchor content={b().revoke}>
                     <Button size="sm" variant="ghost" class="hover:text-danger" loading={busy() === row.id} onClick={() => void revoke(row)} aria-label={b().revoke}>
                       <i class="ti ti-link-off" aria-hidden="true" />
@@ -109,6 +121,7 @@ export default function SharesOverview(props: { shares: ShareView[] }) {
           }}
         />
       </Show>
+      <Show when={next()}><div class="p-3"><Button variant="secondary" loading={loading()} onClick={() => void more()}>{b().moreShares}</Button></div></Show>
     </AppWorkspace.Main>
   );
 }

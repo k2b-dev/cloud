@@ -1,12 +1,11 @@
-import { Button, CopyButton, dialogCore, InlineGuidance, NoticeCard, PanelDialog, panelDialogOptions, TextInput, toast } from "@k2b/ui";
+import { Button, Checkbox, CopyButton, dialogCore, InlineGuidance, NoticeCard, NumberInput, PanelDialog, panelDialogOptions, TextInput, toast } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { ShareView } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
-import { useFilesMessages } from "./messages";
 
-type Validity = "1d" | "7d" | "30d" | "90d";
+type Validity = "1d" | "7d" | "30d" | "90d" | "unlimited";
 
 /** Creates a download share for entries or an upload inbox for a folder and shows the link once created. */
 export function openShareDialog(options: { baseId: string; kind: "download" | "inbox"; paths?: readonly string[]; folder?: string; defaultTitle: string }) {
@@ -15,10 +14,12 @@ export function openShareDialog(options: { baseId: string; kind: "download" | "i
 
 function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: readonly string[]; folder?: string; defaultTitle: string; close: (value: ShareView | null) => void }) {
   const b = useBrowserMessages();
-  const t = useFilesMessages();
   const [title, setTitle] = createSignal(props.defaultTitle);
   const [note, setNote] = createSignal("");
   const [validity, setValidity] = createSignal<Validity>("30d");
+  const [maxFileSize, setMaxFileSize] = createSignal<number | null>(100);
+  const [maxTotalSize, setMaxTotalSize] = createSignal<number | null>(1024);
+  const [showUploadNames, setShowUploadNames] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [created, setCreated] = createSignal<ShareView | null>(null);
   const options: { value: Validity; label: string }[] = [
@@ -26,21 +27,25 @@ function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: 
     { value: "7d", label: b().sevenDays },
     { value: "30d", label: b().thirtyDays },
     { value: "90d", label: b().ninetyDays },
+    { value: "unlimited", label: b().noExpiry },
   ];
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
     if (!title().trim() || busy()) return;
+    const fileLimit = Number(maxFileSize()) * 1024 * 1024;
+    const totalLimit = Number(maxTotalSize()) * 1024 * 1024;
+    if (![fileLimit, totalLimit].every((value) => Number.isSafeInteger(value) && value > 0) || fileLimit > totalLimit) { toast.error(b().quotaInvalid); return; }
     setBusy(true);
     try {
       const response = await apiClient.bases[":baseId"].shares.$post({
         param: { baseId: props.baseId },
-        json: { kind: props.kind, paths: [...(props.paths ?? [])], folder: props.folder ?? "", title: title().trim(), note: note().trim() || undefined, expiresIn: validity() },
+        json: { kind: props.kind, paths: [...(props.paths ?? [])], folder: props.folder ?? "", title: title().trim(), publicNote: note().trim() || undefined, expiresIn: validity(), maxFileSize: fileLimit, maxTotalSize: totalLimit, showUploadNames: showUploadNames() },
       });
       if (!response.ok) await apiFailure(response, b().shareCreateFailed);
       const share = await response.json();
       setCreated(share);
       try {
-        await navigator.clipboard.writeText(share.url);
+        if (share.url) await navigator.clipboard.writeText(share.url);
         toast.success(b().copiedLink);
       } catch {
         toast.success(b().shareCreated);
@@ -65,13 +70,14 @@ function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: 
           <>
             <PanelDialog.Body>
               <NoticeCard tone="success" title={b().shareCreated} detail={props.kind === "inbox" ? b().shareInboxScope : b().shareDownloadScope} />
+              <InlineGuidance icon="ti ti-key">{b().linkOnce}</InlineGuidance>
               <div class="flex flex-col gap-1 text-sm">
                 <span class="font-medium">{b().shareLink}</span>
                 <code class="break-all rounded-md bg-[var(--k2b-surface-muted)] px-2 py-1 text-xs">{created()!.url}</code>
               </div>
               <div class="flex flex-wrap gap-2">
-                <CopyButton text={created()!.url} label={b().copyLink} copiedLabel={b().copiedLink} />
-                <Button variant="ghost" size="sm" onClick={() => window.open(created()!.url, "_blank", "noopener")}>
+                <CopyButton text={created()!.url ?? ""} label={b().copyLink} copiedLabel={b().copiedLink} />
+                <Button variant="ghost" size="sm" onClick={() => window.open(created()!.url ?? "", "_blank", "noopener")}>
                   <i class="ti ti-external-link" aria-hidden="true" />
                   {b().openLink}
                 </Button>
@@ -107,6 +113,12 @@ function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: 
                 </For>
               </div>
             </fieldset>
+            <Show when={props.kind === "inbox"}>
+              <NumberInput label={b().maxFileSize} value={maxFileSize} onValueChange={setMaxFileSize} min={1} step={1} required />
+              <NumberInput label={b().maxTotalSize} value={maxTotalSize} onValueChange={setMaxTotalSize} min={1} step={1} required />
+              <InlineGuidance icon="ti ti-info-circle">{b().inboxQuotaHint}</InlineGuidance>
+              <Checkbox label={b().showUploadNames} value={showUploadNames()} onValueChange={setShowUploadNames} />
+            </Show>
             <TextInput label={b().shareNote} description={b().shareNoteHint} value={note} onValueChange={setNote} maxLength={500} multiline lines={2} />
             <InlineGuidance icon="ti ti-info-circle">{props.kind === "inbox" ? b().shareInboxScope : b().shareDownloadScope}</InlineGuidance>
             <InlineGuidance icon="ti ti-users">{b().shareVisibility}</InlineGuidance>

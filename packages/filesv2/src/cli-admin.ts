@@ -12,7 +12,7 @@ import {
 import { z } from "zod";
 import type { ApiType } from "./api";
 import { downloadFile } from "./cli-download";
-import { type AdminBrowseResult, AdoptInputSchema, type ArchivePage, type DownloadLease } from "./contracts";
+import { type AdminBrowseResult, AdoptInputSchema, type ArchivePage, type DownloadLease, type FileVersion, type SharePage, type ShareView } from "./contracts";
 
 export function adminLifecycleCommands(locale?: string) {
   const t = (text: CloudCliText) => localizeCloudCliText(locale, text);
@@ -68,6 +68,51 @@ export function adminLifecycleCommands(locale?: string) {
     if (cursor && ctx.options.output === "text") ctx.error(`${t({ en: "Next page: --after", de: "Nächste Seite: --after" })} ${cursor}`);
   };
   return [
+    command("admin shares list", {
+      summary: t({ en: "List all public shares, including owners without file access", de: "Alle öffentlichen Freigaben anzeigen, auch nach Rechteverlust des Besitzers" }),
+      flags: { after },
+      async run({ ctx, flags }) {
+        const page = await ctx.readJson<SharePage>(await api(ctx).admin.shares.$get({ query: { after: flags.after } }));
+        printRows(ctx, ctx.options.output === "jsonl" ? page.items : page, page.items, [
+          { key: "id", label: "ID" }, { key: "title", label: t({ en: "Name", de: "Name" }) }, { key: "createdBy", label: t({ en: "Owner", de: "Besitzer" }) }, { key: "state", label: "Status" },
+        ]);
+        if (page.next && ctx.options.output === "text") ctx.error(`--after ${page.next}`);
+      },
+    }),
+    command("admin shares revoke", {
+      summary: t({ en: "Revoke a public share as administrator", de: "Öffentliche Freigabe als Administrator sperren" }),
+      args: { id: arg.required({ description: t({ en: "Share ID", de: "Freigabe-ID" }) }) },
+      async run({ ctx, args }) {
+        const share = await ctx.readJson<ShareView>(await api(ctx).admin.shares[":id"].revoke.$post({ param: { id: args.id } }));
+        if (!printStructured(ctx, share)) ctx.print(`${share.title}: ${share.state}`);
+      },
+    }),
+    command("admin uploads list", {
+      summary: t({ en: "Inspect unresolved inbox reservations", de: "Ungeklärte Eingangsreservierungen prüfen" }),
+      flags: { after },
+      async run({ ctx, flags }) {
+        const page = await ctx.readJson<{ items: { id: string; shareId: string | null; path: string; size: number; state: string; error: string | null; updatedAt: string }[]; next: string | null }>(await api(ctx).admin.uploads.$get({ query: { after: flags.after } }));
+        printRows(ctx, ctx.options.output === "jsonl" ? page.items : page, page.items, [{ key: "id", label: "ID" }, { key: "path", label: t({ en: "Path", de: "Pfad" }) }, { key: "size", label: "Bytes" }, { key: "error", label: t({ en: "Reason", de: "Grund" }) }]);
+        if (page.next && ctx.options.output === "text") ctx.error(`--after ${page.next}`);
+      },
+    }),
+    command("admin versions list", {
+      summary: t({ en: "List historical versions as administrator", de: "Historische Versionen als Administrator auflisten" }),
+      args: { path }, flags: locatorFlags,
+      async run({ ctx, args, flags }) {
+        const rows = await ctx.readJson<FileVersion[]>(await api(ctx).admin.versions.$get({ query: { ...locator(flags), path: args.path } }));
+        printRows(ctx, rows, rows, [{ key: "id", label: "ID" }, { key: "created", label: t({ en: "Created", de: "Erstellt" }) }, { key: "size", label: "Bytes" }]);
+      },
+    }),
+    command("admin versions delete", {
+      summary: t({ en: "Permanently delete a file version", de: "Eine Dateiversion endgültig löschen" }),
+      args: { path, id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }) },
+      flags: { ...locatorFlags, yes, confirmPath },
+      async run({ ctx, args, flags }) {
+        requireYes(flags.yes);
+        await result(ctx, await api(ctx).admin.versions.$delete({ json: { ...locator(flags), path: args.path, id: args.id, confirmPath: confirmation(flags.confirmPath) } }), { en: "Version deleted.", de: "Version gelöscht." });
+      },
+    }),
     command("admin operations retry", {
       summary: t({ en: "Retry a pending operation after fresh checks", de: "Ausstehende Aktion nach erneuter Prüfung fortsetzen" }),
       description: t({

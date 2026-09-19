@@ -453,3 +453,14 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* Keep the favorite's state visible without turning its outline into a filled icon. */
+.filesv2-favorite { position: relative; }
+.filesv2-favorite[data-favorite="true"] .filesv2-favorite__star { color: var(--k2b-warning-500); }
+.filesv2-favorite__remove { display: none; color: var(--k2b-danger-text); }
+.filesv2-favorite[data-favorite="true"]:focus-visible .filesv2-favorite__star { display: none; }
+.filesv2-favorite[data-favorite="true"]:focus-visible .filesv2-favorite__remove { display: inline; }
+@media (hover: hover) and (pointer: fine) {
+  .filesv2-favorite[data-favorite="true"]:hover .filesv2-favorite__star { display: none; }
+  .filesv2-favorite[data-favorite="true"]:hover .filesv2-favorite__remove { display: inline; }
+}

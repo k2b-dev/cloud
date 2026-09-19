@@ -7,6 +7,7 @@ const viewSchema = z.object({
   size: z.enum(["sm", "md", "lg"]).default("md"),
   sort: z.enum(SORT_KEYS).default("name"),
   direction: z.enum(["asc", "desc"]).default("asc"),
+  groupFolders: z.boolean().default(true),
 });
 export type ViewPreference = z.infer<typeof viewSchema>;
 export const defaultView: ViewPreference = viewSchema.parse({});
@@ -14,7 +15,7 @@ export const defaultView: ViewPreference = viewSchema.parse({});
 const cookieSchema = z.record(z.string(), viewSchema);
 export const preferencesCookie = "filesv2-view";
 const BASE_LIMIT = 40;
-export const folderKey = (baseId: string, path: string) => `${baseId}:${path}`;
+export const folderKey = (baseId: string, path: string) => JSON.stringify([baseId, path]);
 const baseKey = (baseId: string) => baseId;
 
 export function parsePreferences(cookie?: string): Record<string, ViewPreference> {

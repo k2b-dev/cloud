@@ -57,7 +57,7 @@ export default function Editor(props: { launch: EditorLaunch; onBack: () => void
     setTheme(cloudTheme());
     setDark(isDark());
     const onMessage = (event: MessageEvent) => {
-      if (event.source !== frame.contentWindow || typeof event.data !== "string") return;
+      if (event.source !== frame.contentWindow || event.origin !== new URL(props.launch.action).origin || typeof event.data !== "string") return;
       let message: { MessageId?: string; Values?: Record<string, unknown> };
       try {
         message = JSON.parse(event.data);

@@ -6,7 +6,7 @@ description: Connect Filegate, inspect directories, and manage their archive and
 order: 200
 ---
 
-Open **File administration** to manage Files v2. Its four views separate storage information, current directories, archived directories, and settings. Filters, folders, and pages remain in the address, including when you use Back or Forward.
+Open **File administration** to manage Files v2. Its views separate storage information, current directories, archived directories, public shares, and settings. Filters, folders, and pages remain in the address, including when you use Back or Forward.
 
 ## Connect storage in Settings
 
@@ -22,7 +22,7 @@ Cloud storage requires enabled local Linux identities. Only eligible user accoun
 
 The overview shows capacity, available space, active uploads, counts, and sizes for the selected root. Unknown values stay unknown. Statistics cover the whole root, including paths outside an area's prefix.
 
-Index and version-history settings come from Filegate. **Refresh statistics** requests an updated root summary. **Rebuild index** requires confirmation because it affects the whole root.
+Index and version-history settings come from Filegate. **Refresh** requests an updated root summary. **Rebuild index** requires confirmation because it affects the whole root.
 
 ## Inspect Directories
 
@@ -53,8 +53,22 @@ A result of **In progress** means completion has not yet been confirmed. Refresh
 
 The archive view shows original paths and archive dates. Open an archived directory to inspect its contents. **Restore** moves it back to its original path after confirmation; that destination must be available. Permanent deletion of an archive or an individual file requires its exact path. These destructive actions exist only in the administrator interface and the administrator CLI.
 
+## Manage public shares and inboxes
+
+**Shares** lists all public links; ordinary users see only their own. Administrators can revoke a link independently of its creator's remaining access. Links are shown only when created. Existing URLs remain valid after the token-storage upgrade, but neither users nor administrators can recover them from the overview. Internal notes remain private; only the separate public note is visible to visitors.
+
+Inboxes default to 100 MiB per file and 1 GiB cumulative total, including links that existed before this upgrade. Confirmed uploads and pending reservations both count against the total. Deleting received files does not restore this budget. Reconciliation continues after a link expires or is revoked. An unresolved transfer keeps its reservation until there is a reliable outcome; inspect the listed path, error, and session before taking action. Do not treat a missing receipt as proof that no file was written.
+
+## Inspect trash and versions
+
+User trash and restore actions record progress before moving a file. An ambiguous result remains pending instead of being reported as completed. Items discovered directly in `trash` can have an unknown original path or deletion time; restoring them requires an explicit destination. Existing destinations are never replaced. Multi-entry operations can partly succeed; inspect each result before retrying failed items.
+
+Historical versions can be permanently deleted only from the administrator file browser's version action or `admin versions delete`. Confirm the exact file path and version first. Ordinary users can download, comment on, and restore versions, but cannot permanently delete them.
+
 ## Use the terminal
 
 `cld filesv2 admin inventory --area freeipa --kind groups --json` reads the same inventory. Pass a returned `next` cursor with `--after`. Read configuration with `cld filesv2 admin configuration get --json`; write a complete edited configuration with `cld filesv2 admin configuration set --input-file ./filesv2.json` or `--stdin`. An omitted or empty `token` preserves the secret.
 
-Use `cld filesv2 help` for the directory, archive, and inspection commands. CLI actions require the same administrative permissions and confirmations as their interface counterparts.
+Use `cld filesv2 admin shares list --json` lists all links; `admin shares revoke <share-id>` revokes one. `cld filesv2 admin uploads list --json` lists unresolved inbox reservations. These lists accept `--after` for further pages.
+
+`cld filesv2 help` for the directory, archive, and inspection commands. CLI actions require the same administrative permissions and confirmations as their interface counterparts.

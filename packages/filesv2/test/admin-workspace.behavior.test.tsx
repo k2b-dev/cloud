@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { createComponent, createRoot } from "solid-js";
+import { createComponent, createRoot, createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { AdminResult, ArchiveEntry, InventoryEntry } from "../src/contracts";
@@ -17,6 +17,7 @@ if (!isServer) {
         configuration: { $put: request("configuration") },
         root: { refresh: { $post: request("root-refresh") } },
         entries: { $get: request("entries"), $delete: request("delete-entry") },
+        versions: { $get: request("versions"), $delete: request("delete-version") },
         directories: { create: { $post: request("create") }, archive: { $post: request("archive") }, delete: { $post: request("delete") } },
         archives: { $get: request("archives"), ":id": { restore: { $post: request("restore") }, $delete: request("delete-archive") } },
       },
@@ -390,4 +391,108 @@ describe("Files v2 admin workspace", () => {
     [...detailsPanel.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Close")!.click();
     await details;
   });
+  test("admin version deletion requires the full path and reloads only after a successful deletion", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    delegateEvents(["click"]);
+    const { default: AdminVersions } = await import("../src/frontend/AdminVersions");
+    const locator = { area: "cloud" as const, kind: "users" as const, name: "alice", path: "report.txt" };
+    const dispose = render(() => createComponent(AdminVersions, {
+      locator, name: "report.txt", fullPath: "home/alice/report.txt", onClose: () => {},
+    }), dom.root);
+    cleanup = () => { dispose(); dom.cleanup(); };
+    await flush();
+    expect(requests[0]!.input).toEqual({ query: locator });
+    requests[0]!.resolve(Response.json([{ id: "v1", created: "2026-09-19T12:00:00Z", size: 42, pinned: false, comment: "Old draft", author: "Alice" }]));
+    await flush();
+    expect(dom.root.textContent).toContain("Old draft");
+    const remove = () => [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Delete version permanently"))!;
+    remove().click();
+    await flush();
+    const form = dom.document.querySelector<HTMLFormElement>(".k2b-dialog__panel")!;
+    const input = form.querySelector<HTMLInputElement>("input")!;
+    expect(form.textContent).toContain("v1");
+    input.value = "report.txt";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    expect(requests).toHaveLength(1);
+    expect(form.textContent).toContain("The path does not match");
+    input.value = "home/alice/report.txt";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    expect(requests[1]!.input).toEqual({ json: { ...locator, id: "v1", confirmPath: "home/alice/report.txt" } });
+    expect(remove().disabled).toBe(true);
+    requests[1]!.resolve(Response.json({ deleted: true }));
+    await flush();
+    expect(requests[2]!.kind).toBe("versions");
+    requests[2]!.resolve(Response.json([]));
+    await flush();
+    expect(dom.root.textContent).toContain("No earlier versions");
+    expect(dom.root.textContent).not.toContain("Old draft");
+  });
+
+  test("admin version history shows sanitized load errors and cancels a pending read when closed", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    delegateEvents(["click"]);
+    const { default: AdminVersions } = await import("../src/frontend/AdminVersions");
+    const dispose = render(() => createComponent(AdminVersions, {
+      locator: { area: "cloud", kind: "users", name: "alice", path: "report.txt" },
+      name: "report.txt", fullPath: "home/alice/report.txt", onClose: () => {},
+    }), dom.root);
+    cleanup = () => { dispose(); dom.cleanup(); };
+    await flush();
+    requests[0]!.resolve(Response.json({ code: "unavailable", message: "private backend detail" }, { status: 503 }));
+    await flush();
+    expect(dom.root.textContent).not.toContain("private backend detail");
+    expect(dom.root.textContent).toContain("The action could not be completed");
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Refresh")!.click();
+    await flush();
+    expect(requests[1]!.signal.aborted).toBe(false);
+    dispose();
+    await flush();
+    expect(requests[1]!.signal.aborted).toBe(true);
+  });
+
+  test("admin file rows expose version history lazily, while folders do not", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    delegateEvents(["click"]);
+    const { default: AdminBrowser } = await import("../src/frontend/AdminBrowser");
+    const [enabled, setEnabled] = createSignal<boolean | undefined>();
+    const dispose = render(() => createComponent(AdminBrowser, {
+      get versioningEnabled() { return enabled(); },
+      browse: {
+        area: "cloud", kind: "users", name: "alice", archiveId: null, basePath: "home/alice", path: "", next: null,
+        items: [
+          { path: "report.txt", name: "report.txt", directory: false, size: 42, modified: "2026-09-19T12:00:00Z" },
+          { path: "notes", name: "notes", directory: true, size: 0, modified: "2026-09-19T12:00:00Z" },
+        ],
+      },
+      location: parseAdminLocation("/admin/filesv2?view=directories&area=cloud&kind=users&name=alice"),
+      busy: false, onNavigate: async () => {}, onDelete: () => {},
+    }), dom.root);
+    cleanup = () => { dispose(); dom.cleanup(); };
+    await flush();
+    expect(requests).toHaveLength(0);
+    expect(dom.root.textContent).not.toContain("Versions");
+    setEnabled(false);
+    await flush();
+    expect(dom.root.textContent).not.toContain("Versions");
+    setEnabled(true);
+    await flush();
+    const versions = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].filter((button) => button.textContent?.includes("Versions"));
+    expect(versions).toHaveLength(1);
+    versions[0]!.click();
+    await flush();
+    expect(requests[0]!.input).toEqual({ query: { area: "cloud", kind: "users", name: "alice", path: "report.txt", archiveId: undefined } });
+    expect(dom.document.querySelector(".k2b-dialog__panel")?.textContent).toContain("home/alice/report.txt");
+    dispose();
+    await flush();
+    expect(requests[0]!.signal.aborted).toBe(true);
+    expect(dom.document.querySelector(".k2b-dialog__panel")).toBeNull();
+  });
+
 });

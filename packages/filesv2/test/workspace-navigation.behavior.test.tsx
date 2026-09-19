@@ -1,14 +1,14 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { createComponent, createRoot } from "solid-js";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { createComponent, createRoot, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import { createWorkspaceState, type WorkspaceSnapshot } from "../src/frontend/workspace-state";
 
-const apiRequests: Array<{ kind: string; resolve: (response: Response) => void }> = [];
+const apiRequests: Array<{ kind: string; input?: unknown; signal?: AbortSignal; resolve: (response: Response) => void }> = [];
 if (!isServer) {
-  const request = (kind: string) => () => new Promise<Response>((resolve) => apiRequests.push({ kind, resolve }));
+  const request = (kind: string) => (_input?: unknown, options?: { init?: { signal?: AbortSignal } }) => new Promise<Response>((resolve) => apiRequests.push({ kind, input: _input, signal: options?.init?.signal, resolve }));
   mock.module("../src/api/client", () => ({
-    apiClient: { bases: { $get: request("bases"), ":baseId": { entries: { $get: request("entries") } } } },
+    apiClient: { shares: { $get: request("shares") }, recent: { $get: request("recent") }, favorites: { $get: request("favorites") }, bases: { $get: request("bases"), ":baseId": { entries: { $get: request("entries") } } } },
   }));
 }
 
@@ -245,4 +245,160 @@ describe("Files v2 progressive navigation", () => {
     expect(dom.root.querySelector(".k2b-app-workspace__main")!.textContent).toContain("This folder is empty");
     expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "bases", "entries", "bases", "entries"]);
   });
+  test("marks load only while open, abort on close, refresh on reopen and use one compact ordered catalog", async () => {
+    const dom = createDomTestHarness();
+    const { MarksMenu, openMarksDialog } = await import("../src/frontend/MarksMenu");
+    const [open, setOpen] = createSignal(false);
+    const opened: string[] = [];
+    const dispose = render(() => createComponent(MarksMenu, { kind: "recent", get open() { return open(); }, close: () => setOpen(false), onOpen: entry => opened.push(entry.entry.path) }), dom.root);
+    cleanup = () => { dispose(); dom.cleanup(); };
+    await flush();
+    expect(apiRequests).toHaveLength(0);
+    setOpen(true);
+    await flush();
+    expect(apiRequests[0]!.kind).toBe("recent");
+    setOpen(false);
+    await flush();
+    expect(apiRequests[0]!.signal?.aborted).toBe(true);
+    setOpen(true);
+    await flush();
+    const make = (path: string, at: string) => ({ base: { id: "home", name: "Home", area: "cloud" }, entry: { path, name: "Notes", directory: false, size: 1, modified: at }, markedAt: at });
+    apiRequests[1]!.resolve(Response.json([make("old/Notes", "2026-01-01T00:00:00Z"), make("new/Notes", new Date().toISOString())]));
+    await flush();
+    apiRequests[0]!.resolve(Response.json([]));
+    await flush();
+    const entries = [...dom.root.querySelectorAll<HTMLButtonElement>("button")];
+    expect(entries).toHaveLength(2);
+    expect(entries[0]!.textContent).toContain("new/Notes");
+    expect(entries[0]!.querySelector("time")).not.toBeNull();
+    entries[0]!.click();
+    await flush();
+    expect(open()).toBe(false);
+    expect(opened).toEqual(["new/Notes"]);
+    const modal = openMarksDialog({ kind: "favorites", title: "Favorites", onOpen: entry => opened.push(entry.entry.path) });
+    await flush();
+    expect(apiRequests[2]!.kind).toBe("favorites");
+    apiRequests[2]!.resolve(Response.json([]));
+    await flush();
+    const dialog = dom.document.querySelector<HTMLDialogElement>("dialog")!;
+    expect(dialog.textContent).toContain("Mark files or folders as favorites");
+    dialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true }));
+    await modal;
+  });
+
+  test("an unchanged current page still refreshes a visible expanded browser branch without navigation", async () => {
+    const dom = createDomTestHarness();
+    Object.defineProperty(dom.document, "visibilityState", { configurable: true, value: "visible" });
+    const interval = globalThis.setInterval;
+    let poll: (() => void) | undefined;
+    const timerSpy = spyOn(globalThis, "setInterval").mockImplementation((handler, delay, ...args) => {
+      if (delay === 20_000 && typeof handler === "function") poll = handler;
+      return interval(handler, delay, ...args);
+    });
+    const base = { id: "home", name: "Home", area: "cloud" as const, kind: "users" as const, status: "existing" as const, reason: null, indexEnabled: false, versioningEnabled: false };
+    const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
+    const directory = { base, path: "", items: [folder], next: null };
+    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }), dom.root);
+    cleanup = () => { dispose(); timerSpy.mockRestore(); dom.cleanup(); };
+    await flush();
+    [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+    await flush();
+    dom.root.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.click();
+    await flush();
+    expect(apiRequests).toHaveLength(1);
+    apiRequests[0]!.resolve(Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "Old.txt", path: "Docs/Old.txt", directory: false }] }));
+    await flush();
+    expect(dom.root.textContent).toContain("Old.txt");
+    poll!();
+    await flush();
+    expect(apiRequests[1]!.input).toEqual({ param: { baseId: "home" }, query: { path: "", after: undefined } });
+    apiRequests[1]!.resolve(Response.json(directory));
+    await flush();
+    expect(apiRequests[2]!.input).toEqual({ param: { baseId: "home" }, query: { path: "Docs", after: undefined } });
+    apiRequests[2]!.resolve(Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "External.txt", path: "Docs/External.txt", directory: false }] }));
+    await flush();
+    expect(dom.root.textContent).toContain("External.txt");
+    expect(dom.root.textContent).not.toContain("Old.txt");
+    expect(apiRequests.map(item => item.kind)).toEqual(["entries", "entries", "entries"]);
+    expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.getAttribute("aria-expanded")).toBe("true");
+    poll!();
+    await flush();
+    const pending = apiRequests.at(-1)!;
+    dispose();
+    expect(pending.signal?.aborted).toBe(true);
+  });
+
+  test("a shares deep link remains account-scoped after its requested group disappears", async () => {
+    const dom = createDomTestHarness();
+    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const dispose = render(() => createComponent(Workspace, { initial, cloudUrl: "https://cloud.test" }), dom.root);
+    cleanup = () => { dispose(); dom.cleanup(); };
+    await flush();
+    dom.window.history.replaceState(null, "", "/app/filesv2?base=removed-group&view=shares");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    apiRequests[0]!.resolve(Response.json(initial.bases));
+    await flush();
+    expect(apiRequests[1]!.kind).toBe("shares");
+    apiRequests[1]!.resolve(Response.json({ items: [], next: null }));
+    await flush();
+    expect(dom.root.querySelector("h1")?.textContent).toBe("Shares");
+    expect(dom.root.textContent).not.toContain("This directory is missing");
+  });
+
+  test("unchanged root polling refreshes an expanded sidebar's children without fetching collapsed descendants", async () => {
+    const dom = createDomTestHarness();
+    Object.defineProperty(dom.document, "visibilityState", { configurable: true, value: "visible" });
+    const interval = globalThis.setInterval;
+    let poll: (() => void) | undefined;
+    const timerSpy = spyOn(globalThis, "setInterval").mockImplementation((handler, delay, ...args) => {
+      if (delay === 20_000 && typeof handler === "function") poll = handler;
+      return interval(handler, delay, ...args);
+    });
+    const base = { id: "home", name: "Home", area: "cloud" as const, kind: "users" as const, status: "existing" as const, reason: null, indexEnabled: false, versioningEnabled: false };
+    const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
+    const bases = { items: [base], issues: [], editor: null };
+    const directory = { base, path: "", items: [folder], next: null };
+    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }), dom.root);
+    cleanup = () => { dispose(); timerSpy.mockRestore(); dom.cleanup(); };
+    await flush();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=home&path=Docs"]')!.click();
+    await flush();
+    apiRequests[0]!.resolve(Response.json(bases));
+    await flush();
+    apiRequests[1]!.resolve(Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "Old nested folder", path: "Docs/Old" }] }));
+    await flush();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=home"]')!.click();
+    await flush();
+    apiRequests[2]!.resolve(Response.json(bases));
+    await flush();
+    apiRequests[3]!.resolve(Response.json(directory));
+    await flush();
+    const docs = [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")].find(node => node.getAttribute("data-k2b-nav-tree-id") === JSON.stringify(["home", null, "Docs"]))!;
+    docs.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    await flush();
+    expect(docs.getAttribute("aria-expanded")).toBe("true");
+    const before = apiRequests.length;
+    poll!();
+    await flush();
+    apiRequests[before]!.resolve(Response.json(directory));
+    await flush();
+    expect(apiRequests[before + 1]!.input).toEqual({ param: { baseId: "home" }, query: { path: "Docs", after: undefined } });
+    apiRequests[before + 1]!.resolve(Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "External nested folder", path: "Docs/External" }] }));
+    await flush();
+    expect(dom.root.querySelector('[role="tree"]')!.textContent).toContain("External nested folder");
+    expect(dom.root.querySelector('[role="tree"]')!.textContent).not.toContain("Old nested folder");
+    expect(apiRequests).toHaveLength(before + 2);
+    const root = [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")].find(node => node.getAttribute("data-k2b-nav-tree-id") === JSON.stringify(["home", null, ""]))!;
+    root.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    await flush();
+    poll!();
+    await flush();
+    apiRequests[before + 2]!.resolve(Response.json(directory));
+    await flush();
+    expect(apiRequests).toHaveLength(before + 3);
+  });
+
 });

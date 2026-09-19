@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { FilesError } from "../service/errors";
 
 /** Per-user pointers to entries: recently opened files and explicit favorites. Both name a binding, never a raw path alone. */
 export type MarkRow = {
@@ -23,16 +24,24 @@ export const recent = {
     return sql<MarkRow[]>`SELECT * FROM filesv2.recent WHERE user_id=${userId}::uuid ORDER BY marked_at DESC LIMIT ${RECENT_LIMIT}`;
   },
   async forget(userId: string, baseId: string, path: string): Promise<void> {
-    await sql`DELETE FROM filesv2.recent WHERE user_id=${userId}::uuid AND base_id=${baseId}::uuid AND (path=${path} OR path LIKE ${`${path}/%`})`;
+    await sql`DELETE FROM filesv2.recent WHERE user_id=${userId}::uuid AND base_id=${baseId}::uuid AND (path=${path} OR starts_with(path, ${`${path}/`}))`;
   },
 };
 export const favorites = {
   async add(input: Pick<MarkRow, "user_id" | "base_id" | "path" | "name" | "directory">): Promise<void> {
-    await sql`INSERT INTO filesv2.favorites(user_id,base_id,path,name,directory,marked_at) VALUES(${input.user_id}::uuid,${input.base_id}::uuid,${input.path},${input.name},${input.directory},now())
-      ON CONFLICT(user_id,base_id,path) DO UPDATE SET name=EXCLUDED.name, directory=EXCLUDED.directory`;
+    await sql.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${'filesv2:favorites:' + input.user_id}, 0))`;
+      const [count] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM filesv2.favorites WHERE user_id=${input.user_id}::uuid AND NOT (base_id=${input.base_id}::uuid AND path=${input.path})`;
+      if ((count?.count ?? 0) >= FAVORITE_LIMIT) throw new FilesError("favorites_full", 409);
+      await tx`INSERT INTO filesv2.favorites(user_id,base_id,path,name,directory,marked_at) VALUES(${input.user_id}::uuid,${input.base_id}::uuid,${input.path},${input.name},${input.directory},now())
+        ON CONFLICT(user_id,base_id,path) DO UPDATE SET name=EXCLUDED.name, directory=EXCLUDED.directory`;
+    });
   },
   async remove(userId: string, baseId: string, path: string): Promise<void> {
-    await sql`DELETE FROM filesv2.favorites WHERE user_id=${userId}::uuid AND base_id=${baseId}::uuid AND (path=${path} OR path LIKE ${`${path}/%`})`;
+    await sql`DELETE FROM filesv2.favorites WHERE user_id=${userId}::uuid AND base_id=${baseId}::uuid AND (path=${path} OR starts_with(path, ${`${path}/`}))`;
+  },
+  async removeByIdentity(userId: string, area: string, kind: string, identityId: string, path: string): Promise<void> {
+    await sql`DELETE FROM filesv2.favorites f USING filesv2.bases b WHERE f.base_id=b.id AND f.user_id=${userId}::uuid AND b.area=${area} AND b.kind=${kind} AND b.identity_id=${identityId}::uuid AND f.path=${path}`;
   },
   async list(userId: string): Promise<MarkRow[]> {
     return sql<MarkRow[]>`SELECT * FROM filesv2.favorites WHERE user_id=${userId}::uuid ORDER BY name, path LIMIT ${FAVORITE_LIMIT}`;

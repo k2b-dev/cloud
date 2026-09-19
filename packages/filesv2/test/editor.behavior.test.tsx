@@ -120,7 +120,7 @@ describe("Files v2 office editing", () => {
     const posted: string[] = [];
     if (frame.contentWindow) frame.contentWindow.postMessage = ((message: string) => posted.push(JSON.parse(message).MessageId)) as typeof postMessage;
     const message = (payload: Record<string, unknown>) =>
-      dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: JSON.stringify(payload), source: frame.contentWindow }));
+      dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: JSON.stringify(payload), source: frame.contentWindow, origin: new URL(launch.action).origin }));
     message({ MessageId: "App_LoadingStatus", Values: { Status: "Frame_Ready" } });
     message({ MessageId: "App_LoadingStatus", Values: { Status: "Document_Loaded" } });
     await flush();

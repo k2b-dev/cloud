@@ -6,6 +6,7 @@ import { Filegate, type Node } from "@k2b/filegate";
 import { sql } from "bun";
 import { z } from "zod";
 import { bindings } from "../data/bases";
+import { resolveEntryRefId } from "../data/references";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
 import { entryRefId } from "../resource-ref";
@@ -148,6 +149,7 @@ suite("Files service and durable bindings", () => {
           return Response.json(node);
         }
         if (init?.method === "DELETE") {
+          if (session.state === "committed" || session.state === "expired") return Response.json({ error: `session_${session.state}` }, { status: 409 });
           session.state = "aborted";
           return new Response(null, { status: 204 });
         }
@@ -530,8 +532,8 @@ suite("Files service and durable bindings", () => {
     await expect(service.rename(actor, { baseId, path: "Archive/old.txt", name: "new.txt" })).rejects.toMatchObject({ code: "forbidden" });
     const moved = await service.move(actor, { baseId, paths: ["Docs/b.txt"], folder: "" });
     expect(moved.entries.map((entry) => entry.path)).toEqual(["b.txt"]);
-    await expect(service.move(actor, { baseId, paths: ["Docs"], folder: "Docs" })).rejects.toMatchObject({ code: "move_into_self" });
-    await expect(service.move(actor, { baseId, paths: ["b.txt"], folder: "Archive" })).rejects.toMatchObject({ code: "forbidden" });
+    expect((await service.move(actor, { baseId, paths: ["Docs"], folder: "Docs" })).results).toMatchObject([{ ok: false, error: "move_into_self" }]);
+    expect((await service.move(actor, { baseId, paths: ["b.txt"], folder: "Archive" })).results).toMatchObject([{ ok: false, error: "forbidden" }]);
     await expect(service.move(actor, { baseId, paths: ["b.txt"], folder: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
     const duplicated = await service.copy(actor, { baseId, paths: ["b.txt"], targetBaseId: baseId, folder: "" });
     expect(duplicated.entries[0]!.path).toBe("b-01.txt");
@@ -566,21 +568,22 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs/note (1).txt", 1001, 2001, "0640", false);
     const baseId = (await service.bases(actor)).items[0]!.id;
     const removed = await service.remove(actor, { baseId, paths: ["Docs/note.txt"] });
-    expect(removed[0]).toMatchObject({ original: "Docs/note.txt", name: "note.txt", directory: false });
+    expect(removed.entries[0]).toMatchObject({ original: "Docs/note.txt", name: "note.txt", directory: false });
     expect(nodes.has("freeipa:users/alice/Docs/note.txt")).toBeFalse();
     expect(nodes.get("freeipa:users/alice/trash")).toMatchObject({ uid: 1001, gid: 2001, mode: "0700" });
-    expect(nodes.has("freeipa:users/alice/trash/note.txt")).toBeTrue();
+    expect(nodes.has(`freeipa:users/alice/trash/${removed.entries[0]!.id}`)).toBeTrue();
     expect((await service.list(actor, { baseId, path: "" })).items.map((item) => item.name)).toEqual(["Docs"]);
     const listed = await service.trash(actor, { baseId });
     expect(listed.entries.map((entry) => entry.original)).toEqual(["Docs/note.txt"]);
     await expect(service.remove(actor, { baseId, paths: ["trash/note.txt"] })).rejects.toMatchObject({ code: "reserved_path" });
     // A second delete of the same name lands beside the first, and restoring requires a free original path.
     directory("freeipa", "users/alice/Docs/note.txt", 1001, 2001, "0640", false);
-    await service.remove(actor, { baseId, paths: ["Docs/note.txt"] });
-    expect(nodes.has("freeipa:users/alice/trash/note-01.txt")).toBeTrue();
-    const restored = await service.restoreTrash(actor, { baseId, id: removed[0]!.id });
+    const removedAgain = await service.remove(actor, { baseId, paths: ["Docs/note.txt"] });
+    expect(nodes.has(`freeipa:users/alice/trash/${removedAgain.entries[0]!.id}`)).toBeTrue();
+    expect(removedAgain.entries[0]!.id).not.toBe(removed.entries[0]!.id);
+    const restored = await service.restoreTrash(actor, { baseId, id: removed.entries[0]!.id });
     expect(restored.entry.path).toBe("Docs/note.txt");
-    await expect(service.restoreTrash(actor, { baseId, id: removed[0]!.id })).rejects.toMatchObject({ code: "not_found" });
+    expect((await service.restoreTrash(actor, { baseId, id: removed.entries[0]!.id })).entry.path).toBe("Docs/note.txt");
     const second = (await service.trash(actor, { baseId })).entries[0]!;
     await expect(service.restoreTrash(actor, { baseId, id: second.id })).rejects.toMatchObject({ status: 409 });
   });
@@ -688,8 +691,8 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs/plan.txt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/Docs/shared.txt", 999, 2001, "0640", false);
     const baseId = (await service.bases(actor)).items[0]!.id;
-    await expect(service.move(actor, { baseId, paths: ["Docs/trash"], folder: "" })).rejects.toMatchObject({ code: "reserved_path" });
-    await expect(service.copy(actor, { baseId, paths: ["Docs/trash"], targetBaseId: baseId, folder: "" })).rejects.toMatchObject({ code: "reserved_path" });
+    expect((await service.move(actor, { baseId, paths: ["Docs/trash"], folder: "" })).results).toMatchObject([{ ok: false, error: "reserved_path" }]);
+    expect((await service.copy(actor, { baseId, paths: ["Docs/trash"], targetBaseId: baseId, folder: "" })).results).toMatchObject([{ ok: false, error: "reserved_path" }]);
     expect(nodes.has("freeipa:users/alice/trash")).toBe(false);
     await expect(service.bundle(actor, { baseId, paths: ["Docs"] })).rejects.toMatchObject({ code: "forbidden" });
     await expect(service.createShare(actor, { baseId, kind: "download", paths: ["Docs"], folder: "", title: "Docs", expiresIn: "7d" })).rejects.toMatchObject({ code: "forbidden" });
@@ -739,7 +742,7 @@ suite("Files service and durable bindings", () => {
     const baseId = (await service.bases(actor)).items[0]!.id;
     const share = await service.createShare(actor, { baseId, kind: "download", paths: ["A/B/C/f1.txt", "A/X/C/f2.txt"], folder: "", title: "Both", expiresIn: "7d" });
     expect(share.scope).toBe("A");
-    const token = share.url.split("/").at(-1)!;
+    const token = share.url!.split("/").at(-1)!;
     expect((await service.publicShare(token, "download")).items).toHaveLength(2);
     config.freeipa.enabled = false;
     await expect(service.publicShare(token, "download")).rejects.toMatchObject({ code: "not_found" });
@@ -747,7 +750,7 @@ suite("Files service and durable bindings", () => {
     await sql`UPDATE filesv2.bases SET lifecycle='archived' WHERE root='freeipa' AND path='users/alice'`;
     await expect(service.publicShare(token, "download")).rejects.toMatchObject({ code: "not_found" });
   });
-  test("shares stay inside one base, are visible to everyone who may read their scope, and serve leases only while active", async () => {
+  test("shares stay inside one base, are private to their owner, and serve leases only while active", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/Docs");
@@ -760,24 +763,24 @@ suite("Files service and durable bindings", () => {
     expect(share).toMatchObject({ kind: "download", scope: "Docs", items: ["Docs/a.txt", "Docs/Sub/b.txt"], state: "active", createdBy: "alice" });
     expect(share.url).toMatch(/^https:\/\/cloud\.test\/share\/filesv2\/s\/[A-Za-z0-9_-]{32}$/);
     await expect(service.createShare(actor, { baseId, kind: "download", paths: ["trash/x"], folder: "", title: "t", expiresIn: "1d" })).rejects.toMatchObject({ code: "reserved_path" });
-    const token = share.url.split("/").at(-1)!;
+    const token = share.url!.split("/").at(-1)!;
     const view = await service.publicShare(token, "download");
     expect(view.items.map((item) => item.path)).toEqual(["Docs/a.txt", "Docs/Sub/b.txt"]);
     expect((await service.publicShareDownload(token, "Docs/a.txt")).method).toBe("GET");
     await expect(service.publicShareDownload(token, "Docs/Sub")).rejects.toMatchObject({ code: "not_found" });
     await expect(service.publicShare(token, "inbox")).rejects.toMatchObject({ code: "not_found" });
     expect((await service.publicShareArchive(token)).manifest).toBe("signed");
-    expect((await service.listShares(actor)).map((item) => item.id)).toEqual([share.id]);
+    expect((await service.listShares(actor)).items.map((item) => item.id)).toEqual([share.id]);
     // Another member without read rights on the scope does not see the share.
     const bob = await user("bob", "ipa");
     await sql`UPDATE auth.user_posix SET uid_number=1002 WHERE user_id=${id(bob)}::uuid`;
     directory("freeipa", "users/bob");
-    expect(await service.listShares(bob)).toEqual([]);
+    expect((await service.listShares(bob)).items).toEqual([]);
     await expect(service.revokeShare(bob, { id: share.id })).rejects.toMatchObject({ code: "not_found" });
     const revoked = await service.revokeShare(actor, { id: share.id });
     expect(revoked.state).toBe("revoked");
     await expect(service.publicShare(token, "download")).rejects.toMatchObject({ code: "not_found" });
-    expect((await service.listShares(actor))[0]?.accessCount).toBe(3);
+    expect((await service.listShares(actor)).items[0]?.accessCount).toBe(3);
   });
   test("an upload inbox accepts anonymous sessions into its folder without replacing existing files", async () => {
     const actor = await user("alice", "ipa");
@@ -787,14 +790,16 @@ suite("Files service and durable bindings", () => {
     const baseId = (await service.bases(actor)).items[0]!.id;
     const inbox = await service.createShare(actor, { baseId, kind: "inbox", paths: [], folder: "Inbox", title: "Drop", expiresIn: "30d" });
     expect(inbox).toMatchObject({ kind: "inbox", scope: "Inbox", items: [] });
-    const token = inbox.url.split("/").at(-1)!;
+    const token = inbox.url!.split("/").at(-1)!;
     expect((await service.publicShare(token, "inbox")).title).toBe("Drop");
     const opened = await service.publicInboxUpload(token, { name: "report.pdf", size: 8 });
     expect(opened.path).toBe("Inbox/report.pdf");
-    expect(sessions.get(opened.id)?.ownership).toEqual({ uid: 1001, gid: 2001, mode: "0660" });
+    const [reservation] = await sql<{filegate_session_id:string}[]>`SELECT filegate_session_id FROM filesv2.uploads WHERE id=${opened.id}`;
+    const filegateId = reservation!.filegate_session_id;
+    expect(sessions.get(filegateId)?.ownership).toEqual({ uid: 1001, gid: 2001, mode: "0600" });
     await expect(service.publicInboxUpload(token, { name: "../x", size: 1 })).rejects.toMatchObject({ code: "invalid_path" });
     await expect(service.publicInboxUpload(token, { name: "sub/x", size: 1 })).rejects.toMatchObject({ code: "invalid_path" });
-    sessions.get(opened.id)!.received = 8;
+    sessions.get(filegateId)!.received = 8;
     expect((await service.publicInboxLease(token, opened.id)).url).toContain("renewed");
     const committed = await service.publicInboxCommit(token, opened.id);
     expect(committed.name).toBe("report-01.pdf");
@@ -1120,4 +1125,100 @@ suite("Files service and durable bindings", () => {
     expect(nodes.has("cloud:users/alice")).toBeFalse();
     expect(nodes.has(`cloud:${archived.path}`)).toBeTrue();
   });
+  test("upload renewal and commit recheck a newly unwritable FreeIPA leaf", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/report.txt", 1001, 2001, "0600", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const upload = await service.upload(actor, { baseId, path: "report.txt", size: 12, onConflict: "overwrite" });
+    sessions.get(upload.id)!.received = 12;
+    directory("freeipa", "users/alice/report.txt", 9999, 9999, "0600", false);
+    await expect(service.uploadLease(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "forbidden" });
+    expect(sessions.get(upload.id)!.state).toBe("open");
+  });
+  test("upload commits reject mismatched receipts and preserve unknown terminal outcomes", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const upload = await service.upload(actor, { baseId, path: "new.txt", size: 12, onConflict: "error" });
+    const session = sessions.get(upload.id)!;
+    session.received = 12;
+    session.path = "users/another/new.txt";
+    await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
+    session.path = "users/alice/new.txt";
+    session.state = "committed";
+    await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
+    expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${upload.id}`)[0]!.state).toBe("open");
+    session.result = directory("freeipa", "users/another/new.txt", 1001, 2001, "0600", false);
+    await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
+    expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${upload.id}`)[0]!.state).toBe("open");
+  });
+  test("abort recovery validates committed receipts and preserves expired state", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const upload = await service.upload(actor, { baseId, path: "new.txt", size: 12, onConflict: "error" });
+    const session = sessions.get(upload.id)!;
+    session.state = "committed";
+    session.result = directory("freeipa", "users/another/new.txt", 1001, 2001, "0600", false);
+    await expect(service.abortUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
+    expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${upload.id}`)[0]!.state).toBe("open");
+    session.result = directory("freeipa", "users/alice/new.txt", 1001, 2001, "0600", false);
+    await expect(service.abortUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_closed" });
+    expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${upload.id}`)[0]!.state).toBe("committed");
+    const expired = await service.upload(actor, { baseId, path: "expired.txt", size: 12, onConflict: "error" });
+    sessions.get(expired.id)!.state = "expired";
+    await service.abortUpload(actor, { baseId, id: expired.id });
+    expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${expired.id}`)[0]!.state).toBe("expired");
+  });
+  test("long resource references persist complete paths without bypassing current rights", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const segments = ["a".repeat(180), "b".repeat(180), "report.txt"];
+    directory("freeipa", `users/alice/${segments[0]}`);
+    directory("freeipa", `users/alice/${segments.slice(0, 2).join("/")}`);
+    const path = segments.join("/");
+    directory("freeipa", `users/alice/${path}`, 1001, 2001, "0600", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const result = await service.entry(actor, { baseId, path });
+    expect(result.resourceId).toStartWith("p:");
+    expect(await resolveEntryRefId(result.resourceId!)).toEqual({ baseId, path });
+    expect((await service.entry(actor, { baseId, path })).resourceId).toBe(result.resourceId);
+    directory("freeipa", `users/alice/${path}`, 9999, 9999, "0600", false);
+    await expect(service.entry(actor, (await resolveEntryRefId(result.resourceId!))!)).rejects.toMatchObject({ code: "forbidden" });
+  });
+  test("marks use live metadata, hide unreadable leaves and allow removal of missing entries", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/report.txt", 1001, 2001, "0600", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    await service.setFavorite(actor, { baseId, path: "report.txt", favorite: true });
+    expect((await service.favorites(actor))[0]!.entry.size).toBe(12);
+    directory("freeipa", "users/alice/report.txt", 9999, 9999, "0600", false);
+    expect(await service.favorites(actor)).toEqual([]);
+    nodes.delete("freeipa:users/alice/report.txt");
+    await service.setFavorite(actor, { baseId, path: "report.txt", favorite: false });
+    expect((await sql`SELECT * FROM filesv2.favorites`).length).toBe(0);
+  });
+  test("mark cleanup treats percent and underscore as literal path segments", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    for (const name of ["a%_", "abX", "a%_extra"]) {
+      directory("freeipa", `users/alice/${name}`);
+      directory("freeipa", `users/alice/${name}/child`, 1001, 2001, "0600", false);
+    }
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    for (const path of ["a%_/child", "abX/child", "a%_extra/child"]) await service.setFavorite(actor, { baseId, path, favorite: true });
+    await service.rename(actor, { baseId, path: "a%_", name: "renamed" });
+    expect((await sql<{path:string}[]>`SELECT path FROM filesv2.favorites ORDER BY path`).map(row => row.path)).toEqual(["a%_extra/child", "abX/child"]);
+  });
+  test("a writable file never grants permanent version deletion to a regular user", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/report.txt", 1001, 2001, "0600", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    await expect(service.deleteVersion(actor, { baseId, path: "report.txt", id: "any" })).rejects.toMatchObject({ code: "admin_required" });
+  });
+
 });

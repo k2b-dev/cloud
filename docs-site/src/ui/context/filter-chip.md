@@ -45,6 +45,7 @@ Changes are emitted immediately. This makes the component suitable for URL-backe
 | `defaultValue` | `readonly string[]` | none | A non-empty array resets to a baseline instead of clearing all values. |
 | `disabled` | `boolean` | `false` | Disables the trigger and menu actions. |
 | `iconOnly` | `boolean` | `false` | Shows only the icon while retaining the label for assistive text. |
+| `variant` | `ButtonVariant` | none | Uses the standard button appearance, for example `input` beside a search field. Omit to keep the default filter field. |
 
 ## Sections and options
 

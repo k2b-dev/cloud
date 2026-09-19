@@ -37,6 +37,8 @@ export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned",
 export type InventoryState = z.infer<typeof InventoryStateSchema>;
 export type BaseSummary = {
   id: string;
+  /** Opaque identity of the current backend, root, path and durable binding. */
+  locationKey?: string;
   area: Area;
   kind: BaseKind;
   name: string;
@@ -45,13 +47,13 @@ export type BaseSummary = {
   indexEnabled: boolean;
   versioningEnabled: boolean;
 };
-export type FileEntry = { name: string; path: string; directory: boolean; size: number; modified: string };
+export type FileEntry = { name: string; path: string; directory: boolean; size: number; modified: string; actions?: { write: boolean; move: boolean; share: boolean } };
 /** Present when an administrator configured Collabora; the browser then offers editing and new documents. */
 export type EditorInfo = { documentFormat: DocumentFormat };
 export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[]; editor: EditorInfo | null };
-export type DirectoryResult = { base: BaseSummary; path: string; items: FileEntry[]; next: string | null };
+export type DirectoryResult = { base: BaseSummary; path: string; items: FileEntry[]; next: string | null; actions?: { create: boolean } };
 export type DownloadLease = { url: string; method: "GET"; expires: string };
-export type EntryResult = { base: BaseSummary; entry: FileEntry; favorite?: boolean };
+export type EntryResult = { base: BaseSummary; entry: FileEntry; favorite?: boolean; resourceId?: string };
 /** A recent or favorite pointer the user may still reach; the base is resolved fresh on every read. */
 export type MarkedEntry = { base: { id: string; name: string; area: Area }; entry: FileEntry; markedAt: string };
 export const FavoriteInputSchema = z.object({ path: z.string().min(1).max(4096), favorite: z.boolean() });
@@ -61,7 +63,7 @@ export type SearchResult = DirectoryResult & { query: string; scope: "folder" | 
 export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export const UploadInputSchema = z.object({
   path: z.string().min(1).max(4096),
-  size: z.number().int().min(0),
+  size: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   onConflict: z.enum(["error", "overwrite"]).default("error"),
 });
 export const UploadIdSchema = z.object({ id: z.string().min(1).max(256) });
@@ -75,7 +77,7 @@ export const RenameInputSchema = z.object({ path: PathSchema, name: z.string().m
 export const MoveInputSchema = z.object({ paths: PathsSchema, folder: z.string().max(4096) });
 export const CopyInputSchema = z.object({ paths: PathsSchema, targetBaseId: z.string().min(1), folder: z.string().max(4096) });
 export const PathsInputSchema = z.object({ paths: PathsSchema });
-export const TrashIdSchema = z.object({ id: z.string().uuid() });
+export const TrashIdSchema = z.object({ id: z.union([z.string().uuid(), z.string().regex(/^fs:[A-Za-z0-9_-]+$/).max(5500)]) });
 export const CreateDocumentInputSchema = z.object({ path: PathSchema, kind: DocumentKindSchema });
 /** Everything the browser needs to load one file into Collabora; the token is bound to this user and file. */
 export type EditorLaunch = { base: BaseSummary; entry: FileEntry; action: string; token: string; tokenTtl: number; canWrite: boolean };
@@ -83,41 +85,60 @@ export const VersionRefSchema = z.object({ path: PathSchema, id: z.string().min(
 export const VersionCommentSchema = VersionRefSchema.extend({ comment: z.string().trim().max(2000) });
 export const VersionRestoreAsSchema = VersionRefSchema.extend({ name: z.string().min(1).max(255) });
 export type FileVersion = { id: string; created: string; size: number; pinned: boolean; comment: string | null; author: string | null };
-export type TrashEntry = { id: string; original: string; name: string; directory: boolean; deletedAt: string };
-export type EntriesResult = { base: BaseSummary; entries: FileEntry[] };
+export type TrashEntry = { id: string; original: string | null; name: string; directory: boolean; deletedAt: string | null; state?: "pending" | "trashed" | "restoring"; error?: string };
+export type EntriesResult = { base: BaseSummary; entries: FileEntry[]; results: ({ path: string; ok: true; entry: FileEntry } | { path: string; ok: false; error: string })[] };
 export type ArchiveDownload = { url: string; method: "POST"; expires: string; manifest: string };
-export const ShareValiditySchema = z.enum(["1d", "7d", "30d", "90d"]);
+export const ShareValiditySchema = z.enum(["1d", "7d", "30d", "90d", "unlimited"]);
 export const CreateShareInputSchema = z.object({
   kind: z.enum(["download", "inbox"]),
   paths: z.array(PathSchema).max(100).default([]),
   folder: z.string().max(4096).default(""),
   title: z.string().trim().min(1).max(200),
   note: z.string().trim().max(500).optional(),
+  publicNote: z.string().trim().max(500).optional(),
   expiresIn: ShareValiditySchema.default("30d"),
+  maxFileSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).default(104857600),
+  maxTotalSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).default(1073741824),
+  showUploadNames: z.boolean().default(false),
 });
 export const ShareIdSchema = z.object({ id: z.string().uuid() });
 export type ShareView = {
   id: string;
   kind: "download" | "inbox";
-  url: string;
+  /** Only present in the create response; links are never recoverable from stored hashes. */
+  url: string | null;
   title: string;
   note: string | null;
+  publicNote: string | null;
   base: { id: string; name: string };
   scope: string;
   items: string[];
   createdBy: string;
   createdAt: string;
-  expiresAt: string;
+  expiresAt: string | null;
   state: "active" | "expired" | "revoked";
   accessCount: number;
   lastAccessedAt: string | null;
+  maxFileSize: number;
+  maxTotalSize: number;
+  showUploadNames: boolean;
 };
-export const PublicUploadInputSchema = z.object({ name: z.string().min(1).max(255), size: z.number().int().min(0) });
+export type SharePage = { items: ShareView[]; next: string | null };
+export const SharePageQuerySchema = z.object({ after: z.string().uuid().optional() });
+export const PublicBrowseQuerySchema = z.object({ path: z.string().max(4096).default(""), after: z.string().max(8192).optional() });
+export const PublicUploadInputSchema = z.object({ name: z.string().min(1).max(255), size: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) });
 export type PublicShare = {
   kind: "download" | "inbox";
   title: string;
-  expiresAt: string;
+  expiresAt: string | null;
   items: { path: string; name: string; directory: boolean; size: number }[];
+  note: string | null;
+  path: string;
+  next: string | null;
+  maxFileSize: number;
+  maxTotalSize: number;
+  showUploadNames: boolean;
+  uploadedNames: string[];
 };
 export type RootSummary = {
   name: string;
@@ -200,6 +221,7 @@ export type AdminBrowseResult = {
   path: string;
   items: FileEntry[];
   next: string | null;
+  versioningEnabled?: boolean;
 };
 export type OperationResult = { id: string; state: "complete" | "pending"; path: string };
 export type ArchiveEntry = {

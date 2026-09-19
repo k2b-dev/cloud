@@ -32,10 +32,11 @@ function Card(props: { locale: string; share: PublicShare | null; children?: JSX
               <div class="min-w-0">
                 <h1 class="break-words text-lg font-semibold text-primary">{props.share.title}</h1>
                 <p class="text-sm text-dimmed">
-                  {t.publicAvailableUntil(new Date(props.share.expiresAt).toLocaleString(props.locale, { dateStyle: "long", timeStyle: "short" }))}
+                  {props.share.expiresAt ? t.publicAvailableUntil(new Date(props.share.expiresAt).toLocaleString(props.locale, { dateStyle: "long", timeStyle: "short" })) : t.noExpiry}
                 </p>
               </div>
             </header>
+            {props.share.note ? <p class="whitespace-pre-wrap text-sm">{props.share.note}</p> : null}
             {props.children}
           </>
         ) : (
@@ -69,7 +70,7 @@ export const publicInboxPage = ssr<AuthContext>(async (c) => {
   return () => (
     <MinimalLayout c={c}>
       <Card locale={locale} share={share}>
-        {share ? <PublicInbox token={token} /> : null}
+        {share ? <PublicInbox token={token} share={share} /> : null}
       </Card>
     </MinimalLayout>
   );

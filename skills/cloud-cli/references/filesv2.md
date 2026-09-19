@@ -40,7 +40,8 @@ cld filesv2 favorites remove <base-id> Documents/report.pdf --json
 
 `recent` lists entries the user opened or downloaded (newest first, at most
 30); `favorites` are explicit marks. Both resolve their base on every read and
-omit bases the user can no longer reach. `search --scope folder` limits hits to
+check current file existence and access before returning live metadata. Favorites
+can be removed even when the marked file is gone or inaccessible. `search --scope folder` limits hits to
 direct children of `--path`.
 
 `documents create` needs Collabora configured by an administrator; it appends
@@ -75,20 +76,58 @@ folder below an existing parent and never overwrites existing names.
 `upload` opens a Filegate upload session through Cloud, streams the file to
 the session lease without Cloud credentials, and commits through Cloud; the
 result is `{base, entry}`. Existing targets fail with `path_conflict` unless
-`--replace` is passed. Interrupted uploads are aborted, nothing partial is
-published.
+`--replace` is passed. The CLI reads disk-backed segments instead of loading the whole file into RAM.
+Retries and lease renewal are bounded; interruption before commit requests an
+abort. If the commit response is lost, inspect the target before repeating the
+upload: publication may have succeeded.
 `move` stays inside one base; `copy` may target another base with
 `--target-base` and keeps the originals. `delete` moves entries to the base's
-trash and prints restorable trash IDs. `versions restore` without `--as`
+trash and prints restorable trash IDs. Multi-entry mutations return
+`results` per item (`path`, `ok`, and either `entry` or `error`) alongside
+successful `entries`; partial failure sets a nonzero exit code. Successful
+items are not rolled back. Retry only failed paths; a selected folder already
+includes its selected descendants. `versions restore` without `--as`
 replaces the current content (the current state is kept as a new version);
 `--as <name>` writes the version next to the file. `shares create --kind
 download` shares the listed entries, `--kind inbox` shares one folder as an
-anonymous upload target; both print the public URL.
+anonymous upload target; both print the public URL once, only on creation.
 `stat` returns `{base, entry}` after checking current access, even when the entry
 is outside the current listing page. `thumbnail` saves a generated image preview;
 `--size` accepts `small` (320 px) or `large` (1024 px). It uses the same private
 transfer and safe output-file rules as `download`. Unsupported images return an
 error rather than an invented preview.
+
+## Shares, inboxes, and trash
+
+`shares list` returns only the caller's own shares and never returns the public
+URL again (`url` is null). Creators can revoke their links after losing file
+access. A parent-folder read permission does not expose other users' shares.
+Existing URLs survive the token-hash migration; they cannot be recovered from
+the database. Treat the creation response as a secret-bearing response.
+
+```bash
+cld filesv2 shares create <base-id> Incoming --kind inbox --title "Send files" --expires-in 7d --max-file-size 104857600 --max-total-size 1073741824 --public-note "Send your documents here" --json
+cld filesv2 shares create <base-id> Documents --title "Documents" --expires-in unlimited --note "Private management note" --json
+cld filesv2 shares list --after '<next>' --json
+cld filesv2 trash list <base-id> --after '<next>' --json
+cld filesv2 trash restore <base-id> <trash-id> --to Documents/recovered.pdf --json
+```
+
+`--expires-in` accepts `1d`, `7d`, `30d` (default), `90d`, or `unlimited`.
+`--note` stays private; `--public-note` is shown to anonymous visitors. Inbox
+limits are bytes: 100 MiB per file and 1 GiB total by default, including existing
+inboxes upgraded from the previous schema. Total means cumulative confirmed
+bytes plus pending reservations; deleting files does not replenish it.
+`--show-upload-names` exposes only names of successful uploads through that
+inbox, never existing folder contents or download access. It is off by default.
+Download shares include current contents of shared folders, including later
+additions. New public actions recheck the creator's current access.
+
+Trash lists include pending moves and filesystem entries without Cloud records.
+An unknown `original` or `deletedAt` is null. Use `--to` with a full base-relative
+destination including the name when the original location is unknown. Restore
+never overwrites an existing destination. An unresolved result requires inspection;
+command success alone does not confirm the filesystem move.
 
 ## Administer storage
 
@@ -120,6 +159,20 @@ Before `admin adopt`, inspect the matching inventory entry and verify its
 current eligible identity and leaves its files in place. It does not create
 directories. Use it only when the user authorized the assignment; `--yes`
 confirms the operation. Read inventory again afterward.
+
+Administrators also manage shares independently of the creator's file access:
+
+```bash
+cld filesv2 admin shares list --json
+cld filesv2 admin shares revoke <share-id> --json
+cld filesv2 admin uploads list --json
+```
+
+Both lists accept `--after`. `admin uploads list` exposes unresolved inbox
+reservations with the share ID, path, declared size, state, and error. A missing
+session receipt is not proof of an abort. The background reconciliation keeps
+uncertain bytes reserved and continues after link expiry or revocation; do not
+manually clear reservations without establishing what happened to the file.
 
 ## Create, archive, or retire a directory
 
@@ -197,13 +250,16 @@ delete the exact target. They bypass trash and require both `--yes` and
 cld filesv2 admin files delete trash/old.pdf --area cloud --kind groups --name team --confirm-path '<basePath>/trash/old.pdf' --yes --json
 cld filesv2 admin directories delete alumni --area freeipa --kind groups --confirm-path '<inventory-path>' --yes --json
 cld filesv2 admin archives delete <archive-uuid> --confirm-path '<archive-path>' --yes --json
+cld filesv2 admin versions list Documents/report.pdf --area cloud --kind groups --name team --json
+cld filesv2 admin versions delete Documents/report.pdf <version-id> --area cloud --kind groups --name team --confirm-path '<basePath>/Documents/report.pdf' --yes --json
 ```
 
 Use the exact root-relative path, including any configured prefix. For a file
 or folder within the admin browser, combine its returned `basePath` with the
 entry's relative `path`. Whole-directory deletion uses the inventory `path`;
 archive deletion uses the archive entry's current `path`, not `originalPath`.
-Never guess a path from a display name. The server validates the confirmation
+Version deletion also requires the exact file path and version ID. There is no
+end-user `versions delete` command. Never guess a path from a display name. The server validates the confirmation
 again. Refresh the relevant listing after the operation.
 
 ## Refresh root metadata

@@ -3,7 +3,7 @@ import { FilegateError } from "@k2b/filegate";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { errorMessage } from "./api/messages";
-import { EntryQuerySchema, PublicUploadInputSchema, UploadIdSchema } from "./contracts";
+import { EntryQuerySchema, PublicBrowseQuerySchema, PublicUploadInputSchema, UploadIdSchema } from "./contracts";
 import { FilesError, filesService } from "./service";
 
 /** Token-only JSON routes behind public share pages; every call re-resolves the share. */
@@ -15,12 +15,12 @@ export const publicApi = new Hono<AuthContext>()
     const code = known ? error.code : error instanceof FilegateError && error.status === 404 ? "not_found" : "unavailable";
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status: known ? error.status : code === "not_found" ? 404 : 503, code });
   })
-  .get("/s/:token/api", async (c) => respond(c, ok(await filesService.publicShare((c.req.param("token") ?? ""), "download"))))
+  .get("/s/:token/api", v("query", PublicBrowseQuerySchema), async (c) => respond(c, ok(await filesService.publicShare((c.req.param("token") ?? ""), "download", c.req.valid("query")))))
   .post("/s/:token/api/download", v("json", EntryQuerySchema), async (c) =>
     respond(c, ok(await filesService.publicShareDownload((c.req.param("token") ?? ""), c.req.valid("json").path))),
   )
   .post("/s/:token/api/archive", async (c) => respond(c, ok(await filesService.publicShareArchive((c.req.param("token") ?? "")))))
-  .get("/inbox/:token/api", async (c) => respond(c, ok(await filesService.publicShare((c.req.param("token") ?? ""), "inbox"))))
+  .get("/inbox/:token/api", v("query", PublicBrowseQuerySchema), async (c) => respond(c, ok(await filesService.publicShare((c.req.param("token") ?? ""), "inbox", c.req.valid("query")))))
   .post("/inbox/:token/api/uploads", v("json", PublicUploadInputSchema), async (c) =>
     respond(c, ok(await filesService.publicInboxUpload((c.req.param("token") ?? ""), c.req.valid("json")))),
   )

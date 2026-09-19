@@ -13,7 +13,7 @@ mock.module("../src/api/client", () => ({
         uploads: {
           $post: async (input: { json: { path: string; size: number; onConflict: string } }) => {
             calls.push(`open ${input.json.path} ${input.json.size} ${input.json.onConflict}`);
-            if (openStatus !== 200) return Response.json({ message: "exists" }, { status: openStatus });
+            if (openStatus !== 200) return Response.json({ code: "path_conflict", message: "exists" }, { status: openStatus });
             return Response.json({ id: "s1", path: input.json.path, size: input.json.size, chunkSize: 4, url: "https://files.test/lease/s1", expires: "2099-01-01T00:00:00Z" });
           },
           ":id": {

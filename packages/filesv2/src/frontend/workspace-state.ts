@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
-import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, MarkedEntry, ShareView } from "../contracts";
+import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, MarkedEntry, SharePage } from "../contracts";
 
 export type WorkspaceSnapshot = {
   source: string;
@@ -9,7 +9,7 @@ export type WorkspaceSnapshot = {
   directory: (DirectoryResult & { query?: string; scope?: "folder" | "tree" }) | null;
   errorCode: string | null;
   detail?: EntryResult | null;
-  shares?: ShareView[];
+  shares?: SharePage;
   editor?: EditorLaunch | null;
   marks?: MarkedEntry[];
 };
@@ -75,7 +75,6 @@ export function createWorkspaceState<T extends { source: string }>(options: {
     previousError = state.error();
     return new Promise<void>((resolve) => {
       const sameSource = source() === target;
-      const wasEnabled = enabled();
       batch(() => {
         setFailure(null);
         setSource(target);

@@ -1,15 +1,14 @@
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { clipboard, query } from "@k2b/stdlib/solid";
-import { Button, DescriptionList, DetailPanel, Format, IconButton, Placeholder, prompts, toast, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { Button, DescriptionList, DetailPanel, Format, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EntryResult, FileEntry, FileVersion } from "../contracts";
 import { ENTRY_TYPE, entryRefId } from "../resource-ref";
 import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
-import FileThumbnail from "./FileThumbnail";
+import FileThumbnail, { documentPreviewable } from "./FileThumbnail";
 import { apiFailure, contentLease, fileIcon, previewKind } from "./file-preview";
-import { documentPreviewable } from "./FileThumbnail";
 import { useFilesMessages } from "./messages";
 import { filesUrl } from "./urls";
 
@@ -22,6 +21,7 @@ export default function FileInspector(props: {
   initial?: EntryResult | null;
   busy?: boolean;
   onClose: () => void;
+  onMarksChanged?: () => void;
   onOpen: (entry: FileEntry) => void;
   /** Files Collabora can open; the primary action then edits instead of previewing. */
   editable?: (entry: FileEntry) => boolean;
@@ -40,22 +40,35 @@ export default function FileInspector(props: {
 }) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
-  // The favorite flag comes with the entry; a toggle overrides it locally until the next load.
-  const [favoriteOverride, setFavoriteOverride] = createSignal<{ path: string; favorite: boolean } | null>(null);
-  const toggleFavorite = async (entry: FileEntry, favorite: boolean) => {
+  const identity = (path: string) => JSON.stringify([props.base.id, props.base.locationKey, path]);
+  const [favoriteOverride, setFavoriteOverride] = createSignal<{ key: string; favorite: boolean } | null>(null);
+  const [favoritePending, setFavoritePending] = createSignal<string | null>(null);
+  let alive = true;
+  onCleanup(() => { alive = false; });
+  const favorite = (item: FileEntry) => favoriteOverride()?.key === source() ? favoriteOverride()!.favorite : (details.data()?.result.favorite ?? false);
+  const toggleFavorite = async (entry: FileEntry, value: boolean) => {
+    const baseId = props.base.id;
+    const key = identity(entry.path);
+    if (favoritePending()) return;
+    setFavoritePending(key);
     try {
-      const response = await apiClient.bases[":baseId"].favorite.$post({ param: { baseId: props.base.id }, json: { path: entry.path, favorite } });
+      const response = await apiClient.bases[":baseId"].favorite.$post({ param: { baseId }, json: { path: entry.path, favorite: value } });
       if (!response.ok) await apiFailure(response, f().unavailable);
-      setFavoriteOverride({ path: entry.path, favorite: (await response.json()).favorite ?? favorite });
-      toast.success(favorite ? t().favoriteAdded : t().favoriteRemoved);
+      const result = await response.json();
+      props.onMarksChanged?.();
+      if (!alive || identity(entry.path) !== key || props.paths[0] !== entry.path) return;
+      setFavoriteOverride({ key: source(), favorite: result.favorite ?? value });
+      toast.success(value ? t().favoriteAdded : t().favoriteRemoved);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : f().unavailable);
+      if (alive && identity(entry.path) === key) toast.error(error instanceof Error ? error.message : f().unavailable);
+    } finally {
+      if (alive) setFavoritePending(null);
     }
   };
   const locale = useLocale();
-  const source = () => JSON.stringify([props.base.id, props.paths.length === 1 ? props.paths[0] : null, props.selected.find((entry) => entry.path === props.paths[0])?.modified]);
+  const source = () => JSON.stringify([props.base.id, props.base.locationKey, props.paths.length === 1 ? props.paths[0] : null, props.selected.find((entry) => entry.path === props.paths[0])?.modified]);
   const initial =
-    props.initial && props.paths.length === 1 && props.initial.entry.path === props.paths[0]
+    props.initial && props.initial.base.id === props.base.id && props.paths.length === 1 && props.initial.entry.path === props.paths[0]
       ? { source: source(), data: { key: source(), result: props.initial } }
       : undefined;
   const details = query.create({
@@ -71,14 +84,15 @@ export default function FileInspector(props: {
   const entry = () => (details.data()?.key === source() && !details.error() ? details.data()?.result.entry : null);
   const refClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
   const copyReference = (item: FileEntry) => {
-    const id = entryRefId(props.base.id, item.path);
+    const id = details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
     if (!id) return;
     const href = item.directory ? filesUrl(props.base.id, item.path) : filesUrl(props.base.id, item.path.split("/").slice(0, -1).join("/"), null, item.path);
     void refClipboard.copy({ cloudUrl: props.cloudUrl, ref: { type: ENTRY_TYPE, id }, fallbackText: new URL(href, props.cloudUrl).href });
   };
   const copyLabel = () => (refClipboard.error() ? t().copyReferenceFailed : refClipboard.wasCopied() ? t().copiedReference : t().copyReference);
   const openInTab = async (item: FileEntry) => {
-    const tab = window.open("", "_blank", "noopener");
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
     try {
       const lease = await contentLease(props.base.id, item.path, new AbortController().signal, f().downloadFailed);
       if (tab) tab.location.href = lease.url;
@@ -99,15 +113,15 @@ export default function FileInspector(props: {
     </IconButton>
   );
   const expand = (item: FileEntry) =>
-    prompts.dialog(() => <FilePreview baseId={props.base.id} entry={item} onDownload={() => props.onDownload([item])} />, { title: item.name, size: "large" });
-  const actionRow = (title: string, icon: string, onClick: () => void, options: { danger?: boolean; description?: string } = {}) => (
+    prompts.dialog(() => <FilePreview baseId={props.base.id} locationKey={props.base.locationKey} entry={item} onDownload={() => props.onDownload([item])} />, { title: item.name, size: "large" });
+  const actionRow = (title: string, icon: string, onClick: () => void, options: { danger?: boolean; description?: string; disabled?: boolean } = {}) => (
     <DetailPanel.Action
       type="button"
       title={title}
       description={options.description}
       leading={<i class={`${icon} ${options.danger ? "text-danger" : ""}`} aria-hidden="true" />}
       class={options.danger ? "text-danger" : undefined}
-      disabled={props.busy}
+      disabled={props.busy || options.disabled}
       onClick={onClick}
     />
   );
@@ -159,12 +173,20 @@ export default function FileInspector(props: {
                     <>
                       <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onOpen(item())}>
                         <i class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"} aria-hidden="true" />
-                        {item().directory ? t().open : props.editable?.(item()) ? (props.canEdit === false ? t().openReadOnly : t().edit) : t().preview}
+                        {item().directory ? t().open : props.editable?.(item()) ? ((props.canEdit === false || item().actions?.write === false) ? t().openReadOnly : t().edit) : t().preview}
                       </Button>
                       <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload([item()])}>
                         <i class="ti ti-download" aria-hidden="true" />
                         {f().download}
                       </Button>
+                      <Tooltip.Anchor content={favorite(item()) ? t().removeFavorite : t().addFavorite}>
+                        <IconButton size="sm" variant="secondary" class="filesv2-favorite" data-favorite={favorite(item()) ? "true" : undefined}
+                          label={favorite(item()) ? t().removeFavorite : t().addFavorite} aria-pressed={favorite(item())}
+                          disabled={props.busy || !!favoritePending()} onClick={() => void toggleFavorite(item(), !favorite(item()))}>
+                          <i class="ti ti-star filesv2-favorite__star" aria-hidden="true" />
+                          <Show when={favorite(item())}><i class="ti ti-x filesv2-favorite__remove" aria-hidden="true" /></Show>
+                        </IconButton>
+                      </Tooltip.Anchor>
                     </>
                   }
                 />
@@ -181,15 +203,15 @@ export default function FileInspector(props: {
                     >
                       <Show
                         keyed
-                        when={previewKind(item()) === "image" || (props.documents && !previewKind(item()) && documentPreviewable(item())) ? `${props.base.id}:${item().path}:${item().modified}` : null}
+                        when={previewKind(item()) === "image" || (props.documents && !previewKind(item()) && documentPreviewable(item())) ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified]) : null}
                         fallback={
-                          <Show keyed when={`${props.base.id}:${item().path}:${item().modified}`}>
-                            <FilePreview baseId={props.base.id} entry={item()} onDownload={() => props.onDownload([item()])} />
+                          <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])}>
+                            <FilePreview baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} onDownload={() => props.onDownload([item()])} />
                           </Show>
                         }
                       >
                         <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
-                          <FileThumbnail baseId={props.base.id} entry={item()} large hero documents={props.documents} />
+                          <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero documents={props.documents} />
                         </button>
                       </Show>
                     </DetailPanel.Section>
@@ -212,17 +234,13 @@ export default function FileInspector(props: {
                     <DetailPanel.Section title={t().actions}>
                       <div class="flex flex-col gap-1">
                         <Show when={!item().directory}>{actionRow(t().openInTab, "ti ti-external-link", () => void openInTab(item()))}</Show>
-                        {(() => {
-                          const favorite = () => (favoriteOverride()?.path === item().path ? favoriteOverride()!.favorite : (details.data()?.result.favorite ?? false));
-                          return actionRow(favorite() ? t().removeFavorite : t().addFavorite, favorite() ? "ti ti-star-filled" : "ti ti-star", () => void toggleFavorite(item(), !favorite()));
-                        })()}
-                        {actionRow(t().rename, "ti ti-pencil", () => props.onRename(item()))}
+                        {actionRow(t().rename, "ti ti-pencil", () => props.onRename(item()), { disabled: item().actions?.move === false })}
                         {actionRow(t().duplicate, "ti ti-copy", () => props.onDuplicate(item()))}
-                        {actionRow(t().moveTo, "ti ti-arrow-move-right", () => props.onMove(item()))}
+                        {actionRow(t().moveTo, "ti ti-arrow-move-right", () => props.onMove(item()), { disabled: item().actions?.move === false })}
                         {actionRow(t().copyTo, "ti ti-folder-symlink", () => props.onCopy(item()))}
-                        <Show when={props.onShare}>{actionRow(t().shareSelection, "ti ti-world-share", () => props.onShare?.(item()))}</Show>
-                        <Show when={props.onShareInbox && item().directory}>{actionRow(t().shareInbox, "ti ti-inbox", () => props.onShareInbox?.(item()))}</Show>
-                        {actionRow(t().trashSelection, "ti ti-trash", () => props.onTrash(item()), { danger: true })}
+                        <Show when={props.onShare && item().actions?.share !== false}>{actionRow(t().shareSelection, "ti ti-world-share", () => props.onShare?.(item()))}</Show>
+                        <Show when={props.onShareInbox && item().directory && item().actions?.write !== false}>{actionRow(t().shareInbox, "ti ti-inbox", () => props.onShareInbox?.(item()))}</Show>
+                        {actionRow(t().trashSelection, "ti ti-trash", () => props.onTrash(item()), { danger: true, disabled: item().actions?.move === false })}
                       </div>
                     </DetailPanel.Section>
                   </DetailPanel.Group>
@@ -267,7 +285,7 @@ function VersionsSection(props: { base: BaseSummary; entry: FileEntry; busy?: bo
   const f = useFilesMessages();
   const [busy, setBusy] = createSignal(false);
   const versions = query.create({
-    source: () => JSON.stringify([props.base.id, props.entry.path, props.entry.modified]),
+    source: () => JSON.stringify([props.base.id, props.base.locationKey, props.entry.path, props.entry.modified]),
     enabled: () => props.base.versioningEnabled,
     load: async (key, { abortSignal }) => {
       const response = await apiClient.bases[":baseId"].versions.$get({ param: { baseId: props.base.id }, query: { path: props.entry.path } }, { init: { signal: abortSignal } });
@@ -275,7 +293,7 @@ function VersionsSection(props: { base: BaseSummary; entry: FileEntry; busy?: bo
       return { key, items: (await response.json()) as FileVersion[] };
     },
   });
-  const items = createMemo(() => versions.data()?.items ?? []);
+  const items = createMemo(() => versions.data()?.key === JSON.stringify([props.base.id, props.base.locationKey, props.entry.path, props.entry.modified]) ? versions.data()?.items ?? [] : []);
   const run = async (work: () => Promise<void>) => {
     if (busy() || props.busy) return;
     setBusy(true);
@@ -287,13 +305,13 @@ function VersionsSection(props: { base: BaseSummary; entry: FileEntry; busy?: bo
       setBusy(false);
     }
   };
-  const param = { baseId: props.base.id };
+  const param = () => ({ baseId: props.base.id });
   const path = () => props.entry.path;
   const comment = async (version: FileVersion) => {
     const values = await prompts.form({ title: t().commentVersion, fields: { comment: { type: "text", label: t().versionComment, default: version.comment ?? "", maxLength: 2000, multiline: true, lines: 3 } } });
     if (!values) return;
     await run(async () => {
-      const response = await apiClient.bases[":baseId"].versions.comment.$post({ param, json: { path: path(), id: version.id, comment: String(values.comment ?? "") } });
+      const response = await apiClient.bases[":baseId"].versions.comment.$post({ param: param(), json: { path: path(), id: version.id, comment: String(values.comment ?? "") } });
       if (!response.ok) await apiFailure(response, f().unavailable);
       toast.success(t().versionCommented);
       await versions.refresh();
@@ -301,7 +319,7 @@ function VersionsSection(props: { base: BaseSummary; entry: FileEntry; busy?: bo
   };
   const restore = (version: FileVersion) =>
     run(async () => {
-      const response = await apiClient.bases[":baseId"].versions.restore.$post({ param, json: { path: path(), id: version.id } });
+      const response = await apiClient.bases[":baseId"].versions.restore.$post({ param: param(), json: { path: path(), id: version.id } });
       if (!response.ok) await apiFailure(response, f().unavailable);
       toast.success(t().versionRestored);
       props.onChanged(path());
@@ -312,25 +330,15 @@ function VersionsSection(props: { base: BaseSummary; entry: FileEntry; busy?: bo
     const values = await prompts.form({ title: t().restoreVersionAs, fields: { name: { type: "text", label: t().restoreAsName, default: suggested, required: true, maxLength: 255 } } });
     if (!values) return;
     await run(async () => {
-      const response = await apiClient.bases[":baseId"].versions["restore-as"].$post({ param, json: { path: path(), id: version.id, name: values.name } });
+      const response = await apiClient.bases[":baseId"].versions["restore-as"].$post({ param: param(), json: { path: path(), id: version.id, name: values.name } });
       if (!response.ok) await apiFailure(response, f().unavailable);
       toast.success(t().versionRestored);
       props.onChanged((await response.json()).entry.path);
     });
   };
-  const remove = async (version: FileVersion) => {
-    const confirmed = await prompts.confirm(t().deleteVersionQuestion, { title: t().deleteVersion, icon: "ti ti-trash", variant: "danger", confirmText: t().deleteVersion });
-    if (!confirmed) return;
-    await run(async () => {
-      const response = await apiClient.bases[":baseId"].versions.delete.$post({ param, json: { path: path(), id: version.id } });
-      if (!response.ok) await apiFailure(response, f().unavailable);
-      toast.success(t().versionDeleted);
-      await versions.refresh();
-    });
-  };
   const downloadVersion = (version: FileVersion) =>
     run(async () => {
-      const response = await apiClient.bases[":baseId"].versions.download.$post({ param, json: { path: path(), id: version.id } });
+      const response = await apiClient.bases[":baseId"].versions.download.$post({ param: param(), json: { path: path(), id: version.id } });
       if (!response.ok) await apiFailure(response, f().downloadFailed);
       const lease = await response.json();
       const link = document.createElement("a");
@@ -358,14 +366,13 @@ function VersionsSection(props: { base: BaseSummary; entry: FileEntry; busy?: bo
                       leading={<i class="ti ti-history" aria-hidden="true" />}
                       trailing={<Format.Bytes value={version.size} />}
                       disabled={busy() || props.busy}
-                      onClick={() => void comment(version)}
+                      onClick={() => props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version)}
                       menuLabel={`${t().actions}: ${when(version.created)}`}
                       menuItems={[
-                        { label: t().commentVersion, icon: "ti ti-message", action: () => void comment(version) },
+                        { disabled: props.entry.actions?.write === false, label: t().commentVersion, icon: "ti ti-message", action: () => void comment(version) },
                         { label: t().downloadVersion, icon: "ti ti-download", action: () => void downloadVersion(version) },
-                        { label: t().restoreVersion, icon: "ti ti-arrow-back-up", action: () => void restore(version) },
+                        { disabled: props.entry.actions?.write === false, label: t().restoreVersion, icon: "ti ti-arrow-back-up", action: () => void restore(version) },
                         { label: t().restoreVersionAs, icon: "ti ti-file-plus", action: () => void restoreAs(version) },
-                        { items: [{ label: t().deleteVersion, icon: "ti ti-trash", variant: "danger" as const, action: () => void remove(version) }] },
                       ]}
                     />
                   )}

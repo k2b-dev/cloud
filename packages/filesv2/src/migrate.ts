@@ -1,4 +1,6 @@
 import { sql } from "bun";
+import { migrateSharing } from "./data/sharing-migration";
+import { migrateTrash } from "./migrate-trash";
 
 export async function migrate(): Promise<void> {
   await sql`CREATE SCHEMA IF NOT EXISTS filesv2`.simple();
@@ -110,4 +112,8 @@ export async function migrate(): Promise<void> {
       PRIMARY KEY (user_id, base_id, path)
     )`);
   }
+  await migrateTrash();
+  await migrateSharing();
+  await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
+
 }

@@ -877,7 +877,8 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
     seen.push(`${request.method} ${url.pathname}`);
     if (url.pathname.endsWith("/delete")) {
       expect(await request.json()).toEqual({ paths: [entry.path, "Documents/old.txt"] });
-      return Response.json([{ id: "11111111-1111-4111-8111-111111111111", original: entry.path, name: entry.name, directory: false, deletedAt: entry.modified }]);
+      const trashEntry = { id: "11111111-1111-4111-8111-111111111111", original: entry.path, name: entry.name, directory: false, deletedAt: entry.modified };
+      return Response.json({ entries: [trashEntry], results: [{ path: entry.path, ok: true, entry: trashEntry }] });
     }
     if (url.pathname.endsWith("/restore") && url.pathname.includes("/trash/")) return Response.json({ base, entry });
     if (url.pathname.endsWith("/versions")) return Response.json([{ id: "v1", created: entry.modified, size: 4, pinned: false, comment: "draft", author: "alice" }]);
@@ -886,7 +887,7 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
       return Response.json({ base, entry: { ...entry, path: "Documents/copy.txt", name: "copy.txt" } });
     }
     if (url.pathname.endsWith("/shares") && request.method === "POST") {
-      expect(await request.json()).toEqual({ kind: "download", paths: [entry.path], folder: "", title: "Report", expiresIn: "7d" });
+      expect(await request.json()).toEqual({ kind: "download", paths: [entry.path], folder: "", title: "Report", expiresIn: "7d", maxFileSize: 104857600, maxTotalSize: 1073741824, showUploadNames: false });
       return Response.json({ id: "s1", kind: "download", url: "https://cloud.test/share/filesv2/s/tok", title: "Report", note: null, base, scope: "Documents", items: [entry.path], createdBy: "alice", createdAt: entry.modified, expiresAt: entry.modified, state: "active", accessCount: 0, lastAccessedAt: null });
     }
     if (url.pathname.endsWith("/revoke")) return Response.json({ id: "s1", state: "revoked", title: "Report" });
@@ -895,7 +896,7 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
   const server = { server: cloud.url.href };
   const removed = await run(["--json", "filesv2", "delete", base.id, entry.path, "Documents/old.txt"], server);
   expect(removed.exitCode, removed.stderr).toBe(0);
-  expect(JSON.parse(removed.stdout)[0].original).toBe(entry.path);
+  expect(JSON.parse(removed.stdout).entries[0].original).toBe(entry.path);
   const restored = await run(["--json", "filesv2", "trash", "restore", base.id, "11111111-1111-4111-8111-111111111111"], server);
   expect(restored.exitCode, restored.stderr).toBe(0);
   const versions = await run(["--json", "filesv2", "versions", "list", base.id, entry.path], server);
@@ -938,4 +939,39 @@ test("documents create calls the API and edit-url prints the Cloud address local
   const query = new URLSearchParams({ base: base.id, path: "Documents", file: "Documents/Minutes.ods" });
   expect(address.stdout.trim()).toBe(`${cloud.url.origin}/app/filesv2?${query}&view=edit`);
   expect(seen).toEqual([`POST /api/filesv2/bases/${base.id}/documents`]);
+});
+
+
+test("batch partial results preserve successes and return a failure exit status", async () => {
+  const cloud = serve(() => Response.json({ base, entries: [entry], results: [{ path: entry.path, ok: true, entry }, { path: "missing.txt", ok: false, error: "not_found" }] }));
+  const result = await run(["--json", "filesv2", "move", base.id, entry.path, "missing.txt", "--to", "Target"], { server: cloud.url.href });
+  expect(result.exitCode).toBe(1);
+  expect(JSON.parse(result.stdout).results).toHaveLength(2);
+  expect(JSON.parse(result.stdout).entries[0].path).toBe(entry.path);
+});
+
+test("new administration and inbox settings use the authenticated API without stored bearer URLs", async () => {
+  const seen: string[] = [];
+  const cloud = serve(async (request) => {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+    const url = new URL(request.url);
+    seen.push(`${request.method} ${url.pathname}`);
+    if (url.pathname === "/api/filesv2/admin/shares" || url.pathname === "/api/filesv2/admin/uploads") return Response.json({ items: [], next: null });
+    if (url.pathname === "/api/filesv2/admin/versions") {
+      expect(request.method).toBe("DELETE");
+      expect(await request.json()).toMatchObject({ path: "a.txt", id: "v1", confirmPath: "home/alice/a.txt", area: "cloud", kind: "users", name: "alice" });
+      return Response.json({ deleted: true });
+    }
+    if (url.pathname.endsWith("/shares")) {
+      expect(await request.json()).toMatchObject({ kind: "inbox", folder: "Inbox", expiresIn: "unlimited", maxFileSize: 123, maxTotalSize: 456, showUploadNames: true, note: "private", publicNote: "hello" });
+      return Response.json({ url: "https://cloud.test/share/filesv2/inbox/once" });
+    }
+    return Response.json({ state: "revoked", title: "Inbox" });
+  });
+  const options = { server: cloud.url.href };
+  for (const args of [["admin", "shares", "list"], ["admin", "uploads", "list"], ["admin", "shares", "revoke", "abc"], ["admin", "versions", "delete", "a.txt", "v1", "--name", "alice", "--confirm-path", "home/alice/a.txt", "--yes"], ["shares", "create", base.id, "Inbox", "--kind", "inbox", "--title", "Drop", "--expires-in", "unlimited", "--max-file-size", "123", "--max-total-size", "456", "--show-upload-names", "--note", "private", "--public-note", "hello"]]) {
+    const result = await run(["--json", "filesv2", ...args], options);
+    expect(result.exitCode, result.stderr).toBe(0);
+  }
+  expect(seen).toHaveLength(5);
 });

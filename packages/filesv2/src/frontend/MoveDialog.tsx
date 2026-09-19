@@ -1,5 +1,5 @@
-import { Button, InlineGuidance, PanelDialog, Placeholder, dialogCore, panelDialogOptions } from "@k2b/ui";
-import { createResource, createSignal, For, Show } from "solid-js";
+import { Button, dialogCore, InlineGuidance, PanelDialog, Placeholder, panelDialogOptions } from "@k2b/ui";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, FileEntry } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
@@ -33,24 +33,35 @@ function DestinationPicker(props: {
   const [location, setLocation] = createSignal<Location>({ baseId: props.sourceBaseId, folder: props.initialFolder });
   const bases = () => props.bases.filter((base) => base.status === "existing");
   const base = () => bases().find((item) => item.id === location().baseId) ?? null;
-  const [folders] = createResource(
-    () => location(),
-    async ({ baseId, folder }) => {
-      if (!baseId) return [] as FileEntry[];
-      // Every subfolder must be reachable as a target, so all pages are read (bounded by the listing pages of one folder).
-      const items: FileEntry[] = [];
-      let after: string | undefined;
-      for (let page = 0; page < 20; page++) {
-        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId }, query: { path: folder, after } });
-        if (!response.ok) await apiFailure(response, t().unavailable);
-        const result = await response.json();
-        items.push(...result.items.filter((entry: FileEntry) => entry.directory && !(baseId === props.sourceBaseId && props.sourcePaths.includes(entry.path))));
-        if (!result.next) break;
-        after = result.next;
-      }
-      return items;
-    },
-  );
+  const [folders, setFolders] = createSignal<FileEntry[]>([]);
+  const [next, setNext] = createSignal<string | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal(false);
+  let request: AbortController | undefined;
+  const load = async (after?: string) => {
+    const { baseId, folder } = location();
+    request?.abort();
+    const pending = new AbortController();
+    request = pending;
+    if (!baseId) { setFolders([]); setNext(null); return; }
+    setLoading(true);
+    setError(false);
+    try {
+      const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId }, query: { path: folder, after } }, { init: { signal: pending.signal } });
+      if (!response.ok) await apiFailure(response, t().unavailable);
+      const result = await response.json();
+      if (pending.signal.aborted) return;
+      const items = result.items.filter((entry: FileEntry) => entry.directory && !(baseId === props.sourceBaseId && props.sourcePaths.includes(entry.path)));
+      setFolders(previous => after ? [...previous, ...items] : items);
+      setNext(result.next);
+    } catch {
+      if (!pending.signal.aborted) setError(true);
+    } finally {
+      if (!pending.signal.aborted) setLoading(false);
+    }
+  };
+  createEffect(() => { location(); setFolders([]); setNext(null); void load(); });
+  onCleanup(() => request?.abort());
   const copy = () => props.copyOnly || location().baseId !== props.sourceBaseId;
   const crumbs = () => location().folder.split("/").filter(Boolean);
   // Inside the source base nothing may land in its own subtree; a move additionally needs a different parent.
@@ -108,8 +119,8 @@ function DestinationPicker(props: {
             when={location().baseId}
             fallback={<For each={bases()}>{(item) => tile(item.kind === "users" ? "ti ti-home" : "ti ti-users", item.name, () => setLocation({ baseId: item.id, folder: "" }))}</For>}
           >
-            <Show when={!folders.loading} fallback={<Placeholder state="loading" align="left" class="col-span-full" description={t().loadingFiles} />}>
-              <Show when={!folders.error} fallback={<Placeholder state="error" align="left" class="col-span-full" description={b().loadFailed} />}>
+            <Show when={!loading()} fallback={<Placeholder state="loading" align="left" class="col-span-full" description={t().loadingFiles} />}>
+              <Show when={!error()} fallback={<Placeholder state="error" align="left" class="col-span-full" description={b().loadFailed} action={<Button onClick={() => void load()}>{b().retry}</Button>} />}>
                 <Show when={folders()?.length} fallback={<p class="col-span-full text-xs text-dimmed">{b().subfolders}: 0</p>}>
                   <For each={folders()}>{(entry) => tile("ti ti-folder", entry.name, () => setLocation({ baseId: location().baseId, folder: entry.path }))}</For>
                 </Show>
@@ -117,6 +128,7 @@ function DestinationPicker(props: {
             </Show>
           </Show>
         </div>
+        <Show when={next()}>{cursor => <Button variant="ghost" disabled={loading()} onClick={() => void load(cursor())}>{b().more}</Button>}</Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <Button variant="ghost" onClick={() => props.close(null)}>

@@ -644,6 +644,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       if (page.items.some((node) => !node.path.startsWith(`${loc.target}/`) || node.path.slice(loc.target.length + 1).includes("/")))
         throw new FilesError("unavailable", 503);
       return {
+        versioningEnabled: (await loc.root.info()).versioning.enabled,
         area: input.area,
         kind: loc.kind,
         name: loc.name,
@@ -666,6 +667,24 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       if (node.directory) throw new FilesError("not_file");
       const lease = await loc.root.directDownload(loc.target, 60);
       return { url: lease.url, method: "GET" as const, expires: lease.expires };
+    },
+    async adminVersions(actor: RequestActor, input: AdminLocator) {
+      const loc = await location(actor, input);
+      if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
+      if (!(await loc.root.info()).versioning.enabled) return [];
+      return (await loc.root.versions(loc.target)).map((version) => ({
+        id: version.id, created: version.created, size: version.size, pinned: version.pinned,
+        comment: typeof version.metadata?.comment === "string" ? version.metadata.comment : null,
+        author: typeof version.metadata?.author === "string" ? version.metadata.author : null,
+      }));
+    },
+    async adminDeleteVersion(actor: RequestActor, input: AdminLocator & { id: string; confirmPath: string }) {
+      const loc = await location(actor, input);
+      if (input.confirmPath !== loc.target) throw new FilesError("confirmation_mismatch");
+      if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
+      if (!(await loc.root.info()).versioning.enabled) throw new FilesError("versioning_disabled");
+      await loc.root.deleteVersion(loc.target, input.id);
+      return { deleted: true };
     },
     async adminDelete(actor: RequestActor, input: AdminLocator & { confirmPath: string }): Promise<OperationResult> {
       const loc = await location(actor, input);

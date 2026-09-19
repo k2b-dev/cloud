@@ -1,13 +1,19 @@
 import { query } from "@k2b/stdlib/solid";
 import { Button, FileView, PdfPreview, Placeholder } from "@k2b/ui";
-import { createSignal, Match, onCleanup, Switch } from "solid-js";
+import { createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import type { FileEntry } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
 import { contentLease, previewFile, previewKind, readPreview } from "./file-preview";
 import { useFilesMessages } from "./messages";
 
 /** Mounted for one selected revision; closing it aborts text/PDF reads. */
-export default function FilePreview(props: { baseId: string; entry: FileEntry; onDownload: () => void }) {
+type PreviewProps = { baseId: string; locationKey?: string; entry: FileEntry; onDownload: () => void };
+export default function FilePreview(props: PreviewProps) {
+  return <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified])}>
+    {(_key) => <RevisionPreview {...props} />}
+  </Show>;
+}
+function RevisionPreview(props: PreviewProps) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
   const [failed, setFailed] = createSignal(false);
@@ -19,7 +25,7 @@ export default function FilePreview(props: { baseId: string; entry: FileEntry; o
   onCleanup(() => abort.abort());
   const kind = () => previewKind(props.entry);
   const media = () => ["image", "video", "audio"].includes(kind() ?? "");
-  const source = () => JSON.stringify([props.baseId, props.entry.path, props.entry.modified]);
+  const source = () => JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified]);
   const lease = query.create({
     source,
     enabled: media,

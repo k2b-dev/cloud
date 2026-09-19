@@ -1,15 +1,17 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, DataTable, Format, InlineGuidance, Placeholder } from "@k2b/ui";
-import { For, onCleanup, Show } from "solid-js";
+import { Button, ButtonLink, DataTable, Format, InlineGuidance, Placeholder, prompts } from "@k2b/ui";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { type AdminBrowseResult, ErrorSchema, type FileEntry } from "../contracts";
+import AdminVersions from "./AdminVersions";
 import { type AdminLocation, adminHref } from "./admin-location";
 import { useAdminMessages } from "./admin-messages";
 import { useFilesMessages } from "./messages";
 import { pathCrumbs } from "./urls";
 export default function AdminBrowser(props: {
   browse: AdminBrowseResult;
+  versioningEnabled?: boolean;
   location: AdminLocation;
   busy: boolean;
   onNavigate: (event: LinkNavigateEvent) => Promise<void>;
@@ -17,6 +19,30 @@ export default function AdminBrowser(props: {
 }) {
   const t = useFilesMessages();
   const a = useAdminMessages();
+  const lifetime = new AbortController();
+  const [versionsOpen, setVersionsOpen] = createSignal(false);
+  const showVersions = async (entry: FileEntry) => {
+    if (!props.versioningEnabled || versionsOpen() || props.busy) return;
+    const locator = {
+      area: props.browse.area,
+      kind: props.browse.kind,
+      name: props.browse.name,
+      archiveId: props.browse.archiveId ?? undefined,
+      path: entry.path,
+    };
+    setVersionsOpen(true);
+    try {
+      const fullPath = [props.browse.basePath, entry.path].filter(Boolean).join("/");
+      await prompts.dialog<void>((close) => <AdminVersions locator={locator} fullPath={fullPath} name={entry.name} onClose={close} />, {
+        title: a().versions,
+        icon: "ti ti-history",
+        size: "large",
+        signal: lifetime.signal,
+      });
+    } finally {
+      setVersionsOpen(false);
+    }
+  };
   const download = mutation.create({
     mutation: async (path: string, { abortSignal }) => {
       const response = await apiClient.admin.download.$post(
@@ -39,7 +65,10 @@ export default function AdminBrowser(props: {
     },
     onSuccess: (lease) => window.location.assign(lease.url),
   });
-  onCleanup(() => download.abort());
+  onCleanup(() => {
+    download.abort();
+    lifetime.abort();
+  });
   return (
     <DataTable.Panel>
       <DataTable.Header title={props.browse.name} subtitle={props.browse.basePath} />
@@ -136,6 +165,12 @@ export default function AdminBrowser(props: {
           return (
             <div class="flex justify-end gap-1">
               <Show when={!row.directory}>
+                <Show when={props.versioningEnabled}>
+                  <Button size="sm" variant="ghost" disabled={versionsOpen() || props.busy} onClick={() => void showVersions(row)}>
+                    <i class="ti ti-history" aria-hidden="true" />
+                    {a().versions}
+                  </Button>
+                </Show>
                 <Button
                   size="sm"
                   variant="ghost"
