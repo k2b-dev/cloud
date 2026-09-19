@@ -49,7 +49,13 @@ const previewChartShape = (preview: PreviewSuccess) => {
     label: column.label,
   }));
   return {
-    groupBy: groupColumns.map((column) => ({ fieldId: column.fieldId ?? column.key, label: column.label })),
+    groupBy: groupColumns.map((column) => ({
+      fieldId: column.fieldId ?? column.key,
+      label: column.label,
+      // SQL date results represent calendar days, including truncated date groups.
+      // Preserve that type for the chart's existing locale-aware date formatter.
+      ...(column.sqlType === "date" ? { granularity: "day" as const } : {}),
+    })),
     aggregations,
     buckets: preview.rows.map((row) => ({
       keys: groupColumns.map((column) => row.values[column.key] ?? null),

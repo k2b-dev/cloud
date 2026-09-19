@@ -30,9 +30,11 @@ export default function CustomAppChart(props: {
   });
   const format = (value: number) => formatCustomAppValue(value, props.valueFormat, props.dateConfig);
   if (renderData.kind === "donut") return <Chart kind="donut" data={renderData.data} legend />;
-  if (renderData.kind === "bar") return <Chart kind="bar" data={renderData.data} yAxis={{ format }} />;
+  // The default gutter fits plain numbers; our labels also include decimal places and units.
+  const padding = { left: 96 };
+  if (renderData.kind === "bar") return <Chart kind="bar" data={renderData.data} padding={padding} yAxis={{ format }} />;
   if (renderData.kind === "line") {
-    return <Chart kind="line" series={renderData.series} xAxis={{ format: renderData.xAxisFormat }} yAxis={{ format }} />;
+    return <Chart kind="line" series={renderData.series} padding={padding} xAxis={{ format: renderData.xAxisFormat }} yAxis={{ format }} />;
   }
   return <Placeholder variant="compact" description={messages().noChartData} />;
 }
