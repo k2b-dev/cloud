@@ -197,3 +197,24 @@ test("forced colors remove both vertical and horizontal masks", async () => {
   const forcedColors = css.slice(css.indexOf("@media (forced-colors: active)", css.indexOf("--scroll-fade-size: 1rem")));
   expect(forcedColors).toContain('.k2b-ui [data-scroll-fade][data-scroll-fade-axis="horizontal"] { mask-image: none; }');
 });
+
+if (!isServer) test("compact viewport remains mounted across catalog states and is opt-in", async () => {
+  const dom = createDomTestHarness();
+  const { default: ScrollArea } = await import("../src/layout/ScrollArea");
+  const [size, setSize] = createSignal<"compact" | undefined>(undefined);
+  const [content, setContent] = createSignal("Loading");
+  const dispose = render(() => <ScrollArea viewportSize={size()}>{content()}</ScrollArea>, dom.root);
+  try {
+    const viewport = dom.root.firstElementChild!;
+    expect(viewport.hasAttribute("data-viewport-size")).toBe(false);
+    setSize("compact");
+    for (const state of ["Empty", "Failed", "Results"]) {
+      setContent(state);
+      expect(dom.root.firstElementChild).toBe(viewport);
+      expect(viewport.getAttribute("data-viewport-size")).toBe("compact");
+      expect(viewport.textContent).toBe(state);
+    }
+    setSize(undefined);
+    expect(viewport.hasAttribute("data-viewport-size")).toBe(false);
+  } finally { dispose(); dom.cleanup(); }
+});

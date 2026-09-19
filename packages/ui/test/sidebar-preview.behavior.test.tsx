@@ -23,13 +23,15 @@ test("row preview shares hover and click opening, stays pinned, closes on select
   const openings: boolean[] = [];
   let selected = 0;
   const dispose = render(() => <AppWorkspace.SidebarItem icon="ti ti-folders" preview={{
-    label: "Projects", trigger: "row", onOpenChange: (open) => openings.push(open),
+    label: "Projects", trigger: "row", align: "end", onOpenChange: (open) => openings.push(open),
     content: (close) => <button on:click={() => { close(); selected++; }}>Choose project</button>,
   }}>Projects</AppWorkspace.SidebarItem>, dom.root);
   try {
     const row = dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item")!;
     const main = row.querySelector<HTMLButtonElement>(".k2b-app-workspace__sidebar-item-main")!;
     const panel = row.querySelector<HTMLElement>('[role="dialog"]')!;
+    row.getBoundingClientRect = () => ({ x: 0, y: 500, top: 500, bottom: 540, left: 0, right: 200, width: 200, height: 40, toJSON() {} });
+    panel.getBoundingClientRect = () => ({ x: 206, y: 0, top: 0, bottom: 450, left: 206, right: 506, width: 300, height: 450, toJSON() {} });
     const isOpen = popover(panel);
     const scroll = panel.querySelector<HTMLElement>('[data-scroll-fade-mode="both"]')!;
     expect(scroll).not.toBeNull();
@@ -51,6 +53,7 @@ test("row preview shares hover and click opening, stays pinned, closes on select
     row.dispatchEvent(hover);
     await Bun.sleep(280);
     expect(isOpen()).toBe(true);
+    expect(panel.style.top).toBe("90px");
     main.click();
     expect(main.getAttribute("aria-expanded")).toBe("true");
     expect(dom.document.activeElement).toBe(panel);

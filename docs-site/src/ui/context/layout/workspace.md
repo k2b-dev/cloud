@@ -275,7 +275,7 @@ type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
 
 type AppWorkspaceSidebarItemProps = {
   variant?: "row" | "card"; context?: JSX.Element; contextMeta?: JSX.Element;
-  description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; onOpenChange?: (open: boolean) => void };
+  description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void; active?: boolean; activeClass?: string; disabled?: boolean;
@@ -555,6 +555,12 @@ while closed; live content updates preserve its controls and focus. Do not start
 expensive subscriptions merely because a row exists. The preview can hold an
 explicit action that loads additional details.
 
+For asynchronous catalogs, set `preview.viewportSize="compact"` to reserve a
+stable 18.75rem (300 px at the default font size) scrollport, capped at 60dvh.
+Loading, empty, error, and populated states then keep the same height. Use
+`<ScrollArea viewportSize="compact">` for the equivalent mobile dialog content.
+The default preview remains content-sized; do not nest another scrollport.
+
 Hover previews use the shared `ScrollArea` internally. Overflowing content fades
 at the top and bottom while the popup border and shadow remain visible. Fades
 follow the current scroll position and disappear when an edge is reached.
@@ -586,7 +592,9 @@ For a row whose only action is opening its preview, set `preview.trigger="row"`
 and omit `href` and `onClick`. Hover and focus still open the same preview;
 clicking the row or its trailing chevron keeps it open. The chevron appears on
 hover or keyboard focus and remains visible on touch devices. Keyboard focus on
-the row or chevron outlines the complete row. Existing previews
+the row or chevron outlines the complete row. Set `preview.align="end"` to align the menu
+bottom edge with the navigation row, constrained to the viewport. The default
+keeps menus vertically centered on their row. Existing previews
 keep their separate info button and independent row navigation by default.
 A content callback receives `close` so selecting a destination can dismiss the
 preview before navigating or opening another dialog:

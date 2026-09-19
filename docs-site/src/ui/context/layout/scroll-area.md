@@ -32,6 +32,12 @@ padding, and spacing. Give the component a bounded height or place it in a
 correctly sized grid or flex region. `ScrollArea` accepts normal `div`
 attributes and an optional `class`.
 
+For compact asynchronous catalogs, use `viewportSize="compact"` instead of a
+custom height. It reserves 18.75rem (300 px at the default font size), capped
+at 60dvh, including any padding. Loading, empty, error, and populated states
+keep the same height; longer content scrolls within it. Sidebar previews expose
+the same setting as `preview.viewportSize`. Omit it for layout-owned sizing.
+
 Pass `scrollPreserveKey` when enhanced navigation should restore this
 scrollport's position. Use a stable purpose-based key rather than an item id.
 

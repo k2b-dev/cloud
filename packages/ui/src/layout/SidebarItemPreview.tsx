@@ -1,9 +1,9 @@
-import { ScrollArea } from "./ScrollArea";
+import { ScrollArea, type ScrollAreaProps } from "./ScrollArea";
 import { createSignal, createUniqueId, type JSX, onCleanup, onMount } from "solid-js";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 
 /** A non-modal, interactive row preview. Native popover owns light dismissal. */
-export function SidebarItemPreview(props: { label: string; children: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; onOpenChange?: (open: boolean) => void }) {
+export function SidebarItemPreview(props: { label: string; children: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: ScrollAreaProps["viewportSize"]; onOpenChange?: (open: boolean) => void }) {
   const id = `sidebar-preview-${createUniqueId()}`;
   const [open, setOpen] = createSignal(false);
   let button!: HTMLButtonElement;
@@ -15,11 +15,20 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
   let dismissed = false;
   const clear = () => { clearTimeout(timer); timer = undefined; };
   const close = () => { clear(); panel.hidePopover(); };
+  const position = () => {
+    const target = row ?? button;
+    positionTooltipSurface(panel, target, "right");
+    if (props.align === "end") {
+      const height = panel.getBoundingClientRect().height;
+      const bottom = target.getBoundingClientRect().bottom;
+      panel.style.top = `${Math.round(Math.max(8, Math.min(bottom - height, window.innerHeight - height - 8)))}px`;
+    }
+  };
   const show = () => {
     clear();
     if (dismissed || open()) return;
     panel.showPopover();
-    positionTooltipSurface(panel, row ?? button, "right");
+    position();
   };
   const enter = () => { clear(); if (!dismissed && !open()) timer = setTimeout(show, 250); };
   const leave = () => {
@@ -61,7 +70,7 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
       if (event.key !== "Escape" || !open()) return;
       dismiss();
     };
-    const reposition = () => { if (open()) positionTooltipSurface(panel, row ?? button, "right"); };
+    const reposition = () => { if (open()) position(); };
     row?.addEventListener("pointerenter", pointerEnter);
     row?.addEventListener("pointerleave", leave);
     row?.addEventListener("focusin", enter);
@@ -93,7 +102,7 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
     <div ref={panel} id={id} popover="auto" role="dialog" aria-label={props.label} tabIndex={-1}
       class="k2b-app-workspace__sidebar-preview" onPointerEnter={clear} onPointerLeave={leave}
       onToggle={(event) => { const visible = event.newState === "open"; setOpen(visible); main?.setAttribute("aria-expanded", String(visible)); props.onOpenChange?.(visible); if (!visible) pinned = false; }}>
-      <ScrollArea class="k2b-app-workspace__sidebar-preview-body">
+      <ScrollArea viewportSize={props.viewportSize} class="k2b-app-workspace__sidebar-preview-body">
         {typeof props.children === "function" ? props.children(dismiss) : props.children}
       </ScrollArea>
     </div>

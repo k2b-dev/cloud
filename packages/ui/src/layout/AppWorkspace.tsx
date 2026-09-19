@@ -1,4 +1,5 @@
 import { createScrollFade } from "./scroll-fade";
+import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
 import { Link, type LinkNavigateEvent, type NavigationScrollMode } from "@k2b/ssr/nav";
 import {
@@ -245,7 +246,7 @@ export type AppWorkspaceSidebarItemProps = {
   /** Passive second line; keep controls in actions or preview. */
   description?: JSX.Element;
   /** Interactive details, also reachable through a dedicated button. */
-  preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; onOpenChange?: (open: boolean) => void };
+  preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: ScrollAreaProps["viewportSize"]; onOpenChange?: (open: boolean) => void };
   href?: string;
   /** Document navigation by default; opt into enhanced navigation only when the owning island applies the target state. */
   navigation?: "enhanced" | "document";
@@ -915,7 +916,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       {singleAction()}
       <Show when={props.preview}>
         {(preview) => (
-          <SidebarItemPreview label={preview().label} trigger={preview().trigger} onOpenChange={preview().onOpenChange}>
+          <SidebarItemPreview label={preview().label} trigger={preview().trigger} align={preview().align} viewportSize={preview().viewportSize} onOpenChange={preview().onOpenChange}>
             {preview().content}
           </SidebarItemPreview>
         )}

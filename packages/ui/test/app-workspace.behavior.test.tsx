@@ -113,7 +113,7 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     let selections = 0;
     const openings: boolean[] = [];
     const dispose = render(() => <AppWorkspace.SidebarItem variant="card" context={status()} contextMeta={count()} description={status()}
-      preview={{ label: "Details", onOpenChange: open => openings.push(open), content: <input aria-label="Preview note" value={status()} /> }}>
+      preview={{ label: "Details", viewportSize: "compact", onOpenChange: open => openings.push(open), content: <input aria-label="Preview note" value={status()} /> }}>
       <AppWorkspace.SidebarItemIcon icon={count() === 1 ? "ti ti-clock" : "ti ti-check"} />
       <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>
       <AppWorkspace.SidebarItemMeta>{count()}</AppWorkspace.SidebarItemMeta>
@@ -144,6 +144,7 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       expect(selections).toBe(1);
       expect(openings).toEqual([]);
       const panel = dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-preview")!;
+      expect(panel.querySelector(".k2b-scroll-area")?.getAttribute("data-viewport-size")).toBe("compact");
       for (const newState of ["open", "closed"]) {
         const event = new Event("toggle");
         Object.defineProperty(event, "newState", { value: newState });

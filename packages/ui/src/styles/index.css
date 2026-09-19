@@ -1819,6 +1819,11 @@
   scrollbar-gutter: stable;
 }
 
+.k2b-ui .k2b-scroll-area[data-viewport-size="compact"] {
+  box-sizing: border-box;
+  height: min(18.75rem, 60dvh);
+}
+
 /* A host may expose its trailing inset to the panel. The scrollport expands
    into that space so its stable gutter replaces the inset instead of adding a
    second gap, while the non-scrolling header keeps its original alignment. */
