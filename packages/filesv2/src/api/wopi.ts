@@ -15,6 +15,7 @@ export const wopiApi = new Hono<AuthContext>()
   .use("*", auth.requireRole("*"))
   .onError((error, c) => {
     if (error instanceof FilesError) return c.json({ code: error.code }, error.status);
+    if (error instanceof FilegateError && error.status === 403) return c.json({ code: "forbidden" }, 403);
     if (error instanceof FilegateError && error.status === 404) return c.json({ code: "not_found" }, 404);
     return c.json({ code: "unavailable" }, 503);
   })

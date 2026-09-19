@@ -1,6 +1,6 @@
 import type { RequestActor } from "@k2b/cloud/server";
 import { type accountIdentities, audit } from "@k2b/cloud/services";
-import { type DirectoryOptions, type Filegate, FilegateError, type Node, type RootClient, type RootInfo } from "@k2b/filegate";
+import { type DirectoryOptions, type Filegate, FilegateError, type Node, type RootClient, type TransferResult } from "@k2b/filegate";
 import { sql } from "bun";
 import type {
   AdminBrowseResult,
@@ -19,6 +19,7 @@ import { type Operation, operations, withRootLock } from "../data/operations";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import { joinPath, relativePath } from "./paths";
+import { rootSummary as summary } from "./root-summary";
 
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
 type Dependencies = {
@@ -45,19 +46,6 @@ const result = (operation: Operation): OperationResult => ({
   id: operation.id,
   state: operation.state === "pending" ? "pending" : "complete",
   path: operation.target ?? operation.source,
-});
-const summary = (info: RootInfo): RootSummary => ({
-  name: info.name,
-  indexEnabled: info.index.enabled,
-  versioningEnabled: info.versioning.enabled,
-  files: info.stats?.files ?? null,
-  directories: info.stats?.directories ?? null,
-  bytes: info.stats?.bytes ?? null,
-  versions: info.versions,
-  versionBytes: info.versionBytes,
-  activeUploads: info.activeUploads,
-  available: info.available,
-  capacity: info.capacity,
 });
 async function stat(root: RootClient, path: string): Promise<Node | null> {
   try {
@@ -212,6 +200,9 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       if (operation.action === "delete" && !within(operation.source, archived.target!)) throw new FilesError("configuration_changed", 409);
     }
     if (operation.state !== "pending") return result(operation);
+    // These callers only issue native same-root moves. An unexpected pending
+    // receipt cannot be completed from filesystem appearance on the next run.
+    if (operation.error_code === "transfer_pending") throw new FilesError("transfer_pending", 409);
     try {
       if (operation.action === "create") {
         const rows = await sql<
@@ -245,6 +236,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         }
         await verifyCreation(root, node, base, daemonUid);
       } else if (operation.action === "archive" || operation.action === "restore") {
+        let movedPath = operation.target!;
         const source = await stat(root, operation.source);
         const target = await stat(root, operation.target!);
         if (source && target) throw new FilesError("path_conflict", 409);
@@ -258,13 +250,22 @@ export function createDirectoryLifecycle(deps: Dependencies) {
             await privateDirectory(root, wrapper);
           } else
             await ensureParents(root, operation.target!.split("/").slice(0, -1).join("/"), operation.area === "cloud" ? "0700" : "0755");
+          let receipt: TransferResult | undefined;
+          let answered = false;
           try {
-            await root.transfer(operation.source, operation.root, operation.target!, { move: true, onConflict: "error" });
+            receipt = await root.transfer(operation.source, operation.root, operation.target!, { move: true, onConflict: "error" });
+            answered = true;
           } catch (error) {
             if ((await stat(root, operation.source)) || !(await stat(root, operation.target!))) throw error;
           }
+          if (answered) {
+            if (receipt?.state !== "completed") throw new FilesError("transfer_pending", 409);
+            if (!receipt.node || receipt.node.root !== operation.root || receipt.node.path !== operation.target)
+              throw new FilesError("operation_unresolved", 409);
+            movedPath = receipt.node.path;
+          }
         }
-        const moved = await root.stat(operation.target!);
+        const moved = await root.stat(movedPath);
         if (!unchanged(operation.snapshot, moved)) throw new FilesError("source_changed", 409);
         if (operation.action === "archive") await privateDirectory(root, operation.target!.split("/").slice(0, -1).join("/"));
       } else {
@@ -665,7 +666,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const loc = await location(actor, input);
       const node = await loc.root.stat(loc.target);
       if (node.directory) throw new FilesError("not_file");
-      const lease = await loc.root.directDownload(loc.target, 60);
+      const lease = await loc.root.directDownload(loc.target, { expiresIn: 60 });
       return { url: lease.url, method: "GET" as const, expires: lease.expires };
     },
     async adminVersions(actor: RequestActor, input: AdminLocator) {

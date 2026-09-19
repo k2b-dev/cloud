@@ -1,4 +1,12 @@
 const messages: Record<string, [string, string]> = {
+  idempotency_conflict: ["This operation ID is already bound to different parameters. Check the original operation before starting another.", "Diese Vorgangs-ID gehört bereits zu anderen Parametern. Prüfe den ursprünglichen Vorgang, bevor du einen neuen startest."],
+  identity_changed: ["The Unix identity changed since this operation began. Reload the folder before starting again.", "Die Unix-Identität hat sich seit Beginn des Vorgangs geändert. Lade den Ordner vor einem neuen Versuch neu."],
+  operation_conflict: ["The operation conflicts with the current storage state. Refresh the folder and check the destination before retrying.", "Der Vorgang passt nicht zum aktuellen Zustand der Ablage. Aktualisiere den Ordner und prüfe das Ziel vor einem neuen Versuch."],
+  feature_disabled: ["A required Filegate root capability is disabled. Check the root configuration.", "Eine erforderliche Fähigkeit des Filegate-Roots ist deaktiviert. Prüfe die Root-Konfiguration."],
+  execution_disabled: ["Enable Unix execution on this Filegate root before using FreeIPA files.", "Aktiviere die Unix-Ausführung dieses Filegate-Roots, bevor du FreeIPA-Dateien verwendest."],
+  transfer_pending: ["Filegate has not confirmed this transfer. Review the operation before retrying.", "Filegate hat diese Übertragung nicht bestätigt. Prüfe den Vorgang vor einem neuen Versuch."],
+  write_conflict: ["The file changed while it was being saved. Reload its current version before saving again.", "Die Datei wurde während des Speicherns geändert. Lade den aktuellen Stand vor einem neuen Speicherversuch."],
+  cursor_invalid: ["The folder or filters changed. Reload the first page.", "Der Ordner oder die Filter wurden geändert. Lade die erste Seite neu."],
   index_disabled: [
     "The index is disabled in this Filegate root configuration.",
     "Der Index ist in der Konfiguration dieses Filegate-Roots deaktiviert.",
@@ -69,6 +77,7 @@ const messages: Record<string, [string, string]> = {
   inbox_file_limit: ["This file exceeds the inbox's file-size limit.", "Diese Datei überschreitet die Dateigrößengrenze des Eingangs."],
   inbox_total_limit: ["The inbox's total upload budget is exhausted.", "Das gesamte Upload-Budget des Eingangs ist ausgeschöpft."],
   inbox_invalid_limits: ["The per-file limit must not exceed the total limit.", "Die Dateigrößengrenze darf die Gesamtgrenze nicht überschreiten."],
+  receipt_unknown: ["The upload receipt is unavailable. Its result is unconfirmed; do not start a duplicate transfer until its destination has been checked.", "Der Upload-Beleg ist nicht verfügbar. Das Ergebnis ist unbestätigt; prüfe das Ziel, bevor du eine neue Übertragung startest."],
   upload_uncertain: ["The upload result cannot be confirmed yet. Its reserved space remains counted.", "Das Upload-Ergebnis ist noch nicht bestätigt. Der reservierte Speicher bleibt angerechnet."],
   upload_changed: ["This upload no longer matches its original target or size.", "Dieser Upload passt nicht mehr zu seinem ursprünglichen Ziel oder seiner Größe."],
   invalid_size: ["Use a non-negative whole number of bytes within the supported range.", "Verwende eine nicht negative ganze Bytezahl im unterstützten Bereich."],

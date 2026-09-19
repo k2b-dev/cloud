@@ -1,4 +1,4 @@
-import { AppWorkspace, Button, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { EditorLaunch } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
@@ -85,6 +85,11 @@ export default function Editor(props: { launch: EditorLaunch; onBack: () => void
   const action = () => `${props.launch.action}&closebutton=1`;
   return (
     <AppWorkspace.Main scroll={false} class="filesv2-editor" aria-busy={!loaded()}>
+      <Show when={props.launch.managed === false && props.launch.canWrite}>
+        <div class="shrink-0 p-3">
+          <InlineGuidance tone="warning" icon="ti ti-alert-triangle">{b().editorExternalWrites}</InlineGuidance>
+        </div>
+      </Show>
       <div class="filesv2-editor__frame">
         <iframe ref={frame} name={frameName} title={props.launch.entry.name} allow="clipboard-read; clipboard-write" />
         <Show when={!loaded()}>

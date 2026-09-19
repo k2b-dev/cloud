@@ -16,7 +16,7 @@ Choose **List**, **Grid**, or **Tree** above the list. Tree shows the whole stor
 
 ## Sort, filter, and drag
 
-Open **Sort and filter** using the icon button to the right of search. Its three sections are **Sort by**, **Order**, and **Type**. Choose name, date, size or type; ascending or descending order; and all entries, folders, documents, images, audio and video, or other files. **Group folders** is on by default: folders come before files, each sorted by name. Turn it off to sort both together. The browser remembers grouping per storage location. **Reset** restores name ascending, all types, and grouping. The `..` row stays above the entries even when you change sorting or filter by type. Column headers in the list sort as well. Storage lists by name, so other orders apply within the loaded page; the count says so when more pages exist.
+Open **Sort and filter** using the icon button to the right of search. Its three sections are **Sort by**, **Order**, and **Type**. Choose name, date, or size; ascending or descending order; and all entries, files, or folders. **Group folders** is on by default: folders come before files, each sorted by name. Turn it off to sort both together. The browser remembers grouping per storage location. **Reset** restores name ascending, all types, and grouping. The `..` row stays above the entries even when you change sorting or filter by type. Column headers in the list sort as well. Sorting and filtering apply across pages. With grouping on, all folders appear before files. Options stay in the address bar. If a saved page has expired or changed, the browser returns to the first page and tells you.
 
 Drag an entry onto a folder to move it there; a highlighted or checked selection moves together. The **..** row moves entries to the parent folder. Rest on a folder for a moment and it opens (list and grid) or expands (tree), so you can drop deeper without letting go. Dropping files or folders from your computer uploads them; folder uploads keep their structure. Large selections are bounded and can be cancelled.
 
@@ -24,23 +24,23 @@ Files you open or download appear under **Recent** in the sidebar; **Favorites**
 
 ## Search
 
-The search field at the top searches names everywhere below the current folder; results show each hit with its path relative to the folder. Press Enter to search and clear the field to return to the listing. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search in a smaller folder. The magnifier at the top of the sidebar opens the global Cloud search restricted to files across all your storage locations; opening a result jumps to its folder with the file selected.
+The search field at the top searches names everywhere below the current folder; results show each hit with its path relative to the folder. Press Enter to search and clear the field to return to the listing. FreeIPA searches always read the current filesystem, even with an index. An unreadable subfolder stops the search; narrow the search to an accessible folder. If access changes or a result disappears while paging, start the search again. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search in a smaller folder. The magnifier at the top of the sidebar opens the global Cloud search restricted to files across all your storage locations; opening a result jumps to its folder with the file selected.
 
 ## Select and act
 
 A click on a file only opens its details; nothing counts as selected until you choose **Select** next to the entry count. Checkboxes then appear in every view: a click toggles an entry, Shift-click selects a range, Ctrl/Cmd-A selects the loaded page, and **Done** ends the selection. Arrow keys move the highlight, Space toggles while selecting, Escape clears. With a selection, **n selected** and an **Actions** menu appear below the search field: download (one file directly, several entries or folders as one ZIP), move into a new folder, move to another folder, copy to this or another storage, share publicly, or move to the trash. Right-click a row for the same actions.
 
-Multi-entry actions can partly succeed. Completed items stay completed; the interface keeps failed items available to retry. Moving stays inside one storage location. Copying can target another storage location; the originals stay where they are, so a group file can never disappear into a private home by accident.
+Multi-entry actions can partly succeed. Completed items stay completed; the interface keeps failed items available to retry. Moving stays inside one storage location. Copying can target another compatible storage location and keeps the originals. You can copy between Cloud and FreeIPA storage when you can read the source and write to the destination. The target keeps its own ownership rules.
 
 ## Edit documents together
 
-When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The document name appears in the top bar; Collabora shows when it last saved, and its close button (X) returns to the folder with the file selected. If you may only read a file, it opens read-only. Every save becomes the current file; the file's version history stays in its details panel. Reopen the editor after changing theme to apply the new theme.
+When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The document name appears in the top bar; Collabora shows when it last saved, and its close button (X) returns to the folder with the file selected. If you may only read a file, it opens read-only. On storage reserved for Filegate writes, a concurrent change causes a save conflict. Storage also changed outside Filegate has only best-effort conflict detection. Every save becomes the current file; the file's version history stays in its details panel. Reopen the editor after changing theme to apply the new theme.
 
 The plus menu then also offers **New text document**, **New spreadsheet** and **New presentation**. You enter a name, the file extension is added for you, and the new document opens in the editor.
 
 ## Add, upload, and change entries
 
-The plus button next to the search field offers **Upload**, **Upload folder**, **New folder**, and **New file**. You can also drop files from your computer onto the list. Each file is transferred directly to the file server after Cloud has checked your access, and it is published only when the whole transfer has arrived. Progress appears in a notification with a progress bar. If names already exist you decide once per upload whether to replace them or upload only the new files. Names cannot contain slashes.
+The plus button next to the search field offers **Upload**, **Upload folder**, **New folder**, and **New file**. You can also drop files from your computer onto the list. Each file is transferred directly to the file server after Cloud has checked your access, and it is published only when the whole transfer has arrived. Progress appears in a notification with a progress bar. If names already exist you decide once per upload whether to replace them or upload only the new files. Retrying the same unchanged file to the same destination reuses its upload session. After an uncertain result, check what happened before starting a different upload. Names cannot contain slashes.
 
 The details panel of an entry offers **Open in new tab**, **Rename**, **Duplicate**, **Move to**, **Copy to**, **Share publicly**, and **Move to trash**. Folders additionally offer **Share as upload inbox**. The copy button in the panel header copies a Cloud reference to the clipboard that other apps understand.
 
@@ -50,7 +50,7 @@ Deleting never removes anything permanently: entries move into the trash of thei
 
 ## Versions
 
-Where the storage keeps versions, the details panel lists earlier versions of a file at the bottom. For each version you can add a comment, download it, restore it in place, or restore it as a new file next to the current one. Only administrators can permanently delete versions. Restoring in place keeps the current state as a new version.
+Where the storage keeps versions, the details panel lists earlier versions of a file at the bottom. For each version you can add a comment, download it, restore it in place, or restore it as a new file next to the current one. Restoring as a new file leaves the original file and its history unchanged. Only administrators can permanently delete versions. Restoring in place keeps the current state as a new version.
 
 ## Share publicly
 

@@ -1,11 +1,13 @@
 import { z } from "zod";
+import { type BrowseOptions, BrowseOptionsSchema } from "../contracts";
 
-export const SORT_KEYS = ["name", "modified", "size", "type"] as const;
+export const SORT_KEYS = ["name", "modified", "size"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 const viewSchema = z.object({
   view: z.enum(["list", "grid", "tree"]).default("list"),
   size: z.enum(["sm", "md", "lg"]).default("md"),
-  sort: z.enum(SORT_KEYS).default("name"),
+  sort: z.enum(SORT_KEYS).catch("name"),
+  type: z.enum(["all", "files", "directories"]).default("all"),
   direction: z.enum(["asc", "desc"]).default("asc"),
   groupFolders: z.boolean().default(true),
 });
@@ -39,3 +41,14 @@ export function withView(preferences: Record<string, ViewPreference>, baseId: st
   const entries = [...Object.entries(next), [baseKey(baseId), view] as const].slice(-BASE_LIMIT);
   return Object.fromEntries(entries);
 }
+
+/** URL wins; preferences only supply absent query fields on the first visit. */
+export function browseOptions(params: URLSearchParams, preference = defaultView): BrowseOptions {
+  return BrowseOptionsSchema.parse({
+    sort: params.get("sort") ?? preference.sort,
+    order: params.get("order") ?? preference.direction,
+    type: params.get("type") ?? preference.type,
+    groupFolders: params.get("groupFolders") ?? preference.groupFolders,
+  });
+}
+export const browseQuery = (options: BrowseOptions) => ({ ...options, groupFolders: options.groupFolders ? "true" as const : "false" as const });

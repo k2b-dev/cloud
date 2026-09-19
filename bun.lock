@@ -317,7 +317,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@k2b/cloud": "workspace:*",
-        "@k2b/filegate": "5.1.0",
+        "@k2b/filegate": "6.1.0",
         "@k2b/ssr": "catalog:",
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
@@ -1066,7 +1066,7 @@
 
     "@k2b/fibel": ["@k2b/fibel@0.7.6", "", { "dependencies": { "@k2b/nessi": "^0.12.0", "@k2b/stdlib": "^0.25.0", "@modelcontextprotocol/sdk": "1.30.0", "bun-plugin-tailwind": "^0.1.2", "marked": "^18.0.12", "tailwindcss": "^4.3.3", "zod": "^4.6.1" }, "peerDependencies": { "@k2b/ssr": "^0.12.0", "solid-js": "^1.9.0" }, "optionalPeers": ["@k2b/ssr", "solid-js"], "bin": { "fibel": "src/cli.ts" } }, "sha512-Bp2WrNMu05p0pMan8pjTzn5lq3Aqt3m4VtcE2AuJA9tAOvKd6Aqffy5qJygz3uEsZ0/MqficfY2iZ/o92Vbu+A=="],
 
-    "@k2b/filegate": ["@k2b/filegate@5.1.0", "", {}, "sha512-UHLoo3c02zREofwCWL/KXtcLZOR1+iHT4DEohgavW1JjgZ3UnPXXbQ5cocJJyWIq+3xjm0vr0XNuGQ317YPjQw=="],
+    "@k2b/filegate": ["@k2b/filegate@6.1.0", "", {}, "sha512-cCdQZx9VF9mUcRTgDkpmpBvjsvuUTCjVkaFZx1jv8JtW7qW+VrBNByG0D04cejypbZurliq4W2JyQ6SAgnwRtw=="],
 
     "@k2b/nessi": ["@k2b/nessi@0.12.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-1yxW7UWmpeoUTw8hvYrm5IF/8YwZLzcBwbczzAvYxqSfZ/k9xHn0dDvoo8P7eHnj82P4TlsY85xUQ2NJHuj6Vg=="],
 

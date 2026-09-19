@@ -32,7 +32,9 @@ export async function migrateSharing(): Promise<void> {
       ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS retain_until TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS error_code TEXT,
-      ADD COLUMN IF NOT EXISTS server_url TEXT NOT NULL DEFAULT ''`.simple();
+      ADD COLUMN IF NOT EXISTS server_url TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS write_options JSONB,
+      ADD COLUMN IF NOT EXISTS execution JSONB`.simple();
     await tx`ALTER TABLE filesv2.uploads DROP CONSTRAINT IF EXISTS uploads_state_check,
       ADD CONSTRAINT uploads_state_check CHECK(state IN ('open','committed','aborted','expired'))`.simple();
     await tx`CREATE INDEX IF NOT EXISTS filesv2_upload_share_state ON filesv2.uploads(share_id,state)`.simple();

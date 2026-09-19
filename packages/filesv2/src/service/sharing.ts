@@ -1,7 +1,16 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { RequestActor } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
-import { type Filegate, FilegateError, type Node, type Ownership, type RootClient, type Session } from "@k2b/filegate";
+import {
+  type ExecutionIdentity,
+  type Filegate,
+  FilegateError,
+  type Node,
+  type Ownership,
+  type RootClient,
+  type Session,
+  type SessionCreated,
+} from "@k2b/filegate";
 import type { z } from "zod";
 import type {
   ArchiveDownload,
@@ -16,7 +25,7 @@ import type {
 } from "../contracts";
 import type { Binding, bindings, NewBinding } from "../data/bases";
 import { type ShareRow, shares, shareTokenHash } from "../data/shares";
-import { type Upload, uploadSessionId, uploads } from "../data/uploads";
+import { normalizeExecution, sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import { joinPath, relativePath, userPath } from "./paths";
@@ -34,7 +43,7 @@ export type SharingAccess = {
 export type SharingDependencies<T extends SharingAccess> = {
   authorized(actor: RequestActor, baseId: string, path: string, directory?: boolean): Promise<T>;
   writableParent(actor: RequestActor, baseId: string, path: string): Promise<T>;
-  assertReadableTree(current: T): Promise<void>;
+  executionFor(current: T): ExecutionIdentity | null;
   requireAdmin(actor: RequestActor): Promise<unknown>;
   actorUserId(actor: RequestActor): Promise<string>;
   creatorActor(id: string): Promise<RequestActor>;
@@ -79,7 +88,10 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
     return row;
   }
   async function activeShare(token: string, kind: ShareRow["kind"]) {
-    const row = await tokenShare(token, kind);
+    return activeRow(await tokenShare(token, kind));
+  }
+  async function activeRow(row: ShareRow) {
+    const kind = row.kind;
     if (shareState(row) !== "active") throw new FilesError("not_found", 404);
     const binding = await deps.bindings.byId(row.base_id);
     if (!binding || binding.lifecycle !== "active" || binding.root !== row.root || binding.path !== row.base_path)
@@ -121,7 +133,9 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       session.id !== uploadSessionId(upload) ||
       session.root !== upload.root ||
       session.size !== upload.size ||
-      session.path !== uploadTarget(upload, share)
+      session.path !== uploadTarget(upload, share) ||
+      (upload.write_options !== null && !sameUploadOptions(session.options, upload.write_options)) ||
+      !sameUploadExecution(session.execution ?? null, upload.execution)
     )
       throw new FilesError("upload_changed", 409);
   }
@@ -146,36 +160,64 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       current.state.config.url !== upload.server_url ||
       current.root.name !== upload.root ||
       current.inspection.binding?.id !== upload.base_id ||
-      current.target !== joinPath(share.base_path, share.scope)
+      current.target !== joinPath(share.base_path, share.scope) ||
+      !sameUploadExecution(deps.executionFor(current), upload.execution) ||
+      (upload.write_options !== null &&
+        !sameUploadOptions(upload.write_options, { onConflict: "rename", ownership: deps.ownershipFor(current, false) }))
     )
       throw new FilesError("upload_changed", 409);
   }
+  const sessionRoot = (root: RootClient, upload: Upload) => (upload.execution ? root.as(upload.execution) : root);
+  async function remember(upload: Upload, share: ShareRow, session: Session): Promise<Upload> {
+    validateSession({ ...upload, filegate_session_id: uploadSessionId(upload) ?? session.id }, share, session);
+    if (session.result) published(upload, share, session.result);
+    await uploads.attachSession(upload.id, session);
+    if (session.state === "committed" && session.result) await uploads.finish(upload.id, "committed", session.result);
+    else if (session.state === "aborted" || session.state === "expired") await uploads.finish(upload.id, session.state, null);
+    else if (session.state === "committed") await uploads.unresolved(upload.id);
+    return (await uploads.getForShare(upload.id, upload.share_id!))!;
+  }
+  async function openReservation(upload: Upload, share: ShareRow, current: T): Promise<SessionCreated> {
+    validateActiveUpload(upload, share, current);
+    // A missing receipt must never turn into a second upload after Filegate discards its idempotency record.
+    if (!upload.write_options || Date.now() - upload.created_at.getTime() >= 7 * 86_400_000) throw new FilesError("upload_uncertain", 409);
+    await deps.validateUploadTarget(current, upload.path);
+    const created = await current.root.createSession(uploadTarget(upload, share), upload.size, {
+      ...upload.write_options,
+      idempotencyKey: upload.id,
+      expiresIn: 300,
+      allowAbort: true,
+    });
+    await remember(upload, share, created.session);
+    return created;
+  }
   async function reconcile(root: RootClient, upload: Upload, config: Config): Promise<Upload> {
-    if (upload.state === "open" && (!upload.server_url || upload.server_url !== config.url)) {
+    if (upload.state !== "open") return upload;
+    if (!upload.server_url || upload.server_url !== config.url) {
       await uploads.unresolved(upload.id, "storage_changed");
       return { ...upload, error_code: "storage_changed" };
     }
-    if (upload.state !== "open") return upload;
-    const id = uploadSessionId(upload);
-    if (!id) {
-      await uploads.unresolved(upload.id, "session_creation_unknown");
-      return { ...upload, error_code: "session_creation_unknown" };
-    }
     try {
-      const session = await root.session(id);
       const share = await shares.get(upload.share_id!);
       if (!share) throw new FilesError("upload_changed", 409);
-      validateSession(upload, share, session);
-      if (session.result) published(upload, share, session.result);
-      await uploads.attachSession(upload.id, session);
-      if (session.state === "committed" && session.result) await uploads.finish(upload.id, "committed", session.result);
-      else if (session.state === "aborted" || session.state === "expired") await uploads.finish(upload.id, session.state, null);
-      else if (session.state === "committed") await uploads.unresolved(upload.id);
-      return (await uploads.getForShare(upload.id, upload.share_id!))!;
+      const id = uploadSessionId(upload);
+      if (!id) {
+        // Replaying create can still create a session, so it requires a currently active creator and grant.
+        const active = await activeRow(share);
+        await openReservation(upload, share, active.current);
+        return (await uploads.getForShare(upload.id, share.id))!;
+      }
+      return await remember(upload, share, await sessionRoot(root, upload).session(id));
     } catch (error) {
-      // A missing terminal receipt proves neither failure nor success. Never release its reservation.
+      // A missing receipt proves neither failure nor success. Its quota remains reserved.
       await uploads.unresolved(upload.id);
-      if (error instanceof FilegateError && [404, 409].includes(error.status)) return { ...upload, error_code: "receipt_unknown" };
+      if (error instanceof FilesError && error.code === "upload_changed") throw error;
+      if (
+        error instanceof FilesError ||
+        error instanceof AccountIdentityError ||
+        (error instanceof FilegateError && [403, 404, 409].includes(error.status))
+      )
+        return { ...upload, error_code: "receipt_unknown" };
       throw error;
     }
   }
@@ -204,7 +246,6 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         if (!parsed.paths.length) throw new FilesError("invalid_path");
         for (const path of parsed.paths) {
           const item = await deps.authorized(actor, input.baseId, path);
-          await deps.assertReadableTree(item);
           items.push(item.relative);
         }
         items = [...new Set(items)].filter((path, _, all) => !all.some((parent) => parent !== path && path.startsWith(`${parent}/`)));
@@ -326,33 +367,34 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const relative = userPath(path);
       if (!contains(row, relative)) throw new FilesError("not_found", 404);
       const current = await deps.authorized(actor, baseId(binding), relative, false);
-      const lease = await current.root.directDownload(current.target, 60);
+      const lease = await current.root.directDownload(current.target, { expiresIn: 60 });
       await shares.touch(row.id);
       return { url: lease.url, method: "GET", expires: lease.expires };
     },
     async publicShareArchive(token: string): Promise<ArchiveDownload> {
       const { row, actor, binding, current } = await activeShare(token, "download");
-      for (const relative of row.items) await deps.assertReadableTree(await deps.authorized(actor, baseId(binding), relative));
-      const lease = await deps.connect(current.state.config).archiveLease(
+      for (const relative of row.items) await deps.authorized(actor, baseId(binding), relative);
+      const client = deps.connect(current.state.config);
+      const execution = deps.executionFor(current);
+      const lease = await (execution ? client.as(execution) : client).archiveLease(
         row.items.map((relative) => ({ root: row.root, path: joinPath(row.base_path, relative), archivePath: relative })),
         300,
       );
       await shares.touch(row.id);
       return { url: lease.url, method: "POST", expires: lease.expires, manifest: lease.manifest };
     },
-    async publicInboxUpload(token: string, input: { name: string; size: number }): Promise<UploadSession> {
+    async publicInboxUpload(token: string, input: { name: string; size: number; idempotencyKey: string }): Promise<UploadSession> {
       const initial = await activeShare(token, "inbox");
       const deadline = Date.now() + 10_000;
       for (const pending of await uploads.pendingForShare(initial.row.id)) {
         if (Date.now() >= deadline) break;
-        await reconcile(initial.root, pending, initial.current.state.config);
+        await reconcile(deps.connect(initial.current.state.config).root(initial.row.root), pending, initial.current.state.config);
       }
       const { row, root, current } = await activeShare(token, "inbox");
       const relative = userPath(joinPath(row.scope, input.name));
       if (relative.split("/").length !== row.scope.split("/").filter(Boolean).length + 1) throw new FilesError("invalid_path");
-      if (input.size > (await root.info()).available) throw new FilesError("insufficient_space", 409);
       const reservation = await uploads.reserve({
-        id: randomUUID(),
+        id: input.idempotencyKey,
         base_id: row.base_id,
         user_id: row.created_by,
         root: row.root,
@@ -360,28 +402,36 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         size: input.size,
         share_id: row.id,
         server_url: current.state.config.url,
+        write_options: { onConflict: "rename", ownership: deps.ownershipFor(current, false) },
+        execution: normalizeExecution(deps.executionFor(current)),
       });
       try {
-        const created = await root.createSession(joinPath(row.base_path, relative), input.size, {
-          onConflict: "rename",
-          ownership: deps.ownershipFor(current, false),
-          expiresIn: 300,
-          allowAbort: true,
-        });
-        await uploads.attachSession(reservation.id, created.session);
+        let created: SessionCreated;
+        const id = uploadSessionId(reservation);
+        if (id) {
+          validateActiveUpload(reservation, row, current);
+          const session = await root.session(id);
+          await remember(reservation, row, session);
+          await deps.validateUploadTarget(current, reservation.path);
+          created = {
+            session,
+            ...(session.state === "open" ? { lease: await root.sessionLease(id, { expiresIn: 300, allowAbort: true }) } : {}),
+          };
+        } else {
+          created = await openReservation(reservation, row, current);
+        }
         await shares.touch(row.id);
         return {
           id: reservation.id,
           path: relative,
           size: input.size,
+          state: created.session.state,
           chunkSize: created.session.chunkSize,
-          url: created.lease.url,
-          expires: created.lease.expires,
+          url: created.lease?.url,
+          expires: created.lease?.expires ?? created.session.expires,
         };
       } catch (error) {
-        if (error instanceof FilegateError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status))
-          await uploads.finish(reservation.id, "aborted", null);
-        else await uploads.unresolved(reservation.id, "session_creation_unknown");
+        await uploads.unresolved(reservation.id, "session_creation_unknown");
         throw error;
       }
     },
@@ -389,11 +439,11 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const { row, root, current } = await activeShare(token, "inbox");
       const upload = await uploads.getForShare(id, row.id);
       const reconciled = upload ? await reconcile(root, upload, current.state.config) : null;
-      if (!upload || !reconciled || reconciled.state !== "open" || reconciled.error_code || !uploadSessionId(upload))
+      if (!upload || !reconciled || reconciled.state !== "open" || reconciled.error_code || !uploadSessionId(reconciled))
         throw new FilesError("upload_closed", 409);
-      validateActiveUpload(upload, row, current);
-      await deps.validateUploadTarget(current, upload.path);
-      const lease = await root.sessionLease(uploadSessionId(upload)!, { expiresIn: 300, allowAbort: true });
+      validateActiveUpload(reconciled, row, current);
+      await deps.validateUploadTarget(current, reconciled.path);
+      const lease = await root.sessionLease(uploadSessionId(reconciled)!, { expiresIn: 300, allowAbort: true });
       return { url: lease.url, expires: lease.expires };
     },
     async publicInboxCommit(token: string, id: string): Promise<{ name: string; size: number }> {
@@ -433,10 +483,10 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const root = deps.connect(config).root(row.root);
       const reconciled = await reconcile(root, upload, config);
       if (reconciled.state !== "open" || reconciled.error_code) return;
-      const sessionId = uploadSessionId(upload);
+      const sessionId = uploadSessionId(reconciled);
       if (!sessionId) return;
       try {
-        await root.abortSession(sessionId);
+        await sessionRoot(root, reconciled).abortSession(sessionId);
       } catch (error) {
         await reconcile(root, upload, config);
         if (!(error instanceof FilegateError && [404, 409].includes(error.status))) throw error;

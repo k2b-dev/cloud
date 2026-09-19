@@ -12,8 +12,8 @@ export const publicApi = new Hono<AuthContext>()
   .use("*", auth.requireRole("*"))
   .onError((error, c) => {
     const known = error instanceof FilesError;
-    const code = known ? error.code : error instanceof FilegateError && error.status === 404 ? "not_found" : "unavailable";
-    return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status: known ? error.status : code === "not_found" ? 404 : 503, code });
+    const code = known ? error.code : error instanceof FilegateError && error.code === "cursor_invalid" ? "cursor_invalid" : error instanceof FilegateError && error.status === 404 ? "not_found" : "unavailable";
+    return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status: known ? error.status : code === "cursor_invalid" ? 409 : code === "not_found" ? 404 : 503, code });
   })
   .get("/s/:token/api", v("query", PublicBrowseQuerySchema), async (c) => respond(c, ok(await filesService.publicShare((c.req.param("token") ?? ""), "download", c.req.valid("query")))))
   .post("/s/:token/api/download", v("json", EntryQuerySchema), async (c) =>

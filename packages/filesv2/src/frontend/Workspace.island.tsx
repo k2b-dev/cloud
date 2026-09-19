@@ -8,7 +8,7 @@ import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry, type MarkedEntry } from "../contracts";
 import Browser from "./Browser";
 import { useBrowserMessages } from "./browser-messages";
-import type { ViewPreference } from "./browser-preferences";
+import { browseOptions, browseQuery, parsePreferences, type ViewPreference, viewFor } from "./browser-preferences";
 import Editor from "./Editor";
 import { IssueMessage } from "./feedback";
 import { MarksMenu, MarksSidebarItem, openMarksDialog } from "./MarksMenu";
@@ -36,6 +36,9 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     const parsed = ErrorSchema.safeParse(await response.json().catch(() => null));
     return new Error(parsed.success ? parsed.data.message : t().unavailable);
   };
+  const invalidCursors = new Set<string>();
+  const [cursorNotice, setCursorNotice] = createSignal(new URL(props.initial.source, "https://files.invalid").searchParams.get("refreshed") === "true");
+  const preference = (baseId: string) => viewFor(parsePreferences(typeof document === "undefined" ? undefined : document.cookie), baseId);
   const workspace = createWorkspaceState({
     initial: props.initial,
     load: async (source, signal) => {
@@ -67,12 +70,16 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         if (!response.ok) throw await apiError(response);
         editor = await response.json();
       } else if (selected?.status === "existing" && view !== "trash") {
-        const query = { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined };
+        const query = { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined, ...browseQuery(browseOptions(url.searchParams, preference(selected.id))) };
         const q = url.searchParams.get("q")?.trim();
         const response = q
-          ? await apiClient.bases[":baseId"].search.$get({ param: { baseId: selected.id }, query: { ...query, q, scope: "tree" } }, { init: { signal } })
+          ? await apiClient.bases[":baseId"].search.$get({ param: { baseId: selected.id }, query: { ...query, q, scope: url.searchParams.get("scope") === "folder" ? "folder" : "tree" } }, { init: { signal } })
           : await apiClient.bases[":baseId"].entries.$get({ param: { baseId: selected.id }, query }, { init: { signal } });
-        if (!response.ok) throw await apiError(response);
+        if (!response.ok) {
+          const error = ErrorSchema.safeParse(await response.json());
+          if (query.after && !signal.aborted && error.success && error.data.code === "cursor_invalid") invalidCursors.add(source);
+          throw new Error(error.success ? error.data.message : t().unavailable);
+        }
         directory = await response.json();
       }
       return { source, bases, selectedId: selected?.id ?? null, directory, errorCode: null, shares, editor, marks };
@@ -94,7 +101,16 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   const selected = () => snapshot().bases.items.find((base) => base.id === snapshot().selectedId);
   const currentPath = () => snapshot().directory?.path ?? "";
   const currentView = () => viewOf(snapshot().source);
+  const resetCursor = async (target: string) => {
+    if (!invalidCursors.delete(target)) return;
+    const url = new URL(target, window.location.origin);
+    url.searchParams.delete("after");
+    const first = `${url.pathname}${url.search}`;
+    setCursorNotice(true);
+    await workspace.navigate(first, () => commitHistory(first, { replace: true, scroll: "manual" }));
+  };
   const onNavigate = async (event: LinkNavigateEvent) => {
+    setCursorNotice(false);
     if (event.url.pathname !== "/app/filesv2") {
       event.fallback();
       return;
@@ -104,8 +120,14 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       if (target === `${window.location.pathname}${window.location.search}` || event.replace) event.replaceWith(target, { scroll: "manual" });
       else event.push(target, { scroll: "manual" });
     });
+    await resetCursor(target);
   };
-  const go = (target: string, replace = false) => workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual" }));
+  const go = async (target: string, replace = false) => {
+    setCursorNotice(false);
+    await workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual" }));
+    await resetCursor(target);
+  };
+  const currentBrowse = () => browseOptions(new URL(snapshot().source, "https://files.invalid").searchParams, preference(snapshot().selectedId ?? ""));
   const [marksRevision, setMarksRevision] = createSignal(0);
   const dialogLifetime = new AbortController();
   onCleanup(() => dialogLifetime.abort());
@@ -138,7 +160,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
           target,
           () => {},
           () => commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false }),
-        );
+        ).then(() => resetCursor(target));
       }),
     ),
   );
@@ -178,8 +200,17 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       const pageCount = background ? folderPages.get(key) ?? 1 : 1;
       for (let index = 0; index < pageCount; index++) {
         signal.throwIfAborted();
-        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId }, query: { path, after: next } }, { init: { signal } });
+        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId }, query: { path, after: next, type: "directories" } }, { init: { signal } });
         if (!response.ok) {
+          const error = ErrorSchema.safeParse(await response.clone().json());
+          if (next && error.success && error.data.code === "cursor_invalid" && !signal.aborted) {
+            inFlight.delete(key);
+            folderPages.delete(key);
+            mergeFolders(key, []);
+            setCursorNotice(true);
+            await loadFolders(baseId, path, true, undefined, background);
+            return;
+          }
           if (!signal.aborted && key === treeId(baseId, path) && (Number(response.status) === 403 || Number(response.status) === 404)) {
             mergeFolders(key, []);
             setFolderCursors(value => ({ ...value, [key]: null }));
@@ -213,7 +244,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   createEffect(() => {
     const directory = snapshot().directory;
     if (!directory || directory.query) return;
-    if (!directory.next && !after()) {
+    if (!directory.next && !after() && currentBrowse().type !== "files") {
       mergeFolders(treeId(directory.base.id, directory.path), directory.items.filter((entry) => entry.directory));
       setFolderCursors(value => ({ ...value, [treeId(directory.base.id, directory.path)]: null }));
     } else void loadFolders(directory.base.id, directory.path, true);
@@ -244,13 +275,21 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       const timeout = setTimeout(() => request.abort(), LIVE_REFRESH_MS);
       try {
         const after = new URL(workspace.committedSource(), window.location.origin).searchParams.get("after") ?? undefined;
-        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId: directory.base.id }, query: { path: directory.path, after } }, { init: { signal: request.signal } }).catch(() => null);
-        if (!response?.ok || snapshot().directory !== directory) return;
+        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId: directory.base.id }, query: { path: directory.path, after, ...browseQuery(currentBrowse()) } }, { init: { signal: request.signal } }).catch(() => null);
+        if (!response?.ok) {
+          const error = response ? ErrorSchema.safeParse(await response.json()) : null;
+          if (after && error?.success && error.data.code === "cursor_invalid") {
+            invalidCursors.add(workspace.committedSource());
+            await resetCursor(workspace.committedSource());
+          }
+          return;
+        }
+        if (snapshot().directory !== directory) return;
         const page = await response.json();
         if (request.signal.aborted || workspace.pending() || snapshot().directory !== directory) return;
         const unchanged = fingerprint(page.items) === fingerprint(directory.items) && page.next === directory.next && page.base.locationKey === directory.base.locationKey && page.actions?.create === directory.actions?.create;
         const currentTreeId = treeId(directory.base.id, directory.path);
-        const reuseCurrent = !after && (folderPages.get(currentTreeId) ?? 1) <= 1;
+        const reuseCurrent = !after && !page.next && currentBrowse().type !== "files" && (folderPages.get(currentTreeId) ?? 1) <= 1;
         if (reuseCurrent) {
           mergeFolders(treeId(directory.base.id, directory.path), page.items.filter(entry => entry.directory));
           setFolderCursors(value => ({ ...value, [treeId(directory.base.id, directory.path)]: page.next }));
@@ -522,15 +561,17 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                   pending={workspace.pending()}
                   preserveSelection={preserveSelection()}
                   error={workspace.failure()?.message}
+                  notice={cursorNotice() ? b().cursorReset : undefined}
                   onRetry={() => void go(retryHref(), true)}
-                  onOpenDirectory={(path) => goTree(treeId(directory().base.id, path), filesUrl(directory().base.id, path))}
+                  onOpenDirectory={(path) => goTree(treeId(directory().base.id, path), filesUrl(directory().base.id, path, null, null, null, null, currentBrowse()))}
                   onOpenTrash={() => goTree(trashId(directory().base.id), viewUrl(directory().base.id, "trash"))}
-                  onSearch={(query) => void go(filesUrl(directory().base.id, directory().path, null, null, query))}
+                  onSearch={(query) => void go(filesUrl(directory().base.id, directory().path, null, null, query, null, currentBrowse()))}
+                  onBrowseChange={(options) => void go(filesUrl(directory().base.id, directory().path, null, null, directory().query, directory().scope, options))}
                   onChanged={(selectPath) => {
                     setMarksRevision(value => value + 1);
                     // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
                     ensureLoaded(Object.keys(folders()), true);
-                    return go(filesUrl(directory().base.id, directory().path, after(), selectPath ?? null, directory().query), true);
+                    return go(filesUrl(directory().base.id, directory().path, null, selectPath ?? null, directory().query, directory().scope, currentBrowse()), true);
                   }}
                   onShare={(paths) =>
                     void openShareDialog({

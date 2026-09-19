@@ -55,6 +55,18 @@ path. Paths are relative to that base. `list` returns one page; pass its `next`
 unchanged as `--after` until it is null. There is no implicit recursive listing
 or automatic pagination.
 
+Both `list` and `search` support `--sort name|modified|size`, `--order asc|desc`,
+and `--type all|files|directories`. Defaults are name ascending and all entries.
+Folders are grouped before files across pages by default; pass
+`--no-group-folders` for one mixed order. Keep these options, the path, and any
+search query/scope unchanged when following `--after`. A `cursor_invalid` error
+means discard the previous pages and restart without `--after`.
+
+```bash
+cld filesv2 list <base-id> --path Documents --sort modified --order desc --type files --json
+cld filesv2 search <base-id> report --sort size --order desc --no-group-folders --json
+```
+
 Prefer `--json` when you need the cursor, area issues, root statistics, or base
 metadata. List commands emit one complete item per line with `--jsonl`, without
 the surrounding page or cursor. Warnings use
@@ -71,24 +83,41 @@ Binary content is saved to disk, not stdout.
 
 `search` matches name fragments below `--path` (recursively) and pages with
 `--after`; storage without an index is scanned and fails with `search_limited`
-when a folder holds too many entries, so narrow `--path`. `mkdir` creates one
+when a folder holds too many entries, so narrow `--path`. FreeIPA search uses
+Unix-scoped live filesystem scans, including on indexed roots. An unreadable
+subtree fails the entire search. Continuations return 403 for revoked access
+or 404 for externally removed results; restart without `--after` for a fresh
+observation.
+`mkdir` creates one
 folder below an existing parent and never overwrites existing names.
 `upload` opens a Filegate upload session through Cloud, streams the file to
 the session lease without Cloud credentials, and commits through Cloud; the
 result is `{base, entry}`. Existing targets fail with `path_conflict` unless
-`--replace` is passed. The CLI reads disk-backed segments instead of loading the whole file into RAM.
+`--replace` is passed. `idempotency_conflict` means the upload ID was reused
+with different parameters; inspect the original operation. Generic
+`operation_conflict` and `write_conflict` do not authorize overwriting. The CLI reads disk-backed segments instead of loading the whole file into RAM.
 Retries and lease renewal are bounded; interruption before commit requests an
-abort. If the commit response is lost, inspect the target before repeating the
-upload: publication may have succeeded.
-`move` stays inside one base; `copy` may target another base with
-`--target-base` and keeps the originals. `delete` moves entries to the base's
+abort. The CLI persists one logical upload ID in its active profile before
+requesting a session. Repeating the same command with unchanged local file
+metadata, target, and conflict policy reuses that ID; there is no `--upload-id`
+flag. Cloud validates the bound write options and execution identity. A retained
+completed result needs no further byte transfer. Terminal receipts last seven
+days; after that, an uncertain outcome needs inspection rather than a new ID.
+Successful completion or confirmed abort clears the local retry record.
+`move` stays inside one base; `copy` may target another compatible base with
+`--target-base` and keeps the originals. Cloud-to-FreeIPA and FreeIPA-to-Cloud
+copies use independent authorized source and destination execution contexts
+with Filegate 6.1. Cloud targets remain service-owned; FreeIPA targets receive
+their Unix ownership. Different contexts require separate Filegate roots.
+`delete` moves entries to the base's
 trash and prints restorable trash IDs. Multi-entry mutations return
 `results` per item (`path`, `ok`, and either `entry` or `error`) alongside
 successful `entries`; partial failure sets a nonzero exit code. Successful
 items are not rolled back. Retry only failed paths; a selected folder already
 includes its selected descendants. `versions restore` without `--as`
 replaces the current content (the current state is kept as a new version);
-`--as <name>` writes the version next to the file. `shares create --kind
+`--as <name>` copies historical bytes next to the file without changing the
+original content, modification time, identity, or history. `shares create --kind
 download` shares the listed entries, `--kind inbox` shares one folder as an
 anonymous upload target; both print the public URL once, only on creation.
 `stat` returns `{base, entry}` after checking current access, even when the entry
@@ -149,8 +178,12 @@ page of directory entries, `next`, and `issue`. `--search` and `--status` filter
 on the server; pass the same filters when following a cursor. Entries include
 `uid`, `gid`, and the current allowed `actions`. Statuses are `existing`,
 `missing`, `unassigned`, `conflict`, `unknown`, `orphaned`, and `retired`.
-Root statistics cover the whole
-root, including when a relative prefix is configured. FreeIPA directories
+Root capabilities include `managed` and `executionEnabled`. File/directory
+counts and byte totals are known only for complete observed scans. The
+`observation` field exposes `complete`, `freshness`, `source`, `started`,
+`completed`, and `indexBuilt`; these are scan observations, not atomic quotas.
+Root statistics cover the whole root, including when a prefix is configured.
+FreeIPA directories
 created outside Cloud are recognized through the filesystem. An unknown state
 does not prove an identity or directory was deleted.
 
@@ -300,6 +333,9 @@ do not print its contents. `tokenConfigured` from `get` is ignored on input.
 Saving replaces both areas' configuration; preserve unrelated settings.
 
 Cloud storage requires local Linux identities. Only POSIX groups have group
-storage. FreeIPA storage requires enabled FreeIPA and works independently.
+storage. FreeIPA storage requires enabled FreeIPA and Filegate Unix execution, and works
+independently. Managed roots enable atomic publication checks only when every
+writer uses Filegate; leave managed mode off with external writers. No Cloud
+configuration flag changes these Filegate capabilities.
 Paths and prerequisites are validated by the server. Public share and inbox
 pages have no CLI: anonymous visitors use the browser links that `shares create` prints.

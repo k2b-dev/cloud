@@ -12,11 +12,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
     "test": "bun test --isolate ./src && bun run test:ssr && bun run test:dom",
     "test:ssr": "bun test --isolate --preload ./test/solid-ssr-preload.ts ./test/files-ui.render.test.tsx",
-    "test:dom": "bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts ./test/files-ui.behavior.test.tsx ./test/browser-selection.behavior.test.tsx ./test/browser-upload.behavior.test.tsx ./test/workspace-navigation.behavior.test.tsx ./test/admin-workspace.behavior.test.tsx ./test/editor.behavior.test.tsx ./test/browser-organize.behavior.test.tsx ./test/trash.behavior.test.tsx ./test/sharing.behavior.test.tsx"
+    "test:dom": "bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts ./test/files-ui.behavior.test.tsx ./test/browser-selection.behavior.test.tsx ./test/browser-upload.behavior.test.tsx ./test/workspace-navigation.behavior.test.tsx ./test/admin-workspace.behavior.test.tsx ./test/editor.behavior.test.tsx ./test/browser-organize.behavior.test.tsx ./test/trash.behavior.test.tsx ./test/sharing.behavior.test.tsx ./test/public-inbox.behavior.test.tsx"
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",
-    "@k2b/filegate": "5.1.0",
+    "@k2b/filegate": "6.1.0",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",

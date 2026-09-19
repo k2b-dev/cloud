@@ -3,6 +3,7 @@ import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { DirectoryResult } from "../src/contracts";
 
+const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
 const calls: string[] = [];
 let openStatus = 200;
 mock.module("../src/api/client", () => ({
@@ -14,7 +15,7 @@ mock.module("../src/api/client", () => ({
           $post: async (input: { json: { path: string; size: number; onConflict: string } }) => {
             calls.push(`open ${input.json.path} ${input.json.size} ${input.json.onConflict}`);
             if (openStatus !== 200) return Response.json({ code: "path_conflict", message: "exists" }, { status: openStatus });
-            return Response.json({ id: "s1", path: input.json.path, size: input.json.size, chunkSize: 4, url: "https://files.test/lease/s1", expires: "2099-01-01T00:00:00Z" });
+            return Response.json({ id: "s1", path: input.json.path, size: input.json.size, chunkSize: 4, state: "open", url: "https://files.test/lease/s1", expires: "2099-01-01T00:00:00Z" });
           },
           ":id": {
             commit: { $post: async () => { calls.push("commit"); return Response.json({ base: initial.base, entry: { ...file, size: 6 } }); } },
@@ -39,6 +40,8 @@ const flush = async () => { for (let i = 0; i < 40; i++) await new Promise((reso
 let cleanup = () => {};
 afterEach(() => {
   cleanup();
+  if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
+  else Reflect.deleteProperty(globalThis, "localStorage");
   calls.length = 0;
   received = 0;
   openStatus = 200;
@@ -50,7 +53,8 @@ test("uploads stream to the session lease without Cloud credentials, then commit
     const url = String(input);
     expect(url.startsWith("https://files.test/lease/s1")).toBeTrue();
     expect(init?.credentials).toBe("omit");
-    const status = () => ({ id: "s1", root: "cloud", size: 6, chunkSize: 4, expires: "2099-01-01T00:00:00Z", state: "open", segments: {}, received });
+    const status = () => ({ id: "s1", root: "cloud", size: 6, chunkSize: 4, expires: "2099-01-01T00:00:00Z", state: "open", uploadedSegments: 0, received });
+    if (new URL(url).searchParams.has("segments")) return Response.json({ items: [] });
     if (init?.method === "PUT") {
       calls.push(`put ${new URL(url).searchParams.get("segment")}`);
       received += (await new Response(init.body as BodyInit).arrayBuffer()).byteLength;
@@ -58,6 +62,7 @@ test("uploads stream to the session lease without Cloud credentials, then commit
     return Response.json(status());
   }) as typeof fetch;
   const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
   const { default: Browser } = await import("../src/frontend/Browser");
   let created = "";
   const dispose = render(() => <Browser directory={initial} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} onChanged={(path) => (created = path ?? "")} />, dom.root);
@@ -72,9 +77,10 @@ test("uploads stream to the session lease without Cloud credentials, then commit
 });
 
 test("an existing name asks before replacing and skipping leaves the file untouched", async () => {
-  globalThis.fetch = (async () => Response.json({ id: "s1", root: "cloud", size: 0, chunkSize: 4, expires: "2099-01-01T00:00:00Z", state: "open", segments: {}, received: 0 })) as typeof fetch;
+  globalThis.fetch = (async () => Response.json({ id: "s1", root: "cloud", size: 0, chunkSize: 4, expires: "2099-01-01T00:00:00Z", state: "open", uploadedSegments: 0, received: 0 })) as typeof fetch;
   openStatus = 409;
   const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
   const { default: Browser } = await import("../src/frontend/Browser");
   let created = "";
   const dispose = render(() => <Browser directory={initial} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} onChanged={(path) => (created = path ?? "")} />, dom.root);

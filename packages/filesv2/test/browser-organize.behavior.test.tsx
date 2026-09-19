@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import type { DirectoryResult } from "../src/contracts";
+import type { BrowseOptions, DirectoryResult } from "../src/contracts";
 
+const browseChanges: BrowseOptions[] = [];
 const requests: Array<{ kind: string; input: unknown; resolve: (response: Response) => void }> = [];
 if (!isServer) {
   const request = (kind: string) => (input: unknown) => new Promise<Response>((resolve) => requests.push({ kind, input: structuredClone(input), resolve }));
@@ -41,11 +42,18 @@ describe("Files v2 ordering and drag-and-drop", () => {
   afterEach(() => {
     cleanup();
     requests.length = 0;
+    browseChanges.length = 0;
   });
   const mount = async (dom: ReturnType<typeof createDomTestHarness>, changed: string[]) => {
     const { default: Browser } = await import("../src/frontend/Browser");
+    const [source, setSource] = createSignal("/app/filesv2?base=cloud%3Agroups%3Ademo&path=Docs");
     const dispose = render(
-      () => createComponent(Browser, { directory, bases: [directory.base], cloudUrl: "https://cloud.test", onNavigate: async () => {}, onChanged: () => changed.push("changed") }),
+      () => createComponent(Browser, { directory, get source() { return source(); }, onBrowseChange: (options: BrowseOptions) => {
+        browseChanges.push(options);
+        const query = new URLSearchParams({ base: directory.base.id, path: directory.path });
+        for (const [key, value] of Object.entries(options)) query.set(key, String(value));
+        setSource(`/app/filesv2?${query}`);
+      }, bases: [directory.base], cloudUrl: "https://cloud.test", onNavigate: async () => {}, onChanged: () => changed.push("changed") }),
       dom.root,
     );
     cleanup = () => {
@@ -57,27 +65,33 @@ describe("Files v2 ordering and drag-and-drop", () => {
   const names = (dom: ReturnType<typeof createDomTestHarness>) =>
     [...dom.root.querySelectorAll(".filesv2-list__row:not(.filesv2-list__row--virtual) .filesv2-list__name")].map((node) => node.textContent?.trim());
 
-  test("folders stay first, headers toggle the order and the type filter narrows the page", async () => {
+  test("headers and type filter request global ordering and never locally reorder a server page", async () => {
     const dom = createDomTestHarness();
     await mount(dom, []);
-    expect(names(dom)).toEqual(["Archive", "alpha.png", "zebra.txt"]);
+    expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
     const header = (label: string) => [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-list__sort")].find((node) => node.textContent?.includes(label))!;
     header("Name").click();
     await flush();
-    expect(names(dom)).toEqual(["Archive", "zebra.txt", "alpha.png"]);
+    expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
     header("Size").click();
     await flush();
-    expect(names(dom)).toEqual(["Archive", "zebra.txt", "alpha.png"]);
+    expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
     header("Size").click();
     await flush();
-    expect(names(dom)).toEqual(["Archive", "alpha.png", "zebra.txt"]);
+    expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
+    expect(browseChanges).toEqual([
+      { sort: "name", order: "desc", type: "all", groupFolders: true },
+      { sort: "size", order: "asc", type: "all", groupFolders: true },
+      { sort: "size", order: "desc", type: "all", groupFolders: true },
+    ]);
     expect(dom.root.querySelector('[aria-sort="descending"]')?.textContent).toContain("Size");
     const chip = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((node) => node.getAttribute("aria-label") === "Sort and filter")!;
     chip.click();
     await flush();
-    [...dom.document.querySelectorAll<HTMLElement>('[role="menuitemradio"], [role="option"], button')].find((node) => node.textContent?.trim() === "Images")!.click();
+    [...dom.document.querySelectorAll<HTMLElement>('[role="menuitemradio"], [role="option"], button')].find((node) => node.textContent?.trim() === "Files")!.click();
     await flush();
-    expect(names(dom)).toEqual(["alpha.png"]);
+    expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
+    expect(browseChanges.at(-1)?.type).toBe("files");
   });
 
   test("one input button beside search controls all three sections and resets to folders first", async () => {
@@ -103,20 +117,22 @@ describe("Files v2 ordering and drag-and-drop", () => {
       await flush();
     };
     await choose("Descending");
-    expect(names(dom)).toEqual(["Archive", "zebra.txt", "alpha.png"]);
-    expect(firstRow()).toBe("..");
-    await choose("Group folders");
     expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
     expect(firstRow()).toBe("..");
     await choose("Group folders");
-    await choose("Images");
-    expect(names(dom)).toEqual(["alpha.png"]);
+    expect(browseChanges.at(-1)?.groupFolders).toBe(false);
+    expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
+    expect(firstRow()).toBe("..");
+    await choose("Group folders");
+    await choose("Files");
+    expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
+    expect(browseChanges.at(-1)?.type).toBe("files");
     expect(firstRow()).toBe("..");
     await choose("Size");
     const checked = () => [...menu().querySelectorAll('[aria-checked="true"]')].map((node) => node.textContent?.trim());
-    expect(checked()).toEqual(["Size", "Descending", "Images", "Group folders"]);
+    expect(checked()).toEqual(["Size", "Descending", "Files", "Group folders"]);
     await choose("Reset");
-    expect(names(dom)).toEqual(["Archive", "alpha.png", "zebra.txt"]);
+    expect(names(dom)).toEqual(["zebra.txt", "Archive", "alpha.png"]);
     expect(checked()).toEqual(["Name", "Ascending", "All", "Group folders"]);
     expect(firstRow()).toBe("..");
   });

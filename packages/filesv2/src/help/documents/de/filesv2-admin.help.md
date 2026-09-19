@@ -10,7 +10,7 @@ order: 200
 
 ## Ablagen unter Einstellungen verbinden
 
-Trage die **Backend-URL** und den **Backend-Token** von Filegate ein. Die Anwendung muss diese Adresse erreichen können. Öffentliche Adressen für direkte Browser-Downloads liefert Filegate. Ein vorhandener Token wird nie angezeigt; lasse sein Feld leer, um ihn beizubehalten. **Konfiguration speichern** übernimmt deine Änderungen, **Verwerfen** stellt die gespeicherten Werte wieder her. Beim Verlassen mit ungespeicherten Änderungen erscheint eine Rückfrage.
+Trage die **Backend-URL** und den **Backend-Token** von Filegate ein. Die Anwendung muss diese Adresse erreichen können. Öffentliche Adressen für direkte Browser-Downloads liefert Filegate 6. Sein öffentlicher Host muss außerhalb des Gültigkeitsbereichs der Cloud-Cookies liegen; ein anderer Port auf demselben Host genügt nicht. Konfiguriere den exakten Cloud-Origin für CORS. Eigene Übertragungen führt Cloud über die Backend-Adresse aus. Ein vorhandener Token wird nie angezeigt; lasse sein Feld leer, um ihn beizubehalten. **Konfiguration speichern** übernimmt deine Änderungen, **Verwerfen** stellt die gespeicherten Werte wieder her. Beim Verlassen mit ungespeicherten Änderungen erscheint eine Rückfrage.
 
 Aktiviere Cloud und FreeIPA unabhängig und wähle ihre Filegate-Roots. **Erweiterte Pfade** enthält den optionalen Basispfad und die dazu relativen Nutzer-, Gruppen- und Archivpfade. Halte diese Pfade getrennt, damit sich Bereiche und reservierte Verzeichnisse nicht überschneiden.
 
@@ -20,13 +20,13 @@ Cloud-Ablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur berechtigt
 
 ## Übersicht lesen
 
-Die Übersicht zeigt Kapazität, verfügbaren Speicher, aktive Uploads, Anzahlen und Größen für den ausgewählten Root. Unbekannte Werte bleiben unbekannt. Statistiken gelten für den gesamten Root, auch für Pfade außerhalb des Basispfads eines Bereichs.
+Die Übersicht zeigt Kapazität, verfügbaren Speicher, aktive Uploads, Anzahlen und Größen für den ausgewählten Root. Unbekannte Werte bleiben unbekannt. Anzahlen und Größen setzen einen vollständigen beobachteten Scan voraus; unvollständige Summen oder Summen unbekannter Aktualität gelten nicht als aktuelle Anzahlen. Die Beobachtungsdaten beschreiben Quelle und Zeitraum, keine atomare Quote. Statistiken gelten für den gesamten Root, auch für Pfade außerhalb des Basispfads eines Bereichs.
 
-Index und Versionshistorie werden in Filegate konfiguriert. **Aktualisieren** fordert eine neue Zusammenfassung an. **Index neu aufbauen** verlangt eine Bestätigung, weil die Aktion den gesamten Root betrifft.
+Index, Versionshistorie, Managed-Modus und Unix-Ausführung werden in Filegate konfiguriert. FreeIPA benötigt aktivierte Unix-Ausführung und einen ausdrücklich dafür konfigurierten Daemon, der Unix-Identitäten wechseln kann. Fehlt das, verweigert Filesv2 den Zugriff, statt das Servicekonto zu verwenden. Managed gilt nur für Roots, deren sämtliche Schreibzugriffe über Filegate laufen; bei direkten externen Schreibern bleibt es aus. Es ermöglicht atomare Prüfungen zwischen Filegate-Aktionen, schützt aber nicht vor gleichzeitigen externen NFS-Schreibzugriffen. Der Editor bleibt auf nicht verwalteten Roots mit nicht atomarer Konflikterkennung nutzbar. **Aktualisieren** fordert eine neue Zusammenfassung an. **Index neu aufbauen** verlangt eine Bestätigung, weil die Aktion den gesamten Root betrifft.
 
 ## Verzeichnisse prüfen
 
-Wähle Bereich und **Nutzer** oder **Gruppen**. Suche nach Namen oder filtere nach Zustand. **Aktualisieren** liest den aktuellen Dateisystembestand einschließlich manuell auf dem Server angelegter Verzeichnisse. **Nächste Seite** setzt die Bestandsanzeige fort.
+Wähle Bereich und **Nutzer** oder **Gruppen**. Suche nach Namen oder filtere nach Zustand. **Aktualisieren** liest den aktuellen Dateisystembestand einschließlich manuell auf dem Server angelegter Verzeichnisse. FreeIPA-Verzeichnisse werden auch bei aktivem Index direkt im Dateisystem gelesen. Mit Filegate 6.1 liest auch die FreeIPA-Dateinamensuche den aktuellen Dateisystembestand unter der Unix-Identität des Nutzers, unabhängig vom Index. Unlesbare Teilbäume brechen die Suche ab. **Nächste Seite** setzt die Bestandsanzeige fort.
 
 - **Vorhanden:** Das Verzeichnis ist für sein ermitteltes Konto verfügbar.
 - **Fehlt:** Das erwartete Verzeichnis ist nicht vorhanden.

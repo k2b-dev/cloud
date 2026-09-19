@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { DirectoryResult, EditorLaunch } from "../src/contracts";
@@ -128,5 +128,22 @@ describe("Files v2 office editing", () => {
     if (frame.contentWindow) expect(posted).toEqual(["Host_PostmessageReady", "Hide_Command", "Hide_Command"]);
     message({ MessageId: "UI_Close", Values: { EverModified: false } });
     expect(backs).toEqual([1]);
+  });
+  test("the editor explains external-write limitations only for writable unmanaged files", async () => {
+    const dom = createDomTestHarness();
+    const submit = dom.window.HTMLFormElement.prototype.submit;
+    dom.window.HTMLFormElement.prototype.submit = () => {};
+    const { default: Editor } = await import("../src/frontend/Editor");
+    const [current, setCurrent] = createSignal<EditorLaunch>({ ...launch, managed: false });
+    const dispose = render(() => createComponent(Editor, { get launch() { return current(); }, onBack: () => {} }), dom.root);
+    cleanup = () => { dispose(); dom.window.HTMLFormElement.prototype.submit = submit; dom.cleanup(); };
+    await flush();
+    expect(dom.root.textContent).toContain("Avoid editing this file in other applications at the same time");
+    setCurrent({ ...launch, managed: true });
+    await flush();
+    expect(dom.root.textContent).not.toContain("atomic conflict checks");
+    setCurrent({ ...launch, managed: false, canWrite: false });
+    await flush();
+    expect(dom.root.textContent).not.toContain("atomic conflict checks");
   });
 });

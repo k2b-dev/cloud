@@ -10,7 +10,7 @@ Open **File administration** to manage Files v2. Its views separate storage info
 
 ## Connect storage in Settings
 
-Enter the Filegate **Backend URL** and **Backend token**. The application must be able to reach the address. Filegate supplies the public addresses for direct browser downloads. An existing token is never shown; leave its field blank to keep it. Use **Save configuration** to save your edits, or **Discard** to restore the saved values. Leaving with unsaved edits asks for confirmation.
+Enter the Filegate **Backend URL** and **Backend token**. The application must be able to reach the address. Filegate 6 supplies the public addresses for direct browser downloads. Its public host must be outside the scope of Cloud cookies; a different port on the same host is insufficient. Configure the exact Cloud origin for CORS. Cloud uses the backend address for its own transfers. An existing token is never shown; leave its field blank to keep it. Use **Save configuration** to save your edits, or **Discard** to restore the saved values. Leaving with unsaved edits asks for confirmation.
 
 Enable Cloud and FreeIPA independently and select their Filegate roots. **Advanced paths** contains the optional base prefix and the home, group, and archive paths relative to that prefix. Keep these paths separate so the areas and reserved directories do not overlap.
 
@@ -20,13 +20,13 @@ Cloud storage requires enabled local Linux identities. Only eligible user accoun
 
 ## Read the Overview
 
-The overview shows capacity, available space, active uploads, counts, and sizes for the selected root. Unknown values stay unknown. Statistics cover the whole root, including paths outside an area's prefix.
+The overview shows capacity, available space, active uploads, counts, and sizes for the selected root. Unknown values stay unknown. Counts and sizes require a complete observed scan; incomplete totals or totals of unknown freshness are not presented as current counts. Observation metadata describes the source and scan interval, not an atomic quota. Statistics cover the whole root, including paths outside an area's prefix.
 
-Index and version-history settings come from Filegate. **Refresh** requests an updated root summary. **Rebuild index** requires confirmation because it affects the whole root.
+Index, version history, managed mode, and Unix execution come from Filegate. FreeIPA requires execution enabled and an explicitly configured daemon that can switch Unix identities. Without it, Filesv2 denies access instead of using the service account. Managed mode is only for roots where all writes use Filegate; keep it off when external processes write directly. It enables atomic publication checks between Filegate operations, not protection against external NFS writes. The editor remains available on unmanaged roots with best-effort conflict checks only. **Refresh** requests an updated root summary. **Rebuild index** requires confirmation because it affects the whole root.
 
 ## Inspect Directories
 
-Select the area and **Users** or **Groups**. Search by name or filter by state. **Refresh** reads the current filesystem, including directories created manually on the server. Use **Next page** to continue the inventory.
+Select the area and **Users** or **Groups**. Search by name or filter by state. **Refresh** reads the current filesystem, including directories created manually on the server. FreeIPA browsing uses live filesystem access even with indexing enabled. With Filegate 6.1, FreeIPA filename search also reads the current filesystem under the user's Unix identity, independently of the index. Unreadable subtrees fail the search. Use **Next page** to continue the inventory.
 
 - **Present:** the directory is available for its identified account.
 - **Missing:** the expected directory is absent.

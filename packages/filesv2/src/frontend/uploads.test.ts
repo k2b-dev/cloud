@@ -7,6 +7,15 @@ let renews = 0;
 let aborts = 0;
 let controller = new AbortController();
 let cancelCommit = false;
+const storage = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
+  },
+});
 const originalFetch = globalThis.fetch;
 mock.module("../api/client", () => ({
   apiClient: {
@@ -16,7 +25,7 @@ mock.module("../api/client", () => ({
           $post: async () =>
             openCode
               ? Response.json({ code: openCode, message: "conflict" }, { status: 409 })
-              : Response.json({ id: "s1", url: "https://filegate.test/lease", size: 3, chunkSize: 3 }),
+              : Response.json({ id: "s1", url: "https://filegate.test/lease", size: 3, chunkSize: 3, state: "open" }),
           ":id": {
             lease: {
               $post: async (_input: unknown, options: { init: { signal: AbortSignal } }) => {
@@ -51,10 +60,12 @@ mock.module("../api/client", () => ({
 const { uploadFile, UploadConflict } = await import("./uploads");
 const options = () => ({ onConflict: "error" as const, signal: controller.signal, fallback: "Upload failed" });
 const normalTransfer = async (_input: RequestInfo | URL, init?: RequestInit) => {
+  if (new URL(String(_input)).searchParams.has("segments")) return Response.json({ items: [] });
   if (init?.method === "PUT") received = 3;
-  return Response.json({ id: "s1", root: "cloud", size: 3, chunkSize: 3, state: "open", received, segments: {} });
+  return Response.json({ id: "s1", root: "cloud", size: 3, chunkSize: 3, state: "open", received, uploadedSegments: 0 });
 };
 afterEach(() => {
+  storage.clear();
   globalThis.fetch = originalFetch;
   openCode = "";
   commitFailure = false;
@@ -78,7 +89,7 @@ test("only path-conflict 409 offers overwrite, other domain conflicts remain err
 });
 
 test("browser renewal has a bounded retry budget and failed transfer aborts", async () => {
-  globalThis.fetch = Object.assign(async () => Response.json({ error: "expired", message: "secret-lease" }, { status: 401 }), {
+  globalThis.fetch = Object.assign(async () => Response.json({ error: "expired_capability", message: "secret-lease" }, { status: 401 }), {
     preconnect: originalFetch.preconnect,
   });
   await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toThrow("Upload failed");

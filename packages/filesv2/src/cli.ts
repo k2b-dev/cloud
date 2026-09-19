@@ -51,6 +51,12 @@ function filesCommands(locale?: string) {
       de: "Unveränderter next-Cursor aus der vorherigen JSON-Antwort",
     }),
   });
+  const browseFlags = {
+    sort: flag.enum(["name", "modified", "size"], { default: "name", description: t({ en: "Sort the complete result before pagination", de: "Gesamtes Ergebnis vor der Paginierung sortieren" }) }),
+    order: flag.enum(["asc", "desc"], { default: "asc", description: t({ en: "Sort direction", de: "Sortierreihenfolge" }) }),
+    type: flag.enum(["all", "files", "directories"], { default: "all", description: t({ en: "Entry type", de: "Eintragsart" }) }),
+    noGroupFolders: flag.boolean({ name: "no-group-folders", description: t({ en: "Mix folders and files; folders are grouped first by default", de: "Ordner und Dateien mischen; standardmäßig stehen Ordner zuerst" }) }),
+  };
   const warn = (ctx: CloudCliContext, issue: string | null) => {
     if (issue) ctx.error(`${t({ en: "Storage status", de: "Ablagenstatus" })}: ${issue}`);
   };
@@ -117,12 +123,13 @@ function filesCommands(locale?: string) {
         flags: {
           path: flag.string({ default: "", description: t({ en: "Path relative to the base", de: "Pfad relativ zur Ablage" }) }),
           after,
+          ...browseFlags,
         },
         async run({ ctx, args, flags }) {
           const result = await ctx.readJson<DirectoryResult>(
             await api(ctx).bases[":baseId"].entries.$get({
               param: { baseId: args.base },
-              query: { path: flags.path, after: flags.after },
+              query: { path: flags.path, after: flags.after, sort: flags.sort, order: flags.order, type: flags.type, groupFolders: flags.noGroupFolders ? "false" : "true" },
             }),
           );
           printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
@@ -184,12 +191,13 @@ function filesCommands(locale?: string) {
           path: flag.string({ default: "", description: t({ en: "Folder to search below", de: "Ordner, unterhalb dessen gesucht wird" }) }),
           scope: flag.enum(["tree", "folder"], { default: "tree", description: t({ en: "tree searches all levels below the folder, folder only its direct entries", de: "tree durchsucht alle Ebenen unter dem Ordner, folder nur seine direkten Einträge" }) }),
           after,
+          ...browseFlags,
         },
         async run({ ctx, args, flags }) {
           const result = await ctx.readJson<SearchResult>(
             await api(ctx).bases[":baseId"].search.$get({
               param: { baseId: args.base },
-              query: { q: args.query, path: flags.path, scope: flags.scope ?? "tree", after: flags.after },
+              query: { q: args.query, path: flags.path, scope: flags.scope ?? "tree", after: flags.after, sort: flags.sort, order: flags.order, type: flags.type, groupFolders: flags.noGroupFolders ? "false" : "true" },
             }),
           );
           printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
@@ -228,10 +236,11 @@ function filesCommands(locale?: string) {
         async run({ ctx, args, flags }) {
           const param = { baseId: args.base };
           const result = await uploadFile(ctx, args.file, {
-            open: async (size, signal) =>
+            scope: JSON.stringify([ctx.options.profile, args.base, flags.to, flags.replace]),
+            open: async (size, signal, idempotencyKey) =>
               ctx.readJson<UploadSession>(
                 await api(ctx).bases[":baseId"].uploads.$post(
-                  { param, json: { path: flags.to!, size, onConflict: flags.replace ? "overwrite" : "error" } },
+                  { param, json: { path: flags.to!, size, onConflict: flags.replace ? "overwrite" : "error", idempotencyKey } },
                   { init: { signal } },
                 ),
               ),

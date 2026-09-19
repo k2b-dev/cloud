@@ -74,13 +74,13 @@ export function MarksSidebarItem(props: MarksOptions) {
   const [open, setOpen] = createSignal(false);
   const label = () => props.kind === "recent" ? b().recent : b().favorites;
   return <AppWorkspace.SidebarItem icon={props.kind === "recent" ? "ti ti-history" : "ti ti-star"}
-    preview={{ label: label(), trigger: "row", onOpenChange: setOpen, content: close => <MarksMenu {...props} open={open()} close={close} /> }}>
+    preview={{ label: label(), trigger: "row", viewportSize: "compact", onOpenChange: setOpen, content: close => <MarksMenu {...props} open={open()} close={close} /> }}>
     {label()}
   </AppWorkspace.SidebarItem>;
 }
 
 export function openMarksDialog(options: MarksOptions & { title: string; signal?: AbortSignal }) {
-  return prompts.dialog<void>(close => <ScrollArea style={{ "max-height": "60dvh" }}>
+  return prompts.dialog<void>(close => <ScrollArea viewportSize="compact">
     <MarksMenu {...options} open close={close} modal />
   </ScrollArea>, { title: options.title, header: false, size: "medium", signal: options.signal });
 }

@@ -39,6 +39,8 @@ export type BaseSummary = {
   id: string;
   /** Opaque identity of the current backend, root, path and durable binding. */
   locationKey?: string;
+  managed?: boolean;
+  executionEnabled?: boolean;
   area: Area;
   kind: BaseKind;
   name: string;
@@ -47,7 +49,7 @@ export type BaseSummary = {
   indexEnabled: boolean;
   versioningEnabled: boolean;
 };
-export type FileEntry = { name: string; path: string; directory: boolean; size: number; modified: string; actions?: { write: boolean; move: boolean; share: boolean } };
+export type FileEntry = { revision?: string; name: string; path: string; directory: boolean; size: number; modified: string; actions?: { write: boolean; move: boolean; share: boolean } };
 /** Present when an administrator configured Collabora; the browser then offers editing and new documents. */
 export type EditorInfo = { documentFormat: DocumentFormat };
 export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[]; editor: EditorInfo | null };
@@ -62,13 +64,14 @@ export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["sma
 export type SearchResult = DirectoryResult & { query: string; scope: "folder" | "tree" };
 export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export const UploadInputSchema = z.object({
+  idempotencyKey: z.string().uuid(),
   path: z.string().min(1).max(4096),
   size: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   onConflict: z.enum(["error", "overwrite"]).default("error"),
 });
 export const UploadIdSchema = z.object({ id: z.string().min(1).max(256) });
 /** Browser and CLI transfer segments straight to `url`; Cloud never sees the bytes. */
-export type UploadSession = { id: string; path: string; size: number; chunkSize: number; url: string; expires: string };
+export type UploadSession = { id: string; path: string; size: number; chunkSize: number; state: "open" | "committed" | "aborted" | "expired"; url?: string; expires: string };
 export type UploadLease = { url: string; expires: string };
 const PathSchema = z.string().min(1).max(4096);
 /** A selection never exceeds two listing pages. */
@@ -80,7 +83,7 @@ export const PathsInputSchema = z.object({ paths: PathsSchema });
 export const TrashIdSchema = z.object({ id: z.union([z.string().uuid(), z.string().regex(/^fs:[A-Za-z0-9_-]+$/).max(5500)]) });
 export const CreateDocumentInputSchema = z.object({ path: PathSchema, kind: DocumentKindSchema });
 /** Everything the browser needs to load one file into Collabora; the token is bound to this user and file. */
-export type EditorLaunch = { base: BaseSummary; entry: FileEntry; action: string; token: string; tokenTtl: number; canWrite: boolean };
+export type EditorLaunch = { managed?: boolean; base: BaseSummary; entry: FileEntry; action: string; token: string; tokenTtl: number; canWrite: boolean };
 export const VersionRefSchema = z.object({ path: PathSchema, id: z.string().min(1).max(128) });
 export const VersionCommentSchema = VersionRefSchema.extend({ comment: z.string().trim().max(2000) });
 export const VersionRestoreAsSchema = VersionRefSchema.extend({ name: z.string().min(1).max(255) });
@@ -126,7 +129,7 @@ export type ShareView = {
 export type SharePage = { items: ShareView[]; next: string | null };
 export const SharePageQuerySchema = z.object({ after: z.string().uuid().optional() });
 export const PublicBrowseQuerySchema = z.object({ path: z.string().max(4096).default(""), after: z.string().max(8192).optional() });
-export const PublicUploadInputSchema = z.object({ name: z.string().min(1).max(255), size: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) });
+export const PublicUploadInputSchema = z.object({ idempotencyKey: z.string().uuid(), name: z.string().min(1).max(255), size: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) });
 export type PublicShare = {
   kind: "download" | "inbox";
   title: string;
@@ -141,6 +144,9 @@ export type PublicShare = {
   uploadedNames: string[];
 };
 export type RootSummary = {
+  managed?: boolean;
+  executionEnabled?: boolean;
+  observation?: { complete: boolean; freshness: "observed" | "unknown"; source: "filesystem" | "index"; started: string; completed: string; indexBuilt?: string } | null;
   name: string;
   indexEnabled: boolean;
   versioningEnabled: boolean;
@@ -175,7 +181,14 @@ export type AdminResult = {
   next: string | null;
   issue: string | null;
 };
-export const BrowseQuerySchema = z.object({ path: z.string().max(4096).default(""), after: z.string().max(4096).optional() });
+export const BrowseOptionsSchema = z.object({
+  sort: z.enum(["name", "modified", "size"]).default("name"),
+  order: z.enum(["asc", "desc"]).default("asc"),
+  type: z.enum(["all", "files", "directories"]).default("all"),
+  groupFolders: z.union([z.boolean(), z.enum(["true", "false"])]).transform(value => value === true || value === "true").default(true),
+});
+export type BrowseOptions = z.infer<typeof BrowseOptionsSchema>;
+export const BrowseQuerySchema = BrowseOptionsSchema.extend({ path: z.string().max(4096).default(""), after: z.string().max(16384).optional() });
 export const DownloadInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export const SearchQuerySchema = BrowseQuerySchema.extend({
   q: z.string().trim().min(1).max(256),

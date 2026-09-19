@@ -144,7 +144,35 @@ describe("Filesv2 CLI integration", () => {
       expect(nested.exitCode, nested.stderr).toBe(0);
       expect(nested.stdout).toContain("--input-file");
       expect(nested.stdout).toContain("--stdin");
+      for (const command of ["list", "search"]) {
+        const browse = await run(["filesv2", command, "--help"], { locale });
+        expect(browse.exitCode, browse.stderr).toBe(0);
+        for (const flag of ["--sort", "--order", "--type", "--no-group-folders"]) expect(browse.stdout).toContain(flag);
+        expect(browse.stdout).toContain(locale === "en" ? "Sort direction" : "Sortierreihenfolge");
+      }
     }
+  }, 20_000);
+
+  test("list and search preserve global sort, type and grouping through cursor requests", async () => {
+    const requests: URL[] = [];
+    const server = serve((request) => {
+      requests.push(new URL(request.url));
+      return Response.json({ base, path: "Documents", query: "report", scope: "tree", items: [entry], next: "next-cursor" });
+    });
+    for (const args of [["list", base.id], ["search", base.id, "report"]]) {
+      const defaults = await run(["--json", "filesv2", ...args], { server: server.url.href });
+      expect(defaults.exitCode, defaults.stderr).toBe(0);
+      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({ sort: "name", order: "asc", type: "all", groupFolders: "true" });
+      const filtered = await run(["--json", "filesv2", ...args, "--path", "Documents", "--after", "opaque+/= cursor", "--sort", "size", "--order", "desc", "--type", "files", "--no-group-folders"], { server: server.url.href });
+      expect(filtered.exitCode, filtered.stderr).toBe(0);
+      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({ path: "Documents", after: "opaque+/= cursor", sort: "size", order: "desc", type: "files", groupFolders: "false" });
+      const alternate = await run(["--json", "filesv2", ...args, "--sort", "modified", "--type", "directories"], { server: server.url.href });
+      expect(alternate.exitCode, alternate.stderr).toBe(0);
+      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({ sort: "modified", type: "directories", groupFolders: "true" });
+      const invalid = await run(["filesv2", ...args, "--sort", "type"], { server: server.url.href });
+      expect(invalid.exitCode).not.toBe(0);
+    }
+    expect(requests).toHaveLength(6);
   }, 20_000);
 
   test("preserves JSON snapshots, JSONL items, opaque cursors and Cloud locale/auth headers", async () => {
@@ -844,7 +872,8 @@ test("upload opens a session through Cloud, streams segments to Filegate without
     expect(request.headers.get("cookie")).toBeNull();
     const url = new URL(request.url);
     expect(url.searchParams.get("lease")).toBe(leaseSecret);
-    const status = () => ({ id: "s1", root: "cloud", size: 14, chunkSize: 4, expires: "2030-01-01T00:00:00Z", state: "open", segments: {}, received });
+    const status = () => ({ id: "s1", root: "cloud", size: 14, chunkSize: 4, expires: "2030-01-01T00:00:00Z", state: "open", uploadedSegments: 0, received });
+    if (url.searchParams.has("segments")) return Response.json({ items: [] });
     if (request.method === "GET") return Response.json(status());
     expect(request.method).toBe("PUT");
     received += (await request.arrayBuffer()).byteLength;
@@ -856,8 +885,8 @@ test("upload opens a session through Cloud, streams segments to Filegate without
     const url = new URL(request.url);
     seen.push(`${request.method} ${url.pathname}`);
     if (url.pathname.endsWith("/uploads")) {
-      expect(await request.json()).toEqual({ path: "Documents/notes.txt", size: 14, onConflict: "overwrite" });
-      return Response.json({ id: "s1", path: "Documents/notes.txt", size: 14, chunkSize: 4, url: `${transfer.url}?lease=${leaseSecret}`, expires: "2030-01-01T00:00:00Z" });
+      expect(await request.json()).toMatchObject({ path: "Documents/notes.txt", size: 14, onConflict: "overwrite", idempotencyKey: expect.any(String) });
+      return Response.json({ id: "s1", path: "Documents/notes.txt", size: 14, chunkSize: 4, state: "open", url: `${transfer.url}?lease=${leaseSecret}`, expires: "2030-01-01T00:00:00Z" });
     }
     expect(received).toBe(14);
     return Response.json({ base, entry: { ...entry, name: "notes.txt", path: "Documents/notes.txt", size: 14 } });
@@ -974,4 +1003,28 @@ test("new administration and inbox settings use the authenticated API without st
     expect(result.exitCode, result.stderr).toBe(0);
   }
   expect(seen).toHaveLength(5);
+});
+
+
+test("cross-area copy and strict search failures use the same CLI contract", async () => {
+  const requests: Array<{source:string; body:unknown}> = [];
+  let denied = 403;
+  const cloud = serve(async request => {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+    const url = new URL(request.url);
+    if (url.pathname.endsWith("/search")) return Response.json({code:denied === 403 ? "forbidden" : "not_found",message:"Storage changed"},{status:denied});
+    requests.push({source:decodeURIComponent(url.pathname.split("/").at(-2)!),body:await request.json()});
+    return Response.json({base,entries:[entry],results:[{path:entry.path,ok:true,entry}]});
+  });
+  for (const [source,target] of [[`cloud:groups:${identityId}`,`freeipa:users:${identityId}`],[`freeipa:users:${identityId}`,`cloud:groups:${identityId}`]]) {
+    const result = await run(["--json","filesv2","copy",source!,entry.path,"--target-base",target!,"--to","Documents"],{server:cloud.url.href});
+    expect(result.exitCode,result.stderr).toBe(0);
+    expect(requests.at(-1)).toEqual({source,body:{paths:[entry.path],targetBaseId:target,folder:"Documents"}});
+  }
+  for (const status of [403,404]) {
+    denied = status;
+    const result = await run(["--json","filesv2","search",base.id,"report","--after","cursor"],{server:cloud.url.href});
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).not.toContain('"items":[]');
+  }
 });

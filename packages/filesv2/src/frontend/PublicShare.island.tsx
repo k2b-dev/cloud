@@ -1,8 +1,8 @@
 import { downloadArchive } from "@k2b/filegate/utils";
 import { fileIcons } from "@k2b/stdlib";
-import { Button, Format, toast } from "@k2b/ui";
+import { Button, Format, InlineGuidance, toast } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
-import type { PublicShare } from "../contracts";
+import { ErrorSchema, type PublicShare } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
@@ -17,6 +17,8 @@ export default function PublicShareList(props: { token: string; share: PublicSha
   const [page, setPage] = createSignal(props.share);
   const [history, setHistory] = createSignal<string[]>([]);
   const [loading, setLoading] = createSignal(false);
+  const [resetNotice, setResetNotice] = createSignal(false);
+  const [browseFailure, setBrowseFailure] = createSignal<string | null>(null);
   let controller: AbortController | undefined;
   onCleanup(() => controller?.abort());
   const browse = async (path: string, append = false, back = false) => {
@@ -24,14 +26,25 @@ export default function PublicShareList(props: { token: string; share: PublicSha
     const pending = new AbortController();
     controller = pending;
     setLoading(true);
+    setBrowseFailure(null);
     try {
-      const response = await publicClient.s[":token"].api.$get({ param, query: { path, ...(append && page().next ? { after: page().next! } : {}) } }, { init: { signal: pending.signal } });
+      let response = await publicClient.s[":token"].api.$get({ param, query: { path, ...(append && page().next ? { after: page().next! } : {}) } }, { init: { signal: pending.signal } });
+      let restarted = false;
+      if (!response.ok && append) {
+        const error = ErrorSchema.safeParse(await response.clone().json());
+        if (error.success && error.data.code === "cursor_invalid" && !pending.signal.aborted) {
+          restarted = true;
+          setPage(current => ({ ...current, items: [], next: null }));
+          setResetNotice(true);
+          response = await publicClient.s[":token"].api.$get({ param, query: { path } }, { init: { signal: pending.signal } });
+        }
+      }
       if (!response.ok) await apiFailure(response, b().publicLinkUnavailableDescription);
       const result = await response.json();
       if (pending.signal.aborted) return;
-      if (!append) setHistory((current) => back ? current.slice(0, -1) : [...current, page().path]);
-      setPage((current) => append ? { ...result, items: [...current.items, ...result.items] } : result);
-    } catch (error) { if (!pending.signal.aborted) toast.error(error instanceof Error ? error.message : b().publicLinkUnavailableDescription); }
+      if (!append && path !== page().path) setHistory((current) => back ? current.slice(0, -1) : [...current, page().path]);
+      setPage((current) => append && !restarted ? { ...result, items: [...current.items, ...result.items] } : result);
+    } catch (error) { if (!pending.signal.aborted) setBrowseFailure(error instanceof Error ? error.message : b().publicLinkUnavailableDescription); }
     finally { if (!pending.signal.aborted) setLoading(false); }
   };
   const download = async (path: string) => {
@@ -67,6 +80,8 @@ export default function PublicShareList(props: { token: string; share: PublicSha
   };
   return (
     <div class="flex flex-col gap-3">
+      <Show when={resetNotice()}><InlineGuidance tone="info">{b().cursorReset}</InlineGuidance></Show>
+      <Show when={browseFailure()}>{message => <InlineGuidance tone="danger">{message()} <Button variant="text" onClick={() => void browse(page().path)}>{b().retry}</Button></InlineGuidance>}</Show>
       <Show when={history().length}>
         <Button variant="ghost" onClick={() => void browse(history().at(-1) ?? "", false, true)}><i class="ti ti-arrow-left" aria-hidden="true" />{b().publicBack}</Button>
       </Show>

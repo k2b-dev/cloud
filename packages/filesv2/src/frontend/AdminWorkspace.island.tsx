@@ -365,6 +365,8 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                             <div class="flex flex-wrap items-center gap-3">
                               <StatusBadge tone="neutral" label={`${t().index}: ${root().indexEnabled ? t().on : t().off}`} />
                               <StatusBadge tone="neutral" label={`${t().history}: ${root().versioningEnabled ? t().on : t().off}`} />
+                              <StatusBadge tone="neutral" label={`${a().managedWrites}: ${root().managed === undefined ? t().unknown : root().managed ? t().on : t().off}`} />
+                              <StatusBadge tone="neutral" label={`${a().unixExecution}: ${root().executionEnabled === undefined ? t().unknown : root().executionEnabled ? t().on : t().off}`} />
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -374,6 +376,19 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                               >
                                 {a().rebuild}
                               </Button>
+                            </div>
+                            <div class="mt-3 space-y-2">
+                              <InlineGuidance tone="info" icon="ti ti-info-circle">
+                                {!root().observation ? a().statisticsUnavailable
+                                  : !root().observation!.complete ? a().statisticsPartial
+                                  : root().observation!.freshness !== "observed" ? a().statisticsUnverified
+                                  : a().statisticsObserved}
+                              </InlineGuidance>
+                              <Show when={root().observation?.complete && root().observation?.freshness === "observed"}>
+                                <p class="text-xs text-dimmed">
+                                  {a().lastObserved}: <Format.DateTime value={root().observation!.completed} />
+                                </p>
+                              </Show>
                             </div>
                             <Show when={root().versioningEnabled}>
                               <dl class="mt-3 grid grid-cols-2 gap-3">

@@ -40,7 +40,7 @@ available for quick restarts. Stop it explicitly with
 
 ## Test Filegate locally
 
-Development infrastructure includes Filegate 5.1.0 for Filesv2 development.
+Development infrastructure includes Filegate 6.1.0 for Filesv2 development.
 To prepare its backend token and start only Filegate:
 
 ```bash
@@ -49,19 +49,20 @@ docker compose -f compose.yml up -d --no-deps --wait filegate
 docker compose -f compose.yml exec filegate /app/filegate status
 ```
 
-Use `http://filegate:4000` from Cloud containers and `http://localhost:4000`
-from the host. Direct transfer leases use the localhost address. Browser CORS
-allows Cloud at `http://localhost:3000` and `http://127.0.0.1:3000`.
+Use `http://filegate:4000` from Cloud containers and `http://127.0.0.1:4000`
+from the host. Direct transfer leases use the latter address. Open Cloud at
+`http://localhost:3000` so its cookies do not share Filegate's host; ports alone
+do not isolate cookies. Browser CORS permits the configured local Cloud origins.
 Only the loopback interface publishes Filegate's port.
 
 The backend token is stored in the Git-ignored `.local/filegate/token` file
 with mode `0600`. Repeated setup retains it. Supply it only to the application
 backend; never include it in browser code or public links.
 
-| Root | Container path | Index | Version history |
-| --- | --- | --- | --- |
-| `cloud` | `/data/cloud` | On | On |
-| `freeipa` | `/data/freeipa` | Off | Off |
+| Root | Container path | Index | Version history | Managed | Unix execution |
+| --- | --- | --- | --- | --- | --- |
+| `cloud` | `/data/cloud` | On | On | On | Off |
+| `freeipa` | `/data/freeipa` | Off | Off | Off | On |
 
 Each root and Filegate's state have separate persistent Docker volumes.
 The `freeipa` root is local test storage, not an NFS mount or a FreeIPA server.
@@ -69,11 +70,12 @@ Both capability combinations are deliberate test fixtures, not provider rules.
 The daemon limits individual test uploads to 1 GiB.
 
 This development container runs as root with only `CHOWN`, `DAC_OVERRIDE`,
-`FOWNER`, and `FSETID` capabilities to test numeric ownership, setgid and POSIX
-ACLs. It is not a production privilege recommendation or proof of NFS behavior.
+`FOWNER`, `FSETID`, `SETUID`, and `SETGID` capabilities to test Unix execution,
+numeric ownership, setgid, and POSIX ACLs. It is not a production privilege
+recommendation or proof of NFS behavior.
 The published image uses `linux/amd64`; Docker Desktop uses emulation on ARM.
 
-The existing `files` app uses the Filegate v2 API and cannot use this v5 daemon.
+The existing `files` app uses the Filegate v2 API and cannot use this v6 daemon.
 Do not point that app at the new roots. Its old Docker volumes are not migrated
 or attached. Filesv2 remains a separate application with its own configuration.
 

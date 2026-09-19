@@ -78,11 +78,12 @@ describe("Files v2 admin workspace", () => {
     cleanup();
     requests.length = 0;
   });
-  const setup = async (view = "overview") => {
+  const setup = async (view = "overview", root = result.root) => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     delegateEvents(["click"]);
     const initial = makeInitial(view);
+    initial.result = { ...initial.result, root };
     dom.window.history.replaceState(null, "", initial.source);
     const { default: AdminWorkspace } = await import("../src/frontend/AdminWorkspace.island");
     const dispose = render(() => createComponent(AdminWorkspace, { initial }), dom.root);
@@ -100,6 +101,9 @@ describe("Files v2 admin workspace", () => {
     await flush();
     expect(requests).toHaveLength(0);
     expect(dom.root.textContent).toContain("Unknown");
+    expect(dom.root.textContent).toContain("Atomic conflict checks: Unknown");
+    expect(dom.root.textContent).toContain("Unix execution: Unknown");
+    expect(dom.root.textContent).toContain("No filesystem scan is available");
     tab("Directories").click();
     await flush();
     expect(dom.window.location.href).toContain("view=overview");
@@ -143,6 +147,21 @@ describe("Files v2 admin workspace", () => {
     expect(dom.window.location.href).toContain("view=archive");
     expect(dom.root.textContent).toContain("Enable this area in Settings");
     expect(dom.root.textContent).not.toContain("Storage could not be loaded");
+  });
+  test.each([
+    { complete: false, freshness: "observed" as const, source: "filesystem" as const, notice: "The last scan was incomplete", showDate: false },
+    { complete: true, freshness: "unknown" as const, source: "index" as const, notice: "Cached index statistics do not confirm", showDate: false },
+    { complete: true, freshness: "observed" as const, source: "filesystem" as const, notice: "Totals reflect the last completed filesystem scan", showDate: true },
+  ])("overview explains observed statistics: $notice", async (state) => {
+    const { dom } = await setup("overview", {
+      ...result.root!, managed: true, executionEnabled: false,
+      observation: { complete: state.complete, freshness: state.freshness, source: state.source, started: "2026-09-19T10:00:00Z", completed: "2026-09-19T10:01:00Z" },
+    });
+    await flush();
+    expect(dom.root.textContent).toContain("Atomic conflict checks: On");
+    expect(dom.root.textContent).toContain("Unix execution: Off");
+    expect(dom.root.textContent).toContain(state.notice);
+    expect(dom.root.textContent?.includes("Last complete scan:")).toBe(state.showDate);
   });
 
   test("the single overview refresh updates root statistics before reloading the snapshot", async () => {

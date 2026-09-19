@@ -1,3 +1,4 @@
+import { filegateErrorCode } from "./filegate-error";
 import {
   type AuthContext,
   auth,
@@ -63,14 +64,12 @@ const api = new Hono<AuthContext>()
   .use("*", auth.requireRole("user"))
   .onError((error, c) => {
     const known = error instanceof FilesError || error instanceof AccountIdentityError;
-    const code = known
-      ? error.code
-      : error instanceof FilegateError && error.status === 404
-        ? "not_found"
-        : error instanceof FilegateError && error.status === 409
-          ? "path_conflict"
-          : "unavailable";
-    const status = known ? error.status : code === "not_found" ? 404 : code === "path_conflict" ? 409 : 503;
+    const code = known ? error.code
+      : error instanceof FilegateError
+        ? filegateErrorCode(error)
+        : "unavailable";
+    const status = known ? error.status : code === "forbidden" ? 403 : code === "not_found" ? 404
+      : ["path_conflict", "idempotency_conflict", "write_conflict", "cursor_invalid", "execution_disabled", "identity_changed", "feature_disabled", "operation_conflict"].includes(code) ? 409 : 503;
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
   .get("/bases", middleware.openapi({ summary: "List accessible file bases", ...requiresAuth }), async (c) =>

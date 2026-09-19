@@ -27,3 +27,10 @@ test("inventory pagination preserves selected area and identity kind", () => {
   expect(url.searchParams.get("status")).toBe("orphaned");
   expect(url.searchParams.get("q")).toBe("old");
 });
+
+
+test("paging and reload URLs preserve the whole global browse query", () => {
+  const options = { sort: "modified" as const, order: "desc" as const, type: "files" as const, groupFolders: false };
+  const url = new URL(filesUrl("home", "Docs", "opaque-cursor", "Docs/a.txt", "report", "folder", options), "https://cloud.test");
+  expect(Object.fromEntries(url.searchParams)).toEqual({ base: "home", path: "Docs", after: "opaque-cursor", file: "Docs/a.txt", q: "report", scope: "folder", sort: "modified", order: "desc", type: "files", groupFolders: "false" });
+});

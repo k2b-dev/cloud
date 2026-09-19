@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { RequestActor } from "@k2b/cloud/server";
-import { FilegateError, type Node } from "@k2b/filegate";
+import { FilegateError, type Node, type TransferState } from "@k2b/filegate";
 import type { BaseSummary } from "../contracts";
 import type { TrashRow, trash } from "../data/trash";
 import { normalizeSelection, runFileBatch } from "./batches";
@@ -58,6 +58,7 @@ function fixture() {
   const calls: string[] = [];
   const denied = new Set<string>();
   let lostResponse = false;
+  let transferState: TransferState = "completed";
   let failInsert = false;
   let failFinish = false;
   let serverUrl = "http://filegate:4000";
@@ -138,7 +139,7 @@ function fixture() {
       const result = { ...value, path: target };
       nodes.set(target, result);
       if (lostResponse) throw new Error("network lost after effect");
-      return result;
+      return { state: transferState, node: result };
     },
   };
   const check = async (path: string) => {
@@ -188,6 +189,9 @@ function fixture() {
     setLostResponse(value: boolean) {
       lostResponse = value;
     },
+    setTransferState(value: TransferState) {
+      transferState = value;
+    },
     setFailInsert(value: boolean) {
       failInsert = value;
     },
@@ -221,6 +225,19 @@ describe("recoverable trash lifecycle", () => {
     expect(result.results[0]?.ok).toBeTrue();
     expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
   });
+  test("a pending transfer receipt stays unresolved even when its target already exists", async () => {
+    const f = fixture();
+    f.setTransferState("source_pending");
+    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    expect(removed.results).toEqual([{ path: "report.txt", ok: false, error: "transfer_pending" }]);
+    const row = [...f.rows.values()][0]!;
+    expect(row.state).toBe("pending");
+    expect(row.error_code).toBe("transfer_pending");
+    f.setTransferState("completed");
+    expect((await f.service.trash(actor, { baseId: base.id })).entries[0]).toMatchObject({ state: "pending", error: "transfer_pending" });
+    await expect(f.service.restoreTrash(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "transfer_pending" });
+    expect(row.state).toBe("pending");
+  });
   test("listing after restart repairs a move whose database completion failed", async () => {
     const f = fixture();
     f.setFailFinish(true);
@@ -239,6 +256,17 @@ describe("recoverable trash lifecycle", () => {
     const result = await f.service.restoreTrash(actor, { baseId: base.id, id: removed.entries[0]!.id, path: "restored.txt" });
     expect(result.entry.path).toBe("restored.txt");
     expect([...f.rows.values()][0]?.state).toBe("restored");
+  });
+  test("a pending restore receipt is not finalized by the next listing or retry", async () => {
+    const f = fixture();
+    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const id = removed.entries[0]!.id;
+    f.setTransferState("source_pending");
+    await expect(f.service.restoreTrash(actor, { baseId: base.id, id })).rejects.toMatchObject({ code: "transfer_pending" });
+    expect([...f.rows.values()][0]?.state).toBe("restoring");
+    f.setTransferState("completed");
+    expect((await f.service.trash(actor, { baseId: base.id })).entries[0]).toMatchObject({ state: "restoring", error: "transfer_pending" });
+    await expect(f.service.restoreTrash(actor, { baseId: base.id, id })).rejects.toMatchObject({ code: "transfer_pending" });
   });
   test("an existing restore destination leaves the trash untouched", async () => {
     const f = fixture();

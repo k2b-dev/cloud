@@ -1,5 +1,5 @@
 import type { RequestActor } from "@k2b/cloud/server";
-import { FilegateError, type Node, type RootClient } from "@k2b/filegate";
+import { FilegateError, type Node, type RootClient, type TransferResult } from "@k2b/filegate";
 import { z } from "zod";
 import type { BaseSummary, EntryResult, TrashEntry } from "../contracts";
 import { withRootLock } from "../data/operations";
@@ -106,6 +106,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
       throw new FilesError("binding_changed", 409);
     const restoring = row.state === "restoring";
     if (row.state !== "pending" && !restoring) return stat(current.root, joinPath(current.basePath, row.trashed));
+    if (row.error_code === "transfer_pending") throw new FilesError("transfer_pending", 409);
     const sourcePath = restoring ? row.trashed : row.original;
     const targetPath = restoring ? row.restore_path : row.trashed;
     if (!sourcePath || !targetPath) throw new FilesError("operation_unresolved", 409);
@@ -122,14 +123,22 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         await current.check(sourceAbsolute, source.directory ? 5 : 4);
         await current.check(sourceAbsolute.split("/").slice(0, -1).join("/") || ".", 3);
         await current.check(targetAbsolute.split("/").slice(0, -1).join("/") || ".", 3);
+        let receipt: TransferResult | undefined;
+        let answered = false;
         try {
-          await current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" });
+          receipt = await current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" });
+          answered = true;
         } catch (error) {
           source = await stat(current.root, sourceAbsolute);
           target = await stat(current.root, targetAbsolute);
           if (source || !target) throw error;
         }
-        target = await stat(current.root, targetAbsolute);
+        if (answered) {
+          if (receipt?.state !== "completed") throw new FilesError("transfer_pending", 409);
+          if (!receipt.node || receipt.node.root !== current.rootName || receipt.node.path !== targetAbsolute)
+            throw new FilesError("operation_unresolved", 409);
+          target = await stat(current.root, receipt.node.path);
+        } else target = await stat(current.root, targetAbsolute);
       }
       if (!target || !sameTrashNode(row.snapshot, target)) throw new FilesError("operation_unresolved", 409);
       await current.check(targetAbsolute, target.directory ? 5 : 4);

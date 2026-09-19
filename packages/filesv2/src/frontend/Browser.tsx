@@ -23,23 +23,23 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../api/client";
-import type { BaseSummary, BasesResult, DirectoryResult, EditorInfo, EntryResult, FileEntry } from "../contracts";
+import { type BaseSummary, type BasesResult, type BrowseOptions, type DirectoryResult, type EditorInfo, type EntryResult, ErrorSchema, type FileEntry } from "../contracts";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { useBrowserMessages } from "./browser-messages";
-import { folderKey, parsePreferences, preferencesCookie, SORT_KEYS, type SortKey, type ViewPreference, viewFor, withView } from "./browser-preferences";
+import { browseOptions, browseQuery, folderKey, parsePreferences, preferencesCookie, SORT_KEYS, type SortKey, type ViewPreference, viewFor, withView } from "./browser-preferences";
 import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
 import FileList, { type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
-import { apiFailure, contentLease, previewKind } from "./file-preview";
+import { apiFailure, contentLease } from "./file-preview";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { UploadConflict, uploadFile } from "./uploads";
 import { filesUrl } from "./urls";
 
-type Directory = DirectoryResult & { query?: string };
+type Directory = DirectoryResult & { query?: string; scope?: "folder" | "tree" };
 type Branch = { items: FileEntry[]; next: string | null; loading: boolean; error: boolean; pages?: number };
 const nameValid = (value: string | undefined) => !!value && !value.includes("/") && value.trim() === value && value !== "." && value !== "..";
 const parentPath = (path: string) => path.split("/").slice(0, -1).join("/");
@@ -60,6 +60,7 @@ export default function Browser(props: {
   pending?: boolean;
   preserveSelection?: boolean;
   error?: string;
+  notice?: string;
   issues?: BasesResult["issues"];
   onSelectionSource?: (source: string) => void;
   onMarksChanged?: () => void;
@@ -68,6 +69,7 @@ export default function Browser(props: {
   onOpenDirectory?: (path: string) => void;
   onOpenTrash?: () => void;
   onSearch?: (query: string | null) => void;
+  onBrowseChange?: (options: BrowseOptions) => void;
   onChanged?: (selectPath?: string | null) => void | Promise<void>;
   onShare?: (paths: readonly string[]) => void;
   onShareInbox?: (folder: string) => void;
@@ -84,39 +86,31 @@ export default function Browser(props: {
   const searching = () => !!props.directory.query;
   // View settings belong to one storage base; a cookie remembers the latest bases.
   const [preferences, setPreferences] = createSignal(props.preferences ?? {});
-  const view = createMemo(() => (searching() ? { ...viewFor(preferences(), baseId()), view: "list" as const } : viewFor(preferences(), baseId())));
+  const activeBrowse = createMemo(() => browseOptions(new URL(props.source ?? "", "https://files.invalid").searchParams, viewFor(preferences(), baseId())));
+  const [requestedBrowse, setRequestedBrowse] = createSignal<BrowseOptions | null>(null);
+  const view = createMemo(() => {
+    const browse = requestedBrowse() ?? activeBrowse();
+    return { ...viewFor(preferences(), baseId()), ...browse, direction: browse.order, ...(searching() ? { view: "list" as const } : {}) };
+  });
+  createEffect(on(() => props.source, () => setRequestedBrowse(null), { defer: true }));
+  createEffect(() => { if (props.error) setRequestedBrowse(null); });
   const updateView = (next: Partial<ViewPreference>) => {
-    const value = withView(preferences(), baseId(), { ...viewFor(preferences(), baseId()), ...next });
+    const updated = { ...view(), ...next };
+    const value = withView(preferences(), baseId(), updated);
     setPreferences(value);
     cookies.writeJsonCookie(preferencesCookie, value);
+    if (next.sort !== undefined || next.direction !== undefined || next.type !== undefined || next.groupFolders !== undefined) {
+      const browse = { sort: updated.sort, order: updated.direction, type: updated.type, groupFolders: updated.groupFolders };
+      setRequestedBrowse(browse);
+      props.onBrowseChange?.(browse);
+    }
   };
-  /*
-   * Order and type filter apply to what is loaded: Filegate lists by name, so other orders hold within
-   * the current page (the toolbar says so when more pages exist). Folders always come first.
-   */
-  const TYPE_FILTERS = ["all", "folders", "documents", "images", "media", "other"] as const;
+  const TYPE_FILTERS = ["all", "directories", "files"] as const;
   type TypeFilter = (typeof TYPE_FILTERS)[number];
-  const [typeFilter, setTypeFilter] = createSignal<TypeFilter>("all");
-  const extensionOf = (entry: FileEntry) => (entry.directory ? "" : (entry.name.split(".").length > 1 ? entry.name.split(".").at(-1)!.toLowerCase() : ""));
-  const kindOf = (entry: FileEntry): TypeFilter => {
-    if (entry.directory) return "folders";
-    const kind = previewKind(entry);
-    if (kind === "image") return "images";
-    if (kind === "video" || kind === "audio") return "media";
-    if (kind === "pdf" || editableExtension(entry.name)) return "documents";
-    return "other";
-  };
-  const byName = (a: FileEntry, b: FileEntry) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
-  const compare = (a: FileEntry, b: FileEntry) => {
-    if (view().groupFolders && a.directory !== b.directory) return a.directory ? -1 : 1;
-    const key = view().sort;
-    const order =
-      key === "modified" ? a.modified.localeCompare(b.modified) : key === "size" ? a.size - b.size : key === "type" ? extensionOf(a).localeCompare(extensionOf(b)) || byName(a, b) : byName(a, b);
-    return view().direction === "desc" ? -order : order;
-  };
-  const arrange = (items: readonly FileEntry[]) => (typeFilter() === "all" ? [...items] : items.filter((entry) => kindOf(entry) === typeFilter())).sort(compare);
-  const visibleItems = createMemo(() => arrange(props.directory.items));
-  const filtered = () => typeFilter() !== "all" && !visibleItems().length && props.directory.items.length > 0;
+  const typeFilter = () => view().type;
+  // The server orders and filters the complete observation before paging. Never rearrange a page.
+  const visibleItems = () => props.directory.items;
+  const filtered = () => typeFilter() !== "all" && !visibleItems().length;
   const requestedFile = () => (props.source ? new URL(props.source, "https://files.invalid").searchParams.get("file") : null);
   const [externalPath, setExternalPath] = createSignal(requestedFile());
   // Checkboxes appear only while selecting; a plain click then toggles instead of opening.
@@ -125,7 +119,7 @@ export default function Browser(props: {
   const [opening, setOpening] = createSignal<string | null>(null);
   let mounted = false;
   let syncing = false;
-  const locationKey = () => JSON.stringify([baseIdentity(), folder(), props.after ?? "", props.directory.query ?? ""]);
+  const locationKey = () => JSON.stringify([baseIdentity(), folder(), props.after ?? "", props.directory.query ?? "", activeBrowse()]);
   let previousBase = baseIdentity();
   let location = locationKey();
   let lastSource = props.source;
@@ -145,6 +139,8 @@ export default function Browser(props: {
   const loadBranch = async (path: string, after?: string | null, background?: AbortSignal) => {
     const base = baseId();
     const location = baseIdentity();
+    const query = browseQuery(activeBrowse());
+    const queryKey = JSON.stringify(query);
     const key = branchKey(path, location);
     if (background && branchRequests.has(key)) return;
     branchRequests.get(key)?.abort();
@@ -160,13 +156,21 @@ export default function Browser(props: {
       let pages = after ? previous?.pages ?? 1 : 0;
       for (let index = 0; index < pageCount; index++) {
         signal.throwIfAborted();
-        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId: base }, query: { path, after: next } }, { init: { signal } });
+        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId: base }, query: { path, after: next, ...query } }, { init: { signal } });
         if (!response.ok) {
+          const error = ErrorSchema.safeParse(await response.clone().json());
+          if (next && error.success && error.data.code === "cursor_invalid" && !signal.aborted) {
+            branchRequests.delete(key);
+            setBranch(path, { items: [], next: null, loading: false, error: false });
+            toast(b().cursorReset);
+            await loadBranch(path, undefined, background);
+            return;
+          }
           if (!signal.aborted && baseIdentity() === location) setBranch(path, { items: Number(response.status) === 403 || Number(response.status) === 404 ? [] : previous?.items ?? [], next: null, loading: false, error: true });
           return;
         }
         const page = await response.json();
-        if (signal.aborted || baseIdentity() !== location) return;
+        if (signal.aborted || baseIdentity() !== location || JSON.stringify(browseQuery(activeBrowse())) !== queryKey) return;
         items.push(...page.items);
         pages++;
         next = page.next ?? undefined;
@@ -246,7 +250,7 @@ export default function Browser(props: {
       out.push(value);
     };
     const walk = (items: readonly FileEntry[], depth: number) => {
-      for (const item of arrange(items)) {
+      for (const item of items) {
         const open = item.directory && expandedFolders().has(item.path) ? branch(item.path) : undefined;
         push({ ...item, depth, expanded: !!open, loading: open?.loading });
         if (open) {
@@ -270,7 +274,7 @@ export default function Browser(props: {
     onChange: (paths) => {
       if (!mounted || syncing || location !== locationKey()) return;
       if (externalPath() && !paths.includes(externalPath()!)) setExternalPath(null);
-      const source = filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, props.directory.query);
+      const source = filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, props.directory.query, props.directory.scope, activeBrowse());
       commitHistory(source, { replace: true, scroll: "manual", viewTransition: false });
       props.onSelectionSource?.(source);
     },
@@ -872,9 +876,9 @@ export default function Browser(props: {
       return selection.keyDown(event, id, columns);
     },
   };
-  const sortLabel = (key: SortKey) => (key === "modified" ? b().sortModified : key === "size" ? b().sortSize : key === "type" ? b().sortType : b().sortName);
+  const sortLabel = (key: SortKey) => (key === "modified" ? b().sortModified : key === "size" ? b().sortSize : b().sortName);
   const filterLabel = (key: TypeFilter) =>
-    key === "folders" ? b().filterFolders : key === "documents" ? b().filterDocuments : key === "images" ? b().filterImages : key === "media" ? b().filterMedia : key === "other" ? b().filterOther : b().filterAll;
+    key === "directories" ? b().filterFolders : key === "files" ? b().filterFiles : b().filterAll;
   const listMessages = () => ({ name: t().name, size: t().size, modified: t().modified, details: b().detailsFor, toggle: b().toggleFolder, select: b().selectEntry, more: b().more, up: b().parentFolderUp });
   return (
     <>
@@ -925,8 +929,8 @@ export default function Browser(props: {
                     sort: SORT_KEYS.find((key) => values.includes(key)) ?? "name",
                     direction: values.includes("desc") ? "desc" : "asc",
                     groupFolders: values.includes("groupFolders"),
+                    type: TYPE_FILTERS.find((key) => values.includes(key)) ?? "all",
                   });
-                  setTypeFilter(TYPE_FILTERS.find((key) => values.includes(key)) ?? "all");
                 }}
                 options={[
                   { label: b().sort, options: SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })) },
@@ -942,16 +946,13 @@ export default function Browser(props: {
                 ]}
               />
             </div>
+            <Show when={props.notice}><InlineGuidance tone="info">{props.notice}</InlineGuidance></Show>
             <div class="filesv2-toolbar">
               <Show
                 when={selecting()}
                 fallback={
                   <span class="flex items-center gap-2 text-xs text-dimmed">
                     {searching() ? b().searchResults(props.directory.items.length) : b().pageItems(props.directory.items.length)}
-                    <Show when={props.directory.next && view().sort !== "name"}>
-                      <span aria-hidden="true">·</span>
-                      <span>{b().sortPageOnly}</span>
-                    </Show>
                     <Show when={props.directory.items.length}>
                       <span aria-hidden="true">·</span>
                       <Button size="xs" variant="text" onClick={() => toggleSelecting(true)}>
@@ -1122,13 +1123,13 @@ export default function Browser(props: {
           </Show>
           <nav class="filesv2-browser__pagination" aria-label={t().files}>
             <Show when={props.after}>
-              <ButtonLink href={filesUrl(baseId(), folder(), null, null, props.directory.query)} navigation="enhanced" onNavigate={props.onNavigate} size="sm" variant="secondary">
+              <ButtonLink href={filesUrl(baseId(), folder(), null, null, props.directory.query, props.directory.scope, activeBrowse())} navigation="enhanced" onNavigate={props.onNavigate} size="sm" variant="secondary">
                 {t().first}
               </ButtonLink>
             </Show>
             <Show when={props.directory.next}>
               {(next) => (
-                <ButtonLink href={filesUrl(baseId(), folder(), next(), null, props.directory.query)} navigation="enhanced" onNavigate={props.onNavigate} size="sm" variant="secondary">
+                <ButtonLink href={filesUrl(baseId(), folder(), next(), null, props.directory.query, props.directory.scope, activeBrowse())} navigation="enhanced" onNavigate={props.onNavigate} size="sm" variant="secondary">
                   {t().next}
                   <i class="ti ti-chevron-right" aria-hidden="true" />
                 </ButtonLink>
