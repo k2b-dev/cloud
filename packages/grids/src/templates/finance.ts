@@ -1,28 +1,60 @@
 import { i18n } from "@k2b/stdlib";
-import {
-  currentMonthDate,
-  documentTemplate,
-  field,
-  form,
-  formula,
-  type GridTemplate,
-  launcher,
-  record,
-  table,
-  view,
-  viewColumns,
-} from "./types";
+import { financeApp, financeBudgetViews } from "./finance-app";
+import { financeForms } from "./finance-forms";
+import { currentMonthDate, field, formula, type GridTemplate, record, table } from "./types";
 
 const financeTemplateMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      overview: "This month",
+      overviewHelp:
+        "Income, spending and budgets refer to the current calendar month. Recorded expenses count immediately, including entries not yet reconciled. This is a personal spending log, not a live bank balance.",
+      activity: "All transactions",
+      review: "To reconcile",
+      reviewHelp:
+        "Compare these entries with your bank statement or cash balance. Open an entry, correct it if needed and mark it as reconciled. No bank connection or payment is initiated.",
+      noReview: "Everything recorded has been reconciled.",
+      noTransactions: "No transactions yet. Start by recording an expense or income.",
+      logIncome: "Record income",
+      incomeLogged: "Income recorded.",
+      editTransaction: "Edit transaction",
+      saveChanges: "Save changes",
+      changesSaved: "Changes saved.",
+      plan: "Budget plan",
+      budgetHelp:
+        "All amounts in EUR. Set one budget per category and calendar month. Edit an existing budget instead of adding another: duplicate limits are added together in the monthly total. Current-month expenses are compared with each limit; a negative remainder means you are over budget. Transfers and income are excluded.",
+      newBudget: "Set a budget",
+      editBudget: "Edit budget",
+      budgetSaved: "Budget saved.",
+      budgetHistory: "Budget history",
+      remaining: "Remaining",
+      spent: "Spent",
+      currentBudgets: "Budgets this month",
+      budgetSpendTotals: "Current-month spending by category",
+      budgetLimitTotals: "Current-month budget totals",
+      categoryTransactions: "View category transactions",
+      noBudgets: "No budget set for this month. Set a budget to compare planned and actual spending.",
+      setup: "Accounts & categories",
+      setupHelp:
+        "Set up the accounts and categories used when recording transactions. Opening balances are reference information; this app does not calculate bank balances or manage paired transfers.",
+      newAccount: "Add account",
+      newCategory: "Add category",
+      details: "Details",
+      receiptHelp:
+        "Optional: send a printable summary of this expense. It is not the merchant’s original receipt. Add a real recipient first. Email delivery never reconciles the transaction.",
+      viewSummary: "Transaction summary",
+      sendConfirm: "Send this transaction summary to the saved recipient?",
+      savedHelp: "Record the amount as a positive value. Choose the account and category; income and expenses are reported separately.",
+      additional: "Optional details",
+      editAccount: "Edit account",
+      editCategory: "Edit category",
       templateName: "Personal finance",
       receiptJourney:
         "Review the transaction and replace the example receipt email with the intended recipient before processing. The action creates a transaction summary and sends it by email; it does not retrieve the merchant's original receipt or make a payment. Generated documents appear below.",
       templateDescription: "Track accounts, purchases, budgets, and receipt processing in one place.",
       highlightRecords: "Transactions, budgets, and a purchase form",
-      highlightOverview: "Spending, budget, and merchant overview",
+      highlightOverview: "Spending, budgets, and payment partners",
       highlightWorkflow: "Guided receipt processing and email delivery",
       baseName: "Personal Finance",
       baseDescription: "Track personal spending, income, budgets, and recent purchases.",
@@ -44,10 +76,10 @@ const financeTemplateMessages = i18n.define({
       expense: "Expense",
       fixed: "Fixed",
       fixedDescription: "Marks recurring categories such as rent or utilities.",
-      merchants: "Merchants",
-      merchantNameDescription: "Merchant, vendor, employer, or payee name.",
+      merchants: "Payees & senders",
+      merchantNameDescription: "Name of the person, business or employer.",
       defaultCategory: "Default category",
-      defaultCategoryDescription: "Category suggested for future transactions from this merchant.",
+      defaultCategoryDescription: "Usual category for this merchant; select the category when entering a transaction.",
       website: "Website",
       merchantWebsiteDescription: "Merchant website kept as a transaction reference.",
       transactions: "Transactions",
@@ -55,15 +87,15 @@ const financeTemplateMessages = i18n.define({
       transactionReferenceDescription: "Generated monthly reference for this transaction.",
       date: "Date",
       transactionDateDescription: "Transaction date.",
-      merchant: "Merchant",
-      transactionMerchantDescription: "Merchant or payee for this transaction.",
+      merchant: "Payee or sender",
+      transactionMerchantDescription: "Who did you pay, or who did you receive the money from?",
       account: "Account",
       transactionAccountDescription: "Account this transaction belongs to.",
       category: "Category",
       transactionCategoryDescription: "Budget or reporting category for this transaction.",
-      merchantName: "Merchant name",
+      merchantName: "Partner name",
       merchantNameLookupDescription: "Lookup label copied from the related merchant.",
-      merchantWebsite: "Merchant website",
+      merchantWebsite: "Partner website",
       merchantWebsiteLookupDescription: "Lookup website copied from the related merchant.",
       categoryName: "Category name",
       categoryNameLookupDescription: "Lookup label copied from the related category.",
@@ -72,12 +104,12 @@ const financeTemplateMessages = i18n.define({
       transfer: "Transfer",
       amount: "Amount",
       amountDescription: "Transaction amount in euros.",
-      cleared: "Cleared",
-      clearedDescription: "Whether the transaction has cleared the account.",
+      cleared: "Reconciled",
+      clearedDescription: "Checked against the bank statement or cash balance. Receipt delivery does not change this.",
       notes: "Notes",
       notesDescription: "Optional notes about this transaction.",
       receiptEmail: "Receipt email",
-      receiptEmailDescription: "Recipient used by the receipt workflow.",
+      receiptEmailDescription: "Optional. Required only when sending a transaction summary.",
       receiptSent: "Receipt delivery",
       receiptSentDescription:
         "Ready, in progress, or sent. Inspect the original run before resetting an interrupted delivery; it may already have sent email.",
@@ -114,13 +146,13 @@ const financeTemplateMessages = i18n.define({
       expenseLogged: "Expense logged.",
       purchaseDate: "Purchase date.",
       purchaseLocation: "Where the purchase happened.",
-      merchantHelp: "Shop, vendor, or person.",
+      merchantHelp: "Person, business or employer.",
       merchantUrlHelp: "Optional merchant URL.",
       accountHelp: "Account or payment source.",
       categoryHelp: "Budget or spending category.",
       amountHelp: "Expense amount.",
       notesHelp: "Receipt details or context.",
-      transactionReceipt: "Transaction receipt",
+      transactionReceipt: "Transaction summary",
       transactionReceiptDescription: "Printable receipt summary for one transaction.",
       transactionReceiptReady: "Transaction receipt ready",
       transactionReceiptReadyDescription: "Sends a private download link for a transaction receipt.",
@@ -131,14 +163,15 @@ const financeTemplateMessages = i18n.define({
   <p style="margin:24px 0;"><a href="{{ data.receipt.url }}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:6px;">Download receipt</a></p>
   <p style="color:#6b7280;font-size:14px;">This private link expires automatically.</p>
 </main>`,
-      clearAndSendReceipt: "Clear and send receipt",
-      clearAndSendReceiptDescription: "Creates a receipt link, emails it, and marks the transaction as cleared.",
+      clearAndSendReceipt: "Send transaction summary",
+      clearAndSendReceiptDescription:
+        "Creates a transaction summary and emails its private download link. It does not change bank reconciliation.",
       transaction: "Transaction",
       expenseOnlyError: "Receipts can only be sent for expense transactions.",
       alreadySentError: "Receipt delivery is not ready. Inspect the original workflow run and existing documents before retrying.",
       missingEmailError: "Add a receipt email address before processing this transaction.",
       sampleEmailError: "Replace the sample receipt email before sending a real receipt.",
-      receiptSentSuccess: "Receipt ${{ inputs.transaction.Transaction reference }} sent and transaction cleared.",
+      receiptSentSuccess: "Receipt ${{ inputs.transaction.Transaction reference }} sent.",
       chooseTransaction: "Choose transaction to process receipt",
       financeOverview: "Finance overview",
       spend: "Spend",
@@ -146,17 +179,60 @@ const financeTemplateMessages = i18n.define({
       spendByCategory: "Spend by category",
       expenseTransactionsOnly: "Expense transactions only",
       monthlySpend: "Monthly spend",
-      processReceipt: "Process receipt",
+      processReceipt: "Send summary",
       logPurchaseTitle: "Log a purchase",
       monthlyIncome: "Monthly income",
+      metricTotal: "Total",
     },
     de: {
+      overview: "Dieser Monat",
+      overviewHelp:
+        "Einnahmen, Ausgaben und Budgets beziehen sich auf den aktuellen Kalendermonat. Erfasste Ausgaben zählen sofort, auch noch nicht abgeglichene Einträge. Dies ist ein privates Ausgabenbuch, kein Live-Kontostand.",
+      activity: "Alle Transaktionen",
+      review: "Zum Abgleichen",
+      reviewHelp:
+        "Vergleiche diese Einträge mit Kontoauszug oder Bargeldbestand. Öffne einen Eintrag, korrigiere ihn bei Bedarf und markiere ihn als abgeglichen. Es wird keine Bankverbindung hergestellt oder Zahlung ausgeführt.",
+      noReview: "Alle erfassten Transaktionen sind abgeglichen.",
+      noTransactions: "Noch keine Transaktionen. Erfasse eine Ausgabe oder Einnahme.",
+      logIncome: "Einnahme erfassen",
+      incomeLogged: "Einnahme erfasst.",
+      editTransaction: "Transaktion bearbeiten",
+      saveChanges: "Änderungen speichern",
+      changesSaved: "Änderungen gespeichert.",
+      plan: "Budgetplanung",
+      budgetHelp:
+        "Alle Beträge in EUR. Lege je Kategorie und Kalendermonat ein Budget an. Bearbeite vorhandene Budgets, statt ein zweites anzulegen: doppelte Limits werden in der Monatssumme addiert. Die Ausgaben des aktuellen Monats werden mit dem Limit verglichen; ein negativer Rest bedeutet eine Überschreitung. Umbuchungen und Einnahmen zählen nicht mit.",
+      newBudget: "Budget festlegen",
+      editBudget: "Budget bearbeiten",
+      budgetSaved: "Budget gespeichert.",
+      budgetHistory: "Budgetverlauf",
+      remaining: "Verbleibend",
+      spent: "Ausgegeben",
+      currentBudgets: "Budgets dieses Monats",
+      budgetSpendTotals: "Aktuelle Monatsausgaben nach Kategorie",
+      budgetLimitTotals: "Aktuelle Monatsbudgets nach Kategorie",
+      categoryTransactions: "Transaktionen der Kategorie ansehen",
+      noBudgets: "Für diesen Monat gibt es noch kein Budget. Lege eines an, um Plan und Ausgaben zu vergleichen.",
+      setup: "Konten & Kategorien",
+      setupHelp:
+        "Pflege hier die Konten und Kategorien für neue Transaktionen. Anfangssalden dienen als Referenz; diese App berechnet keine Kontostände und verwaltet keine zusammengehörigen Umbuchungen.",
+      newAccount: "Konto hinzufügen",
+      newCategory: "Kategorie hinzufügen",
+      details: "Angaben",
+      receiptHelp:
+        "Optional: Versende eine druckbare Übersicht dieser Ausgabe. Sie ist nicht der Originalbeleg des Händlers. Hinterlege zuerst einen echten Empfänger. Der Versand gleicht die Transaktion nicht ab.",
+      viewSummary: "Transaktionsübersicht",
+      sendConfirm: "Diese Transaktionsübersicht an den gespeicherten Empfänger senden?",
+      savedHelp: "Erfasse den Betrag positiv. Wähle Konto und Kategorie; Einnahmen und Ausgaben werden getrennt ausgewertet.",
+      additional: "Optionale Angaben",
+      editAccount: "Konto bearbeiten",
+      editCategory: "Kategorie bearbeiten",
       templateName: "Private Finanzen",
       receiptJourney:
         "Prüfe die Transaktion und ersetze die Beispieladresse vor der Verarbeitung durch die gewünschte Empfängeradresse. Die Aktion erstellt eine Transaktionsübersicht und versendet sie per E-Mail; sie ruft weder den Originalbeleg des Händlers ab noch führt sie eine Zahlung aus. Erzeugte Dokumente erscheinen unten.",
       templateDescription: "Konten, Ausgaben, Budgets und Belegverarbeitung an einem Ort verwalten.",
       highlightRecords: "Transaktionen, Budgets und ein Ausgabenformular",
-      highlightOverview: "Übersicht über Ausgaben, Budgets und Händler",
+      highlightOverview: "Übersicht über Ausgaben, Budgets und Zahlungspartner",
       highlightWorkflow: "Geführte Belegverarbeitung und E-Mail-Versand",
       baseName: "Private Finanzen",
       baseDescription: "Private Ausgaben, Einnahmen, Budgets und letzte Käufe verwalten.",
@@ -178,10 +254,10 @@ const financeTemplateMessages = i18n.define({
       expense: "Ausgabe",
       fixed: "Wiederkehrend",
       fixedDescription: "Kennzeichnet wiederkehrende Kategorien wie Miete oder Nebenkosten.",
-      merchants: "Händler",
-      merchantNameDescription: "Name des Händlers, Anbieters, Arbeitgebers oder Zahlungsempfängers.",
+      merchants: "Zahlungspartner",
+      merchantNameDescription: "Name der Person, des Unternehmens oder Arbeitgebers.",
       defaultCategory: "Standardkategorie",
-      defaultCategoryDescription: "Kategorie, die für künftige Transaktionen dieses Händlers vorgeschlagen wird.",
+      defaultCategoryDescription: "Übliche Kategorie dieses Händlers; wähle die Kategorie beim Erfassen einer Transaktion.",
       website: "Website",
       merchantWebsiteDescription: "Händlerwebsite als Referenz für Transaktionen.",
       transactions: "Transaktionen",
@@ -189,15 +265,15 @@ const financeTemplateMessages = i18n.define({
       transactionReferenceDescription: "Automatisch erzeugte monatliche Referenz für diese Transaktion.",
       date: "Datum",
       transactionDateDescription: "Datum der Transaktion.",
-      merchant: "Händler",
-      transactionMerchantDescription: "Händler oder Zahlungsempfänger dieser Transaktion.",
+      merchant: "Zahlungspartner",
+      transactionMerchantDescription: "Von wem erhalten oder an wen gezahlt?",
       account: "Konto",
       transactionAccountDescription: "Konto, zu dem diese Transaktion gehört.",
       category: "Kategorie",
       transactionCategoryDescription: "Budget- oder Berichtskategorie dieser Transaktion.",
-      merchantName: "Händlername",
+      merchantName: "Name des Zahlungspartners",
       merchantNameLookupDescription: "Aus dem verknüpften Händler übernommene Bezeichnung.",
-      merchantWebsite: "Händlerwebsite",
+      merchantWebsite: "Website des Zahlungspartners",
       merchantWebsiteLookupDescription: "Aus dem verknüpften Händler übernommene Website.",
       categoryName: "Kategoriename",
       categoryNameLookupDescription: "Aus der verknüpften Kategorie übernommene Bezeichnung.",
@@ -206,12 +282,12 @@ const financeTemplateMessages = i18n.define({
       transfer: "Umbuchung",
       amount: "Betrag",
       amountDescription: "Transaktionsbetrag in Euro.",
-      cleared: "Gebucht",
-      clearedDescription: "Gibt an, ob die Transaktion auf dem Konto gebucht wurde.",
+      cleared: "Abgeglichen",
+      clearedDescription: "Mit Kontoauszug oder Bargeldbestand abgeglichen. Der Belegversand ändert diesen Status nicht.",
       notes: "Notizen",
       notesDescription: "Optionale Notizen zu dieser Transaktion.",
       receiptEmail: "E-Mail-Adresse für Beleg",
-      receiptEmailDescription: "Empfängeradresse für den Beleg-Workflow.",
+      receiptEmailDescription: "Optional. Nur zum Versenden einer Transaktionsübersicht erforderlich.",
       receiptSent: "Belegversand",
       receiptSentDescription:
         "Bereit, in Bearbeitung oder gesendet. Prüfe vor dem Zurücksetzen eines unterbrochenen Versands den ursprünglichen Lauf; die E-Mail könnte bereits gesendet worden sein.",
@@ -248,13 +324,13 @@ const financeTemplateMessages = i18n.define({
       expenseLogged: "Ausgabe erfasst.",
       purchaseDate: "Datum des Kaufs.",
       purchaseLocation: "Ort des Kaufs.",
-      merchantHelp: "Geschäft, Anbieter oder Person.",
+      merchantHelp: "Person, Unternehmen oder Arbeitgeber.",
       merchantUrlHelp: "Optionale URL des Händlers.",
       accountHelp: "Konto oder Zahlungsquelle.",
       categoryHelp: "Budget- oder Ausgabenkategorie.",
       amountHelp: "Betrag der Ausgabe.",
       notesHelp: "Belegdetails oder weitere Hinweise.",
-      transactionReceipt: "Transaktionsbeleg",
+      transactionReceipt: "Transaktionsübersicht",
       transactionReceiptDescription: "Druckbare Belegübersicht für eine Transaktion.",
       transactionReceiptReady: "Transaktionsbeleg verfügbar",
       transactionReceiptReadyDescription: "Sendet einen privaten Download-Link für einen Transaktionsbeleg.",
@@ -265,15 +341,16 @@ const financeTemplateMessages = i18n.define({
   <p style="margin:24px 0;"><a href="{{ data.receipt.url }}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:6px;">Beleg herunterladen</a></p>
   <p style="color:#6b7280;font-size:14px;">Dieser private Link läuft automatisch ab.</p>
 </main>`,
-      clearAndSendReceipt: "Beleg buchen und senden",
-      clearAndSendReceiptDescription: "Erstellt einen Beleg-Link, sendet ihn per E-Mail und markiert die Transaktion als gebucht.",
+      clearAndSendReceipt: "Transaktionsübersicht senden",
+      clearAndSendReceiptDescription:
+        "Erstellt eine Transaktionsübersicht und versendet ihren privaten Download-Link. Der Kontenabgleich bleibt unverändert.",
       transaction: "Transaktion",
       expenseOnlyError: "Belege können nur für Ausgabentransaktionen gesendet werden.",
       alreadySentError:
         "Der Belegversand ist nicht bereit. Prüfe vor einem erneuten Versuch den ursprünglichen Workflow-Lauf und vorhandene Dokumente.",
       missingEmailError: "Füge eine E-Mail-Adresse für den Beleg hinzu, bevor du diese Transaktion verarbeitest.",
       sampleEmailError: "Ersetze die Beispieladresse, bevor du einen echten Beleg sendest.",
-      receiptSentSuccess: "Beleg ${{ inputs.transaction.Transaktionsreferenz }} gesendet und Transaktion gebucht.",
+      receiptSentSuccess: "Beleg ${{ inputs.transaction.Transaktionsreferenz }} gesendet.",
       chooseTransaction: "Transaktion für die Belegverarbeitung auswählen",
       financeOverview: "Finanzübersicht",
       spend: "Ausgaben",
@@ -281,27 +358,15 @@ const financeTemplateMessages = i18n.define({
       spendByCategory: "Ausgaben nach Kategorie",
       expenseTransactionsOnly: "Nur Ausgabentransaktionen",
       monthlySpend: "Monatliche Ausgaben",
-      processReceipt: "Beleg verarbeiten",
+      processReceipt: "Übersicht senden",
       logPurchaseTitle: "Kauf erfassen",
       monthlyIncome: "Monatliche Einnahmen",
+      metricTotal: "Summe",
     },
   },
 });
 
-const monthlySpendSource = () =>
-  formula(
-    "from table ",
-    table("transactions"),
-    "\nwhere ",
-    field("transactions.type"),
-    " = 'expense'\ngroup by ",
-    field("transactions.date"),
-    " by month\naggregate sum(",
-    field("transactions.amount"),
-    ") as monthly_spend\nsort ",
-    field("transactions.date"),
-    " asc",
-  );
+export type FinanceText = ReturnType<typeof financeTemplateMessages.resolve>["t"];
 
 export const createFinanceTemplate = (locale?: string): GridTemplate => {
   const { t } = financeTemplateMessages.resolve([locale ?? "en"]);
@@ -321,7 +386,7 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
           { type: "customApp", key: "overview" },
           { type: "view", key: "recent_transactions" },
           { type: "form", key: "log_expense" },
-          { type: "workflow", key: "clear_and_send_receipt" },
+          { type: "workflow", key: "send_receipt" },
           { type: "documentTemplate", key: "transaction_receipt" },
         ],
       },
@@ -468,6 +533,7 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
             name: t.date,
             description: t.transactionDateDescription,
             type: "date",
+            defaultValue: { kind: "now" },
             required: true,
             icon: "ti ti-calendar",
           },
@@ -556,7 +622,7 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
             config: {
               precision: 16,
               decimalPlaces: 2,
-              min: "0",
+              min: "0.01",
               unit: "EUR",
               unitPosition: "suffix",
             },
@@ -581,10 +647,8 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
             name: t.receiptEmail,
             description: t.receiptEmailDescription,
             type: "text",
-            required: true,
             icon: "ti ti-mail",
             config: { regex: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" },
-            defaultValue: "receipts@example.test",
           },
           {
             key: "receipt_sent",
@@ -1008,6 +1072,7 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
       },
     ],
     views: [
+      ...financeBudgetViews(t),
       {
         key: "recent_transactions",
         table: "transactions",
@@ -1084,7 +1149,7 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
       {
         key: "budgets",
         table: "budgets",
-        name: t.monthlyBudgets,
+        name: t.budgetHistory,
         shared: true,
         source: formula(
           "from table ",
@@ -1096,105 +1161,12 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
           ", ",
           field("budgets.limit"),
           "\nsort ",
-          field("budgets.limit"),
+          field("budgets.month"),
           " desc",
         ),
       },
     ],
-    forms: [
-      {
-        key: "log_expense",
-        table: "transactions",
-        name: t.logExpense,
-        config: {
-          title: t.logExpense,
-          description: t.logExpenseDescription,
-          submitLabel: t.logPurchase,
-          successMessage: t.expenseLogged,
-          fields: [
-            {
-              kind: "user_input",
-              fieldId: field("transactions.date"),
-              label: t.date,
-              helpText: t.purchaseDate,
-              required: true,
-            },
-            {
-              kind: "user_input",
-              fieldId: field("transactions.merchant"),
-              label: t.merchant,
-              helpText: t.purchaseLocation,
-              required: true,
-              inlineCreate: {
-                enabled: true,
-                fields: [
-                  {
-                    fieldId: field("merchants.name"),
-                    label: t.merchantName,
-                    helpText: t.merchantHelp,
-                    required: true,
-                  },
-                  {
-                    fieldId: field("merchants.website"),
-                    label: t.website,
-                    helpText: t.merchantUrlHelp,
-                  },
-                ],
-              },
-            },
-            {
-              kind: "user_input",
-              fieldId: field("transactions.account"),
-              label: t.account,
-              helpText: t.accountHelp,
-              required: true,
-            },
-            {
-              kind: "user_input",
-              fieldId: field("transactions.category"),
-              label: t.category,
-              helpText: t.categoryHelp,
-              required: true,
-            },
-            {
-              kind: "user_input",
-              fieldId: field("transactions.amount"),
-              label: t.amount,
-              helpText: t.amountHelp,
-              required: true,
-            },
-            {
-              kind: "user_input",
-              fieldId: field("transactions.notes"),
-              label: t.notes,
-              helpText: t.notesHelp,
-            },
-            {
-              kind: "user_input",
-              fieldId: field("transactions.receipt_email"),
-              label: t.receiptEmail,
-              helpText: t.receiptEmailDescription,
-              required: true,
-            },
-            {
-              kind: "form_value",
-              fieldId: field("transactions.type"),
-              value: ["expense"],
-            },
-            {
-              kind: "form_value",
-              fieldId: field("transactions.cleared"),
-              value: false,
-            },
-            {
-              kind: "form_value",
-              fieldId: field("transactions.receipt_sent"),
-              value: ["ready"],
-            },
-          ],
-        },
-      },
-    ],
+    forms: financeForms(t),
     documentTemplates: [
       {
         key: "transaction_receipt",
@@ -1247,7 +1219,7 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
     ],
     workflows: [
       {
-        key: "clear_and_send_receipt",
+        key: "send_receipt",
         name: t.clearAndSendReceipt,
         description: t.clearAndSendReceiptDescription,
         source: `inputs:
@@ -1324,7 +1296,6 @@ steps:
   - updateRecord:
       record: inputs.transaction
       set:
-        ${t.cleared}: true
         ${t.receiptSent}: [sent]
   - succeed:
       message: "${t.receiptSentSuccess}"`,
@@ -1333,368 +1304,14 @@ steps:
     ],
     workflowLaunchers: [
       {
-        key: "clear_and_send_receipt_custom_app",
-        workflow: "clear_and_send_receipt",
+        key: "send_receipt_custom_app",
+        workflow: "send_receipt",
         name: t.chooseTransaction,
         config: { kind: "customApp", inputMode: "prompt" },
         enabled: true,
       },
     ],
-    customApps: [
-      {
-        key: "overview",
-        definition: {
-          schemaVersion: 5,
-          kind: "grids.custom-app",
-          name: t.financeOverview,
-          startPageId: "overview",
-          pages: [
-            {
-              id: "overview",
-              title: t.financeOverview,
-              navigation: {
-                visible: true,
-              },
-              parameters: {},
-              rows: [
-                {
-                  id: "r-stats",
-                  columns: [
-                    {
-                      id: "w-income-column",
-                      span: 3,
-                      blocks: [
-                        {
-                          id: "w-income",
-                          type: "metrics",
-                          title: t.income,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("transactions"),
-                              "\nwhere ",
-                              field("transactions.type"),
-                              " = 'income'\naggregate sum(",
-                              field("transactions.amount"),
-                              ") as total_income",
-                            ),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-spend-column",
-                      span: 3,
-                      blocks: [
-                        {
-                          id: "w-spend",
-                          type: "metrics",
-                          title: t.spend,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("transactions"),
-                              "\nwhere ",
-                              field("transactions.type"),
-                              " = 'expense'\naggregate sum(",
-                              field("transactions.amount"),
-                              ") as total_spend",
-                            ),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-tx-column",
-                      span: 3,
-                      blocks: [
-                        {
-                          id: "w-tx",
-                          type: "metrics",
-                          title: t.transactions,
-                          source: {
-                            kind: "gql",
-                            query: formula("from table ", table("transactions"), "\naggregate count(*) as transaction_count"),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-budget-column",
-                      span: 3,
-                      blocks: [
-                        {
-                          id: "w-budget",
-                          type: "metrics",
-                          title: t.budget,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("budgets"),
-                              "\nwhere YEAR(",
-                              field("budgets.month"),
-                              ") = YEAR(TODAY()) and MONTH(",
-                              field("budgets.month"),
-                              ") = MONTH(TODAY())\naggregate sum(",
-                              field("budgets.limit"),
-                              ") as total_budget",
-                            ),
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "r-charts",
-                  columns: [
-                    {
-                      id: "w-spend-cat-column",
-                      span: 6,
-                      blocks: [
-                        {
-                          id: "w-spend-cat",
-                          type: "chart",
-                          title: t.spendByCategory,
-                          subtitle: t.expenseTransactionsOnly,
-                          chartType: "donut",
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("transactions"),
-                              "\njoin table ",
-                              table("categories"),
-                              " as category on ",
-                              field("transactions.category"),
-                              " = category.id\nwhere ",
-                              field("transactions.type"),
-                              " = 'expense'\ngroup by category.",
-                              field("categories.name"),
-                              "\naggregate sum(",
-                              field("transactions.amount"),
-                              ") as category_spend\nhaving category_spend > 0\nsort category_spend desc nulls last",
-                            ),
-                          },
-                          limit: 100,
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-monthly-column",
-                      span: 6,
-                      blocks: [
-                        {
-                          id: "w-monthly",
-                          type: "chart",
-                          title: t.monthlySpend,
-                          chartType: "bar",
-                          source: {
-                            kind: "gql",
-                            query: monthlySpendSource(),
-                          },
-                          valueFormat: {
-                            style: "number",
-                            decimalPlaces: 2,
-                            unit: "EUR",
-                            unitPosition: "suffix",
-                          },
-                          yAxisLabel: "EUR",
-                          limit: 100,
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "r-work",
-                  columns: [
-                    {
-                      id: "w-recent-column",
-                      span: 7,
-                      blocks: [
-                        {
-                          id: "w-recent",
-                          type: "records",
-                          searchable: true,
-                          pageSize: 25,
-                          title: t.recentTransactions,
-                          rowNavigate: {
-                            history: "push",
-                            kind: "navigate",
-                            pageId: "transaction",
-                            params: { transaction_id: { source: "ROW", path: "id" } },
-                          },
-                          source: { kind: "view", viewId: view("recent_transactions") },
-                          display: {
-                            kind: "table",
-                            columnIds: viewColumns("recent_transactions"),
-                          },
-                          rowActions: [
-                            {
-                              id: "send-receipt",
-                              label: t.processReceipt,
-                              showLabel: true,
-                              kind: "workflow",
-                              launcherId: launcher("clear_and_send_receipt_custom_app"),
-                              inputs: { transaction: { source: "ROW", path: "id" } },
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-log-column",
-                      span: 5,
-                      blocks: [
-                        {
-                          id: "w-log",
-                          type: "form",
-                          title: t.logPurchaseTitle,
-                          formId: form("log_expense"),
-                          fixedValues: {},
-                          onSuccessNavigate: {
-                            kind: "navigate",
-                            pageId: "transaction",
-                            params: { transaction_id: { source: "RESULT", path: "recordId" } },
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "r-budget",
-                  columns: [
-                    {
-                      id: "w-budgets-column",
-                      span: 6,
-                      blocks: [
-                        {
-                          id: "w-budgets",
-                          type: "records",
-                          searchable: true,
-                          pageSize: 25,
-                          title: t.monthlyBudgets,
-                          source: { kind: "view", viewId: view("budgets") },
-                          display: {
-                            kind: "table",
-                            columnIds: viewColumns("budgets"),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-income-chart-column",
-                      span: 6,
-                      blocks: [
-                        {
-                          id: "w-income-chart",
-                          type: "chart",
-                          title: t.monthlyIncome,
-                          chartType: "bar",
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("transactions"),
-                              "\nwhere ",
-                              field("transactions.type"),
-                              " = 'income'\ngroup by ",
-                              field("transactions.date"),
-                              " by month\naggregate sum(",
-                              field("transactions.amount"),
-                              ") as monthly_income\nsort ",
-                              field("transactions.date"),
-                              " asc",
-                            ),
-                          },
-                          valueFormat: {
-                            style: "number",
-                            decimalPlaces: 2,
-                            unit: "EUR",
-                            unitPosition: "suffix",
-                          },
-                          limit: 100,
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              id: "transaction",
-              title: t.transaction,
-              navigation: { visible: false },
-              parameters: { transaction_id: { type: "record", tableId: table("transactions"), required: true } },
-              record: { tableId: table("transactions"), id: { source: "PARAMS", path: "transaction_id" } },
-              rows: [
-                {
-                  id: "detail",
-                  columns: [
-                    {
-                      id: "content",
-                      span: 12,
-                      blocks: [
-                        { id: "instructions", type: "markdown", markdown: t.receiptJourney },
-                        {
-                          id: "transaction",
-                          type: "record",
-                          title: t.transaction,
-                          fieldIds: [
-                            field("transactions.transaction_ref"),
-                            field("transactions.date"),
-                            field("transactions.merchant"),
-                            field("transactions.category"),
-                            field("transactions.account"),
-                            field("transactions.type"),
-                            field("transactions.amount"),
-                            field("transactions.cleared"),
-                            field("transactions.receipt_email"),
-                            field("transactions.receipt_sent"),
-                            field("transactions.notes"),
-                          ],
-                          editableFieldIds: [field("transactions.receipt_email"), field("transactions.notes")],
-                          documents: { templateIds: [documentTemplate("transaction_receipt")] },
-                        },
-                        {
-                          id: "actions",
-                          type: "actions",
-                          actions: [
-                            {
-                              id: "send-receipt",
-                              kind: "workflow",
-                              label: t.processReceipt,
-                              launcherId: launcher("clear_and_send_receipt_custom_app"),
-                              inputs: { transaction: { source: "RECORD", path: "id" } },
-                              availableWhen: {
-                                query: formula(
-                                  "from table ",
-                                  table("transactions"),
-                                  "\nwhere record.id = @params.transaction_id and ",
-                                  field("transactions.type"),
-                                  " = 'expense' and ",
-                                  field("transactions.receipt_sent"),
-                                  " = 'ready'\nlimit 1",
-                                ),
-                              },
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    ],
+    customApps: financeApp(t),
   };
 };
 

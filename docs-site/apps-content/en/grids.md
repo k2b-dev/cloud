@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-09-17
+updated: 2026-09-19
 ---
 
 # Grids
@@ -42,6 +42,46 @@ Use **Field configuration reference** for field types and ID strategies,
 **Financial formats** for exact inputs and limits, and **Workflows** for the
 workflow, CLI, and API contracts. Agents should discover and read those Help
 pages rather than infer options from a UI label.
+
+### Choose a template for daily work
+
+Templates create a new Base with tables, Forms, Workflows, Documents, and published
+Apps. Later template improvements apply to newly created Bases; existing Bases
+keep their configuration and data.
+
+| Template | Daily work | App audience |
+| --- | --- | --- |
+| Bookshop | Prepare orders, add books, maintain customers, and track fulfillment | One staff App with orders, catalog, customers, and reports |
+| Finance | Record income and expenses, compare monthly spending with budgets and reconcile entries | One App for the person or household keeping these records |
+| Inventory | Request equipment, prepare handovers, issue items and record returns | Separate borrower and loan-desk Apps |
+| Billing | Draft and issue invoices, corrections, and self-billing; record payments | One billing App |
+
+Bookshop keeps order lines beside their order. Create and edit short records in
+dialogs, then continue on the same detail page. Review the captured sale prices
+before sending an order summary. Catalog prices can change without rewriting
+those prices or an existing Document. Use Billing for invoices; Bookshop does
+not collect payments.
+
+Finance distinguishes checking a transaction against the bank from sending its
+receipt. Receipt email is optional until you choose to send it. Monthly income,
+spending, and budget figures use the same period; transfers do not count as income
+or spending. The template records financial activity without making transfers or
+claiming to synchronize bank balances.
+
+Inventory borrowers browse kits and follow their own requests. The loan desk
+prepares individual items and handles approval, issue, and return. Handing over an
+item starts the loan; emailing an agreement does not. Staff can record a return
+from its detail page without a scanner. Kits describe requested equipment, not a
+guaranteed future reservation.
+
+Share the appropriate App with each audience. App access does not require Base
+access; Base Read exposes all records. Bookshop and Finance use one App because
+their tasks share an audience. Inventory needs separate Apps because borrowers
+and the loan desk have different records and actions available.
+Share **Equipment loans** with borrowers and **Loan desk** only with the staff
+who manage equipment and requests. These grants are not assigned automatically.
+Loan comments are shared with the requester; the separate admin-notes field is
+for internal notes.
 
 ### Start with the billing template
 
@@ -166,6 +206,10 @@ configuration through `grids bases navigation get` and `grids bases navigation s
   contract and recheck selected records server-side.
 - Let signed-in App readers manage explicitly editable File fields from Record details
   without granting access to the Base record API.
+
+Custom App charts display date-typed categories as localized calendar dates.
+Text categories keep their original labels, even when they resemble dates.
+
 ### Manage files and retention
 
 - Replace or remove a record attachment without rewriting file history. Removal

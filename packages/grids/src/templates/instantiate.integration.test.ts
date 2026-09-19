@@ -79,7 +79,7 @@ const verifyRuntimeSurfaces = async (baseId: string, withSampleData: boolean) =>
     const html = await renderDocumentHtml(documentTemplate, live.data.data);
     expect(html.ok, `${documentRow.name} HTML`).toBe(true);
     if (html.ok) expect(html.data.length).toBeGreaterThan(1_000);
-    if (documentRow.name === "Order invoice") expect(live.data.rows.length).toBeGreaterThan(1);
+    if (documentRow.name === "Order summary") expect(live.data.rows.length).toBeGreaterThan(1);
   }
 };
 
@@ -110,20 +110,23 @@ describe("built-in template instantiation", () => {
   const expectations = [
     {
       templateId: "bookshop",
-      documentNames: ["Order invoice"],
-      emailName: "Order invoice ready",
-      workflows: [{ name: "Send order invoice", steps: 10 }],
-      launchers: ["Choose order to send invoice"],
+      documentNames: ["Order summary"],
+      emailName: "Order summary ready",
+      workflows: [
+        { name: "Remove line", steps: 1 },
+        { name: "Send order summary", steps: 10 },
+      ],
+      launchers: ["Remove line", "Choose order to send summary"],
       workflowCapabilities: 2,
       scannerCapabilities: 0,
     },
     {
       templateId: "finance",
-      documentNames: ["Transaction receipt"],
+      documentNames: ["Transaction summary"],
       emailName: "Transaction receipt ready",
-      workflows: [{ name: "Clear and send receipt", steps: 10 }],
+      workflows: [{ name: "Send transaction summary", steps: 10 }],
       launchers: ["Choose transaction to process receipt"],
-      workflowCapabilities: 2,
+      workflowCapabilities: 1,
       scannerCapabilities: 0,
     },
     {
@@ -131,6 +134,9 @@ describe("built-in template instantiation", () => {
       documentNames: ["Asset label", "Loan agreement"],
       emailName: "Loan agreement ready",
       workflows: [
+        { name: "Mark repaired", steps: 2 },
+        { name: "Cancel planned position", steps: 3 },
+        { name: "Reject request", steps: 2 },
         { name: "Cancel requested loan", steps: 3 },
         { name: "Approve equipment loan", steps: 5 },
         { name: "Send approved loan agreement", steps: 12 },
@@ -141,6 +147,10 @@ describe("built-in template instantiation", () => {
         { name: "Add loan position", steps: 2 },
       ],
       launchers: [
+        "Mark repaired",
+        "Cancel planned position",
+        "Reject request",
+        "Mark loan item as returned",
         "Cancel requested loan",
         "Approve equipment loan",
         "Choose loan to send agreement",
@@ -150,7 +160,7 @@ describe("built-in template instantiation", () => {
         "Close returned loan",
         "Add loan position",
       ],
-      workflowCapabilities: 6,
+      workflowCapabilities: 10,
       scannerCapabilities: 2,
     },
   ];

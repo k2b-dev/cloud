@@ -1,23 +1,67 @@
 import { createMockCover } from "@k2b/cloud/shared";
 import { i18n } from "@k2b/stdlib";
-import {
-  currentMonthDate,
-  documentTemplate,
-  field,
-  form,
-  formula,
-  type GridTemplate,
-  launcher,
-  record,
-  table,
-  view,
-  viewColumns,
-} from "./types";
+import { inventoryApps } from "./inventory-apps";
+import { currentMonthDate, field, formula, type GridTemplate, record, table } from "./types";
 
 const inventoryMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      completeRepair: "Mark repaired",
+      completeRepairHelp: "Confirm that this item was checked and is ready to use again.",
+      repairCompleted: "Item available again.",
+      cancelPosition: "Cancel planned position",
+      cancelPositionHelp: "Remove this item from the planned handover? Issued items must be returned instead.",
+      positionCancelled: "Planned position cancelled.",
+      rejectLoan: "Reject request",
+      rejectConfirm: "Reject this request? No equipment will be handed over.",
+      rejectionReason: "Reason for rejection",
+      loanRejected: "Request rejected.",
+      addKit: "Create kit",
+      kitAdded: "Kit created.",
+      editKit: "Edit kit",
+      kitCatalogHelp:
+        "Maintain the sets offered to borrowers. Only requestable kits with Available status appear in their catalog. Check individual items before every handover.",
+      catalogHelp:
+        ":::info Choose a kit\nOpen a kit to see what is included and request your dates. A request is not a reservation; the loan desk checks availability before approval.\n:::",
+      deskHelp:
+        ":::info Your next handover\nReview requests, assign individual items, then confirm availability and approve. Issue each item when handing it over. Sending an agreement is optional. Record returns before closing the loan.\n:::",
+      returnHelp:
+        ":::info Return an item\nScan its asset label, or open an in-use item under Inventory. Choose its returned condition. Damaged items stay unavailable until repaired.\n:::",
+      requestedHelp:
+        ":::info Request received\nThe loan desk will check the dates and available items. Approval does not mean that equipment has already been handed over.\n:::",
+      prepareHelp:
+        ":::info Prepare this request\nAdd the individual items below. Check their availability for the requested dates, then edit the loan to confirm availability. Approval freezes allocation planning.\n:::",
+      activeHelp:
+        ":::info Handover and return\nOpen a planned position to issue that item. For a return, open the item or use the scanner. Close the loan only after every position has been returned.\n:::",
+      editLoan: "Edit loan details",
+      editItem: "Edit item details",
+      saveChanges: "Save changes",
+      changesSaved: "Changes saved.",
+      loanSchedule: "Dates and allocation",
+      contactDetails: "Contact details",
+      additionalDetails: "Additional details",
+      awaitingReview: "Requests to review",
+      upcomingHandovers: "Approved · ready for handover",
+      activeLoans: "Handovers and returns",
+      loanArchive: "Completed requests",
+      emptyReview: "No requests need review.",
+      emptyApproved: "No approved loans waiting for handover.",
+      emptyActive: "No active loans are due today or later.",
+      emptyOverdue: "No overdue returns. Thank you for keeping the equipment moving.",
+      emptyPositions: "No items assigned yet. Add the individual items below before approving this request.",
+      emptyInventory: "No items yet. Add your first item to start tracking handovers.",
+      demoRejection: "The requested kit is already allocated for this period.",
+      emptyArchive: "Completed and cancelled requests will appear here.",
+      inventory: "Inventory",
+      browseStock: "Find an item by its name or asset ID. Open it to view its location, register a return, or update its details.",
+      kitDetails: "Kit details",
+      noKits: "No kits are currently offered for requests.",
+      positionDetails: "Handover position",
+      openItem: "Open item",
+      positionHelp:
+        "The position records one physical handover. Issue it once; record its return on the item, where you also choose the returned condition.",
+
       templateName: "Inventory",
       templateDescription: "Track assets, storage locations, equipment loans, agreements, and repairs.",
       templateHighlightRecords: "Assets, kits, locations, and loan requests",
@@ -187,7 +231,7 @@ const inventoryMessages = i18n.define({
       notesHelp: "Extra context for admins.",
       requestLoan: "Request loan",
       requestKitLoan: "Request kit loan",
-      requestKitLoanDescription: "Choose one or more kits. An admin reviews and approves the request.",
+      requestKitLoanDescription: "Enter your contact details and dates. The loan desk checks availability before approving your request.",
       loanRequested: "Loan requested.",
       requesterFormName: "Name",
       requesterNameHelp: "Who should receive the kit.",
@@ -202,8 +246,7 @@ const inventoryMessages = i18n.define({
       equipmentLoans: "Equipment loans",
       newLoan: "New loan",
       myEquipmentLoans: "My equipment loans",
-      equipmentLoansGuidance:
-        "# Equipment loans\n\nUse **New loan** to request a kit. Open a loan to follow its approval, agreement, handover, and return.",
+      equipmentLoansGuidance: "Request a kit with **New loan**. Open an existing loan to see its status or send a message.",
       myLoans: "My loans",
       noEquipmentLoans: "You do not have any equipment loans yet.",
       equipmentCatalog: "Equipment catalog",
@@ -227,9 +270,9 @@ const inventoryMessages = i18n.define({
       loanAndHandover: "Loan and handover",
       approveLoan: "Approve loan",
       approveLoanConfirm: "Approve this loan after checking availability?",
-      sendAgreementAndStartLoan: "Send agreement and start loan",
-      sendAgreementConfirm: "Send the agreement and mark the approved loan active?",
-      loanNotesAndUpdates: "Loan notes and updates",
+      sendAgreementAndStartLoan: "Send agreement by email",
+      sendAgreementConfirm: "Send the agreement to the borrower by email? This does not hand over any items.",
+      loanNotesAndUpdates: "Messages shared with the borrower",
       assetLabel: "Asset label",
       assetLabelDescription: "Printable inventory label used to identify and scan one item.",
       loanAgreement: "Loan agreement",
@@ -274,12 +317,68 @@ const inventoryMessages = i18n.define({
         "Returns the scanned item's current loan position and records its condition. No historical loan selection is needed.",
       returnedItem: "Returned item",
       returnedCondition: "Returned condition",
-      returnedConditionDescription: "Assess this item after scanning it.",
+      returnedConditionDescription: "Check the returned item. Damaged items go to maintenance and remain unavailable.",
       chooseLoanToSendAgreement: "Choose loan to send agreement",
       scanDamagedInventoryItem: "Scan damaged inventory item",
       returnItemsForLoan: "Scan returned inventory item",
     },
     de: {
+      completeRepair: "Reparatur abschließen",
+      completeRepairHelp: "Bestätige, dass dieses Gerät geprüft wurde und wieder einsatzbereit ist.",
+      repairCompleted: "Gerät wieder verfügbar.",
+      cancelPosition: "Geplante Position stornieren",
+      cancelPositionHelp: "Dieses Gerät aus der geplanten Übergabe entfernen? Bereits ausgegebene Geräte müssen zurückgegeben werden.",
+      positionCancelled: "Geplante Position storniert.",
+      rejectLoan: "Anfrage ablehnen",
+      rejectConfirm: "Diese Anfrage ablehnen? Es werden keine Geräte ausgegeben.",
+      rejectionReason: "Grund der Ablehnung",
+      loanRejected: "Anfrage abgelehnt.",
+      addKit: "Set erstellen",
+      kitAdded: "Set erstellt.",
+      editKit: "Set bearbeiten",
+      kitCatalogHelp:
+        "Pflege die angebotenen Sets. Im Katalog erscheinen nur anfragbare Sets mit Status Verfügbar. Prüfe vor jeder Übergabe die einzelnen Geräte.",
+      catalogHelp:
+        ":::info Wähle ein Set\nÖffne ein Set, prüfe den Inhalt und frage deinen Zeitraum an. Eine Anfrage ist keine Reservierung: Die Ausleihe prüft die Verfügbarkeit vor der Freigabe.\n:::",
+      deskHelp:
+        ":::info Die nächste Übergabe\nPrüfe Anfragen und ordne einzelne Geräte zu. Bestätige die Verfügbarkeit und gib die Ausleihe frei. Gib jedes Gerät bei der Übergabe aus. Der Versand einer Vereinbarung ist optional. Erfasse alle Rückgaben vor dem Abschluss.\n:::",
+      returnHelp:
+        ":::info Gerät zurücknehmen\nScanne das Inventaretikett oder öffne ein ausgeliehenes Gerät unter Inventar. Wähle den Zustand bei Rückgabe. Beschädigte Geräte bleiben bis zur Reparatur nicht verfügbar.\n:::",
+      requestedHelp:
+        ":::info Anfrage eingegangen\nDie Ausleihe prüft Zeitraum und verfügbare Geräte. Eine Freigabe bedeutet noch nicht, dass die Geräte bereits übergeben wurden.\n:::",
+      prepareHelp:
+        ":::info Anfrage vorbereiten\nOrdne unten die einzelnen Geräte zu und prüfe deren Verfügbarkeit für den Zeitraum. Bestätige sie anschließend unter Ausleihdaten bearbeiten. Nach der Freigabe ist die Zuordnung abgeschlossen.\n:::",
+      activeHelp:
+        ":::info Übergabe und Rücknahme\nÖffne eine geplante Position, um das Gerät auszugeben. Öffne für die Rückgabe das Gerät oder nutze den Scanner. Schließe die Ausleihe erst ab, wenn alle Positionen zurückgegeben wurden.\n:::",
+      editLoan: "Ausleihdaten bearbeiten",
+      editItem: "Gerät bearbeiten",
+      saveChanges: "Änderungen speichern",
+      changesSaved: "Änderungen gespeichert.",
+      loanSchedule: "Zeitraum und Zuordnung",
+      contactDetails: "Kontaktdaten",
+      additionalDetails: "Weitere Angaben",
+      awaitingReview: "Anfragen prüfen",
+      upcomingHandovers: "Freigegeben · bereit zur Übergabe",
+      activeLoans: "Übergaben und Rückgaben",
+      loanArchive: "Abgeschlossene Anfragen",
+      emptyReview: "Keine Anfragen warten auf Prüfung.",
+      emptyApproved: "Keine freigegebenen Ausleihen warten auf ihre Übergabe.",
+      emptyActive: "Keine aktiven Ausleihen mit Rückgabe heute oder später.",
+      emptyOverdue: "Keine überfälligen Rückgaben. Alle Geräte sind im Zeitplan.",
+      emptyPositions: "Noch keine Geräte zugeordnet. Ergänze unten die einzelnen Geräte, bevor du diese Anfrage freigibst.",
+      emptyInventory: "Noch keine Geräte vorhanden. Lege dein erstes Gerät an, um Übergaben zu erfassen.",
+      demoRejection: "Das angefragte Set ist für diesen Zeitraum bereits vergeben.",
+      emptyArchive: "Abgeschlossene und stornierte Anfragen erscheinen hier.",
+      inventory: "Inventar",
+      browseStock:
+        "Suche ein Gerät über Name oder Inventarnummer. Öffne es, um den Lagerort zu sehen, eine Rückgabe zu erfassen oder Angaben zu ändern.",
+      kitDetails: "Set-Details",
+      noKits: "Aktuell werden keine Sets zur Anfrage angeboten.",
+      positionDetails: "Ausleihposition",
+      openItem: "Gerät öffnen",
+      positionHelp:
+        "Diese Position dokumentiert eine einzelne Übergabe. Gib sie einmal aus. Erfasse die Rückgabe beim Gerät und wähle dort den Zustand bei Rückgabe.",
+
       templateName: "Inventar",
       templateDescription: "Verwalte Gegenstände, Lagerorte, Ausleihen, Vereinbarungen und Reparaturen.",
       templateHighlightRecords: "Gegenstände, Sets, Lagerorte und Ausleihanfragen",
@@ -452,7 +551,7 @@ const inventoryMessages = i18n.define({
       notesHelp: "Zusätzlicher Kontext für Personen mit Admin-Rechten.",
       requestLoan: "Ausleihe anfragen",
       requestKitLoan: "Set-Ausleihe anfragen",
-      requestKitLoanDescription: "Wähle ein oder mehrere Sets. Eine Person mit Admin-Rechten prüft die Anfrage und gibt sie frei.",
+      requestKitLoanDescription: "Ergänze Kontaktdaten und Zeitraum. Die Ausleihe prüft die Verfügbarkeit vor der Freigabe.",
       loanRequested: "Ausleihe angefragt.",
       requesterFormName: "Name",
       requesterNameHelp: "Person, die das Set erhalten soll.",
@@ -468,7 +567,7 @@ const inventoryMessages = i18n.define({
       newLoan: "Neue Ausleihe",
       myEquipmentLoans: "Meine Geräteausleihen",
       equipmentLoansGuidance:
-        "# Geräteausleihen\n\nFordere mit **Neue Ausleihe** ein Set an. Öffne eine Ausleihe, um Freigabe, Vereinbarung, Übergabe und Rückgabe zu verfolgen.",
+        "Frage über **Neue Ausleihe** ein Set an. Öffne eine bestehende Ausleihe, um den Status zu sehen oder eine Nachricht zu schreiben.",
       myLoans: "Meine Ausleihen",
       noEquipmentLoans: "Du hast noch keine Geräteausleihen.",
       equipmentCatalog: "Gerätekatalog",
@@ -492,9 +591,9 @@ const inventoryMessages = i18n.define({
       loanAndHandover: "Ausleihe und Übergabe",
       approveLoan: "Ausleihe freigeben",
       approveLoanConfirm: "Diese Ausleihe nach der Verfügbarkeitsprüfung freigeben?",
-      sendAgreementAndStartLoan: "Vereinbarung senden und Ausleihe starten",
-      sendAgreementConfirm: "Die Vereinbarung senden und die freigegebene Ausleihe als aktiv markieren?",
-      loanNotesAndUpdates: "Notizen und Neuigkeiten zur Ausleihe",
+      sendAgreementAndStartLoan: "Vereinbarung per E-Mail senden",
+      sendAgreementConfirm: "Die Vereinbarung per E-Mail an die ausleihende Person senden? Dadurch wird kein Gerät ausgegeben.",
+      loanNotesAndUpdates: "Nachrichten an die ausleihende Person",
       assetLabel: "Inventaretikett",
       assetLabelDescription: "Druckbares Inventaretikett zum Identifizieren und Scannen eines Gegenstands.",
       loanAgreement: "Ausleihvereinbarung",
@@ -541,13 +640,15 @@ const inventoryMessages = i18n.define({
         "Gibt die aktuelle Ausleihposition des gescannten Gegenstands zurück und erfasst dessen Zustand. Keine Auswahl einer historischen Ausleihe nötig.",
       returnedItem: "Zurückgegebener Gegenstand",
       returnedCondition: "Zustand bei Rückgabe",
-      returnedConditionDescription: "Bewerte den Gegenstand nach dem Scannen.",
+      returnedConditionDescription: "Prüfe das zurückgegebene Gerät. Beschädigte Geräte gehen in die Wartung und bleiben nicht verfügbar.",
       chooseLoanToSendAgreement: "Ausleihe für den Versand der Vereinbarung wählen",
       scanDamagedInventoryItem: "Beschädigten Inventargegenstand scannen",
       returnItemsForLoan: "Zurückgegebenen Inventargegenstand scannen",
     },
   },
 });
+
+export type InventoryText = ReturnType<typeof inventoryMessages.resolve>["t"];
 
 export const createInventoryTemplate = (locale?: string): GridTemplate => {
   const { t } = inventoryMessages.resolve(locale ? [locale] : undefined);
@@ -557,7 +658,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
     itemName: `\${{ inputs.item.${t.name} }}`,
     loanNumber: `\${{ inputs.loan.${t.loanNumber} }}`,
   };
-  const returnPosition = (status: "available" | "maintenance") => `- atomicRecords:
+  const returnPosition = (status: "available" | "maintenance", condition: "good" | "used" | "repair") => `- atomicRecords:
     locks: [inputs.item, position, position.${t.positionLoan}]
     checks:
       - table: ${t.loanPositions}
@@ -579,13 +680,13 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           set:
             ${t.status}: [returned]
             ${t.returnedAt}: \${{ now() }}
-            ${t.returnedCondition}: ["\${{ inputs.condition }}"]
+            ${t.returnedCondition}: [${condition}]
       - updateRecord:
           record: inputs.item
           set:
             ${t.currentPosition}: null
             ${t.status}: [${status}]
-            ${t.condition}: ["\${{ inputs.condition }}"]`;
+            ${t.condition}: [${condition}]`;
 
   return {
     id: "inventory",
@@ -1087,6 +1188,13 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             icon: "ti ti-message",
           },
           {
+            key: "rejection_reason",
+            name: t.rejectionReason,
+            description: t.rejectionReason,
+            type: "longtext",
+            icon: "ti ti-message",
+          },
+          {
             key: "notes",
             name: t.adminNotes,
             description: t.loanNotesDescription,
@@ -1139,6 +1247,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             config: {
               options: [
                 { id: "planned", label: t.planned },
+                { id: "cancelled", label: t.cancelled },
                 { id: "issued", label: t.inUse },
                 { id: "returned", label: t.returned },
               ],
@@ -1301,8 +1410,8 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           kits: [record("kits.video")],
           start_date: currentMonthDate(10),
           due_date: currentMonthDate(12),
-          status: ["active"],
-          availability_confirmed: true,
+          status: ["requested"],
+          availability_confirmed: false,
           agreement_sent: ["ready"],
           purpose: t.productInterviewPurpose,
         },
@@ -1318,6 +1427,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           start_date: currentMonthDate(18),
           due_date: currentMonthDate(20),
           status: ["rejected"],
+          rejection_reason: t.demoRejection,
           availability_confirmed: false,
           agreement_sent: ["ready"],
           purpose: t.trainingRecordingPurpose,
@@ -1434,6 +1544,24 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
     ],
     forms: [
       {
+        key: "kit",
+        table: "kits",
+        name: t.addKit,
+        config: {
+          title: t.kits,
+          submitLabel: t.saveChanges,
+          successMessage: t.changesSaved,
+          fields: [
+            { kind: "user_input", fieldId: field("kits.name"), required: true, helpText: t.kitNameDescription },
+            { kind: "user_input", fieldId: field("kits.category"), width: "compact", helpText: t.kitCategoryDescription },
+            { kind: "user_input", fieldId: field("kits.status"), width: "compact", helpText: t.kitStatusDescription },
+            { kind: "user_input", fieldId: field("kits.items"), helpText: t.kitItemsDescription },
+            { kind: "user_input", fieldId: field("kits.requestable"), helpText: t.requestableDescription },
+            { kind: "user_input", fieldId: field("kits.description"), helpText: t.kitDescriptionDescription },
+          ],
+        },
+      },
+      {
         key: "add_item",
         table: "items",
         name: t.addItem,
@@ -1452,6 +1580,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             {
               kind: "user_input",
               fieldId: field("items.category"),
+              width: "compact",
               label: t.category,
               helpText: t.categoryHelp,
               inlineCreate: {
@@ -1469,6 +1598,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             {
               kind: "user_input",
               fieldId: field("items.location"),
+              width: "compact",
               label: t.location,
               helpText: t.locationHelp,
               inlineCreate: {
@@ -1494,15 +1624,14 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
               },
             },
             {
-              kind: "user_input",
+              kind: "form_value",
               fieldId: field("items.status"),
-              label: t.status,
-              helpText: t.statusHelp,
-              defaultValue: ["available"],
+              value: ["available"],
             },
             {
               kind: "user_input",
               fieldId: field("items.condition"),
+              width: "compact",
               label: t.condition,
               helpText: t.conditionHelp,
             },
@@ -1513,16 +1642,14 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
               helpText: t.tagsHelp,
             },
             {
-              kind: "user_input",
+              kind: "form_value",
               fieldId: field("items.quantity"),
-              label: t.quantity,
-              helpText: t.quantityHelp,
-              required: true,
-              defaultValue: "1",
+              value: "1",
             },
             {
               kind: "user_input",
               fieldId: field("items.replacement_value"),
+              width: "compact",
               label: t.replacementValue,
               helpText: t.replacementValueHelp,
             },
@@ -1539,16 +1666,27 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
         key: "request_loan",
         table: "loans",
         name: t.requestLoan,
-        isPublic: true,
+        isPublic: false,
         config: {
           title: t.requestKitLoan,
           description: t.requestKitLoanDescription,
           submitLabel: t.requestLoan,
           successMessage: t.loanRequested,
+          validations: [
+            {
+              leftFieldId: field("loans.start_date"),
+              operator: "lte",
+              rightFieldId: field("loans.due_date"),
+              errorFieldId: field("loans.due_date"),
+              message: t.dueDateMustFollowStartDate,
+            },
+          ],
           fields: [
             {
               kind: "user_input",
+              section: { title: t.contactDetails },
               fieldId: field("loans.requester_name"),
+              width: "compact",
               label: t.requesterFormName,
               helpText: t.requesterNameHelp,
               required: true,
@@ -1556,6 +1694,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             {
               kind: "user_input",
               fieldId: field("loans.requester_email"),
+              width: "compact",
               label: t.email,
               helpText: t.emailHelp,
               required: true,
@@ -1568,6 +1707,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             },
             {
               kind: "user_input",
+              section: { title: t.loanSchedule },
               fieldId: field("loans.kits"),
               label: t.kits,
               helpText: t.kitsHelp,
@@ -1576,6 +1716,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             {
               kind: "user_input",
               fieldId: field("loans.start_date"),
+              width: "compact",
               label: t.startDate,
               helpText: t.startDateHelp,
               required: true,
@@ -1583,6 +1724,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             {
               kind: "user_input",
               fieldId: field("loans.due_date"),
+              width: "compact",
               label: t.dueDate,
               helpText: t.dueDateHelp,
               required: true,
@@ -1611,654 +1753,49 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           ],
         },
       },
-    ],
-    customApps: [
       {
-        key: "equipment_loans",
-        definition: {
-          schemaVersion: 5,
-          kind: "grids.custom-app",
-          name: t.equipmentLoans,
-          icon: "package",
-          sidebar: {
-            actions: [
-              {
-                id: "new-loan",
-                kind: "form",
-                label: t.newLoan,
-                icon: "plus",
-                tone: "success",
-                formId: form("request_loan"),
-                fixedValues: {},
-                onSuccessNavigate: {
-                  kind: "navigate",
-                  pageId: "loan",
-                  params: { loan_id: { source: "RESULT", path: "recordId" } },
-                },
-              },
-            ],
-          },
-          startPageId: "home",
-          pages: [
+        key: "edit_loan",
+        table: "loans",
+        name: t.editLoan,
+        config: {
+          title: t.editLoan,
+          submitLabel: t.saveChanges,
+          successMessage: t.changesSaved,
+          validations: [
             {
-              id: "home",
-              title: t.myEquipmentLoans,
-              navigation: { visible: true, icon: "home" },
-              parameters: {},
-              rows: [
-                {
-                  id: "welcome",
-                  columns: [
-                    {
-                      id: "content",
-                      span: 12,
-                      blocks: [
-                        {
-                          id: "guidance",
-                          type: "markdown",
-                          markdown: t.equipmentLoansGuidance,
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "loans",
-                  columns: [
-                    {
-                      id: "content",
-                      span: 12,
-                      blocks: [
-                        {
-                          id: "my-loans",
-                          type: "records",
-                          title: t.myLoans,
-                          emptyText: t.noEquipmentLoans,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("loans"),
-                              "\nwhere record.createdBy = @auth.id\nselect ",
-                              field("loans.loan_no"),
-                              ", ",
-                              field("loans.purpose"),
-                              ", ",
-                              field("loans.start_date"),
-                              ", ",
-                              field("loans.due_date"),
-                              ", ",
-                              field("loans.status"),
-                              "\nsort record.createdAt desc",
-                            ),
-                          },
-                          display: { kind: "table", columnIds: [] },
-                          searchable: true,
-                          pageSize: 25,
-                          rowNavigate: {
-                            kind: "navigate",
-                            pageId: "loan",
-                            history: "push",
-                            params: { loan_id: { source: "ROW", path: "id" } },
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
+              leftFieldId: field("loans.start_date"),
+              operator: "lte",
+              rightFieldId: field("loans.due_date"),
+              errorFieldId: field("loans.due_date"),
+              message: t.dueDateMustFollowStartDate,
             },
-            {
-              id: "catalog",
-              title: t.equipmentCatalog,
-              navigation: { visible: true, icon: "package" },
-              parameters: {},
-              rows: [
-                {
-                  id: "catalog",
-                  columns: [
-                    {
-                      id: "content",
-                      span: 12,
-                      blocks: [
-                        {
-                          id: "available-items",
-                          type: "records",
-                          title: t.availableEquipment,
-                          emptyText: t.noAvailableEquipment,
-                          source: { kind: "view", viewId: view("available_items") },
-                          display: { kind: "cards" },
-                          searchable: true,
-                          pageSize: 25,
-                          rowNavigate: {
-                            kind: "navigate",
-                            pageId: "item",
-                            history: "push",
-                            params: { item_id: { source: "ROW", path: "id" } },
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              id: "loan",
-              title: t.loanDetails,
-              navigation: { visible: false },
-              parameters: { loan_id: { type: "record", tableId: table("loans"), required: true } },
-              record: { tableId: table("loans"), id: { source: "PARAMS", path: "loan_id" } },
-              availableWhen: {
-                query: formula(
-                  "from table ",
-                  table("loans"),
-                  "\nwhere record.id = @params.loan_id and record.createdBy = @auth.id\nlimit 1",
-                ),
-              },
-              rows: [
-                {
-                  id: "detail",
-                  columns: [
-                    {
-                      id: "loan",
-                      span: 8,
-                      blocks: [
-                        {
-                          id: "loan",
-                          type: "record",
-                          title: t.loanOverview,
-                          documents: { templateIds: [documentTemplate("loan_agreement")] },
-                          fieldIds: [
-                            field("loans.loan_no"),
-                            field("loans.requester_name"),
-                            field("loans.requester_email"),
-                            field("loans.organization"),
-                            field("loans.kits"),
-                            field("loans.start_date"),
-                            field("loans.due_date"),
-                            field("loans.status"),
-                            field("loans.purpose"),
-                          ],
-                          editableFieldIds: [],
-                        },
-                      ],
-                    },
-                    {
-                      id: "updates",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "actions",
-                          type: "actions",
-                          actions: [
-                            {
-                              id: "cancel",
-                              label: t.cancelRequest,
-                              icon: "calendar-x",
-                              kind: "workflow",
-                              launcherId: launcher("cancel_loan_custom_app"),
-                              inputs: { loan: { source: "RECORD", path: "id" } },
-                              confirm: t.cancelRequestConfirm,
-                              availableWhen: {
-                                query: formula(
-                                  "from table ",
-                                  table("loans"),
-                                  "\nwhere record.id = @params.loan_id and ",
-                                  field("loans.status"),
-                                  " = 'requested'\nlimit 1",
-                                ),
-                              },
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "updates",
-                  columns: [
-                    {
-                      id: "comments",
-                      span: 12,
-                      blocks: [
-                        {
-                          id: "comments",
-                          type: "comments",
-                          title: t.questionsAndUpdates,
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              id: "item",
-              title: t.equipmentDetails,
-              navigation: { visible: false },
-              parameters: { item_id: { type: "record", tableId: table("items"), required: true } },
-              record: { tableId: table("items"), id: { source: "PARAMS", path: "item_id" } },
-              rows: [
-                {
-                  id: "item",
-                  columns: [
-                    {
-                      id: "content",
-                      span: 12,
-                      blocks: [
-                        {
-                          id: "item",
-                          type: "record",
-                          documents: { templateIds: [documentTemplate("asset_label")] },
-                          fieldIds: [
-                            field("items.asset_id"),
-                            field("items.name"),
-                            field("items.category"),
-                            field("items.location"),
-                            field("items.status"),
-                            field("items.condition"),
-                            field("items.files"),
-                            field("items.notes"),
-                          ],
-                          editableFieldIds: [],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
+          ],
+          fields: [
+            { kind: "user_input", fieldId: field("loans.start_date"), width: "compact", required: true },
+            { kind: "user_input", fieldId: field("loans.due_date"), width: "compact", required: true },
+            { kind: "user_input", fieldId: field("loans.availability_confirmed"), helpText: t.availabilityConfirmedDescription },
+            { kind: "user_input", fieldId: field("loans.notes") },
           ],
         },
       },
       {
-        key: "loan_desk",
-        definition: {
-          schemaVersion: 5,
-          kind: "grids.custom-app",
-          name: t.loanDesk,
-          icon: "clipboard-check",
-          startPageId: "dashboard",
-          pages: [
-            {
-              id: "dashboard",
-              title: t.loanDesk,
-              navigation: { visible: true },
-              parameters: {},
-              rows: [
-                {
-                  id: "metrics",
-                  columns: [
-                    {
-                      id: "open",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "open-loans",
-                          type: "metrics",
-                          title: t.openLoans,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("loans"),
-                              "\nwhere oneof(",
-                              field("loans.status"),
-                              ", 'requested', 'approved', 'active')\naggregate count(*) as open_loans",
-                            ),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "overdue",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "overdue-loans",
-                          type: "metrics",
-                          title: t.overdueLoans,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("loans"),
-                              "\nwhere ",
-                              field("loans.due_date"),
-                              " < @time.today and ",
-                              field("loans.status"),
-                              " = 'active'\naggregate count(*) as overdue_loans",
-                            ),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "stock",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "available-items",
-                          type: "metrics",
-                          title: t.availableItems,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("items"),
-                              "\nwhere ",
-                              field("items.status"),
-                              " = 'available'\naggregate count(*) as available_items",
-                            ),
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "queue",
-                  columns: [
-                    {
-                      id: "content",
-                      span: 12,
-                      blocks: [
-                        {
-                          id: "loan-queue",
-                          type: "records",
-                          title: t.operationalLoanQueue,
-                          emptyText: t.noOpenLoans,
-                          source: { kind: "view", viewId: view("open_loans") },
-                          display: { kind: "table", columnIds: viewColumns("open_loans") },
-                          searchable: true,
-                          pageSize: 25,
-                          rowNavigate: {
-                            kind: "navigate",
-                            pageId: "loan",
-                            history: "push",
-                            params: { loan_id: { source: "ROW", path: "id" } },
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "inventory-value",
-                  columns: [
-                    {
-                      id: "value",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "w-value",
-                          type: "metrics",
-                          title: t.inventoryValue,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("items"),
-                              "\naggregate sum(formula(",
-                              field("items.quantity"),
-                              " * ",
-                              field("items.replacement_value"),
-                              ")) as inventory_value",
-                            ),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "status",
-                      span: 8,
-                      blocks: [
-                        {
-                          id: "loan-status",
-                          type: "chart",
-                          title: t.loansByStatus,
-                          chartType: "donut",
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("loans"),
-                              "\ngroup by ",
-                              field("loans.status"),
-                              "\naggregate count(*) as loans\nsort loans desc",
-                            ),
-                          },
-                          limit: 20,
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              id: "returns",
-              title: t.returns,
-              navigation: { visible: true, icon: "scan" },
-              parameters: {},
-              rows: [
-                {
-                  id: "returns",
-                  columns: [
-                    {
-                      id: "damage",
-                      span: 12,
-                      blocks: [
-                        {
-                          id: "report-defect",
-                          type: "scanner",
-                          title: t.reportDamagedItem,
-                          launcherId: launcher("report_item_defect_scanner"),
-                        },
-                        {
-                          id: "return-item",
-                          type: "scanner",
-                          title: t.markLoanItemReturned,
-                          launcherId: launcher("return_loan_item_scanner"),
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              id: "loan",
-              title: t.loanAdministration,
-              navigation: { visible: false },
-              parameters: { loan_id: { type: "record", tableId: table("loans"), required: true } },
-              record: { tableId: table("loans"), id: { source: "PARAMS", path: "loan_id" } },
-              rows: [
-                {
-                  id: "loan",
-                  columns: [
-                    {
-                      id: "detail",
-                      span: 8,
-                      blocks: [
-                        {
-                          id: "loan",
-                          type: "record",
-                          title: t.loanAndHandover,
-                          documents: { templateIds: [documentTemplate("loan_agreement")] },
-                          fieldIds: [
-                            field("loans.loan_no"),
-                            field("loans.requester_name"),
-                            field("loans.requester_email"),
-                            field("loans.organization"),
-                            field("loans.kits"),
-                            field("loans.start_date"),
-                            field("loans.due_date"),
-                            field("loans.returned_at"),
-                            field("loans.status"),
-                            field("loans.availability_confirmed"),
-                            field("loans.agreement_sent"),
-                            field("loans.purpose"),
-                            field("loans.notes"),
-                          ],
-                          editableFieldIds: [
-                            field("loans.kits"),
-                            field("loans.start_date"),
-                            field("loans.due_date"),
-                            field("loans.availability_confirmed"),
-                            field("loans.notes"),
-                          ],
-                        },
-                        {
-                          id: "loan-positions",
-                          type: "referenced_records",
-                          title: t.loanPositions,
-                          sourceTableId: table("loan_positions"),
-                          relationFieldId: field("loan_positions.loan"),
-                          fieldIds: [
-                            field("loan_positions.position_no"),
-                            field("loan_positions.item"),
-                            field("loan_positions.status"),
-                            field("loan_positions.issued_at"),
-                            field("loan_positions.returned_at"),
-                            field("loan_positions.condition"),
-                          ],
-                          display: { kind: "table" },
-                          searchable: true,
-                          pageSize: 25,
-                          rowActions: [
-                            {
-                              id: "issue",
-                              kind: "workflow",
-                              label: t.issuePosition,
-                              launcherId: launcher("issue_position"),
-                              inputs: { position: { source: "ROW", path: "id" } },
-                              showLabel: true,
-                            },
-                          ],
-                        },
-                        {
-                          id: "add-position",
-                          type: "records",
-                          title: t.addPosition,
-                          source: { kind: "view", viewId: view("available_items") },
-                          display: { kind: "table", columnIds: viewColumns("available_items") },
-                          searchable: true,
-                          pageSize: 10,
-                          availableWhen: {
-                            query: formula(
-                              "from table ",
-                              table("loans"),
-                              "\nwhere record.id = @params.loan_id and ",
-                              field("loans.status"),
-                              " = 'requested'\nlimit 1",
-                            ),
-                          },
-                          rowActions: [
-                            {
-                              id: "add",
-                              kind: "workflow",
-                              label: t.addPosition,
-                              launcherId: launcher("add_position"),
-                              inputs: { loan: { source: "RECORD", path: "id" }, item: { source: "ROW", path: "id" } },
-                              showLabel: true,
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                    {
-                      id: "actions",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "actions",
-                          type: "actions",
-                          actions: [
-                            {
-                              id: "approve",
-                              label: t.approveLoan,
-                              icon: "check",
-                              kind: "workflow",
-                              launcherId: launcher("approve_loan_custom_app"),
-                              inputs: { loan: { source: "RECORD", path: "id" } },
-                              confirm: t.approveLoanConfirm,
-                              availableWhen: {
-                                query: formula(
-                                  "from table ",
-                                  table("loans"),
-                                  "\nwhere record.id = @params.loan_id and ",
-                                  field("loans.status"),
-                                  " = 'requested'\nlimit 1",
-                                ),
-                              },
-                            },
-                            {
-                              id: "send-agreement",
-                              label: t.sendAgreementAndStartLoan,
-                              icon: "file-check",
-                              kind: "workflow",
-                              launcherId: launcher("send_loan_agreement_custom_app"),
-                              inputs: { loan: { source: "RECORD", path: "id" } },
-                              confirm: t.sendAgreementConfirm,
-                              availableWhen: {
-                                query: formula(
-                                  "from table ",
-                                  table("loans"),
-                                  "\nwhere record.id = @params.loan_id and ",
-                                  field("loans.status"),
-                                  " = 'approved' and ",
-                                  field("loans.agreement_sent"),
-                                  " = 'ready'\nlimit 1",
-                                ),
-                              },
-                            },
-                            {
-                              id: "close-loan",
-                              kind: "workflow",
-                              label: t.closeLoan,
-                              launcherId: launcher("close_loan"),
-                              inputs: { loan: { source: "RECORD", path: "id" } },
-                              availableWhen: {
-                                query: formula(
-                                  "from table ",
-                                  table("loans"),
-                                  "\nwhere record.id = @params.loan_id and ",
-                                  field("loans.status"),
-                                  " = 'active'\nlimit 1",
-                                ),
-                              },
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "updates",
-                  columns: [
-                    {
-                      id: "comments",
-                      span: 12,
-                      blocks: [
-                        {
-                          id: "comments",
-                          type: "comments",
-                          title: t.loanNotesAndUpdates,
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
+        key: "edit_item",
+        table: "items",
+        name: t.editItem,
+        config: {
+          title: t.editItem,
+          submitLabel: t.saveChanges,
+          successMessage: t.changesSaved,
+          fields: [
+            { kind: "user_input", fieldId: field("items.name"), required: true },
+            { kind: "user_input", fieldId: field("items.location"), width: "compact" },
+            { kind: "user_input", fieldId: field("items.serial_no"), width: "compact" },
+            { kind: "user_input", fieldId: field("items.notes") },
           ],
         },
       },
     ],
+    customApps: inventoryApps(t),
     documentTemplates: [
       {
         key: "asset_label",
@@ -2323,7 +1860,9 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           " as item_name",
           "\nwhere ",
           field("loan_positions.loan"),
-          " = '{{ record.id }}'\nsort ",
+          " = '{{ record.id }}' and ",
+          field("loan_positions.status"),
+          " != 'cancelled'\nsort ",
           field("loan_positions.position_no"),
           " asc",
         ),
@@ -2349,6 +1888,108 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
       },
     ],
     workflows: [
+      {
+        key: "complete_repair",
+        name: t.completeRepair,
+        description: t.completeRepairHelp,
+        enabled: true,
+        source: `inputs:
+  item:
+    type: record
+    table: ${t.items}
+    required: true
+steps:
+  - atomicRecords:
+      locks: [inputs.item]
+      checks:
+        - table: ${t.items}
+          where:
+            - { field: ${t.assetId}, op: equals, value: "\${{ inputs.item.${t.assetId} }}" }
+            - { field: ${t.status}, op: is, value: maintenance }
+            - { field: ${t.currentPosition}, op: isEmpty }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+      changes:
+        - updateRecord:
+            record: inputs.item
+            set:
+              ${t.status}: [available]
+              ${t.condition}: [good]
+  - succeed:
+      message: ${t.repairCompleted}`,
+      },
+      {
+        key: "cancel_position",
+        name: t.cancelPosition,
+        description: t.cancelPositionHelp,
+        enabled: true,
+        source: `inputs:
+  position:
+    type: record
+    table: ${t.loanPositions}
+    required: true
+steps:
+  - setVariable:
+      name: loan
+      value: \${{ inputs.position.${t.positionLoan} }}
+  - atomicRecords:
+      locks: [inputs.position, loan]
+      checks:
+        - table: ${t.loanPositions}
+          where:
+            - { field: ${t.positionNumber}, op: equals, value: "\${{ inputs.position.${t.positionNumber} }}" }
+            - { field: ${t.status}, op: is, value: planned }
+            - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ loan.recordId }}"] }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+        - table: ${t.loans}
+          where:
+            - { field: ${t.loanNumber}, op: equals, value: "\${{ loan.${t.loanNumber} }}" }
+            - { field: ${t.status}, op: isAnyOf, value: [requested, approved, active] }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+      changes:
+        - updateRecord:
+            record: inputs.position
+            set:
+              ${t.status}: [cancelled]
+  - succeed:
+      message: ${t.positionCancelled}`,
+      },
+      {
+        key: "reject_loan",
+        name: t.rejectLoan,
+        description: t.rejectConfirm,
+        enabled: true,
+        source: `inputs:
+  loan:
+    type: record
+    table: ${t.loans}
+    required: true
+  reason:
+    type: text
+    label: ${t.rejectionReason}
+    required: true
+steps:
+  - atomicRecords:
+      locks: [inputs.loan]
+      checks:
+        - table: ${t.loans}
+          where:
+            - { field: ${t.loanNumber}, op: equals, value: "\${{ inputs.loan.${t.loanNumber} }}" }
+            - { field: ${t.status}, op: isAnyOf, value: [requested, approved] }
+            - { field: ${t.agreementSent}, op: isNot, value: processing }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+      changes:
+        - updateRecord:
+            record: inputs.loan
+            set:
+              ${t.status}: [rejected]
+              ${t.rejectionReason}: \${{ inputs.reason }}
+  - succeed:
+      message: ${t.loanRejected}`,
+      },
       {
         key: "cancel_loan",
         name: t.cancelRequestedLoan,
@@ -2429,6 +2070,12 @@ steps:
             - { field: ${t.dueDate}, op: onOrAfter, value: "\${{ inputs.loan.${t.requestedFrom} }}" }
           assert: notEmpty
           message: ${t.positionUnavailable}
+        - table: ${t.loanPositions}
+          where:
+            - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ inputs.loan.recordId }}"] }
+            - { field: ${t.status}, op: isNot, value: cancelled }
+          assert: notEmpty
+          message: ${t.outstandingPositions}
       changes:
         - updateRecord:
             record: inputs.loan
@@ -2450,9 +2097,9 @@ steps:
     required: true
 steps:
   - if:
-      notEquals:
-        - \${{ inputs.loan.${t.status} }}
-        - [approved]
+      all:
+        - notEquals: ["\${{ inputs.loan.${t.status} }}", [approved]]
+        - notEquals: ["\${{ inputs.loan.${t.status} }}", [active]]
     then:
       - fail:
           message: ${t.approveBeforeSendingAgreement}
@@ -2502,8 +2149,8 @@ steps:
               op: is
               value: ready
             - field: ${t.status}
-              op: is
-              value: approved
+              op: isAnyOf
+              value: [approved, active]
             - field: ${t.availabilityConfirmed}
               op: '='
               value: true
@@ -2518,6 +2165,7 @@ steps:
         - table: ${t.loanPositions}
           where:
             - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ inputs.loan.recordId }}"] }
+            - { field: ${t.status}, op: isNot, value: cancelled }
           assert: notEmpty
           message: ${t.outstandingPositions}
       changes:
@@ -2546,7 +2194,6 @@ steps:
       record: inputs.loan
       set:
         ${t.agreementSent}: [sent]
-        ${t.status}: [active]
   - succeed:
       message: "${t.agreementSentMessage({ loanNumber: workflowRefs.loanNumber })}"`,
         enabled: true,
@@ -2606,6 +2253,7 @@ steps:
           where:
             - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ inputs.loan.recordId }}"] }
             - { field: ${t.positionItem}, op: containsAny, value: ["\${{ inputs.item.recordId }}"] }
+            - { field: ${t.status}, op: isNot, value: cancelled }
           assert: empty
           message: ${t.positionUnavailable}
       changes:
@@ -2656,10 +2304,14 @@ steps:
         - table: ${t.loans}
           where:
             - { field: ${t.loanNumber}, op: equals, value: "\${{ loan.${t.loanNumber} }}" }
-            - { field: ${t.status}, op: is, value: active }
+            - { field: ${t.status}, op: isAnyOf, value: [approved, active] }
           assert: notEmpty
           message: ${t.positionUnavailable}
       changes:
+        - updateRecord:
+            record: loan
+            set:
+              ${t.status}: [active]
         - updateRecord:
             record: inputs.position
             set:
@@ -2696,7 +2348,12 @@ steps:
         - table: ${t.loanPositions}
           where:
             - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ inputs.loan.recordId }}"] }
-            - { field: ${t.status}, op: isNot, value: returned }
+          assert: notEmpty
+          message: ${t.outstandingPositions}
+        - table: ${t.loanPositions}
+          where:
+            - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ inputs.loan.recordId }}"] }
+            - { field: ${t.status}, op: isAnyOf, value: [planned, issued] }
           assert: empty
           message: ${t.outstandingPositions}
       changes:
@@ -2723,9 +2380,9 @@ steps:
     label: ${t.returnedCondition}
     description: ${t.returnedConditionDescription}
     options:
-      - good
-      - used
-      - repair
+      - "${t.good}"
+      - "${t.used}"
+      - "${t.needsRepair}"
     required: true
 steps:
   - if:
@@ -2740,16 +2397,24 @@ steps:
   - if:
       equals:
         - \${{ inputs.condition }}
-        - repair
+        - "${t.needsRepair}"
     then:
-${returnPosition("maintenance")
+${returnPosition("maintenance", "repair")
   .split("\n")
   .map((line) => `      ${line}`)
   .join("\n")}
     else:
-${returnPosition("available")
+      - if:
+          equals: ["\${{ inputs.condition }}", "${t.used}"]
+        then:
+${returnPosition("available", "used")
   .split("\n")
-  .map((line) => `      ${line}`)
+  .map((line) => `          ${line}`)
+  .join("\n")}
+        else:
+${returnPosition("available", "good")
+  .split("\n")
+  .map((line) => `          ${line}`)
   .join("\n")}
   - succeed:
       message: ${t.positionReturned}`,
@@ -2757,6 +2422,34 @@ ${returnPosition("available")
       },
     ],
     workflowLaunchers: [
+      {
+        key: "complete_repair",
+        workflow: "complete_repair",
+        name: t.completeRepair,
+        config: { kind: "customApp", inputMode: "prompt" },
+        enabled: true,
+      },
+      {
+        key: "cancel_position",
+        workflow: "cancel_position",
+        name: t.cancelPosition,
+        config: { kind: "customApp", inputMode: "prompt" },
+        enabled: true,
+      },
+      {
+        key: "reject_loan",
+        workflow: "reject_loan",
+        name: t.rejectLoan,
+        config: { kind: "customApp", inputMode: "prompt" },
+        enabled: true,
+      },
+      {
+        key: "return_loan_item_custom_app",
+        workflow: "return_loan_item",
+        name: t.markLoanItemReturned,
+        config: { kind: "customApp", inputMode: "prompt" },
+        enabled: true,
+      },
       {
         key: "add_position",
         workflow: "add_position",

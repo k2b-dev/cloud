@@ -9,7 +9,16 @@ Start with one complete journey. Configuration requires Base Admin access. Templ
 
 ## Choose the records you need {icon="table"}
 
-Every template includes Workflows, Document templates and a published Custom App. Bookshop Orders and Finance Transactions offer details, delivery and Documents; their create Forms open the new Record. Inventory shows agreements on Loans and labels on Items. Template updates affect new Bases only.
+Every template includes Workflows, Document templates and published Apps. Template updates affect new Bases only; existing Bases keep their configuration and data.
+
+- **Bookshop:** Start from orders, add positions within the order, and manage the catalog and customers in their own sections. Short create and edit Forms open in dialogs. Review the saved sale prices before sending the order summary; later catalog changes do not update those prices or existing Documents.
+- **Finance:** Record income and expenses, check transactions against your bank, and compare the current month's spending with its budget. Receipt delivery is optional and does not mark a transaction as reconciled. Transfers are excluded from income and spending; the template does not synchronize bank balances.
+- **Inventory:** Borrowers browse kits and track their own requests. Staff use a separate loan-desk App for preparation, handover, and returns. Issue starts the physical loan; sending the agreement is optional. Returns work from the item detail as well as a scanner.
+- **Billing:** Draft and issue invoices, corrections, and commission self-billing, then record actual payments. Follow the Billing journey below.
+
+Bookshop and Finance each serve one working audience. Inventory separates borrowers from staff because they need different records and actions. Share the appropriate App instead of granting raw Base access to these audiences.
+
+Share **Equipment loans** with borrowers and **Loan desk** only with the staff who manage equipment and requests. The template does not assign these audiences automatically. Loan comments are shared with the requester; use the separate admin-notes field for internal notes.
 
 | Your task | Start with | First check |
 | --- | --- | --- |
@@ -40,13 +49,15 @@ Bind all required workflow inputs before publishing. Fixed launchers use stored 
 
 ## Make handovers and deliveries safe to repeat {icon="repeat"}
 
-Create one loan position per item. Issue checks active loan, eligible position and available item, then stores that allocation. Return must match it: an old loan cannot return a newly lent item. Record damage before making items available. Close loans only after all positions finish.
+Create one loan position per item. Issue checks an approved or active loan, an eligible position and an available item, then stores the allocation and starts the loan. Return must match it: an old loan cannot return a newly lent item. Record damage before making items available. Close loans only after all positions finish.
 
 Inventory supplies issue/return actions; inspect them before adapting. Add positions before approving a requested loan. Kits describe equipment, not enforced future reservations.
 
 Use `atomicRecords` for bounded checks and changes that must succeed together. Separate update steps are not one transaction. Competing actions must coordinate on the same existing record. See **Workflows**.
 
 Claim a ready delivery before generating documents or sending email. A retry key identifies one invocation; independent requests still need a shared business-state check. Complete delivery only after its steps finish. If stuck, inspect the original run, Documents and email delivery before retrying. Cancellation does not undo sent email or Documents.
+
+An interrupted template delivery needs a Base admin to review the original run under **Workflows**. Resolve the delivery there before resetting its status in the Base table; the App intentionally offers no blind resend action.
 
 ## Preserve invoices {icon="file-invoice"}
 
@@ -71,7 +82,7 @@ Prepare corrections from the original invoice; reduce copied positions for a par
 
 Corrections start with today's document date and no due date; review these before issuing. Record customer refunds with **Record refund** on the original invoice, using a positive amount. Confirmation subtracts the refund from received payments and rejects amounts above the current credit balance, including competing confirmations. A correction has no separate payment balance. Pending payments and refunds can be discarded; confirmed ones remain immutable.
 
-HTML invoice starters are not E-Invoices. Check the installed renderer's currency, tax, address and correction scope and both output artifacts. The issuer remains responsible; validation is not tax or legal approval. Bookshop demonstrates invoices, not payment collection.
+HTML invoice starters are not E-Invoices. Check the installed renderer's currency, tax, address and correction scope and both output artifacts. The issuer remains responsible; validation is not tax or legal approval. Bookshop sends order summaries; use Billing for invoices.
 
 ## Review expenses {icon="checklist"}
 

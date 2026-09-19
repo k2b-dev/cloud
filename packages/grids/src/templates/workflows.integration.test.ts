@@ -156,8 +156,14 @@ describe("authored template workflow transitions", () => {
   });
 
   for (const scenario of [
-    { template: "bookshop", workflow: "Send order invoice", table: "Orders", input: "order", delivery: "Invoice delivery" },
-    { template: "finance", workflow: "Clear and send receipt", table: "Transactions", input: "transaction", delivery: "Receipt delivery" },
+    { template: "bookshop", workflow: "Send order summary", table: "Orders", input: "order", delivery: "Summary delivery" },
+    {
+      template: "finance",
+      workflow: "Send transaction summary",
+      table: "Transactions",
+      input: "transaction",
+      delivery: "Receipt delivery",
+    },
     { template: "inventory", workflow: "Send approved loan agreement", table: "Loans", input: "loan", delivery: "Agreement delivery" },
   ]) {
     postgresTest(
@@ -169,7 +175,7 @@ describe("authored template workflow transitions", () => {
           let record = required(candidates[0], "dispatch record");
           if (scenario.template === "bookshop") {
             record = required(
-              candidates.find((candidate) => candidate.data[field(target, "Ready to invoice")] === true),
+              candidates.find((candidate) => candidate.data[field(target, "Ready to send")] === true),
               "ready order",
             );
             const customers = await table(fixture, "Customers");
@@ -203,6 +209,31 @@ describe("authored template workflow transitions", () => {
             AND action IN ('generateDocument', 'sendEmail', 'createDocumentLink')
         `;
           expect(effects?.count).toBe(0);
+          if (scenario.template === "inventory") {
+            const reject = await workflow(fixture, "Reject request");
+            const rejection = { loan: ref(record), reason: "Equipment unavailable" };
+            expect((await invoke(fixture, reject, rejection)).state).toBe("failed");
+            await edit(fixture, target, record, { "Agreement delivery": ["ready"] });
+            expect((await invoke(fixture, reject, rejection)).state).toBe("succeeded");
+            expect(await value(target, record, "Status")).toEqual(["rejected"]);
+            expect(await value(target, record, "Reason for rejection")).toBe("Equipment unavailable");
+            expect((await invoke(fixture, reject, rejection)).state).toBe("failed");
+          }
+          if (scenario.template === "finance") {
+            expect(await value(target, record, "Reconciled")).toBe(record.data[field(target, "Reconciled")]);
+          }
+          if (scenario.template === "bookshop") {
+            const emptyOrder = await add(fixture, target, {
+              Customer: record.data[field(target, "Customer")],
+              "Ordered at": record.data[field(target, "Ordered at")],
+              "Ready to send": true,
+            });
+            expect(await invoke(fixture, claim, { order: ref(emptyOrder) })).toMatchObject({
+              state: "failed",
+              error: { code: "ATOMIC_CHECK_FAILED" },
+            });
+            expect(await value(target, emptyOrder, scenario.delivery)).toEqual(["ready"]);
+          }
         });
       },
       60_000,
@@ -223,6 +254,12 @@ describe("authored template workflow transitions", () => {
           "request loan without positions",
         );
         const item = required((await records(items))[0], "item");
+        await edit(fixture, loans, loan, { Status: ["active"] });
+        const close = await workflow(fixture, "Close returned loan");
+        expect(await invoke(fixture, close, { loan: ref(loan) })).toMatchObject({
+          state: "failed",
+          error: { code: "ATOMIC_CHECK_FAILED" },
+        });
         await edit(fixture, loans, loan, { Status: ["requested"] });
         const addPosition = await workflow(fixture, "Add loan position");
         const inputs = { loan: ref(loan), item: ref(item) };
@@ -273,7 +310,9 @@ describe("authored template workflow transitions", () => {
           loanRows.find((candidate) => candidate.id !== firstLoan.id),
           "distinct second loan",
         );
-        await edit(fixture, loans, secondLoan, { Status: ["active"] });
+        // Physical handover must work before optional agreement email delivery.
+        await edit(fixture, loans, firstLoan, { Status: ["approved"], "Agreement delivery": ["ready"] });
+        await edit(fixture, loans, secondLoan, { Status: ["approved"], "Agreement delivery": ["ready"] });
         const item = required(await get(items.id, relationId(positions, firstPosition, "Item")), "item");
         const secondPosition = await add(fixture, positions, { Loan: [secondLoan.id], Item: [item.id], Status: ["planned"] });
         expect(relationId(positions, firstPosition, "Loan")).toBe(firstLoan.id);
@@ -297,16 +336,18 @@ describe("authored template workflow transitions", () => {
         const loser = winnerIndex === 0 ? secondPosition : firstPosition;
         const winnerLoan = winnerIndex === 0 ? firstLoan : secondLoan;
         expect(await value(items, item, "Current loan position")).toEqual([winner.id]);
+        expect(await value(loans, winnerLoan, "Status")).toEqual(["active"]);
+        expect(await value(loans, winnerLoan, "Agreement delivery")).toEqual(["ready"]);
         expect(await value(positions, loser, "Status")).toEqual(["planned"]);
         expect(await invoke(fixture, close, { loan: ref(winnerLoan) })).toMatchObject({
           state: "failed",
           error: { code: "ATOMIC_CHECK_FAILED" },
         });
-        const returnRun = await queue(fixture, returnItem, { item: ref(item), condition: "good" });
+        const returnRun = await queue(fixture, returnItem, { item: ref(item), condition: "Good" });
         expect((await drive(returnRun)).state).toBe("succeeded");
         expect(await value(positions, winner, "Status")).toEqual(["returned"]);
         expect(await value(items, item, "Status")).toEqual(["available"]);
-        expect((await invoke(fixture, returnItem, { item: ref(item), condition: "good" })).state).toBe("failed");
+        expect((await invoke(fixture, returnItem, { item: ref(item), condition: "Good" })).state).toBe("failed");
         const closed = await invoke(fixture, close, { loan: ref(winnerLoan) });
         expect(closed.state, JSON.stringify(closed)).toBe("succeeded");
         expect((await invoke(fixture, issue, { position: ref(loser) })).state).toBe("succeeded");
@@ -314,9 +355,29 @@ describe("authored template workflow transitions", () => {
         expect((await drive(returnRun)).state).toBe("succeeded");
         expect(await value(items, item, "Current loan position")).toEqual([loser.id]);
         expect(await value(positions, loser, "Status")).toEqual(["issued"]);
-        expect((await invoke(fixture, returnItem, { item: ref(item), condition: "repair" })).state).toBe("succeeded");
+        expect((await invoke(fixture, returnItem, { item: ref(item), condition: "Needs repair" })).state).toBe("succeeded");
         expect(await value(items, item, "Status")).toEqual(["maintenance"]);
         expect(await value(positions, loser, "Status")).toEqual(["returned"]);
+
+        const repair = await workflow(fixture, "Mark repaired");
+        expect((await invoke(fixture, repair, { item: ref(item) })).state).toBe("succeeded");
+        expect(await value(items, item, "Status")).toEqual(["available"]);
+        expect(await value(items, item, "Condition")).toEqual(["good"]);
+        expect((await invoke(fixture, repair, { item: ref(item) })).state).toBe("failed");
+
+        const loserLoan = winnerIndex === 0 ? secondLoan : firstLoan;
+        const unneeded = await add(fixture, positions, { Loan: [loserLoan.id], Item: [item.id], Status: ["planned"] });
+        const cancelPosition = await workflow(fixture, "Cancel planned position");
+        expect((await invoke(fixture, cancelPosition, { position: ref(unneeded) })).state).toBe("succeeded");
+        expect(await value(positions, unneeded, "Status")).toEqual(["cancelled"]);
+        expect(await value(items, item, "Status")).toEqual(["available"]);
+        expect((await invoke(fixture, cancelPosition, { position: ref(unneeded) })).state).toBe("failed");
+        const usedPosition = await add(fixture, positions, { Loan: [loserLoan.id], Item: [item.id], Status: ["planned"] });
+        expect((await invoke(fixture, issue, { position: ref(usedPosition) })).state).toBe("succeeded");
+        expect((await invoke(fixture, returnItem, { item: ref(item), condition: "Used" })).state).toBe("succeeded");
+        expect(await value(items, item, "Condition")).toEqual(["used"]);
+        expect(await value(items, item, "Status")).toEqual(["available"]);
+        expect((await invoke(fixture, close, { loan: ref(loserLoan) })).state).toBe("succeeded");
       });
     },
     60_000,

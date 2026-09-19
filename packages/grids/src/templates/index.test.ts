@@ -461,7 +461,7 @@ describe("built-in grid templates", () => {
     );
     expect(websiteColumn).toEqual({
       fieldId: field("transactions.merchant_website"),
-      label: "Merchant website",
+      label: "Partner website",
     });
 
     const merchantRecords = (finance.records ?? []).filter((record) => record.table === "merchants");
@@ -583,11 +583,11 @@ describe("built-in grid templates", () => {
     expect(invoiceSource).not.toContain("limit 1");
 
     const workflow = template.workflows?.find((item) => item.key === "send_order_invoice")?.source ?? "";
-    expect(workflow).toContain("Ready to invoice");
-    expect(workflow).toContain("Invoice delivery");
+    expect(workflow).toContain("Ready to send");
+    expect(workflow).toContain("Summary delivery");
     expect(workflow).toContain("Replace the sample customer email");
-    expect(workflow).toContain("Invoice delivery: [sent]");
-    expect(workflow.indexOf("Invoice delivery: [processing]")).toBeLessThan(workflow.indexOf("- generateDocument:"));
+    expect(workflow).toContain("Summary delivery: [sent]");
+    expect(workflow.indexOf("Summary delivery: [processing]")).toBeLessThan(workflow.indexOf("- generateDocument:"));
 
     const launcher = template.workflowLaunchers?.find((item) => item.key === "send_order_invoice_custom_app");
     expect(launcher?.config).toEqual({ kind: "customApp", inputMode: "prompt" });
@@ -624,6 +624,7 @@ describe("built-in grid templates", () => {
     expect(workflow).toContain("Agreement delivery: [sent]");
     expect(workflow.indexOf("Agreement delivery: [processing]")).toBeLessThan(workflow.indexOf("- generateDocument:"));
     expect(workflow).not.toContain("Status: [approved]");
+    expect(workflow).not.toContain("Status: [active]");
     expect(workflow).toContain("Replace the sample requester email");
 
     const agreementLauncher = template.workflowLaunchers?.find((item) => item.key === "send_loan_agreement_custom_app");
@@ -644,11 +645,11 @@ describe("built-in grid templates", () => {
       enabled: true,
     });
 
-    const valueWidget = customAppBlocks(template).find((cell) => cell.id === "w-value");
-    expect(valueWidget).toMatchObject({
-      type: "metrics",
-      title: "Inventory value",
-    });
+    const apps = template.customApps ?? [];
+    expect(apps.map((app) => app.key)).toEqual(["equipment_loans", "loan_desk"]);
+    const borrower = apps.find((app) => app.key === "equipment_loans")!;
+    expect(borrower.definition.pages.find((page) => page.id === "loan")?.availableWhen).toBeDefined();
+    expect(customAppBlocks(template).some((block) => block.id === "stock" && block.type === "records")).toBe(true);
     const openLoans = template.views?.find((item) => item.key === "open_loans");
     expect((openLoans?.ui as { columns?: Array<Record<string, unknown>> })?.columns?.[0]).toEqual({
       fieldId: field("loans.loan_no"),
@@ -661,7 +662,7 @@ describe("built-in grid templates", () => {
     if (!template) return;
 
     const transactions = template.tables.find((table) => table.key === "transactions");
-    for (const key of ["date", "merchant", "account", "category", "type", "amount", "receipt_email"]) {
+    for (const key of ["date", "merchant", "account", "category", "type", "amount"]) {
       expect(transactions?.fields.find((item) => item.key === key)?.required, `finance transactions.${key} required`).toBe(true);
     }
     expect(transactions?.fields.find((item) => item.key === "cleared")?.defaultValue).toBe(false);
@@ -676,21 +677,27 @@ describe("built-in grid templates", () => {
         ?.value,
     ).toEqual(["ready"]);
 
-    const workflow = template.workflows?.find((item) => item.key === "clear_and_send_receipt")?.source ?? "";
+    const workflow = template.workflows?.find((item) => item.key === "send_receipt")?.source ?? "";
     expect(workflow).toContain("Receipts can only be sent for expense transactions");
     expect(workflow).toContain("Receipt delivery: [sent]");
     expect(workflow.indexOf("Receipt delivery: [processing]")).toBeLessThan(workflow.indexOf("- generateDocument:"));
     expect(workflow).toContain("Replace the sample receipt email");
-    const launcher = template.workflowLaunchers?.find((item) => item.key === "clear_and_send_receipt_custom_app");
+    const launcher = template.workflowLaunchers?.find((item) => item.key === "send_receipt_custom_app");
     expect(launcher?.config).toEqual({ kind: "customApp", inputMode: "prompt" });
 
-    const budgetWidget = customAppBlocks(template).find((cell) => cell.id === "w-budget");
-    const budgetSource = resolveTemplateGqlValue(
-      (budgetWidget?.source as { query?: unknown } | undefined)?.query,
-      templateNamesForGql(template),
-    );
-    expect(budgetSource).toContain("YEAR(TODAY())");
-    expect(budgetSource).toContain("MONTH(TODAY())");
+    expect(transactions?.fields.find((item) => item.key === "receipt_email")?.required).not.toBe(true);
+    expect(workflow).not.toContain("Reconciled: true");
+    const budgetWidget = customAppBlocks(template).find((cell) => cell.id === "current-budgets");
+    const budgetViews = refsIn(budgetWidget?.source)
+      .filter((reference) => reference.$ref === "view")
+      .map((reference) => reference.key);
+    expect(budgetViews).toContain("current_spending");
+    expect(budgetViews).toContain("current_budget_limits");
+    for (const viewKey of ["current_spending", "current_budget_limits"]) {
+      const source = resolveTemplateGqlValue(template.views?.find((view) => view.key === viewKey)?.source, templateNamesForGql(template));
+      expect(source).toContain("YEAR(TODAY())");
+      expect(source).toContain("MONTH(TODAY())");
+    }
     expect((template.records ?? []).some((item) => item.key === "budgets.previous_groceries")).toBe(true);
 
     const recentTransactions = template.views?.find((item) => item.key === "recent_transactions");
@@ -729,7 +736,13 @@ describe("built-in grid templates", () => {
     ]);
   });
 
-  test("form input entries include help text", () => {
+  test("form inputs have explicit or inherited field help", () => {
+    const helpText = (template: GridTemplate, entry: Record<string, unknown>) => {
+      if (typeof entry.helpText === "string") return entry.helpText;
+      if (!isRef(entry.fieldId)) return "";
+      const [tableKey, fieldKey] = entry.fieldId.key.split(".");
+      return template.tables.find((table) => table.key === tableKey)?.fields.find((field) => field.key === fieldKey)?.description ?? "";
+    };
     for (const template of templates) {
       for (const form of template.forms ?? []) {
         const fields = (form.config as { fields?: unknown }).fields;
@@ -737,16 +750,13 @@ describe("built-in grid templates", () => {
 
         for (const entry of fields as Array<Record<string, unknown>>) {
           if (entry.kind !== "user_input") continue;
-          expect(
-            typeof entry.helpText === "string" && entry.helpText.trim().length > 0,
-            `${template.id}.${form.key}.${String(entry.fieldId)} helpText`,
-          ).toBe(true);
+          expect(helpText(template, entry).trim().length > 0, `${template.id}.${form.key}.${String(entry.fieldId)} helpText`).toBe(true);
 
           const inlineFields = (entry.inlineCreate as { fields?: unknown } | undefined)?.fields;
           if (!Array.isArray(inlineFields)) continue;
           for (const inlineEntry of inlineFields as Array<Record<string, unknown>>) {
             expect(
-              typeof inlineEntry.helpText === "string" && inlineEntry.helpText.trim().length > 0,
+              helpText(template, inlineEntry).trim().length > 0,
               `${template.id}.${form.key}.${String(entry.fieldId)} inline ${String(inlineEntry.fieldId)} helpText`,
             ).toBe(true);
           }

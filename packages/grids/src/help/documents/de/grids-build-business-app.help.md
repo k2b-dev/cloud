@@ -9,7 +9,16 @@ Beginne mit einem vollständigen Ablauf. Die Einrichtung benötigt Base-Admin-Zu
 
 ## Die benötigten Datensätze wählen {icon="table"}
 
-Jede Vorlage enthält Workflows, Dokumentvorlagen und eine veröffentlichte Custom App. Bestellungen in Buchhandlung und Transaktionen in Finanzen bieten Details, Versand und Dokumente; Erstellungsformulare öffnen den neuen Datensatz. Inventar zeigt Verträge bei Ausleihen und Etiketten bei Gegenständen. Vorlagenupdates gelten nur für neue Bases.
+Jede Vorlage enthält Workflows, Dokumentvorlagen und veröffentlichte Apps. Vorlagenupdates gelten nur für neue Bases; bestehende Bases behalten ihre Konfiguration und Daten.
+
+- **Buchhandlung:** Beginne bei den Bestellungen und ergänze Positionen direkt bei der Bestellung. Katalog und Kunden haben eigene Bereiche. Kurze Formulare zum Erstellen und Bearbeiten öffnen sich im Dialog. Prüfe die gespeicherten Verkaufspreise vor dem Versand der Bestellübersicht; spätere Katalogänderungen ändern weder diese Preise noch vorhandene Dokumente.
+- **Finanzen:** Erfasse Einnahmen und Ausgaben, gleiche Transaktionen mit deiner Bank ab und vergleiche die Ausgaben des aktuellen Monats mit dessen Budget. Der optionale Belegversand markiert eine Transaktion nicht als abgeglichen. Umbuchungen zählen weder als Einnahme noch als Ausgabe; die Vorlage synchronisiert keine Bankkontostände.
+- **Inventar:** Ausleihende sehen Sets und ihre eigenen Anfragen. Das Team nutzt eine separate Ausleihverwaltung für Vorbereitung, Übergabe und Rücknahme. Die tatsächliche Ausgabe startet die Ausleihe; der Vereinbarungsversand ist optional. Rückgaben lassen sich auch ohne Scanner über die Detailseite erfassen.
+- **Rechnungswesen:** Erstelle Rechnungen, Korrekturen und Provisionsgutschriften und erfasse tatsächliche Zahlungen. Den Ablauf findest du weiter unten.
+
+Buchhandlung und Finanzen bedienen jeweils eine gemeinsame Zielgruppe. Inventar trennt Ausleihende und Verwaltung, weil sie unterschiedliche Datensätze und Aktionen benötigen. Teile die passende App, statt diesen Zielgruppen vollständigen Base-Zugriff zu geben.
+
+Teile **Geräteausleihen** mit Ausleihenden und die **Ausleihverwaltung** nur mit dem zuständigen Team. Die Vorlage vergibt diese Zugriffe nicht automatisch. Kommentare zur Ausleihe sieht auch die anfragende Person; nutze das separate Feld für interne Notizen für vertrauliche Teamnotizen.
 
 | Deine Aufgabe | Beginne mit | Erste Prüfung |
 | --- | --- | --- |
@@ -40,13 +49,15 @@ Binde vor Veröffentlichung alle Workflow-Pflichteingaben. Feste Launcher nutzen
 
 ## Übergaben und Versand sicher wiederholen {icon="repeat"}
 
-Erstelle pro Gegenstand eine Ausleihposition. Ausgabe prüft aktive Ausleihe, zulässige Position und verfügbaren Gegenstand und speichert die Belegung. Rückgabe muss diese treffen: Alte Ausleihen dürfen keine neu verliehenen Gegenstände zurückgeben. Erfasse Schäden vor erneuter Verfügbarkeit. Schließe Ausleihen erst nach allen Positionen ab.
+Erstelle pro Gegenstand eine Ausleihposition. Ausgabe prüft eine freigegebene oder aktive Ausleihe, eine zulässige Position und einen verfügbaren Gegenstand. Sie speichert die Belegung und startet die Ausleihe. Rückgabe muss diese treffen: Alte Ausleihen dürfen keine neu verliehenen Gegenstände zurückgeben. Erfasse Schäden vor erneuter Verfügbarkeit. Schließe Ausleihen erst nach allen Positionen ab.
 
 Inventar liefert Ausgabe-/Rückgabeaktionen; prüfe sie vor Anpassungen. Ergänze Positionen vor Genehmigung der angefragten Ausleihe. Kits beschreiben Ausstattung, sichern aber keine zukünftigen Reservierungen.
 
 Nutze `atomicRecords` für begrenzte Prüfungen und Änderungen, die gemeinsam gelingen müssen. Einzelne Änderungsschritte sind keine gemeinsame Transaktion. Konkurrierende Aktionen müssen denselben bestehenden Datensatz zur Koordination nutzen. Siehe **Workflows**.
 
 Übernimm einen bereiten Versand vor Dokumenterzeugung oder E-Mail. Ein Wiederholungsschlüssel identifiziert einen Aufruf; unabhängige Anfragen brauchen trotzdem dieselbe Prüfung des Geschäftszustands. Schließe den Versand erst nach seinen Schritten ab. Prüfe bei Stillstand den ursprünglichen Lauf, Dokumente und E-Mail-Zustellung vor Wiederholung. Abbrechen macht E-Mails oder Dokumente nicht rückgängig.
+
+Bei unterbrochenem Vorlagenversand prüft ein Base-Admin den ursprünglichen Lauf unter **Workflows**. Kläre dort zuerst die Zustellung, bevor du den Versandstatus in der Base-Tabelle zurücksetzt. Die App bietet bewusst keine ungeprüfte Wiederholung an.
 
 ## Rechnungen bewahren {icon="file-invoice"}
 
@@ -71,7 +82,7 @@ Bereite Korrekturen von der ursprünglichen Rechnung aus vor; reduziere kopierte
 
 Korrekturen beginnen mit dem heutigen Belegdatum und ohne Fälligkeitsdatum; prüfe beides vor der Ausstellung. Erfasse Kundenerstattungen über **Erstattung erfassen** an der ursprünglichen Rechnung mit positivem Betrag. Die Bestätigung mindert deren Zahlungseingänge und verhindert Erstattungen über das aktuelle Guthaben hinaus, auch bei gleichzeitigen Bestätigungen. Die Korrektur hat keinen eigenen Zahlungssaldo. Unbestätigte Zahlungen und Erstattungen kannst du verwerfen; bestätigte bleiben unveränderlich.
 
-HTML-Rechnungsvorlagen sind keine E-Rechnungen. Prüfe Währungs-, Steuer-, Adress- und Korrekturgrenzen des installierten Renderers sowie beide Ausgabedateien. Der Aussteller bleibt verantwortlich; Validierung ist keine steuerliche oder rechtliche Freigabe. Buchhandlung zeigt Rechnungen, wickelt aber keine Zahlungen ab.
+HTML-Rechnungsvorlagen sind keine E-Rechnungen. Prüfe Währungs-, Steuer-, Adress- und Korrekturgrenzen des installierten Renderers sowie beide Ausgabedateien. Der Aussteller bleibt verantwortlich; Validierung ist keine steuerliche oder rechtliche Freigabe. Buchhandlung versendet Bestellübersichten; für Rechnungen ist Rechnungswesen vorgesehen.
 
 ## Auslagen prüfen {icon="checklist"}
 

@@ -1,30 +1,66 @@
 import { i18n } from "@k2b/stdlib";
 import { createMockCover } from "@k2b/cloud/shared";
-import {
-  currentMonthDate,
-  documentTemplate,
-  field,
-  form,
-  formula,
-  type GridTemplate,
-  launcher,
-  record,
-  table,
-  view,
-  viewColumns,
-} from "./types";
+import { currentMonthDate, documentTemplate, field, form, formula, type GridTemplate, record, table } from "./types";
+
+import { bookshopApp } from "./bookshop-app";
+import { bookshopSummary } from "./bookshop-summary";
 
 const bookshopMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      removeLine: "Remove line",
+      removeLineConfirm: "Remove this book from the order?",
+      removeLineError: "This line cannot be removed because summary delivery has already started.",
+      editOrder: "Edit order",
+
+      total: "Total",
+      completedOrders: "Delivered orders",
+      customerDirectory: "Customer directory",
+      workbench: "Orders to fulfill",
+      archive: "Completed orders",
+      catalog: "Catalog",
+      insights: "Sales overview",
+      edit: "Edit",
+      save: "Save",
+      saved: "Saved.",
+      addCustomer: "Add customer",
+      noOrders: "No orders here. Create an order to start collecting its books.",
+      noLines: "No books yet. Add the first book to this order.",
+      noCustomers: "No customers yet. Add one here or while creating an order.",
+      noBooks: "Your catalog is empty. Add a book to make it available for orders.",
+      orderValue: "Order value",
+      orderValueHelp: "Sum of captured sale prices. This is not a payment balance.",
+      workbenchHelp: "Open an order to add books, check its summary and update fulfillment. New orders remain here until delivered.",
+      catalogHelp:
+        "Find a title, check availability and maintain its sale price. Availability is a manual flag, not a counted stock balance.",
+      customerPageHelp: "Contact details used for orders. Open a customer to update their address and see their orders.",
+      reviewInvoice: "Review and send",
+      invoiceHelp:
+        "Check the books, quantities, agreed prices and customer email. Then mark ready and send the summary. This is not a tax invoice; use the Billing template for invoices.",
+      sampleHelp: "Demo email addresses end in .test and cannot receive summaries. Replace the customer email before a real send.",
+      invoiceAccepted: "Summary delivery requested. You can continue working; status and the PDF appear here.",
+      invoiceConfirm: "Create the order summary and email a private download link to this customer?",
+      deliveryHelp:
+        "Delivery has started or finished. Inspect the original workflow run before retrying an interrupted delivery; email may already have been sent.",
+      salesHelp: "Order values from captured line prices, including open orders. These figures do not track received payments.",
+      backOrders: "All orders",
+      backCatalog: "Back to catalog",
+      backCustomers: "Back to customers",
+      backOrder: "Back to order",
+      editLine: "Edit order line",
+      lineDetails: "Book and agreed price",
+      fulfillment: "Fulfillment",
+      contact: "Contact",
+      optionalDetails: "More details",
+      newOrderHelp: "Create the order first, then add its books on the order page.",
+      shippingHelp: "Update the status after dispatch or handover. This does not send an email.",
+      noLinesInvoice: "Add at least one order line before sending the summary.",
       templateName: "Bookshop",
-      orderJourney:
-        "Add order lines from the overview and select this order. Review the customer email and line amounts before marking the order ready to invoice. Replace example.test addresses in Customers before sending. Generated invoices appear below; later edits do not change an existing document.",
-      templateDescription: "Manage a book catalog, customers, orders, fulfillment, and invoice delivery.",
+      templateDescription: "Manage a book catalog, customers, orders, fulfillment, and order summaries.",
       highlightCatalog: "Relational catalog and order tracking",
-      highlightSales: "Sales and fulfillment overview",
-      highlightInvoices: "Guided invoice generation and email delivery",
+      highlightSales: "Order values and fulfillment overview",
+      highlightInvoices: "Order summaries with explicit email delivery",
       baseDescription: "Inventory and order tracking for a small bookshop.",
       authors: "Authors",
       authorsDescription: "People who wrote the books.",
@@ -79,7 +115,7 @@ const bookshopMessages = i18n.define({
       customersDescription: "Bookshop customers.",
       customerNameDescription: "The customer's display name.",
       email: "Email",
-      emailDescription: "Contact address used for order invoices.",
+      emailDescription: "Contact address used for order summaries.",
       phone: "Phone",
       phoneDescription: "Optional phone number.",
       joined: "Joined",
@@ -104,9 +140,9 @@ const bookshopMessages = i18n.define({
       statusNew: "New",
       statusShipped: "Shipped",
       statusDelivered: "Delivered",
-      readyToInvoice: "Ready to invoice",
-      readyToInvoiceDescription: "Confirm that all order lines are complete before the invoice workflow can run.",
-      invoiceSent: "Invoice delivery",
+      readyToInvoice: "Ready to send",
+      readyToInvoiceDescription: "Confirm that the books, quantities, prices and customer email have been reviewed.",
+      invoiceSent: "Summary delivery",
       invoiceSentDescription:
         "Ready, in progress, or sent. Inspect the original run before resetting an interrupted delivery; it may already have sent email.",
       deliveryReady: "Ready",
@@ -117,7 +153,7 @@ const bookshopMessages = i18n.define({
       customerEmail: "Customer email",
       customerEmailDescription: "Email address from the linked customer.",
       orderLines: "Order lines",
-      orderLinesDescription: "Itemized books and immutable sale prices for each order.",
+      orderLinesDescription: "Books and agreed sale prices captured for each order.",
       lineNumber: "Line number",
       lineNumberDescription: "Generated identifier for this order line.",
       order: "Order",
@@ -127,9 +163,9 @@ const bookshopMessages = i18n.define({
       quantity: "Quantity",
       quantityDescription: "Number of copies sold.",
       unitPrice: "Unit price",
-      unitPriceDescription: "Price captured when the order is placed; later catalog price changes do not alter the invoice.",
+      unitPriceDescription: "Agreed sale price. Changing the catalog price does not change existing order lines.",
       lineTotal: "Line total",
-      lineTotalDescription: "Quantity multiplied by the captured unit price.",
+      lineTotalDescription: "Quantity multiplied by the agreed unit price.",
       bookTitle: "Book title",
       bookTitleDescription: "Lookup from the linked book.",
       tolkienBio: "Philologist; coined Middle-earth.",
@@ -146,7 +182,6 @@ const bookshopMessages = i18n.define({
       recentBooks: "Recent books",
       orderCalendar: "Order calendar",
       addBook: "Add book",
-      bookAdded: "Book added.",
       titleHelp: "Book title shown in catalog and order forms.",
       authorHelp: "Pick an existing author or create one inline.",
       authorName: "Author name",
@@ -168,50 +203,93 @@ const bookshopMessages = i18n.define({
       emailHelp: "Order contact address.",
       orderedAtHelp: "Date the order was placed.",
       addOrderLine: "Add order line",
-      addOrderLineDescription: "Add a book and capture the sale price used on the invoice.",
+      addOrderLineDescription: "Add a book and its agreed sale price to this order.",
       addLine: "Add line",
       orderLineAdded: "Order line added.",
       orderHelp: "Order this item belongs to.",
       bookHelp: "Book sold on this line.",
       quantityHelp: "Number of copies.",
-      unitPriceHelp: "Capture the agreed sale price; the line total is calculated automatically.",
-      orderInvoice: "Order invoice",
-      orderInvoiceDescription: "Customer invoice with every line belonging to one order.",
-      orderInvoiceReady: "Order invoice ready",
-      orderInvoiceReadyDescription: "Sends a private invoice link to the customer.",
-      invoiceSubject: "Invoice for order {{ data.orderNumber }}",
+      unitPriceHelp: "Agreed price per copy.",
+      orderInvoice: "Order summary",
+      orderInvoiceDescription: "Snapshot of the books and agreed prices in one order. Not a tax invoice.",
+      orderInvoiceReady: "Order summary ready",
+      orderInvoiceReadyDescription: "Sends a private link to the order summary.",
+      invoiceSubject: "Summary for order {{ data.orderNumber }}",
       invoiceEmailHtml: `<main style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;max-width:640px;margin:0 auto;padding:32px;">
-  <h1 style="font-size:24px;margin:0 0 16px;">Your invoice is ready</h1>
+  <h1 style="font-size:24px;margin:0 0 16px;">Your order summary is ready</h1>
   <p>Hello {{ data.customerName | default: "there" }},</p>
-  <p>We prepared the invoice for order <strong>{{ data.orderNumber }}</strong>.</p>
-  <p style="margin:24px 0;"><a href="{{ data.invoice.url }}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:6px;">Download invoice</a></p>
-  <p style="color:#6b7280;font-size:14px;">This private link expires automatically.</p>
+  <p>We prepared the order summary for order <strong>{{ data.orderNumber }}</strong>.</p>
+  <p style="margin:24px 0;"><a href="{{ data.invoice.url }}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:6px;">Download summary</a></p>
+  <p style="color:#6b7280;font-size:14px;">This private link expires in 30 days.</p>
 </main>`,
-      sendOrderInvoice: "Send order invoice",
-      sendOrderInvoiceDescription: "Generates an invoice, creates a private link, and emails it to the customer.",
-      invoiceAlreadySent: "Invoice delivery is not ready. Inspect the original workflow run and existing documents before retrying.",
-      addCustomerEmail: "Add a customer email address before sending the invoice.",
-      replaceSampleEmail: "Replace the sample customer email before sending a real invoice.",
-      completeOrderLines: "Add every order line, then mark the order as ready to invoice.",
+      sendOrderInvoice: "Send order summary",
+      sendOrderInvoiceDescription: "Creates an order summary and emails a private download link to the customer.",
+      invoiceAlreadySent: "Summary delivery is not ready. Inspect the original workflow run and existing documents before retrying.",
+      addCustomerEmail: "Add a customer email address before sending the summary.",
+      replaceSampleEmail: "Replace the sample customer email before sending a real order summary.",
+      completeOrderLines: "Review the books and agreed prices, then mark the order ready to send.",
       invoiceSentMessage: ({ orderNumber, customerEmail }: { orderNumber: string; customerEmail: string }) =>
-        `Invoice ${orderNumber} sent to ${customerEmail}.`,
-      chooseOrderToSendInvoice: "Choose order to send invoice",
-      bookshopOverview: "Bookshop overview",
-      totalRevenue: "Total revenue",
-      monthlyRevenue: "Monthly revenue",
-      revenueByCustomer: "Revenue by customer",
-      revenueByCustomerSubtitle: "Joined directly from orders and customers",
-      ordersReadyToInvoice: "Orders ready to invoice",
-      sendInvoice: "Send invoice",
+        `Order summary ${orderNumber} sent to ${customerEmail}.`,
+      chooseOrderToSendInvoice: "Choose order to send summary",
+      monthlyRevenue: "Monthly order value",
+      sendInvoice: "Send summary",
     },
     de: {
+      removeLine: "Position entfernen",
+      removeLineConfirm: "Dieses Buch aus der Bestellung entfernen?",
+      removeLineError: "Die Position kann nicht entfernt werden, weil der Versand der Übersicht bereits gestartet wurde.",
+      editOrder: "Bestellung bearbeiten",
+
+      total: "Summe",
+      completedOrders: "Übergebene Bestellungen",
+      customerDirectory: "Kundenverzeichnis",
+      workbench: "Bestellungen bearbeiten",
+      archive: "Abgeschlossene Bestellungen",
+      catalog: "Katalog",
+      insights: "Verkaufsübersicht",
+      edit: "Bearbeiten",
+      save: "Speichern",
+      saved: "Gespeichert.",
+      addCustomer: "Kunde hinzufügen",
+      noOrders: "Hier gibt es keine Bestellungen. Erstelle eine Bestellung und füge ihre Bücher hinzu.",
+      noLines: "Noch keine Bücher. Füge dieser Bestellung das erste Buch hinzu.",
+      noCustomers: "Noch keine Kunden. Lege sie hier oder beim Erstellen einer Bestellung an.",
+      noBooks: "Dein Katalog ist leer. Füge ein Buch hinzu, um es in Bestellungen zu verwenden.",
+      orderValue: "Bestellwert",
+      orderValueHelp: "Summe der vereinbarten Verkaufspreise. Das ist kein Zahlungssaldo.",
+      workbenchHelp:
+        "Öffne eine Bestellung, um Bücher hinzuzufügen, die Bestellübersicht zu prüfen und den Versand zu aktualisieren. Bis zur Übergabe bleibt sie hier.",
+      catalogHelp:
+        "Finde Titel, prüfe die Verfügbarkeit und pflege Verkaufspreise. Die Verfügbarkeit wird manuell gepflegt; sie zählt keinen Lagerbestand.",
+      customerPageHelp: "Kontaktdaten für Bestellungen. Öffne einen Kunden, um seine Adresse zu ändern und seine Bestellungen zu sehen.",
+      reviewInvoice: "Prüfen und versenden",
+      invoiceHelp:
+        "Prüfe Bücher, Mengen, vereinbarte Preise und Kunden-E-Mail. Markiere die Bestellung dann als bereit und versende die Übersicht. Sie ist keine steuerliche Rechnung; nutze dafür die Rechnungsvorlage.",
+      sampleHelp:
+        "Demo-Adressen enden auf .test und können keine Bestellübersichten empfangen. Ersetze die Kunden-E-Mail vor einem echten Versand.",
+      invoiceAccepted: "Versand der Bestellübersicht beantragt. Du kannst weiterarbeiten; Status und PDF erscheinen hier.",
+      invoiceConfirm: "Bestellübersicht erstellen und einen privaten Download-Link an diesen Kunden senden?",
+      deliveryHelp:
+        "Der Versand wurde gestartet oder abgeschlossen. Prüfe bei einer Unterbrechung zuerst den ursprünglichen Workflow-Lauf; die E-Mail kann bereits versendet worden sein.",
+      salesHelp:
+        "Bestellwerte aus vereinbarten Positionspreisen, einschließlich offener Bestellungen. Zahlungseingänge werden hier nicht erfasst.",
+      backOrders: "Alle Bestellungen",
+      backCatalog: "Zurück zum Katalog",
+      backCustomers: "Zurück zu Kunden",
+      backOrder: "Zurück zur Bestellung",
+      editLine: "Position bearbeiten",
+      lineDetails: "Buch und vereinbarter Preis",
+      fulfillment: "Versand und Übergabe",
+      contact: "Kontakt",
+      optionalDetails: "Weitere Angaben",
+      newOrderHelp: "Erstelle zuerst die Bestellung. Füge ihre Bücher anschließend auf der Bestellseite hinzu.",
+      shippingHelp: "Aktualisiere den Status nach Versand oder Übergabe. Dabei wird keine E-Mail versendet.",
+      noLinesInvoice: "Füge mindestens eine Position hinzu, bevor du die Bestellübersicht versendest.",
       templateName: "Buchhandlung",
-      orderJourney:
-        "Füge Positionen über die Übersicht hinzu und wähle diese Bestellung. Prüfe die Kundenadresse und Positionsbeträge, bevor du die Bestellung zur Rechnungsstellung freigibst. Ersetze example.test-Adressen in Kunden vor dem Versand. Erzeugte Rechnungen erscheinen unten; spätere Änderungen verändern bestehende Dokumente nicht.",
-      templateDescription: "Verwalte Buchkatalog, Kundschaft, Bestellungen, Versand und Rechnungszustellung.",
+      templateDescription: "Verwalte Buchkatalog, Kunden, Bestellungen, Versand und Bestellübersichten.",
       highlightCatalog: "Verknüpfter Katalog und Bestellverfolgung",
-      highlightSales: "Übersicht über Umsatz und Versand",
-      highlightInvoices: "Geführte Rechnungserstellung und Versand per E-Mail",
+      highlightSales: "Bestellwerte und Versand im Blick",
+      highlightInvoices: "Bestellübersichten mit bewusstem E-Mail-Versand",
       baseDescription: "Bestands- und Bestellverwaltung für eine kleine Buchhandlung.",
       authors: "Autoren",
       authorsDescription: "Personen, die die Bücher geschrieben haben.",
@@ -266,7 +344,7 @@ const bookshopMessages = i18n.define({
       customersDescription: "Kunden der Buchhandlung.",
       customerNameDescription: "Anzeigename des Kunden.",
       email: "E-Mail-Adresse",
-      emailDescription: "Kontaktadresse für Bestellrechnungen.",
+      emailDescription: "Kontaktadresse für Bestellübersichten.",
       phone: "Telefon",
       phoneDescription: "Optionale Telefonnummer.",
       joined: "Hinzugefügt am",
@@ -291,10 +369,9 @@ const bookshopMessages = i18n.define({
       statusNew: "Neu",
       statusShipped: "Versendet",
       statusDelivered: "Zugestellt",
-      readyToInvoice: "Bereit zur Rechnungsstellung",
-      readyToInvoiceDescription:
-        "Bestätigt, dass alle Bestellpositionen vollständig sind und der Rechnungsworkflow ausgeführt werden kann.",
-      invoiceSent: "Rechnungsversand",
+      readyToInvoice: "Bereit zum Versenden",
+      readyToInvoiceDescription: "Bestätige, dass Bücher, Mengen, Preise und Kunden-E-Mail geprüft sind.",
+      invoiceSent: "Versand der Übersicht",
       invoiceSentDescription:
         "Bereit, in Bearbeitung oder gesendet. Prüfe vor dem Zurücksetzen eines unterbrochenen Versands den ursprünglichen Lauf; die E-Mail könnte bereits gesendet worden sein.",
       deliveryReady: "Bereit",
@@ -305,7 +382,7 @@ const bookshopMessages = i18n.define({
       customerEmail: "E-Mail-Adresse des Kunden",
       customerEmailDescription: "E-Mail-Adresse des verknüpften Kunden.",
       orderLines: "Bestellpositionen",
-      orderLinesDescription: "Aufgeschlüsselte Bücher und unveränderliche Verkaufspreise jeder Bestellung.",
+      orderLinesDescription: "Bücher und vereinbarte Verkaufspreise jeder Bestellung.",
       lineNumber: "Positionsnummer",
       lineNumberDescription: "Erzeugte Kennung für diese Bestellposition.",
       order: "Bestellung",
@@ -315,7 +392,7 @@ const bookshopMessages = i18n.define({
       quantity: "Menge",
       quantityDescription: "Anzahl der verkauften Exemplare.",
       unitPrice: "Stückpreis",
-      unitPriceDescription: "Beim Bestellen erfasster Preis; spätere Änderungen am Katalogpreis ändern die Rechnung nicht.",
+      unitPriceDescription: "Vereinbarter Verkaufspreis. Spätere Katalogpreisänderungen verändern bestehende Bestellpositionen nicht.",
       lineTotal: "Positionssumme",
       lineTotalDescription: "Menge multipliziert mit dem erfassten Stückpreis.",
       bookTitle: "Buchtitel",
@@ -334,7 +411,6 @@ const bookshopMessages = i18n.define({
       recentBooks: "Zuletzt veröffentlichte Bücher",
       orderCalendar: "Bestellkalender",
       addBook: "Buch hinzufügen",
-      bookAdded: "Buch hinzugefügt.",
       titleHelp: "Buchtitel im Katalog und in Bestellformularen.",
       authorHelp: "Wähle einen vorhandenen Autor oder erstelle direkt einen neuen.",
       authorName: "Name des Autors",
@@ -356,44 +432,41 @@ const bookshopMessages = i18n.define({
       emailHelp: "Kontaktadresse für die Bestellung.",
       orderedAtHelp: "Datum der Bestellung.",
       addOrderLine: "Bestellposition hinzufügen",
-      addOrderLineDescription: "Füge ein Buch hinzu und erfasse den Verkaufspreis für die Rechnung.",
+      addOrderLineDescription: "Füge dieser Bestellung ein Buch mit seinem vereinbarten Verkaufspreis hinzu.",
       addLine: "Position hinzufügen",
       orderLineAdded: "Bestellposition hinzugefügt.",
       orderHelp: "Bestellung, zu der diese Position gehört.",
       bookHelp: "In dieser Position verkauftes Buch.",
       quantityHelp: "Anzahl der Exemplare.",
-      unitPriceHelp: "Erfasse den vereinbarten Verkaufspreis; die Positionssumme wird automatisch berechnet.",
-      orderInvoice: "Bestellrechnung",
-      orderInvoiceDescription: "Kundenrechnung mit allen Positionen einer Bestellung.",
-      orderInvoiceReady: "Bestellrechnung verfügbar",
-      orderInvoiceReadyDescription: "Sendet dem Kunden einen privaten Link zur Rechnung.",
-      invoiceSubject: "Rechnung für Bestellung {{ data.orderNumber }}",
+      unitPriceHelp: "Vereinbarter Preis pro Exemplar.",
+      orderInvoice: "Bestellübersicht",
+      orderInvoiceDescription: "Momentaufnahme der Bücher und vereinbarten Preise einer Bestellung. Keine steuerliche Rechnung.",
+      orderInvoiceReady: "Bestellübersicht fertig",
+      orderInvoiceReadyDescription: "Versendet einen privaten Link zur Bestellübersicht.",
+      invoiceSubject: "Übersicht zur Bestellung {{ data.orderNumber }}",
       invoiceEmailHtml: `<main style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;max-width:640px;margin:0 auto;padding:32px;">
-  <h1 style="font-size:24px;margin:0 0 16px;">Deine Rechnung ist verfügbar</h1>
+  <h1 style="font-size:24px;margin:0 0 16px;">Deine Bestellübersicht ist verfügbar</h1>
   <p>Hallo {{ data.customerName | default: "zusammen" }},</p>
-  <p>Wir haben die Rechnung für die Bestellung <strong>{{ data.orderNumber }}</strong> erstellt.</p>
-  <p style="margin:24px 0;"><a href="{{ data.invoice.url }}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:6px;">Rechnung herunterladen</a></p>
-  <p style="color:#6b7280;font-size:14px;">Dieser private Link läuft automatisch ab.</p>
+  <p>Wir haben die Übersicht für die Bestellung <strong>{{ data.orderNumber }}</strong> erstellt.</p>
+  <p style="margin:24px 0;"><a href="{{ data.invoice.url }}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 18px;border-radius:6px;">Bestellübersicht herunterladen</a></p>
+  <p style="color:#6b7280;font-size:14px;">Dieser private Link läuft in 30 Tagen ab.</p>
 </main>`,
-      sendOrderInvoice: "Bestellrechnung senden",
-      sendOrderInvoiceDescription: "Erstellt eine Rechnung und einen privaten Link und sendet beides per E-Mail an den Kunden.",
+      sendOrderInvoice: "Bestellübersicht senden",
+      sendOrderInvoiceDescription: "Erstellt eine Bestellübersicht und sendet einen privaten Download-Link an den Kunden.",
       invoiceAlreadySent:
-        "Der Rechnungsversand ist nicht bereit. Prüfe vor einem erneuten Versuch den ursprünglichen Workflow-Lauf und vorhandene Dokumente.",
-      addCustomerEmail: "Füge vor dem Senden der Rechnung eine E-Mail-Adresse des Kunden hinzu.",
-      replaceSampleEmail: "Ersetze die Beispieladresse des Kunden, bevor du eine echte Rechnung sendest.",
-      completeOrderLines: "Füge alle Bestellpositionen hinzu und markiere die Bestellung anschließend als rechnungsbereit.",
-      invoiceSentMessage: ({ orderNumber, customerEmail }) => `Rechnung ${orderNumber} an ${customerEmail} gesendet.`,
-      chooseOrderToSendInvoice: "Bestellung für Rechnungsversand wählen",
-      bookshopOverview: "Buchhandlungsübersicht",
-      totalRevenue: "Gesamtumsatz",
-      monthlyRevenue: "Monatlicher Umsatz",
-      revenueByCustomer: "Umsatz nach Kunde",
-      revenueByCustomerSubtitle: "Direkt aus Bestellungen und Kunden verknüpft",
-      ordersReadyToInvoice: "Rechnungsbereite Bestellungen",
-      sendInvoice: "Rechnung senden",
+        "Der Versand ist nicht bereit. Prüfe vor einem erneuten Versuch den ursprünglichen Workflow-Lauf und die vorhandenen Dokumente.",
+      addCustomerEmail: "Ergänze vor dem Versand die E-Mail-Adresse des Kunden.",
+      replaceSampleEmail: "Ersetze vor einem echten Versand die Demo-E-Mail-Adresse des Kunden.",
+      completeOrderLines: "Prüfe Bücher und vereinbarte Preise und markiere die Bestellung dann als bereit zum Versenden.",
+      invoiceSentMessage: ({ orderNumber, customerEmail }) => `Bestellübersicht ${orderNumber} an ${customerEmail} gesendet.`,
+      chooseOrderToSendInvoice: "Bestellung für den Versand auswählen",
+      monthlyRevenue: "Bestellwert pro Monat",
+      sendInvoice: "Übersicht senden",
     },
   },
 });
+
+export type BookshopText = ReturnType<typeof bookshopMessages.resolve>["t"];
 
 export const createBookshopTemplate = (locale?: string): GridTemplate => {
   const { t } = bookshopMessages.resolve(locale ? [locale] : []);
@@ -581,6 +654,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
             config: {
               precision: 16,
               decimalPlaces: 2,
+              min: "0",
               unit: "EUR",
               unitPosition: "suffix",
             },
@@ -1194,7 +1268,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
           field("orders.invoice_sent"),
           "\nsort ",
           field("orders.ordered_at"),
-          " asc\nlimit 100",
+          " desc",
         ),
         ui: {
           columns: [
@@ -1214,13 +1288,79 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
     ],
     forms: [
       {
+        key: "edit_order",
+        table: "orders",
+        name: t.editOrder,
+        config: {
+          title: t.editOrder,
+          submitLabel: t.save,
+          successMessage: t.saved,
+          fields: [
+            { kind: "user_input", fieldId: field("orders.customer"), label: t.customer, helpText: t.customerHelp, required: true },
+            { kind: "user_input", fieldId: field("orders.ordered_at"), label: t.orderedAt, helpText: t.orderedAtHelp, required: true },
+          ],
+        },
+      },
+      {
+        key: "customer",
+        table: "customers",
+        name: t.customers,
+        config: {
+          title: t.contact,
+          submitLabel: t.save,
+          successMessage: t.saved,
+          fields: [
+            { kind: "user_input", fieldId: field("customers.name"), label: t.name, required: true, helpText: t.customerNameHelp },
+            { kind: "user_input", fieldId: field("customers.email"), label: t.email, required: true, helpText: t.emailHelp },
+            { kind: "user_input", fieldId: field("customers.phone"), label: t.phone, helpText: t.phoneDescription },
+            {
+              kind: "user_input",
+              fieldId: field("customers.source"),
+              label: t.source,
+              helpText: t.sourceDescription,
+              section: { title: t.optionalDetails, collapsible: true },
+            },
+            { kind: "user_input", fieldId: field("customers.notes"), label: t.notes, helpText: t.notesDescription },
+          ],
+        },
+      },
+      {
+        key: "edit_order_line",
+        table: "order_lines",
+        name: t.editLine,
+        config: {
+          title: t.lineDetails,
+          submitLabel: t.save,
+          successMessage: t.saved,
+          fields: [
+            { kind: "user_input", fieldId: field("order_lines.book"), label: t.book, required: true, helpText: t.bookHelp },
+            {
+              kind: "user_input",
+              fieldId: field("order_lines.quantity"),
+              label: t.quantity,
+              required: true,
+              width: "compact",
+              helpText: t.quantityHelp,
+            },
+            {
+              kind: "user_input",
+              fieldId: field("order_lines.unit_price"),
+              label: t.unitPrice,
+              required: true,
+              width: "compact",
+              helpText: t.unitPriceHelp,
+            },
+          ],
+        },
+      },
+      {
         key: "add_book",
         table: "books",
         name: t.addBook,
         config: {
-          title: t.addBook,
-          submitLabel: t.addBook,
-          successMessage: t.bookAdded,
+          title: t.book,
+          submitLabel: t.save,
+          successMessage: t.saved,
           fields: [
             {
               kind: "user_input",
@@ -1293,9 +1433,11 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
               helpText: t.priceDescription,
               required: true,
             },
+            { kind: "user_input", fieldId: field("books.in_stock"), label: t.inStock, helpText: t.inStockDescription },
             {
               kind: "user_input",
               fieldId: field("books.pages"),
+              section: { title: t.optionalDetails, collapsible: true },
               label: t.pages,
               helpText: t.pagesHelp,
             },
@@ -1323,7 +1465,6 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
               label: t.description,
               helpText: t.bookDescriptionDescription,
             },
-            { kind: "form_value", fieldId: field("books.in_stock"), value: true },
           ],
         },
       },
@@ -1333,6 +1474,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
         name: t.newOrder,
         config: {
           title: t.newOrder,
+          description: t.newOrderHelp,
           submitLabel: t.createOrder,
           successMessage: t.orderCreated,
           fields: [
@@ -1368,6 +1510,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
             {
               kind: "user_input",
               fieldId: field("orders.ordered_at"),
+              defaultValue: { kind: "now" },
               label: t.orderedAt,
               helpText: t.orderedAtHelp,
               required: true,
@@ -1418,6 +1561,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
               kind: "user_input",
               fieldId: field("order_lines.quantity"),
               label: t.quantity,
+              width: "compact",
               helpText: t.quantityHelp,
               required: true,
               defaultValue: "1",
@@ -1426,6 +1570,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
               kind: "user_input",
               fieldId: field("order_lines.unit_price"),
               label: t.unitPrice,
+              width: "compact",
               helpText: t.unitPriceHelp,
               required: true,
             },
@@ -1437,7 +1582,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
       {
         key: "order_invoice",
         table: "orders",
-        starterId: "invoice",
+        renderer: bookshopSummary(t),
         name: t.orderInvoice,
         description: t.orderInvoiceDescription,
         source: formula(
@@ -1503,6 +1648,32 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
     ],
     workflows: [
       {
+        key: "remove_order_line",
+        name: t.removeLine,
+        enabled: true,
+        source: `inputs:
+  line: {type: record, table: ${JSON.stringify(t.orderLines)}, required: true}
+steps:
+  - atomicRecords:
+      locks: [inputs.line, inputs.line.${t.order}]
+      checks:
+        - query:
+            source: |
+              from table ${JSON.stringify(t.orderLines)} as line
+              join table ${JSON.stringify(t.orders)} as parent on line.${JSON.stringify(t.order)} = parent.id
+              select line.${JSON.stringify(t.lineNumber)}
+              where record.id = @params.line and ${JSON.stringify(t.order)} = @params.order and parent.${JSON.stringify(t.invoiceSent)} = 'ready'
+              limit 1
+            parameters:
+              line: {type: record, value: "\${{ inputs.line }}"}
+              order: {type: record, value: "\${{ inputs.line.${t.order} }}"}
+          assert: notEmpty
+          message: ${JSON.stringify(t.removeLineError)}
+      changes:
+        - deleteRecord: {record: inputs.line}
+`,
+      },
+      {
         key: "send_order_invoice",
         name: t.sendOrderInvoice,
         description: t.sendOrderInvoiceDescription,
@@ -1556,6 +1727,15 @@ steps:
               value: true
           assert: notEmpty
           message: ${t.invoiceAlreadySent}
+        - query:
+            source: |
+              from table ${JSON.stringify(t.orderLines)}
+              where ${JSON.stringify(t.order)} = @params.order
+              limit 1
+            parameters:
+              order: {type: record, value: "\${{ inputs.order }}"}
+          assert: notEmpty
+          message: ${t.noLinesInvoice}
       changes:
         - updateRecord:
             record: inputs.order
@@ -1580,7 +1760,6 @@ steps:
   - updateRecord:
       record: inputs.order
       set:
-        ${t.readyToInvoice}: false
         ${t.invoiceSent}: [sent]
   - succeed:
       message: "${t.invoiceSentMessage({
@@ -1592,6 +1771,13 @@ steps:
     ],
     workflowLaunchers: [
       {
+        key: "remove_order_line",
+        workflow: "remove_order_line",
+        name: t.removeLine,
+        config: { kind: "customApp", inputMode: "prompt" },
+        enabled: true,
+      },
+      {
         key: "send_order_invoice_custom_app",
         workflow: "send_order_invoice",
         name: t.chooseOrderToSendInvoice,
@@ -1599,361 +1785,7 @@ steps:
         enabled: true,
       },
     ],
-    customApps: [
-      {
-        key: "sales",
-        definition: {
-          schemaVersion: 5,
-          kind: "grids.custom-app",
-          name: t.bookshopOverview,
-          startPageId: "overview",
-          pages: [
-            {
-              id: "overview",
-              title: t.bookshopOverview,
-              navigation: {
-                visible: true,
-              },
-              parameters: {},
-              rows: [
-                {
-                  id: "r-stats",
-                  columns: [
-                    {
-                      id: "w-orders-column",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "w-orders",
-                          type: "metrics",
-                          title: t.orders,
-                          source: {
-                            kind: "gql",
-                            query: formula("from table ", table("orders"), "\naggregate count(*) as order_count"),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-revenue-column",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "w-revenue",
-                          type: "metrics",
-                          title: t.totalRevenue,
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("order_lines"),
-                              "\naggregate sum(formula(",
-                              field("order_lines.quantity"),
-                              " * ",
-                              field("order_lines.unit_price"),
-                              ")) as total_revenue",
-                            ),
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-books-column",
-                      span: 4,
-                      blocks: [
-                        {
-                          id: "w-books",
-                          type: "metrics",
-                          title: t.books,
-                          source: {
-                            kind: "gql",
-                            query: formula("from table ", table("books"), "\naggregate count(*) as book_count"),
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "r-main",
-                  columns: [
-                    {
-                      id: "w-chart-column",
-                      span: 6,
-                      blocks: [
-                        {
-                          id: "w-chart",
-                          type: "chart",
-                          title: t.monthlyRevenue,
-                          chartType: "line",
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("order_lines"),
-                              " as line\njoin table ",
-                              table("orders"),
-                              " as order on line.",
-                              field("order_lines.order"),
-                              " = order.id\ngroup by order.",
-                              field("orders.ordered_at"),
-                              " by month\naggregate sum(formula(",
-                              "line.",
-                              field("order_lines.quantity"),
-                              " * line.",
-                              field("order_lines.unit_price"),
-                              ")) as monthly_revenue, count(*) as order_line_count\nsort ",
-                              "order.",
-                              field("orders.ordered_at"),
-                              " asc",
-                            ),
-                          },
-                          valueFormat: {
-                            style: "number",
-                            decimalPlaces: 2,
-                            unit: "EUR",
-                            unitPosition: "suffix",
-                          },
-                          limit: 100,
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-new-order-column",
-                      span: 3,
-                      blocks: [
-                        {
-                          id: "w-new-order",
-                          type: "form",
-                          title: t.newOrder,
-                          formId: form("new_order"),
-                          fixedValues: {},
-                          onSuccessNavigate: {
-                            kind: "navigate",
-                            pageId: "order",
-                            params: { order_id: { source: "RESULT", path: "recordId" } },
-                          },
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-add-order-line-column",
-                      span: 3,
-                      blocks: [
-                        {
-                          id: "w-add-order-line",
-                          type: "form",
-                          title: t.addOrderLine,
-                          formId: form("add_order_line"),
-                          fixedValues: {},
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "r-views",
-                  columns: [
-                    {
-                      id: "w-add-book-column",
-                      span: 6,
-                      blocks: [
-                        {
-                          id: "w-add-book",
-                          type: "form",
-                          title: t.addBook,
-                          formId: form("add_book"),
-                          fixedValues: {},
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-recent-column",
-                      span: 6,
-                      blocks: [
-                        {
-                          id: "w-recent",
-                          type: "records",
-                          searchable: true,
-                          pageSize: 25,
-                          title: t.recentBooks,
-                          source: { kind: "view", viewId: view("recent_books") },
-                          display: {
-                            kind: "table",
-                            columnIds: viewColumns("recent_books"),
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-                {
-                  id: "r-fulfillment",
-                  columns: [
-                    {
-                      id: "w-revenue-by-customer-column",
-                      span: 7,
-                      blocks: [
-                        {
-                          id: "w-revenue-by-customer",
-                          type: "chart",
-                          title: t.revenueByCustomer,
-                          subtitle: t.revenueByCustomerSubtitle,
-                          chartType: "bar",
-                          source: {
-                            kind: "gql",
-                            query: formula(
-                              "from table ",
-                              table("order_lines"),
-                              " as line\njoin table ",
-                              table("orders"),
-                              " as order on line.",
-                              field("order_lines.order"),
-                              " = order.id\njoin table ",
-                              table("customers"),
-                              " as customer on order.",
-                              field("orders.customer"),
-                              " = customer.id\ngroup by customer.",
-                              field("customers.name"),
-                              "\naggregate sum(formula(",
-                              "line.",
-                              field("order_lines.quantity"),
-                              " * line.",
-                              field("order_lines.unit_price"),
-                              ")) as customer_revenue\nhaving customer_revenue > 0\nsort customer_revenue desc nulls last\nlimit 8",
-                            ),
-                          },
-                          valueFormat: {
-                            style: "number",
-                            decimalPlaces: 2,
-                            unit: "EUR",
-                            unitPosition: "suffix",
-                          },
-                          limit: 100,
-                        },
-                      ],
-                    },
-                    {
-                      id: "w-send-invoice-column",
-                      span: 5,
-                      blocks: [
-                        {
-                          id: "w-invoice-orders",
-                          type: "records",
-                          title: t.orders,
-                          source: { kind: "view", viewId: view("order_calendar") },
-                          display: {
-                            kind: "table",
-                            columnIds: viewColumns("order_calendar"),
-                          },
-                          searchable: true,
-                          pageSize: 25,
-                          rowActions: [
-                            {
-                              id: "send-invoice",
-                              label: t.sendInvoice,
-                              showLabel: true,
-                              kind: "workflow",
-                              launcherId: launcher("send_order_invoice_custom_app"),
-                              inputs: { order: { source: "ROW", path: "id" } },
-                            },
-                          ],
-                          rowNavigate: {
-                            history: "push",
-                            kind: "navigate",
-                            pageId: "order",
-                            params: { order_id: { source: "ROW", path: "id" } },
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              id: "order",
-              title: t.order,
-              navigation: { visible: false },
-              parameters: { order_id: { type: "record", tableId: table("orders"), required: true } },
-              record: { tableId: table("orders"), id: { source: "PARAMS", path: "order_id" } },
-              rows: [
-                {
-                  id: "detail",
-                  columns: [
-                    {
-                      id: "content",
-                      span: 12,
-                      blocks: [
-                        { id: "instructions", type: "markdown", markdown: t.orderJourney },
-                        {
-                          id: "order",
-                          type: "record",
-                          title: t.order,
-                          fieldIds: [
-                            field("orders.order_no"),
-                            field("orders.customer"),
-                            field("orders.customer_email"),
-                            field("orders.ordered_at"),
-                            field("orders.status"),
-                            field("orders.invoice_ready"),
-                            field("orders.invoice_sent"),
-                          ],
-                          editableFieldIds: [field("orders.status"), field("orders.invoice_ready")],
-                          documents: { templateIds: [documentTemplate("order_invoice")] },
-                        },
-                        {
-                          id: "lines",
-                          type: "referenced_records",
-                          title: t.orderLines,
-                          sourceTableId: table("order_lines"),
-                          relationFieldId: field("order_lines.order"),
-                          fieldIds: [
-                            field("order_lines.line_no"),
-                            field("order_lines.book"),
-                            field("order_lines.quantity"),
-                            field("order_lines.unit_price"),
-                            field("order_lines.line_total"),
-                          ],
-                          display: { kind: "table" },
-                          searchable: true,
-                          pageSize: 25,
-                          rowActions: [],
-                        },
-                        {
-                          id: "actions",
-                          type: "actions",
-                          actions: [
-                            {
-                              id: "send-invoice",
-                              kind: "workflow",
-                              label: t.sendInvoice,
-                              launcherId: launcher("send_order_invoice_custom_app"),
-                              inputs: { order: { source: "RECORD", path: "id" } },
-                              availableWhen: {
-                                query: formula(
-                                  "from table ",
-                                  table("orders"),
-                                  "\nwhere record.id = @params.order_id and ",
-                                  field("orders.invoice_ready"),
-                                  " = true and ",
-                                  field("orders.invoice_sent"),
-                                  " = 'ready'\nlimit 1",
-                                ),
-                              },
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    ],
+    customApps: bookshopApp(t),
   };
 };
 
