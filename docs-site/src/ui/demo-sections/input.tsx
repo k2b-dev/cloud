@@ -271,6 +271,7 @@ const emojiCompletion: Completion = {
 
 const TextDemo = () => {
   const [project, setProject] = createSignal("Portable value");
+  const [amountText, setAmountText] = createSignal("1933.30");
   const [expiresAt, setExpiresAt] = createSignal("");
   const [token, setToken] = createSignal("secret");
   const [notes, setNotes] = createSignal("One focused multiline field.");
@@ -285,7 +286,9 @@ const TextDemo = () => {
 <TextInput label="Notes" value={notes} onValueChange={setNotes} multiline lines={3} icon="ti ti-notes" />
 <TextInput label="AI prompt" value={prompt} onValueChange={setPrompt} variant="ai" />
 <TextInput label="Expiry (placeholder)" value={expiresAt} onValueChange={setExpiresAt} placeholder="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
-<TextInput label="Expiry (entered value)" value="2027-01-01T00:00:00Z" icon="ti ti-calendar" />`}
+<TextInput label="Expiry (entered value)" value="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
+<TextInput label="Amount text" value={amountText} onValueChange={setAmountText} icon="ti ti-number" suffix="EUR" inputMode="decimal" />
+<TextInput label="Clearable amount text" value={amountText} onValueChange={setAmountText} icon="ti ti-number" suffix="EUR" inputMode="decimal" clearable />`}
     >
       <div class="ui-demo-form-grid">
         <TextInput label="Project" value={project} onValueChange={setProject} clearable icon="ti ti-folder" />
@@ -302,6 +305,23 @@ const TextDemo = () => {
         <TextInput label="AI prompt" value={prompt} onValueChange={setPrompt} variant="ai" />
         <TextInput label="Expiry (placeholder)" value={expiresAt} onValueChange={setExpiresAt} placeholder="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
         <TextInput label="Expiry (entered value)" value="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
+        <TextInput
+          label="Amount text"
+          value={amountText}
+          onValueChange={setAmountText}
+          icon="ti ti-number"
+          suffix="EUR"
+          inputMode="decimal"
+        />
+        <TextInput
+          label="Clearable amount text"
+          value={amountText}
+          onValueChange={setAmountText}
+          icon="ti ti-number"
+          suffix="EUR"
+          inputMode="decimal"
+          clearable
+        />
       </div>
     </DemoCard>
   );

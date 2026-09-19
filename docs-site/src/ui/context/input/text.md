@@ -41,7 +41,9 @@ Enter calls `onSubmit` in single-line fields and in plain multiline mode, where 
 disables the input and its controls.
 
 The complete visible input shell keeps the text cursor across leading icons,
-affixes, and padding. Clear and password controls retain their action cursor.
+affixes, and padding. Prefixes and suffixes keep space from the field edges,
+including when no clear or password control is present. Clear and password
+controls retain their action cursor.
 
 `spellcheck` and `maxLength` pass through in every mode, including markdown. `autocomplete` and `autocapitalize` reach the native input and textarea only, not the markdown editor. `inputMode` applies to the single-line input.
 

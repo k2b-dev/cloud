@@ -1601,6 +1601,10 @@
   margin-left: 0.625rem;
 }
 
+.k2b-ui .k2b-input-shell__affix:last-child {
+  margin-right: 0.625rem;
+}
+
 .k2b-ui .k2b-input-shell__clear {
   @apply flex shrink-0 items-center justify-center;
   width: 1.75rem;
@@ -2892,10 +2896,6 @@
   min-width: 0;
   flex: 1;
   align-items: center;
-}
-
-.k2b-ui .k2b-number-input__value > .k2b-input-shell__affix:last-child {
-  margin-right: 0.625rem;
 }
 
 /* Disabled fields read as a muted well instead of stacking opacity on top of

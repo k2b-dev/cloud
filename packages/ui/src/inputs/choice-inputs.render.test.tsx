@@ -606,7 +606,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(cssRule(".k2b-ui .k2b-number-input__step:last-child")).toContain("border-left");
     expect(cssRule(".k2b-ui .k2b-number-input:focus-within > .k2b-number-input__step")).toContain("var(--k2b-focus-fill)");
     expect(cssRule(".k2b-ui .k2b-number-input__step:hover:not(:disabled)")).toContain("var(--k2b-focus-fill)");
-    expect(cssRule(".k2b-ui .k2b-number-input__value > .k2b-input-shell__affix:last-child")).toContain("margin-right: 0.625rem");
+    expect(cssRule(".k2b-ui .k2b-input-shell__affix:last-child")).toContain("margin-right: 0.625rem");
   });
 
   test("sizes a multiline text input from its lines prop", () => {
