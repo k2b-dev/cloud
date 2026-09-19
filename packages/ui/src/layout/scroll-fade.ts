@@ -9,12 +9,17 @@ function observeScrollFade(body: HTMLElement) {
   if (!entry) {
     const update = () => {
       const mode = body.getAttribute("data-scroll-fade-mode");
-      const overflow = body.scrollHeight - body.clientHeight;
-      const top = mode === "both" && overflow > 1 && body.scrollTop > 1;
-      const bottom = !!mode && overflow > 1 && overflow - body.scrollTop > 1;
+      const horizontal = body.getAttribute("data-scroll-fade-axis") === "horizontal";
+      const overflow = horizontal ? body.scrollWidth - body.clientWidth : body.scrollHeight - body.clientHeight;
+      // Horizontal RTL scrollLeft starts at zero on the right and becomes negative.
+      const rtl = horizontal && getComputedStyle(body).direction === "rtl";
+      const offset = horizontal ? (rtl ? overflow + body.scrollLeft : body.scrollLeft) : body.scrollTop;
+      const top = mode === "both" && overflow > 1 && offset > 1;
+      const bottom = !!mode && overflow > 1 && overflow - offset > 1;
       const edges = top && bottom ? "both" : top ? "top" : bottom ? "bottom" : undefined;
-      if (edges) body.setAttribute("data-scroll-fade", edges);
-      else body.removeAttribute("data-scroll-fade");
+      if (edges) {
+        if (body.getAttribute("data-scroll-fade") !== edges) body.setAttribute("data-scroll-fade", edges);
+      } else if (body.hasAttribute("data-scroll-fade")) body.removeAttribute("data-scroll-fade");
     };
     const resize = new ResizeObserver(update);
     const observe = () => {
@@ -32,7 +37,7 @@ function observeScrollFade(body: HTMLElement) {
       subtree: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["class", "style", "hidden", "open", "data-scroll-fade-mode"],
+      attributeFilter: ["class", "style", "hidden", "open", "data-scroll-fade-mode", "data-scroll-fade-axis", "dir"],
     });
     body.addEventListener("scroll", update, { passive: true });
     observe();

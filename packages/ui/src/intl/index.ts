@@ -7,6 +7,7 @@ export type {
   FormatDurationProps,
   FormatNumberProps,
   FormatPercentProps,
+  FormatRelativeDateProps,
   FormatRelativeTimeProps,
   FormatTimeProps,
 } from "./Format";

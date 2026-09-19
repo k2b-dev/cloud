@@ -45,6 +45,25 @@ editor; its book view inherits the fade from `AppWorkspace.Main`.
 `DetailPanel` also integrates its gutter with the surrounding workspace inset;
 that panel-specific geometry is not part of `ScrollArea`.
 
+## Horizontal strips
+
+Use `orientation="horizontal"` for a bounded row of wider content. It uses
+left/right overflow hints on the same scrollport and supports right-to-left
+content. The default `orientation="vertical"` retains top/bottom hints.
+Hints disappear at the corresponding edge or when content fits. Resizing and
+content changes update both orientations. Keep fixed actions outside the port.
+
+```tsx
+<ScrollArea orientation="horizontal" role="region" aria-label="Recent documents" tabIndex={0}>
+  <div style={{ display: "flex", gap: "1rem", width: "max-content" }}>
+    <DocumentCards />
+  </div>
+</ScrollArea>
+```
+
+`Tabs` already applies horizontal fades to its existing list; do not wrap it in
+another `ScrollArea`. `PanelDialog.Body` also owns its own vertical fades.
+
 ## Accessibility
 
 `ScrollArea` renders a normal `div` and does not add a landmark, accessible
@@ -56,7 +75,8 @@ scrollport.
 
 ## Runtime
 
-The component is server-renderable and needs no client JavaScript. Native
+The scrollport is server-renderable and native scrolling works without client
+JavaScript. Overflow hints require hydration or the workspace controller. Native
 disclosures inside it continue to work before hydration.
 
 ## Example

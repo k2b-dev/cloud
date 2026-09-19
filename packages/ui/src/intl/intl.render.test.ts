@@ -212,3 +212,53 @@ describe("Format components SSR", () => {
     expect(html).toContain('id="created-at"');
   });
 });
+
+const { relativeDateCases } = await import("../../test/relative-date-cases");
+
+describe("Format.RelativeDate SSR", () => {
+  for (const item of relativeDateCases) {
+    test(`calendar ${item.value} against ${item.base}`, () => {
+      const { expected, ...props } = item;
+      const html = renderToString(() => createComponent(Format.RelativeDate, { ...props, locale: "en" }));
+      expect(html).toContain(`datetime="${item.value}"`);
+      expect(html).toContain(`>${expected}</time>`);
+    });
+  }
+
+  test("inherits locale and accepts an explicit override", () => {
+    const html = renderToString(() =>
+      provided(
+        "de",
+        () => createComponent(Format.RelativeDate, { value: "2026-09-17", base: "2026-09-17" }),
+        () => createComponent(Format.RelativeDate, { value: "2026-09-18", base: "2026-09-17", locale: "en" }),
+      ),
+    );
+    expect(html).toContain(">heute</time>");
+    expect(html).toContain(">tomorrow</time>");
+  });
+
+  test("invalid input, base, or zone renders a semantic fallback", () => {
+    const cases = [
+      { value: null },
+      { value: undefined },
+      { value: "2025-02-29" },
+      { value: "2026-02-30" },
+      { value: "2026-13-01" },
+      { value: "0000-01-01" },
+      { value: "2026-9-17" },
+      { value: "2026-09-17T00:00:00Z" },
+      { value: "2026-09-17", base: "2026-09-17T12:00:00" },
+      { value: "2026-09-17", base: "2026-02-30T12:00:00Z" },
+      { value: "2026-09-17", base: new Date(Number.NaN) },
+      { value: "2026-09-17", timeZone: "Not/AZone" },
+    ];
+    for (const item of cases) {
+      const html = renderToString(() =>
+        createComponent(Format.RelativeDate, { base: "2026-09-17", ...item, fallback: "Unknown", class: "date" }),
+      );
+      expect(html).toContain(">Unknown</span>");
+      expect(html).toContain('class="date');
+      expect(html).not.toContain("<time");
+    }
+  });
+});

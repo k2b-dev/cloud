@@ -83,6 +83,13 @@ describe("@k2b/ui complete action migrations", () => {
     expect(tabs).toContain('role="tabpanel"');
     expect(disclosure).toContain("<details");
     expect(disclosure).toContain("open");
+    expect(disclosure).toContain('data-surface="paper"');
+    const plain = renderToString(() => createComponent(Disclosure, { summary: "Details", surface: "plain", children: "Content" }));
+    expect(plain).toContain('data-surface="plain"');
+    expect(rule('.k2b-ui .k2b-disclosure[data-surface="plain"]')).toContain("background: transparent");
+    expect(rule('.k2b-ui .k2b-disclosure:not([open]):not([data-disabled="true"]) > summary:hover')).toContain("var(--k2b-hover)");
+    expect(rule(".k2b-ui .k2b-disclosure[open]")).toContain("color-mix");
+    expect(rule('.k2b-ui .k2b-disclosure[open]:not([data-disabled="true"]):has(> summary:hover)')).toContain("var(--k2b-hover)");
     expect(toolbar).toContain('role="toolbar"');
     expect(toolbar).toContain('aria-label="Document actions"');
     expect(toolbar).toContain('role="separator"');
@@ -92,7 +99,9 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule(".k2b-ui .k2b-disclosure")).toContain("align-self: stretch");
     expect(rule(".k2b-ui .k2b-disclosure > summary")).toContain("user-select: none");
     expect(actionsCss).not.toContain(".k2b-disclosure > summary:hover { background:");
-    expect(actionsCss).toContain(".k2b-disclosure > summary:hover .k2b-disclosure__chevron");
+    expect(rule('.k2b-ui .k2b-disclosure:not([data-disabled="true"]) > summary:hover .k2b-disclosure__chevron')).toContain(
+      "var(--k2b-action)",
+    );
   });
 
   test("keeps the first enabled tab in the tab order when the controlled value is unavailable", () => {
@@ -263,14 +272,16 @@ describe("@k2b/ui complete action migrations", () => {
   });
 
   test("renders separate file selection and file action menus", () => {
-    const html = renderToString(() => createComponent(SplitButton, {
-      primaryItems: [{ label: "other.ts", action: () => {} }],
-      primaryMenuLabel: "Choose file",
-      items: [{ label: "Rename file", action: () => {} }],
-      menuLabel: "File actions",
-      menuIcon: "...",
-      children: "main.ts",
-    }));
+    const html = renderToString(() =>
+      createComponent(SplitButton, {
+        primaryItems: [{ label: "other.ts", action: () => {} }],
+        primaryMenuLabel: "Choose file",
+        items: [{ label: "Rename file", action: () => {} }],
+        menuLabel: "File actions",
+        menuIcon: "...",
+        children: "main.ts",
+      }),
+    );
     expect(html).toContain('aria-label="Choose file"');
     expect(html).toContain('aria-label="File actions"');
     expect(html.match(/aria-haspopup="menu"/g)).toHaveLength(2);
@@ -763,9 +774,7 @@ describe("@k2b/ui action geometry parity", () => {
     const active = rule(".k2b-ui .k2b-button:not(:disabled):active");
     const split = rule(".k2b-ui .k2b-dropdown.k2b-split-button");
     const splitSegmentActive = rule(".k2b-ui .k2b-split-button > .k2b-button:not(:disabled):active");
-    const splitPrimaryActive = rule(
-      ".k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-split-button__primary:not(:disabled):active)",
-    );
+    const splitPrimaryActive = rule(".k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-split-button__primary:not(:disabled):active)");
     const disabled = rule(".k2b-ui .k2b-button:disabled");
 
     expect(button).toContain("transition:");
@@ -776,9 +785,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(split).toContain("transition: scale 100ms ease-out");
     expect(splitSegmentActive).toContain("scale: none");
     expect(splitPrimaryActive).toContain("scale: 0.98");
-    expect(actionsCss).not.toContain(
-      ".k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-button:not(:disabled):active)",
-    );
+    expect(actionsCss).not.toContain(".k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-button:not(:disabled):active)");
     expect(actionsCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(disabled).toContain("opacity: 0.4");
   });

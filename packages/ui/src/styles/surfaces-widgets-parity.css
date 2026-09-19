@@ -191,6 +191,7 @@
 /* ------------------------------------------------------------ NoticeCard -- */
 .k2b-ui .k2b-notice-card {
   display: block;
+  line-height: 1.5;
   padding: 0.75rem;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-surface);

@@ -1,7 +1,8 @@
-import { useUiMessages } from "../intl/messages";
 import { children, createEffect, createMemo, createUniqueId, For, type JSX, Show } from "solid-js";
 import type { MaybeAccessor } from "../inputs/field-contract";
 import { resolveMaybeAccessor } from "../inputs/field-contract";
+import { useUiMessages } from "../intl/messages";
+import { createScrollFade } from "../layout/scroll-fade";
 
 export type TabOption<T extends string = string> = {
   value: T;
@@ -57,6 +58,11 @@ function TabsItem<T extends string = string>(props: TabsItemProps<T>): JSX.Eleme
 function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
   const messages = useUiMessages();
   let root: HTMLDivElement | undefined;
+  let list: HTMLDivElement | undefined;
+  createScrollFade(
+    () => list,
+    () => props.orientation !== "vertical",
+  );
   const instanceId = `k2b-tabs-${createUniqueId()}`;
   const resolvedChildren = children(() => props.children);
   const trailing = children(() => props.trailing);
@@ -74,7 +80,10 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
   });
   const buttons: HTMLButtonElement[] = [];
   let closing: T | undefined;
-  const requestClose = (option: TabOption<T>) => { closing = option.value; option.onClose?.(); };
+  const requestClose = (option: TabOption<T>) => {
+    closing = option.value;
+    option.onClose?.();
+  };
   const current = () => resolveMaybeAccessor(props.value);
   const active = createMemo(() => items().find((option) => option.value === current()));
   const activeIndex = createMemo(() =>
@@ -93,7 +102,7 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
   });
   createEffect(() => {
     const index = activeIndex();
-    const removed = closing !== undefined && !items().some(item => item.value === closing);
+    const removed = closing !== undefined && !items().some((item) => item.value === closing);
     if (removed) closing = undefined;
     queueMicrotask(() => {
       buttons[index]?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
@@ -118,52 +127,84 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
   };
 
   return (
-    <div ref={root} class={`k2b-tabs ${props.class ?? ""}`} data-orientation={props.orientation ?? "horizontal"} data-variant={props.variant ?? "line"}>
+    <div
+      ref={root}
+      class={`k2b-tabs ${props.class ?? ""}`}
+      data-orientation={props.orientation ?? "horizontal"}
+      data-variant={props.variant ?? "line"}
+    >
       <div class="k2b-tabs__bar">
-      <div class="k2b-tabs__list" role="tablist" aria-label={props.ariaLabel} aria-orientation={props.orientation ?? "horizontal"}>
-        <For each={items()}>
-          {(option, index) => {
-            const id = () => `${instanceId}-tab-${index()}`;
-            const panelId = () => `${instanceId}-panel-${index()}`;
-            return (
-              <div class="k2b-tabs__item" role="presentation">
-              <button
-                ref={(element) => {
-                  buttons[index()] = element;
-                }}
-                id={id()}
-                type="button"
-                role="tab"
-                aria-selected={current() === option.value}
-                aria-controls={option.panel !== undefined ? panelId() : undefined}
-                tabIndex={tabStopIndex() === index() ? 0 : -1}
-                disabled={option.disabled}
-                onClick={() => props.onValueChange(option.value)}
-                onKeyDown={(event) => {
-                  if ((event.key === "Delete" || event.key === "Backspace") && option.onClose) { event.preventDefault(); requestClose(option); return; }
-                  const previous = props.orientation === "vertical" ? "ArrowUp" : "ArrowLeft";
-                  const next = props.orientation === "vertical" ? "ArrowDown" : "ArrowRight";
-                  if (event.key === previous || event.key === next) {
-                    event.preventDefault();
-                    move(index(), event.key === next ? 1 : -1);
-                  } else if (event.key === "Home" || event.key === "End") {
-                    event.preventDefault();
-                    const available = enabled();
-                    const target = event.key === "End" ? available.at(-1) : available[0];
-                    if (target) select(target.index);
-                  }
-                }}
-              >
-                <Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-                <span>{option.label}</span>
-              </button>
-              <Show when={option.onClose}><button type="button" class="k2b-tabs__close" aria-label={option.closeLabel ?? messages().closeNamed({ name: typeof option.label === "string" ? option.label : props.ariaLabel })} disabled={option.disabled} onClick={() => requestClose(option)}><i class="ti ti-x" aria-hidden="true" /></button></Show>
-              </div>
-            );
-          }}
-        </For>
-      </div>
-      <Show when={trailing()}><div class="k2b-tabs__trailing">{trailing()}</div></Show>
+        <div
+          ref={list}
+          data-scroll-fade-mode={props.orientation !== "vertical" ? "both" : undefined}
+          data-scroll-fade-axis="horizontal"
+          class="k2b-tabs__list"
+          role="tablist"
+          aria-label={props.ariaLabel}
+          aria-orientation={props.orientation ?? "horizontal"}
+        >
+          <For each={items()}>
+            {(option, index) => {
+              const id = () => `${instanceId}-tab-${index()}`;
+              const panelId = () => `${instanceId}-panel-${index()}`;
+              return (
+                <div class="k2b-tabs__item" role="presentation">
+                  <button
+                    ref={(element) => {
+                      buttons[index()] = element;
+                    }}
+                    id={id()}
+                    type="button"
+                    role="tab"
+                    aria-selected={current() === option.value}
+                    aria-controls={option.panel !== undefined ? panelId() : undefined}
+                    tabIndex={tabStopIndex() === index() ? 0 : -1}
+                    disabled={option.disabled}
+                    onClick={() => props.onValueChange(option.value)}
+                    onKeyDown={(event) => {
+                      if ((event.key === "Delete" || event.key === "Backspace") && option.onClose) {
+                        event.preventDefault();
+                        requestClose(option);
+                        return;
+                      }
+                      const previous = props.orientation === "vertical" ? "ArrowUp" : "ArrowLeft";
+                      const next = props.orientation === "vertical" ? "ArrowDown" : "ArrowRight";
+                      if (event.key === previous || event.key === next) {
+                        event.preventDefault();
+                        move(index(), event.key === next ? 1 : -1);
+                      } else if (event.key === "Home" || event.key === "End") {
+                        event.preventDefault();
+                        const available = enabled();
+                        const target = event.key === "End" ? available.at(-1) : available[0];
+                        if (target) select(target.index);
+                      }
+                    }}
+                  >
+                    <Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                    <span>{option.label}</span>
+                  </button>
+                  <Show when={option.onClose}>
+                    <button
+                      type="button"
+                      class="k2b-tabs__close"
+                      aria-label={
+                        option.closeLabel ??
+                        messages().closeNamed({ name: typeof option.label === "string" ? option.label : props.ariaLabel })
+                      }
+                      disabled={option.disabled}
+                      onClick={() => requestClose(option)}
+                    >
+                      <i class="ti ti-x" aria-hidden="true" />
+                    </button>
+                  </Show>
+                </div>
+              );
+            }}
+          </For>
+        </div>
+        <Show when={trailing()}>
+          <div class="k2b-tabs__trailing">{trailing()}</div>
+        </Show>
       </div>
       <Show when={active()?.panel !== undefined}>
         <div

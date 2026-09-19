@@ -1,5 +1,3 @@
-import { BottomSheetDemo, NavigationDemo } from "./mobile-navigation";
-import { LiveWorkspaceDemo } from "./workspace-live";
 import {
   AppOverview,
   AppWorkspace,
@@ -20,6 +18,7 @@ import {
   type PanesItem,
   type PanesLayout,
   type PanesNode,
+  Paper,
   removePanesItem,
   ScrollArea,
   Select,
@@ -39,7 +38,9 @@ import {
 } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { BottomSheetDemo, NavigationDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
+import { LiveWorkspaceDemo } from "./workspace-live";
 
 const WorkspaceDemo = () => {
   const [activeView, setActiveView] = createSignal("available");
@@ -735,7 +736,7 @@ const PanelDemo = () => {
     <DemoCard
       id="panel-dialog"
       chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
-      description="Compare a regular section with two hideable sections: Connection starts open, Advanced starts closed. Use the eye buttons to toggle them; edited values stay intact."
+      description="Scroll the bounded body: overflow fades leave the header and footer visible. Toggle the optional sections; edited values stay intact and fade edges follow content height."
       code={`const [baseUrl, setBaseUrl] = createSignal("");
 const [reference, setReference] = createSignal("");
 
@@ -759,34 +760,36 @@ const [reference, setReference] = createSignal("");
   </PanelDialog.Footer>
 </PanelDialog>`}
     >
-      <PanelDialog surface="contained">
-        <PanelDialog.Header title="Edit project" subtitle="General settings" icon="ti ti-settings" />
-        <PanelDialog.Tabs
-          value={tab()}
-          onValueChange={setTab}
-          options={[
-            { value: "general", label: "General" },
-            { value: "access", label: "Access" },
-          ]}
-        />
-        <PanelDialog.Body>
-          <PanelDialog.Section title="Profile" subtitle="Visible to collaborators" icon="ti ti-user">
-            <TextInput label="Name" value="Launch plan" />
-          </PanelDialog.Section>
-          <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings" icon="ti ti-plug">
-            <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} placeholder="https://api.example.com/v1" />
-          </PanelDialog.Section>
-          <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings" icon="ti ti-adjustments">
-            <TextInput label="Internal reference" value={reference()} onValueChange={setReference} />
-          </PanelDialog.Section>
-        </PanelDialog.Body>
-        <PanelDialog.Footer>
-          <div class="ui-demo-row">
-            <Button variant="secondary">Cancel</Button>
-            <Button>Save</Button>
-          </div>
-        </PanelDialog.Footer>
-      </PanelDialog>
+      <div style={{ height: "28rem", width: "100%" }}>
+        <PanelDialog surface="contained">
+          <PanelDialog.Header title="Edit project" subtitle="General settings" icon="ti ti-settings" />
+          <PanelDialog.Tabs
+            value={tab()}
+            onValueChange={setTab}
+            options={[
+              { value: "general", label: "General" },
+              { value: "access", label: "Access" },
+            ]}
+          />
+          <PanelDialog.Body>
+            <PanelDialog.Section title="Profile" subtitle="Visible to collaborators" icon="ti ti-user">
+              <TextInput label="Name" value="Launch plan" />
+            </PanelDialog.Section>
+            <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings" icon="ti ti-plug">
+              <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} placeholder="https://api.example.com/v1" />
+            </PanelDialog.Section>
+            <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings" icon="ti ti-adjustments">
+              <TextInput label="Internal reference" value={reference()} onValueChange={setReference} />
+            </PanelDialog.Section>
+          </PanelDialog.Body>
+          <PanelDialog.Footer>
+            <div class="ui-demo-row">
+              <Button variant="secondary">Cancel</Button>
+              <Button>Save</Button>
+            </div>
+          </PanelDialog.Footer>
+        </PanelDialog>
+      </div>
     </DemoCard>
   );
 };
@@ -1233,7 +1236,7 @@ const ScrollAreaDemo = () => (
   <DemoCard
     id="scroll-area"
     chip={{ kind: "component", name: "ScrollArea", from: "@k2b/ui" }}
-    description="Open the native disclosure. The fixed-height region begins to scroll, while the status badge and text keep the same horizontal alignment."
+    description="Expand the activity list to reveal vertical fades. Scroll the document strip horizontally: each edge hint disappears when you reach the end."
     code={`<ScrollArea
   role="region"
   aria-label="Order activity"
@@ -1279,6 +1282,22 @@ const ScrollAreaDemo = () => (
         </div>
       </ScrollArea>
     </div>
+    <ScrollArea
+      orientation="horizontal"
+      role="region"
+      aria-label="Recent documents"
+      tabIndex={0}
+      style={{ "max-width": "28rem", padding: "0.5rem 0" }}
+    >
+      <div style={{ display: "flex", gap: "1rem", width: "max-content" }}>
+        {["Purchase order", "Delivery note", "Service report", "Invoice", "Payment receipt"].map((label) => (
+          <Paper style={{ padding: "1rem", width: "11rem" }}>
+            <strong>{label}</strong>
+            <p>Recent document</p>
+          </Paper>
+        ))}
+      </div>
+    </ScrollArea>
   </DemoCard>
 );
 

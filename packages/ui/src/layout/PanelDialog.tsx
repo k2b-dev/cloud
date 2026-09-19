@@ -4,6 +4,7 @@ import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
 import { prompts } from "../feedback/prompts";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
+import { createScrollFade } from "./scroll-fade";
 
 export type PanelDialogSurface = "contained" | "floating";
 
@@ -25,6 +26,7 @@ export type PanelDialogHeaderProps = {
 export type PanelDialogBodyProps = {
   children: JSX.Element;
   scrollPreserveKey?: string;
+  scrollFade?: boolean;
 };
 
 export type PanelDialogFooterProps = {
@@ -135,11 +137,24 @@ const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
   );
 };
 
-const PanelDialogBody = (props: PanelDialogBodyProps): JSX.Element => (
-  <div class="k2b-panel-dialog__body" data-scroll-preserve={props.scrollPreserveKey} data-surface={usePanelDialogSurface()}>
-    {props.children}
-  </div>
-);
+const PanelDialogBody = (props: PanelDialogBodyProps): JSX.Element => {
+  let body: HTMLDivElement | undefined;
+  createScrollFade(
+    () => body,
+    () => props.scrollFade !== false,
+  );
+  return (
+    <div
+      ref={body}
+      class="k2b-panel-dialog__body"
+      data-scroll-preserve={props.scrollPreserveKey}
+      data-surface={usePanelDialogSurface()}
+      data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined}
+    >
+      {props.children}
+    </div>
+  );
+};
 
 const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => (
   <footer class="k2b-panel-dialog__footer" data-surface={usePanelDialogSurface()}>

@@ -2,6 +2,12 @@
 
 `PanelDialog` is the layout shell for a complex editor. It keeps the header and footer fixed while the body scrolls.
 
+`PanelDialog.Body` adds top/bottom overflow fades only where more content remains.
+The header and footer stay unmasked. Set `scrollFade={false}` on the body for
+an unmasked surface; do not add a second scroll wrapper. Fades update when
+sections expand, content changes, or the dialog resizes, and are disabled in
+forced-color mode.
+
 It does not open a dialog, own form state, validate fields, or save data.
 
 ## Use PanelDialog
@@ -115,7 +121,7 @@ type PanelDialogHeaderProps = {
 };
 
 type PanelDialogBodyProps = {
-  children: JSX.Element; scrollPreserveKey?: string;
+  children: JSX.Element; scrollPreserveKey?: string; scrollFade?: boolean;
 };
 
 type PanelDialogFooterProps = {
@@ -145,7 +151,7 @@ Types map to the correspondingly named compound members. `PanelDialog` supplies 
 
 Give the header and every section a clear title and icon. Header actions need their own accessible names.
 
-Tabs use pressed buttons inside a labelled group. Pass `ariaLabel` when the default `Dialog tabs` does not describe the choices. Disabled options remain visible but cannot be selected.
+Tabs use tab triggers inside a labelled tab list. Pass `ariaLabel` when the default `Dialog tabs` does not describe the choices. Disabled options remain visible but cannot be selected.
 
 ## Runtime
 

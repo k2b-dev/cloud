@@ -10,17 +10,22 @@ import {
   DocPage,
   DocRows,
   DocSection,
+  dialogCore,
   FileBrowserPanel,
   type FileSource,
   FilterChip,
   Format,
+  InlineGuidance,
   Lightbox,
   LocaleProvider,
   LogEntriesTable,
   MarkdownEditor,
   MarkdownView,
+  NoticeCard,
   Pagination,
+  PanelDialog,
   PdfPreview,
+  panelDialogFixedOptions,
   StatusBadge,
   StructuredDataPreview,
   TemplateEditor,
@@ -309,6 +314,34 @@ const gallery = [
 ];
 const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
+  const openPreview = () =>
+    dialogCore.open<void>(
+      (close) => (
+        <PdfPreview
+          autoLoad
+          title="Report preview"
+          request={async () => Response.json({ message: "Choose a reporting period before generating this document." }, { status: 400 })}
+          renderError={(message) => (
+            <NoticeCard role="alert" tone="warning" title="Preview is not available yet" detail={message}>
+              <Button variant="secondary" size="sm" onClick={() => close()}>
+                Back to report
+              </Button>
+            </NoticeCard>
+          )}
+        >
+          {(preview) => (
+            <PanelDialog>
+              <PanelDialog.Header title="Report preview" actions={preview.actions} close={close} />
+              <PanelDialog.Body>
+                <InlineGuidance icon="ti ti-info-circle">Preview of your saved report settings.</InlineGuidance>
+                {preview.content}
+              </PanelDialog.Body>
+            </PanelDialog>
+          )}
+        </PdfPreview>
+      ),
+      panelDialogFixedOptions,
+    );
   return (
     <DemoCard
       id="media"
@@ -316,7 +349,7 @@ const MediaDemo = () => {
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
         { kind: "component", name: "PdfPreview", from: "@k2b/ui" },
       ]}
-      description="Application-owned media in a native image dialog and an explicitly requested local PDF preview."
+      description="Application-owned media, a standalone PDF preview, and a composed dialog with header actions and an actionable error."
       code={`const [open, setOpen] = createSignal(false);
 
 <Button variant="secondary" onClick={() => setOpen(true)}>Open gallery</Button>
@@ -328,6 +361,9 @@ const MediaDemo = () => {
       <div class="ui-demo-row">
         <Button variant="secondary" onClick={() => setOpen(true)}>
           Open gallery
+        </Button>
+        <Button variant="secondary" onClick={() => void openPreview()}>
+          Preview dialog · recovery state
         </Button>
       </div>
       <Show when={open()}>
@@ -549,7 +585,9 @@ const DocsDemo = () => (
 );
 
 const MarkdownDemo = (props: { html: string }) => {
-  const [value, setValue] = createSignal("# Hello @auth.name\n\n| Item | Amount |\n| --- | ---: |\n| Subtotal | 123.00 |\n| Tip | 12.30 |\n\n| | |\n| --- | ---: |\n| Tip | **12.30** |\n| Total | **135.30** |");
+  const [value, setValue] = createSignal(
+    "# Hello @auth.name\n\n| Item | Amount |\n| --- | ---: |\n| Subtotal | 123.00 |\n| Tip | 12.30 |\n\n| | |\n| --- | ---: |\n| Tip | **12.30** |\n| Total | **135.30** |",
+  );
   return (
     <DemoCard
       id="markdown"
@@ -590,6 +628,18 @@ const IntlValues = () => {
         <Format.DateTime value="2026-07-28T09:00:00Z" timeZone="Europe/Berlin" /> ·{" "}
         <Format.RelativeTime value="2026-07-28T09:00:00Z" base="2026-07-28T11:00:00Z" /> · <Format.DurationMs value={90_000} />
       </p>
+      <p style="margin:0">
+        <Format.Date value="2026-09-17" />
+        {" ("}
+        <Format.RelativeDate value="2026-09-17" base="2026-09-16T22:30:00Z" timeZone="Europe/Berlin" />
+        {")"}
+        {" · "}
+        <Format.RelativeDate value="2026-09-20" base="2026-09-17" />
+      </p>
+      <p style="margin:0">
+        Calendar day across the spring clock change:{" "}
+        <Format.RelativeDate value="2026-03-30" base="2026-03-28T23:00:00Z" timeZone="Europe/Berlin" />
+      </p>
     </div>
   );
 };
@@ -603,6 +653,7 @@ const IntlDemo = () => (
   <Format.Currency value={1999.5} currency="EUR" />
   <Format.DateTime value={order.createdAt} timeZone="Europe/Berlin" />
   <Format.RelativeTime value={order.updatedAt} />
+  <Format.RelativeDate value="2026-09-17" base="2026-09-16T22:30:00Z" timeZone="Europe/Berlin" />
 </LocaleProvider>`}
   >
     <IntlValues />

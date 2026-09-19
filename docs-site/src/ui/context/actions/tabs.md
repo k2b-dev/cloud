@@ -70,7 +70,10 @@ the application owns confirmation, item removal, and the next selected value.
 Delete or Backspace closes the focused tab when a close handler is present.
 Close controls appear on hover, keyboard focus, or touch devices.
 
-The tab list scrolls horizontally. The active tab remains visible. Use
+The tab list scrolls horizontally. Subtle overflow fades appear only at edges
+with hidden content and disappear when the list fits. Vertical tabs are not
+masked; forced-color mode leaves every orientation unmasked. The active tab
+remains visible. Use
 `trailing` for a fixed action outside the scrollport, such as an IconButton or
 Dropdown trigger. The application owns that action and its menu entries.
 Do not nest a close button inside a tab label.

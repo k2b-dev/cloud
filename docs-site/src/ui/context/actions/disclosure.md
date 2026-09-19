@@ -27,12 +27,24 @@ const [advanced, setAdvanced] = createSignal(false);
 </Disclosure>
 ```
 
+Use `surface="paper"` (the default) for a standalone framed group. Use
+`surface="plain"` inside an existing surface to avoid a second frame. Both
+use an inset summary hover while collapsed. When expanded, the header and
+content share one subtle surface, which becomes stronger when the header is
+hovered. Disabled summaries do not paint a hover state.
+
+The semibold header leads the smaller body text. Let explanatory text inherit
+the component's typography rather than applying a larger paragraph style.
+Only the header toggles the disclosure: content stays selectable, and links
+and controls inside it retain their normal interaction.
+
 Pass `value` for controlled state or `defaultValue` for local initial state.
 
 ## API reference
 
 ```ts
 type DisclosureProps = {
+  surface?: "paper" | "plain";
   summary: JSX.Element; children: JSX.Element; value?: MaybeAccessor<boolean>; defaultValue?: boolean;
   onValueChange?: (value: boolean) => void; icon?: string; disabled?: boolean; class?: string;
 };

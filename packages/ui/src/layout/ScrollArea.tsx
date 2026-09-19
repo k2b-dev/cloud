@@ -1,15 +1,16 @@
-import { createScrollFade } from "./scroll-fade";
 import { type JSX, splitProps } from "solid-js";
+import { createScrollFade } from "./scroll-fade";
 
 export type ScrollAreaProps = Omit<JSX.HTMLAttributes<HTMLDivElement>, "children" | "class"> & {
   children: JSX.Element;
   scrollFade?: boolean;
+  orientation?: "vertical" | "horizontal";
   scrollPreserveKey?: string | false;
   class?: string;
 };
 
 export function ScrollArea(props: ScrollAreaProps): JSX.Element {
-  const [local, elementProps] = splitProps(props, ["children", "scrollPreserveKey", "class", "scrollFade", "ref"]);
+  const [local, elementProps] = splitProps(props, ["children", "scrollPreserveKey", "class", "scrollFade", "orientation", "ref"]);
   let body!: HTMLDivElement;
   createScrollFade(
     () => body,
@@ -24,6 +25,8 @@ export function ScrollArea(props: ScrollAreaProps): JSX.Element {
         body = el;
         if (typeof local.ref === "function") local.ref(el);
       }}
+      data-scroll-fade-axis={local.orientation ?? "vertical"}
+      data-orientation={local.orientation ?? "vertical"}
       data-scroll-fade-mode={local.scrollFade !== false ? "both" : undefined}
       class={className() ? `k2b-scroll-area ${className()}` : "k2b-scroll-area"}
       data-scroll-preserve={local.scrollPreserveKey || undefined}

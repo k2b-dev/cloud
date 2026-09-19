@@ -81,6 +81,17 @@ export type FormatRelativeTimeProps = TimeElementProps &
     timeZone?: string;
   };
 
+export type FormatRelativeDateProps = TimeElementProps &
+  LocaleProp &
+  FallbackProp & {
+    /** A Gregorian calendar date in strict YYYY-MM-DD format, never timezone-shifted. */
+    value: string | null | undefined;
+    /** Calendar date, Date, or ISO timestamp with an explicit offset. Defaults to now. */
+    base?: Date | string;
+    /** Zone used to read the base instant as a calendar day. Defaults to UTC. */
+    timeZone?: string;
+  };
+
 export type FormatDurationProps = TimeElementProps &
   LocaleProp &
   FallbackProp & {
@@ -208,6 +219,59 @@ const FormatRelativeTime = (props: FormatRelativeTimeProps): JSX.Element => {
   );
 };
 
+// Encode calendar dates as UTC day ordinals, not elapsed local-midnight time:
+// a calendar day remains one day across 23-hour and 25-hour DST transitions.
+const calendarDay = (value: string | null | undefined): number | null => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return null;
+  const instant = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(instant.getTime()) || instant.toISOString().slice(0, 10) !== value) return null;
+  return instant.getTime() / 86_400_000;
+};
+
+const FormatRelativeDate = (props: FormatRelativeDateProps): JSX.Element => {
+  const [own, rest] = splitProps(props, ["value", "locale", "base", "timeZone", "fallback"]);
+  const locale = useLocale();
+  const relative = () => {
+    const targetDay = calendarDay(own.value);
+    const zone = own.timeZone ?? "UTC";
+    if (targetDay === null || !dates.isValidTimeZone(zone)) return null;
+    const base = own.base ?? new Date();
+    let baseDay: number | null;
+    if (typeof base === "string" && /^\d{4}-\d{2}-\d{2}$/.test(base)) {
+      baseDay = calendarDay(base);
+    } else {
+      // Offsetless timestamps depend on the host timezone and cannot hydrate reliably.
+      if (typeof base === "string" && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(base)) return null;
+      if (typeof base === "string" && calendarDay(base.slice(0, 10)) === null) return null;
+      const instant = toDate(base);
+      if (!instant) return null;
+      const parts = new Intl.DateTimeFormat("en-US", {
+        calendar: "gregory",
+        numberingSystem: "latn",
+        timeZone: zone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        era: "short",
+      }).formatToParts(instant);
+      const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
+      if (part("era") !== "AD") return null;
+      baseDay = calendarDay(`${part("year")?.padStart(4, "0")}-${part("month")}-${part("day")}`);
+    }
+    if (baseDay === null) return null;
+    return { label: new Intl.RelativeTimeFormat(own.locale ?? locale(), { numeric: "auto" }).format(targetDay - baseDay, "day") };
+  };
+  return (
+    <Show when={relative()} fallback={<span {...rest}>{own.fallback ?? FALLBACK}</span>}>
+      {(value) => (
+        <time {...rest} datetime={own.value ?? undefined}>
+          {value().label}
+        </time>
+      )}
+    </Show>
+  );
+};
+
 const FormatDuration = (props: FormatDurationProps): JSX.Element => {
   const [own, rest] = splitProps(props, ["from", "to", "locale", "fallback"]);
   const locale = useLocale();
@@ -265,6 +329,7 @@ export const Format = {
   Time: FormatTime,
   DateTime: FormatDateTime,
   RelativeTime: FormatRelativeTime,
+  RelativeDate: FormatRelativeDate,
   Duration: FormatDuration,
   DurationMs: FormatDurationMs,
 } as const;

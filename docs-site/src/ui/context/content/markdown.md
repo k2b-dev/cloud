@@ -40,6 +40,9 @@ These options also work with `renderSafeMarkdown(source, options)`. They apply
 to Markdown rendering only; `trustedHtml` already crosses an explicit trust
 boundary and bypasses the renderer.
 
+Embedded components such as `NoticeCard` keep their own paragraph spacing;
+ordinary Markdown paragraphs retain the standard prose spacing.
+
 ### Highlight known inline tokens
 
 Pass exact `inlineTokens` when an authoring preview needs to distinguish known

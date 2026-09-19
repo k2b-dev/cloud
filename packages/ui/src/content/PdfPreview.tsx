@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
 
 export type PdfPreviewRequest = () => Promise<Response | Blob>;
@@ -12,6 +12,8 @@ export type PdfPreviewProps = {
   openButtonLabel?: string;
   emptyText?: string;
   class?: string;
+  children?: (parts: { actions: JSX.Element; content: JSX.Element }) => JSX.Element;
+  renderError?: (message: string) => JSX.Element;
 };
 
 const readErrorMessage = async (response: Response): Promise<string> => {
@@ -111,6 +113,71 @@ export default function PdfPreview(props: PdfPreviewProps) {
     }
   };
 
+  const actions = () => (
+    <div class="k2b-content-pdf-preview__actions">
+      <button
+        type="button"
+        class="k2b-button"
+        data-variant="secondary"
+        data-size="sm"
+        onClick={() => void openInNewTab()}
+        disabled={loading() || opening() || props.disabled?.()}
+      >
+        <i class={opening() ? "ti ti-loader-2 k2b-spin" : "ti ti-external-link"} aria-hidden="true" />
+        {props.openButtonLabel ?? messages().openPreview}
+      </button>
+      <button
+        type="button"
+        class="k2b-button"
+        data-variant="secondary"
+        data-size="sm"
+        onClick={() => void load()}
+        disabled={loading() || opening() || props.disabled?.()}
+      >
+        <i class={loading() ? "ti ti-loader-2 k2b-spin" : "ti ti-file-type-pdf"} aria-hidden="true" />
+        {props.buttonLabel ?? messages().previewPdf}
+      </button>
+    </div>
+  );
+  const content = () => (
+    <Show
+      when={error()}
+      fallback={
+        <Show
+          when={url()}
+          fallback={
+            <div class="k2b-content-pdf-preview__empty">
+              <span role={loading() ? "status" : undefined}>
+                {loading() ? messages().loading : (props.emptyText ?? messages().renderPdfPreview)}
+              </span>
+            </div>
+          }
+        >
+          {(currentUrl) => (
+            <iframe class="k2b-content-pdf-preview__frame" src={currentUrl()} title={props.title ?? messages().pdfPreview} />
+          )}
+        </Show>
+      }
+    >
+      {(message) =>
+        props.renderError?.(message()) ?? (
+          <div role="alert" class="k2b-content-pdf-preview__error">
+            {message()}
+          </div>
+        )
+      }
+    </Show>
+  );
+
+  if (props.children)
+    return props.children({
+      get actions() {
+        return actions();
+      },
+      get content() {
+        return content();
+      },
+    });
   return (
     <section class={`k2b-content-pdf-preview ${props.class ?? ""}`}>
       <div class="k2b-content-pdf-preview__toolbar">
@@ -119,51 +186,9 @@ export default function PdfPreview(props: PdfPreviewProps) {
             <h2 class="k2b-content-pdf-preview__title">{props.title}</h2>
           </Show>
         </div>
-        <div class="k2b-content-pdf-preview__actions">
-          <button
-            type="button"
-            class="k2b-button"
-            data-variant="secondary"
-            data-size="sm"
-            onClick={() => void openInNewTab()}
-            disabled={loading() || opening() || props.disabled?.()}
-          >
-            <i class={opening() ? "ti ti-loader-2 k2b-spin" : "ti ti-external-link"} aria-hidden="true" />
-            {props.openButtonLabel ?? messages().openPreview}
-          </button>
-          <button
-            type="button"
-            class="k2b-button"
-            data-variant="secondary"
-            data-size="sm"
-            onClick={() => void load()}
-            disabled={loading() || opening() || props.disabled?.()}
-          >
-            <i class={loading() ? "ti ti-loader-2 k2b-spin" : "ti ti-file-type-pdf"} aria-hidden="true" />
-            {props.buttonLabel ?? messages().previewPdf}
-          </button>
-        </div>
+        {actions()}
       </div>
-
-      <Show
-        when={url()}
-        fallback={
-          <div class="k2b-content-pdf-preview__empty">
-            <Show
-              when={error()}
-              fallback={
-                <span role={loading() ? "status" : undefined}>
-                  {loading() ? messages().loading : (props.emptyText ?? messages().renderPdfPreview)}
-                </span>
-              }
-            >
-              {(message) => <div class="k2b-content-pdf-preview__error">{message()}</div>}
-            </Show>
-          </div>
-        }
-      >
-        {(currentUrl) => <iframe class="k2b-content-pdf-preview__frame" src={currentUrl()} title={props.title ?? messages().pdfPreview} />}
-      </Show>
+      {content()}
     </section>
   );
 }

@@ -36,6 +36,14 @@ Set `autoLoad` when mounting the preview already follows an explicit user action
 
 Authentication, request input, server-side rendering, and error sanitization remain with the caller.
 
+### Compose a dialog or pane
+
+Pass a `children` render function to place `actions` and `content` in an existing container. The preview then omits its own border, heading, and toolbar; `class` only applies to its default shell. Render each part once. The same request state, disabled controls, and object URL cleanup apply in either layout.
+
+For a dialog, put `actions` in `PanelDialog.Header` and `content` in a flex column that fills the remaining body height. Keep explanatory text in `InlineGuidance` above the content. Do not put another preview card inside the dialog.
+
+Use `renderError(message)` for application-specific recovery, such as a `NoticeCard` with a return-to-form action. Errors replace the document, including a previously rendered PDF after a failed reload; they are not centered inside an empty viewer. Keep an accessible alert role in custom error content.
+
 ## API reference
 
 ```ts
@@ -48,6 +56,8 @@ type PdfPreviewRequest = () => Promise<Response | Blob>;
 type PdfPreviewProps = {
   request: PdfPreviewRequest; autoLoad?: boolean; disabled?: () => boolean; title?: string; buttonLabel?: string;
   openButtonLabel?: string; emptyText?: string; class?: string;
+  children?: (parts: { actions: JSX.Element; content: JSX.Element }) => JSX.Element;
+  renderError?: (message: string) => JSX.Element;
 };
 ```
 
@@ -87,4 +97,16 @@ const images: LightboxImage[] = [
   request={() => fetch("/api/reports/42/pdf")}
   disabled={() => reportMutation.loading()}
 />
+```
+
+
+```tsx
+<PdfPreview autoLoad title="Report" request={() => fetch("/api/reports/42/pdf")}>
+  {(preview) => (
+    <PanelDialog>
+      <PanelDialog.Header title="Report preview" actions={preview.actions} close={close} />
+      <PanelDialog.Body>{preview.content}</PanelDialog.Body>
+    </PanelDialog>
+  )}
+</PdfPreview>
 ```

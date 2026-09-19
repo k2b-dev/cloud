@@ -9,9 +9,10 @@ else
     const dom = createDomTestHarness();
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
     const { default: DetailPanel } = await import("../src/layout/DetailPanel");
+    const { default: PanelDialog } = await import("../src/layout/PanelDialog");
     const { default: ScrollArea } = await import("../src/layout/ScrollArea");
     try {
-      for (const Component of [AppWorkspace.SidebarBody, DetailPanel.Body, ScrollArea]) {
+      for (const Component of [AppWorkspace.SidebarBody, DetailPanel.Body, ScrollArea, PanelDialog.Body]) {
         const [enabled, setEnabled] = createSignal<boolean | undefined>(undefined);
         const dispose = render(
           () =>
@@ -109,3 +110,90 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+if (!isServer)
+  test("horizontal fades follow physical edges in LTR and RTL, reactive axis and content changes", async () => {
+    const dom = createDomTestHarness();
+    const { default: ScrollArea } = await import("../src/layout/ScrollArea");
+    const [orientation, setOrientation] = createSignal<"vertical" | "horizontal">("horizontal");
+    const dispose = render(() => <ScrollArea orientation={orientation()}>Wide content</ScrollArea>, dom.root);
+    try {
+      const body = dom.root.firstElementChild as HTMLElement;
+      Object.defineProperties(body, {
+        scrollWidth: { configurable: true, value: 500 },
+        clientWidth: { value: 200 },
+        scrollHeight: { value: 200 },
+        clientHeight: { value: 200 },
+      });
+      const scroll = (left: number) => {
+        body.scrollLeft = left;
+        body.dispatchEvent(new Event("scroll"));
+      };
+      scroll(0);
+      expect(body.dataset.scrollFade, "initial horizontal").toBe("bottom");
+      scroll(120);
+      expect(body.dataset.scrollFade).toBe("both");
+      scroll(300);
+      expect(body.dataset.scrollFade).toBe("top");
+      body.style.direction = "rtl";
+      scroll(0);
+      expect(body.dataset.scrollFade).toBe("top");
+      scroll(-120);
+      expect(body.dataset.scrollFade).toBe("both");
+      scroll(-300);
+      expect(body.dataset.scrollFade, "rtl end").toBe("bottom");
+      setOrientation("vertical");
+      await Promise.resolve();
+      expect(body.dataset.scrollFade).toBeUndefined();
+      setOrientation("horizontal");
+      await Promise.resolve();
+      expect(body.dataset.scrollFade, "after axis restored").toBe("bottom");
+      Object.defineProperty(body, "scrollWidth", { value: 200 });
+      body.textContent = "Short";
+      await Promise.resolve();
+      expect(body.dataset.scrollFade).toBeUndefined();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("tabs use their existing horizontal scrollport and disable fades vertically", async () => {
+    const dom = createDomTestHarness();
+    const { Tabs } = await import("../src/actions/Tabs");
+    const [orientation, setOrientation] = createSignal<"vertical" | "horizontal">("horizontal");
+    const dispose = render(
+      () => (
+        <Tabs
+          value="one"
+          onValueChange={() => {}}
+          ariaLabel="Views"
+          orientation={orientation()}
+          options={[
+            { value: "one", label: "One" },
+            { value: "two", label: "Two" },
+          ]}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const list = dom.root.querySelector<HTMLElement>('[role="tablist"]')!;
+      Object.defineProperties(list, { scrollWidth: { value: 500 }, clientWidth: { value: 100 } });
+      list.dispatchEvent(new Event("scroll"));
+      expect(list.dataset.scrollFade).toBe("bottom");
+      expect(dom.root.querySelectorAll("[data-scroll-fade-mode]").length).toBe(1);
+      setOrientation("vertical");
+      expect(list.dataset.scrollFade).toBeUndefined();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+test("forced colors remove both vertical and horizontal masks", async () => {
+  const css = await Bun.file(new URL("../src/styles/index.css", import.meta.url)).text();
+  const forcedColors = css.slice(css.indexOf("@media (forced-colors: active)", css.indexOf("--scroll-fade-size: 1rem")));
+  expect(forcedColors).toContain('.k2b-ui [data-scroll-fade][data-scroll-fade-axis="horizontal"] { mask-image: none; }');
+});

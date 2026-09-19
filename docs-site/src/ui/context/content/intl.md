@@ -42,7 +42,8 @@ On the server the provider is the only source, so SSR consumers wrap the page in
 - `Format.Currency` — requires an ISO 4217 `currency` code.
 - `Format.Bytes` — IEC units by default, `mode="si"` for decimal units.
 - `Format.Date`, `Format.Time`, `Format.DateTime` — render `<time>` with a canonical `datetime` attribute; format in UTC unless an explicit `timeZone` is given, so server and browser never disagree.
-- `Format.RelativeTime` — relative wording with an optional deterministic `base`.
+- `Format.RelativeTime` — elapsed relative wording with an optional deterministic `base`.
+- `Format.RelativeDate` — calendar-day wording for a strict `YYYY-MM-DD` value, such as “today”, “tomorrow”, or “3 days ago”.
 - `Format.Duration` — human-readable span between `from` and `to`.
 - `Format.DurationMs` — compact duration from milliseconds.
 
@@ -117,6 +118,14 @@ type FormatRelativeTimeProps = TimeElementProps &
     timeZone?: string;
   };
 
+type FormatRelativeDateProps = TimeElementProps &
+  LocaleProp &
+  FallbackProp & {
+    value: string | null | undefined;
+    base?: Date | string;
+    timeZone?: string;
+  };
+
 type FormatDurationProps = TimeElementProps &
   LocaleProp &
   FallbackProp & {
@@ -134,6 +143,38 @@ type FormatDurationMsProps = TimeElementProps &
 `SpanProps` means native `JSX.HTMLAttributes<HTMLSpanElement>`. `TimeElementProps` means native HTML attributes without `ref`; the formatter owns `datetime`. `ByteMode` is `"iec" | "si"`. `LocaleProp` and `FallbackProp` name shared shapes in this reference, not additional component exports.
 
 `Format.Percent.decimals` defaults to 0 and `clamp` to false. Currency decimals default to the currency's standard digits. Dates accept `Date` or a parseable string; prefer explicit offset-bearing instants. `Format.RelativeTime.base` defaults to now; supply the same base for deterministic server/browser output. `Format.Duration` takes from/to instants, whereas DurationMs takes a number of milliseconds.
+
+## Calendar-relative dates
+
+Use `Format.RelativeDate` for date-only deadlines or scheduled days. It compares
+Gregorian calendar dates, not elapsed 24-hour periods: tomorrow remains tomorrow
+across daylight-saving changes. The value must be a real `YYYY-MM-DD` date
+(years 0001–9999). It is never shifted by the timezone.
+
+The optional `base` accepts a calendar date, a valid `Date`, or an ISO timestamp
+with an explicit `Z` or `±HH:MM` offset. For an instant, `timeZone` determines
+which calendar day it represents; the default is UTC. A date-only base already
+names its calendar day. Invalid dates, timestamps without an offset, and
+invalid zones render the fallback. Locale wording uses `Intl.RelativeTimeFormat`
+with `numeric: "auto"`; it can include locale-specific labels such as “übermorgen”.
+The formatter never decides whether a date is overdue or assigns a warning tone.
+
+Pass the same base snapshot to SSR and the browser. An omitted base reads the
+current time when the formatter evaluates; it does not install a timer. The
+application owns refreshing a reactive base at day rollover or on resume. Share
+one base across a list instead of giving every cell a timer.
+
+Pair it with the absolute date so the reader retains context. Keep the absolute
+date in UTC when formatting a date-only string with `Format.Date`:
+
+```tsx
+<Format.Date value="2026-09-17" />{ " (" }
+<Format.RelativeDate
+  value="2026-09-17"
+  base="2026-09-16T22:30:00Z"
+  timeZone="Europe/Berlin"
+/>{ ")" }
+```
 
 ## Date and locale options
 
@@ -156,7 +197,7 @@ time on machines in different zones.
 
 ## Accessibility
 
-Temporal components expose the machine-readable instant through the `<time datetime>` attribute. The visible text is plain content, so screen readers announce the localized value directly. Fallback output is text, never an empty element.
+Temporal components expose the machine-readable instant through the `<time datetime>` attribute. `Format.RelativeDate` preserves the date-only value in that attribute. The visible text is plain content, so screen readers announce the localized value directly. Fallback output is text, never an empty element.
 
 ## Runtime
 

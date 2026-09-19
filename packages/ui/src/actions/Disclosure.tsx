@@ -4,6 +4,7 @@ import { resolveMaybeAccessor } from "../inputs/field-contract";
 
 export type DisclosureProps = {
   summary: JSX.Element;
+  surface?: "paper" | "plain";
   children: JSX.Element;
   value?: MaybeAccessor<boolean>;
   defaultValue?: boolean;
@@ -28,6 +29,7 @@ export function Disclosure(props: DisclosureProps): JSX.Element {
     <details
       ref={details}
       class={`k2b-disclosure ${props.class ?? ""}`}
+      data-surface={props.surface ?? "paper"}
       open={open()}
       data-disabled={props.disabled ? "true" : undefined}
       onToggle={(event) => {
