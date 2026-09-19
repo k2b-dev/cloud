@@ -1,8 +1,8 @@
 import { runnerClient } from "./runner-client";
 import type { RunnerMetadata } from "./runner-contracts";
-import { Button, InlineGuidance, Paper, StatusBadge, useLocale } from "@k2b/ui";
+import { Button, InlineGuidance, Paper, ScrollArea, StatusBadge, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
-import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
+import { type JSX, createEffect, createMemo, createResource, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
 import { openArtifactModal } from "./modal-host";
@@ -26,7 +26,7 @@ export function pickFiles(multiple: boolean, folder: boolean, accept: string, si
   });
 }
 
-export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetadata; onRunnerMetadata?: (metadata: RunnerMetadata) => void; onPublished?: () => Promise<void>; unsavedChanges?: boolean; refreshKey?: string; published?: boolean; version?: number; sourceRevision?:number; test?:boolean; pickerInputs?:File[]; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
+export function ArtifactPanel(props: { artifactId: string; actions?: JSX.Element; runner?: RunnerMetadata; onRunnerMetadata?: (metadata: RunnerMetadata) => void; onPublished?: () => Promise<void>; unsavedChanges?: boolean; refreshKey?: string; published?: boolean; version?: number; sourceRevision?:number; test?:boolean; pickerInputs?:File[]; autoStart?: boolean; userId: string; browseSource?: () => void; browseVersions?: () => void; onTitle?: (title: string) => void }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t;
   const loadMetadata = async () => props.runner ? runnerClient.get(props.artifactId) : artifactClient.get(props.artifactId, props.published, props.version);
   const [metadata, { mutate }] = createResource(() => props.runner ? false : props.artifactId, loadMetadata, { initialValue: props.runner });
@@ -153,7 +153,7 @@ export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetada
   }
   return <div class="artifact-panel">
     <div ref={container} />
-    <div class="artifact-panel__preview">
+    <ScrollArea class="artifact-panel__preview" scrollFade={!!props.runner}>
       <Show when={state()?.nodes.length} fallback={<div class="artifact-panel__launch">
         <Button variant="success" loading={loading()} onClick={() => void start()}><Show when={!loading()}><i class="ti ti-player-play" aria-hidden="true" /></Show>{t().start}</Button>
       </div>}>
@@ -161,11 +161,11 @@ export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetada
           void session?.event(event).catch((error) => setError(error instanceof Error ? error.message : t().REQUEST_FAILED));
         }} />
       </Show>
-    </div>
+    </ScrollArea>
     <div class="artifact-panel__console">
-    <Show when={loading() || (revision() !== undefined && (metadata()?.sourceRevision ?? 0) > revision()!)}>
-      <InlineGuidance role="status" loading={loading()} icon={loading() ? undefined : "ti ti-info-circle"} class="px-2 py-1">
-        {loading() ? t().loading : t().staleSource}
+    <Show when={!loading() && revision() !== undefined && (metadata()?.sourceRevision ?? 0) > revision()!}>
+      <InlineGuidance role="status" icon="ti ti-info-circle" class="px-2 py-1">
+        {t().staleSource}
       </InlineGuidance>
     </Show>
     <div class="artifact-console__header">
@@ -182,6 +182,7 @@ export function ArtifactPanel(props: { artifactId: string; runner?: RunnerMetada
           <Show when={props.browseVersions}><Button size="sm" variant="ghost" onClick={() => props.browseVersions?.()}><i class="ti ti-git-branch" aria-hidden="true" />{t().versions}</Button></Show>
           <Button size="sm" variant="ghost" disabled={loading()} aria-busy={loading() ? "true" : undefined} onClick={() => void start()}><i class={`ti ti-refresh${loading() ? " k2b-spin" : ""}`} aria-hidden="true" />{t().restart}</Button>
           <Button size="sm" variant="ghost" disabled={!loading() && (!state() || state()?.status === "stopped")} onClick={stop}><i class="ti ti-player-stop" aria-hidden="true" />{t().stop}</Button>
+          {props.actions}
         </div>
       </div>
     <Paper id={consoleId} class="artifact-console" hidden={!consoleOpen()}>

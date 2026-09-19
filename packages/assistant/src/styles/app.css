@@ -14,6 +14,10 @@
   width: 100%;
 }
 
+.k2b-ui .assistant-project-link-choice > .k2b-button__label {
+  width: 100%;
+}
+
 /* The timeline owns the full-width scrollport; its contents keep the same
    column as the composer. Context occupies the reserved column without moving
    the native scrollbar between the two columns. */
@@ -292,4 +296,48 @@
 }
 .k2b-ui .assistant-project-chats-scroll::-webkit-scrollbar {
   width: 0.5rem;
+}
+
+/* Keep the standalone app within the Cloud viewport so its preview can scroll. */
+.assistant-standalone-page { display: flex; height: 100dvh; min-height: 0; overflow: hidden; }
+.assistant-standalone-runner { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: .75rem; }
+
+/* Complete a chat from its context row, without squeezing its title. */
+.k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item--done-action > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
+  position: absolute;
+  inset-block-start: .375rem;
+  inset-inline-end: .625rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .25rem;
+  width: auto;
+  height: 1.5rem;
+  padding-inline: .25rem;
+  color: var(--k2b-success-text);
+  font-size: .6875rem;
+  font-weight: 600;
+}
+.k2b-ui .assistant-chat-sidebar-item--done-action:is(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)) .k2b-app-workspace__sidebar-item-context-meta {
+  visibility: hidden;
+}
+@media (hover: none), (pointer: coarse) {
+  .k2b-ui .assistant-chat-sidebar-item--done-action .k2b-app-workspace__sidebar-item-context-meta { visibility: hidden; }
+}
+
+/* Keep the scroll thumb visible alongside the standard ScrollArea edge fade. */
+.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog) {
+  scrollbar-width: auto;
+  scrollbar-color: var(--k2b-text-muted) transparent;
+}
+.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog)::-webkit-scrollbar {
+  width: .375rem;
+}
+.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog)::-webkit-scrollbar-thumb {
+  background: var(--k2b-text-muted);
+  border-radius: 999px;
+}
+
+.k2b-ui .k2b-scroll-area[data-viewport-size="compact"]:has(> :is(.assistant-studio-catalog, .assistant-project-catalog)) {
+  height: min(450px, 60dvh);
 }

@@ -179,7 +179,8 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   .patch("/:id/metadata", v("json", ArtifactMetadata), async c => respond(c,ok(await artifacts.metadata(id(c),c.req.valid("json"),identity(c)))))
   .post("/:id/unpublish", async c => respond(c, ok(await artifacts.unpublish(id(c), identity(c)))))
   .post("/:id/fork", async c => respond(c, ok(await artifacts.fork(id(c), identity(c))), 201))
-  .post("/:id/edit-chat", async c => respond(c, ok(await artifacts.editChat(id(c), identity(c))), 201))
+  .post("/:id/edit-chat", v("query", z.object({ intent: z.literal("customize").optional() })), async c => respond(c, ok(await artifacts.editChat(id(c), identity(c),
+    c.req.valid("query").intent === "customize" ? artifactMessages.resolve([getLocale(c)]).t.customizePrompt : undefined)), 201))
   .put("/:id/files",v("json",ArtifactFile),async c=>respond(c,ok(await artifacts.writeFile(id(c),c.req.valid("json").path,c.req.valid("json").content,identity(c)))))
   .put("/:id", v("json",ArtifactUpdate), async (c) => respond(c,ok(await artifacts.update(id(c),c.req.valid("json"),identity(c)))))
   .get("/:id/revisions", async (c) => respond(c,ok(await artifacts.history(id(c),identity(c),page(c)))))

@@ -546,13 +546,14 @@ export const artifacts = {
       return revision(db,updated!,permission);
     });
   },
-  async editChat(id: string, identity: ArtifactIdentity) {
+  async editChat(id: string, identity: ArtifactIdentity, prompt?: string) {
     const bundle = await artifacts.get(id, identity);
     if (!hasPermission(bundle.permission, "admin")) throw new ArtifactError("ACCESS_DENIED");
     const ref = { type: "assistant.artifact", id };
     const href = `/app/assistant/apps/${id}`;
     const conversation = await aiConversations.createConversation({ ownerUserId: user(identity).id,
-      title: bundle.title, draft: [{ type: "resource", ref, title: bundle.title, icon: "ti ti-app-window", href }] });
+      title: bundle.title, draft: [{ type: "resource", ref, title: bundle.title, icon: "ti ti-app-window", href },
+        ...(prompt ? [{ type: "text" as const, text: prompt }] : [])] });
     await aiConversations.indexConversationResources({ conversationId: conversation.id,
       resources: [{ ref, title: bundle.title, icon: "ti ti-app-window", href }] });
     return { href: `/app/assistant?conversation=${conversation.shortId}&workspace=${encodeURIComponent(JSON.stringify(["app", id]))}` };

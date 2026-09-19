@@ -17,7 +17,7 @@ export default ssr<AuthContext>(async c => {
     c.get("page").title = metadata.title;
     const content = () => <Runner initial={metadata} userId={user?.id ?? "public-visitor"} />;
     return () => user ? <Layout c={c} title={[{ title: metadata.title }]} fullPage>{content()}</Layout>
-      : <MinimalLayout c={c}><main>{content()}</main></MinimalLayout>;
+      : <MinimalLayout c={c}><main class="assistant-standalone-page">{content()}</main></MinimalLayout>;
   } catch (error) {
     if (error instanceof ArtifactError) {
       // Private links offer sign-in; authenticated callers receive an ordinary unavailable page.

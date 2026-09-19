@@ -40,6 +40,8 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     remove:"Delete", removeConfirm:"Permanently delete this app, its publications and shared data?", search:"Search apps", kind:"Type", present:"Present", absent:"None",
 
     unpublishedAccess: "Not published yet", unpublishedAccessHelp: "Only administrators can see and use unpublished apps. Users with Use access can open the app after it is published.", guiApps: "Apps", scripts: "Scripts", changeNote: "What changed?", versions: "Versions", currentVersion: "Start current version", versionsHelp: "Users without administrator access only see the latest publication. Restore appends a new publication with an automatic note; history and user data stay unchanged.", noVersions: "No published versions yet", restore: "Restore", publishUpdate: "Update publication", use: "Use", manage: "Manage", edit: "Edit", publish: "Publish", published: "Published", draft: "Draft", launch: "Launch",
+    forkConfirm: "Copy the published app code into your own draft. Data, secrets and sharing settings are not copied. Then customize it in a new Assistant chat.",
+    customizePrompt: "Help me customize this app.",
     fork: "Create your own copy", share: "Manage access", unpublish: "Unpublish", actions: "Actions",
     noAccessibleApps: "No apps yet. Create one with Assistant or ask someone to share an app with you.",
     unpublished: "Not published yet", unpublishedDescription: "Edit and test this app in a chat, then publish it to make it available to users.",
@@ -109,6 +111,8 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     remove:"Löschen", removeConfirm:"Diese App mit allen Veröffentlichungen und gemeinsamen Daten endgültig löschen?", search:"Apps suchen", kind:"Typ", present:"Vorhanden", absent:"Keine",
 
     unpublishedAccess: "Noch nicht veröffentlicht", unpublishedAccessHelp: "Unveröffentlichte Apps können nur Admins sehen und nutzen. Nutzer mit Benutzen-Rechten erhalten erst nach der Veröffentlichung Zugriff auf die App.", guiApps: "Apps", scripts: "Skripte", changeNote: "Was wurde geändert?", versions: "Versionen", currentVersion: "Aktuelle Version starten", versionsHelp: "Nutzer ohne Adminrechte sehen nur die neueste Veröffentlichung. Wiederherstellen hängt eine neue Version mit automatischer Nachricht an. Historie und Nutzerdaten bleiben erhalten.", noVersions: "Noch keine Version veröffentlicht", restore: "Wiederherstellen", publishUpdate: "Veröffentlichung aktualisieren", use: "Benutzen", manage: "Verwalten", edit: "Bearbeiten", publish: "Veröffentlichen", published: "Veröffentlicht", draft: "Entwurf", launch: "Starten",
+    forkConfirm: "Du erhältst den veröffentlichten App-Code als eigenen Entwurf – ohne Daten, Secrets oder Freigaben. Danach kannst du ihn in einem neuen Assistant-Chat anpassen.",
+    customizePrompt: "Hilf mir dabei, diese App anzupassen.",
     fork: "Eigene Kopie erstellen", share: "Zugriff verwalten", unpublish: "Veröffentlichung zurückziehen", actions: "Aktionen",
     noAccessibleApps: "Noch keine Apps. Erstelle eine mit Assistant oder lass eine App mit dir teilen.",
     unpublished: "Noch nicht veröffentlicht", unpublishedDescription: "Bearbeite und teste diese App in einem Chat. Veröffentliche sie anschließend für ihre Nutzer.",

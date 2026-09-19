@@ -122,8 +122,8 @@ export const artifactClient = {
     const response = await client[":id"].fork.$post({ param: { id } });
     await checked(response); return response.json();
   },
-  editChat: async (id: string) => {
-    const response = await client[":id"]["edit-chat"].$post({ param: { id } });
+  editChat: async (id: string, customize = false) => {
+    const response = await client[":id"]["edit-chat"].$post({ param: { id }, query: customize ? { intent: "customize" } : {} });
     await checked(response); return response.json();
   },
   versions: async (id: string, page = 1) => {

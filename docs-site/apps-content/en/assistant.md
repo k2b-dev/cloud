@@ -15,7 +15,10 @@ The **Studio** navigation opens a compact app list on hover or click, just like
 a **Search apps** button. Search opens global search with one **Studio** context chip and an empty
 search field, matching app titles and descriptions. Apps are created by Assistant, so there is no creation
 button. On mobile, tap **Studio** to open the same list in a dialog. Both surfaces
-show scroll-edge fades when more apps are available above or below.
+show a scrollbar and the standard scroll-edge fade when more apps are available. Projects and
+Studio desktop menus, and the mobile Studio dialog, keep a fixed height of 450 px (at most 60% of the viewport)
+while loading or showing empty, failed, or populated lists. Long lists scroll
+inside that area. Desktop menus align their bottom edge with their navigation item. Mobile Projects remain expandable in the navigation.
 
 There is no separate Studio overview page. Old `/app/assistant/apps` links, the
 Studio breadcrumb, and deleting the currently open app return to Assistant with
@@ -28,11 +31,20 @@ The app detail action menu provides **Edit**, **Manage access**,
 and **Publish** for administrators. It retains the same actions as app cards
 inside chat context, including copying, deleting, and advanced tools.
 **Delete** is the final menu entry, under **Danger zone**.
+In the runner, **Create your own copy** first explains what is copied. Confirming
+creates your own draft from the published code, without data, secrets, or sharing
+settings, and opens a new chat with an unsent customization prompt. Secrets
+are available in management only.
 **Edit** opens a new chat with the app attached, ready for your instructions. It
 does not send a message. Saving code updates the working draft. **Publish** makes
 that tested version available to users; later edits do not change it. Running apps
 keep their inputs and offer a restart when a newer publication becomes available.
 
+
+Project managers can change direct grants under **Project settings → Access**.
+Add people, groups, service accounts or all signed-in users, choose View, Edit or
+Manage, or remove a grant. Changes apply immediately; the last administrator
+cannot be removed. Projects cannot be shared publicly.
 
 ### Link Studio Apps and Skills to a Project
 
@@ -63,7 +75,9 @@ to Studio Apps or external resources mentioned in their instructions.
 
 Studio opens the standalone runner for users with **Use** access. App managers
 enter the management view and select **Open fullscreen** in the header or action menu. The
-runner offers **Manage** to those managers. This distinction uses app permissions,
+runner offers **Manage** and a personal action menu beside **Restart** and
+**Stop** in the bottom toolbar. The app content scrolls independently with
+scroll-edge fades. Restarting shows progress in the button without adding a status row. This distinction uses app permissions,
 not the global Cloud administrator role.
 
 App managers see a **Draft** or **Published** badge beside the runtime controls.
@@ -143,6 +157,9 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 The sidebar shows one chat list with pinned chats first, marked by a colored pin instead of the chat or Project icon. **Done** remains a separate collapsible section.
 
 **Projects**, between Studio and Personalize in the footer, opens the same preview popup as chat rows: hover or click it to choose a Project, create one with **+**, or open global search with the **Search Projects** button. The search shows one **Projects** context chip and matches accessible Project names and descriptions. Removing that chip returns to global search.
+
+Inside a Project, **Search chats** opens global search with the Project name as
+a context chip. Results are limited to your chats in that Project.
 
 The main sidebar search button has a different purpose: while a Project is open, it searches your own chats within that Project using a removable Project context.
 

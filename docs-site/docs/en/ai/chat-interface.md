@@ -346,7 +346,10 @@ The Assistant **Studio** navigation opens its app catalog on hover or click;
 its search button opens global search filtered to Studio apps. Use-level users
 enter the standalone runner; managers enter Studio management. Management actions
 include editing, publication, and access. The runner retains personal actions for copying an app,
-managing secrets and clearing browser-local data. Public-only visitors can manage
+clearing browser-local data. Secrets are available in management only.
+Copying asks for confirmation, then opens a new chat with the copy attached
+and an unsent customization prompt. Only published code is copied, not data,
+secrets, or sharing settings. Public-only visitors can manage
 only their browser-local data. Permissions use the Cloud editor in a dialog.
 Artifacts are independent of chats. Cloud `auth.access` grants are linked
 through `assistant.artifact_access`: `read` is presented as **Use**, `admin` as
@@ -417,7 +420,9 @@ description supplied by the app and clear it when the app returns to ready.
 
 Studio opens the standalone runner for users with **Use** access. App managers
 enter the management view and select **Open fullscreen** in the header or action menu. The
-runner offers **Manage** to those managers. This distinction uses app permissions,
+runner offers **Manage** and a personal action menu beside **Restart** and **Stop**
+in the bottom toolbar. Its content scrolls within the available viewport with
+scroll-edge fades. Restarting shows progress in the button without adding a status row. This distinction uses app permissions,
 not the global Cloud administrator role.
 
 App managers see a **Draft** or **Published** badge beside the runtime controls.

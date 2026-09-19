@@ -17,7 +17,7 @@ function StudioCatalog(props: { open: boolean; close: () => void; activeAppId?: 
   });
   createEffect(() => { if (!props.open) pending?.abort(); });
   onCleanup(() => pending?.abort());
-  return <div class="flex flex-col gap-2">
+  return <div class="assistant-studio-catalog flex flex-col gap-2">
     <div class="flex items-center justify-between gap-2">
       <strong>{t().apps}</strong>
       <div class="flex items-center gap-1"><IconButton size="xs" label={t().search} onClick={() => { props.close(); openGlobalSearch(assistantAppsSearchOptions(locale())); }}>
@@ -46,7 +46,7 @@ function StudioCatalog(props: { open: boolean; close: () => void; activeAppId?: 
 }
 
 export function openStudioDialog(options: { activeAppId?: string; signal?: AbortSignal } = {}) {
-  return prompts.dialog<void>(close => <ScrollArea style={{ "max-height": "60dvh" }}>
+  return prompts.dialog<void>(close => <ScrollArea viewportSize="compact">
     <StudioCatalog open close={close} activeAppId={options.activeAppId} modal />
   </ScrollArea>, { title: "Studio", header: false, size: "medium", signal: options.signal });
 }
@@ -57,7 +57,7 @@ export function StudioSidebarItem(props: { active: boolean; activeAppId?: string
   // Fetch only when opened; reopening refreshes publications and access.
   const [open, setOpen] = createSignal(false);
   return <AppWorkspace.SidebarItem icon="ti ti-app-window" title={t().apps} active={props.active}
-    preview={{ label: t().apps, trigger: "row", onOpenChange: setOpen, content: close => <StudioCatalog open={open()} close={close} activeAppId={props.activeAppId} /> }}>
+    preview={{ align: "end", viewportSize: "compact", label: t().apps, trigger: "row", onOpenChange: setOpen, content: close => <StudioCatalog open={open()} close={close} activeAppId={props.activeAppId} /> }}>
     {t().apps}
   </AppWorkspace.SidebarItem>;
 }

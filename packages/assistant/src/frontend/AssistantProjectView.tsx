@@ -1,6 +1,6 @@
 import { AssistantProjectSkills } from "./AssistantProjectSkills";
 import { AssistantProjectApps } from "./AssistantProjectApps";
-import { Link, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
+import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { query as solidQuery } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -9,13 +9,14 @@ import {
   IconButton,
   InlineGuidance,
   Lightbox,
-  openSpotlightSearch,
   Placeholder,
   prompts,
   ScrollArea,
   toast,
 } from "@k2b/ui";
 import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@k2b/cloud/ai";
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
+import { assistantProjectSearchOptions } from "./assistant-search";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { formatDateTime } from "@k2b/cloud/shared";
@@ -339,33 +340,7 @@ export default function AssistantProjectView(props: Props) {
       nav.fallback();
     }
   };
-  const searchChats = async () => {
-    const selected = await openSpotlightSearch<AiConversation>({
-      title: copy().searchChatsIn({ project: props.project.name }),
-      icon: "ti ti-search",
-      placeholder: text("Search chats…"),
-      minQueryLength: 1,
-      noResultsText: text("No chats found."),
-      resolve: async ({ query, abortSignal }) => {
-        const conversations = await assistantApi.listConversations({
-          projectId: props.project.id,
-          q: query.trim(),
-          limit: 20,
-          signal: abortSignal,
-        });
-        return conversations.map((conversation) => ({
-          value: conversation,
-          label: conversation.title,
-          desc: conversation.description || formatDateTime(conversation.updatedAt),
-          icon: "ti ti-message-circle",
-        }));
-      },
-    });
-    if (!selected?.value) return;
-    if (await props.onOpenConversation(selected.value.id)) {
-      navigate(assistantConversationHref("/app/assistant", selected.value.id), { scroll: "manual" });
-    }
-  };
+  const searchChats = () => openGlobalSearch(assistantProjectSearchOptions(props.project));
 
   onMount(() => {
     if (!chatListViewport || !loadMoreSentinel || typeof IntersectionObserver === "undefined") return;

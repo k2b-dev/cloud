@@ -27,6 +27,7 @@ test("Studio loads on open, paginates, retries failures and launches scoped sear
     };
     panel.showPopover = () => toggle("open");
     panel.hidePopover = () => toggle("closed");
+    expect(panel.querySelector('[data-viewport-size="compact"]')).not.toBeNull();
     expect(requests).toEqual([]);
     dom.root.querySelector<HTMLButtonElement>('.k2b-app-workspace__sidebar-item-main')!.click();
     await Bun.sleep(0);
@@ -42,6 +43,7 @@ test("Studio loads on open, paginates, retries failures and launches scoped sear
     button("Back").click();
     await Bun.sleep(0);
     expect(panel.textContent).toContain("Could not load this content");
+    expect(panel.querySelector('[data-viewport-size="compact"]')).not.toBeNull();
     failure = false;
     button("Try again").click();
     await Bun.sleep(0);
@@ -50,4 +52,26 @@ test("Studio loads on open, paginates, retries failures and launches scoped sear
     panel.querySelector<HTMLButtonElement>('[aria-label="Search apps"]')!.click();
     expect(searches).toEqual([{ query: "", scope: { appId: "assistant", tag: "studio-app", label: "Studio", icon: "ti ti-app-window" } }]);
   } finally { dispose(); release(); artifactClient.list = original; dom.cleanup(); }
+});
+
+test("mobile Studio keeps one compact viewport through loading and empty results", async () => {
+  const dom = createDomTestHarness();
+  const { openStudioDialog } = await import("./StudioSidebarItem");
+  const { artifactClient } = await import("./client");
+  const original = artifactClient.list;
+  let resolve!: (value: Awaited<ReturnType<typeof artifactClient.list>>) => void;
+  artifactClient.list = () => new Promise(done => { resolve = done; });
+  const lifetime = new AbortController();
+  const dialog = openStudioDialog({ signal: lifetime.signal });
+  try {
+    await Bun.sleep(0);
+    const viewport = dom.document.querySelector('[data-viewport-size="compact"]');
+    expect(viewport).not.toBeNull();
+    expect(viewport?.querySelector('[data-viewport-size]')).toBeNull();
+    resolve({ items: [], page: 1, hasNext: false });
+    await Bun.sleep(0);
+    expect(dom.document.querySelector('[data-viewport-size="compact"]')).toBe(viewport);
+  } finally {
+    lifetime.abort(); await dialog; artifactClient.list = original; dom.cleanup();
+  }
 });

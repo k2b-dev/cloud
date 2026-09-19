@@ -33,7 +33,7 @@ function ProjectLinkPicker(props: Props & { choose: (id: string) => void }) {
         <Show when={apps.loading()}><InlineGuidance loading>{text("Loading…")}</InlineGuidance></Show>
         <Show when={!apps.loading() && !apps.error()}>
           <For each={apps.pages().flatMap(page => page.items)} fallback={<AssistantContextEmpty>{props.noResultsLabel}</AssistantContextEmpty>}>
-            {app => <Button wrap variant="ghost" class="w-full justify-start" onClick={() => props.choose(app.id)}>
+            {app => <Button wrap variant="ghost" class="w-full assistant-project-link-choice" onClick={() => props.choose(app.id)}>
               <i class={app.icon || "ti ti-app-window"} aria-hidden="true" />
               <span class="min-w-0 flex-1 truncate text-left">{app.title}</span>
               <i class="ti ti-plus" aria-hidden="true" />

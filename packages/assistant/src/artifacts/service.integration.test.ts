@@ -1075,6 +1075,11 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect(result.href).toContain("conversation=edit01");
       expect(create.mock.calls[0]![0].draft).toEqual([expect.objectContaining({ type: "resource", ref: { type: "assistant.artifact", id } })]);
       expect(index.mock.calls[0]![0]).toMatchObject({ conversationId, resources: [{ ref: { type: "assistant.artifact", id } }] });
+      await artifacts.editChat(id, owner, "Help me customize this app.");
+      expect(create.mock.calls[1]![0].draft).toEqual([
+        expect.objectContaining({ type: "resource", ref: { type: "assistant.artifact", id } }),
+        { type: "text", text: "Help me customize this app." },
+      ]);
     } finally { create.mockRestore(); index.mockRestore(); }
   });
   test.skipIf(!process.env.ASSISTANT_EVAL_URL)("real model builds and exercises the three-CSV dashboard", async () => {

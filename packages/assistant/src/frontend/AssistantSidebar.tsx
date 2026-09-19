@@ -122,7 +122,7 @@ function ConversationSidebarItem(props: {
   return (
     <AppWorkspace.SidebarItem
       href={href()}
-      class="assistant-chat-sidebar-item"
+      class={`assistant-chat-sidebar-item${!props.conversation.isDone && !props.conversation.pinnedAt ? " assistant-chat-sidebar-item--done-action" : ""}`}
       variant={props.conversation.isDone ? "row" : "card"}
       context={
         !props.conversation.isDone ? (
@@ -175,7 +175,11 @@ function ConversationSidebarItem(props: {
           disabled={saving() || (!props.conversation.isDone && busy())}
           visibility="hover"
           onSelect={() => void toggleDone()}
-        />
+        >
+          <Show when={!props.conversation.isDone} fallback={<i class="ti ti-arrow-back-up" aria-hidden="true" />}>
+            <i class="ti ti-check" aria-hidden="true" /><span>{text("Done")}</span>
+          </Show>
+        </AppWorkspace.SidebarItemAction>
       </Show>
     </AppWorkspace.SidebarItem>
   );
@@ -219,9 +223,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       active={Boolean(activeProjectId())}
       preview={{
         label: t().projects,
+        viewportSize: "compact",
+        align: "end",
         trigger: "row",
         content: (close) => (
-          <div class="flex flex-col gap-2">
+          <div class="assistant-project-catalog flex flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
               <strong>{t().projects}</strong>
               <div class="flex items-center gap-1">
@@ -309,7 +315,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       <Show when={!doneConversations().length}>
         <p class="px-2 py-1 text-xs text-dimmed">{text("No done chats.")}</p>
       </Show>
-      <AppWorkspace.SidebarItem onClick={() => openAllChats()}>{t().allChats}</AppWorkspace.SidebarItem>
+      <AppWorkspace.SidebarItem icon="ti ti-eye" onClick={() => openAllChats()}>{t().allChats}</AppWorkspace.SidebarItem>
     </AppWorkspace.SidebarSection>
   );
   const collapsedChatMenu = () => chatConversations().map((conversation) => ({
@@ -379,7 +385,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         id: "done-chats",
         label: text("Done"),
         badge: props.doneCount ?? doneConversations().length,
-        children: [...doneConversations().map(chatItem), { id: "all", action: "all", label: t().allChats }],
+        children: [...doneConversations().map(chatItem), { id: "all", action: "all", label: t().allChats, icon: "ti ti-eye" }],
       },
       {
         id: "apps",

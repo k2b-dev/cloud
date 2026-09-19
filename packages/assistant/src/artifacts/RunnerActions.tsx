@@ -1,11 +1,12 @@
-import { Dropdown, prompts, useLocale } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { navigateTo } from "@k2b/ssr/nav";
+import { Button, Dropdown, prompts, useLocale } from "@k2b/ui";
+import { createSignal, Show } from "solid-js";
 import { artifactMessages } from "./messages";
 import { advancedMessages } from "./advanced-messages";
 import { runnerHref } from "./runner-contracts";
 
 /** Keep personal app controls available without loading Studio management. */
-export function RunnerActions(props: { id: string; userId: string; serverAccess: boolean }) {
+export function RunnerActions(props: { id: string; userId: string; serverAccess: boolean; canManage?: boolean }) {
   const locale = useLocale(), t = () => artifactMessages.resolve([locale()]).t, a = () => advancedMessages.resolve([locale()]).t;
   const [busy, setBusy] = createSignal(false);
   async function action(run: () => Promise<unknown>) {
@@ -19,14 +20,10 @@ export function RunnerActions(props: { id: string; userId: string; serverAccess:
     { label: t().copyAppLink, icon: "ti ti-link", action: () => action(() => navigator.clipboard.writeText(new URL(runnerHref(props.id), location.origin).href)) },
     ...(props.serverAccess ? [
       { label: t().fork, icon: "ti ti-copy", action: () => action(async () => {
+        if (!await prompts.confirm(t().forkConfirm, { title: t().fork, confirmText: t().fork })) return;
         const { artifactClient } = await import("./client");
-        const { navigateTo } = await import("@k2b/ssr/nav");
         const copy = await artifactClient.fork(props.id);
-        navigateTo((await artifactClient.editChat(copy.id)).href);
-      }) },
-      { label: "Secrets", icon: "ti ti-key", action: () => action(async () => {
-        const { openSecretsDialog } = await import("./SecretsDialog");
-        await openSecretsDialog({ resourceId: props.id });
+        navigateTo((await artifactClient.editChat(copy.id, true)).href);
       }) },
     ] : []),
     { label: a().local, icon: "ti ti-device-desktop", action: () => action(async () => {
@@ -34,5 +31,14 @@ export function RunnerActions(props: { id: string; userId: string; serverAccess:
       await openDataDialog(props.id, props.serverAccess ? props.userId : "public-visitor", "local", a().local);
     }) },
   ];
-  return <Dropdown.Root items={items()}><Dropdown.Trigger iconOnly variant="ghost" label={t().actions} disabled={busy()}><i class="ti ti-dots" aria-hidden="true" /></Dropdown.Trigger></Dropdown.Root>;
+  return <>
+    <Show when={props.canManage}>
+      <Button size="sm" variant="ghost" disabled={busy()} onClick={() => navigateTo(`/app/assistant/apps/${props.id}`)}>
+        <i class="ti ti-settings" aria-hidden="true" />{t().manage}
+      </Button>
+    </Show>
+    <Dropdown.Root items={items()} position="top-right">
+      <Dropdown.Trigger size="sm" iconOnly variant="ghost" label={t().actions} disabled={busy()}><i class="ti ti-dots" aria-hidden="true" /></Dropdown.Trigger>
+    </Dropdown.Root>
+  </>;
 }

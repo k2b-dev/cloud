@@ -1,8 +1,10 @@
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import { query } from "@k2b/stdlib/solid";
-import { Button, confirmDiscardIfDirty, Placeholder, prompts, SettingsGroup, SettingsModal, StatusBadge, TextInput, toast } from "@k2b/ui";
+import { Button, confirmDiscardIfDirty, Placeholder, prompts, SettingsGroup, SettingsModal, TextInput, toast } from "@k2b/ui";
 import type { AiProject, AiProjectAccess } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import {
   type AssistantLiveHub,
   type AssistantLiveInvalidation,
@@ -16,9 +18,6 @@ const readError = async (response: Pick<Response, "json">, fallback: string) => 
   const body = (await response.json().catch(() => null)) as { message?: string } | null;
   return body?.message || fallback;
 };
-
-const permissionTone = (permission: AiProjectAccess["permission"]) =>
-  permission === "admin" ? ("warning" as const) : permission === "write" ? ("ok" as const) : ("neutral" as const);
 
 function ProjectSettings(props: { project: AiProject; close: () => void }) {
   const text = useAssistantText();
@@ -39,7 +38,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
       if (!projectId) return [];
       const response = await coreClient.ai.projects[":projectId"].access.$get({ param: { projectId } });
       if (!response.ok) throw new Error(await readError(response, text("Failed to load Project access")));
-      return (await response.json()).access as AiProjectAccess[];
+      return (await response.json()).access;
     },
   });
   const live = useAssistantLive();
@@ -142,8 +141,9 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
               icon="ti ti-shield"
               description={text("People and groups with direct access to this Project.")}
             >
-              <SettingsGroup title={text("Project access")} description={text("Cloud resolves direct and nested group membership at request time.")}>
+              <SettingsGroup title={text("Project access")} description={text("Changes apply immediately. At least one administrator must remain.")}>
                 <Show
+                  keyed
                   when={access.data()}
                   fallback={
                     <Placeholder
@@ -160,20 +160,32 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
                     />
                   }
                 >
-                  {(entries) => (
-                    <Show when={entries().length > 0} fallback={<Placeholder title={text("No additional access")} />}>
-                      <ul class="flex flex-col gap-3">
-                        <For each={entries()}>
-                          {(entry) => (
-                            <li class="flex items-center justify-between gap-3 text-sm">
-                              <span class="min-w-0 truncate text-primary">{entry.displayName || entry.principal.type}</span>
-                              <StatusBadge label={entry.permission} tone={permissionTone(entry.permission)} variant="chip" />
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Show>
-                  )}
+                  {(entries) => <PermissionEditor
+                    initialEntries={entries}
+                    canEdit
+                    allowPublic={false}
+                    allowServiceAccounts
+                    grantAccess={async (principal, permission) => {
+                      const response = await coreClient.ai.projects[":projectId"].access.$post({
+                        param: { projectId: props.project.id },
+                        json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission },
+                      });
+                      if (!response.ok) throw new Error(await readError(response, text("Could not update Project access")));
+                      return (await response.json()).access;
+                    }}
+                    updateAccess={async (accessId, permission) => {
+                      const response = await coreClient.ai.projects[":projectId"].access[":accessId"].$patch({
+                        param: { projectId: props.project.id, accessId }, json: { permission },
+                      });
+                      if (!response.ok) throw new Error(await readError(response, text("Could not update Project access")));
+                    }}
+                    revokeAccess={async (accessId) => {
+                      const response = await coreClient.ai.projects[":projectId"].access[":accessId"].$delete({
+                        param: { projectId: props.project.id, accessId },
+                      });
+                      if (!response.ok) throw new Error(await readError(response, text("Could not update Project access")));
+                    }}
+                  />}
                 </Show>
               </SettingsGroup>
             </SettingsModal.Tab>

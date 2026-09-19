@@ -2,6 +2,8 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  "Changes apply immediately. At least one administrator must remain.": "Änderungen gelten sofort. Mindestens eine Person muss Administrator bleiben.",
+  "Could not update Project access": "Projektzugriff konnte nicht geändert werden",
   "Link a Skill": "Skill verknüpfen",
   "Search Skills…": "Skills suchen…",
   "Members can read and use linked Skills. Editing permissions stay unchanged.": "Mitglieder können verknüpfte Skills lesen und nutzen. Bearbeitungsrechte bleiben unverändert.",
