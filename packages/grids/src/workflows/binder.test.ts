@@ -712,6 +712,36 @@ steps:
     }
   });
 
+  test("atomic delete binds one record and its audit values", async () => {
+    for (const target of ["inputs.item", "inputs.item.Current archive", "inputs.items"]) {
+      const result = await compileAndBindGridsWorkflowSource(
+        `inputs:
+  item: {type: record, table: Items}
+  items: {type: recordList, table: Items}
+steps:
+  - atomicRecords:
+      locks: [inputs.item]
+      checks:
+        - table: Items
+          where: [{field: Status, op: equals, value: Open}]
+          assert: notEmpty
+      changes:
+        - deleteRecord:
+            record: ${JSON.stringify(target)}
+            audit:
+              aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa: "\${{ inputs.item.Name }}"
+`,
+        catalog(),
+      );
+      expect(result.ok, JSON.stringify(result)).toBe(target !== "inputs.items");
+      if (result.ok)
+        expect(result.plan.bindings["steps.0.atomicRecords.changes.0.deleteRecord.audit.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]).toBe(
+          ids.name,
+        );
+      else expect(result.diagnostics.some((diagnostic) => diagnostic.code === "reference.type")).toBe(true);
+    }
+  });
+
   test("atomic GQL checks pin their own query and reject untyped or interpolated input", async () => {
     const source = `inputs:
   item: { type: record, table: Items, required: true }

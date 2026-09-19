@@ -240,7 +240,7 @@ Run options are configured separately from the workflow source. One workflow can
 | `deleteRecord` | `record` | `audit`, `saveAs` | Checks permission and predicts moving a non-finalized Record to trash, not destroying it |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers keyed by audit-question UUID | Validates and predicts the record update |
 | `createRecord` | `table`, non-empty `values` | `copyFrom`, `copyFields`, `saveAs` | Validates and predicts the new record |
-| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Check `message`; update `ifVersion`/`audit`; 1–50 `validateDocuments` | Evaluates checks and predicts changes without locking or writing |
+| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Check `message`; update `ifVersion`; update/delete `audit`; 1–50 `validateDocuments` | Evaluates checks and predicts changes without locking or writing |
 | `generateDocument` | `template` + `record`, or `data` + `output` | `filename`, up to 20 `tags`, `associatedData`, `saveAs` | Validates access and values; does not generate |
 | `createDocumentLink` | `document` output reference | `expiresIn` (`1d`, `7d`, `30d`, `90d`; default `30d`), `comment`, `saveAs` | Validates the document and access; does not create a link |
 | `sendEmail` | `template`, 1–50 `to` recipients | `data` with up to 200 keys, `saveAs` | Validates template, recipients, data, and access; does not send |
@@ -341,7 +341,7 @@ The starter labels the action **Correction** or **Cancellation**; its run option
 
 The `generateDocument` result includes `business`, the stored company context of a record Document. For example, `${{ issued.business.legalName }}` reads the original issuer name; `${{ issued.business }}` can be copied to a JSON snapshot field for a correction. It never reads current Base settings. Query-generated Documents have `business: null`.
 
-`deleteRecord` trashes one non-finalized Record, never destroys it. Permission, mutation-policy and required `audit` checks apply; `saveAs` returns its reference. Not supported inside `atomicRecords.changes`.
+`deleteRecord` trashes one non-finalized Record, never destroys it. Permission, mutation-policy and required `audit` checks apply; `saveAs` returns its reference. Inside `atomicRecords.changes`, use `deleteRecord: {record, audit?}` to apply the same trash operation after locked checks; `saveAs` belongs to the standalone action.
 
 **Four-eyes Finalization** cannot be bypassed by `finalizeRecord`: request it from the Record; a different current approver-group member approves. Direct mode instead permits writers to finalize through Workflows, API, CLI and Record actions.
 
@@ -354,7 +354,7 @@ The `generateDocument` result includes `business`, the stored company context of
 :::reference
 - **locks:** Record or record-list references, such as `inputs.item` or `inputs.items`, acquired in stable order before checks. Duplicates count once; explicit locks, change targets and `validateDocuments` targets together may include at most 100 distinct records. Empty lists add no locks. Every competing workflow must lock the same coordination record for the same business decision.
 - **checks:** Choose `query: {source, parameters}` or `table` with 1–20 AND-combined `where` predicates (`field`, `op`, optional `value`/`caseInsensitive`). `assert: empty|notEmpty` tests row existence; optional `message` explains failure.
-- **changes:** An ordered list of `createRecord`, `updateRecord`, or `finalizeRecord` entries. Create uses `table` and non-empty `values`; optional `finalize: true` creates and finalizes the new Record in this transaction. It requires enabled direct Finalization. A failed finalization leaves no draft behind. Update uses `record`, non-empty `set`, optional `ifVersion`, and optional `audit` answers. Finalize uses `record` and requires enabled direct Finalization; it does not bypass Four-eyes approval. Finalize after the required updates. A later rejected change rolls back the finalization too.
+- **changes:** An ordered list of `createRecord`, `updateRecord`, `deleteRecord`, or `finalizeRecord` entries. Create uses `table` and non-empty `values`; optional `finalize: true` creates and finalizes the new Record in this transaction. It requires enabled direct Finalization. A failed finalization leaves no draft behind. Update uses `record`, non-empty `set`, optional `ifVersion`, and optional `audit` answers. Delete uses `record` and optional `audit` answers; its target is locked automatically, and it moves only mutable records to trash without destroying retained data. Finalize uses `record` and requires enabled direct Finalization; it does not bypass Four-eyes approval. Finalize after the required updates. A later rejected change rolls back the finalization too.
 - **transaction:** Permissions and row scope are rechecked. Records, relations, audit, outbox and outcome commit together or roll back together.
 :::
 

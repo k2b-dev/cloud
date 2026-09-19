@@ -241,7 +241,7 @@ Ausführungsoptionen werden getrennt von der Workflow-Quelle konfiguriert. Ein W
 | `deleteRecord` | `record` | `audit`, `saveAs` | Prüft Berechtigungen und sagt das Verschieben eines nicht festgeschriebenen Datensatzes in den Papierkorb vorher, keine Vernichtung |
 | `updateRecord` | `record`, nicht leeres `set` | Nach UUID der Audit-Frage indizierte `audit`-Antworten | Validiert die Datensatzaktualisierung und sagt sie vorher |
 | `createRecord` | `table`, nicht leere `values` | `copyFrom`, `copyFields`, `saveAs` | Validiert den neuen Datensatz und sagt ihn vorher |
-| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Prüfungs-`message`; Update-`ifVersion`/`audit`; 1–50 `validateDocuments` | Prüft und sagt Änderungen ohne Sperren oder Schreiben vorher |
+| `atomicRecords` | 1–100 `locks`, 1–50 `checks`, 1–50 `changes` | Prüfungs-`message`; Update-`ifVersion`; Update/Delete-`audit`; 1–50 `validateDocuments` | Prüft und sagt Änderungen ohne Sperren oder Schreiben vorher |
 | `generateDocument` | `template` + `record` oder `data` + `output` | `filename`, bis zu 20 `tags`, `associatedData`, `saveAs` | Validiert Zugriff und Werte; generiert nichts |
 | `createDocumentLink` | Ausgabereferenz `document` | `expiresIn` (`1d`, `7d`, `30d`, `90d`; Standard `30d`), `comment`, `saveAs` | Validiert Dokument und Zugriff; erstellt keinen Link |
 | `sendEmail` | `template`, 1–50 Empfänger unter `to` | `data` mit bis zu 200 Schlüsseln, `saveAs` | Validiert Vorlage, Empfänger, Daten und Zugriff; sendet nichts |
@@ -344,7 +344,7 @@ Das Ergebnis von `generateDocument` enthält `business`, den gespeicherten Unter
 
 `finalizeRecord` umgeht keine **Vier-Augen-Finalisierung**: Fordere sie am Datensatz an; ein anderes aktuelles Mitglied der Freigabegruppe genehmigt. Der Modus Direkt erlaubt dagegen Schreibberechtigten die Finalisierung über Workflows, API, CLI und Datensatzaktionen.
 
-`deleteRecord` verschiebt einen nicht festgeschriebenen Datensatz in den Papierkorb, ohne Vernichtung. Berechtigungen, Schreibregeln und nötige `audit`-Antworten werden geprüft; `saveAs` liefert seine Referenz. Nicht in `atomicRecords.changes` unterstützt.
+`deleteRecord` verschiebt einen nicht festgeschriebenen Datensatz in den Papierkorb, ohne Vernichtung. Berechtigungen, Schreibregeln und nötige `audit`-Antworten werden geprüft; `saveAs` liefert seine Referenz. Innerhalb von `atomicRecords.changes` führt `deleteRecord: {record, audit?}` dieselbe Papierkorb-Aktion nach den gesperrten Prüfungen aus; `saveAs` gehört zur eigenständigen Aktion.
 
 ### Zusammengehörige Datensatzänderungen gemeinsam festschreiben
 
@@ -355,7 +355,8 @@ Das Ergebnis von `generateDocument` enthält `business`, den gespeicherten Unter
 :::reference
 - **locks:** Datensatz- oder Listenreferenzen wie `inputs.item` oder `inputs.items`, vor Prüfungen in stabiler Reihenfolge gesperrt. Duplikate zählen einmal; explizite Sperren, Änderungsziele und `validateDocuments`-Ziele dürfen zusammen höchstens 100 verschiedene Datensätze umfassen. Leere Listen sperren nichts. Jeder konkurrierende Workflow muss denselben Koordinationsdatensatz für dieselbe fachliche Entscheidung sperren.
 - **checks:** Wähle `query: {source, parameters}` oder `table` mit 1–20 AND-verknüpften `where`-Prädikaten (`field`, `op`, optional `value`/`caseInsensitive`). `assert: empty|notEmpty` prüft Zeilenexistenz; optional erklärt `message` den Fehler.
-- **changes:** Geordnete Liste aus Einträgen `createRecord`, `updateRecord` oder `finalizeRecord`. Erstellen verwendet `table` und nicht leere `values`; optionales `finalize: true` erstellt und finalisiert den neuen Datensatz in dieser Transaktion. Dafür muss direkte Finalisierung aktiviert sein. Bei fehlgeschlagener Finalisierung bleibt kein Entwurf zurück. Aktualisieren verwendet `record`, nicht leeres `set`, optional `ifVersion` und optionale `audit`-Antworten. Finalisieren verwendet `record` und benötigt aktivierte direkte Finalisierung; die Vier-Augen-Freigabe wird nicht umgangen. Finalisiere nach den nötigen Aktualisierungen. Eine später abgelehnte Änderung nimmt auch die Finalisierung zurück.
+- **changes:** Geordnete Liste aus Einträgen `createRecord`, `updateRecord`, `deleteRecord` oder `finalizeRecord`. Erstellen verwendet `table` und nicht leere `values`; optionales `finalize: true` erstellt und finalisiert den neuen Datensatz in dieser Transaktion. Dafür muss direkte Finalisierung aktiviert sein. Bei fehlgeschlagener Finalisierung bleibt kein Entwurf zurück. Aktualisieren verwendet `record`, nicht leeres `set`, optional `ifVersion` und optionale `audit`-Antworten. Finalisieren verwendet `record` und benötigt aktivierte direkte Finalisierung; die Vier-Augen-Freigabe wird nicht umgangen. Finalisiere nach den nötigen Aktualisierungen. Eine später abgelehnte Änderung nimmt auch die Finalisierung zurück.
+- **deleteRecord:** Nutzt `record` und optionale `audit`-Antworten. Das Ziel wird automatisch gesperrt. Nur veränderbare Datensätze werden in den Papierkorb verschoben; aufbewahrte Daten werden nicht vernichtet. Eine spätere fehlgeschlagene Änderung rollt auch das Löschen zurück.
 - **transaction:** Berechtigungen und Zeilenbereich werden erneut geprüft. Datensätze, Relationen, Audit, Outbox und Ergebnis werden gemeinsam festgeschrieben oder zurückgerollt.
 :::
 

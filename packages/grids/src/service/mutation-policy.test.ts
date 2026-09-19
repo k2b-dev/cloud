@@ -39,8 +39,28 @@ describe("mutation policy workflow impact", () => {
     expect(workflowMutatesTable(candidate, TABLE)).toBe(true);
     expect(workflowMutatesTable(candidate, OTHER_TABLE)).toBe(false);
   });
+  test("finds atomic delete targets including a related record table", () => {
+    for (const related of [false, true]) {
+      const candidate = plan(
+        [
+          action(["steps", 0], "atomicRecords", {
+            changes: [{ deleteRecord: { record: related ? "inputs.items.Parent" : "inputs.items" } }],
+          }),
+        ],
+        {
+          "inputs.items.table": TABLE,
+          ...(related ? { "steps.0.atomicRecords.changes.0.deleteRecord.record.$relationTarget": OTHER_TABLE } : {}),
+        },
+      );
+      expect(workflowMutatesTable(candidate, TABLE)).toBe(!related);
+      expect(workflowMutatesTable(candidate, OTHER_TABLE)).toBe(related);
+    }
+  });
   test("finds nested updates through record-list aliases", () => {
-    for (const [operation, key] of [["deleteRecord", "record"], ["createCorrectionDraft", "original"]] as const) {
+    for (const [operation, key] of [
+      ["deleteRecord", "record"],
+      ["createCorrectionDraft", "original"],
+    ] as const) {
       const candidate = plan([action(["steps", 0], operation, { [key]: "inputs.items" })], { "inputs.items.table": TABLE });
       expect(workflowMutatesTable(candidate, TABLE)).toBe(true);
       expect(workflowMutatesTable(candidate, OTHER_TABLE)).toBe(false);

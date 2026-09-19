@@ -132,6 +132,10 @@ const mutationTargets = (
           const target = recordTableForReference(change.updateRecord.record, scope, bindings, [...changePath, "updateRecord", "record"]);
           if (target) targets.add(target);
         }
+        if (change.deleteRecord && typeof change.deleteRecord === "object" && !Array.isArray(change.deleteRecord)) {
+          const target = recordTableForReference(change.deleteRecord.record, scope, bindings, [...changePath, "deleteRecord", "record"]);
+          if (target) targets.add(target);
+        }
         if (change.finalizeRecord && typeof change.finalizeRecord === "object" && !Array.isArray(change.finalizeRecord)) {
           const target = recordTableForReference(change.finalizeRecord.record, scope, bindings, [
             ...changePath,

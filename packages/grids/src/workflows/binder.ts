@@ -697,6 +697,11 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
         if (!rawChange || typeof rawChange !== "object" || Array.isArray(rawChange)) return;
         const change = rawChange as Record<string, WorkflowJsonValue>;
         const basePath = [...path, "changes", changeIndex];
+        if (change.deleteRecord && typeof change.deleteRecord === "object" && !Array.isArray(change.deleteRecord)) {
+          expectReference(change.deleteRecord.record, "grids.record", "record", [...basePath, "deleteRecord", "record"], scope, context);
+          if (change.deleteRecord.audit !== undefined)
+            bindValue(change.deleteRecord.audit, [...basePath, "deleteRecord", "audit"], scope, context);
+        }
         if (change.finalizeRecord && typeof change.finalizeRecord === "object" && !Array.isArray(change.finalizeRecord)) {
           expectReference(
             change.finalizeRecord.record,

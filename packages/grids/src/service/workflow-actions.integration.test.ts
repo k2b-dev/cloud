@@ -3484,6 +3484,147 @@ steps:
     }
   });
 
+  for (const mode of ["commit", "rollback", "finalized", "revoked", "policy", "audit-required", "audit-present", "dry-run"] as const) {
+    postgresTest(`atomicRecords deleteRecord ${mode} preserves the canonical trash boundary`, async () => {
+      const fixture = createFixture();
+      const questionId = uuid();
+      const commits = mode === "commit" || mode === "audit-present";
+      try {
+        await insertFixture(fixture);
+        const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+        if (!history.ok) throw history.error;
+        if (mode === "finalized") {
+          const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+          if (!activation.ok) throw activation.error;
+          const finalization = await finalizeRecord({
+            tableId: fixture.tableId,
+            recordId: fixture.recordId,
+            actorId: fixture.actorId,
+            origin: "direct",
+          });
+          if (!finalization.ok) throw finalization.error;
+        }
+        if (mode === "audit-required" || mode === "audit-present") {
+          await sql`UPDATE grids.tables SET audit_policy = ${{ delete: { enabled: true, questions: [{ id: questionId, label: "Reason", type: "text", required: true }] } }}::jsonb WHERE id = ${fixture.tableId}::uuid`;
+        }
+        const runId = await queueRun(fixture, {
+          mode: mode === "dry-run" ? "dryRun" : "execute",
+          plan: boundPlan(
+            [
+              actionStep(0, "atomicRecords", {
+                locks: ["inputs.record"],
+                checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+                changes: [
+                  {
+                    deleteRecord: {
+                      record: "inputs.record",
+                      ...(mode === "audit-present" ? { audit: { [questionId]: "Mistaken line" } } : {}),
+                    },
+                  },
+                  ...(mode === "rollback" ? [{ updateRecord: { record: "inputs.record", set: { Status: "Changed" } } }] : []),
+                ],
+              }),
+            ],
+            {
+              "steps.0.atomicRecords.checks.0.table": fixture.tableId,
+              "steps.0.atomicRecords.checks.0.where.0.field": fixture.statusFieldId,
+              ...(mode === "rollback" ? { "steps.0.atomicRecords.changes.1.updateRecord.set.Status.$target": fixture.statusFieldId } : {}),
+            },
+          ),
+          inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+        });
+        if (mode === "revoked")
+          await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM grids.base_access WHERE base_id = ${fixture.baseId}::uuid)`;
+        if (mode === "policy") {
+          const policy = await updateMutationPolicy(fixture.tableId, { mode: "selected", sources: ["direct"] }, fixture.actorId);
+          if (!policy.ok) throw policy.error;
+        }
+        if (mode === "dry-run") {
+          expect(await drive(runId, "dryRun")).toBe("succeeded");
+        } else {
+          expect(await drive(runId)).toBe(commits ? "succeeded" : "failed");
+          if (commits) {
+            await reopenForReplay(runId);
+            expect(await drive(runId)).toBe("succeeded");
+          }
+        }
+        const [record] = await sql`SELECT deleted_at, data FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+        expect(Boolean(record.deleted_at)).toBe(commits);
+        expect(record.data[fixture.statusFieldId]).toBe("Open");
+        const audits =
+          await sql`SELECT id FROM grids.audit_log WHERE record_id = ${fixture.recordId}::uuid AND action = 'workflow.record.deleted'`;
+        expect(audits).toHaveLength(commits ? 1 : 0);
+        const events =
+          await sql`SELECT id FROM grids.record_event_outbox WHERE record_id = ${fixture.recordId}::uuid AND payload->>'type' = 'record.deleted'`;
+        expect(events).toHaveLength(commits ? 1 : 0);
+        const revisions = await listRecordRevisions({ tableId: fixture.tableId, recordId: fixture.recordId });
+        expect(revisions.ok).toBe(true);
+        if (revisions.ok) expect(revisions.data.items.filter((revision) => revision.action === "deleted")).toHaveLength(commits ? 1 : 0);
+      } finally {
+        await cleanupFixture(fixture);
+      }
+    });
+  }
+
+  postgresTest("atomicRecords deleteRecord locks its target before evaluating checks", async () => {
+    const fixture = createFixture();
+    const held = Promise.withResolvers<number>();
+    const release = Promise.withResolvers<void>();
+    let holding: Promise<unknown> | undefined;
+    let execution: Promise<string> | undefined;
+    try {
+      await insertFixture(fixture);
+      const runId = await queueRun(fixture, {
+        plan: boundPlan(
+          [
+            actionStep(0, "atomicRecords", {
+              // The explicit list contributes no locks. The delete target must do so.
+              locks: ["inputs.records"],
+              checks: [{ table: "Tasks", where: [{ field: "Status", op: "equals", value: "Open" }], assert: "notEmpty" }],
+              changes: [{ deleteRecord: { record: "inputs.record" } }],
+            }),
+          ],
+          {
+            "steps.0.atomicRecords.checks.0.table": fixture.tableId,
+            "steps.0.atomicRecords.checks.0.where.0.field": fixture.statusFieldId,
+          },
+        ),
+        inputs: {
+          record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId },
+          records: [],
+        },
+      });
+      holding = sql.begin(async (tx) => {
+        await tx`SELECT id FROM grids.records WHERE id = ${fixture.recordId}::uuid FOR UPDATE`;
+        const [backend] = await tx`SELECT pg_backend_pid() AS pid`;
+        held.resolve(backend.pid);
+        await release.promise;
+        await tx`UPDATE grids.records SET data = jsonb_set(data, ARRAY[${fixture.statusFieldId}], '"Claimed"'::jsonb) WHERE id = ${fixture.recordId}::uuid`;
+      });
+      void holding.catch(held.reject);
+      const blocker = await held.promise;
+      execution = drive(runId);
+      let waiting = false;
+      for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+        const [state] =
+          await sql`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND ${blocker}::int = ANY(pg_blocking_pids(pid))) AS waiting`;
+        waiting = state.waiting;
+        if (!waiting) await Bun.sleep(10);
+      }
+      expect(waiting).toBe(true);
+      release.resolve();
+      await holding;
+      expect(await execution).toBe("failed");
+      expect((await runRow(runId)).error).toMatchObject({ code: "ATOMIC_CHECK_FAILED" });
+      const [record] = await sql`SELECT deleted_at FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+      expect(record.deleted_at).toBeNull();
+    } finally {
+      release.resolve();
+      await Promise.allSettled([holding, execution].filter((promise) => promise !== undefined));
+      await cleanupFixture(fixture);
+    }
+  });
+
   for (const finalized of [false, true]) {
     postgresTest(`deleteRecord ${finalized ? "refuses finalized records" : "moves drafts to trash once across replay"}`, async () => {
       const fixture = createFixture();

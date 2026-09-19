@@ -297,6 +297,23 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
               {
                 kind: "object",
                 properties: {
+                  deleteRecord: {
+                    kind: "object",
+                    properties: {
+                      record: {
+                        kind: "string",
+                        minLength: 1,
+                        maxLength: 500,
+                        description: "Existing record reference to move to trash after the checks pass.",
+                      },
+                      audit: auditAnswers,
+                    },
+                  },
+                },
+              },
+              {
+                kind: "object",
+                properties: {
                   finalizeRecord: {
                     kind: "object",
                     properties: {
@@ -359,7 +376,7 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
               },
             ],
           },
-          description: "Record creates, updates and finalizations committed in order. A later failure rolls back every change.",
+          description: "Record creates, updates, deletions and finalizations committed in order. A later failure rolls back every change.",
         },
         validateDocuments: {
           kind: "array",

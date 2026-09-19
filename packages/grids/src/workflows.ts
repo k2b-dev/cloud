@@ -1244,8 +1244,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         for (let index = 0; index < config.changes.length; index += 1) {
           const change = config.changes[index]!;
           if ("createRecord" in change) continue;
-          const kind = "updateRecord" in change ? "updateRecord" : "finalizeRecord";
-          const reference = "updateRecord" in change ? change.updateRecord.record : change.finalizeRecord.record;
+          const kind = "updateRecord" in change ? "updateRecord" : "deleteRecord" in change ? "deleteRecord" : "finalizeRecord";
+          const reference =
+            "updateRecord" in change
+              ? change.updateRecord.record
+              : "deleteRecord" in change
+                ? change.deleteRecord.record
+                : change.finalizeRecord.record;
           const record = await recordReference(ctx, reference, `changes.${index}.${kind}.record`);
           if (record.planned)
             throw actionError(
@@ -1306,6 +1311,33 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const updated: RuntimeRecord[] = [];
         for (let changeIndex = 0; changeIndex < config.changes.length; changeIndex += 1) {
           const change = config.changes[changeIndex]!;
+          if ("deleteRecord" in change) {
+            const record = await recordReference(ctx, change.deleteRecord.record, `changes.${changeIndex}.deleteRecord.record`);
+            await effectAccess.requireTable(record.tableId);
+            requireOk(
+              await softDeleteInTransaction(
+                tx,
+                record.tableId,
+                record.recordId,
+                actorId(scope),
+                "workflow",
+                auditAnswerPayload(ctx, change.deleteRecord.audit),
+                invocationLocale(ctx),
+              ),
+            );
+            await logAudit(
+              {
+                baseId: scope.baseId,
+                tableId: record.tableId,
+                recordId: record.recordId,
+                userId: actorId(scope),
+                action: "workflow.record.deleted",
+                diff: { workflowRecordDeletion: { old: null, new: workflowAuditMeta(scope) } },
+              },
+              tx,
+            );
+            continue;
+          }
           if ("finalizeRecord" in change) {
             const record = await recordReference(ctx, change.finalizeRecord.record, `changes.${changeIndex}.finalizeRecord.record`);
             await effectAccess.requireTable(record.tableId);
@@ -1488,6 +1520,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               await listFields(tableId),
               atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values),
             );
+          } else if ("deleteRecord" in change) {
+            const record = await recordReference(ctx, change.deleteRecord.record, `changes.${changeIndex}.deleteRecord.record`);
+            await readableRecord(ctx, scope, record, "write");
+            requireOk(await assertMutationAllowed(sql, record.tableId, "workflow", invocationLocale(ctx)));
+            requireOk(await assertRecordMutable(sql, record.tableId, record.recordId, invocationLocale(ctx)));
+            auditAnswerPayload(ctx, change.deleteRecord.audit);
           } else if ("finalizeRecord" in change) {
             const record = await recordReference(ctx, change.finalizeRecord.record, `changes.${changeIndex}.finalizeRecord.record`);
             await readableRecord(ctx, scope, record, "write");
