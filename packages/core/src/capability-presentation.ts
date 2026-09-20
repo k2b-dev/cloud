@@ -19,6 +19,14 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "ai.task.run.read": {
+          title: "Ausführung einer Hintergrundaufgabe lesen",
+          description: "Zeigt Ergebnis, Fehler und isolierten Ausführungsverlauf einer eigenen Aufgabe. Verwenden Sie Aufgaben- und Ausführungs-IDs aus ai.task.read. Für eine blockierte Aufgabe zuerst die Berechtigungen mit ai.task.update prüfen und ändern, danach ai.task.run aufrufen.",
+          input: {
+            taskId: "Öffentliche ID der eigenen Aufgabe aus ai.task.read.",
+            occurrenceId: "ID der konkreten Ausführung aus ai.task.read.",
+          },
+        },
         "entities.search": {
           title: "Empfänger für Zugriffsrechte suchen",
           description: "Sucht sichtbare Benutzer, Gruppen und Dienstkonten für Berechtigungen. Öffentliche und angemeldete Benutzer sind explizite Empfänger und keine Suchergebnisse.",
@@ -231,8 +239,13 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.task.create": {
           title: "Eine geplante AI-Aufgabe erstellen",
           description:
-            "Erstellen Sie eine überprüfte zukünftige Eingabeaufforderung in einer eigenen AI-Konversation. Lösen Sie den relativen Benutzerwortlaut vor dem Aufruf in „localAt“ auf.",
+            "Erstellen Sie eine autonome Aufgabe in einer eigenen AI-Konversation. Ermitteln Sie vorher die benötigten Capabilities und lassen Sie deren Berechtigungsumfang prüfen. Immer bestätigungspflichtige Capabilities und interaktive Browser-/Code-Mode-Werkzeuge sind im Hintergrund nicht verfügbar. Lösen Sie relative Zeitangaben vor dem Aufruf in localAt auf.",
           input: {
+            grants: "Geprüfte Capability-Berechtigungen für die gesamte Aufgabe.",
+            "grants[].appId": "ID der App, die die Capability bereitstellt.",
+            "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
+            "grants[].kind": "Operationstyp: query für Lesen oder action für Änderungen.",
+            "grants[].fixedInput": "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
             chatId: "Lesbare sechsstellige AI-Konversation ID.",
             prompt: "Genaue Aufforderung zur Übermittlung an diesen Chat, wenn die Aufgabe ausgeführt wird.",
             schedule: "Wann diese Aufgabe ausgeführt werden soll.",
@@ -270,8 +283,13 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.task.update": {
           title: "Eine geplante AI-Aufgabe aktualisieren",
           description:
-            "Aktualisieren Sie die Eingabeaufforderung oder den zukünftigen Zeitplan einer eigenen Aufgabe, nachdem Sie den genauen Ersatz überprüft haben.",
+            "Aktualisieren Sie Aufforderung, zukünftigen Zeitplan oder Capability-Berechtigungen einer eigenen Aufgabe nach Prüfung des genauen Ersatzes. Lesen Sie bei fehlenden Rechten zuerst Aufgabe und fehlgeschlagene Ausführung. Lassen Sie erweiterte Rechte ausdrücklich prüfen und berücksichtigen Sie bereits ausgeführte Änderungen vor einem erneuten Start.",
           input: {
+            grants: "Vollständige Ersatzliste der Berechtigungen; erfordert Benutzerprüfung. Weglassen erhält bestehende Berechtigungen.",
+            "grants[].appId": "ID der App, die die Capability bereitstellt.",
+            "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
+            "grants[].kind": "Operationstyp: query für Lesen oder action für Änderungen.",
+            "grants[].fixedInput": "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
             taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
             prompt: "Beim Ausführen der Aufgabe wird eine Ersatzaufforderung bereitgestellt.",
             schedule: "Einmaliger oder wiederkehrender Ersatzplan.",

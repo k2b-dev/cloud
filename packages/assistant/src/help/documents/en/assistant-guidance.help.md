@@ -68,7 +68,7 @@ Treat generated facts, calculations, external actions, and changes to important 
 - Check the selected model and the status shown by the composer when no response starts.
 - Split a large request into a small first result and a follow-up instead of repeating an overloaded prompt.
 
-## Open or share a Studio app
+## Open or share a Studio app {icon="share"}
 
 App users open the standalone view without the Assistant sidebar. App managers
 can select **Open fullscreen** in the header or **Copy app link** from the action menu. The link always

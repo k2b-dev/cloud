@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { assistantAiSettingsState, isAssistantChatTurn, selectAssistantAiModelId } from "./assistant-models";
 import { aiModelAccess } from "./model-access";
+import * as transcription from "./transcription";
 import * as settings from "./settings";
 import type { AiPublicModelProfile } from "./types";
 
@@ -15,6 +16,7 @@ const models: AiPublicModelProfile[] = ["restricted", "allowed"].map((id) => ({
 }));
 afterEach(() => mock.restore());
 const setup = (allowed = models.slice(1)) => {
+  spyOn(transcription, "resolveAiAudioModel").mockRejectedValue(new Error("No audio model configured"));
   spyOn(settings, "listAiModels").mockResolvedValue(models);
   spyOn(settings, "toPublicAiSettingsState").mockResolvedValue({
     ok: true,
@@ -46,6 +48,8 @@ describe("Assistant model boundary", () => {
     expect(status.defaultModelId).toBe("allowed");
     expect(status.models.map((model) => model.id)).toEqual(["allowed"]);
     expect(status.visionModelConfigured).toBe(true);
+    expect(status.audioModelConfigured).toBe(false);
+    expect(transcription.resolveAiAudioModel).toHaveBeenCalledTimes(1);
   });
   test("locked and platform-default policies never substitute another allowed model", async () => {
     setup();

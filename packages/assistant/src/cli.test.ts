@@ -325,7 +325,7 @@ describe("assistant CLI", () => {
       {
         path: "/api/ai/tasks",
         method: "POST",
-        body: { chatId: "cHt234", prompt: "Check the release.", schedule: { kind: "once", localAt: "2099-06-15T09:30" } },
+        body: { chatId: "cHt234", prompt: "Check the release.", schedule: { kind: "once", localAt: "2099-06-15T09:30" }, grants: [] },
       },
       { path: "/api/ai/tasks/tSk234/run", method: "POST", body: null },
     ]);

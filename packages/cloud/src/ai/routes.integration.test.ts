@@ -1,3 +1,5 @@
+import { redis } from "bun";
+import * as platformSettings from "../services/settings";
 import { describe, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { createTestSession } from "../services/session/test-fixture";
@@ -33,9 +35,19 @@ const insertUser = async (): Promise<string> => {
 
 describe("global AI route registration", () => {
   test("mounts personalization learning activity behind authentication", async () => {
-    const response = await aiRoutes.request("/memory-learning-runs?page=1&perPage=20");
-    expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ message: "Authentication required" });
+    const config = spyOn(platformSettings, "get").mockResolvedValue(100);
+    const counter = spyOn(redis, "send").mockResolvedValue([1, 0, "1"]);
+    try {
+      const response = await aiRoutes.request("/memory-learning-runs?page=1&perPage=20");
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ message: "Authentication required" });
+      expect(response.headers.get("X-RateLimit-Limit")).toBe("100");
+      expect(counter).toHaveBeenCalledTimes(1);
+      expect(counter.mock.calls[0]?.[0]).toBe("EVAL");
+    } finally {
+      config.mockRestore();
+      counter.mockRestore();
+    }
   });
 });
 

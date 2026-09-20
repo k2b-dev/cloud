@@ -54,7 +54,8 @@ describe("Assistant frontend contracts", () => {
     expect(projectsDialog).not.toContain("divide-y");
     expect(projectsDialog).not.toContain("rounded-lg border");
     expect(projectsDialog).not.toContain("listProjects");
-    expect(project).toContain("openSpotlightSearch");
+    expect(project).toContain('import { openGlobalSearch } from "@k2b/cloud/browser/search"');
+    expect(project).toContain("openGlobalSearch(assistantProjectSearchOptions(props.project))");
     expect(project).toContain("copy().searchChatsIn({ project: props.project.name })");
     expect(project).not.toContain("TextInput");
     expect(project).toContain("IntersectionObserver");

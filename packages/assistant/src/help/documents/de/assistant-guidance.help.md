@@ -68,7 +68,7 @@ Behandle erzeugte Tatsachen, Berechnungen, externe Aktionen und Änderungen an w
 - Prüfe das ausgewählte Modell und den Status am Eingabefeld, wenn keine Antwort beginnt.
 - Teile eine große Anfrage in ein kleines erstes Ergebnis und eine Folgeanfrage auf, statt einen überladenen Prompt zu wiederholen.
 
-## Studio-App öffnen oder teilen
+## Studio-App öffnen oder teilen {icon="share"}
 
 App-Nutzer öffnen die eigenständige Ansicht ohne Assistant-Sidebar. App-Verwalter
 wählen oben **Vollbild öffnen** oder im Aktionsmenü **App-Link kopieren**. Der Link startet

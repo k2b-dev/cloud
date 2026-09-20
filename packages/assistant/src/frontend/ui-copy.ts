@@ -2,6 +2,9 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  "Loading…": "Wird geladen…",
+  "New": "Neu",
+  "Show more": "Mehr anzeigen",
   "Capability grants must be a JSON list.": "Aufgabenfreigaben müssen eine JSON-Liste sein.",
   "Active schedule": "Aktiver Zeitplan",
   "No capabilities approved yet. Ask in this chat to prepare permissions for the task.": "Noch keine Capabilities genehmigt. Bitte im Chat darum, die Freigaben für diese Aufgabe vorzubereiten.",

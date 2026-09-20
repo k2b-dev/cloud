@@ -1,3 +1,5 @@
+import { redis } from "bun";
+import * as platformSettings from "../services/settings";
 import { expect, spyOn, test } from "bun:test";
 import * as models from "./assistant-models";
 import * as settings from "./settings";
@@ -19,7 +21,18 @@ const balance = (scope: string) => ({
   bypassed: false,
 });
 test("quota endpoint requires authentication", async () => {
-  expect((await aiRoutes.request("/quotas")).status).toBe(401);
+  const config = spyOn(platformSettings, "get").mockResolvedValue(100);
+  const counter = spyOn(redis, "send").mockResolvedValue([1, 0, "1"]);
+  try {
+    const response = await aiRoutes.request("/quotas");
+    expect(response.status).toBe(401);
+    expect(response.headers.get("X-RateLimit-Limit")).toBe("100");
+    expect(counter).toHaveBeenCalledTimes(1);
+    expect(counter.mock.calls[0]?.[0]).toBe("EVAL");
+  } finally {
+    config.mockRestore();
+    counter.mockRestore();
+  }
 });
 test("disabled quotas skip account and usage queries", async () => {
   const config = spyOn(aiQuotas, "config").mockResolvedValue({ enabled: false, revision: 0, rules: [] });

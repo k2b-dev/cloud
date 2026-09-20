@@ -1,4 +1,4 @@
-import { createEffect } from "solid-js";
+import { createEffect, onCleanup, onMount } from "solid-js";
 import { useAiChatActions } from "./message-actions";
 
 export function AssistantMarkdownBlock(props: { html: string }) {
@@ -20,12 +20,26 @@ export function AssistantMarkdownBlock(props: { html: string }) {
       else files.delete(link);
     }
   });
-  return <div ref={element} class="assistant-markdown-block" innerHTML={props.html} onClick={event => {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !actions.onOpenFile) return;
-    const link = event.target instanceof Element ? event.target.closest("a") : null;
-    const path = link ? files.get(link) : undefined;
-    if (!path) return;
-    event.preventDefault();
-    actions.onOpenFile(path);
-  }} />;
+  onMount(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        !actions.onOpenFile
+      )
+        return;
+      const link = event.target instanceof Element ? event.target.closest("a") : null;
+      const path = link ? files.get(link) : undefined;
+      if (!path) return;
+      event.preventDefault();
+      actions.onOpenFile(path);
+    };
+    element.addEventListener("click", handleClick);
+    onCleanup(() => element.removeEventListener("click", handleClick));
+  });
+  return <div ref={element} class="assistant-markdown-block" innerHTML={props.html} />;
 }

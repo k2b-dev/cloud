@@ -169,6 +169,7 @@ describe("enrichDirtyAiConversations", () => {
 
     const summary = await enrichDirtyAiConversations({
       deps: {
+        readAdditionalInstructions: async () => "Use concise German summaries.",
         store,
         structured: fakeStructured(enrichment({ summary: "GQL join discussion.", keywords: ["GQL ", "Joins"], title: "GQL joins" }), calls),
         resolveModel: async () => fakeResolvedModel,
@@ -185,6 +186,7 @@ describe("enrichDirtyAiConversations", () => {
       dirtyAsOf: target.dirtyAsOf,
     });
     expect(calls[0]?.task).toBe("chat-enrich");
+    expect(calls[0]?.systemPrompt).toContain("Use concise German summaries.");
     expect(calls[0]?.input).toContain("Explain GQL joins");
     expect(recorded[0]).toMatchObject({ status: "ok", trigger: "scheduled", titleUpdated: true, keywordsCount: 2 });
   });
@@ -197,6 +199,7 @@ describe("enrichDirtyAiConversations", () => {
     let call = 0;
     const summary = await enrichDirtyAiConversations({
       deps: {
+        readAdditionalInstructions: async () => "",
         store,
         structured: async <TOutput extends z.ZodType>(input: RunAiStructuredInput<TOutput>) => {
           call += 1;
@@ -219,6 +222,7 @@ describe("enrichDirtyAiConversations", () => {
       const { store, failed, recorded } = makeStore([target], [stored(1, userMessage("hello"))]);
       const summary = await enrichDirtyAiConversations({
         deps: {
+          readAdditionalInstructions: async () => "",
           store,
           structured: async () => {
             throw error;
@@ -238,6 +242,7 @@ describe("enrichDirtyAiConversations", () => {
 
     await enrichDirtyAiConversations({
       deps: {
+        readAdditionalInstructions: async () => "",
         store,
         structured: async <TOutput extends z.ZodType>(_input: RunAiStructuredInput<TOutput>): Promise<RunAiStructuredResult<TOutput>> => {
           throw new Error("provider down");
@@ -256,7 +261,12 @@ describe("enrichDirtyAiConversations", () => {
 
     const summary = await enrichDirtyAiConversations({
       conversationId: target.id,
-      deps: { store, structured: fakeStructured(enrichment()), resolveModel: async () => fakeResolvedModel },
+      deps: {
+        readAdditionalInstructions: async () => "",
+        store,
+        structured: fakeStructured(enrichment()),
+        resolveModel: async () => fakeResolvedModel,
+      },
     });
 
     expect(summary.enriched).toBe(1);
@@ -270,7 +280,12 @@ describe("enrichDirtyAiConversations", () => {
     const calls: RunAiStructuredInput<z.ZodType>[] = [];
 
     const summary = await enrichDirtyAiConversations({
-      deps: { store, structured: fakeStructured(enrichment(), calls), resolveModel: async () => fakeResolvedModel },
+      deps: {
+        readAdditionalInstructions: async () => "",
+        store,
+        structured: fakeStructured(enrichment(), calls),
+        resolveModel: async () => fakeResolvedModel,
+      },
     });
 
     expect(summary).toEqual({ scanned: 1, enriched: 0, titlesUpdated: 0, skipped: 1, failed: 0 });
@@ -283,6 +298,7 @@ describe("enrichDirtyAiConversations", () => {
     const { store } = makeStore([conversation()], []);
     const summary = await enrichDirtyAiConversations({
       deps: {
+        readAdditionalInstructions: async () => "",
         store,
         structured: fakeStructured(enrichment()),
         resolveModel: async () => {
