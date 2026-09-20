@@ -21,6 +21,7 @@ export {
   type AiChatTaskView,
   AiConversationIdSchema,
   ChatTaskIdSchema,
+  ChatTaskGrantsSchema,
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,

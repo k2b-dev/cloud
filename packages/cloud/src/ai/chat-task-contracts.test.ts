@@ -38,6 +38,21 @@ describe("scheduled chat task contracts", () => {
     });
   });
 
+  test("binds the exact reviewed capability grant scope into create idempotency", () => {
+    const input = {
+      chatId: "cHt234",
+      prompt: "Summarize mail",
+      schedule: { kind: "cron" as const, cron: "0 9 * * *" },
+      grants: [{ appId: "notebooks", capabilityId: "note.edit", kind: "action" as const, fixedInput: { noteId: "note-a" } }],
+    };
+    expect(chatTaskCreateFingerprint(input)).not.toBe(
+      chatTaskCreateFingerprint({ ...input, grants: [{ ...input.grants[0]!, fixedInput: { noteId: "note-b" } }] }),
+    );
+    expect(chatTaskCreateFingerprint(input)).not.toBe(
+      chatTaskCreateFingerprint({ ...input, grants: [{ ...input.grants[0]!, fixedInput: {} }] }),
+    );
+  });
+
   test("includes the reviewed timezone in create idempotency", () => {
     const input = {
       chatId: "cHt234",

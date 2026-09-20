@@ -2,6 +2,8 @@ import {
   AiChatTaskIdempotencyConflictError,
   AiConversationIdSchema,
   ChatTaskIdSchema,
+  ChatTaskOccurrenceIdSchema,
+  ChatTaskGrantsSchema,
   ChatTaskScheduleInputSchema as ScheduleInputSchema,
   aiChatTasks,
   chatTaskCreateFingerprint,
@@ -18,12 +20,24 @@ import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime
 
 const APP_ID = "core";
 const CreateSchema = z
-  .object({ chatId: AiConversationIdSchema, prompt: z.string().trim().min(1).max(10_000), schedule: ScheduleInputSchema })
+  .object({
+    chatId: AiConversationIdSchema,
+    prompt: z.string().trim().min(1).max(10_000),
+    schedule: ScheduleInputSchema,
+    grants: ChatTaskGrantsSchema.default([]),
+  })
   .strict();
 const UpdateSchema = z
-  .object({ prompt: z.string().trim().min(1).max(10_000).optional(), schedule: ScheduleInputSchema.optional() })
+  .object({
+    prompt: z.string().trim().min(1).max(10_000).optional(),
+    schedule: ScheduleInputSchema.optional(),
+    grants: ChatTaskGrantsSchema.optional(),
+  })
   .strict()
-  .refine((value) => value.prompt !== undefined || value.schedule !== undefined, "Provide a prompt or schedule");
+  .refine(
+    (value) => value.prompt !== undefined || value.schedule !== undefined || value.grants !== undefined,
+    "Provide a prompt, schedule or grants",
+  );
 const ListSchema = z
   .object({
     chatId: AiConversationIdSchema.optional(),
@@ -51,6 +65,47 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     const query = c.req.valid("query");
     return respond(c, ok((await aiChatTasks.list({ userId: owner, ...query })).map(toAiChatTaskView)));
   })
+  .get(
+    "/tasks/activities",
+    v(
+      "query",
+      z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), offset: z.coerce.number().int().min(0).default(0) }).strict(),
+    ),
+    async (c) => {
+      const owner = userId(c);
+      if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));
+      const page = await aiChatTasks.listActivities({ userId: owner, ...c.req.valid("query") });
+      return respond(
+        c,
+        ok({
+          ...page,
+          items: page.items.map((item) => ({
+            ...item,
+            task: toAiChatTaskView(item.task),
+            occurrence: toAiChatTaskOccurrenceView(item.occurrence, item.task.shortId),
+          })),
+        }),
+      );
+    },
+  )
+  .get("/tasks/:taskId/occurrences/:occurrenceId", async (c) => {
+    const owner = userId(c);
+    if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));
+    const task = ChatTaskIdSchema.safeParse(c.req.param("taskId"));
+    const occurrence = ChatTaskOccurrenceIdSchema.safeParse(c.req.param("occurrenceId"));
+    if (!task.success || !occurrence.success) return respond(c, fail(err.badInput("Invalid task or occurrence ID")));
+    const detail = await aiChatTasks.getOccurrenceDetail({ userId: owner, taskId: task.data, occurrenceId: occurrence.data });
+    return detail
+      ? respond(
+          c,
+          ok({
+            ...detail,
+            task: toAiChatTaskView(detail.task),
+            occurrence: toAiChatTaskOccurrenceView(detail.occurrence, detail.task.shortId),
+          }),
+        )
+      : respond(c, fail(err.notFound("Task run")));
+  })
   .get("/tasks/status", async (c) => {
     const owner = userId(c);
     if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));
@@ -76,6 +131,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     }
     let normalized: Awaited<ReturnType<typeof normalizeChatTaskSchedule>>;
     try {
+      await aiChatTasks.validateGrants(input.grants);
       normalized = await normalizeChatTaskSchedule(input.schedule);
     } catch (error) {
       return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Invalid schedule")));
@@ -86,6 +142,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
         userId: owner,
         chatId: input.chatId,
         prompt: input.prompt,
+        grants: input.grants,
         ...normalized,
         idempotencyKey: idempotencyKey.data,
         idempotencyFingerprint,
@@ -122,11 +179,18 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     const input = c.req.valid("json");
     let normalized: Partial<Awaited<ReturnType<typeof normalizeChatTaskSchedule>>> = {};
     try {
+      if (input.grants !== undefined) await aiChatTasks.validateGrants(input.grants);
       if (input.schedule) normalized = await normalizeChatTaskSchedule(input.schedule);
     } catch (error) {
       return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Invalid schedule")));
     }
-    const task = await aiChatTasks.update({ userId: owner, taskId: parsed.data, prompt: input.prompt, ...normalized });
+    const task = await aiChatTasks.update({
+      userId: owner,
+      taskId: parsed.data,
+      prompt: input.prompt,
+      grants: input.grants,
+      ...normalized,
+    });
     if (!task) return respond(c, fail(err.notFound("Task")));
     reconcileSoon();
     return respond(c, ok(toAiChatTaskView(task)));

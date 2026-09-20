@@ -76,6 +76,59 @@ const assistantMessage = (text: string): Message => ({
 const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "none" as const } };
 
 suite("AI conversation store integration", () => {
+  test("an interactive turn defers new background results without losing or compacting them", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Hello") });
+      await aiConversations.claimTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", leaseMs: 30_000, from: "queue", maxAttempts: 50, runBudgetMs: 60_000 });
+      const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground" });
+      await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, meta)
+        VALUES (${createAiShortId()}, ${chat.id}, 2, 'message', 'assistant', ${JSON.stringify(assistantMessage("Background result"))}::text::jsonb,
+          '{"scheduledTask":{"taskId":"task","occurrenceId":"run"}}'::jsonb)`;
+      await sql`UPDATE ai.conversations SET background_received_at = now() WHERE id = ${chat.id}`;
+      expect((await session.load()).map(entry => entry.message)).toEqual([userMessage("Hello")]);
+      // Nessi's next local sequence is already occupied by the delivered result.
+      await session.append(assistantMessage("Foreground answer"), { seq: 2 });
+      expect((await session.load()).map(entry => entry.seq)).toEqual([1, 3]);
+      expect((await aiConversations.listMessages({ conversationId: chat.id })).map(message => message.seq)).toEqual([1, 2, 3]);
+      await aiConversations.compactMessages({ conversationId: chat.id, turnId: turn.id, checkpointSeq: 3, summary: assistantMessage("Summary") });
+      const context = await aiConversations.listContextMessages({ conversationId: chat.id });
+      expect(context.map(message => message.seq)).toEqual([2, 3]);
+      expect((await session.load()).map(entry => entry.seq)).toEqual([3]);
+      expect((await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).map(item => item.id)).toContain(chat.id);
+      await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", status: "completed" });
+      const next = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Next") });
+      expect((await aiConversations.createSessionStore({ conversationId: chat.id, turnId: next.turn.id }).load()).some(entry => JSON.stringify(entry.message).includes("Background result"))).toBe(true);
+    } finally { await cleanupFixture({ userId, conversationIds: [chat.id] }); }
+  });
+
+  test("background turns and summaries stay isolated from the active conversation turn", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const background = { taskId: "task", occurrenceId: "run", context: [{ seq: 1, kind: "message" as const, message: userMessage("Existing context") }] };
+    try {
+      const [bg] = await sql<{ id: string }[]>`INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
+        VALUES (${createAiShortId()}, ${chat.id}, 'test-model', 'queued', ${JSON.stringify({ ...runConfig, background })}::text::jsonb) RETURNING id`;
+      await aiConversations.claimTurn({ conversationId: chat.id, turnId: bg!.id, leaseOwner: "background", leaseMs: 30_000, from: "queue", maxAttempts: 50, runBudgetMs: 60_000 });
+      expect(await aiConversations.getActiveTurn({ conversationId: chat.id })).toBeNull();
+      expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
+      const foreground = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Interact now") });
+      expect((await aiConversations.getActiveTurn({ conversationId: chat.id }))?.turn.id).toBe(foreground.turn.id);
+      const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: bg!.id, leaseOwner: "background", background });
+      await session.append(assistantMessage("Isolated summary"), { kind: "summary", seq: 200 });
+      await session.append(assistantMessage("Isolated answer"), { seq: 201 });
+      expect((await session.load()).map(entry => entry.seq)).toEqual([1, 2, 3]);
+      const aggregate: LoopAggregate = { turns: [], usage: { input: 1, output: 2, total: 3 }, issueCount: 0, issues: [], toolCallCount: 0, toolErrorCount: 0, toolIssueCount: 0, toolMalformedCount: 0, toolCancelledCount: 0, toolIssues: [], assistantMessageCount: 1 };
+      await aiConversations.setLatestAssistantLoopAggregate({ conversationId: chat.id, loopId: bg!.id, aggregate, doneReason: "stop" });
+      const transcript = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: bg!.id });
+      expect(transcript.at(-1)?.loopAggregate?.usage).toEqual(aggregate.usage);
+      expect(transcript.map(message => message.loopId)).toEqual([bg!.id, bg!.id]);
+      expect(transcript.map(message => message.kind)).toEqual(["summary", "message"]);
+      expect((await aiConversations.listMessages({ conversationId: chat.id })).map(message => message.message)).toEqual([userMessage("Interact now")]);
+    } finally { await cleanupFixture({ userId, conversationIds: [chat.id] }); }
+  });
+
   test("fork preserves the versions referenced by inline draft files", async () => {
     const userId = await insertUser();
     const source = await aiConversations.createConversation({ ownerUserId: userId });

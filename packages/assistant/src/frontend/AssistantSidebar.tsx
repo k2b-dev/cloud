@@ -1,3 +1,4 @@
+import { openAssistantActivities } from "./AssistantActivitiesDialog";
 import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { assistantSearchOptions, assistantProjectSearchOptions, assistantProjectsSearchOptions } from "./assistant-search";
@@ -78,6 +79,8 @@ function AssistantSearchButton(props: { project?: AiProject; currentChat?: boole
   );
 }
 
+type DonePhase = "saving" | "confirmed" | "leaving";
+
 function ConversationSidebarItem(props: {
   conversation: AiConversation;
   active: boolean;
@@ -85,23 +88,15 @@ function ConversationSidebarItem(props: {
   edit: (conversation: AiConversation) => void;
   project?: AiProject;
   update: (conversation: AiConversation) => void;
+  donePhase?: DonePhase;
+  toggleDone: (conversation: AiConversation) => Promise<void>;
 }) {
   const text = useAssistantText();
   const locale = useLocale();
   const [previewOpen, setPreviewOpen] = createSignal(false);
-  const [saving, setSaving] = createSignal(false);
+  const saving = () => props.donePhase !== undefined;
   const busy = () => ["queued", "running", "needs_attention", "waiting_for_browser"].includes(props.conversation.runStatus);
-  const toggleDone = async () => {
-    if (saving()) return;
-    setSaving(true);
-    try {
-      props.update(await assistantApi.setConversationDone(props.conversation.id, !props.conversation.isDone));
-    } catch {
-      toast.error(text("Could not update chat. Stop the response first or try again."));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const toggleDone = () => props.toggleDone(props.conversation);
   const href = () => assistantConversationHref("/app/assistant", props.conversation.id);
   const handleClick = (event: MouseEvent) => {
     // Keep modified clicks native. Plain clicks must not put the network request
@@ -122,7 +117,7 @@ function ConversationSidebarItem(props: {
   return (
     <AppWorkspace.SidebarItem
       href={href()}
-      class={`assistant-chat-sidebar-item${!props.conversation.isDone && !props.conversation.pinnedAt ? " assistant-chat-sidebar-item--done-action" : ""}`}
+      class={`assistant-chat-sidebar-item${props.donePhase ? ` assistant-chat-sidebar-item--${props.donePhase}` : ""}${!props.conversation.isDone && !props.conversation.pinnedAt ? " assistant-chat-sidebar-item--done-action" : ""}`}
       variant={props.conversation.isDone ? "row" : "card"}
       context={
         !props.conversation.isDone ? (
@@ -161,7 +156,7 @@ function ConversationSidebarItem(props: {
         ),
       }}
     >
-      <AppWorkspace.SidebarItemLabel marquee={false}>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
+      <AppWorkspace.SidebarItemLabel marquee={false}>{props.conversation.title}<Show when={props.conversation.hasActiveSchedule}><i class="assistant-chat-schedule-icon ti ti-clock" role="img" aria-label={text("Active schedule")} title={text("Active schedule")} /></Show></AppWorkspace.SidebarItemLabel>
       <Show when={!props.conversation.pinnedAt}>
         <AppWorkspace.SidebarItemAction
           icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
@@ -173,11 +168,11 @@ function ConversationSidebarItem(props: {
                 : text("Mark chat done")
           }
           disabled={saving() || (!props.conversation.isDone && busy())}
-          visibility="hover"
+          visibility={props.conversation.isDone ? "hover" : "always"}
           onSelect={() => void toggleDone()}
         >
           <Show when={!props.conversation.isDone} fallback={<i class="ti ti-arrow-back-up" aria-hidden="true" />}>
-            <i class="ti ti-check" aria-hidden="true" /><span>{text("Done")}</span>
+            <i class={props.donePhase === "saving" ? "ti ti-loader-2 animate-spin motion-reduce:animate-none" : "ti ti-check"} aria-hidden="true" /><span role="status">{text("Done")}</span>
           </Show>
         </AppWorkspace.SidebarItemAction>
       </Show>
@@ -189,8 +184,43 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const text = useAssistantText();
-  const activeConversations = () => props.conversations().filter((conversation) => !conversation.isDone);
-  const doneConversations = () => props.conversations().filter((conversation) => conversation.isDone);
+  const [doneFeedback, setDoneFeedback] = createSignal<ReadonlyMap<string, { conversation: AiConversation; phase: DonePhase; index: number }>>(new Map());
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  let disposed = false;
+  onCleanup(() => { disposed = true; for (const timer of timers) clearTimeout(timer); });
+  const clearFeedback = (id: string) => setDoneFeedback(current => { const next = new Map(current); next.delete(id); return next; });
+  const setPhase = (id: string, phase: DonePhase) => setDoneFeedback(current => {
+    const entry = current.get(id);
+    return entry ? new Map(current).set(id, { ...entry, phase }) : current;
+  });
+  const later = (action: () => void, delay: number) => {
+    const timer = setTimeout(() => { timers.delete(timer); if (!disposed) action(); }, delay);
+    timers.add(timer);
+  };
+  const toggleDone = async (conversation: AiConversation) => {
+    if (doneFeedback().has(conversation.id)) return;
+    setDoneFeedback(current => new Map(current).set(conversation.id, { conversation, phase: "saving", index: props.conversations().findIndex(item => item.id === conversation.id) }));
+    try {
+      const updated = await assistantApi.setConversationDone(conversation.id, !conversation.isDone);
+      if (disposed) return;
+      props.onConversationUpdated?.(updated);
+      if (conversation.isDone) { clearFeedback(conversation.id); return; }
+      setPhase(conversation.id, "confirmed");
+      later(() => { setPhase(conversation.id, "leaving"); later(() => clearFeedback(conversation.id), 150); }, 450);
+    } catch {
+      if (disposed) return;
+      clearFeedback(conversation.id);
+      toast.error(text("Could not update chat. Stop the response first or try again."));
+    }
+  };
+  const visibleConversations = () => {
+    const retained = doneFeedback();
+    const current = props.conversations().filter(item => !retained.has(item.id));
+    for (const item of [...retained.values()].sort((a, b) => a.index - b.index)) current.splice(Math.max(0, Math.min(item.index, current.length)), 0, item.conversation);
+    return current;
+  };
+  const activeConversations = () => visibleConversations().filter(conversation => !conversation.isDone);
+  const doneConversations = () => visibleConversations().filter(conversation => conversation.isDone);
   const activeView = () => props.activeView ?? "chat";
   const activeProjectId = () => (activeView() === "chat" ? (props.activeProjectId ?? null) : null);
   const activeConversationId = () => (activeView() === "chat" && !activeProjectId() ? (props.activeConversationId?.() ?? null) : null);
@@ -304,6 +334,8 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         {(conversation) => (
           <ConversationSidebarItem
             conversation={conversation}
+            donePhase={doneFeedback().get(conversation.id)?.phase}
+            toggleDone={toggleDone}
             active={conversation.id === activeConversationId()}
             project={props.projects?.find((project) => project.id === conversation.projectId)}
             open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
@@ -320,7 +352,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   );
   const collapsedChatMenu = () => chatConversations().map((conversation) => ({
     label: conversation.title,
-    icon: conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message",
+    icon: conversation.pinnedAt ? "ti ti-pin text-accent" : conversation.hasActiveSchedule ? "ti ti-clock" : "ti ti-message",
     action: () => openConversationFromCommand(conversation),
   }));
 
@@ -329,13 +361,12 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     const project = searchProject();
     openGlobalSearch(project ? assistantProjectSearchOptions(project) : assistantSearchOptions(locale()));
   };
-  const [savingIds, setSavingIds] = createSignal<ReadonlySet<string>>(new Set());
   const chatItem = (conversation: AiConversation): NavigationItem => {
     const busy = ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
     return {
       id: `chat:${conversation.id}`,
       label: conversation.title,
-      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message",
+      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : conversation.hasActiveSchedule ? "ti ti-clock" : "ti ti-message",
       href: assistantConversationHref("/app/assistant", conversation.id),
       action: `chat:${conversation.id}`,
       active: activeConversationId() === conversation.id,
@@ -353,7 +384,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                     ? text("Stop the response before marking it done")
                     : text("Mark chat done"),
                 icon: conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check",
-                disabled: savingIds().has(conversation.id) || (!conversation.isDone && busy),
+                disabled: doneFeedback().has(conversation.id) || (!conversation.isDone && busy),
               },
             ]
           : []),
@@ -413,6 +444,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           })),
         ],
       },
+      { id: "activities", action: "activities", label: text("Background activity"), icon: "ti ti-inbox" },
       { id: "preferences", action: "preferences", label: t().personalize, icon: "ti ti-user-cog" },
     ],
     onAction: async (action) => {
@@ -434,6 +466,10 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       }
       if (action === "search") {
         await openSearch();
+        return;
+      }
+      if (action === "activities") {
+        await openAssistantActivities(props.live);
         return;
       }
       if (action === "preferences") {
@@ -480,15 +516,8 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           ),
           panelDialogOptions,
         );
-      } else if (kind === "done" && !savingIds().has(conversation.id)) {
-        setSavingIds((ids) => new Set([...ids, conversation.id]));
-        try {
-          props.onConversationUpdated?.(await assistantApi.setConversationDone(conversation.id, !conversation.isDone));
-        } catch {
-          toast.error(text("Could not update chat. Stop the response first or try again."));
-        } finally {
-          setSavingIds((ids) => new Set([...ids].filter((id) => id !== conversation.id)));
-        }
+      } else if (kind === "done") {
+        await toggleDone(conversation);
       }
     },
   });
@@ -538,6 +567,8 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                   {(conversation) => (
                     <ConversationSidebarItem
                       conversation={conversation}
+                      donePhase={doneFeedback().get(conversation.id)?.phase}
+                      toggleDone={toggleDone}
                       active={conversation.id === activeConversationId()}
                       open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
                       edit={(item) => void openEditor(item)}
@@ -553,6 +584,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
             <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
+            <AppWorkspace.SidebarItem icon="ti ti-inbox" title={text("Background activity")} onClick={() => void openAssistantActivities(props.live)}>{text("Background activity")}</AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}
             </AppWorkspace.SidebarItem>
@@ -561,6 +593,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <AppWorkspace.SidebarItem icon="ti ti-check" title={text("Done")} onClick={() => openAllChats(true)}>{text("Done")}</AppWorkspace.SidebarItem>
             <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
+            <AppWorkspace.SidebarItem icon="ti ti-inbox" title={text("Background activity")} onClick={() => void openAssistantActivities(props.live)}>{text("Background activity")}</AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" title={t().personalize} onClick={() => void openAssistantPrefsModal()}>{t().personalize}</AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>

@@ -215,17 +215,21 @@ asynchronous when the target is busy.
 
 ## Scheduled chat tasks
 
-Tasks store a prompt that is delivered back into one Assistant chat. They are
-not directly attached to Projects; a chat in a Project loads current Project
-context when the task runs. One-time `--at` values are local wall-clock times
-in `app.timezone`, with the exact format `YYYY-MM-DDTHH:mm`. Recurring tasks use
-a five-field cron expression in the same timezone.
+Tasks belong to a chat, but each run uses an independent execution history.
+It starts from completed chat context and reads current files, memories, and
+Project resources. Interactive chatting can continue while it runs. Results and
+failures are delivered to the original chat, reopening it and updating its
+activity time. One-time `--at` values are local wall-clock times in `app.timezone`,
+with the exact format `YYYY-MM-DDTHH:mm`. Recurring tasks use a five-field cron
+expression in the same timezone.
 
 ```bash
 cld assistant tasks list
 cld assistant tasks status
 cld assistant tasks list --chat <chat-id> --state active
 cld assistant tasks get <task-id>
+cld assistant tasks activities --limit 50
+cld assistant tasks run-get <task-id> <occurrence-id>
 cld assistant tasks create --chat <chat-id> --prompt "Check the release" --at 2026-08-12T09:30
 cld assistant tasks create --chat <chat-id> --prompt-file ./weekly-review.md --cron "0 9 * * 1"
 cld assistant tasks update <task-id> --at 2026-08-13T10:00
@@ -234,6 +238,31 @@ cld assistant tasks resume <task-id>
 cld assistant tasks run <task-id>
 cld assistant tasks delete <task-id> --yes
 ```
+
+Capability grants are a JSON list. Each entry contains `appId`, `capabilityId`,
+`kind` (`query` or `action`), and `fixedInput`. Fixed fields must match exactly;
+`{}` allows any input within the caller's current access. Omitting grants when
+creating a task gives it no capability grants. Updating grants replaces the list.
+Always-approval actions cannot be preapproved.
+
+```json
+[
+  {
+    "appId": "notebooks",
+    "capabilityId": "note.edit",
+    "kind": "action",
+    "fixedInput": { "noteId": "<note-id>" }
+  }
+]
+```
+
+```bash
+cld assistant tasks update <task-id> --grants-file ./grants.json --yes
+```
+
+Read capabilities and resolve resource IDs before proposing grants. Ask the user
+to approve the actual scope, including unrestricted fields, before using `--yes`.
+An existing remembered chat approval does not authorize a background task.
 
 Use `tasks status` before creating a schedule when you need to confirm the
 effective application timezone. `tasks get` includes recent occurrence history. A terminal delivery or turn

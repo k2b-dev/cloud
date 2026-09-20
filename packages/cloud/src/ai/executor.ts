@@ -1,3 +1,7 @@
+import { createRunToolStore } from "./capabilities";
+import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
+import { AiCapabilityExecutionError } from "./capability-execution";
+import { aiChatTasks } from "./chat-tasks";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { AiRunTimeout } from "./run-timeout";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
@@ -570,6 +574,7 @@ export class AiTurnExecutor {
       startSeq: claim.liveSeq,
       leaseOwner: this.config.leaseOwner,
       seedBlocks: claim.liveBlocks ?? [],
+      background: claim.runConfig?.kind !== "compact" && Boolean(claim.runConfig?.background),
       allowRememberedApprovals: aiTurnAllowsRememberedApprovals(claim.runConfig),
     });
     const runConfig = claim.runConfig;
@@ -659,6 +664,7 @@ export class AiTurnExecutor {
     let chatId = config.chatId ?? "";
     let allowedTools: string[] | null = null;
     try {
+      if (config.background && !config.mandate) throw new Error("Background execution requires its task mandate.");
       const [nextMaterial, conversation] = await Promise.all([
         materializeChatConfig(config, abortController.signal, turnId),
         aiConversations.getConversation({ conversationId }),
@@ -783,7 +789,12 @@ export class AiTurnExecutor {
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
     const allowed = allowedTools === null ? null : new Set(allowedTools);
-    const activeTools = toolsSupported ? runtimeTools.filter((tool) => !allowed || allowed.has(tool.def.name)) : [];
+    const activeTools = toolsSupported
+      ? runtimeTools.filter(
+          (tool) =>
+            (!allowed || allowed.has(tool.def.name)) && !(config.mandate && CODE_RUNTIME_TOOL_NAMES.some((name) => name === tool.def.name)),
+        )
+      : [];
     const memoryToolEnabled = activeTools.some((tool) => tool.def.name === "memory");
     const projectToolEnabled = activeTools.some((tool) => tool.def.name === "search_project");
 
@@ -812,6 +823,7 @@ export class AiTurnExecutor {
       actor: material.actor,
       conversationId,
     });
+    let backgroundError: string | null = null;
     const rememberableCapabilityApprovals = new Map<string, string>();
     const capabilityActionReviews = new Map<string, CapabilityActionReview>();
     pipeline.setFrontendModes(prepared.frontendModes);
@@ -846,6 +858,7 @@ export class AiTurnExecutor {
       return;
     }
     const store = aiConversations.createSessionStore({
+      background: config.background,
       onMessage: async (message) => {
         if (message.message.role === "assistant") await pipeline.timing.finishGeneration();
         await pipeline.emitMessage(message);
@@ -880,6 +893,7 @@ export class AiTurnExecutor {
 
     const appliedSteers: AiTurnSteer[] = [];
 
+    const toolStore = config.background ? createRunToolStore(await aiConversations.getLoadedTools({ conversationId })) : aiConversations;
     const tools = toolActor
       ? createAiToolResolver({
           conversationId,
@@ -887,7 +901,7 @@ export class AiTurnExecutor {
           staticTools: activeTools,
           allowedTools,
           runtimeContext: dynamicToolRuntimeContext,
-          store: aiConversations,
+          store: toolStore,
           ...(capabilityAuthority ? { listRegistry: listCapabilities } : {}),
           onCapabilityRegistryError: (error) =>
             log.warn("AI Capability registry unavailable; continuing without app capabilities", {
@@ -910,6 +924,25 @@ export class AiTurnExecutor {
                   }),
               }
             : {}),
+          ...(config.background && config.mandate
+            ? {
+                authorizeBackground: async (entry, args) => {
+                  try {
+                    await aiChatTasks.authorizeCapability({
+                      mandate: config.mandate!,
+                      appId: entry.appId,
+                      capabilityId: entry.operation.localId,
+                      kind: entry.kind,
+                      input: args,
+                      approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+                    });
+                  } catch (error) {
+                    backgroundError = error instanceof Error ? error.message : "Background capability access denied";
+                    throw error;
+                  }
+                },
+              }
+            : {}),
           onReview: (callId, review) => {
             capabilityActionReviews.set(callId, review);
             if (review.approvalScope) rememberableCapabilityApprovals.set(callId, review.approvalScope);
@@ -918,6 +951,16 @@ export class AiTurnExecutor {
             ? {
                 execute: async (entry, args, context) => {
                   try {
+                    if (config.background && config.mandate) {
+                      await aiChatTasks.authorizeCapability({
+                        mandate: config.mandate,
+                        appId: entry.appId,
+                        capabilityId: entry.operation.localId,
+                        kind: entry.kind,
+                        input: args,
+                        approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+                      });
+                    }
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,
@@ -947,6 +990,12 @@ export class AiTurnExecutor {
                     }
                     return result;
                   } catch (error) {
+                    if (
+                      config.background &&
+                      error instanceof AiCapabilityExecutionError &&
+                      (error.status === 401 || error.status === 403 || error.code === "ACTION_OUTCOME_UNKNOWN")
+                    )
+                      backgroundError = error.message;
                     const resources = collectConversationResourceObservations(args);
                     if (resources.length) {
                       await indexConversationResources({ conversationId, turnId, callId: context.callId, resources });
@@ -975,7 +1024,12 @@ export class AiTurnExecutor {
         })
       : prepared.tools;
 
-    const loadedSkills = await loadSelectedAiSkills(config.selectedSkillIds ?? [], turnId, skillSubject, activeTools.some(tool => tool.def.name === "load_skill"));
+    const loadedSkills = await loadSelectedAiSkills(
+      config.selectedSkillIds ?? [],
+      turnId,
+      skillSubject,
+      activeTools.some((tool) => tool.def.name === "load_skill"),
+    );
     const workingPlan = (await aiConversations.getConversation({ conversationId }))?.todoPlan;
     const systemPrompt = composeAiSystemPrompt({
       globalInstructions: settings.globalInstructions,
@@ -1041,14 +1095,16 @@ export class AiTurnExecutor {
       temperature: resolved.profile.temperature,
       maxOutputTokens: resolved.profile.maxOutputTokens,
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
-      compact: createCloudCompactFn({
-        conversationId,
-        turnId,
-        modelProfileId: resolved.profile.id,
-        additionalInstructions: settings.compactionInstructions,
-        maxOutputTokens: resolved.profile.maxOutputTokens,
-        signal: abortController.signal,
-      }),
+      compact: config.background
+        ? undefined
+        : createCloudCompactFn({
+            conversationId,
+            turnId,
+            modelProfileId: resolved.profile.id,
+            additionalInstructions: settings.compactionInstructions,
+            maxOutputTokens: resolved.profile.maxOutputTokens,
+            signal: abortController.signal,
+          }),
       maxToolResultChars: resolveAiToolResultMaxChars({
         contextWindow: resolved.provider.contextWindow,
         configuredMaxChars: settings.maxToolResultChars,
@@ -1074,6 +1130,9 @@ export class AiTurnExecutor {
       capabilityActionReviews,
       appliedSteers,
       noteToolRound: toolRoundPolicy.noteToolRound,
+      onBackgroundBlocked: (message) => {
+        backgroundError = message;
+      },
     });
     signal.removeEventListener("abort", onSignal);
 
@@ -1097,7 +1156,14 @@ export class AiTurnExecutor {
       outcome.status = "failed";
       outcome.error = timeout.messageFor(promptLocale);
     }
-    const finalized = await this.finalize(conversationId, turnId, pipeline, outcome.status, outcome.error, "chat");
+    const finalized = await this.finalize(
+      conversationId,
+      turnId,
+      pipeline,
+      backgroundError ? "failed" : outcome.status,
+      backgroundError ?? outcome.error,
+      "chat",
+    );
     if (finalized === "pending_steering" && outcome.status === "completed" && !signal.aborted) {
       await this.runChat(conversationId, turnId, claim, config, pipeline, signal, true);
       return;
@@ -1126,6 +1192,7 @@ export class AiTurnExecutor {
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
     appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
+    onBackgroundBlocked?: (message: string) => void;
   }): Promise<AttemptOutcome> {
     const {
       loop,
@@ -1159,6 +1226,7 @@ export class AiTurnExecutor {
             allowRememberedApprovals,
             rememberableCapabilityApprovals,
             capabilityActionReviews,
+            onBackgroundBlocked: input.onBackgroundBlocked,
           });
           if (suspended) {
             abortController.abort();
@@ -1250,6 +1318,7 @@ export class AiTurnExecutor {
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
+    onBackgroundBlocked?: (message: string) => void;
   }): Promise<boolean> {
     const {
       event,
@@ -1273,6 +1342,21 @@ export class AiTurnExecutor {
         : undefined;
     const approvalScope = capabilityApprovalScope ?? aiToolApprovalScope(toolName, approvalPolicy);
     const allowAlways = allowRememberedApprovals && (capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy));
+
+    const runConfig = await aiConversations.getTurnRunConfig({ conversationId, turnId });
+    if (runConfig?.kind !== "compact" && (runConfig?.background || runConfig?.mandate)) {
+      input.onBackgroundBlocked?.(
+        `Background operation ${toolName} requires ${event.kind === "client_tool" ? "an interactive browser" : "interactive approval"}. Update the task in the normal chat.`,
+      );
+      if (event.kind === "client_tool")
+        loop.push({
+          type: "tool_result",
+          callId: event.callId,
+          result: { error: "This operation requires an interactive browser and is unavailable in a background run." },
+        });
+      else loop.push({ type: "approval_response", callId: event.callId, approved: false });
+      return false;
+    }
 
     // Display-only client_view tools (e.g. cards) never need user input — resolve
     // inline and keep streaming instead of taking a full suspend/continuation trip.
@@ -1501,6 +1585,7 @@ class StreamPipeline {
   private readonly attempt: number;
   private readonly leaseOwner: string;
   private readonly mapper: ReturnType<typeof createEventMapper>;
+  private readonly background: boolean;
   private readonly allowRememberedApprovals: boolean;
   readonly timing: ReturnType<typeof createTurnTimingRecorder>;
   private lastSnapshotAt = 0;
@@ -1514,8 +1599,10 @@ class StreamPipeline {
     startSeq: number;
     leaseOwner: string;
     seedBlocks: AiTurnBlock[];
+    background?: boolean;
     allowRememberedApprovals: boolean;
   }) {
+    this.background = input.background ?? false;
     this.timing = createTurnTimingRecorder(input.turnId);
     this.conversationId = input.conversationId;
     this.turnId = input.turnId;
@@ -1677,6 +1764,7 @@ class StreamPipeline {
   }
 
   private publish(event: AiWireEvent): Promise<void> {
+    if (this.background) return Promise.resolve();
     return this.ordered(() => publishAiWireEvent(event).catch(() => undefined));
   }
 

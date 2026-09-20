@@ -40,7 +40,7 @@ const statePresentation = (state: AssistantChatTask["state"], text: (value: stri
   return { label: text("Needs attention"), tone: "warning" as const };
 };
 
-const occurrencePresentation = (state: AssistantChatTaskOccurrence["state"], text: (value: string) => string) => {
+export const occurrencePresentation = (state: AssistantChatTaskOccurrence["state"], text: (value: string) => string) => {
   if (state === "completed") return { label: text("Completed"), tone: "ok" as const };
   if (state === "failed") return { label: text("Failed"), tone: "error" as const };
   if (state === "running") return { label: text("Running"), tone: "running" as const };
@@ -52,7 +52,7 @@ export const formatAssistantTaskSchedule = (task: AssistantChatTask, locale = "e
     ? dates.formatDateTime(task.schedule.runAt, { locale, timeZone: task.timezone })
     : `${task.schedule.cron} · ${task.timezone}`;
 
-export function AssistantTasksView(props: { chatId: string }) {
+export function AssistantTasksView(props: { chatId: string; onOpenRun: (taskId: string, occurrenceId: string) => void }) {
   const locale = useLocale();
   const text = useAssistantText();
   const copy = useAssistantCopy();
@@ -70,6 +70,7 @@ export function AssistantTasksView(props: { chatId: string }) {
   onCleanup(unregister);
   const [timezone] = createResource(() => request<{ timezone: string }>("/tasks/status"));
   const [prompt, setPrompt] = createSignal("");
+  const [grants, setGrants] = createSignal("[]");
   const [kind, setKind] = createSignal<"once" | "cron">("once");
   const [runAt, setRunAt] = createSignal<string | null>(null);
   const [cron, setCron] = createSignal("0 9 * * 1-5");
@@ -123,6 +124,7 @@ export function AssistantTasksView(props: { chatId: string }) {
   const reset = () => {
     setEditing(null);
     setPrompt("");
+    setGrants("[]");
     setKind("once");
     setRunAt(null);
     setCron("0 9 * * 1-5");
@@ -134,6 +136,7 @@ export function AssistantTasksView(props: { chatId: string }) {
   const edit = (task: AssistantChatTask) => {
     setEditing(task);
     setPrompt(task.prompt);
+    setGrants(JSON.stringify(task.grants, null, 2));
     setKind(task.schedule.kind);
     setRunAt(task.schedule.kind === "once" ? task.schedule.runAt : null);
     setCron(task.schedule.kind === "cron" ? task.schedule.cron : "0 9 * * 1-5");
@@ -167,13 +170,17 @@ export function AssistantTasksView(props: { chatId: string }) {
     if (!prompt().trim() || (includeSchedule && (!schedule || scheduleError()))) return;
     setBusyAction("save");
     try {
+      const parsedGrants: unknown = JSON.parse(grants());
+      if (!Array.isArray(parsedGrants)) throw new Error(text("Capability grants must be a JSON list."));
+      const grantsChanged = !current || JSON.stringify(parsedGrants) !== JSON.stringify(current.grants);
+      if (grantsChanged && parsedGrants.length && !(await prompts.confirm(text("Approve these capabilities and fixed inputs for this task? Empty fixed inputs allow any input within your existing access.")))) return;
       await request(current ? `/tasks/${current.id}` : "/tasks", {
         method: current ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json", ...(current ? {} : { "Idempotency-Key": idempotencyKey() }) },
         body: JSON.stringify(
           current
-            ? { prompt: prompt().trim(), ...(includeSchedule && schedule ? { schedule } : {}) }
-            : { chatId: props.chatId, prompt: prompt().trim(), schedule },
+            ? { ...(grantsChanged ? { grants: parsedGrants } : {}), prompt: prompt().trim(), ...(includeSchedule && schedule ? { schedule } : {}) }
+            : { grants: parsedGrants, chatId: props.chatId, prompt: prompt().trim(), schedule },
         ),
       });
       reset();
@@ -216,7 +223,7 @@ export function AssistantTasksView(props: { chatId: string }) {
       <form class="flex flex-col gap-4 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4" onSubmit={save}>
         <div>
           <h3 class="font-semibold text-primary">{text(editing() ? "Edit task" : "Schedule a task")}</h3>
-          <p class="mt-1 text-sm text-secondary">{text("Tasks stay attached to this chat and use its current Project context when they run.")}</p>
+          <p class="mt-1 text-sm text-secondary">{text("Runs work independently using the completed chat context at their start. Files and memories remain live.")}</p>
         </div>
         <TextInput
           label={text("Prompt")}
@@ -229,6 +236,15 @@ export function AssistantTasksView(props: { chatId: string }) {
           error={promptError}
           disabled={busy()}
         />
+        <Show when={grants().trim() === "[]"}>
+          <InlineGuidance tone="info" icon="ti ti-info-circle">{text("No capabilities approved yet. Ask in this chat to prepare permissions for the task.")}</InlineGuidance>
+        </Show>
+        <details>
+          <summary class="cursor-pointer text-sm font-medium">{text("Task permissions")}</summary>
+          <TextInput label={text("Capabilities and fixed inputs")}
+            description={text("A JSON list of appId, capabilityId, kind and fixedInput. Empty fixedInput allows any input within your access. Always-approval actions remain blocked.")}
+            multiline lines={5} monospace value={grants} onValueChange={setGrants} disabled={busy()} />
+        </details>
         <Select
           label={text("Schedule")}
           value={kind}
@@ -410,7 +426,7 @@ export function AssistantTasksView(props: { chatId: string }) {
                                 {(message) => <span class="block text-xs text-red-600 dark:text-red-300">{message()}</span>}
                               </Show>
                             </span>
-                            <StatusBadge label={state().label} tone={state().tone} variant="text" />
+                            <div class="flex shrink-0 items-center gap-2"><StatusBadge label={state().label} tone={state().tone} variant="text" /><Button variant="ghost" size="xs" onClick={() => void props.onOpenRun(task().id, item.id)}>{text("Open run")}</Button></div>
                           </li>
                         );
                       }}

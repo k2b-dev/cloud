@@ -4,6 +4,7 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      backgroundRun: "Background run",
       tableLinks: "Links",
       tableOpen: "Open",
       tableEmpty: "No matching rows.",
@@ -20,6 +21,7 @@ const messages = i18n.define({
       byteRange: ({ start, end }: { start: string; end: string }) => `Bytes ${start}–${end}`,
     },
     de: {
+      backgroundRun: "Hintergrundlauf",
       tableLinks: "Links",
       tableOpen: "Öffnen",
       tableEmpty: "Keine passenden Zeilen.",

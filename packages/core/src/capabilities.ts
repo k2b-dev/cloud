@@ -20,7 +20,9 @@ import {
   aiConversations,
   aiSkills,
   ChatTaskIdSchema,
+  ChatTaskGrantsSchema,
   ChatTaskOccurrenceIdSchema,
+  toAiChatTaskOccurrenceView,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
   isConversationResourceCursor,
@@ -91,6 +93,9 @@ const ChatTaskCreateInputSchema = z
   .object({
     chatId: ChatIdSchema,
     prompt: z.string().trim().min(1).max(10_000).describe("Exact prompt to deliver to this chat when the task runs."),
+    grants: ChatTaskGrantsSchema.default([]).describe(
+      "Exact capabilities authorized for this task. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval actions cannot be granted.",
+    ),
     schedule: ChatTaskScheduleInputSchema.describe("When this task should run."),
     timezone: z.string().min(1).max(100).describe("Exact IANA timezone from the current runtime context."),
   })
@@ -99,13 +104,14 @@ const ChatTaskUpdateInputSchema = z
   .object({
     taskId: ChatTaskIdSchema,
     prompt: z.string().trim().min(1).max(10_000).optional().describe("Replacement prompt delivered when the task runs."),
+    grants: ChatTaskGrantsSchema.optional().describe("Replacement full grant list; requires user review. Omit to retain existing grants."),
     schedule: ChatTaskScheduleInputSchema.optional().describe("Replacement one-time or recurring schedule."),
     timezone: z.string().min(1).max(100).optional().describe("Required with schedule; copy the current runtime IANA timezone."),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.prompt === undefined && value.schedule === undefined)
-      context.addIssue({ code: "custom", message: "Provide a prompt or schedule" });
+    if (value.prompt === undefined && value.schedule === undefined && value.grants === undefined)
+      context.addIssue({ code: "custom", message: "Provide a prompt, schedule or grants" });
     if (value.schedule !== undefined && value.timezone === undefined)
       context.addIssue({ code: "custom", path: ["timezone"], message: "Provide the runtime timezone with a schedule" });
     if (value.schedule === undefined && value.timezone !== undefined)
@@ -129,6 +135,7 @@ const ChatTaskDataSchema = z
     chatId: ChatIdSchema,
     chatTitle: z.string(),
     prompt: z.string(),
+    grants: ChatTaskGrantsSchema,
     schedule: z.union([z.object({ kind: z.literal("once"), runAt: z.string() }), z.object({ kind: z.literal("cron"), cron: z.string() })]),
     timezone: z.string(),
     state: z.enum(["active", "paused", "completed", "needs_attention"]),
@@ -162,6 +169,7 @@ const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
   chatId: task.chatId,
   chatTitle: task.chatTitle,
   prompt: task.prompt,
+  grants: task.grants,
   schedule: task.schedule,
   timezone: task.timezone,
   state: task.state,
@@ -690,6 +698,42 @@ export const aiCapabilities = defineCapabilities({
         });
       },
     },
+    "ai.task.run.read": {
+      title: "Read a background task run",
+      description:
+        "Inspect one owned task run, including its normal-language result, errors and isolated execution history. Use task IDs and run IDs returned by ai.task.read. To repair a blocked task, use ai.task.update with reviewed grants and then ai.task.run.",
+      input: z.object({ taskId: ChatTaskIdSchema, occurrenceId: ChatTaskOccurrenceIdSchema }).strict(),
+      data: z
+        .object({
+          task: ChatTaskDataSchema,
+          occurrence: z
+            .object({
+              id: ChatTaskOccurrenceIdSchema,
+              taskId: ChatTaskIdSchema,
+              scheduledFor: z.string(),
+              trigger: z.enum(["scheduled", "manual"]),
+              state: z.enum(["queued", "running", "completed", "failed"]),
+              error: z.string().nullable(),
+              resultText: z.string().nullable(),
+              createdAt: z.string(),
+              startedAt: z.string().nullable(),
+              completedAt: z.string().nullable(),
+            })
+            .strict(),
+          messages: z.array(z.json()),
+        })
+        .strict(),
+      openWorld: false,
+      async run(input, context) {
+        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
+        const detail = await aiChatTasks.getOccurrenceDetail({ userId: context.user.id, ...input });
+        if (!detail) return fail(err.notFound("Task run"));
+        return ok({
+          data: { task: taskData(detail.task), occurrence: toAiChatTaskOccurrenceView(detail.occurrence, detail.task.shortId), messages: detail.messages.map((message) => z.json().parse(message)) },
+          summary: detail.occurrence.resultText ?? detail.occurrence.error ?? `Task run ${detail.occurrence.state}.`,
+        });
+      },
+    },
     "ai.task.read": {
       title: "Read a scheduled AI task",
       description:
@@ -1147,7 +1191,7 @@ export const aiCapabilities = defineCapabilities({
     "ai.task.create": {
       title: "Create a scheduled AI task",
       description:
-        "Create one reviewed future prompt in an owned AI conversation. Resolve relative user wording to localAt before calling.",
+        "Create one reviewed autonomous task in an owned AI conversation. Discover the capabilities needed for the whole task first and propose their grants. Fix input fields such as a note or notebook ID where the user's task permits; leave them unrestricted when broader scope is needed. Always-approval capabilities and interactive browser/Code Mode are unavailable in background runs. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
       input: ChatTaskCreateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1158,6 +1202,7 @@ export const aiCapabilities = defineCapabilities({
         const chat = await ownedChat(input.chatId, context.user.id);
         if (!chat) return fail(err.notFound("Chat"));
         try {
+          await aiChatTasks.validateGrants(input.grants);
           const normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
           const schedule = normalized.schedule.kind === "once" ? normalized.schedule.runAt : normalized.schedule.cron;
           return ok({
@@ -1166,6 +1211,11 @@ export const aiCapabilities = defineCapabilities({
               { label: "Chat", value: `${chat.title} (${chat.shortId})` },
               { label: "Schedule", value: `${schedule} (${normalized.timezone})` },
               { label: "Prompt", value: input.prompt, display: "block" },
+              {
+                label: "Capability grants (empty fixedInput means unrestricted inputs)",
+                value: JSON.stringify(input.grants, null, 2),
+                display: "block",
+              },
             ],
           });
         } catch (error) {
@@ -1185,10 +1235,7 @@ export const aiCapabilities = defineCapabilities({
             return ok({
               data: taskData(replay),
               summary: `Scheduled a task in ${taskChatTitle(replay)}.`,
-              refs: [
-                taskReference(replay, context.locale),
-                taskChatReference(replay, context.locale),
-              ],
+              refs: [taskReference(replay, context.locale), taskChatReference(replay, context.locale)],
             });
         } catch (error) {
           if (error instanceof AiChatTaskIdempotencyConflictError) return fail(capabilityIdempotencyConflict(error.message));
@@ -1196,6 +1243,7 @@ export const aiCapabilities = defineCapabilities({
         }
         let normalized: Awaited<ReturnType<typeof normalizeChatTaskSchedule>>;
         try {
+          await aiChatTasks.validateGrants(input.grants);
           normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
         } catch (error) {
           return fail(err.badInput(error instanceof Error ? error.message : "Invalid schedule"));
@@ -1206,6 +1254,7 @@ export const aiCapabilities = defineCapabilities({
             userId: context.user.id,
             chatId: input.chatId,
             prompt: input.prompt,
+            grants: input.grants,
             ...normalized,
             idempotencyKey: context.idempotencyKey,
             idempotencyFingerprint,
@@ -1219,16 +1268,13 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: taskData(task),
           summary: `Scheduled a task in ${taskChatTitle(task)}.`,
-          refs: [
-            taskReference(task, context.locale),
-            taskChatReference(task, context.locale),
-          ],
+          refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
         });
       },
     },
     "ai.task.update": {
       title: "Update a scheduled AI task",
-      description: "Update the prompt or future schedule of one owned task after reviewing the exact replacement.",
+      description: "Update the prompt, future schedule or capability grants of one owned task after reviewing the exact replacement. Read the task and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
       input: ChatTaskUpdateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1239,6 +1285,7 @@ export const aiCapabilities = defineCapabilities({
         const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
         if (!task) return fail(err.notFound("Task"));
         try {
+          if (input.grants !== undefined) await aiChatTasks.validateGrants(input.grants);
           const normalized = input.schedule ? await normalizeChatTaskSchedule(input.schedule, input.timezone) : null;
           const nextSchedule = normalized?.schedule ?? task.schedule;
           return ok({
@@ -1250,6 +1297,11 @@ export const aiCapabilities = defineCapabilities({
                 value: taskScheduleLabel({ ...task, schedule: nextSchedule, timezone: normalized?.timezone ?? task.timezone }),
               },
               { label: "Prompt", value: input.prompt ?? task.prompt, display: "block" },
+              {
+                label: "Capability grants (empty fixedInput means unrestricted inputs)",
+                value: JSON.stringify(input.grants ?? task.grants, null, 2),
+                display: "block",
+              },
             ],
           });
         } catch (error) {
@@ -1260,6 +1312,7 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         let normalized: Partial<Awaited<ReturnType<typeof normalizeChatTaskSchedule>>> = {};
         try {
+          if (input.grants !== undefined) await aiChatTasks.validateGrants(input.grants);
           if (input.schedule) normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
         } catch (error) {
           return fail(err.badInput(error instanceof Error ? error.message : "Invalid schedule"));
@@ -1268,6 +1321,7 @@ export const aiCapabilities = defineCapabilities({
           userId: context.user.id,
           taskId: input.taskId,
           prompt: input.prompt,
+          grants: input.grants,
           ...normalized,
         });
         if (!task) return fail(err.notFound("Task"));

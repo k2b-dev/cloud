@@ -1,4 +1,4 @@
-import { Chat, type ChatTimelineItem, useLocale } from "@k2b/ui";
+import { Button, Chat, type ChatTimelineItem, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import type { AiActiveTurn } from "../client/projection";
 import { type AiActiveTurnSegment, isRenderableTurnBlock, splitActiveTurnBlocks } from "../protocol";
@@ -170,11 +170,18 @@ const storedItems = (
         createdAt: actionEntry?.createdAt ?? item.entries.at(-1)?.createdAt,
         class: segment.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined,
         content: (
-          <AiAssistantContent
-            item={{ ...item, blocks: segment.blocks }}
-            segmentId={segments.length > 1 ? `${item.id}:${index}` : undefined}
-            disclosureState={disclosureState}
-          />
+          <>
+            <Show when={index === 0 && item.entries.find(entry => entry.meta?.scheduledTask)?.meta?.scheduledTask}>
+              {task => <Button variant="ghost" size="xs" class="mb-2" onClick={() => actions.onOpenScheduledTaskRun?.(task().taskId, task().occurrenceId)} disabled={!actions.onOpenScheduledTaskRun}>
+                <i class="ti ti-calendar-time" aria-hidden="true" /> {aiChatMessages(locale).backgroundRun}
+              </Button>}
+            </Show>
+            <AiAssistantContent
+              item={{ ...item, blocks: segment.blocks }}
+              segmentId={segments.length > 1 ? `${item.id}:${index}` : undefined}
+              disclosureState={disclosureState}
+            />
+          </>
         ),
         actions:
           actionEntry && index === lastAssistant

@@ -18,6 +18,7 @@ import {
   createAiToolMetaTools,
   createAiToolResolver,
   createLoadedAiCapabilityTools,
+  createRunToolStore,
   listAiCapabilityApps,
   reduceAiCapabilityInputSchema,
   searchAiTools,
@@ -740,6 +741,39 @@ describe("AI capability catalog", () => {
       ),
     ).rejects.toThrow("rejected by the user");
     expect(actionExecutions).toBe(1);
+  });
+
+  test("background authorization gates queries and actions before execution and never opens approvals", async () => {
+    const app = capabilityApp("contacts");
+    app.manifest.actions[0]!.approval = "rememberable";
+    const catalog = buildAiCapabilityCatalog([app]);
+    let allow = false;
+    const calls: string[] = [];
+    const prepared = prepareAiTools({tools: createLoadedAiCapabilityTools({catalog, actor, loadedNames: ["contacts.create", "contacts.list"],
+      authorizeBackground: async (entry) => {calls.push(`authorize:${entry.name}`); if (!allow) throw new Error("Grant denied");},
+      review: async () => {throw new Error("Unexpected interactive review");},
+      execute: async (entry) => {calls.push(`execute:${entry.name}`); return {data: {}};},
+    }), actor, conversationId: "conversation-1"});
+    const context = {signal: AbortSignal.timeout(1000), requestApproval: async () => {throw new Error("Unexpected approval");}, requestClientTool: async <T>(): Promise<T> => {throw new Error("Unexpected client");}};
+    for (const action of prepared.tools) {
+      if (action.kind !== "server") throw new Error("Expected server tool");
+      await expect(action.execute({title: "Example"}, context)).rejects.toThrow("Grant denied");
+    }
+    expect(calls.some(call => call.startsWith("execute:"))).toBe(false);
+    allow = true;
+    for (const action of prepared.tools) if (action.kind === "server") await action.execute({title: "Example"}, context);
+    expect(calls.filter(call => call.startsWith("execute:"))).toHaveLength(2);
+  });
+
+  test("background discovery keeps loaded tool names isolated with the existing eviction contract", async () => {
+    const seed = ["mail.list"];
+    const store = createRunToolStore(seed);
+    expect(await store.loadTools({conversationId: "chat", names: ["mail.list", "notes.read", "notes.edit"], maxLoadedTools: 2})).toEqual({loaded: ["notes.read", "notes.edit"], alreadyLoaded: ["mail.list"], evicted: ["mail.list"]});
+    expect(seed).toEqual(["mail.list"]);
+    expect(await store.getLoadedTools({conversationId: "chat"})).toEqual(["notes.read", "notes.edit"]);
+    const snapshot = await store.getLoadedTools({conversationId: "chat"});
+    snapshot.push("other");
+    expect(await store.getLoadedTools({conversationId: "chat"})).toEqual(["notes.read", "notes.edit"]);
   });
 
   test("explicit no-approval actions execute without review or a user prompt", async () => {

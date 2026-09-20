@@ -4,11 +4,7 @@ import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
-import {
-  HELP_READ_MAX_CHARS,
-  HELP_SEARCH_MAX_LIMIT,
-  readHelpArticle,
-} from "../_internal/help-catalog";
+import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
 import {
   type CapabilityActionManifest,
   type CapabilityActionReview,
@@ -547,6 +543,7 @@ export const createLoadedAiCapabilityTools = (input: {
   loadedNames: readonly string[];
   actor: RequestActor;
   review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
+  authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
   onReview?: (callId: string, review: CapabilityActionReview) => void;
   execute: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
 }): AiRuntimeTool[] => {
@@ -565,7 +562,8 @@ export const createLoadedAiCapabilityTools = (input: {
         // live review has resolved. The review may supply an app-owned scope.
         approval: "never",
       }).server(async (args, context) => {
-        if (entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
+        await input.authorizeBackground?.(entry, args);
+        if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
           if (review && context.callId) input.onReview?.(context.callId, review);
           const message =
@@ -613,6 +611,24 @@ export const createAiResourceReaderTool = (input: {
   });
 
 /** Nessi resolver: one registry/load-state snapshot drives discovery, loading, schemas, and execution per model turn. */
+/** Background discovery belongs to one run, never the interactive conversation. */
+export const createRunToolStore = (initialNames: readonly string[]): Pick<AiConversationService, "getLoadedTools" | "loadTools"> => {
+  let current = [...new Set(initialNames)];
+  return {
+    getLoadedTools: async () => [...current],
+    loadTools: async ({ names, maxLoadedTools }) => {
+      const requested = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+      const alreadyLoaded = requested.filter((name) => current.includes(name));
+      const added = requested.filter((name) => !current.includes(name));
+      const combined = [...current, ...added];
+      const limit = Math.floor(maxLoadedTools ?? 0);
+      const evicted = limit > 0 ? combined.slice(0, Math.max(0, combined.length - limit)) : [];
+      current = combined.slice(evicted.length);
+      return { loaded: added.filter((name) => current.includes(name)), alreadyLoaded, evicted };
+    },
+  };
+};
+
 export const createAiToolResolver =
   (input: {
     conversationId: string;
@@ -628,6 +644,7 @@ export const createAiToolResolver =
     maxLoadedTools?: number;
     execute?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
     review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
+    authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
     onReview?: (callId: string, review: CapabilityActionReview) => void;
     onPrepared?: (snapshot: {
       prepared: PreparedAiTools;
@@ -653,7 +670,7 @@ export const createAiToolResolver =
     const capabilityCatalog = buildAiCapabilityCatalog(registry).filter((entry) => !allowed || allowed.has(entry.name));
     const helpTools = input.help ? createAiHelpTools(input.help, input.locale) : [];
     const resourceTool =
-      input.execute && (capabilityCatalog.length > 0 || input.staticTools.some(tool => tool.def.name === "code_read"))
+      input.execute && (capabilityCatalog.length > 0 || input.staticTools.some((tool) => tool.def.name === "code_read"))
         ? createAiResourceReaderTool({ apps: registry, catalog: capabilityCatalog, execute: input.execute })
         : null;
     const builtIns = [...input.staticTools, ...helpTools, ...(resourceTool ? [resourceTool] : [])].filter(
@@ -682,6 +699,7 @@ export const createAiToolResolver =
             actor: input.actor,
             review: input.review,
             onReview: input.onReview,
+            authorizeBackground: input.authorizeBackground,
             execute: input.execute,
           })
         : []),

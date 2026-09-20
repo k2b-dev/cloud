@@ -1,3 +1,4 @@
+import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import { assistantComposerCommands } from "./composer-commands";
 import { type ChatMention, reconcileChatMentions } from "@k2b/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
@@ -1483,6 +1484,7 @@ export default function AssistantWorkspace(props: Props) {
                                 onRetrySteer: async (block) => {
                                   if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
                                 },
+                                onOpenScheduledTaskRun: (taskId, occurrenceId) => void openAssistantTaskRun(taskId, occurrenceId, liveHub),
                                 onOpenFile: (path) => void openFiles(path),
                                 fileUrl: chat.fileContentUrl,
                               }}

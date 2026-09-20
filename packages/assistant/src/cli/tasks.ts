@@ -1,8 +1,5 @@
 import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
-import type {
-  AiChatTaskOccurrenceView as AssistantChatTaskOccurrence,
-  AiChatTaskView as AssistantChatTask,
-} from "@k2b/cloud/ai";
+import type { AiChatTaskOccurrenceView as AssistantChatTaskOccurrence, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
 import { idempotentJsonRequest, jsonRequest, printRows, printValue, queryString, readApi, requireConfirmation } from "./shared";
 
 type TaskDetail = { task: AssistantChatTask; occurrences: AssistantChatTaskOccurrence[] };
@@ -37,6 +34,29 @@ const printTask = (ctx: Parameters<typeof printValue>[0], task: AssistantChatTas
   printValue(ctx, task, `${verb ? `${verb} ` : ""}${task.id}\t${task.state}\t${scheduleText(task)}\t${promptPreview(task.prompt)}`);
 
 export const assistantTaskCommands = [
+  command("tasks activities", {
+    summary: "List background task activity across chats",
+    flags: { limit: flag.int({ default: 50, min: 1, max: 100 }), offset: flag.int({ default: 0, min: 0 }) },
+    async run({ ctx, flags }) {
+      const page = await readApi<{
+        items: Array<{ task: AssistantChatTask; occurrence: AssistantChatTaskOccurrence; chatTitle: string; unread: boolean }>;
+        hasMore: boolean;
+      }>(ctx, `/tasks/activities${queryString(flags)}`);
+      if (ctx.options.output !== "text") return printValue(ctx, page);
+      for (const item of page.items)
+        ctx.print(
+          `${item.occurrence.id}\t${item.task.id}\t${item.occurrence.state}\t${item.chatTitle}\t${item.occurrence.resultText ?? item.occurrence.error ?? ""}`,
+        );
+      if (page.hasMore) ctx.print(`More: use --offset ${(flags.offset ?? 0) + (flags.limit ?? 50)}`);
+    },
+  }),
+  command("tasks run-get", {
+    summary: "Inspect one background run and its execution history",
+    args: { task: arg.required({ valueLabel: "task-id" }), run: arg.required({ valueLabel: "run-id" }) },
+    async run({ ctx, args }) {
+      printValue(ctx, await readApi(ctx, path(args.task, `/occurrences/${encodeURIComponent(args.run)}`)));
+    },
+  }),
   command("tasks status", {
     summary: "Show the timezone used for new task schedules",
     async run({ ctx }) {
@@ -79,6 +99,7 @@ export const assistantTaskCommands = [
       if (ctx.options.output !== "text") return printValue(ctx, detail);
       ctx.print(`${detail.task.id}\t${detail.task.state}\t${scheduleText(detail.task)}\t${detail.task.timezone}`);
       ctx.print(detail.task.prompt);
+      ctx.print(`Capability grants: ${JSON.stringify(detail.task.grants)}`);
       printRows(
         ctx,
         detail.occurrences,
@@ -100,12 +121,22 @@ export const assistantTaskCommands = [
       prompt: flag.input({ required: true, description: "Task prompt text or --prompt-file" }),
       at: flag.string({ description: "Local date and time in YYYY-MM-DDTHH:mm using app.timezone" }),
       cron: flag.string({ description: "Five-field recurring cron expression using app.timezone" }),
+      grants: flag.input({ description: "JSON capability grants or --grants-file; omitted means no capabilities" }),
+      yes: confirmFlag("Confirm background capability grants"),
     },
     async run({ ctx, flags }) {
       const schedule = scheduleInput(flags.at, flags.cron);
       if (!schedule) throw new Error("Supply --at or --cron.");
       const prompt = await readCliInput(flags.prompt, { label: "task prompt", required: true, trimFinalNewline: true });
-      const task = await readApi<AssistantChatTask>(ctx, "/tasks", idempotentJsonRequest("POST", { chatId: flags.chat, prompt, schedule }));
+      const rawGrants = await readCliInput(flags.grants, { label: "capability grants" });
+      const grants: unknown = rawGrants === undefined ? [] : JSON.parse(rawGrants);
+      if (!Array.isArray(grants)) throw new Error("Capability grants must be a JSON list.");
+      if (grants.length) requireConfirmation(flags.yes, "Authorizing background capability grants");
+      const task = await readApi<AssistantChatTask>(
+        ctx,
+        "/tasks",
+        idempotentJsonRequest("POST", { chatId: flags.chat, prompt, schedule, grants }),
+      );
       printTask(ctx, task, "Created");
     },
   }),
@@ -116,15 +147,25 @@ export const assistantTaskCommands = [
       prompt: flag.input({ description: "Replacement prompt text or --prompt-file" }),
       at: flag.string({ description: "Replacement local date and time in YYYY-MM-DDTHH:mm" }),
       cron: flag.string({ description: "Replacement five-field cron expression" }),
+      grants: flag.input({ description: "Replacement JSON capability grants or --grants-file" }),
+      yes: confirmFlag("Confirm replacement background capability grants"),
     },
     async run({ ctx, args, flags }) {
       const schedule = scheduleInput(flags.at, flags.cron);
       const prompt = await readCliInput(flags.prompt, { label: "task prompt", trimFinalNewline: true });
-      if (!schedule && prompt === undefined) throw new Error("Supply --prompt, --at, or --cron.");
+      const rawGrants = await readCliInput(flags.grants, { label: "capability grants" });
+      const grants: unknown = rawGrants === undefined ? undefined : JSON.parse(rawGrants);
+      if (grants !== undefined && !Array.isArray(grants)) throw new Error("Capability grants must be a JSON list.");
+      if (Array.isArray(grants) && grants.length) requireConfirmation(flags.yes, "Authorizing background capability grants");
+      if (!schedule && prompt === undefined && grants === undefined) throw new Error("Supply --prompt, --at, --cron, or --grants.");
       const task = await readApi<AssistantChatTask>(
         ctx,
         path(args.task),
-        jsonRequest("PATCH", { ...(prompt === undefined ? {} : { prompt }), ...(schedule ? { schedule } : {}) }),
+        jsonRequest("PATCH", {
+          ...(prompt === undefined ? {} : { prompt }),
+          ...(schedule ? { schedule } : {}),
+          ...(grants === undefined ? {} : { grants }),
+        }),
       );
       printTask(ctx, task, "Updated");
     },

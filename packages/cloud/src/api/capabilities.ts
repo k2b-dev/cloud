@@ -372,6 +372,8 @@ const runCapabilityDispatch = async (
                     targetAppId: params.appId,
                     operation: invocationOperation,
                     actionApproval: mandate.actionApproval ?? "none",
+                    input: params.input,
+                    capabilityApproval: "approval" in operation ? (operation.approval ?? "always") : "always",
                     requestId,
                   },
                   async (mandateAuthority) => {

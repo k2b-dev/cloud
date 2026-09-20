@@ -45,13 +45,9 @@ suite("AI chat tasks", () => {
       const resumed = await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "active" });
       expect(resumed?.state).toBe("active");
       expect(resumed?.mandateRevision).toBe(task.mandateRevision! + 2);
-      const narrowed = await mandates.updatePolicy({
-        mandateId: task.mandateId!,
-        expectedRevision: resumed!.mandateRevision!,
-        authority: { kind: "workload", ownerAppId: "core" },
-        policy: { version: 1, apps: ["mail"], operations: ["capability.query:mail.read"], actions: "deny" },
-      });
-      expect(narrowed.ok).toBe(true);
+      // Simulate an independent authority change; task lifecycle must not restore it.
+      await sql`UPDATE auth.mandates SET policy = ${JSON.stringify({ version: 1, apps: ["mail"], operations: ["capability.query:mail.read"], actions: "deny" })}::text::jsonb,
+        revision = revision + 1 WHERE id = ${task.mandateId!}::uuid`;
       await expect(aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "active" })).rejects.toThrow(
         "Scheduled task mandate cannot be resumed",
       );
@@ -163,7 +159,7 @@ suite("AI chat tasks", () => {
     }
   });
 
-  test("serializes concurrent task admission per chat and records only the task's current mandate", async () => {
+  test("runs different schedules independently and records only the task's current mandate", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
@@ -211,8 +207,8 @@ suite("AI chat tasks", () => {
           return result;
         }),
       );
-      expect(results.filter((result) => result.delivered)).toHaveLength(1);
-      expect(results.filter((result) => !result.delivered)).toEqual([{ delivered: false, reason: "busy" }]);
+      expect(results.filter((result) => result.delivered)).toHaveLength(2);
+      expect(results.filter((result) => !result.delivered)).toEqual([]);
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
@@ -456,7 +452,7 @@ suite("AI chat tasks", () => {
           workload_type: "ai.chat-task",
           workload_id: task!.id,
           state: "active",
-          policy: { version: 1, apps: "*", operations: "*", actions: "require_approval" },
+          policy: { version: 1, apps: [], operations: [], actions: "deny", grants: [] },
         },
       ]);
       expect((await aiChatTasks.list({ userId: user!.id })).map((entry) => entry.shortId)).toEqual([task!.shortId]);
@@ -486,16 +482,6 @@ suite("AI chat tasks", () => {
         VALUES (${createAiShortId()}, ${conversation.id}::uuid, 'queued')
         RETURNING id
       `;
-      expect(
-        await aiChatTasks.deliverOccurrence({
-          occurrenceId: manual!.id,
-          modelProfileId: "test-model",
-          runConfig: { kind: "chat", input: task!.prompt, toolSource: { kind: "none" } },
-          userMessage: { role: "user", content: [{ type: "text", text: task!.prompt }] },
-          expectedRevision: (await aiChatTasks.get({ userId: user!.id, taskId: task!.shortId }))!.revision,
-        }),
-      ).toEqual({ delivered: false, reason: "busy" });
-      await sql`UPDATE ai.turns SET status = 'aborted', completed_at = now() WHERE id = ${blockingTurn!.id}::uuid`;
       const manualDelivery = await aiChatTasks.deliverOccurrence({
         occurrenceId: manual!.id,
         modelProfileId: "test-model",
@@ -505,6 +491,8 @@ suite("AI chat tasks", () => {
       });
       expect(manualDelivery.delivered).toBe(true);
       if (!manualDelivery.delivered) throw new Error("Expected manual task occurrence to be delivered");
+      expect((await aiConversations.getActiveTurn({ conversationId: conversation.id }))?.turn.id).toBe(blockingTurn!.id);
+      await sql`UPDATE ai.turns SET status = 'aborted', completed_at = now() WHERE id = ${blockingTurn!.id}::uuid`;
       await sql`UPDATE ai.turns SET status = 'completed', completed_at = now() WHERE id = ${manualDelivery.turnId}::uuid`;
       await aiChatTasks.finalizeTurn({ turnId: manualDelivery.turnId, status: "completed" });
       expect((await aiChatTasks.get({ userId: user!.id, taskId: task!.shortId }))?.state).toBe("active");
@@ -522,7 +510,7 @@ suite("AI chat tasks", () => {
       });
       if (!delivered.delivered) throw new Error("Expected scheduled task occurrence to be delivered");
       const [scheduledMessage] = await sql<{ meta: unknown }[]>`
-        SELECT meta FROM ai.messages WHERE loop_id = ${delivered.turnId} AND role = 'user'
+        SELECT meta FROM ai.task_messages WHERE loop_id = ${delivered.turnId} AND role = 'user'
       `;
       expect(scheduledMessage?.meta).toEqual({
         scheduledTask: {
@@ -573,6 +561,137 @@ suite("AI chat tasks", () => {
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("snapshots completed context, skips overlapping ticks and delivers a result exactly once", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users(uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`bg-isolation-${suffix}`}, 'local', 'user', 'Background test', ${`${suffix}@example.test`}, 'AI', 'Test') RETURNING id
+    `;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Independent background run" });
+    try {
+      const task = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Summarize",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      await sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message)
+        VALUES (${createAiShortId()},${conversation.id}::uuid,1,'message','user',${JSON.stringify({ role: "user", content: [{ type: "text", text: "Completed context" }] })}::text::jsonb)`;
+      const [interactive] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status)
+        VALUES (${createAiShortId()},${conversation.id}::uuid,'running') RETURNING id`;
+      await sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message,loop_id)
+        VALUES (${createAiShortId()},${conversation.id}::uuid,2,'message','user',${JSON.stringify({ role: "user", content: [{ type: "text", text: "Still processing" }] })}::text::jsonb,${interactive!.id})`;
+      const occurrence = (await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: new Date().toISOString(),
+        trigger: "manual",
+        requestKey: `isolated:${suffix}`,
+      }))!;
+      const delivered = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: "test",
+        runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
+        expectedRevision: task.revision,
+      });
+      if (!delivered.delivered) throw new Error("Background run must start alongside interactive turn");
+      const config = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: delivered.turnId });
+      expect(config?.kind === "chat" && config.background?.context).toHaveLength(1);
+      expect(
+        await aiChatTasks.createOccurrence({
+          taskId: task.id,
+          scheduledFor: new Date().toISOString(),
+          trigger: "scheduled",
+          requestKey: `tick:${suffix}`,
+        }),
+      ).toBeNull();
+      expect(
+        (
+          await aiChatTasks.createOccurrence({
+            taskId: task.id,
+            scheduledFor: occurrence.scheduledFor,
+            trigger: "manual",
+            requestKey: `isolated:${suffix}`,
+          })
+        )?.id,
+      ).toBe(occurrence.id);
+      await sql`INSERT INTO ai.task_messages(short_id,conversation_id,seq,kind,role,message,loop_id)
+        VALUES (${createAiShortId()},${conversation.id}::uuid,2,'message','assistant',${JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Your summary is ready." }] })}::text::jsonb,${delivered.turnId})`;
+      await sql`UPDATE ai.conversations SET done = true, last_viewed_at = now() - interval '1 day', last_used_at = now() - interval '1 day' WHERE id = ${conversation.id}::uuid`;
+      await sql`UPDATE ai.turns SET status='completed',completed_at=now() WHERE id=${delivered.turnId}::uuid`;
+      expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "completed" })).toEqual({
+        occurrenceId: occurrence.id,
+        failed: false,
+      });
+      expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "completed" })).toBeNull();
+      const messages = await sql<
+        { role: string; loop_id: string | null; message: unknown }[]
+      >`SELECT role,loop_id,message FROM ai.messages WHERE conversation_id=${conversation.id}::uuid ORDER BY seq`;
+      expect(messages).toHaveLength(3);
+      expect(messages[2]).toEqual({
+        role: "assistant",
+        loop_id: null,
+        message: { role: "assistant", content: [{ type: "text", text: "Your summary is ready." }] },
+      });
+      const updated = await aiConversations.getConversation({ conversationId: conversation.id, ownerUserId: user!.id });
+      expect(updated?.done).toBeNull();
+      expect(updated?.unreadCompletion).toBe(true);
+      expect(updated?.hasActiveSchedule).toBe(true);
+      expect((await aiConversations.getActiveTurn({ conversationId: conversation.id }))?.turn.id).toBe(interactive!.id);
+      const activities = (await aiChatTasks.listActivities({ userId: user!.id })).items;
+      expect(activities[0]?.occurrence.resultText).toBe("Your summary is ready.");
+      expect(activities[0]?.unread).toBe(true);
+      expect(
+        await aiChatTasks.getOccurrenceDetail({ userId: user!.id, taskId: task.shortId, occurrenceId: occurrence.shortId }),
+      ).not.toBeNull();
+      expect(
+        await aiChatTasks.getOccurrenceDetail({ userId: crypto.randomUUID(), taskId: task.shortId, occurrenceId: occurrence.shortId }),
+      ).toBeNull();
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
+    }
+  });
+
+  test("delivers startup failures to the chat once and preserves repairable task state", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name,mail,given_name,sn)
+      VALUES (${`bg-failure-${suffix}`},'local','user','BG failure',${`${suffix}@example.test`},'AI','Test') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Startup failure" });
+    try {
+      const task = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Read my notes",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      const occurrence = (await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: new Date().toISOString(),
+        trigger: "manual",
+        requestKey: suffix,
+      }))!;
+      expect(
+        await aiChatTasks.failOccurrence({
+          occurrenceId: occurrence.id,
+          error: "Project access is missing. Update this task in the chat.",
+        }),
+      ).toBe("failed");
+      expect(await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "duplicate" })).toBe("gone");
+      expect((await aiChatTasks.get({ userId: user!.id, taskId: task.shortId }))?.state).toBe("needs_attention");
+      expect((await aiChatTasks.listOccurrences({ userId: user!.id, taskId: task.shortId }))?.[0]?.resultText).toContain("Project access");
+      expect(
+        (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.messages WHERE conversation_id=${conversation.id}::uuid`)[0]
+          ?.count,
+      ).toBe(1);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
     }
   });
 

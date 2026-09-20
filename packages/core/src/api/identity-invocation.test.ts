@@ -101,6 +101,7 @@ describe("identity invocation broker", () => {
             ownerAppId: "mail",
             targetAppId: "spaces",
             operation: "capability.query:get",
+            input: { id: "one" },
             requestId: "request-7",
           });
           return ok(
@@ -154,6 +155,43 @@ describe("identity invocation broker", () => {
     expect(targetRequest?.headers.get("authorization")).not.toContain(workloadToken);
     expect(targetRequest?.headers.get("x-cloud-capability-schema-hash")).toBe(schemaHash);
     expect(targetRequest?.headers.get("x-cloud-locale")).toBe("de");
+  });
+
+  test("passes actual inputs and live action approval mode to mandate enforcement before target effects", async () => {
+    for (const approval of ["none", "rememberable", undefined] as const) {
+      let checked = false;
+      let dispatched = false;
+      const routes = createIdentityInvocationRoutes({
+        authenticateWorkload,
+        dispatchDependencies: {
+          getCapability: async () => ({
+            ...registryEntry,
+            manifest: {
+              ...registryEntry.manifest,
+              actions: [{ ...registryEntry.manifest.queries[0]!, destructive: false, idempotency: "none", approval }],
+            },
+          }),
+          withActiveSigner,
+          withMandateIssueAuthority: async (input) => {
+            checked = true;
+            expect(input).toMatchObject({
+              input: { id: "one" },
+              capabilityApproval: approval ?? "always",
+              operation: "capability.action.run:get",
+            });
+            return fail(err.forbidden("Grant denied"));
+          },
+          fetch: async () => {
+            dispatched = true;
+            return Response.json({ data: { id: "one" } });
+          },
+        },
+      });
+      const response = await routes.request(request(invocation({ kind: "action" })));
+      expect(response.status).toBe(403);
+      expect(checked).toBe(true);
+      expect(dispatched).toBe(false);
+    }
   });
 
   test("rejects caller-supplied schema or authority fields", async () => {

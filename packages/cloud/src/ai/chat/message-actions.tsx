@@ -36,6 +36,8 @@ export type AiChatActions = {
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;
   onMessageFeedback?: (entry: AiStoredMessage, feedback: Omit<AiMessageFeedback, "updatedAt"> | null) => void | Promise<void>;
+  /** Open the originating background run for a delivered scheduled result. */
+  onOpenScheduledTaskRun?: (taskId: string, occurrenceId: string) => void;
   /** Open a conversation VFS file in the host application's artifact surface. */
   onOpenFile?: (path: string) => void;
   /** Download URL for a conversation VFS file (present blocks, attachment chips). */

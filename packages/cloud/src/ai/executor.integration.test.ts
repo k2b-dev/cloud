@@ -310,7 +310,7 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
-  test("requires a fresh background approval without changing interactive remembered approvals", async () => {
+  test("rejects background approvals without changing interactive remembered approvals", async () => {
     const userId = await insertUser();
     const approvalContext = { actorUserId: userId };
     await rememberAiToolApproval(approvalContext, { toolName: "danger", approvalScope: "danger" });
@@ -382,30 +382,23 @@ suite("AI executor integration", () => {
             rememberableCapabilityApprovals: new Map(),
             capabilityActionReviews: new Map(),
           });
-          expect(suspended).toBe(background);
+          expect(suspended).toBe(false);
           if (!background) {
             expect(pushed).toEqual([{ type: "approval_response", callId: "approval-1", approved: true }]);
             expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
           } else {
-            expect(pushed).toHaveLength(0);
-            expect(pipeline.blocks).toMatchObject([{ kind: "tool", approval: { allowAlways: false } }]);
-            expect(
-              await aiConversations.getPendingTurnAction({ conversationId: conversation.id, turnId: turn.id, callId: "approval-1" }),
-            ).toMatchObject({ allowAlways: false });
-            // A pre-upgrade pending record cannot restore Always Allow through a forged response.
-            await sql`UPDATE ai.pending_actions SET allow_always = true WHERE turn_id = ${turn.id}::uuid`;
-            expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toMatchObject([
-              { allowAlways: false },
-            ]);
-            expect(
-              await submitAiTurnAction({
-                conversationId: conversation.id,
-                turnId: turn.id,
-                callId: "approval-1",
-                action: { type: "approval_response", approved: true, remember: "always" },
-                toolApprovalContext: approvalContext,
-              }),
-            ).toMatchObject({ ok: false, status: 400 });
+            expect(pushed).toEqual([{type: "approval_response", callId: "approval-1", approved: false}]);
+            expect(await listPendingAiTurnActions({conversationId: conversation.id, turnId: turn.id})).toHaveLength(0);
+            let blocked = "";
+            const clientSuspended = await createExecutor("approval-test")["handleActionRequest"]({
+              event: {...event, kind: "client_tool"}, loop: {push: (value: InboundEvent) => pushed.push(value)} as never,
+              pipeline, conversationId: conversation.id, turnId: turn.id, prepared, approvalContext, allowRememberedApprovals,
+              rememberableCapabilityApprovals: new Map(), capabilityActionReviews: new Map(), onBackgroundBlocked: message => {blocked = message;},
+            });
+            expect(clientSuspended).toBe(false);
+            expect(blocked).toContain("interactive browser");
+            expect(pushed.at(-1)).toMatchObject({type: "tool_result", result: {error: expect.stringContaining("unavailable in a background run")}});
+            expect(await listPendingAiTurnActions({conversationId: conversation.id, turnId: turn.id})).toHaveLength(0);
           }
         } finally {
           await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;

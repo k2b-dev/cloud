@@ -101,7 +101,7 @@ describe("Assistant sidebar", () => {
     expect(html).toContain("Chat settings");
     expect(html).toContain("Mark chat done");
     expect(html).toContain("assistant-chat-sidebar-item--done-action");
-    expect(html).toContain("<span>Done</span>");
+    expect(html).toContain('role="status">Done</span>');
     expect(html).not.toContain(">Chats</");
     expect(html).toContain("General chat 15");
     expect(html).toContain("General chat 17");

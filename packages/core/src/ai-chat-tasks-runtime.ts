@@ -1,7 +1,8 @@
+import { backgroundTaskInstructions } from "./ai-background-prompt";
 import type { JobContext, Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
-import { aiChatTasks, aiConversations, aiProjects, personalAiModelPolicy } from "@k2b/cloud/ai";
-import { enqueueExistingAiTurn, validateAiTurnRequest } from "@k2b/cloud/ai/runtime";
+import { aiChatTasks, aiConversations, aiProjects, listAiConversationFiles, personalAiModelPolicy } from "@k2b/cloud/ai";
+import { enqueueExistingAiTurn, prepareAiChatTurn } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings, logger } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
@@ -59,27 +60,32 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
   }
   const text = `Scheduled task ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
-  const { resolved } = await validateAiTurnRequest({
+  const files = await listAiConversationFiles(conversation.id);
+  const prepared = await prepareAiChatTurn({
+    assistantChat: true,
+    conversationId: conversation.id,
+    chatId: conversation.shortId,
     input: text,
+    userMessage: { role: "user", content: [{ type: "text", text }] },
+    systemPrompt: backgroundTaskInstructions({
+      taskId: task.shortId,
+      occurrenceId: occurrence.shortId,
+      scheduledFor: occurrence.scheduledFor,
+      grants: task.grants,
+    }),
+    fileSnapshot: { attached: [], available: files, total: files.length },
+    actor: { kind: "user", user },
     modelPolicy: personalAiModelPolicy,
     requestedModelId: project?.defaultModelProfileId ?? undefined,
+    project: project ?? undefined,
+    toolSource: { kind: "default", appTools: true },
+    toolApprovalContext: { actorUserId: user.id },
   });
   const delivered = await aiChatTasks.deliverOccurrence({
     occurrenceId: occurrence.id,
-    modelProfileId: resolved.profile.id,
-    runConfig: {
-      kind: "chat",
-      input: text,
-      chatId: conversation.shortId,
-      actor: { kind: "user", user },
-      modelPolicy: personalAiModelPolicy,
-      requestedModelId: project?.defaultModelProfileId ?? undefined,
-      project: project ?? undefined,
-      toolSource: { kind: "default", appTools: true },
-      toolApprovalContext: { actorUserId: user.id },
-      mandate: taskMandate(task),
-    },
-    userMessage: { role: "user", content: [{ type: "text", text }] },
+    modelProfileId: prepared.modelProfileId,
+    runConfig: { ...prepared.runConfig, mandate: taskMandate(task) },
+    userMessage: prepared.userMessage,
     expectedRevision: task.revision,
   });
   if (!delivered.delivered)

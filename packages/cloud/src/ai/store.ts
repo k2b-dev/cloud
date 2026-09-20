@@ -103,6 +103,8 @@ type ConversationRow = {
   done: boolean | null;
   last_used_at: Date | string;
   is_done?: boolean;
+  has_active_schedule?: boolean;
+  background_received_at?: Date | string | null;
   last_viewed_at: Date | string | null;
   latest_turn_status?: AiTurnStatus | null;
   latest_browser_pending?: boolean;
@@ -482,8 +484,10 @@ const fieldSource = (value: string | null): AiConversation["titleSource"] => (va
 // Pins stay active; otherwise explicit choices win and automatic completion never hides pending work.
 const effectiveDone = () => sql`(conversation.pinned_at IS NULL AND COALESCE(conversation.done,
   conversation.last_used_at <= now() - interval '7 days'
+  AND NOT EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active')
   AND NOT EXISTS (SELECT 1 FROM ai.turns active_turn
     WHERE active_turn.conversation_id = conversation.id
+      AND NOT COALESCE(active_turn.run_config ? 'background', false)
       AND active_turn.status IN ('queued', 'running', 'waiting_for_action'))
   AND NOT EXISTS (SELECT 1 FROM ai.queued_messages pending WHERE pending.conversation_id = conversation.id AND pending.status IN ('pending','failed'))))`;
 
@@ -514,9 +518,18 @@ const conversationRunStatus = (status: AiTurnStatus | null | undefined, browserP
 const todoMessageJson = () => sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (message #>> '{}')::jsonb ELSE message END)`;
 const todoMetaJson = () => sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
 
+// A scheduled result arriving during an interactive turn becomes context on the next turn.
+const visibleToTurn = (turnId?: string) => sql`(
+  ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ? 'scheduledTask', false) OR seq < ALL (
+    SELECT input_message.seq FROM ai.messages input_message
+    WHERE input_message.loop_id = ${turnId ?? null} AND input_message.role = 'user'
+  )
+)`;
+
 const rowToConversation = (row: ConversationRow): AiConversation => ({
   ...(row.activity ? {activity:row.activity} : {}),
   id: row.id,
+  hasActiveSchedule: Boolean(row.has_active_schedule),
   shortId: row.short_id,
   title: row.title,
   titleSource: fieldSource(row.title_source),
@@ -528,12 +541,14 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
   done: row.done,
   isDone: row.pinned_at ? false : row.is_done ?? row.done ?? (
     new Date(row.last_used_at).getTime() <= Date.now() - 7 * 86400000
+    && !row.has_active_schedule
     && !["queued", "running", "waiting_for_action"].includes(row.latest_turn_status ?? "")
   ),
   lastUsedAt: iso(row.last_used_at),
   runStatus: conversationRunStatus(row.latest_turn_status, row.latest_browser_pending),
   runError: row.latest_turn_status === "failed" ? row.latest_turn_error?.trim() || "Assistant response failed." : null,
   unreadCompletion:
+    Boolean(row.background_received_at && (!row.last_viewed_at || new Date(row.background_received_at).getTime() > new Date(row.last_viewed_at).getTime())) ||
     row.latest_turn_status === "completed" &&
     Boolean(row.latest_turn_completed_at) &&
     (!row.last_viewed_at || new Date(row.latest_turn_completed_at!).getTime() > new Date(row.last_viewed_at).getTime()),
@@ -696,6 +711,7 @@ const loadConversationSummary = async (input: {
     SELECT
       conversation.*,
       ${effectiveDone()} AS is_done,
+        EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
       latest.status AS latest_turn_status,
       ${browserWorkPending()} AS latest_browser_pending,
       latest.error AS latest_turn_error,
@@ -704,7 +720,7 @@ const loadConversationSummary = async (input: {
     LEFT JOIN LATERAL (
       SELECT status, error, completed_at, live_blocks
       FROM ai.turns
-      WHERE conversation_id = conversation.id
+      WHERE conversation_id = conversation.id AND NOT COALESCE(run_config ? 'background', false)
       ORDER BY created_at DESC, id DESC
       LIMIT 1
     ) latest ON TRUE
@@ -832,6 +848,7 @@ const insertMessageLocked = async (
 
 /** Append a turn-owned (assistant/tool_result/summary) message, guarded by lease ownership in one statement. */
 const appendTurnOwnedMessage = async (input: {
+  background?: boolean;
   conversationId: string;
   turnId: string;
   leaseOwner: string;
@@ -842,11 +859,13 @@ const appendTurnOwnedMessage = async (input: {
   modelProfileId?: string | null;
   meta?: AiStoredMessage["meta"];
 }): Promise<AiStoredMessage | null> => {
+  return sql.begin(async tx => {
+  if (!input.background) await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid FOR UPDATE`;
   const { usage, providerModel, stopReason } = messageColumns(input.message);
-  const rows = await withAiShortId(
+  const rows = await withAiShortIdForDb(tx,
     "idx_ai_messages_conversation_short_id",
-    (shortId) => sql<MessageRow[]>`
-    INSERT INTO ai.messages (
+    (attempt, shortId) => attempt<MessageRow[]>`
+    INSERT INTO ${sql(input.background ? "ai.task_messages" : "ai.messages")} (
       short_id,
       conversation_id,
       seq,
@@ -864,8 +883,8 @@ const appendTurnOwnedMessage = async (input: {
       ${shortId},
       ${input.conversationId},
       CASE
-        WHEN ${input.seq ?? null}::int IS NOT NULL AND ${input.seq ?? null}::int > 0 THEN ${input.seq ?? null}::int
-        ELSE (SELECT COALESCE(MAX(seq), 0) + 1 FROM ai.messages WHERE conversation_id = ${input.conversationId} AND seq > 0)
+        WHEN NOT ${Boolean(input.background)} AND ${input.kind === 'summary'} AND ${input.seq ?? null}::int IS NOT NULL AND ${input.seq ?? null}::int > 0 THEN ${input.seq ?? null}::int
+        ELSE (SELECT COALESCE(MAX(seq), 0) + 1 FROM ${sql(input.background ? "ai.task_messages" : "ai.messages")} WHERE conversation_id = ${input.conversationId} AND seq > 0 AND (NOT ${Boolean(input.background)} OR loop_id = ${input.turnId}))
       END,
       ${input.kind ?? "message"},
       ${input.message.role},
@@ -888,10 +907,11 @@ const appendTurnOwnedMessage = async (input: {
   `,
   );
   if (rows[0]) {
-    await sql`UPDATE ai.conversations SET updated_at = now() WHERE id = ${input.conversationId}`;
+    if (!input.background) await tx`UPDATE ai.conversations SET updated_at = now() WHERE id = ${input.conversationId}`;
     return rowToMessage(rows[0]);
   }
   return null;
+  });
 };
 
 const toolMessageMeta = (
@@ -1077,6 +1097,7 @@ export const aiConversations: AiConversationService = {
       SELECT
         conversation.*,
         ${effectiveDone()} AS is_done,
+        EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
         latest.status AS latest_turn_status,
         ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
@@ -1085,7 +1106,7 @@ export const aiConversations: AiConversationService = {
       LEFT JOIN LATERAL (
         SELECT status, error, completed_at, live_blocks
         FROM ai.turns
-        WHERE conversation_id = conversation.id
+        WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
@@ -1121,7 +1142,9 @@ export const aiConversations: AiConversationService = {
           OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending()}))
           OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending()})
           OR (${status} = 'failed' AND latest.status = 'failed')
-          OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
+          OR (${status} = 'unread' AND (
+            (latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity'))
+            OR conversation.background_received_at > COALESCE(conversation.last_viewed_at, '-infinity'))))
       ORDER BY ${order}
       LIMIT ${limit}
     `;
@@ -1132,6 +1155,7 @@ export const aiConversations: AiConversationService = {
   listSidebarConversations: async (input) => {
     const rows = await sql<ConversationRow[]>`
       SELECT conversation.*, ${effectiveDone()} AS is_done,
+        EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
         latest.status AS latest_turn_status, ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at,
         jsonb_build_object('completed', COALESCE(progress.completed,0), 'total', COALESCE(progress.total,0),
@@ -1139,7 +1163,7 @@ export const aiConversations: AiConversationService = {
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
         SELECT status, error, completed_at, live_blocks FROM ai.turns
-        WHERE conversation_id = conversation.id ORDER BY created_at DESC, id DESC LIMIT 1
+        WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id ORDER BY created_at DESC, id DESC LIMIT 1
       ) latest ON TRUE
       LEFT JOIN LATERAL (
         SELECT CASE WHEN role = 'tool_result' THEN ${todoMessageJson()}->'result' ELSE ${todoMetaJson()}->'todoPlan' END AS plan
@@ -1176,6 +1200,7 @@ export const aiConversations: AiConversationService = {
       SELECT
         conversation.*,
         ${effectiveDone()} AS is_done,
+        EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
         latest.status AS latest_turn_status,
         ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
@@ -1184,7 +1209,7 @@ export const aiConversations: AiConversationService = {
       LEFT JOIN LATERAL (
         SELECT status, error, completed_at, live_blocks
         FROM ai.turns
-        WHERE conversation_id = conversation.id
+        WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
@@ -1209,7 +1234,9 @@ export const aiConversations: AiConversationService = {
           OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending()}))
           OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending()})
           OR (${status} = 'failed' AND latest.status = 'failed')
-          OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
+          OR (${status} = 'unread' AND (
+            (latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity'))
+            OR conversation.background_received_at > COALESCE(conversation.last_viewed_at, '-infinity'))))
       ORDER BY ${order}
       LIMIT ${perPage}
       OFFSET ${offset}
@@ -1221,7 +1248,7 @@ export const aiConversations: AiConversationService = {
       LEFT JOIN LATERAL (
         SELECT status, completed_at, live_blocks
         FROM ai.turns
-        WHERE conversation_id = conversation.id
+        WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
@@ -1246,7 +1273,9 @@ export const aiConversations: AiConversationService = {
           OR (${status} = 'running' AND (latest.status IN ('queued', 'running') OR ${browserWorkPending()}))
           OR (${status} = 'needs_attention' AND latest.status = 'waiting_for_action' AND NOT ${browserWorkPending()})
           OR (${status} = 'failed' AND latest.status = 'failed')
-          OR (${status} = 'unread' AND latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity')))
+          OR (${status} = 'unread' AND (
+            (latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity'))
+            OR conversation.background_received_at > COALESCE(conversation.last_viewed_at, '-infinity'))))
     `;
     const total = Number(countRows[0]?.total ?? 0);
     return {
@@ -1546,7 +1575,8 @@ export const aiConversations: AiConversationService = {
           SELECT 1
           FROM ai.turns active_turn
           WHERE active_turn.conversation_id = message.target_conversation_id
-            AND active_turn.status IN ('queued', 'running', 'waiting_for_action')
+            AND NOT COALESCE(active_turn.run_config ? 'background', false)
+      AND active_turn.status IN ('queued', 'running', 'waiting_for_action')
         ))
         AND (${input.targetConversationId ?? null}::uuid IS NOT NULL OR message.id = (
           SELECT oldest.id
@@ -1601,6 +1631,7 @@ export const aiConversations: AiConversationService = {
       const [active] = await tx<{ id: string }[]>`
         SELECT id FROM ai.turns
         WHERE conversation_id = ${message.target_conversation_id}::uuid
+          AND NOT COALESCE(run_config ? 'background', false)
           AND status IN ('queued', 'running', 'waiting_for_action')
         LIMIT 1
       `;
@@ -1743,7 +1774,7 @@ export const aiConversations: AiConversationService = {
       if (input.done) {
         const [active] = await tx<{ id: string }[]>`
           SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
-            AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1
+            AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1
         `;
         const [pending] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
         if (active || pending) return { ok: false as const, reason: "active_turn" as const };
@@ -1828,7 +1859,7 @@ export const aiConversations: AiConversationService = {
         AND EXISTS (SELECT 1 FROM ai.messages m WHERE m.conversation_id = c.id)
         AND NOT EXISTS (
           SELECT 1 FROM ai.turns t
-          WHERE t.conversation_id = c.id AND t.status IN ('queued', 'running', 'waiting_for_action')
+          WHERE t.conversation_id = c.id AND NOT COALESCE(t.run_config ? 'background', false) AND t.status IN ('queued', 'running', 'waiting_for_action')
         )
       ORDER BY c.updated_at ASC
       LIMIT ${limit}
@@ -2176,7 +2207,7 @@ export const aiConversations: AiConversationService = {
   listTurnMessages: async (input) => {
     const rows = await sql<MessageRow[]>`
       SELECT *
-      FROM ai.messages
+      FROM (SELECT * FROM ai.messages UNION ALL SELECT * FROM ai.task_messages) messages
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.loopId}
         AND (${input.includeCompacted ?? false} OR compacted_at IS NULL)
@@ -2287,13 +2318,15 @@ export const aiConversations: AiConversationService = {
 
   setLatestAssistantLoopAggregate: async (input) => {
     const loopId = input.loopId ?? null;
+    const config = loopId ? await aiConversations.getTurnRunConfig({ conversationId: input.conversationId, turnId: loopId }) : null;
+    const table = config?.kind === "chat" && config.background ? "ai.task_messages" : "ai.messages";
     await sql`
-      UPDATE ai.messages
+      UPDATE ${sql(table)}
       SET loop_aggregate = ${JSON.stringify(input.aggregate)}::text::jsonb,
           loop_done_reason = ${input.doneReason}
       WHERE id = (
         SELECT id
-        FROM ai.messages
+        FROM ${sql(table)}
         WHERE conversation_id = ${input.conversationId}
           AND compacted_at IS NULL
           AND kind = 'message'
@@ -2317,12 +2350,14 @@ export const aiConversations: AiConversationService = {
         WHERE conversation_id = ${input.conversationId}
           AND compacted_at IS NULL
           AND seq <= ${checkpointSeq}
+          AND ${visibleToTurn(input.turnId)}
       `;
       if ((rows[0]?.count ?? 0) === 0) return;
 
       const plans = await tx<{ plan: unknown }[]>`
         SELECT CASE WHEN role = 'tool_result' THEN ${todoMessageJson()}->'result' ELSE ${todoMetaJson()}->'todoPlan' END AS plan
         FROM ai.messages WHERE conversation_id = ${input.conversationId} AND seq <= ${checkpointSeq}
+          AND ${visibleToTurn(input.turnId)}
           AND ((role = 'tool_result' AND ${todoMessageJson()}->>'name' = 'todo_write' AND COALESCE(${todoMessageJson()}->>'isError','false') = 'false') OR ${todoMetaJson()} ? 'todoPlan')
         ORDER BY seq DESC, id DESC LIMIT 1
       `;
@@ -2334,6 +2369,7 @@ export const aiConversations: AiConversationService = {
           WHERE conversation_id = ${input.conversationId}
             AND compacted_at IS NULL
             AND seq <= ${checkpointSeq}
+            AND ${visibleToTurn(input.turnId)}
           RETURNING id
         )
         SELECT COUNT(*)::int AS count FROM archived
@@ -2377,7 +2413,7 @@ export const aiConversations: AiConversationService = {
       if (!conversation) throw new Error("Conversation not found.");
       if (input.queuedMessageId) {
         const [head] = await tx<{id:string;status:string}[]>`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY position LIMIT 1`;
-        const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
+        const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
         if (!head || head.id !== input.queuedMessageId || head.status !== 'pending' || busy) throw new Error("Queued message is no longer ready.");
       }
       if (!input.queuedMessageId) {
@@ -2512,7 +2548,7 @@ export const aiConversations: AiConversationService = {
   },
 
   getLatestTurn: async (input) => {
-    const [row] = await sql<TurnRow[]>`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
+    const [row] = await sql<TurnRow[]>`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false)
       ORDER BY created_at DESC, id DESC LIMIT 1`;
     return row ? rowToTurn(row) : null;
   },
@@ -2544,6 +2580,7 @@ export const aiConversations: AiConversationService = {
       SELECT *
       FROM ai.turns
       WHERE conversation_id = ${input.conversationId}
+        AND NOT COALESCE(run_config ? 'background', false)
         AND status IN ('queued', 'running', 'waiting_for_action')
       ORDER BY created_at DESC
       LIMIT 1
@@ -3183,7 +3220,21 @@ export const aiConversations: AiConversationService = {
   createSessionStore: (input): SessionStore => ({
     load: async (): Promise<StoreEntry[]> => {
       // The loop must only ever see the active model context, never archived history.
-      const rows = await aiConversations.listContextMessages({ conversationId: input.conversationId });
+      if (input.background && input.turnId) {
+        const own = await aiConversations.listTurnMessages({ conversationId: input.conversationId, loopId: input.turnId });
+        const context = input.background.context;
+        return [...context, ...own.map(row => ({ seq: context.length + row.seq, kind: row.kind, message: row.message }))];
+      }
+      // Results delivered after this turn started belong to the next turn's context.
+      // Compare durable message sequences rather than wall-clock timestamps.
+      const rows = input.turnId
+        ? (await sql<MessageRow[]>`
+            SELECT * FROM ai.messages
+            WHERE conversation_id = ${input.conversationId}::uuid AND compacted_at IS NULL
+              AND ${visibleToTurn(input.turnId)}
+            ORDER BY seq ASC
+          `).map(rowToMessage)
+        : await aiConversations.listContextMessages({ conversationId: input.conversationId });
       return rows.map((row) => ({
         seq: row.seq,
         kind: row.kind,
@@ -3206,13 +3257,14 @@ export const aiConversations: AiConversationService = {
 
       if (input.turnId && input.leaseOwner) {
         const appended = await appendTurnOwnedMessage({
+          background: Boolean(input.background),
           conversationId: input.conversationId,
           turnId: input.turnId,
           leaseOwner: input.leaseOwner,
           message,
           kind: opts?.kind,
           seq: opts?.seq,
-          loopId: opts?.kind === "summary" ? null : input.turnId,
+          loopId: opts?.kind === "summary" && !input.background ? null : input.turnId,
           modelProfileId: input.modelProfileId,
           meta,
         });

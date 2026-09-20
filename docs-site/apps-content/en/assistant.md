@@ -10,6 +10,38 @@ updated: 2026-09-11
 
 # Assistant
 
+## Background tasks
+
+Ask Assistant to run a task once or on a recurring schedule. Each run starts
+with the completed chat context available at that moment and works independently,
+so you can continue chatting. Files, memories, Skills, and Project resources stay
+live; they are not copied into a frozen workspace. A schedule has at most one
+queued or running occurrence; ticks during that run are skipped. Different
+schedules can run independently in the same chat.
+
+The **Background activity** view lists runs across your chats. Open a run to read
+its result and inspect its history, or return to the chat to adjust the task.
+Results and failures arrive as ordinary messages. A new result reopens a completed
+chat and moves it to the top of recent activity. Chats with active schedules show
+a clock and do not become done automatically. Marking a chat done manually does
+not pause its schedules. After a successful Done action, the card briefly shows
+green confirmation before fading out. Failed requests leave it in place.
+
+Before enabling a task, approve its capabilities and any fixed inputs. For example,
+fixing `noteId` permits updates only to that note. Leaving inputs unrestricted
+permits any input allowed by your existing access. These approvals belong only to
+the task; they do not grant additional resource permissions. Actions that require
+a fresh confirmation every time cannot run unattended.
+
+If a run fails or lacks permission, ask in the original chat to change its
+instructions, schedule, or approvals and try again. Expanding its approvals needs
+confirmation. Failed runs remain available for inspection. Do not blindly repeat
+a write whose outcome is unknown. Browser interaction and Code Mode are unavailable
+in background runs. Background runs do not compact the parent chat; a run that
+exceeds its context or runtime limit reports a failure.
+
+## Studio
+
 The **Studio** navigation opens a compact app list on hover or click, just like
 **Projects**. It loads accessible apps when opened and includes page controls and
 a **Search apps** button. Search opens global search with one **Studio** context chip and an empty

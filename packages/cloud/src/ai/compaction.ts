@@ -182,6 +182,7 @@ export const createCloudCompactFn = (input: {
 
       await aiConversations.compactMessages({
         conversationId: input.conversationId,
+        turnId: input.turnId,
         checkpointSeq: checkpoint.seq,
         modelProfileId: input.modelProfileId,
         summary: {

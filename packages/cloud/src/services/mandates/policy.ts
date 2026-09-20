@@ -25,12 +25,48 @@ const operationSchema = z.union([
   }, "Expected a canonical mandate operation"),
 ]);
 
+export const CapabilityGrantSchema = z
+  .object({
+    appId: CapabilityAppIdSchema.describe("Exact discovered application ID."),
+    capabilityId: CapabilityLocalIdSchema.describe("Exact local capability ID from discovery, without application prefix."),
+    kind: z.enum(["query", "action"]).describe("Discovered capability kind."),
+    fixedInput: z.record(z.string(), z.json()).default({}).describe("Exact top-level input values. Omitted fields remain unrestricted."),
+  })
+  .strict();
+export const CapabilityGrantsSchema = z.array(CapabilityGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
+export type CapabilityGrant = z.output<typeof CapabilityGrantSchema>;
+
+const equalJson = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b))
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => equalJson(v, b[i]));
+  const ak = Object.keys(a),
+    bk = Object.keys(b);
+  return ak.length === bk.length && ak.every((key) => Object.hasOwn(b, key) && equalJson(Reflect.get(a, key), Reflect.get(b, key)));
+};
+export const capabilityGrantAllows = (
+  grant: CapabilityGrant,
+  input: { appId: string; capabilityId: string; kind: "query" | "action"; input: unknown },
+): boolean =>
+  grant.appId === input.appId &&
+  grant.capabilityId === input.capabilityId &&
+  grant.kind === input.kind &&
+  Object.entries(grant.fixedInput).every(
+    ([key, value]) =>
+      input.input !== null &&
+      typeof input.input === "object" &&
+      Object.hasOwn(input.input, key) &&
+      equalJson(value, Reflect.get(input.input, key)),
+  );
+
 export const MandatePolicyV1Schema = z
   .object({
     version: z.literal(MANDATE_POLICY_VERSION),
     apps: z.union([z.literal("*"), identifierList(CapabilityAppIdSchema)]),
     operations: z.union([z.literal("*"), identifierList(operationSchema)]),
     actions: z.enum(["deny", "require_approval", "preapproved"]),
+    grants: CapabilityGrantsSchema.optional(),
   })
   .strict()
   .superRefine((policy, context) => {
@@ -70,14 +106,41 @@ const ACTION_AUTHORITY = { deny: 0, require_approval: 1, preapproved: 2 } as con
 export const isMandatePolicyNarrowing = (current: MandatePolicyV1, next: MandatePolicyV1): boolean =>
   setAllows(current.apps, next.apps) &&
   setAllows(current.operations, next.operations) &&
-  ACTION_AUTHORITY[next.actions] <= ACTION_AUTHORITY[current.actions];
+  ACTION_AUTHORITY[next.actions] <= ACTION_AUTHORITY[current.actions] &&
+  (current.grants === undefined ||
+    (next.grants !== undefined &&
+      next.grants.every((grant) =>
+        current.grants!.some((existing) => capabilityGrantAllows(existing, { ...grant, input: grant.fixedInput })),
+      )));
 
 export const mandatePolicyAllows = (
   policy: MandatePolicyV1,
-  input: { appId: string; operation: string; actionApproval: "none" | "approved" },
+  input: {
+    appId: string;
+    operation: string;
+    actionApproval: "none" | "approved";
+    input?: unknown;
+    capabilityApproval?: "none" | "rememberable" | "always";
+  },
 ): boolean => {
   if (policy.apps !== "*" && !policy.apps.includes(input.appId)) return false;
   if (policy.operations !== "*" && !policy.operations.includes(input.operation)) return false;
+  if (policy.grants !== undefined) {
+    const [operation, capabilityId] = input.operation.split(":");
+    const kind =
+      operation === "capability.query"
+        ? "query"
+        : operation === "capability.action.run" || operation === "capability.action.review"
+          ? "action"
+          : null;
+    if (
+      !kind ||
+      !capabilityId ||
+      !policy.grants.some((grant) => capabilityGrantAllows(grant, { appId: input.appId, capabilityId, kind, input: input.input }))
+    )
+      return false;
+    if (kind === "action" && input.capabilityApproval !== "none" && input.capabilityApproval !== "rememberable") return false;
+  }
   if (!input.operation.startsWith("capability.action.run:")) return true;
   if (policy.actions === "deny") return false;
   if (policy.actions === "require_approval") return input.actionApproval === "approved";

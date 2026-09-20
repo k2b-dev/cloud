@@ -1,3 +1,4 @@
+import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import { ContextStudio } from "../artifacts/ContextStudio";
 import { formatDictationTimestamp } from "./dictation-files";
 import { query } from "@k2b/stdlib/solid";
@@ -148,6 +149,8 @@ const createAssistantChatContextState = (props: AssistantChatContextQueryProps) 
 type AssistantChatContextState = ReturnType<typeof createAssistantChatContextState>;
 
 function AssistantChatContextView(props: ContextNavigation & { state: AssistantChatContextState; onOpenApp?: (id: string, title: string, start?: boolean) => void }) {
+  const live = useAssistantLive();
+  const openRun = (taskId: string, occurrenceId: string) => void openAssistantTaskRun(taskId, occurrenceId, live);
   const locale = useLocale();
   const text = useAssistantText();
   const [search, setSearch] = createSignal("");
@@ -449,7 +452,7 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
               </AssistantContextSection>
             </Show>
 
-            <Show when={props.category === "tasks"}><AssistantTasksView chatId={value().chat.chatId} /></Show>
+            <Show when={props.category === "tasks"}><AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} /></Show>
             <Show when={!props.category && section("tasks") && value().chat.tasks[0]}>
               {(task) => {
                 const status = () => taskStatus(task(), text);
@@ -462,7 +465,7 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
                       <Show when={!props.category && value().chat.tasks.length > 1}>
                         <AssistantContextViewAll
                           onClick={() =>
-                            props.onOpenView ? overview("tasks", text("Scheduled tasks")) : void prompts.dialog<void>(() => <AssistantTasksView chatId={value().chat.chatId} />, {
+                            props.onOpenView ? overview("tasks", text("Scheduled tasks")) : void prompts.dialog<void>(() => <AssistantLiveProvider value={live}><AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} /></AssistantLiveProvider>, {
                               title: text("Scheduled tasks"),
                               icon: "ti ti-calendar-time",
                               size: "large",

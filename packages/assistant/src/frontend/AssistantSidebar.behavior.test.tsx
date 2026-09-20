@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { assistantApi } from "../api/client";
+import { expect, spyOn, test } from "bun:test";
 import type { AiConversation } from "@k2b/cloud/ai";
 import { createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
@@ -120,7 +121,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
     const mobile = readWorkspaceNavigation()!.navigation;
     const ids = mobile.items().map((item) => item.id);
     expect(ids.slice(2, 4)).toEqual(["chat:pinned", "chat:normal"]);
-    expect(ids.slice(-3)).toEqual(["apps", "projects", "preferences"]);
+    expect(ids.slice(-4)).toEqual(["apps", "projects", "activities", "preferences"]);
     expect(ids).not.toContain("pinned");
     expect(ids).not.toContain("chats");
     expect(mobile.items().find((item) => item.id === "projects")?.defaultExpanded).toBe(false);
@@ -133,4 +134,53 @@ test("footer project popup and mobile group share search and creation; pinned ch
     expect(searches).toHaveLength(2);
     expect(created).toBe(2);
   } finally { release(); dispose(); dom.cleanup(); }
+});
+
+test("Done keeps its card through live updates, confirms success, then fades without blocking", async () => {
+  const dom = createDomTestHarness();
+  const { default: AssistantSidebar } = await import("./AssistantSidebar");
+  const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
+  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const original = { ...conversation("finish", "Finish this", null), hasActiveSchedule: true };
+  const completed = { ...original, isDone: true, done: true };
+  const [items, setItems] = createSignal<AiConversation[]>([original]);
+  let resolveSave: (value: AiConversation) => void = () => {};
+  const save = spyOn(assistantApi, "setConversationDone").mockImplementation(() => new Promise(resolve => { resolveSave = resolve; }));
+  const dispose = render(() => <AssistantSidebar conversations={items} live={live} onConversationUpdated={item => setItems([item])} />, dom.root);
+  delegateEvents(["click"]);
+  const card = () => dom.root.querySelector<HTMLElement>('.assistant-chat-sidebar-item[data-variant="card"]');
+  try {
+    expect(card()?.querySelector('[aria-label="Active schedule"]')).not.toBeNull();
+    card()!.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')!.click();
+    expect(card()?.classList.contains("assistant-chat-sidebar-item--saving")).toBe(true);
+    setItems([completed]);
+    expect(card()).not.toBeNull();
+    resolveSave(completed);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(card()?.classList.contains("assistant-chat-sidebar-item--confirmed")).toBe(true);
+    expect(card()?.textContent).toContain("Done");
+    await new Promise(resolve => setTimeout(resolve, 460));
+    expect(card()?.classList.contains("assistant-chat-sidebar-item--leaving")).toBe(true);
+    await new Promise(resolve => setTimeout(resolve, 170));
+    expect(card()).toBeNull();
+    expect(save).toHaveBeenCalledTimes(1);
+  } finally { dispose(); save.mockRestore(); live.dispose(); dom.cleanup(); }
+});
+
+test("failed Done request leaves the chat available and clears its pending feedback", async () => {
+  const dom = createDomTestHarness();
+  const { default: AssistantSidebar } = await import("./AssistantSidebar");
+  const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
+  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const save = spyOn(assistantApi, "setConversationDone").mockRejectedValue(new Error("Offline"));
+  const dispose = render(() => <AssistantSidebar conversations={() => [conversation("fail", "Keep this", null)]} live={live} />, dom.root);
+  delegateEvents(["click"]);
+  try {
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')!.click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const card = dom.root.querySelector('.assistant-chat-sidebar-item[data-variant="card"]');
+    expect(card).not.toBeNull();
+    expect(card?.classList.contains("assistant-chat-sidebar-item--saving")).toBe(false);
+    expect(card?.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')?.disabled).toBe(false);
+  } finally { dispose(); save.mockRestore(); live.dispose(); dom.cleanup(); }
 });

@@ -1,3 +1,5 @@
+import { CapabilityGrantsSchema, type CapabilityGrant } from "../services/mandates";
+export { CapabilityGrantsSchema as ChatTaskGrantsSchema };
 import { dates } from "@k2b/stdlib";
 import {
   type AiChatTask,
@@ -19,6 +21,7 @@ export type AiChatTaskView = {
   id: string;
   chatId: string;
   chatTitle: string;
+  grants: CapabilityGrant[];
   prompt: string;
   schedule: AiChatTaskSchedule;
   timezone: string;
@@ -35,6 +38,7 @@ export type AiChatTaskOccurrenceView = {
   trigger: "scheduled" | "manual";
   state: AiChatTaskOccurrenceState;
   error: string | null;
+  resultText: string | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -44,6 +48,7 @@ export const toAiChatTaskView = (task: AiChatTask): AiChatTaskView => ({
   id: task.shortId,
   chatId: task.chatId,
   chatTitle: task.chatTitle,
+  grants: task.grants,
   prompt: task.prompt,
   schedule: task.schedule,
   timezone: task.timezone,
@@ -60,6 +65,7 @@ export const toAiChatTaskOccurrenceView = (occurrence: AiChatTaskOccurrence, tas
   trigger: occurrence.trigger,
   state: occurrence.state,
   error: occurrence.error,
+  resultText: occurrence.resultText,
   createdAt: occurrence.createdAt,
   startedAt: occurrence.startedAt,
   completedAt: occurrence.completedAt,
@@ -92,9 +98,10 @@ export const chatTaskCreateFingerprint = (input: {
   prompt: string;
   schedule: z.infer<typeof ChatTaskScheduleInputSchema>;
   timezone?: string;
+  grants?: CapabilityGrant[];
 }): string =>
   new Bun.CryptoHasher("sha256")
-    .update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone ?? null]))
+    .update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone ?? null, input.grants ?? []]))
     .digest("hex");
 
 export const normalizeChatTaskSchedule = async (

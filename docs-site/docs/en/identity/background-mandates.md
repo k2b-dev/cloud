@@ -5,14 +5,14 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-09-10
+updated: 2026-09-20
 ---
 
 # Background authority mandates
 
 A mandate records what one durable workload may ask Core to do later for a
 current user or resource service account. It is not a bearer token, does not
-contain resource grants, and cannot be sent to a target application by itself.
+grant resource access, and cannot be sent to a target application by itself.
 
 Use a mandate when a job, workflow, or automation must call another Cloud
 application after the originating browser session may have expired. Do not
@@ -99,7 +99,9 @@ Policy values are:
   `capability.action.review:item.rename`,
   `capability.action.run:item.rename`, `search.query`, or
   `widget.read:weather`;
-- `actions`: `deny`, `require_approval`, or `preapproved`.
+- `actions`: `deny`, `require_approval`, or `preapproved`;
+- optional `grants`: exact capability pairs and fixed inputs, checked in addition
+  to the app and operation allowlists.
 
 `preapproved` requires explicit non-empty app and operation allowlists. A
 wildcard mandate always requires approval. It cannot silently approve an
@@ -113,6 +115,43 @@ with a user's browser session or silently recreated by a worker.
 Only a current interactive subject or administrator can create, resume, or
 broaden a mandate. The owning workload may narrow, pause, or revoke it. A
 revoked mandate is terminal.
+
+## Grant capabilities to an unattended Assistant task
+
+Assistant tasks use explicit `grants` in their mandate policy. Each grant pairs
+one `appId`, local `capabilityId`, and `kind` (`query` or `action`) with optional
+fixed top-level inputs. The agent proposes the scope; the user reviews it when
+creating or updating the task. Capabilities need no additional metadata.
+
+```json
+{
+  "appId": "notebooks",
+  "capabilityId": "note.edit",
+  "kind": "action",
+  "fixedInput": { "noteId": "abc123" }
+}
+```
+
+This allows changes to that note while leaving the edit content unrestricted.
+An empty `fixedInput` allows any inputs to that exact capability within the
+user's current access. Fixed JSON values use exact equality: nested objects
+must match completely, and array order matters. There are no wildcards,
+implicit parent-resource checks, or expressions. A notebook restriction cannot
+be inferred from a capability that only accepts a note ID.
+
+Core checks the current mandate revision, grant pair, fixed values, and live
+capability approval mode before every invocation. The target application still
+checks the user's current resource permissions. Only actions with `approval:
+"none"` or `approval: "rememberable"` can run unattended; actions requiring an
+approval every time remain unavailable even when listed in a grant. Remembered
+interactive approvals do not authorize background work.
+
+Changing grants updates the mandate revision, invalidating older runs' authority.
+The agent can inspect a failed run and propose revised grants in the normal chat;
+expanding the scope requires a new reviewed task update. A worker cannot grant
+itself more authority. Missing or revoked authority produces an actionable task
+failure, not a pending browser dialog. Managed Code Mode remains unavailable to
+these tasks until its execution host supports the same task-scoped authority.
 
 ## Invoke from a worker
 

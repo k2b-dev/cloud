@@ -71,3 +71,56 @@ describe("mandate policy", () => {
     ).toBe(true);
   });
 });
+
+describe("bounded background capability grants", () => {
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["notebooks", "mail"],
+    operations: ["capability.action.run:note.edit", "capability.query:message.read"],
+    actions: "preapproved",
+    grants: [
+      { appId: "notebooks", kind: "action", capabilityId: "note.edit", fixedInput: { noteId: "abc123", options: { a: 1, b: [2, 3] } } },
+      { appId: "mail", kind: "query", capabilityId: "message.read", fixedInput: {} },
+    ],
+  });
+  const call = {
+    appId: "notebooks",
+    operation: "capability.action.run:note.edit",
+    actionApproval: "none" as const,
+    capabilityApproval: "rememberable" as const,
+    input: { noteId: "abc123", options: { b: [2, 3], a: 1 }, content: "new" },
+  };
+  test("enforces exact JSON values while leaving unspecified inputs free", () => {
+    expect(mandatePolicyAllows(policy, call)).toBe(true);
+    expect(mandatePolicyAllows(policy, { ...call, input: { ...call.input, noteId: "other" } })).toBe(false);
+    expect(mandatePolicyAllows(policy, { ...call, input: { noteId: "abc123" } })).toBe(false);
+    expect(mandatePolicyAllows(policy, { ...call, input: { ...call.input, options: { a: 1, b: [3, 2] } } })).toBe(false);
+  });
+  test("never crosses grant app/operation pairs or bypasses always approval", () => {
+    expect(mandatePolicyAllows(policy, { ...call, appId: "mail" })).toBe(false);
+    expect(mandatePolicyAllows(policy, { ...call, capabilityApproval: "always", actionApproval: "approved" })).toBe(false);
+    expect(mandatePolicyAllows(policy, { ...call, capabilityApproval: undefined })).toBe(false);
+  });
+  test("allows unrestricted inputs only for an exact unbounded grant", () => {
+    expect(
+      mandatePolicyAllows(policy, {
+        appId: "mail",
+        operation: "capability.query:message.read",
+        actionApproval: "none",
+        input: { messageId: "any" },
+      }),
+    ).toBe(true);
+  });
+  test("workload narrowing cannot remove or weaken fixed inputs", () => {
+    expect(isMandatePolicyNarrowing(policy, { ...policy, grants: policy.grants!.map((grant) => ({ ...grant, fixedInput: {} })) })).toBe(
+      false,
+    );
+    expect(isMandatePolicyNarrowing(policy, { ...policy, grants: undefined })).toBe(false);
+    expect(
+      isMandatePolicyNarrowing(policy, {
+        ...policy,
+        grants: policy.grants!.map((grant) => ({ ...grant, fixedInput: { ...grant.fixedInput, extra: "fixed" } })),
+      }),
+    ).toBe(true);
+  });
+});

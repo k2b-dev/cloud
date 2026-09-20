@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
+import { expect, test, spyOn } from "bun:test";
 import { defineTool, nessi, type Provider, type StoreEntry, type InboundEvent } from "@k2b/nessi";
 import { z } from "zod";
-import { waitForManagedCodeCall } from "./code-runtime-tools";
+import { aiConversations } from "./store";
+import { runManagedCodeTool, waitForManagedCodeCall } from "./code-runtime-tools";
 
 test("two managed approvals retain their Nessi action IDs across two suspended attempts", async () => {
   const entries: StoreEntry[] = [];
@@ -82,4 +83,58 @@ test("two managed approvals retain their Nessi action IDs across two suspended a
   expect(
     entries.some((entry) => entry.message.role === "tool_result" && JSON.stringify(entry.message.result).includes('"executed":1')),
   ).toBe(true);
+});
+
+test("managed code rejects background authority before resolving a user or contacting a host", async () => {
+  const actor = {
+    kind: "user" as const,
+    user: {
+      id: "11111111-1111-4111-8111-111111111111",
+      uid: "test",
+      provider: "local" as const,
+      profile: "user" as const,
+      displayName: "Test",
+      mail: "test@example.test",
+      givenname: "Test",
+      sn: "User",
+      roles: ["user" as const],
+      accountExpires: null,
+      avatarHash: null,
+      lastLoginLocal: null,
+      memberofGroup: [],
+      memberofGroupIds: [],
+      manages: [],
+      managesGroupIds: [],
+      ipa: null,
+    },
+  };
+  const config = spyOn(aiConversations, "getTurnRunConfig");
+  try {
+    for (const runConfig of [
+      null,
+      { input: "Run", mandate: { id: crypto.randomUUID(), revision: 1 } },
+      { input: "Run", background: { taskId: "task01", occurrenceId: "run001", context: [] } },
+    ]) {
+      config.mockResolvedValue(runConfig);
+      await expect(
+        runManagedCodeTool("code_run")(
+          {},
+          {
+            actor,
+            conversationId: "chat",
+            turnId: "turn",
+            signal: AbortSignal.timeout(1000),
+            requestApproval: async () => {
+              throw new Error("Unexpected approval");
+            },
+            requestClientTool: async <T>(): Promise<T> => {
+              throw new Error("Unexpected client");
+            },
+          },
+        ),
+      ).rejects.toThrow("task-scoped authority");
+    }
+  } finally {
+    config.mockRestore();
+  }
 });

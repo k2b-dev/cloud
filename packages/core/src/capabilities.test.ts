@@ -89,6 +89,7 @@ const scheduledTask: AiChatTask = {
   sponsorUserId: user.id,
   mandateId: null,
   mandateRevision: null,
+  grants: [],
   prompt: "Prepare the release report.",
   schedule: { kind: "cron", cron: "0 9 * * 1" },
   timezone: "Europe/Berlin",
@@ -107,6 +108,7 @@ const taskOccurrence: AiChatTaskOccurrence = {
   trigger: "manual",
   state: "queued",
   turnId: null,
+  resultText: null,
   error: null,
   createdAt: chat.updatedAt,
   startedAt: null,
@@ -196,6 +198,7 @@ describe("Core AI capabilities", () => {
       "ai.skill.reference.read",
       "ai.skills.list",
       "ai.task.read",
+      "ai.task.run.read",
       "ai.tasks.list",
       "entities.search",
     ];

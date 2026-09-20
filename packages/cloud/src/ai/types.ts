@@ -151,6 +151,7 @@ export type AiConversation = {
   /** null: automatic after seven days without use; false: explicitly active; true: finished. */
   done: boolean | null;
   isDone: boolean;
+  hasActiveSchedule?: boolean;
   lastUsedAt: string;
   runStatus: AiConversationRunStatus;
   /** Error from the latest turn when `runStatus` is `failed`. */
@@ -553,7 +554,14 @@ export type AiConversationFileSnapshot = {
   total: number;
 };
 
+export type AiBackgroundRunContext = {
+  taskId: string;
+  occurrenceId: string;
+  context: Array<{ seq: number; kind: "message" | "summary"; message: Message }>;
+};
+
 export type AiChatTurnRunConfig = {
+  background?: AiBackgroundRunContext;
   selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
   assistantChat?: true;
@@ -819,6 +827,7 @@ export type AiConversationService = {
   }): Promise<void>;
   compactMessages(input: {
     conversationId: string;
+    turnId?: string;
     checkpointSeq: number;
     summary: Message;
     modelProfileId?: string | null;
@@ -921,6 +930,7 @@ export type AiConversationService = {
   /** Atomically make pending steers visible to the model and return them in order. */
   takePendingTurnSteers(input: { conversationId: string; turnId: string; leaseOwner: string }): Promise<AiTurnSteer[]>;
   createSessionStore(input: {
+    background?: AiBackgroundRunContext;
     /** Called after a durable append, for incremental usage/history projection. */
     onMessage?: (message: AiStoredMessage) => Promise<void>;
     conversationId: string;

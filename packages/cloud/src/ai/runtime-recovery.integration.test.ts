@@ -97,3 +97,15 @@ recovery("a failed completion publication remains recoverable and logs turn corr
     warning.mockRestore();
   }
 });
+
+recovery("background sweep finalization does not finish the interactive chat stream", async () => {
+  const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" }, background: { taskId: "task01", occurrenceId: "run001", context: [] } });
+  const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
+  try {
+    await __aiRuntimeTest.publishSweepFinished({ conversationId: crypto.randomUUID(), turnId: crypto.randomUUID(), attempt: 1, seq: 7 }, "failed");
+    expect(publish).not.toHaveBeenCalled();
+  } finally {
+    config.mockRestore();
+    publish.mockRestore();
+  }
+});

@@ -31,6 +31,10 @@ export const runManagedCodeTool =
   (name: string) =>
   async (args: unknown, context: Context): Promise<z.infer<ReturnType<typeof z.json>>> => {
     if (!context.conversationId || !context.turnId) throw new Error("Code execution requires an active Assistant turn");
+    const runConfig = await aiConversations.getTurnRunConfig({ conversationId: context.conversationId, turnId: context.turnId });
+    if (!runConfig || (runConfig.kind !== "compact" && (runConfig.background || runConfig.mandate))) {
+      throw new Error("Code execution is unavailable for background tasks until the code host supports task-scoped authority.");
+    }
     const { actor } = await resolveAiCapabilityActor({
       conversationId: context.conversationId,
       persistedActor: context.actor,

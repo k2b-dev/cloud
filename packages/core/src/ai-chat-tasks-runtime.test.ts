@@ -11,6 +11,7 @@ const task = (id: string): AiChatTask => ({
   sponsorUserId: "sponsor",
   mandateId: "mandate",
   mandateRevision: 1,
+  grants: [],
   prompt: "Check",
   schedule: { kind: "cron", cron: "0 9 * * *" },
   timezone: "UTC",

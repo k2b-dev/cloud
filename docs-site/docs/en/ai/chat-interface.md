@@ -378,6 +378,15 @@ It does not show the human-attention hand. A selected chat shows running progres
 another chat can indicate that browser execution is waiting. Approval and human
 input still use `needs_attention`. Running-list filters include browser work.
 
+### Inspect background results
+
+Delivered background results use ordinary assistant prose with
+`meta.scheduledTask` identifying the task and occurrence. The timeline displays a
+**Background run** control above the result. Hosts provide
+`AiChatActions.onOpenScheduledTaskRun(taskId, occurrenceId)` to open their
+permission-checked run detail view. Assistant shows the result, execution history,
+and controls for returning to the chat or managing the task.
+
 ### Open chat content beside the conversation
 
 The context panel is the entry point for apps, files, images, sources, project

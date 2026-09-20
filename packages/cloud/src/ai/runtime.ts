@@ -70,7 +70,7 @@ const aiTurnQueue = lazySync((sync) => {
 
 // No idempotency key: the DB claim is the only gate, so re-enqueues (recovery,
 // continuation, stale-sweep) are always allowed and never silently swallowed.
-const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({ data: job, orderingKey: job.conversationId });
+const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({ data: job, orderingKey: job.turnId });
 
 /** Wake the durable queue promptly; the periodic sweep retries a failed wake-up. */
 export const wakeAiMessageQueue = (conversationId: string): void => {
@@ -263,7 +263,8 @@ export const abortAiTurn = async (input: { conversationId: string; turnId: strin
 
   if (request.ownerless) {
     const finalized = await aiConversations.completeTurn({ ...input, status: "aborted", error: null });
-    if (finalized === "completed") {
+    const config = await aiConversations.getTurnRunConfig(input);
+    if (finalized === "completed" && !(config?.kind === "chat" && config.background)) {
       const attempt = active?.turn.id === input.turnId ? active.turn.attempt : 1;
       const seq = (active?.turn.id === input.turnId ? active.liveSeq : 0) + 1;
       await publishAiWireEvent({
@@ -445,6 +446,8 @@ const processMessage = async (
 };
 
 const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: string }, status: "failed" | "aborted"): Promise<void> => {
+  const config = await aiConversations.getTurnRunConfig(turn);
+  if (config?.kind === "chat" && config.background) return;
   await publishAiWireEvent({
     v: 1,
     conversationId: turn.conversationId,

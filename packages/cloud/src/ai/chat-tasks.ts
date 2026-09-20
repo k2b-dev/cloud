@@ -1,8 +1,13 @@
+import { aiConversations } from "./store";
 import type { Message } from "@k2b/nessi";
 import { type SQL, sql } from "bun";
 import { logger } from "../services/logging";
 import {
   createMandate,
+  CapabilityGrantsSchema,
+  type CapabilityGrant,
+  updateMandatePolicy,
+  validateMandateIssueAuthority,
   type Mandate,
   type MandatePolicyV1,
   MandatePolicyV1Schema,
@@ -10,6 +15,7 @@ import {
   resumeMandate,
   revokeMandate,
 } from "../services/mandates";
+import { getCapability } from "../_internal/registry";
 import { parsePgJsonValue } from "../services/postgres";
 import { withAiShortIdForDb } from "./short-id";
 import type { AiChatTurnRunConfig, AiStoredMessage, AiTurnStatus } from "./types";
@@ -25,6 +31,7 @@ export type AiChatTask = {
   sponsorUserId: string;
   mandateId: string | null;
   mandateRevision: number | null;
+  grants: CapabilityGrant[];
   prompt: string;
   schedule: AiChatTaskSchedule;
   timezone: string;
@@ -45,6 +52,7 @@ export type AiChatTaskOccurrence = {
   state: AiChatTaskOccurrenceState;
   turnId: string | null;
   error: string | null;
+  resultText: string | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -59,6 +67,7 @@ type TaskRow = {
   sponsor_user_id: string;
   mandate_id: string | null;
   mandate_revision: number | bigint | null;
+  mandate_policy?: unknown;
   prompt: string;
   schedule_kind: "once" | "cron";
   run_at: Date | string | null;
@@ -91,6 +100,8 @@ type OccurrenceRow = {
   state: AiChatTaskOccurrenceState;
   turn_id: string | null;
   error: string | null;
+  result_text?: string | null;
+  request_key?: string;
   created_at: Date | string;
   started_at: Date | string | null;
   completed_at: Date | string | null;
@@ -99,21 +110,42 @@ type OccurrenceRow = {
 const iso = (value: Date | string): string => new Date(value).toISOString();
 const nullableIso = (value: Date | string | null): string | null => (value === null ? null : iso(value));
 const taskIdempotencyKey = (key: string): string => `task.create:${key}`;
-const CHAT_TASK_MANDATE_POLICY = {
+const chatTaskMandatePolicy = (grants: CapabilityGrant[]): MandatePolicyV1 => ({
   version: 1,
-  apps: "*",
-  operations: "*",
-  actions: "require_approval",
-} as const satisfies MandatePolicyV1;
+  apps: [...new Set(grants.map((grant) => grant.appId))],
+  operations: [
+    ...new Set(
+      grants.flatMap((grant) =>
+        grant.kind === "query"
+          ? [`capability.query:${grant.capabilityId}`]
+          : [`capability.action.review:${grant.capabilityId}`, `capability.action.run:${grant.capabilityId}`],
+      ),
+    ),
+  ],
+  actions: grants.length ? "preapproved" : "deny",
+  grants,
+});
+const validateTaskGrants = async (input: unknown): Promise<CapabilityGrant[]> => {
+  const grants = CapabilityGrantsSchema.parse(input);
+  for (const grant of grants) {
+    const entry = await getCapability(grant.appId);
+    const operation = (grant.kind === "query" ? entry?.manifest.queries : entry?.manifest.actions)?.find(
+      (item) => item.localId === grant.capabilityId,
+    );
+    if (!operation) throw new Error(`Capability unavailable: ${grant.appId}.${grant.capabilityId}`);
+    if (grant.kind === "action" && (!("approval" in operation) || (operation.approval !== "none" && operation.approval !== "rememberable")))
+      throw new Error(`Capability always requires interactive approval: ${grant.appId}.${grant.capabilityId}`);
+    const properties = operation.inputSchema.properties ?? {};
+    for (const key of Object.keys(grant.fixedInput))
+      if (!Object.hasOwn(properties, key)) throw new Error(`Unknown fixed input ${key} for ${grant.appId}.${grant.capabilityId}`);
+  }
+  return grants;
+};
 const mandateAuthority = (userId: string) => ({ kind: "interactive" as const, userId });
 const mandateWorkloadAuthority = { kind: "workload" as const, ownerAppId: "core" };
 const mandateError = (operation: string, result: { ok: false; error: { message: string } }): Error =>
   new AiChatTaskAuthorityError(`Could not ${operation} scheduled task mandate: ${result.error.message}`);
-const isChatTaskMandatePolicy = (policy: MandatePolicyV1): boolean =>
-  policy.version === CHAT_TASK_MANDATE_POLICY.version &&
-  policy.apps === CHAT_TASK_MANDATE_POLICY.apps &&
-  policy.operations === CHAT_TASK_MANDATE_POLICY.operations &&
-  policy.actions === CHAT_TASK_MANDATE_POLICY.actions;
+const isChatTaskMandatePolicy = (policy: MandatePolicyV1): boolean => policy.grants !== undefined;
 const mandateRevision = async (
   task: { mandate_id: string; mandate_revision: number | bigint },
   state: "active" | "paused",
@@ -187,6 +219,26 @@ const stopTaskAdmission = async (
         revision = revision + 1, updated_at = now()
     WHERE id = ${task.id}::uuid AND state = 'active'
   `;
+  if (state === "needs_attention" && reason) {
+    const occurrences = await db<{ id: string }[]>`
+      UPDATE ai.chat_task_occurrences SET state = 'failed', error = ${reason}, completed_at = now()
+      WHERE task_id = ${task.id}::uuid AND state = 'queued' RETURNING id
+    `;
+    if (!occurrences.length) {
+      // Reconciliation can detect revoked authority before the next occurrence exists.
+      const failed = await withAiShortIdForDb(
+        db,
+        "ai_chat_task_occurrences_short_id_unique",
+        (attempt, shortId) => attempt<{ id: string }[]>`
+        INSERT INTO ai.chat_task_occurrences(short_id, task_id, scheduled_for, trigger, request_key, task_revision, state, error, completed_at)
+        VALUES (${shortId}, ${task.id}::uuid, now(), 'scheduled', ${`authority:${task.id}:${task.revision}`}, ${task.revision}, 'failed', ${reason}, now())
+        ON CONFLICT DO NOTHING RETURNING id
+      `,
+      );
+      occurrences.push(...failed);
+    }
+    for (const occurrence of occurrences) await deliverOccurrenceResult(db, task, occurrence.id, reason);
+  }
   return null;
 };
 /** The caller holds the task lock; mandate and sponsor locks remain held until turn admission commits. */
@@ -233,14 +285,30 @@ const pauseTerminalTaskMandate = async (task: TaskRow, db: SQL): Promise<number 
   if (!paused.ok) throw mandateError("pause", paused);
   return paused.data.revision;
 };
-const taskFingerprint = (input: { chatId: string; prompt: string; schedule: AiChatTaskSchedule; timezone: string }): string =>
-  new Bun.CryptoHasher("sha256").update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone])).digest("hex");
+const taskFingerprint = (input: {
+  chatId: string;
+  prompt: string;
+  schedule: AiChatTaskSchedule;
+  timezone: string;
+  grants?: CapabilityGrant[];
+}): string =>
+  new Bun.CryptoHasher("sha256")
+    .update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone, input.grants ?? []]))
+    .digest("hex");
 const taskSelect = () => sql`
-  SELECT task.*, conversation.short_id AS conversation_short_id, conversation.title AS conversation_title
+  SELECT task.*, (SELECT policy FROM auth.mandates WHERE id = task.mandate_id) AS mandate_policy, conversation.short_id AS conversation_short_id, conversation.title AS conversation_title
   FROM ai.chat_tasks task
   JOIN ai.conversations conversation ON conversation.id = task.conversation_id
 `;
 
+const taskGrants = (row: TaskRow): CapabilityGrant[] => {
+  try {
+    const policy = MandatePolicyV1Schema.safeParse(parsePgJsonValue(row.mandate_policy));
+    return policy.success ? (policy.data.grants ?? []) : [];
+  } catch {
+    return [];
+  }
+};
 const toTask = (row: TaskRow): AiChatTask => ({
   id: row.id,
   shortId: row.short_id,
@@ -250,6 +318,7 @@ const toTask = (row: TaskRow): AiChatTask => ({
   sponsorUserId: row.sponsor_user_id,
   mandateId: row.mandate_id,
   mandateRevision: row.mandate_revision === null ? null : Number(row.mandate_revision),
+  grants: taskGrants(row),
   prompt: row.prompt,
   schedule: row.schedule_kind === "once" ? { kind: "once", runAt: iso(row.run_at!) } : { kind: "cron", cron: row.cron! },
   timezone: row.timezone,
@@ -269,6 +338,7 @@ const toOccurrence = (row: OccurrenceRow): AiChatTaskOccurrence => ({
   state: row.state,
   turnId: row.turn_id,
   error: row.error,
+  resultText: row.result_text ?? null,
   createdAt: iso(row.created_at),
   startedAt: nullableIso(row.started_at),
   completedAt: nullableIso(row.completed_at),
@@ -307,7 +377,110 @@ const loadTurnTask = async (turnId: string, db: SQL): Promise<TaskRow | null> =>
   return task ?? null;
 };
 
+/** Called in the occurrence terminal transition transaction, so delivery is exactly once. */
+const deliverOccurrenceResult = async (db: SQL, task: TaskRow, occurrenceId: string, resultText: string): Promise<void> => {
+  const [occurrence] = await db<OccurrenceRow[]>`
+    UPDATE ai.chat_task_occurrences SET result_text = ${resultText}, delivered_at = now()
+    WHERE id = ${occurrenceId}::uuid AND delivered_at IS NULL RETURNING *
+  `;
+  if (!occurrence) return;
+  const [destination] = await db<{ id: string }[]>`
+    SELECT id FROM ai.conversations WHERE id = ${task.conversation_id}::uuid AND archived_at IS NULL FOR UPDATE
+  `;
+  if (!destination) return;
+  const message: Message = { role: "assistant", content: [{ type: "text", text: resultText }] };
+  const meta = {
+    scheduledTask: {
+      taskId: task.short_id,
+      occurrenceId: occurrence.short_id,
+      scheduledFor: iso(occurrence.scheduled_for),
+      trigger: occurrence.trigger,
+    },
+  };
+  await withAiShortIdForDb(
+    db,
+    "idx_ai_messages_conversation_short_id",
+    (attempt, shortId) => attempt`
+    INSERT INTO ai.messages(short_id, conversation_id, seq, kind, role, message, search_text, meta)
+    VALUES (${shortId}, ${task.conversation_id}::uuid,
+      (SELECT COALESCE(MAX(seq),0)+1 FROM ai.messages WHERE conversation_id = ${task.conversation_id}::uuid),
+      'message', 'assistant', ${JSON.stringify(message)}::text::jsonb, ${resultText}, ${JSON.stringify(meta)}::text::jsonb)
+  `,
+  );
+  await db`UPDATE ai.conversations SET done = NULL, last_used_at = now(), updated_at = now(), background_received_at = now() WHERE id = ${task.conversation_id}::uuid`;
+};
+
 export const aiChatTasks = {
+  listActivities: async (input: { userId: string; limit?: number; offset?: number }) => {
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+    const rows = await sql<(OccurrenceRow & { unread: boolean })[]>`
+      SELECT occurrence.*, (occurrence.delivered_at > COALESCE(conversation.last_viewed_at, '-infinity')) AS unread
+      FROM ai.chat_task_occurrences occurrence
+      JOIN ai.chat_tasks task ON task.id = occurrence.task_id
+      JOIN ai.conversations conversation ON conversation.id = task.conversation_id
+      WHERE task.sponsor_user_id = ${input.userId}::uuid AND conversation.created_by_user_id = ${input.userId}::uuid
+        AND conversation.archived_at IS NULL
+      ORDER BY occurrence.created_at DESC, occurrence.id DESC LIMIT ${limit + 1} OFFSET ${Math.max(input.offset ?? 0, 0)}
+    `;
+    const page = rows.slice(0, limit);
+    if (!page.length) return { items: [], hasMore: false };
+    const tasks = await sql<TaskRow[]>`${taskSelect()} WHERE task.id IN
+      (SELECT value::uuid FROM jsonb_array_elements_text(${JSON.stringify([...new Set(page.map((row) => row.task_id))])}::text::jsonb))`;
+    const byId = new Map(tasks.map((row) => [row.id, toTask(row)]));
+    return {
+      items: page.flatMap((row) => {
+        const task = byId.get(row.task_id);
+        return task
+          ? [
+              {
+                task,
+                occurrence: toOccurrence(row),
+                chatTitle: task.chatTitle,
+                unread: Boolean(row.unread),
+              },
+            ]
+          : [];
+      }),
+      hasMore: rows.length > limit,
+    };
+  },
+
+  getOccurrenceDetail: async (input: { userId: string; taskId: string; occurrenceId: string }) => {
+    const task = await aiChatTasks.get({ userId: input.userId, taskId: input.taskId });
+    if (!task) return null;
+    const [row] = await sql<
+      OccurrenceRow[]
+    >`SELECT * FROM ai.chat_task_occurrences WHERE task_id = ${task.id}::uuid AND short_id = ${input.occurrenceId}`;
+    if (!row) return null;
+    const messages = row.turn_id
+      ? await aiConversations.listTurnMessages({ conversationId: task.conversationId, loopId: row.turn_id, includeCompacted: true })
+      : [];
+    return { task, occurrence: toOccurrence(row), messages };
+  },
+
+  validateGrants: validateTaskGrants,
+  authorizeCapability: async (input: {
+    mandate: { id: string; revision: number };
+    appId: string;
+    capabilityId: string;
+    kind: "query" | "action";
+    input: unknown;
+    approval?: "none" | "rememberable" | "always";
+  }): Promise<void> => {
+    const result = await validateMandateIssueAuthority({
+      mandateId: input.mandate.id,
+      expectedRevision: input.mandate.revision,
+      ownerAppId: "core",
+      targetAppId: input.appId,
+      operation: `capability.${input.kind === "query" ? "query" : "action.run"}:${input.capabilityId}`,
+      input: input.input,
+      capabilityApproval: input.approval,
+    });
+    if (!result.ok)
+      throw new AiChatTaskAuthorityError(
+        `Background task cannot call ${input.appId}.${input.capabilityId}: ${result.error.message}. Check the task grants and fixed inputs in the normal chat; this run cannot expand them.`,
+      );
+  },
   list: async (input: {
     userId: string;
     chatId?: string;
@@ -343,6 +516,7 @@ export const aiChatTasks = {
     prompt: string;
     schedule: AiChatTaskSchedule;
     timezone: string;
+    grants?: CapabilityGrant[];
     idempotencyKey?: string;
     idempotencyFingerprint?: string;
   }): Promise<AiChatTask | null> => {
@@ -360,6 +534,7 @@ export const aiChatTasks = {
         return toTask(existing[0]);
       }
     }
+    const grants = await validateTaskGrants(input.grants ?? []);
     let rows: TaskRow[];
     try {
       rows = await sql.begin(async (tx) => {
@@ -380,7 +555,7 @@ export const aiChatTasks = {
             ownerAppId: "core",
             workloadType: "ai.chat-task",
             workloadId: taskId,
-            policy: CHAT_TASK_MANDATE_POLICY,
+            policy: chatTaskMandatePolicy(grants),
           },
           { db: tx },
         );
@@ -405,6 +580,7 @@ export const aiChatTasks = {
         );
         const task = inserted[0];
         if (!task) throw new AiChatTaskCreateRace();
+        task.mandate_policy = mandate.data.policy;
         return inserted;
       });
     } catch (error) {
@@ -444,6 +620,7 @@ export const aiChatTasks = {
     userId: string;
     taskId: string;
     prompt?: string;
+    grants?: CapabilityGrant[];
     schedule?: AiChatTaskSchedule;
     timezone?: string;
   }): Promise<AiChatTask | null> =>
@@ -470,10 +647,27 @@ export const aiChatTasks = {
           nextTimezone !== current.timezone
         : false;
       const promptChanged = input.prompt !== undefined && input.prompt.trim() !== current.prompt;
-      if (!promptChanged && !scheduleChanged) return toTask(current);
+      const grants = input.grants === undefined ? undefined : await validateTaskGrants(input.grants);
+      let updatedMandateRevision = Number(current.mandate_revision);
+      if (grants !== undefined) {
+        const mandate = await loadTaskMandate(current, tx);
+        if (!mandate || !taskMandateMatches(current, mandate)) throw new AiChatTaskAuthorityError("Scheduled task mandate is unavailable");
+        const updated = await updateMandatePolicy(
+          {
+            mandateId: mandate.id,
+            expectedRevision: Number(mandate.revision),
+            authority: mandateAuthority(input.userId),
+            policy: chatTaskMandatePolicy(grants),
+          },
+          { db: tx },
+        );
+        if (!updated.ok) throw mandateError("update", updated);
+        updatedMandateRevision = updated.data.revision;
+      }
+      if (!promptChanged && !scheduleChanged && grants === undefined) return toTask(current);
       await tx`
         UPDATE ai.chat_tasks task
-        SET prompt = ${input.prompt?.trim() ?? current.prompt},
+        SET mandate_revision = ${updatedMandateRevision}, prompt = ${input.prompt?.trim() ?? current.prompt},
             schedule_kind = ${input.schedule?.kind ?? current.schedule_kind},
             run_at = ${input.schedule ? (input.schedule.kind === "once" ? input.schedule.runAt : null) : current.run_at}::timestamptz,
             cron = ${input.schedule ? (input.schedule.kind === "cron" ? input.schedule.cron : null) : current.cron},
@@ -626,6 +820,12 @@ export const aiChatTasks = {
     return sql.begin(async (tx) => {
       const [current] = await tx<TaskRow[]>`${taskSelect()} WHERE task.id = ${input.taskId}::uuid FOR UPDATE OF task`;
       if (!current || !(await prepareTaskForExecution(current, tx))) return null;
+      // One occurrence per schedule; timer ticks during a run do not accumulate.
+      const [inFlight] = await tx<
+        OccurrenceRow[]
+      >`SELECT * FROM ai.chat_task_occurrences WHERE task_id = ${input.taskId}::uuid AND state IN ('queued','running') LIMIT 1`;
+      if (inFlight) return inFlight.request_key === input.requestKey ? toOccurrence(inFlight) : null;
+
       const rows = await withAiShortIdForDb(
         tx,
         "ai_chat_task_occurrences_short_id_unique",
@@ -686,20 +886,20 @@ export const aiChatTasks = {
         occurrence.state, occurrence.turn_id, occurrence.error, occurrence.created_at, occurrence.started_at, occurrence.completed_at,
         task.id AS task_row_id, task.short_id AS task_short_id, task.conversation_id, conversation.short_id AS conversation_short_id,
         conversation.title AS conversation_title, task.sponsor_user_id, task.mandate_id, task.mandate_revision,
+        (SELECT policy FROM auth.mandates WHERE id = task.mandate_id) AS mandate_policy,
         task.prompt, task.schedule_kind, task.run_at, task.cron,
         task.timezone, task.state AS task_state, task.revision, task.last_error, task.created_at AS task_created_at, task.updated_at
       FROM (
         SELECT candidate.*,
-          row_number() OVER (PARTITION BY task.conversation_id ORDER BY candidate.created_at, candidate.id) AS conversation_rank
+          row_number() OVER (PARTITION BY task.id ORDER BY candidate.created_at, candidate.id) AS conversation_rank
         FROM ai.chat_task_occurrences candidate
         JOIN ai.chat_tasks task ON task.id = candidate.task_id
         JOIN ai.conversations conversation ON conversation.id = task.conversation_id
         WHERE candidate.state = 'queued' AND task.state = 'active'
           AND task.mandate_id IS NOT NULL AND task.mandate_revision IS NOT NULL
           AND NOT EXISTS (
-            SELECT 1 FROM ai.turns turn
-            WHERE turn.conversation_id = task.conversation_id
-              AND turn.status IN ('queued', 'running', 'waiting_for_action')
+            SELECT 1 FROM ai.chat_task_occurrences running
+            WHERE running.task_id = task.id AND running.state = 'running'
           )
       ) occurrence
       JOIN ai.chat_tasks task ON task.id = occurrence.task_id
@@ -759,6 +959,7 @@ export const aiChatTasks = {
         RETURNING occurrence.task_id, occurrence.task_revision
       `;
       if (rows[0]) {
+        await deliverOccurrenceResult(tx, task, input.occurrenceId, input.error);
         const revision = await pauseTerminalTaskMandate(task, tx);
         await tx`
           UPDATE ai.chat_tasks
@@ -821,15 +1022,26 @@ export const aiChatTasks = {
       if (occurrence.archived_at) return { delivered: false as const, reason: "not_found" as const };
       if (Number(occurrence.task_revision) !== input.expectedRevision) return { delivered: false as const, reason: "stale" as const };
       const active = await tx<{ id: string }[]>`
-        SELECT id FROM ai.turns
-        WHERE conversation_id = ${occurrence.conversation_id}::uuid
-          AND status IN ('queued', 'running', 'waiting_for_action')
+        SELECT id FROM ai.chat_task_occurrences
+        WHERE task_id = ${task.id}::uuid AND state = 'running'
         LIMIT 1
       `;
       if (active[0]) return { delivered: false as const, reason: "busy" as const };
       const mandate = requireTaskMandate(task);
+      const contextRows = await tx<{ seq: number; kind: "message" | "summary"; message: Message }[]>`
+        SELECT message.seq, message.kind, message.message FROM ai.messages message
+        WHERE message.conversation_id = ${occurrence.conversation_id}::uuid AND message.compacted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM ai.turns pending WHERE pending.id::text = message.loop_id
+            AND pending.status IN ('queued','running','waiting_for_action'))
+        ORDER BY message.seq
+      `;
       const runConfig: AiChatTurnRunConfig = {
         ...input.runConfig,
+        background: {
+          taskId: task.short_id,
+          occurrenceId: occurrence.short_id,
+          context: contextRows.map((row, index) => ({ seq: index + 1, kind: row.kind, message: row.message })),
+        },
         mandate: { id: mandate.mandate_id, revision: Number(mandate.mandate_revision) },
       };
       const turn = await withAiShortIdForDb(
@@ -854,16 +1066,16 @@ export const aiChatTasks = {
         tx,
         "idx_ai_messages_conversation_short_id",
         (attempt, shortId) => attempt`
-        INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, search_text, loop_id, meta)
+        INSERT INTO ai.task_messages (short_id, conversation_id, seq, kind, role, message, search_text, loop_id, meta)
         VALUES (
           ${shortId}, ${occurrence.conversation_id}::uuid,
-          (SELECT COALESCE(MAX(seq), 0) + 1 FROM ai.messages WHERE conversation_id = ${occurrence.conversation_id}::uuid AND seq > 0),
+          1,
           'message', 'user', (${JSON.stringify(input.userMessage)}::text)::jsonb, ${input.runConfig.input}, ${turnId}::uuid,
           (${JSON.stringify(messageMeta)}::text)::jsonb
         )
       `,
       );
-      await tx`UPDATE ai.conversations SET updated_at = now() WHERE id = ${occurrence.conversation_id}::uuid`;
+
       await tx`
         UPDATE ai.chat_task_occurrences
         SET state = 'running', turn_id = ${turnId}::uuid, task_revision = ${occurrence.task_revision}::bigint, started_at = now()
@@ -908,6 +1120,27 @@ export const aiChatTasks = {
       `;
       const row = rows[0];
       if (!row) return null;
+      const responses = await tx<{ message: Message }[]>`
+        SELECT message FROM ai.task_messages WHERE loop_id = ${input.turnId} AND role = 'assistant' ORDER BY seq DESC
+      `;
+      const resultText =
+        responses
+          .map((response) => {
+            const message = response.message;
+            if (message.role !== "assistant" || message.content.some((part) => part.type === "tool_call")) return "";
+            return message.content
+              .filter((part) => typeof part === "string" || part.type === "text")
+              .map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : ""))
+              .join("\n")
+              .trim();
+          })
+          .find(Boolean) ||
+        input.error ||
+        row.turn_error ||
+        (input.status === "completed"
+          ? "Background task completed."
+          : "Background task could not finish. Please review this run in the chat.");
+      await deliverOccurrenceResult(tx, task, row.occurrence_id, resultText);
       const unchangedSinceStart = Number(row.task_revision) === Number(row.current_revision);
       const currentOnceSlot = row.run_at !== null && iso(row.run_at) === iso(row.scheduled_for);
       if (

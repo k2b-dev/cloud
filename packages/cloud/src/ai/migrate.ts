@@ -476,9 +476,15 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_turns_one_active_per_conversation
-    ON ai.turns(conversation_id)
-    WHERE status IN ('queued', 'running', 'waiting_for_action')
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'ai'
+        AND indexname = 'idx_ai_turns_one_active_per_conversation' AND indexdef NOT LIKE '%background%') THEN
+        DROP INDEX ai.idx_ai_turns_one_active_per_conversation;
+      END IF;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_turns_one_active_per_conversation
+        ON ai.turns(conversation_id)
+        WHERE status IN ('queued', 'running', 'waiting_for_action') AND NOT COALESCE(run_config ? 'background', false);
+    END $$
   `.simple();
 
   await sql`
@@ -2239,6 +2245,14 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`CREATE TRIGGER ai_live_sidebar_plan_changed AFTER INSERT ON ai.messages
     FOR EACH ROW WHEN (NEW.role = 'tool_result' OR NEW.meta IS NOT NULL)
     EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')`.simple();
+  // Separate run history keeps background tool loops out of the interactive chat.
+  await sql`CREATE TABLE IF NOT EXISTS ai.task_messages (LIKE ai.messages INCLUDING DEFAULTS INCLUDING CONSTRAINTS, FOREIGN KEY (conversation_id) REFERENCES ai.conversations(id) ON DELETE CASCADE)`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_task_messages_id ON ai.task_messages(id)`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_task_messages_seq ON ai.task_messages(loop_id, seq)`.simple();
+
+  await sql`ALTER TABLE ai.chat_task_occurrences ADD COLUMN IF NOT EXISTS result_text TEXT`.simple();
+  await sql`ALTER TABLE ai.chat_task_occurrences ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`.simple();
+  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS background_received_at TIMESTAMPTZ`.simple();
   await migrateAiMessageQueue();
   console.log("  ✓ ai conversation tables");
 };

@@ -9,6 +9,10 @@ import { parsePgJsonValue } from "../postgres";
 import { isMandatePolicyNarrowing, type MandatePolicyV1, MandatePolicyV1Schema, mandatePolicyAllows, parseMandatePolicy } from "./policy";
 
 export {
+  CapabilityGrantsSchema,
+  CapabilityGrantSchema,
+  type CapabilityGrant,
+  capabilityGrantAllows,
   isMandatePolicyNarrowing,
   MANDATE_POLICY_MAX_IDENTIFIERS,
   MANDATE_POLICY_VERSION,
@@ -616,6 +620,8 @@ export const validateMandateIssueAuthority = async (
     targetAppId: string;
     operation: string;
     actionApproval?: "none" | "approved";
+    input?: unknown;
+    capabilityApproval?: "none" | "rememberable" | "always";
     expectedRevision?: number;
     requestId?: string;
   },
@@ -669,7 +675,15 @@ export const validateMandateIssueAuthority = async (
   } catch {
     return denyMandateIssue(err.forbidden("Mandate policy is invalid"));
   }
-  if (!mandatePolicyAllows(policy, { appId: target.data, operation: operation.data, actionApproval: input.actionApproval ?? "none" })) {
+  if (
+    !mandatePolicyAllows(policy, {
+      appId: target.data,
+      operation: operation.data,
+      actionApproval: input.actionApproval ?? "none",
+      input: input.input,
+      capabilityApproval: input.capabilityApproval,
+    })
+  ) {
     return denyMandateIssue(err.forbidden("Mandate policy does not allow this operation"));
   }
   const mandate = mapMandate(row);

@@ -58,6 +58,57 @@ suite("mandates", () => {
     actions,
   });
 
+  test("checks bounded grant inputs, live approval mode, revision and revocation at issuance", async () => {
+    const policy = {
+      version: 1,
+      apps: ["notebooks"],
+      operations: ["capability.action.run:note.edit"],
+      actions: "preapproved",
+      grants: [{ appId: "notebooks", capabilityId: "note.edit", kind: "action", fixedInput: { noteId: "note-a" } }],
+    };
+    const created = await mandates.create({
+      authority: interactive(),
+      subject: { type: "user", id: ownerUserId },
+      ownerAppId: "core",
+      workloadType: "ai.chat-task",
+      workloadId: `bounded-${suffix}`,
+      policy,
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    createdMandateIds.push(created.data.id);
+    const input = {
+      mandateId: created.data.id,
+      expectedRevision: created.data.revision,
+      ownerAppId: "core",
+      targetAppId: "notebooks",
+      operation: "capability.action.run:note.edit",
+      capabilityApproval: "rememberable" as const,
+      input: { noteId: "note-a", content: "summary" },
+    };
+    expect((await mandates.validateIssueAuthority(input)).ok).toBe(true);
+    expect((await mandates.validateIssueAuthority({ ...input, input: { noteId: "note-b" } })).ok).toBe(false);
+    expect((await mandates.validateIssueAuthority({ ...input, capabilityApproval: "always", actionApproval: "approved" })).ok).toBe(false);
+    const updated = await mandates.updatePolicy({
+      mandateId: created.data.id,
+      expectedRevision: created.data.revision,
+      authority: interactive(),
+      policy: { ...policy, grants: [{ ...policy.grants[0]!, fixedInput: { noteId: "note-b" } }] },
+    });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect((await mandates.validateIssueAuthority(input)).ok).toBe(false);
+    const next = { ...input, expectedRevision: updated.data.revision, input: { noteId: "note-b" } };
+    expect((await mandates.validateIssueAuthority(next)).ok).toBe(true);
+    await mandates.revoke({
+      mandateId: created.data.id,
+      expectedRevision: updated.data.revision,
+      authority: interactive(),
+      reason: "Test revocation",
+    });
+    expect((await mandates.validateIssueAuthority(next)).ok).toBe(false);
+  });
+
   test("enforces one mandate per workload and current subjects", async () => {
     const created = await mandates.create({
       authority: interactive(),

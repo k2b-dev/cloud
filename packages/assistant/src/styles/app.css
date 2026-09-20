@@ -305,6 +305,7 @@
 /* Complete a chat from its context row, without squeezing its title. */
 .k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item--done-action > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
   position: absolute;
+  z-index: 1;
   inset-block-start: .375rem;
   inset-inline-end: .625rem;
   display: inline-flex;
@@ -317,6 +318,16 @@
   color: var(--k2b-success-text);
   font-size: .6875rem;
   font-weight: 600;
+}
+@media (hover: hover) and (pointer: fine) {
+  .k2b-ui .assistant-chat-sidebar-item--done-action > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .k2b-ui .assistant-chat-sidebar-item--done-action:is(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)) > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .k2b-ui .assistant-chat-sidebar-item--done-action:is(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)) .k2b-app-workspace__sidebar-item-context-meta {
   visibility: hidden;
@@ -340,4 +351,35 @@
 
 .k2b-ui .k2b-scroll-area[data-viewport-size="compact"]:has(> :is(.assistant-studio-catalog, .assistant-project-catalog)) {
   height: min(450px, 60dvh);
+}
+
+/* Keep completion feedback visible even after the cursor leaves the card. */
+.k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--saving, .assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
+  opacity: 1;
+}
+.k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--saving, .assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) .k2b-app-workspace__sidebar-item-context-meta {
+  visibility: hidden;
+}
+.k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) .k2b-app-workspace__sidebar-item-context {
+  color: var(--k2b-success-text);
+}
+.k2b-ui .assistant-chat-sidebar-item--leaving {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+}
+.k2b-ui .assistant-chat-schedule-icon {
+  position: absolute;
+  inset-inline-end: .75rem;
+  inset-block-end: .625rem;
+  color: var(--k2b-text-muted);
+  font-size: .875rem;
+  pointer-events: none;
+}
+.k2b-ui .assistant-chat-sidebar-item:has(.assistant-chat-schedule-icon) .k2b-app-workspace__sidebar-item-label {
+  padding-inline-end: 1.5rem;
+}
+.k2b-ui .assistant-chat-sidebar-item[data-variant="row"] .assistant-chat-schedule-icon { inset-inline-end: 2rem; }
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
 }
