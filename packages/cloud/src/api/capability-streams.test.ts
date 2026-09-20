@@ -5,11 +5,14 @@ import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
 import { invokeCapabilityStream } from "../_internal/capability-streams";
+import { env } from "../config/env";
 import { type CapabilityExecutionContext, type CapabilityStream, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestAuthority } from "../server";
 import type { CapabilityDispatchDependencies } from "./capabilities";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
+
+Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only", configurable: true });
 
 const authority: RequestAuthority = {
   actor: {

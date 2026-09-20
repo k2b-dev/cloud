@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { isServer } from "solid-js/web";
-import type { AiStreamSseEvent, AiTurnBlock } from "../protocol";
+import type { AiStreamSseEvent, AiTurnBlock, AiTurnSnapshot } from "../protocol";
 import type { AiConversation } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
 import type { AiChatProjection } from "./projection";
@@ -710,6 +710,15 @@ describe("AI controller steering reconciliation", () => {
 
 for (const recovery of ["snapshot", "refresh"] as const) test.skipIf(isServer)(`unlocks the composer after abort completes through ${recovery}`, async () => {
   const current = conversation("Chat01");
+  const runningTurn: AiTurnSnapshot = {
+    turnId: "running",
+    attempt: 1,
+    seq: 1,
+    status: "waiting_for_action",
+    blocks: [],
+    modelProfileId: null,
+    createdAt: "2026-09-20T00:00:00Z",
+  };
   let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
   globalThis.fetch = Object.assign(async () => Response.json({ conversation: current, messages: [], activeTurn: null }), { preconnect: originalFetch.preconnect });
   let dispose!: () => void;
@@ -717,14 +726,14 @@ for (const recovery of ["snapshot", "refresh"] as const) test.skipIf(isServer)(`
     dispose = cleanup;
     return createAiChatController({
       baseUrl: "/api/ai", initialConversationId: current.id,
-      initialDetail: { conversation: current, messages: [], activeTurn: { turnId: "running", attempt: 1, seq: 1, status: "waiting_for_action", blocks: [], modelProfileId: null, createdAt: "2026-09-20T00:00:00Z" } },
+      initialDetail: { conversation: current, messages: [], activeTurn: runningTurn },
       streamTransport: { subscribe: input => { emit = input.onEvent; return { close() {} }; } },
     });
   });
   try {
     expect(await controller.abort()).toBe(true);
     expect(controller.runStatus()).toBe("stopping");
-    emit({ type: "state", conversation: current, messages: [], activeTurn: controller.activeTurn() });
+    emit({ type: "state", conversation: current, messages: [], activeTurn: runningTurn });
     expect(controller.runStatus()).toBe("stopping");
     if (recovery === "snapshot") emit({ type: "state", conversation: current, messages: [], activeTurn: null });
     else await controller.refreshActiveConversation();

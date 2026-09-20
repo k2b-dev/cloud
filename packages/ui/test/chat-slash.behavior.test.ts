@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createComponent, createSignal, Show } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
 import type { ChatMention, ChatSubmitInput } from "../src/chat/types";
 import type { ChatCommand } from "../src/chat/ChatComposer";
@@ -123,7 +123,7 @@ test("an empty reactive accessory does not add a composer row after hydration", 
   const [visible, setVisible] = createSignal(false);
   const dispose = render(() => createComponent(ChatComposer, {
     value: "", onValueChange() {}, onSubmit() {},
-    get accessory() { return createComponent(Show, { get when() { return visible(); }, children: "Tasks" }); },
+    get accessory() { return visible() ? "Tasks" : null; },
   }), dom.root);
   try {
     expect(dom.root.querySelector(".k2b-chat-composer-slot")).toBeNull();

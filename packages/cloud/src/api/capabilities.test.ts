@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
+import { env } from "../config/env";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { auth, type RequestAuthority } from "../server";
@@ -15,6 +16,8 @@ import {
   loadCapabilityCatalogPage,
   dispatchCapability as performDispatch,
 } from "./capabilities";
+
+Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only", configurable: true });
 
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
