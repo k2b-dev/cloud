@@ -51,7 +51,7 @@ du nicht löschen.
 Konto- und Zugriffsänderungen werden im Audit-Protokoll erfasst. Nutze bei der Untersuchung von API-Schlüssel-Aktivität den Dienstkonto-Filter.
 :::
 
-## POSIX-Gruppen
+## POSIX-Gruppen {icon="users"}
 
 Wähle beim Anlegen einer lokalen Gruppe **Als POSIX-Gruppe erstellen**, um eine feste GID zu vergeben. Die Option ist standardmäßig aus und setzt aktivierte lokale Linux-Identitäten in der Administration voraus. Ohne diese Option bleibt die Gruppe eine logische Gruppe. Schlägt die Vergabe fehl, wird keine Gruppe erstellt.
 

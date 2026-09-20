@@ -384,7 +384,7 @@ Nutze eine gespeicherte Ansicht, wenn Personen das Ergebnis im unmittelbaren Arb
 GQL strukturiert gespeicherte Daten. Es kopiert keine Datensätze und umgeht keine Zugriffs-, Feld- oder Relationsregeln der Basis.
 :::
 
-## Datensätze anhand erzeugter Dokumente finden
+## Datensätze anhand erzeugter Dokumente finden {icon="search"}
 
 `documentCount()` zählt eindeutig zugeordnete Dokumente. `latestDocumentAt()`
 liefert deren letzten Erstellungszeitpunkt oder null. Als optionales Format sind

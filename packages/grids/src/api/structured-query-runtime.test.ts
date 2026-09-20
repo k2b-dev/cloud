@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { AuthContext } from "@k2b/cloud/server";
 import type { Context } from "hono";
@@ -10,6 +10,21 @@ import { encodeDslResultCursor } from "../query-dsl/result-cursor";
 import { gridsService } from "../service";
 import type { GqlRuntimeTraceEnd } from "./gql-observability";
 import { executeRecordQuery } from "./gql-runtime";
+
+import * as querySettings from "../service/query-settings";
+
+// Exercise real admission and runtime logic with process configuration supplied locally.
+let restoreQuerySettings: () => void;
+beforeEach(() => {
+  const settings = spyOn(querySettings, "getQuerySettings").mockResolvedValue({
+    poolSize: 2,
+    concurrency: 2,
+    queueLimit: 4,
+    queueTimeoutMs: 1000,
+  });
+  restoreQuerySettings = () => settings.mockRestore();
+});
+afterEach(() => restoreQuerySettings());
 
 const baseId = "11111111-1111-4111-8111-111111111111";
 const tableId = "22222222-2222-4222-8222-222222222222";

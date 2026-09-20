@@ -309,6 +309,11 @@ describe("grids help", () => {
     const codeBlocks = (id: string, locale: string) =>
       (gridsHelp.getMarkdown(id, locale)?.match(/```[\s\S]*?```/g) ?? []).map((block) => {
         if (id === "grids-data-exchange") return block.replace(/"Name01":"[^"]+"/g, '"Name01":"<localized label>"');
+        if (id === "grids-custom-app-pages-blocks") {
+          return block
+            .replace(/(:::info) [^\n]+\n[^\n]+(?=\n:::)/g, "$1 <localized title>\n<localized description>")
+            .replace(/(  label:) [^\n]+/g, "$1 <localized label>");
+        }
         return block;
       });
 

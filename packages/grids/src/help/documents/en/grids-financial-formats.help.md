@@ -7,7 +7,7 @@ order: 136
 ---
 Grids offers a defined subset of financial formats. Choose a format supported by the recipient, then test a representative file with that recipient's import settings. Generating or validating a file does not transfer money, import bookkeeping, or certify legal correctness.
 
-## Formats and ownership
+## Formats and ownership {icon="file-description"}
 
 | Grids output | Supported format | What it produces |
 | --- | --- | --- |
@@ -15,9 +15,8 @@ Grids offers a defined subset of financial formats. Choose a format supported by
 | `datev-csv`, version 1 | DATEV 700/13, EUR | UTF-8 CSV with BOM; filename `EXTF_*.csv` |
 | `sepa-xml`, version 1 | SCT `pain.001.001.09`, DK GBIC 5, EUR | One XML file containing one or more transfers |
 
-Calculation and serialization use public stdlib 0.25.0 APIs. Grids retains ownership of snapshots, permission checks, workflow identities, confirmation, immutable issuance and duplicate-export protection. Free CSV/JSON/XML and HTML PDF remain separate generic output options.
 
-## E-Invoice input
+## E-Invoice input {icon="file-invoice"}
 
 Choose the installed renderer with `cld grids documents renderers --json`; its `inputSchema` is the structural contract. A template's Liquid JSON maps the selected Record into that input. Preview it before enabling the template.
 
@@ -35,7 +34,7 @@ Version 2 lines may have `description` and `unitCode`: `C62` (default), `HUR`, `
 
 These Grids profiles are narrower than an arbitrary invoice model: no zero/exempt VAT, allowances, charges, prepayments, incoming invoice import, or arbitrary XML formats. Workflows, not serializers, check whether the original exists and correction/commission budgets remain available. The Billing template adds business rules; choosing this renderer alone does not add them.
 
-## SEPA transfer input
+## SEPA transfer input {icon="transfer"}
 
 The workflow's `output` has `kind: sepa-xml`, `version: 1`, `header`, and `mapping`. See [Workflows](/app/grids/help/grids-workflows) for executable query/mapping examples.
 
@@ -53,7 +52,7 @@ Required mappings: `businessId`, `endToEndId`, `amount`, `creditorName`, `credit
 
 This output is SCT, not direct debit or an instant-payment product. The receiving bank determines file acceptance.
 
-## DATEV posting input
+## DATEV posting input {icon="receipt"}
 
 Header: `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label`, and `finalize`.
 
@@ -73,7 +72,7 @@ Required mappings: `businessId`, `entryId`, `amount`, `direction`, `account`, `c
 
 This is a booking batch, not the complete DATEV product family. ADDISON or other software may need a specific import configuration.
 
-## Review once, preserve identities
+## Review once, preserve identities {icon="check"}
 
 Both financial workflow outputs accept 1–10,000 rows under the cumulative capture budget. `destinationKey`, `businessId` and DATEV `entryId` are 1–200 characters without surrounding whitespace or control characters. They identify the real destination and business event, not a run, filename, or newly generated random value.
 

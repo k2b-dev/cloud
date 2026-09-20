@@ -7,7 +7,7 @@ order: 112
 ---
 Choose the operation by intent: a one-off import creates new Records; an external-identity upsert reconciles one known source item; a query export downloads selected data; an Evidence export preserves verifiable history.
 
-## Import new Records
+## Import new Records {icon="file-import"}
 
 Discover the destination with `cld grids records shape <base> <table> --json`. JSON values use public field IDs and each field's actual type; select values are option-ID arrays, numbers use exact decimal strings, relations use public Record IDs. System and calculated fields are not writable.
 
@@ -21,7 +21,7 @@ For example, if `Name01` is the real text field ID:
 
 Required fields, uniqueness, defaults, mutation policy, and Base permissions still apply. Upload attachments separately with File operations. Combined tables are read-only and cannot receive imports.
 
-## Integrate an external system
+## Integrate an external system {icon="plug"}
 
 Use `records upsert-external` when a source supplies stable identities:
 
@@ -40,7 +40,7 @@ An existing binding requires `--if-version <current-version>`. A version conflic
 
 These APIs do not schedule a sync or authorize access to another Cloud application. A connector owns source access and change detection. A file hash alone is not a stable bank-booking identity across overlapping reports.
 
-## Export the intended data
+## Export the intended data {icon="file-export"}
 
 `records export <base> <table> --format csv|json --out result.csv` exports through the permission-aware query path. `--body-file` supplies the full query/export configuration; `--limit` caps the result to at most 10,000 rows. A deliberate query limit is not a complete table export. Use the CLI's command help for delimiter, Markdown handling and row bounds.
 

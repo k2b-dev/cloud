@@ -814,3 +814,24 @@ rows, allowing operators to correlate domain changes with capability executions.
 The bundled `cloud-grids` Assistant Skill is version 2. Startup updates an
 unchanged managed copy, including its query reference. User-edited copies remain
 untouched and require deliberate reconciliation with the current template.
+
+### Coordinated capability upgrade
+
+This release intentionally replaces the earlier Grids capability contract.
+Upgrade callers together with Grids and refresh cached capability schemas before
+sending requests. The checked-in manifest in
+`tests/fixtures/capabilities/v2/grids.json` is the baseline for subsequent
+additive changes; the shared compatibility check remains enabled.
+
+- `gql.context` returns compact Base and catalog entries. Use `base.read` for
+  full Base metadata and `includeWriteContext: true` with `kind: "fields"`
+  before writing records. Typed list columns use `kind: "list-columns"`.
+- GQL results omit internal `sqlType` and `recordMeta` fields. Use the published
+  column format, resource references, and `record.read` instead.
+- `record.create` requires an idempotency key and a review through Cloud's
+  capability dispatcher. Reuse a key only for retries of the same request.
+- Record updates and external upserts retain review and permission checks but
+  are no longer classified as destructive operations. They can remember an
+  approval scoped to one table; document issuance still needs individual approval.
+- Timestamps use ISO 8601 with an explicit UTC offset; consumers must accept
+  offsets as well as `Z`.

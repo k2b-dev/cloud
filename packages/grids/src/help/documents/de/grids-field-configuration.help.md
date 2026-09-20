@@ -7,7 +7,7 @@ order: 111
 ---
 Diese Referenz hilft bei Feldkonfigurationen über CLI und API. Zur Auswahl eines Feldtyps siehe [Tabellen und Felder](/app/grids/help/grids-tables-fields). `cld grids fields types --json` liefert den aktuellen Katalog, `cld grids fields type <type> --json` einen einzelnen Typ. Die sichtbare Feldbezeichnung allein erklärt nicht die Konfiguration.
 
-## Gemeinsame Optionen
+## Gemeinsame Optionen {icon="settings"}
 
 Ein Feld hat `name` (1–200 Zeichen), optional `description` (bis 2.000), `icon` (bis 200), eine ganzzahlige `position` und die Schalter `required`, `presentable`, `hideInTable` (standardmäßig false). Namen sind innerhalb der Tabelle eindeutig, ohne Beachtung der Großschreibung und umgebender Leerzeichen. Das Anzeigefeld liefert den Datensatztitel, keine Berechtigung.
 
@@ -17,7 +17,7 @@ Ein Feld hat `name` (1–200 Zeichen), optional `description` (bis 2.000), `icon
 
 `indexed` gibt es für Text, Langtext, ID, Zahl, Prozent, Dauer, Datum, Boolean und Einfachauswahl. `uniqueConstraint` gibt es für Text, Langtext, Zahl, Prozent, Datum, Boolean und ID. Indizes helfen bei konkreten Abfragen, verursachen aber zusätzlichen Aufwand beim Schreiben.
 
-## Eingegebene Werte
+## Eingegebene Werte {icon="edit"}
 
 | `type` | Optionen in `config` und Standards |
 | --- | --- |
@@ -36,7 +36,7 @@ Ein Feld hat `name` (1–200 Zeichen), optional `description` (bis 2.000), `icon
 
 Ein Principal-Wert ist etwa `[{"type":"user","id":"<user-uuid>"}]` oder eine `group`-Referenz. Eine Identität im Feld ist ein Wert, **keine Freigabe**. Den aktuellen Nutzer sicher einzutragen gehört in die konfigurierte Übermittlung einer veröffentlichten App, nicht in ein veränderbares Eingabefeld.
 
-## Verknüpfungen und berechnete Werte
+## Verknüpfungen und berechnete Werte {icon="link"}
 
 | `type` | `config` |
 | --- | --- |
@@ -50,11 +50,11 @@ Berechnete Werte sind keine schreibbaren Datensatzwerte. Lookup und Rollup beach
 
 HTML-Vorlagenfelder sind keine Dokumente. Sie benötigen gespeicherte Tabellen und stehen nicht für Filter, Sortierung, Gruppierung, Aggregate, Formeln oder Lookups zur Verfügung. Andere HTML-Vorlagenfelder sind zum Schutz vor Rekursion nicht zugänglich.
 
-## Anzeige berechneter Werte
+## Anzeige berechneter Werte {icon="numbers"}
 
 Das optionale `format` steuert die Anzeige, nicht die gespeicherte Genauigkeit: `{kind:"decimal", precision?:0..10, thousandsSeparator?:boolean}`, `{kind:"percent", precision?:0..10}`, `{kind:"date", format:"iso"|"short"|"long"|"relative", includeTime?:boolean}`, `{kind:"progress", label?:"value"|"percent"|"none"}` oder `{kind:"barcode", bcid:string, showText?:boolean}`. `bcid` benennt das Barcodeformat mit 1–80 Kleinbuchstaben/Ziffern. Das Format muss zum Ergebnistyp passen.
 
-## Generierte Kennungen
+## Generierte Kennungen {icon="id"}
 
 `id` ist ein servergeneriertes Feld, kein frei bearbeitbarer Text. Die Konfiguration lautet:
 
@@ -78,7 +78,7 @@ Beispiel für jährliche Dokumentnummern:
 
 `created_at`, `updated_at`, `created_by` und `updated_by` sind Systemtypen mit `config: {}`. Grids setzt diese Werte; sie sind keine schreibbaren Formularantworten.
 
-## Spalten einer Objektliste
+## Spalten einer Objektliste {icon="columns"}
 
 `object_list.config` enthält `fields` (1–200 Spalten), `minItems` (0–1.000, Standard 0) und `maxItems` (1–1.000, Standard 100). Die gesamte Liste einschließlich berechneter Werte darf 256 KiB groß sein. Verschachtelte Listen, Relationen, Dateien und beliebige Objektspalten sind nicht erlaubt.
 

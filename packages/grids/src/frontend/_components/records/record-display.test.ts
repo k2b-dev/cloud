@@ -62,7 +62,7 @@ describe("record display title", () => {
         fieldsByTable: { table: [relation, lookup], products: [amount] },
         viewColumns: [{ fieldId: lookup.id, format: { kind: "decimal", precision: 2, thousandsSeparator: true } }],
       }),
-    ).toBe("1,200.00");
+    ).toBe("1,200.00 EUR");
   });
 
   test("falls back to a stable short record id", () => {

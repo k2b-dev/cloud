@@ -18,7 +18,7 @@ Zahleingaben zeigen keine angehängten Nachkommanullen: `1.0000` erscheint als `
 
 Bei Objektlisten schlägt **Regeln und Berechnung → Standardwert** einen Wert nur beim Hinzufügen eines Eintrags vor. Vorhandene Werte bleiben unverändert. In der Konfiguration steht dafür ein fester `defaultValue` an der Unterspalte; Auswahlwerte verwenden Options-IDs. Der Wert muss die Spaltenregeln erfüllen. Berechnete Spalten haben keine Standardwerte. API-Schreibzugriffe ergänzen fehlende Zellen nicht aus diesen Vorschlägen.
 
-## Objektlisten bearbeiten
+## Objektlisten bearbeiten {icon="table"}
 
 Objektlisten zeigen kompakte Zeilen. Beim Wechsel zur Eingabe bleiben Zeilenhöhen und Spaltenbreiten gleich. Lange Anzeigewerte werden gekürzt; im Eintragseditor kannst du sie vollständig lesen. Fehlermeldungen stehen unter der Tabelle und nennen Eintrag und Feld. Klicke auf einen Wert, um die Zeile zu bearbeiten. Neue Einträge öffnen sich direkt zur Eingabe. Tab wechselt zwischen Feldern und Zeilen. In einzeiligen Text- und Zahleneingaben schließt Enter die Zeile ab, Escape setzt ihre Änderungen zurück und Strg/Cmd+Enter fügt einen weiteren Eintrag hinzu.
 
@@ -58,7 +58,7 @@ Wähle **Datensatz dieser Seite bearbeiten** für ein Formular auf einer passend
 
 Speichern prüft Versionen und übernimmt verknüpfte Änderungen gemeinsam. Verbindungsfehler im offenen Dialog erneut versuchen; bei Versionskonflikten neu laden und vor dem Speichern prüfen. CLI/API-Versionen, Idempotenzschlüssel, Payloads und Grenzen stehen in der [API-Referenz](/app/grids/help/grids-custom-app-api).
 
-## Konfiguration für CLI- und API-Autoren
+## Konfiguration für CLI- und API-Autoren {icon="code"}
 
 Formular-`config` verwendet folgende Schlüssel. Öffentliche APIs nehmen öffentliche Feld-IDs an, keine internen UUIDs.
 

@@ -10,7 +10,11 @@ Review incompatible changes as a new coordinated contract before updating a
 baseline. The explicit required-idempotency inventory remains independently
 asserted in the test.
 
-Grids remains under active development. Its previous baseline is carried forward
-with only the protocol version and empty Commands collection updated. New Grids
-operations and compatibility changes still require a separate review; they are
-not accepted by regenerating this fixture.
+The Grids baseline includes the separately reviewed, intentional application hard
+cut: compact GQL context and results, typed list columns, offset-aware timestamps,
+reviewed idempotent record creation, and table-scoped approval for updates and
+external upserts. See the [Grids upgrade notes](../../../docs-site/apps-content/en/grids.md#coordinated-capability-upgrade)
+for caller changes. Its database-backed provider tests validate permissions,
+query results, conflict protection, and durable issuance replay. The independent
+required-idempotency inventory and normal evolution check remain active for
+future changes; this is not a blanket exemption for Grids.

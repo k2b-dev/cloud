@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "grids",
-  "manifestHash": "b55336f4d84e66bdb91e7689af7e3d421c8fe2fb019925093bcb0ab39c9dc216",
+  "manifestHash": "95498cfb317ef655a680502f1857a8f42bf9d3be3e596b4592873b64dcf47e8c",
   "types": [
     {
       "localId": "base",
@@ -9,6 +9,12 @@
       "description": "A permission-scoped Grids workspace.",
       "icon": "ti ti-table",
       "reader": "base.read"
+    },
+    {
+      "localId": "document",
+      "title": "Grids Document",
+      "description": "One stored immutable document and its artifact metadata.",
+      "reader": "document.read"
     },
     {
       "localId": "record",
@@ -30,6 +36,12 @@
       "description": "A permission-scoped saved GQL data view.",
       "icon": "ti ti-layout-list",
       "reader": "view.read"
+    },
+    {
+      "localId": "workflow-run",
+      "title": "Grids Workflow Run",
+      "description": "Status of one accepted workflow operation.",
+      "reader": "workflow.run.read"
     }
   ],
   "queries": [
@@ -92,12 +104,12 @@
             "createdAt": {
               "type": "string",
               "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
             },
             "updatedAt": {
               "type": "string",
               "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
             },
             "links": {
               "minItems": 1,
@@ -149,7 +161,7 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "7b89baf4de70fb0d175d70cdd545f3b4cfd2f6387a4c0f0c66fee229c6f04972",
+      "schemaHash": "1184df30d7c5c419871c5eff2a9b085ac8a5dd1ee5954b9fb93251767104742b",
       "openWorld": false
     },
     {
@@ -198,12 +210,12 @@
           "createdAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "links": {
             "minItems": 1,
@@ -254,7 +266,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "39165357c40fb88ca0bee49f5462fbd184a7f2e80c63669af0b719626a6c0991",
+      "schemaHash": "747a5422e868f6903a82bb3293205d1e31b4fad226e1ba7513b3107cde0a7e68",
       "openWorld": false
     },
     {
@@ -279,6 +291,30 @@
               "maxLength": 64
             },
             "description": "Canonical search facets supported by this query."
+          },
+          "scope": {
+            "description": "Optional resource containing the search results; must be an explicitly supported scope type.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 180,
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "description": "Namespaced resource type declared by the owning app."
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Stable app-owned resource identifier."
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": false
           },
           "limit": {
             "type": "integer",
@@ -421,7 +457,7 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "20c45cac7f9ead6abd77794026e5191fa675eec39bcf2ced9ca950d513a4a326",
+      "schemaHash": "5b78e710d3729f50c18b549cedce82e88fbd22757c37d87a0e245682c8d1608e",
       "openWorld": false,
       "universalSearch": {
         "tags": [
@@ -437,9 +473,588 @@
       }
     },
     {
+      "localId": "document.list",
+      "title": "Find stored documents",
+      "description": "Read a bounded page of immutable documents for a template from document.templates. Follow document refs with document.read. Does not render or issue documents.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "templateId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Template public ID from document.templates."
+          },
+          "cursor": {
+            "description": "Opaque cursor from the previous page.",
+            "type": "string",
+            "maxLength": 2000
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum candidates inspected on this page.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "templateId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{6}$"
+            },
+            "baseId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{6}$"
+            },
+            "tableId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recordId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "templateId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "number": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "filename": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "renderer": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "html"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "profile"
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9.-]{2,99}$"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "version"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "validationStatus": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "valid",
+                    "warning",
+                    "unchecked"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "artifacts": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+                  },
+                  "filename": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "key",
+                  "filename",
+                  "mimeType",
+                  "sizeBytes",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "primaryArtifactKey": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+            },
+            "sourceRecordCount": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dataSnapshot": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "rowCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "capturedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    }
+                  },
+                  "required": [
+                    "rowCount",
+                    "capturedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "baseId",
+            "tableId",
+            "recordId",
+            "templateId",
+            "number",
+            "filename",
+            "createdAt",
+            "renderer",
+            "validationStatus",
+            "artifacts",
+            "primaryArtifactKey",
+            "sourceRecordCount",
+            "dataSnapshot"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "119e803e554465256276c571430999ed44ddccbcaa32ae97e4d92b427f30d2d0",
+      "openWorld": false
+    },
+    {
+      "localId": "document.read",
+      "title": "Read stored document",
+      "description": "Read metadata and artifact hashes for a grids.document ref from document.list or document.create. The authenticated download link returns stored PDF bytes, not a new rendering.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public ID from the corresponding discovery result or resource reference."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "baseId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "tableId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "templateId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "renderer": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "html"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "profile"
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9.-]{2,99}$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id",
+                  "version"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "validationStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "valid",
+                  "warning",
+                  "unchecked"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifacts": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+                },
+                "filename": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "mimeType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "key",
+                "filename",
+                "mimeType",
+                "sizeBytes",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "primaryArtifactKey": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+          },
+          "sourceRecordCount": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataSnapshot": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "rowCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "capturedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "rowCount",
+                  "capturedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "baseId",
+          "tableId",
+          "recordId",
+          "templateId",
+          "number",
+          "filename",
+          "createdAt",
+          "renderer",
+          "validationStatus",
+          "artifacts",
+          "primaryArtifactKey",
+          "sourceRecordCount",
+          "dataSnapshot"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "72e9205be0b89008515635c617e298cb2f296d1e7000e10306d0950d9f3e281e",
+      "openWorld": false
+    },
+    {
+      "localId": "document.templates",
+      "title": "Find document templates",
+      "description": "Discover templates for a table from gql.context. Use an enabled template ID and a record from that table with document.create or document.list.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tableId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Table public ID from gql.context."
+          },
+          "offset": {
+            "default": 0,
+            "description": "Next offset from discovery; zero for the first page.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740970
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum candidates inspected on this page.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "tableId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$"
+                },
+                "tableId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "tableId",
+                "name",
+                "enabled"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextOffset": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextOffset"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "3f719e3676c0da5740820a398554cc910f052613302640ee263511e11cf1e0dd",
+      "openWorld": false
+    },
+    {
       "localId": "gql.context",
       "title": "Load Grids GQL context",
-      "description": "Load the schema before authoring GQL or record writes. Get baseId from base.list or base.search; request tables first, then fields or select options with returned IDs, or views for gql.view.execute. Field results include write and audit requirements.",
+      "description": "Load compact schema for a known task. If the source is unknown, request tables first; otherwise request fields with tableId. Options and list-columns need tableId and fieldId. List columns include typed constraints and calculations; follow pagination. Omit unused IDs, never send empty strings. Use includeWriteContext only before record writes. Views can feed gql.view.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -451,24 +1066,30 @@
           },
           "kind": {
             "default": "tables",
-            "description": "Catalog section: tables, views, fields, or exact select option IDs.",
+            "description": "Catalog section: tables, views, fields, select options, or typed object-list columns.",
             "type": "string",
             "enum": [
               "tables",
               "views",
               "fields",
-              "options"
+              "options",
+              "list-columns"
             ]
           },
           "tableId": {
-            "description": "Public Table ID; required for fields and options, optional for views.",
+            "description": "Public Table ID; required for fields, options and list-columns, optional for views.",
             "type": "string",
             "pattern": "^[A-Za-z0-9]{6}$"
           },
           "fieldId": {
-            "description": "Public Select Field ID; required when kind is options.",
+            "description": "Public Field ID; required for options or list-columns. Optional filter for fields.",
             "type": "string",
             "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "includeWriteContext": {
+            "default": false,
+            "description": "For kind fields only: include writable/required flags and record audit requirements before a record write. Omit for queries.",
+            "type": "boolean"
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -504,74 +1125,11 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200
-              },
-              "description": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "maxLength": 1000
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "createdAt": {
-                "type": "string",
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-              },
-              "updatedAt": {
-                "type": "string",
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-              },
-              "links": {
-                "minItems": 1,
-                "maxItems": 10,
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "rel": {
-                      "type": "string",
-                      "enum": [
-                        "open",
-                        "edit",
-                        "status",
-                        "preview",
-                        "download"
-                      ],
-                      "description": "Semantic relationship; clients decide how to present it."
-                    },
-                    "href": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 2048,
-                      "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
-                      "description": "Root-relative Cloud URL."
-                    },
-                    "title": {
-                      "description": "Optional human-readable link label.",
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 120
-                    }
-                  },
-                  "required": [
-                    "rel",
-                    "href"
-                  ],
-                  "additionalProperties": false
-                }
               }
             },
             "required": [
               "id",
-              "name",
-              "description",
-              "createdAt",
-              "updatedAt"
+              "name"
             ],
             "additionalProperties": false
           },
@@ -581,7 +1139,8 @@
               "tables",
               "views",
               "fields",
-              "options"
+              "options",
+              "list-columns"
             ]
           },
           "items": {
@@ -597,10 +1156,6 @@
                       "const": "table"
                     },
                     "id": {
-                      "type": "string",
-                      "pattern": "^[A-Za-z0-9]{6}$"
-                    },
-                    "baseId": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9]{6}$"
                     },
@@ -626,83 +1181,14 @@
                           "type": "null"
                         }
                       ]
-                    },
-                    "icon": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "maxLength": 200
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "permission": {
-                      "type": "string",
-                      "enum": [
-                        "read",
-                        "write",
-                        "admin"
-                      ]
-                    },
-                    "canCreateRecords": {
-                      "type": "boolean"
-                    },
-                    "canUpdateRecords": {
-                      "type": "boolean"
-                    },
-                    "links": {
-                      "minItems": 1,
-                      "maxItems": 10,
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "rel": {
-                            "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
-                            "description": "Semantic relationship; clients decide how to present it."
-                          },
-                          "href": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 2048,
-                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
-                            "description": "Root-relative Cloud URL."
-                          },
-                          "title": {
-                            "description": "Optional human-readable link label.",
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
-                          }
-                        },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
-                        "additionalProperties": false
-                      }
                     }
                   },
                   "required": [
                     "kind",
                     "id",
-                    "baseId",
                     "tableKind",
                     "name",
-                    "description",
-                    "icon",
-                    "permission",
-                    "canCreateRecords",
-                    "canUpdateRecords"
+                    "description"
                   ],
                   "additionalProperties": false
                 },
@@ -736,56 +1222,6 @@
                           "type": "null"
                         }
                       ]
-                    },
-                    "icon": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "maxLength": 200
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "links": {
-                      "minItems": 1,
-                      "maxItems": 10,
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "rel": {
-                            "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
-                            "description": "Semantic relationship; clients decide how to present it."
-                          },
-                          "href": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 2048,
-                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
-                            "description": "Root-relative Cloud URL."
-                          },
-                          "title": {
-                            "description": "Optional human-readable link label.",
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
-                          }
-                        },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
-                        "additionalProperties": false
-                      }
                     }
                   },
                   "required": [
@@ -793,8 +1229,7 @@
                     "id",
                     "tableId",
                     "name",
-                    "description",
-                    "icon"
+                    "description"
                   ],
                   "additionalProperties": false
                 },
@@ -833,11 +1268,6 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 100
-                    },
-                    "position": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
                     },
                     "required": {
                       "type": "boolean"
@@ -890,9 +1320,6 @@
                     "name",
                     "description",
                     "type",
-                    "position",
-                    "required",
-                    "writable",
                     "valueHint",
                     "targetTableId",
                     "relationCardinality"
@@ -940,238 +1367,458 @@
                     "description"
                   ],
                   "additionalProperties": false
-                }
-              ]
-            }
-          },
-          "recordWrite": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "tableId": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9]{6}$"
-                  },
-                  "canCreateRecords": {
-                    "type": "boolean"
-                  },
-                  "canUpdateRecords": {
-                    "type": "boolean"
-                  },
-                  "updateAudit": {
-                    "anyOf": [
-                      {
-                        "type": "object",
-                        "properties": {
-                          "scope": {
-                            "type": "string",
-                            "enum": [
-                              "all",
-                              "selected"
-                            ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "list-column"
+                    },
+                    "fieldId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9]{6}$"
+                    },
+                    "column": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9]{6}$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "text",
+                            "longtext",
+                            "number",
+                            "boolean",
+                            "date",
+                            "select",
+                            "percent",
+                            "duration"
+                          ]
+                        },
+                        "config": {
+                          "default": {},
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
                           },
-                          "fieldIds": {
-                            "maxItems": 200,
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "pattern": "^[A-Za-z0-9]{6}$"
-                            }
-                          },
-                          "questions": {
-                            "maxItems": 20,
-                            "type": "array",
-                            "items": {
+                          "additionalProperties": {}
+                        },
+                        "required": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "formula": {
+                          "type": "object",
+                          "properties": {
+                            "expression": {
+                              "type": "string"
+                            },
+                            "format": {
                               "oneOf": [
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "id": {
+                                    "kind": {
                                       "type": "string",
-                                      "format": "uuid",
-                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      "const": "date"
                                     },
-                                    "label": {
+                                    "format": {
                                       "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 200
-                                    },
-                                    "description": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string",
-                                          "maxLength": 1000
-                                        },
-                                        {
-                                          "type": "null"
-                                        }
+                                      "enum": [
+                                        "iso",
+                                        "short",
+                                        "long",
+                                        "relative"
                                       ]
                                     },
-                                    "required": {
+                                    "includeTime": {
                                       "type": "boolean"
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "text"
                                     }
                                   },
                                   "required": [
-                                    "id",
-                                    "label",
-                                    "description",
-                                    "required",
-                                    "type"
+                                    "kind",
+                                    "format"
                                   ],
                                   "additionalProperties": false
                                 },
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "id": {
+                                    "kind": {
                                       "type": "string",
-                                      "format": "uuid",
-                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      "const": "decimal"
                                     },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 200
+                                    "precision": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 10
                                     },
-                                    "description": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string",
-                                          "maxLength": 1000
-                                        },
-                                        {
-                                          "type": "null"
-                                        }
-                                      ]
-                                    },
-                                    "required": {
+                                    "thousandsSeparator": {
                                       "type": "boolean"
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "longtext"
                                     }
                                   },
                                   "required": [
-                                    "id",
-                                    "label",
-                                    "description",
-                                    "required",
-                                    "type"
+                                    "kind"
                                   ],
                                   "additionalProperties": false
                                 },
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "id": {
+                                    "kind": {
                                       "type": "string",
-                                      "format": "uuid",
-                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      "const": "percent"
                                     },
-                                    "label": {
-                                      "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 200
-                                    },
-                                    "description": {
-                                      "anyOf": [
-                                        {
-                                          "type": "string",
-                                          "maxLength": 1000
-                                        },
-                                        {
-                                          "type": "null"
-                                        }
-                                      ]
-                                    },
-                                    "required": {
-                                      "type": "boolean"
-                                    },
-                                    "type": {
-                                      "type": "string",
-                                      "const": "select"
-                                    },
-                                    "options": {
-                                      "maxItems": 100,
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "properties": {
-                                          "id": {
-                                            "type": "string",
-                                            "format": "uuid",
-                                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                                          },
-                                          "label": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 200
-                                          }
-                                        },
-                                        "required": [
-                                          "id",
-                                          "label"
-                                        ],
-                                        "additionalProperties": false
-                                      }
+                                    "precision": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 10
                                     }
                                   },
                                   "required": [
-                                    "id",
-                                    "label",
-                                    "description",
-                                    "required",
-                                    "type",
-                                    "options"
+                                    "kind"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "progress"
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "enum": [
+                                        "value",
+                                        "percent",
+                                        "none"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "barcode"
+                                    },
+                                    "bcid": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 80,
+                                      "pattern": "^[a-z0-9]+$"
+                                    },
+                                    "showText": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "bcid"
                                   ],
                                   "additionalProperties": false
                                 }
                               ]
                             }
-                          }
+                          },
+                          "additionalProperties": false
                         },
-                        "required": [
-                          "scope",
-                          "fieldIds",
-                          "questions"
-                        ],
-                        "additionalProperties": false
+                        "detailsOnly": {
+                          "type": "boolean"
+                        },
+                        "width": {
+                          "type": "string",
+                          "enum": [
+                            "fullWidth",
+                            "compact"
+                          ]
+                        },
+                        "defaultValue": {}
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "tableId",
-                  "canCreateRecords",
-                  "canUpdateRecords",
-                  "updateAudit"
-                ],
-                "additionalProperties": false
+                      "required": [
+                        "id",
+                        "name",
+                        "type",
+                        "config",
+                        "required"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "fieldId",
+                    "column"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "recordWrite": {
+            "type": "object",
+            "properties": {
+              "tableId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{6}$"
               },
-              {
-                "type": "null"
+              "canCreateRecords": {
+                "type": "boolean"
+              },
+              "canUpdateRecords": {
+                "type": "boolean"
+              },
+              "updateAudit": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "scope": {
+                        "type": "string",
+                        "enum": [
+                          "all",
+                          "selected"
+                        ]
+                      },
+                      "fieldIds": {
+                        "maxItems": 200,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9]{6}$"
+                        }
+                      },
+                      "questions": {
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "description": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 1000
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "text"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "description",
+                                "required",
+                                "type"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "description": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 1000
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "longtext"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "description",
+                                "required",
+                                "type"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "description": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 1000
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "select"
+                                },
+                                "options": {
+                                  "maxItems": 100,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "label"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "description",
+                                "required",
+                                "type",
+                                "options"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "scope",
+                      "fieldIds",
+                      "questions"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
-            ]
+            },
+            "required": [
+              "tableId",
+              "canCreateRecords",
+              "canUpdateRecords",
+              "updateAudit"
+            ],
+            "additionalProperties": false
+          },
+          "list": {
+            "type": "object",
+            "properties": {
+              "fieldId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{6}$"
+              },
+              "minItems": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxItems": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "fieldId",
+              "minItems",
+              "maxItems"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
           "base",
           "kind",
-          "items",
-          "recordWrite"
+          "items"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "535a8f120d201bb12d16b13ef6bb853d20258a09d635e49c85e2ca9236040b5f",
+      "schemaHash": "0d79278254537553d6701113bebf158c0ea5f5e04536db32566a17ef2d774530",
       "openWorld": false
     },
     {
@@ -1249,6 +1896,89 @@
             "minLength": 1,
             "maxLength": 16384
           },
+          "parameters": {
+            "description": "Values for @params.name only; scalars, exact {decimal: string} values or flat lists. No auth/page context. Parameterized results omit the editor link.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 20000
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "decimal": {
+                          "type": "string",
+                          "maxLength": 20000,
+                          "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$"
+                        }
+                      },
+                      "required": [
+                        "decimal"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "maxItems": 10000,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20000
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "decimal": {
+                            "type": "string",
+                            "maxLength": 20000,
+                            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$"
+                          }
+                        },
+                        "required": [
+                          "decimal"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "showTableToUser": {
+            "default": false,
+            "description": "Show this result as a table to the user. Use true for requested results, false for research or intermediate queries. When true, do not repeat the table in Markdown.",
+            "type": "boolean"
+          },
           "pageSize": {
             "default": 100,
             "description": "Maximum rows to return on this cursor page.",
@@ -1317,10 +2047,6 @@
                       "type": "string",
                       "maxLength": 100
                     },
-                    "sqlType": {
-                      "type": "string",
-                      "maxLength": 100
-                    },
                     "aggregate": {
                       "type": "string",
                       "maxLength": 100
@@ -1329,8 +2055,7 @@
                   "required": [
                     "key",
                     "label",
-                    "type",
-                    "sqlType"
+                    "type"
                   ],
                   "additionalProperties": false
                 }
@@ -1348,97 +2073,6 @@
                     "tableId": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9]{6}$"
-                    },
-                    "recordMeta": {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "exclusiveMinimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "finalizedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "finalizedBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "deletedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "updatedBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                        },
-                        "updatedAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                        }
-                      },
-                      "required": [
-                        "version",
-                        "finalizedAt",
-                        "finalizedBy",
-                        "deletedAt",
-                        "createdBy",
-                        "updatedBy",
-                        "createdAt",
-                        "updatedAt"
-                      ],
-                      "additionalProperties": false
                     },
                     "values": {
                       "type": "object",
@@ -1528,6 +2162,17 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "gql.syntax",
+                        "gql.context",
+                        "gql.resolution",
+                        "gql.execution",
+                        "gql.cursor",
+                        "gql.access"
+                      ]
+                    },
                     "line": {
                       "type": "integer",
                       "exclusiveMinimum": 0,
@@ -1564,7 +2209,7 @@
           }
         ]
       },
-      "schemaHash": "13d63a3cbe5e59da71658fd5ccb67cee308c1a7085100d4280537d505483d737",
+      "schemaHash": "89a8d31a42a4b77e22dff7117d6c7e0c9495682a1984c4cfce6153757098e936",
       "openWorld": false
     },
     {
@@ -1642,6 +2287,89 @@
             "minLength": 1,
             "maxLength": 16384
           },
+          "parameters": {
+            "description": "Values for @params.name only; scalars, exact {decimal: string} values or flat lists. No auth/page context. Parameterized results omit the editor link.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 20000
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "decimal": {
+                          "type": "string",
+                          "maxLength": 20000,
+                          "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$"
+                        }
+                      },
+                      "required": [
+                        "decimal"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "maxItems": 10000,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20000
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "decimal": {
+                            "type": "string",
+                            "maxLength": 20000,
+                            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$"
+                          }
+                        },
+                        "required": [
+                          "decimal"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "showTableToUser": {
+            "default": false,
+            "description": "Show this result as a table to the user. Use true for requested results, false for research or intermediate queries. When true, do not repeat the table in Markdown.",
+            "type": "boolean"
+          },
           "pageSize": {
             "default": 25,
             "description": "Maximum preview rows to return.",
@@ -1704,10 +2432,6 @@
                       "type": "string",
                       "maxLength": 100
                     },
-                    "sqlType": {
-                      "type": "string",
-                      "maxLength": 100
-                    },
                     "aggregate": {
                       "type": "string",
                       "maxLength": 100
@@ -1716,8 +2440,7 @@
                   "required": [
                     "key",
                     "label",
-                    "type",
-                    "sqlType"
+                    "type"
                   ],
                   "additionalProperties": false
                 }
@@ -1735,97 +2458,6 @@
                     "tableId": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9]{6}$"
-                    },
-                    "recordMeta": {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "exclusiveMinimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "finalizedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "finalizedBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "deletedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "updatedBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                        },
-                        "updatedAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                        }
-                      },
-                      "required": [
-                        "version",
-                        "finalizedAt",
-                        "finalizedBy",
-                        "deletedAt",
-                        "createdBy",
-                        "updatedBy",
-                        "createdAt",
-                        "updatedAt"
-                      ],
-                      "additionalProperties": false
                     },
                     "values": {
                       "type": "object",
@@ -1915,6 +2547,17 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "gql.syntax",
+                        "gql.context",
+                        "gql.resolution",
+                        "gql.execution",
+                        "gql.cursor",
+                        "gql.access"
+                      ]
+                    },
                     "line": {
                       "type": "integer",
                       "exclusiveMinimum": 0,
@@ -1951,7 +2594,7 @@
           }
         ]
       },
-      "schemaHash": "c2edf3aeed4a582c089d84544e6db062521e1450d71fd10d5616a718528dd7f1",
+      "schemaHash": "62ce38c5490e60acc148a7e5ddfbf8df730fff802ec0464cf3e14cd450eb1f46",
       "openWorld": false
     },
     {
@@ -1971,6 +2614,11 @@
             "type": "string",
             "pattern": "^[A-Za-z0-9]{6}$",
             "description": "Public saved View ID whose exact stored GQL should execute."
+          },
+          "showTableToUser": {
+            "default": false,
+            "description": "Show this result as a table to the user. Use true for requested results, false for research or intermediate queries. When true, do not repeat the table in Markdown.",
+            "type": "boolean"
           },
           "pageSize": {
             "default": 100,
@@ -2040,10 +2688,6 @@
                       "type": "string",
                       "maxLength": 100
                     },
-                    "sqlType": {
-                      "type": "string",
-                      "maxLength": 100
-                    },
                     "aggregate": {
                       "type": "string",
                       "maxLength": 100
@@ -2052,8 +2696,7 @@
                   "required": [
                     "key",
                     "label",
-                    "type",
-                    "sqlType"
+                    "type"
                   ],
                   "additionalProperties": false
                 }
@@ -2071,97 +2714,6 @@
                     "tableId": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9]{6}$"
-                    },
-                    "recordMeta": {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "exclusiveMinimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "finalizedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "finalizedBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "deletedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "date-time",
-                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "updatedBy": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "createdAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                        },
-                        "updatedAt": {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                        }
-                      },
-                      "required": [
-                        "version",
-                        "finalizedAt",
-                        "finalizedBy",
-                        "deletedAt",
-                        "createdBy",
-                        "updatedBy",
-                        "createdAt",
-                        "updatedAt"
-                      ],
-                      "additionalProperties": false
                     },
                     "values": {
                       "type": "object",
@@ -2251,6 +2803,17 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "gql.syntax",
+                        "gql.context",
+                        "gql.resolution",
+                        "gql.execution",
+                        "gql.cursor",
+                        "gql.access"
+                      ]
+                    },
                     "line": {
                       "type": "integer",
                       "exclusiveMinimum": 0,
@@ -2287,7 +2850,7 @@
           }
         ]
       },
-      "schemaHash": "723f8093a99adff536bef4ed458c7a1f2f8e5acaf9fb80a8837ed9535296610a",
+      "schemaHash": "b42f66c929db058916dcf4e4e822d4a04dc4307c4da727ba1ee0fdb3209e1480",
       "openWorld": false
     },
     {
@@ -2331,7 +2894,7 @@
               {
                 "type": "string",
                 "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               {
                 "type": "null"
@@ -2355,7 +2918,7 @@
               {
                 "type": "string",
                 "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               {
                 "type": "null"
@@ -2389,12 +2952,12 @@
           "createdAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
         "required": [
@@ -2409,7 +2972,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "c8c57716e3679cea8a9a66c74dcd69e37bf88f0245f810b96e4c7e093ef8c57d",
+      "schemaHash": "e69440c1a6d41f102bcaf93dacb3b0c7348411548979e392848b56be0a8bfc18",
       "openWorld": false
     },
     {
@@ -2666,13 +3229,399 @@
       },
       "schemaHash": "3f3990fb6cf0abffff71079e9a71de95669819050266e3f74f8c8f3bf25dfb3f",
       "openWorld": false
+    },
+    {
+      "localId": "workflow.record-actions",
+      "title": "Find record workflow actions",
+      "description": "Discover configured correction/cancellation Draft actions in a Base from base.list. Pages may be empty after permission/revision filtering; follow nextOffset. Use the returned table with GQL to find a finalized original, then workflow.record-action.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Base public ID from base.list."
+          },
+          "offset": {
+            "default": 0,
+            "description": "Next offset from discovery; zero for the first page.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740970
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum candidates inspected on this page.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "baseId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tableId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{6}$"
+                },
+                "expectedRevision": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "intent": {
+                  "type": "string",
+                  "enum": [
+                    "correction",
+                    "cancellation"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "tableId",
+                "expectedRevision",
+                "intent"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextOffset": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextOffset"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "03ee076eed43b41e866672c77300af32cc1d923f779719f95289050d87c267ea",
+      "openWorld": false
+    },
+    {
+      "localId": "workflow.run.read",
+      "title": "Read workflow run status",
+      "description": "Read the current status of a grids.workflow-run ref returned by workflow.record-action. Requires Base read access; no raw inputs, results or internal event payloads are returned.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public ID from the corresponding discovery result or resource reference."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "status": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "mode"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "fa0db70bcc5b08048d711242a9c31c0dfcc492b52fa6f947bd335a11efdfd02e",
+      "openWorld": false
     }
   ],
   "actions": [
     {
+      "localId": "document.create",
+      "title": "Issue an immutable document",
+      "description": "Issue one document from document.templates and a Record. This may assign an irreversible invoice/document number. Review every issuance; reuse the capability idempotency key only for retries of the same request. No compliance guarantee or external delivery.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "templateId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Enabled template public ID from document.templates."
+          },
+          "recordId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Record public ID from the template table, obtained with GQL."
+          }
+        },
+        "required": [
+          "templateId",
+          "recordId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "baseId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "tableId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recordId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "templateId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "renderer": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "html"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "profile"
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9.-]{2,99}$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id",
+                  "version"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "validationStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "valid",
+                  "warning",
+                  "unchecked"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifacts": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+                },
+                "filename": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "mimeType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "key",
+                "filename",
+                "mimeType",
+                "sizeBytes",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "primaryArtifactKey": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+          },
+          "sourceRecordCount": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataSnapshot": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "rowCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "capturedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "rowCount",
+                  "capturedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "baseId",
+          "tableId",
+          "recordId",
+          "templateId",
+          "number",
+          "filename",
+          "createdAt",
+          "renderer",
+          "validationStatus",
+          "artifacts",
+          "primaryArtifactKey",
+          "sourceRecordCount",
+          "dataSnapshot"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "d1b7f491aed24d16cafa98f3807cc9ca0b2ec1c5152e5078fd9bc26475485238",
+      "destructive": true,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
       "localId": "record.create",
       "title": "Create Grids Record",
-      "description": "Call gql.context kind fields first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. This action is not idempotent.",
+      "description": "Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. Reuse the idempotency key only to retry the same create.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2720,7 +3669,7 @@
               {
                 "type": "string",
                 "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               {
                 "type": "null"
@@ -2744,7 +3693,7 @@
               {
                 "type": "string",
                 "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               {
                 "type": "null"
@@ -2778,12 +3727,12 @@
           "createdAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
         "required": [
@@ -2798,15 +3747,16 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "d8a6dace63e0f6facb3435a4666bd6c72e6fafc082c913d255b3d0c60787610b",
+      "schemaHash": "3808213f82807d21f9a74edfcbed03f49f2a39a8a9f18ef43d2bf6f3b7389ed2",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none"
+      "idempotency": "required",
+      "review": true
     },
     {
       "localId": "record.update",
       "title": "Update Grids Record",
-      "description": "Load fields for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
+      "description": "Load gql.context kind fields with includeWriteContext true for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2888,7 +3838,7 @@
               {
                 "type": "string",
                 "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               {
                 "type": "null"
@@ -2912,7 +3862,7 @@
               {
                 "type": "string",
                 "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               {
                 "type": "null"
@@ -2946,12 +3896,12 @@
           "createdAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
         "required": [
@@ -2966,8 +3916,8 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "5a88415f137411284759af1a185e557809b1f56204a81409a357ef9da4fa0c5a",
-      "destructive": true,
+      "schemaHash": "7e62c9415db67c19efe32537f8d6c234397842dbb918b2e252723e1bcd5e02b3",
+      "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
@@ -2976,7 +3926,7 @@
     {
       "localId": "record.upsert-external",
       "title": "Upsert external Grids Record",
-      "description": "Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. The first request creates it; later updates require ifVersion and patch only supplied Field IDs.",
+      "description": "Load gql.context kind fields with includeWriteContext true. Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. The first request creates it; later updates require ifVersion and patch only supplied Field IDs.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3105,10 +4055,292 @@
         "additionalProperties": false
       },
       "schemaHash": "05ae5319997d24a8030110a3068b79f65e8c78f11ee11d94e622b67e54f67d66",
-      "destructive": true,
+      "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "view.create",
+      "title": "Save Grids query as View",
+      "description": "Save a reviewed GQL query as a new personal or shared View. Requires Base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public Base ID in which the GQL source is resolved."
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "Grids Query Language source to execute."
+          },
+          "currentSource": {
+            "description": "Source for a query without an explicit from clause.",
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "table",
+                    "description": "Select a Table as the current source."
+                  },
+                  "tableId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9]{6}$",
+                    "description": "Public current Table ID."
+                  }
+                },
+                "required": [
+                  "kind",
+                  "tableId"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "view",
+                    "description": "Select a View as the current source."
+                  },
+                  "viewId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9]{6}$",
+                    "description": "Public current View ID."
+                  }
+                },
+                "required": [
+                  "kind",
+                  "viewId"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Name for the new saved View."
+          },
+          "shared": {
+            "default": false,
+            "description": "Share the View with Base readers; otherwise create a personal View. Both require Base admin access.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "baseId",
+          "query",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "view"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "tableId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "tableId",
+          "name",
+          "description",
+          "icon"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "8d0bb19c0c0c2231f9a300a7db39ceec5df825c0e646aeb6dfb4c6615ccb2295",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "workflow.record-action",
+      "title": "Run a record workflow action",
+      "description": "Create one linked correction/cancellation Draft through an action from workflow.record-actions at its exact revision. The original must be finalized and remains unchanged. No issuance or external delivery. Obtain explicit approval; no arbitrary workflow source or extra inputs. Follow the run ref for status.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "launcherId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Record action ID from workflow.record-actions."
+          },
+          "recordId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Record public ID from the returned table, obtained with GQL."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Revision returned by workflow.record-actions; changes require new approval."
+          }
+        },
+        "required": [
+          "launcherId",
+          "recordId",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "workflowId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "execute",
+              "dryRun"
+            ]
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "api",
+              "customApp",
+              "scanner",
+              "bulk",
+              "record",
+              "schedule",
+              "recordEvent"
+            ]
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "waiting",
+              "succeeded",
+              "failed",
+              "canceled",
+              "needs_attention"
+            ]
+          }
+        },
+        "required": [
+          "runId",
+          "workflowId",
+          "revision",
+          "mode",
+          "channel",
+          "created",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "b9e804208b50d2e5d75d6077447566623a52edfe5a31e0b6f484f31aea3d4b37",
+      "destructive": true,
+      "openWorld": false,
+      "idempotency": "required",
       "review": true
     }
   ],

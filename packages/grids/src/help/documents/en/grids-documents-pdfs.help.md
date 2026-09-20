@@ -13,7 +13,7 @@ Use templates for formatted, shareable output; CSV/JSON exports for data exchang
 
 Workflows can also create one PDF from several Records, free CSV/JSON/XML, DATEV booking batches, and SEPA transfer files. All are Documents, not just PDFs. See [workflow outputs](/app/grids/help/grids-workflows) for header/mapping configuration.
 
-The financial serializers use stdlib 0.25.0. Grids owns permissions, captured inputs, IDs, duplicate-export claims and confirmation; stdlib owns format calculation and serialization. E-Invoice issuance validates its inputs, serializes XML, and makes one Gotenberg call to create the PDF with its attachment. It does not revalidate generated XML against XSD or reopen the PDF at runtime. Its output status is **Not checked** (`unchecked`); the report names the checks that were not run. Release tests check the pinned XSD and compare the actual PDF attachment with the structured artifact. SEPA XML retains runtime XSD validation. This does not certify the whole business process.
+E-Invoice output has status **Not checked** (`unchecked`): the report identifies checks that were not performed, including validation of the generated XML and PDF attachment. Review this report before using the output. SEPA XML is validated against its schema during generation. These checks do not certify the whole business process.
 
 ## One immutable Document model {icon="shield-check"}
 
@@ -66,7 +66,7 @@ For an E-Invoice template, choose its renderer and map the preview data in **Ren
 7. **Enable and test:** Base users with Write access can then select a record and generate a saved document.
 :::
 
-## Documents shared by several records
+## Documents shared by several records {icon="files"}
 
 The source inspector shows current readable names in stable public-ID order.
 A missing captured version is left blank rather than shown as version zero.

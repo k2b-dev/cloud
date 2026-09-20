@@ -204,7 +204,7 @@ describe("completion editor runtime behavior", () => {
         }),
       dom.root,
     );
-    const documentTools = [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-markdown-editor__tool")];
+    const documentTools = Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".k2b-markdown-editor__tool"));
     expect(documentTools.at(-1)!.getAttribute("aria-label")).toBe("Close");
     expect(documentTools.at(-2)!.getAttribute("aria-label")).toBe("Save");
     expect(documentTools.at(-1)!.disabled).toBe(false);

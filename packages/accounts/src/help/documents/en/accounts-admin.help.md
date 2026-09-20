@@ -49,7 +49,7 @@ disappear from the list; you cannot delete your own account.
 Account and access changes are recorded in Audit Log. Use the service-account filter when investigating API-key activity.
 :::
 
-## POSIX groups
+## POSIX groups {icon="users"}
 
 When creating a local group, select **Create as POSIX group** to assign a stable GID. The option is off by default and requires local Linux identities to be enabled in Administration. Without it, the group remains a logical group. If assignment fails, no group is created.
 

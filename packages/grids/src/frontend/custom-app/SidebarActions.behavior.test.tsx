@@ -90,7 +90,7 @@ domTest("navigation away while the form module loads does not open a stale dialo
 domTest("workspace navigation preserves links and opens forms through controller activation", async () => {
   const dom = createDomTestHarness();
   const { default: CustomAppNavigation } = await import("./CustomAppNavigation.island");
-  const { readWorkspaceNavigation } = await import("../../../../cloud/src/ssr/workspace-navigation");
+  const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
   const { dialogCore } = await import("@k2b/ui");
   const dispose = render(
     () => (

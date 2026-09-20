@@ -7,7 +7,7 @@ order: 112
 ---
 Wähle nach dem Zweck: Ein einmaliger Import erstellt neue Datensätze. Ein Upsert mit externer Identität gleicht ein bekanntes Quellobjekt ab. Ein Abfrageexport lädt ausgewählte Daten herunter. Ein Evidence-Export bewahrt prüfbare Nachweise.
 
-## Neue Datensätze importieren
+## Neue Datensätze importieren {icon="file-import"}
 
 Erkunde das Ziel mit `cld grids records shape <base> <table> --json`. JSON verwendet öffentliche Feld-IDs und die echten Typen: Auswahlwerte als Arrays von Options-IDs, Zahlen als exakte Dezimalstrings und Relationen mit öffentlichen Datensatz-IDs. System- und berechnete Felder sind nicht schreibbar.
 
@@ -21,7 +21,7 @@ Wenn `Name01` die tatsächliche Textfeld-ID ist:
 
 Pflichtfelder, Eindeutigkeit, Standardwerte, Änderungsrichtlinie und Base-Rechte gelten weiter. Anhänge werden separat über Datei-Aktionen hochgeladen. Kombinierte Tabellen sind nur lesbar und können keine Importe aufnehmen.
 
-## Externes System anbinden
+## Externes System anbinden {icon="plug"}
 
 Verwende `records upsert-external`, wenn die Quelle stabile Identitäten liefert:
 
@@ -40,7 +40,7 @@ Eine vorhandene Zuordnung erfordert `--if-version <aktuelle-version>`. Bei einem
 
 Diese APIs planen keine Synchronisation und gewähren keine Rechte auf andere Cloud-Anwendungen. Zugriff auf die Quelle und Änderungserkennung gehören zum Connector. Ein Dateihash allein identifiziert keine Bankbuchung über überlappende Berichte hinweg.
 
-## Die gewünschten Daten exportieren
+## Die gewünschten Daten exportieren {icon="file-export"}
 
 `records export <base> <table> --format csv|json --out result.csv` nutzt den berechtigungsgeprüften Abfragepfad. `--body-file` übergibt die vollständige Abfrage-/Exportkonfiguration; `--limit` begrenzt auf höchstens 10.000 Zeilen. Eine absichtlich begrenzte Abfrage ist kein vollständiger Tabellenexport. Die CLI-Befehlshilfe erklärt Trennzeichen, Markdown-Ausgabe und Zeilengrenzen.
 

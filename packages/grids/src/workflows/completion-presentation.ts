@@ -8,6 +8,7 @@ const deDetailsByStableLabel: Readonly<Record<string, string>> = {
   record: "Ein Datensatz aus einer konfigurierten Tabelle.",
   recordList: "Eine geordnete Liste von Datensätzen aus einer konfigurierten Tabelle.",
   text: "Ein Textwert, der beim Start des Workflows übergeben wird.",
+  decimal: "Ein exakter Dezimalwert, der beim Start des Workflows als Zeichenfolge übergeben wird.",
   number: "Ein Zahlenwert, der beim Start des Workflows übergeben wird.",
   boolean: "Ein boolescher Wert, der beim Start des Workflows übergeben wird.",
   date: "Ein Datumswert, der beim Start des Workflows übergeben wird.",

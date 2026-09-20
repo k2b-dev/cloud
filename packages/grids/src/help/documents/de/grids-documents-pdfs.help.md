@@ -15,7 +15,7 @@ Nutze Vorlagen für formatierte, teilbare Ausgaben; CSV-/JSON-Exporte für den D
 
 Workflows erzeugen auch ein PDF aus mehreren Datensätzen, freie CSV-/JSON-/XML-Dateien, DATEV-Buchungsstapel und SEPA-Überweisungsdateien. Alles sind Dokumente, nicht nur PDFs. Kopf- und Spaltenzuordnung stehen unter [Workflows](/app/grids/help/grids-workflows).
 
-Die Finanz-Serialisierer verwenden stdlib 0.25.0. Grids verwaltet Rechte, erfasste Daten, IDs, Schutz vor Doppelexporten und Bestätigung. stdlib übernimmt Formatberechnung und Serialisierung. Bei E-Rechnungen prüft Grids die Eingaben, erzeugt die XML und ruft Gotenberg einmal für das PDF mit Anhang auf. Die erzeugte XML wird zur Laufzeit nicht erneut gegen das XSD geprüft und das PDF nicht wieder geöffnet. Der Ausgabestatus lautet **Nicht geprüft** (`unchecked`); der Bericht benennt die nicht ausgeführten Prüfungen. Release-Tests prüfen das festgelegte XSD und vergleichen den tatsächlichen PDF-Anhang mit dem strukturierten Artefakt. Bei SEPA-XML bleibt die XSD-Prüfung zur Laufzeit erhalten. Der gesamte Geschäftsprozess wird damit nicht zertifiziert.
+E-Rechnungen erhalten den Ausgabestatus **Nicht geprüft** (`unchecked`): Der Bericht benennt nicht ausgeführte Prüfungen, darunter die Validierung der erzeugten XML und des PDF-Anhangs. Prüfen Sie diesen Bericht vor der Verwendung. SEPA-XML wird bei der Erzeugung gegen ihr Schema geprüft. Diese Prüfungen zertifizieren nicht den gesamten Geschäftsprozess.
 
 Agents finden mit `document.templates` Vorlagen, lesen mit `document.list` und `document.read` gespeicherte Dokumente und stellen mit `document.create` ein Dokument für einen ausgewählten Record aus. Dafür sind Schreibzugriff, ein Idempotenzschlüssel und eine einzelne ausdrückliche Bestätigung nötig. Die Ausstellung ist nicht rückgängig zu machen und erlaubt keine dauerhafte Pauschalfreigabe. Der Download-Link benötigt weiterhin deine Berechtigungen; er erstellt keinen öffentlichen Freigabelink und versendet das Dokument nicht.
 
@@ -66,7 +66,7 @@ Wähle bei einer E-Rechnungsvorlage den Renderer aus und ordne die Vorschaudaten
 7. **Aktivieren und testen:** Personen mit Schreibzugriff auf die Basis können anschließend einen Datensatz auswählen und ein gespeichertes Dokument generieren.
 :::
 
-## Ein Dokument für mehrere Datensätze
+## Ein Dokument für mehrere Datensätze {icon="files"}
 
 Die Quellenliste zeigt aktuelle lesbare Namen, sortiert nach stabilen öffentlichen
 IDs. Eine fehlende erfasste Version bleibt leer statt als Version 0 zu erscheinen.

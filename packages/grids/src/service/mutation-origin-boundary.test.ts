@@ -18,6 +18,7 @@ describe("trusted mutation origin boundary", () => {
 
     expect([...owners].sort()).toEqual([
       "service/files.ts",
+      "service/local-calculation-storage.ts",
       "service/record-finalization.ts",
       "service/record-write.ts",
       "service/relation-links.ts",

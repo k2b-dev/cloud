@@ -7,7 +7,7 @@ order: 111
 ---
 Use this reference when configuring a field through the CLI or API. For choosing a field, see [Tables & fields](/app/grids/help/grids-tables-fields). Run `cld grids fields types --json` for the live catalog and `cld grids fields type <type> --json` for one type; do not infer configuration from a field's display label.
 
-## Shared options
+## Shared options {icon="settings"}
 
 A field has `name` (1–200 characters), optional `description` (up to 2,000), `icon` (up to 200), integer `position`, and `required`, `presentable`, `hideInTable` flags (false by default). Names are unique within the table, ignoring case and surrounding whitespace. The presentable field supplies the Record label; it does not change permissions.
 
@@ -17,7 +17,7 @@ A field has `name` (1–200 characters), optional `description` (up to 2,000), `
 
 `indexed` is available for text, long text, ID, number, percent, duration, date, boolean, and single-select fields. `uniqueConstraint` is supported for text, long text, number, percent, date, boolean, and ID fields. Add indexes for actual query patterns; they add work to writes.
 
-## Entered values
+## Entered values {icon="edit"}
 
 | `type` | `config` options and defaults |
 | --- | --- |
@@ -36,7 +36,7 @@ A field has `name` (1–200 characters), optional `description` (up to 2,000), `
 
 For a Principal value, use `[{"type":"user","id":"<user-uuid>"}]` or a `group` reference. An identity in a field is data, **not a grant**. Assigning the current user securely belongs to a published app's configured submission action, not a user-editable input.
 
-## Relations and calculated values
+## Relations and calculated values {icon="link"}
 
 | `type` | `config` |
 | --- | --- |
@@ -50,11 +50,11 @@ Calculated values cannot be supplied by Record writes. Lookup/rollup access foll
 
 HTML template fields are not Documents. They require stored tables and cannot be queried through filters, sorts, groups, aggregates, formulas, or lookups. Other HTML template fields are unavailable to prevent recursion.
 
-## Calculated-value formatting
+## Calculated-value formatting {icon="numbers"}
 
 The optional `format` controls presentation, not stored precision: `{kind:"decimal", precision?:0..10, thousandsSeparator?:boolean}`, `{kind:"percent", precision?:0..10}`, `{kind:"date", format:"iso"|"short"|"long"|"relative", includeTime?:boolean}`, `{kind:"progress", label?:"value"|"percent"|"none"}`, or `{kind:"barcode", bcid:string, showText?:boolean}`. `bcid` is 1–80 lowercase letters/digits naming the barcode format. Use only a format compatible with the result type.
 
-## Generated identifiers
+## Generated identifiers {icon="id"}
 
 `id` is a server-generated field, not an ordinary editable text column. Its configuration uses:
 
@@ -78,7 +78,7 @@ Example configuration for a yearly document number:
 
 `created_at`, `updated_at`, `created_by`, and `updated_by` are system types with `config: {}`. They are supplied by Grids and are never writable Form answers.
 
-## Object-list columns
+## Object-list columns {icon="columns"}
 
 `object_list.config` contains `fields` (1–200 columns), `minItems` (0–1,000, default 0), and `maxItems` (1–1,000, default 100). The entire list, including calculated cells, is limited to 256 KiB. No nested lists, relations, files, or arbitrary nested object columns.
 

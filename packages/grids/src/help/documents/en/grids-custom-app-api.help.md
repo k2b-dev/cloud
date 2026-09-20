@@ -38,17 +38,17 @@ Every block requires `id` and `type`; all accept optional `title` (1–160 chara
 
 | `type` | Additional required keys | Optional keys and defaults |
 | --- | --- | --- |
-| `markdown` | `markdown` (up to 20,000 characters; empty is allowed) | none |
-| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `workflowStatus`, `rowNavigate`, `rowActions` (up to 6) |
-| `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (up to 6) |
-| `metrics` | `source` | `valueFormat` (common override for all values in this block) |
-| `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (each 1–60) |
-| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (up to 30), `layout:grid\|rows\|compact\|summary\|context`, `relativeDates`, `heading:{fieldId,documentNumber?,title?}`, `documents:{templateIds:[…]}` (1–12) |
-| `html` | `fieldId` | `height:normal` (`compact\|normal\|large`) |
-| `comments` | none | none |
-| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate`, `actionsBlockId`, `workspace:{summaryTitle?,summaryDescription?,helpTitle?,helpText?}`, `presentation:{kind:dialog,label,icon?,variant?}` |
-| `actions` | `actions` (1–12) | none |
-| `scanner` | `launcherId` | none |
+| `markdown` | `markdown` (up to 20,000 characters; empty is allowed) | `disclosure:{label,defaultOpen?}` |
+| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `workflowStatus`, `rowNavigate`, `rowActions` (up to 6), `disclosure:{label,defaultOpen?}` |
+| `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (up to 6), `disclosure:{label,defaultOpen?}` |
+| `metrics` | `source` | `valueFormat` (common override for all values in this block), `disclosure:{label,defaultOpen?}` |
+| `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (each 1–60), `disclosure:{label,defaultOpen?}` |
+| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (up to 30), `layout:grid\|rows\|compact\|summary\|context`, `relativeDates`, `heading:{fieldId,documentNumber?,title?}`, `documents:{templateIds:[…]}` (1–12), `disclosure:{label,defaultOpen?}` |
+| `html` | `fieldId` | `height:normal` (`compact\|normal\|large`), `disclosure:{label,defaultOpen?}` |
+| `comments` | none | `disclosure:{label,defaultOpen?}` |
+| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate`, `actionsBlockId`, `workspace:{summaryTitle?,summaryDescription?,helpTitle?,helpText?}`, `presentation:{kind:dialog,label,icon?,variant?}`, `disclosure:{label,defaultOpen?}` |
+| `actions` | `actions` (1–12) | `disclosure:{label,defaultOpen?}` |
+| `scanner` | `launcherId` | `disclosure:{label,defaultOpen?}` |
 
 `source` is exactly `{kind:view,viewId}` or `{kind:gql,query}`. For `records`, `display` is `{kind:table,columnIds:[…]}` (up to 30) or `{kind:cards}`. Saved-view tables need at least one column; inline GQL tables normally use the query's selected columns with `columnIds:[]`; a non-empty list narrows displayed fields while retaining selected fields for behavior. Cards inherit a saved View's Cards configuration and cannot use inline GQL. Metrics require ungrouped scalar aggregates (up to 12); charts require grouped aggregates (up to 100 groups). At most four Records blocks, 24 insight blocks and 24 Scanner blocks are allowed per App.
 

@@ -18,7 +18,7 @@ Unsaved or submitting forms warn before leaving the page.
 
 For object-list columns, **Rules and calculation → Default value** suggests a value only when adding an entry. Existing values stay unchanged. In configuration, set a literal `defaultValue` on the column, using option IDs for selects. It must satisfy the column's rules; calculated columns cannot have defaults. API writes do not fill missing cells from these suggestions.
 
-## Edit object lists
+## Edit object lists {icon="table"}
 
 Object lists show compact rows. Switching to editing keeps row heights and column widths stable. Long display values are shortened; open the entry editor to read them in full. Validation messages appear below the table and identify the entry and field. Click a value to edit that row; new entries open directly for input. Tab moves between fields and rows. In single-line text and numeric inputs, Enter finishes the row, Escape undoes its edits, and Ctrl/Cmd+Enter adds another entry.
 
@@ -58,7 +58,7 @@ Choose **Edit this page's record** for a Form on a matching Record page when use
 
 Saving checks versions and commits related edits together. Retry connection failures in the open dialog; after version conflicts, reload and review before saving. For CLI/API versions, idempotency keys, payloads and limits, see the [API reference](/app/grids/help/grids-custom-app-api).
 
-## Configuration for CLI and API authors
+## Configuration for CLI and API authors {icon="code"}
 
 Form `config` uses the following keys. Public APIs accept public field IDs, not internal UUIDs.
 

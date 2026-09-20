@@ -183,7 +183,7 @@ und in Seiten unterteilt. Sichtbare laufende Einträge werden aktualisiert.
 
 #Skalare Workflow-Eingaben können über `prompt.inputs` direkt im Aktionsdialog abgefragt werden. Beschriftungen und Validierung stammen aus dem Workflow. Binde den aktuellen Datensatz weiterhin serverseitig. Ein Abschluss führt den Vorgang aus und aktualisiert nach Erfolg die Seite. Bei unklarem Ausgang prüft eine Wiederholung denselben Vorgang; sie startet keinen zweiten. `description` und `successMessage` erklären Aufgabe und Ergebnis.
 
-## Scanner
+## Scanner {icon="scan"}
 
 Scanner bettet eine vorhandene aktivierte Scanner-Ausführungsoption ein. Angemeldete lesende Personen der App können mit der Kamera scannen oder einen Code manuell eingeben. Öffentliche anonyme Personen sehen stattdessen eine Aufforderung zur Anmeldung. Sitzungswerte werden einmal beim Öffnen des Scanners abgefragt, Werte nach dem Scan für jeden Code.
 

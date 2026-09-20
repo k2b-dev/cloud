@@ -36,7 +36,7 @@ Choose a small process that already has clear items, such as equipment loans or 
 5. Add a form, Grids App, document, or workflow only when it removes a real manual step.
 :::
 
-## All topics
+## All topics {icon="list"}
 
 - [Bases, tables, Records and relations](/app/grids/help/grids-core-model)
 - [Build a Base and configure settings](/app/grids/help/grids-build-base)

@@ -861,17 +861,17 @@ For quick orientation, every block accepts `id`, `type`, optional `title` and `a
 
 | Block | Required besides id/type | Optional (defaults where defined) |
 | --- | --- | --- |
-| `markdown` | `markdown` | none |
-| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `workflowStatus`, `rowNavigate`, `rowActions` |
-| `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `rowActions` |
-| `metrics` | `source` | none |
-| `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle`, `limit:100`, `valueFormat`, `xAxisLabel`, `yAxisLabel` |
-| `record` | `fieldIds` | `emptyText`, `editableFieldIds:[]`, `documents:{templateIds:[…]}` |
-| `html` | `fieldId` | `height:normal` (`compact\|normal\|large`) |
-| `comments` | none | none |
-| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate` |
-| `actions` | `actions` | none |
-| `scanner` | `launcherId` | none |
+| `markdown` | `markdown` | `disclosure:{label,defaultOpen?}` |
+| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `workflowStatus`, `rowNavigate`, `rowActions`, `disclosure:{label,defaultOpen?}` |
+| `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds`, `display` | `emptyText`, `searchable:true`, `pageSize:25`, `rowActions`, `disclosure:{label,defaultOpen?}` |
+| `metrics` | `source` | `valueFormat`, `disclosure:{label,defaultOpen?}` |
+| `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle`, `limit:100`, `valueFormat`, `xAxisLabel`, `yAxisLabel`, `disclosure:{label,defaultOpen?}` |
+| `record` | `fieldIds` | `emptyText`, `editableFieldIds:[]`, `layout:grid\|rows\|compact\|summary\|context`, `relativeDates`, `heading:{fieldId,documentNumber?,title?}`, `documents:{templateIds:[…]}`, `disclosure:{label,defaultOpen?}` |
+| `html` | `fieldId` | `height:normal` (`compact\|normal\|large`), `disclosure:{label,defaultOpen?}` |
+| `comments` | none | `disclosure:{label,defaultOpen?}` |
+| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate`, `actionsBlockId`, `workspace:{summaryTitle?,summaryDescription?,helpTitle?,helpText?}`, `presentation:{kind:dialog,label,icon?,variant?}`, `disclosure:{label,defaultOpen?}` |
+| `actions` | `actions` | `disclosure:{label,defaultOpen?}` |
+| `scanner` | `launcherId` | `disclosure:{label,defaultOpen?}` |
 
 Read nested shapes, enum values and limits in `definitionSchema`; always run the compiler because JSON Schema cannot express permission checks, same-table rules, unique IDs, compatible navigation and query result shapes. Local IDs start with a lowercase letter and contain lowercase letters/digits/hyphens (up to 80); parameter names use underscores. Resource IDs are six case-sensitive letters/digits. `startPageId` must name a parameter-free page. A Record page has exactly its matching Record parameter, hidden navigation and at least one Record or HTML block. Column spans total at most 12. Omit optional values instead of sending null. Form success navigation replaces history; only normal/row navigation supports `history:push|replace`.
 
@@ -1147,7 +1147,7 @@ Every input may set `label`, `description`, and `required`. Type-specific declar
 
 | Type | Declaration | Invocation value |
 | --- | --- | --- |
-| `record` | required `table` exact name or public ID | one record public ID |
+| `record` | required `table` exact name or public ID | one record public ID, `disclosure:{label,defaultOpen?}` |
 | `recordList` | required `table` exact name or public ID | ordered record public-ID list, at most 10,000 |
 | `text` | none | string |
 | `number` | none | finite number |
@@ -1796,3 +1796,5 @@ an unconditional Record block. Records tables can show the state with
 `workflowStatus: true` and direct `ROW.id` navigation to that page. Existing Apps
 must be updated and republished to use this flow; no stored definition migration
 is performed.
+
+`createRecord` can copy selected inputs from an existing record in the same table: supply `copyFrom: inputs.original` with `copyFields: [Positions]`. Select up to 100 stored value fields. IDs, unique fields, files, relations and calculated fields cannot be copied. Object-list inputs are copied and their formulas recalculated. Explicit `values` override copies and retain normal write validation. The source remains unchanged; replaying the same workflow step returns the same new record. This option belongs to the standalone action, not entries inside `atomicRecords`.

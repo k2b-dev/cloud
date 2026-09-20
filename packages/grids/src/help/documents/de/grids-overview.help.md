@@ -36,7 +36,7 @@ Wähle einen kleinen Prozess mit bereits klar definierten Einträgen, etwa Gerä
 5. Füge ein Formular, eine Grids App, ein Dokument oder einen Workflow erst hinzu, wenn dadurch ein konkreter manueller Schritt entfällt.
 :::
 
-## Alle Themen
+## Alle Themen {icon="list"}
 
 - [Bases, Tabellen, Datensätze und Relationen](/app/grids/help/grids-core-model)
 - [Base aufbauen und Einstellungen wählen](/app/grids/help/grids-build-base)

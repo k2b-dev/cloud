@@ -501,7 +501,7 @@ export const queryMessages = i18n.define({
           "Year number.": "Jahreszahl.",
           "Month number.": "Monatszahl.",
           "Day number.": "Tageszahl.",
-          "Add time to a date; the unit defaults to days.": "Addiert Zeit zu einem Datum; standardmäßig ist die Einheit Tage.",
+          "Add time within years 1000–9999; the unit defaults to days.": "Addiert Zeit innerhalb der Jahre 1000–9999; standardmäßig ist die Einheit Tage.",
           "Difference between dates; the unit defaults to days.": "Differenz zwischen Datumswerten; standardmäßig ist die Einheit Tage.",
         })[description] ?? description,
     },

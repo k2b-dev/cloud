@@ -7,7 +7,7 @@ order: 136
 ---
 Grids bietet einen definierten Umfang an Finanzformaten. Wähle ein vom Empfänger unterstütztes Format und prüfe eine repräsentative Datei mit dessen Importeinstellungen. Erstellen und Validieren überweist kein Geld, importiert keine Buchhaltung und bestätigt keine Rechtskonformität.
 
-## Formate und Zuständigkeiten
+## Formate und Zuständigkeiten {icon="file-description"}
 
 | Grids-Ausgabe | Unterstütztes Format | Ergebnis |
 | --- | --- | --- |
@@ -15,9 +15,8 @@ Grids bietet einen definierten Umfang an Finanzformaten. Wähle ein vom Empfäng
 | `datev-csv`, Version 1 | DATEV 700/13, EUR | UTF-8-CSV mit BOM; Dateiname `EXTF_*.csv` |
 | `sepa-xml`, Version 1 | SCT `pain.001.001.09`, DK GBIC 5, EUR | Eine XML-Datei mit einer oder mehreren Überweisungen |
 
-Berechnung und Serialisierung verwenden öffentliche APIs aus stdlib 0.25.0. Grids verwaltet Datenstände, Rechte, Workflow-Identitäten, Bestätigung, unveränderliche Ausstellung und Schutz vor Doppelexporten. Freies CSV/JSON/XML und HTML-PDF bleiben eigene allgemeine Ausgaben.
 
-## E-Rechnungseingabe
+## E-Rechnungseingabe {icon="file-invoice"}
 
 `cld grids documents renderers --json` zeigt installierte Renderer; deren `inputSchema` beschreibt die Eingabestruktur. Liquid-JSON der Vorlage ordnet den ausgewählten Datensatz zu. Prüfe die Vorschau, bevor du die Vorlage aktivierst.
 
@@ -35,7 +34,7 @@ Positionen in Version 2 erlauben `description` und `unitCode`: `C62` (Standard),
 
 Diese Grids-Profile sind enger als ein beliebiges Rechnungsmodell: keine steuerfreien Positionen oder Nullsteuer, Zu-/Abschläge, Vorauszahlungen, Eingangsrechnungsimporte oder beliebige XML-Formate. Ob ein Original existiert und Korrektur-/Provisionsbudgets reichen, prüft der Workflow, nicht der Serialisierer. Die Billing-Vorlage ergänzt fachliche Regeln; der Renderer allein fügt sie nicht hinzu.
 
-## SEPA-Überweisungen
+## SEPA-Überweisungen {icon="transfer"}
 
 Die Workflow-`output` enthält `kind: sepa-xml`, `version: 1`, `header` und `mapping`. Ausführbare Beispiele für Abfrage und Zuordnung stehen unter [Workflows](/app/grids/help/grids-workflows).
 
@@ -53,7 +52,7 @@ Pflichtzuordnungen: `businessId`, `endToEndId`, `amount`, `creditorName`, `credi
 
 Das ist SCT, keine Lastschrift oder Echtzeitüberweisung. Die Bank entscheidet über die Annahme.
 
-## DATEV-Buchungen
+## DATEV-Buchungen {icon="receipt"}
 
 Kopf: `destinationKey`, `consultantNumber`, `clientNumber`, `fiscalYearStart`, `accountLength`, `periodStart`, `periodEnd`, `label` und `finalize`.
 
@@ -73,7 +72,7 @@ Pflichtzuordnungen: `businessId`, `entryId`, `amount`, `direction`, `account`, `
 
 Dies ist ein Buchungsstapel, nicht die gesamte DATEV-Produktfamilie. ADDISON oder andere Software kann bestimmte Importeinstellungen benötigen.
 
-## Prüfen und Identitäten beibehalten
+## Prüfen und Identitäten beibehalten {icon="check"}
 
 Beide Workflow-Finanzausgaben erlauben 1–10.000 Zeilen innerhalb des gemeinsamen Speicherlimits für erfasste Daten. `destinationKey`, `businessId` und DATEV-`entryId` haben 1–200 Zeichen ohne umgebende Leer- oder Steuerzeichen. Sie benennen das echte Ziel und den Geschäftsvorfall, nicht Lauf, Dateiname oder neu erzeugten Zufallswert.
 

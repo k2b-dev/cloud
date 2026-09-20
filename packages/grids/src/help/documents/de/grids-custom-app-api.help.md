@@ -38,17 +38,17 @@ Jeder Block benötigt `id` und `type`. Alle unterstützen optional `title` (1–
 
 | `type` | Weitere Pflichtfelder | Optional und Standardwerte |
 | --- | --- | --- |
-| `markdown` | `markdown` (bis 20.000 Zeichen, leer erlaubt) | keine |
-| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `workflowStatus`, `rowNavigate`, `rowActions` (bis 6) |
-| `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (bis 6) |
-| `metrics` | `source` | `valueFormat` (gemeinsames Format für alle Werte dieses Blocks) |
-| `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (je 1–60) |
-| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (bis 30), `layout:grid\|rows\|compact\|summary\|context`, `relativeDates`, `heading:{fieldId,documentNumber?,title?}`, `documents:{templateIds:[…]}` (1–12) |
-| `html` | `fieldId` | `height:normal` (`compact\|normal\|large`) |
-| `comments` | keine | keine |
-| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate`, `actionsBlockId`, `workspace:{summaryTitle?,summaryDescription?,helpTitle?,helpText?}`, `presentation:{kind:dialog,label,icon?,variant?}` |
-| `actions` | `actions` (1–12) | keine |
-| `scanner` | `launcherId` | keine |
+| `markdown` | `markdown` (bis 20.000 Zeichen, leer erlaubt) | `disclosure:{label,defaultOpen?}` |
+| `records` | `source`, `display` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `workflowStatus`, `rowNavigate`, `rowActions` (bis 6), `disclosure:{label,defaultOpen?}` |
+| `referenced_records` | `sourceTableId`, `relationFieldId`, `fieldIds` (1–30), `display:{kind:table\|cards}` | `emptyText`, `searchable:true`, `pageSize:25` (5–100), `rowActions` (bis 6), `disclosure:{label,defaultOpen?}` |
+| `metrics` | `source` | `valueFormat` (gemeinsames Format für alle Werte dieses Blocks), `disclosure:{label,defaultOpen?}` |
+| `chart` | `source`, `chartType:donut\|bar\|line` | `subtitle` (1–200), `limit:100` (1–100), `valueFormat`, `xAxisLabel`, `yAxisLabel` (je 1–60), `disclosure:{label,defaultOpen?}` |
+| `record` | `fieldIds` (1–30) | `emptyText`, `editableFieldIds:[]` (bis 30), `layout:grid\|rows\|compact\|summary\|context`, `relativeDates`, `heading:{fieldId,documentNumber?,title?}`, `documents:{templateIds:[…]}` (1–12), `disclosure:{label,defaultOpen?}` |
+| `html` | `fieldId` | `height:normal` (`compact\|normal\|large`), `disclosure:{label,defaultOpen?}` |
+| `comments` | keine | `disclosure:{label,defaultOpen?}` |
+| `form` | `formId` | `mode:create` (`create\|edit`), `fixedValues:{}`, `onSuccessNavigate`, `actionsBlockId`, `workspace:{summaryTitle?,summaryDescription?,helpTitle?,helpText?}`, `presentation:{kind:dialog,label,icon?,variant?}`, `disclosure:{label,defaultOpen?}` |
+| `actions` | `actions` (1–12) | `disclosure:{label,defaultOpen?}` |
+| `scanner` | `launcherId` | `disclosure:{label,defaultOpen?}` |
 
 `source` ist genau `{kind:view,viewId}` oder `{kind:gql,query}`. Für `records` ist `display` entweder `{kind:table,columnIds:[…]}` (bis 30) oder `{kind:cards}`. Tabellen aus gespeicherten Ansichten benötigen mindestens eine Spalte; Inline-GQL zeigt mit `columnIds:[]` seine ausgewählten Spalten; eine nichtleere Liste begrenzt die sichtbaren Felder, während ausgewählte Felder für Verhalten verfügbar bleiben. Karten übernehmen die Kartenkonfiguration einer gespeicherten Ansicht; Inline-GQL ist dafür nicht möglich. Kennzahlen benötigen ungruppierte skalare Aggregate (bis 12); Diagramme gruppierte Aggregate (bis 100 Gruppen). Pro App sind höchstens vier Records-Blöcke, 24 Kennzahlen-/Diagrammblöcke und 24 Scanner-Blöcke erlaubt.
 

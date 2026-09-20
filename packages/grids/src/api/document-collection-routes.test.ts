@@ -6,6 +6,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
 import type { z } from "zod";
 import { gridsService } from "../service";
+import * as documentBrowse from "../service/document-browse";
 import * as documentSources from "../service/document-record-sources";
 import * as publicResources from "../service/public-resources";
 import type { PublicDocumentSchema } from "./document-public-contracts";
@@ -218,6 +219,7 @@ const expectForbidden = async (response: Response) => {
 
 describe("document routes", () => {
   beforeEach(() => {
+    spyOn(documentBrowse, "loadDocumentDataSnapshots").mockResolvedValue(new Map());
     spyOn(documentSources, "loadDocumentRecordCounts").mockResolvedValue(new Map());
     spyOn(documentSources, "listDocumentRecordSources").mockResolvedValue({ items: [], hasMore: false });
     spyOn(publicResources, "resolvePublicId").mockImplementation(publicResourceMocks.resolvePublicId);
