@@ -87,3 +87,15 @@ Open a `.md` or `.markdown` file in the full workspace editor, or choose **Add â
 **Add â†’ Template** shows the templates available to you. Choose one and a name to create an independent file in the current folder. You need write access there. Existing files are never replaced. A template may be available even when you cannot access its original file. Later changes to the template do not change your copy. If no templates appear, an administrator can grant you or your groups access.
 
 Use `cld filesv2 documents markdown <base-id> Notes.md`, `cld filesv2 templates list --json`, and `cld filesv2 templates use <template-id> <base-id> Notes.md` for the same actions in the terminal. For conditional replacement, add `--replace --expected-revision <revision>` to `upload`; a conflict leaves the current file untouched.
+
+## Use files with Assistant
+
+Assistant can discover your storage, read files for analysis and save results
+back into a folder you can write to. In code mode, files travel as binary
+streams; a file can be up to 50 MiB. You can also ask Assistant to create folders,
+rename, move or copy entries, or move them to the trash and restore them.
+
+The same access rules apply as in Files. Actions use Assistant's usual approval
+flow. New results do not overwrite existing files by default; replacing a file
+requires its current revision. If a write is interrupted, Assistant can check
+its status before retrying. It cannot permanently delete your files.

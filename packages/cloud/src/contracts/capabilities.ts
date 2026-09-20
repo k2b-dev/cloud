@@ -1,3 +1,5 @@
+import { CapabilityStreamSchema, CapabilityStreamPolicySchema, type CapabilityStream, type CapabilityStreamDefinition } from "./capability-streams";
+export * from "./capability-streams";
 import { z } from "zod";
 import { CommandPathSchema } from "./commands";
 import type { AccessSubject, RequestActor, User } from "./shared";
@@ -189,6 +191,7 @@ export const capabilityDataAtPath = (data: unknown, path: readonly string[]): un
 
 export type CapabilityResult<T> = {
   data: T;
+  stream?: CapabilityStream;
   /** Provider-authored, user-facing summary of the successful result. Render as escaped plain text. */
   summary?: string;
   refs?: CloudResourceReference[];
@@ -204,6 +207,7 @@ export const capabilityResultSchema = <T extends z.ZodType>(
   z
     .object({
       data,
+      stream: CapabilityStreamSchema.optional(),
       summary: z.string().trim().min(1).max(500).optional(),
       refs: z.array(CloudResourceReferenceSchema).max(100).optional(),
       page: CapabilityPageSchema.optional(),
@@ -366,6 +370,7 @@ export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, 
   input: Input;
   data: Data;
   openWorld: boolean;
+  stream?: CapabilityStreamDefinition;
   universalSearch?: CapabilityUniversalSearchDefinition;
   run: (
     input: z.output<Input>,
@@ -383,6 +388,7 @@ export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>,
   data: Data;
   destructive: boolean;
   openWorld: boolean;
+  stream?: CapabilityStreamDefinition;
   idempotency: CapabilityIdempotencyPolicy;
   approval?: CapabilityActionApprovalPolicy;
   review?: (
@@ -461,6 +467,7 @@ const CapabilityOperationManifestBaseSchema = z
     description: z.string().min(1).max(1000),
     inputSchema: z.record(z.string(), z.unknown()),
     dataSchema: z.record(z.string(), z.unknown()),
+    stream: CapabilityStreamPolicySchema.optional(),
     schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();

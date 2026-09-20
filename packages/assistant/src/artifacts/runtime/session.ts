@@ -1,3 +1,4 @@
+import { RuntimeStream, runStream } from "./streams";
 import { StoragePage } from "./storage";
 import type { WorkState } from "./work";
 import { RuntimeStorage, localStorageCall } from "./shared-storage";
@@ -54,6 +55,9 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
   const memoryBytes = new Map<string, number>();
   let modalSequence = 0;
   let capabilityRequests = 0;
+  const capabilityStreams = new Map<string, RuntimeStream>();
+  let streamBytes = 0;
+  let streamRequests = 0;
   let modal: { resolve: (value: unknown) => void; reject: (error: Error) => void } | undefined;
   let watchdog: ReturnType<typeof setTimeout> | undefined;
   let errorGeneration = 0;
@@ -64,7 +68,7 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
   const log = (level: string, text: string) => emit({ logs: [...state.logs, { time: new Date().toISOString(), level, text }].slice(-LIMITS.logs) });
   const arm = () => {
     clearTimeout(watchdog);
-    if (state.work?.status === "running") return;
+    if (state.work?.status === "running" || streamRequests > 0 || capabilityRequests > 0) return;
     watchdog = setTimeout(() => {
       emit({ status: "error", error: "Run timed out before becoming ready", busy: false });
       void run.stop();
@@ -164,8 +168,31 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
       if (method === "capabilities.run") {
         if(!options.capability || typeof args[0]!=="string")throw new Error("Capability execution unavailable");
         clearTimeout(watchdog);capabilityRequests++;emit({approvalPending:true});
-        try {return await options.capability(args[0],args[1],signal);}
+        try {
+          const result=await options.capability(args[0],args[1],signal);
+          if(result && typeof result === "object" && "stream" in result && result.stream) {
+            const ref=RuntimeStream.parse(result.stream);
+            if(capabilityStreams.size >= LIMITS.files)throw new Error("Too many streams in this run");
+            capabilityStreams.set(ref.id,ref);
+          }
+          return result;
+        }
         finally {capabilityRequests--;emit({approvalPending:capabilityRequests>0});if(!capabilityRequests&&state.status==="starting"&&!signal.aborted)arm();}
+      }
+      if (method === "capabilities.stream") {
+        const ref=RuntimeStream.parse(args[0]);
+        const known=capabilityStreams.get(ref.id);
+        if(!known || JSON.stringify(known)!==JSON.stringify(ref))throw new Error("Stream was not issued to this run");
+        const verb=args[1];
+        if(verb!=="read" && verb!=="write" && verb!=="status" && verb!=="abort")throw new Error("Unknown stream operation");
+        if((verb==="read") !== (ref.direction==="read"))throw new Error("Wrong stream direction");
+        if(verb==="read" || verb==="write") {
+          if(streamBytes+ref.size>LIMITS.inputBytes)throw new Error("Stream transfers exceed the 250 MiB run budget");
+          streamBytes+=ref.size;
+        }
+        clearTimeout(watchdog); streamRequests++; emit({inputPending:true});
+        try {return await runStream(ref,verb,args[2] instanceof Blob ? args[2] : undefined,signal);}
+        finally {streamRequests--;emit({inputPending:streamRequests>0});if(state.status==="starting"&&!signal.aborted)arm();}
       }
       if (method === "http.fetch") {
         if (!options.http) throw new Error("Server HTTP unavailable");

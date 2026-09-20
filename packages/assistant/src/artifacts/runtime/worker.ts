@@ -137,7 +137,15 @@ const api = {
   },
   http: createHttp(rpc),
   secret,
-  capabilities: {run:(name:string,input:unknown={}) => rpc("capabilities.run",[name,input])},
+  capabilities: {
+    run:(name:string,input:unknown={}) => rpc("capabilities.run",[name,input]),
+    streams: {
+      read:(ref:unknown) => rpc("capabilities.stream",[ref,"read"]),
+      write:(ref:unknown,body:Blob|string|ArrayBuffer|Uint8Array) => rpc("capabilities.stream",[ref,"write",new Blob([body instanceof Uint8Array ? new Uint8Array(body) : body])]),
+      status:(ref:unknown) => rpc("capabilities.stream",[ref,"status"]),
+      abort:(ref:unknown) => rpc("capabilities.stream",[ref,"abort"]),
+    },
+  },
   database: {connect: async () => {
     await rpc("database",[{operation:"connect"}]);
     const call = (request: unknown) => rpc("database",[request]);

@@ -896,3 +896,26 @@ test("a Command cannot direct the user into another app's owned route", async ()
   });
   expect(response.status).toBe(503);
 });
+
+test("ordinary invocation seals a stream offer and the transfer route accepts only that caller", async () => {
+  const { dispatchCapabilityStream } = await import("./capability-streams");
+  const streamDefinition = compileCapabilities("demo", defineCapabilities({ protocolVersion: 2, queries: {
+    content: { title: "Read content", description: "Read bytes", input: z.object({}).strict(), data: z.object({}), openWorld: false,
+      stream: {direction:"read",maxBytes:3,read:async()=>new Response("abc")}, run:()=>ok({data:{}}) },
+  }}));
+  const app = {...entry(), manifest:streamDefinition.manifest};
+  const offer = {id:"provider-private-id",direction:"read",mediaType:"text/plain",size:3,expiresAt:new Date(Date.now()+60_000).toISOString()};
+  const result = await dispatchCapability({request:new Request("http://cloud.test/api/capabilities/v1/queries/demo/content"),kind:"queries",appId:"demo",capabilityId:"content",input:{},origin:"http",
+    dependencies:{getCapability:async()=>app,fetch:async()=>Response.json({data:{},stream:offer})}});
+  expect(result.status).toBe(200);
+  const body = await result.json();
+  expect(body.stream.id).not.toBe(offer.id);
+  const response=await dispatchCapabilityStream(new Request("http://cloud.test/api/capabilities/v1/streams/read",{headers:{"x-cloud-stream-id":body.stream.id}}),resourceAuthority,"read",{
+    getCapability:async()=>app,withActiveSigner,fetch:async(_url,init)=>{
+      const forwarded=JSON.parse(Buffer.from(new Headers(init?.headers).get("x-cloud-stream-offer")!,"base64url").toString());
+      expect(forwarded).toEqual(offer);
+      return new Response("abc");
+    },
+  });
+  expect(await response.text()).toBe("abc");
+});

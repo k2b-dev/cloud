@@ -1,3 +1,4 @@
+import { CapabilityStreamSchema } from "@k2b/cloud/contracts";
 import type { HttpApproval } from "../http-host";
 import { artifactClient } from "../client";
 export type CapabilityApproval=Extract<Awaited<ReturnType<typeof artifactClient.capabilityPrepare>>,{status:"approval"}>;
@@ -6,7 +7,8 @@ export type ApproveCapability=(request:CapabilityApproval,signal:AbortSignal,con
 
 export async function runCapability(name:string,input:unknown,context:{artifactId?:string;conversationId?:string},approve:ApproveCapability,signal:AbortSignal){
   signal.throwIfAborted();
-  let response=await artifactClient.capabilityPrepare({id:crypto.randomUUID(),name,input,...context},signal);
+  const callId=crypto.randomUUID();
+  let response=await artifactClient.capabilityPrepare({id:callId,name,input,...context},signal);
   signal.throwIfAborted();
   if(response.status==="approval"){
     const id=response.id;
@@ -26,7 +28,11 @@ export async function runCapability(name:string,input:unknown,context:{artifactI
     const error="error" in result ? result.error : undefined;
     throw new Error(error && typeof error==="object" && "message" in error ? String(error.message) : "Capability failed");
   }
-  return "data" in result ? result.data : null;
+  const envelope="data" in result ? result.data : null;
+  if(envelope && typeof envelope==="object" && "stream" in envelope && envelope.stream) {
+    return {...envelope,stream:{...CapabilityStreamSchema.parse(envelope.stream),callId}};
+  }
+  return envelope;
 }
 
 export type CodeApproval = CapabilityApproval | HttpApproval;

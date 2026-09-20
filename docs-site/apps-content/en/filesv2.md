@@ -475,3 +475,21 @@ The CLI exposes `templates list|get|use`,
 read the revision with `stat`. Keep the same revision and idempotency key when
 recovering an uncertain upload. For unmanaged files, the observation token is
 `fs:<modified>:<size>` from the stat response.
+
+## Analyze and organize files through capabilities
+
+Assistant code mode can discover accessible storage, list folders, search names,
+read file content and save analysis results back to a permitted folder. Binary
+streams support CSV, Excel and other formats without embedding the file in a
+JSON tool response. Filesv2 capability streams accept files up to 50 MiB, matching the code-mode
+file budget. The regular direct upload and download paths keep their own limits.
+
+Folder creation, renaming, moving, copying, moving to trash and restoring are
+available through the same capability catalog. Actions follow Assistant's normal
+approval flow and recheck current storage access. New uploads default to creating
+a file; replacing a file requires its current revision. Permanent deletion is
+still an administrative operation, not an Assistant capability.
+
+Use `cld capabilities catalog --json` for current schemas and the generic
+`stream-read`, `stream-write`, `stream-status` and `stream-abort` commands for
+binary transfers. The existing Filesv2 CLI remains available for direct tasks.

@@ -1319,3 +1319,77 @@ A save or lease failure leaves the user in the composer. Incoming invitation
 import, RSVP draft preparation and linking a conversation to an existing
 Spaces item remain local context actions with their existing selectors and
 confirmation steps.
+
+## Binary streams
+
+A Query or Action can optionally return one `stream` alongside its ordinary
+`data`, references and links. Use this for binary content that does not fit the
+256 KiB JSON result budget. The same contract supports a file download, an
+invoice PDF, audio or an archive import. Resource Types do not prescribe a
+format, and consumers must discover the operation's input schema.
+
+Declare `stream: { direction, maxBytes, ...handlers }` on the operation. A read
+Query implements `read(descriptor, context): Promise<Response>`. A write Action
+must require idempotency and implement:
+
+- `write(descriptor, body, context)`: consume the `ReadableStream<Uint8Array>`
+  completely, validate it, then publish and return a normal capability result.
+- `status(descriptor, context)`: return `{state:"open"}`, `{state:"aborted"}` or
+  `{state:"completed", result}` with the same result schema as the Action.
+- `abort(descriptor, context)`: discard an unfinished transfer. Preserve an
+  already completed result; the framework reads status after aborting.
+
+The operation's `run` returns a descriptor with `id`, `direction`, `mediaType`,
+`size` (exact byte count), `expiresAt` (ISO timestamp), and optional `name`.
+The provider's ID identifies an authorized source revision or a durable upload
+reservation. Core replaces it with an encrypted, caller-bound reference. The
+manifest publishes direction and maximum bytes and includes them in the schema
+hash. Expiry must be in the future and at most 24 hours away.
+
+Handlers receive the original descriptor and a freshly authenticated execution
+context. Check current resource permissions in **every** handler. Keep source
+identity/revision and destination/conflict policy in the reservation, not in
+caller-supplied transfer parameters. Serialize concurrent writes to the same
+reservation and reconcile retries from its durable receipt. A write response
+must not promise success before publication. Do not emit another stream from a
+write receipt.
+
+Consumers use `transferCapabilityStream(ref, "read" | "write" | "status" |
+"abort")` from `@k2b/cloud/capabilities`; the server counterpart accepts the same
+`CapabilityCaller` as ordinary invocation. Read returns binary bytes; the other
+verbs return JSON. Writes supply `body` without encoding it as JSON or base64.
+The HTTP endpoint is `POST /api/capabilities/v1/streams/{verb}` with the opaque
+reference in `x-cloud-stream-id`. Never put it in a URL or log it.
+
+Transfers preserve backpressure, propagate cancellation and enforce the exact
+byte count even without `Content-Length`. Each request has a five-minute
+transport deadline. No write is retried automatically: after a lost response,
+inspect status before deciding whether to resume or prepare a new operation.
+Expiry also limits status and abort; providers must reclaim abandoned
+reservations independently. Keep receipts for their domain recovery period.
+
+References require the same caller and credential scope, an unchanged live
+operation schema and current provider access. Possessing a reference alone
+cannot invoke a different operation. This initial stream contract supports
+interactive and service-account authority; mandate-backed background
+invocations of streaming operations fail before execution. Existing operations
+without streams retain their contracts.
+
+Assistant code mode exposes `capabilities.streams.read/write/status/abort`.
+`read` returns a `File`, and `write` accepts a `Blob`, string, `ArrayBuffer` or
+`Uint8Array`. It uses only references returned by that run's approved
+`capabilities.run` calls. The existing runtime budget applies: 50 MiB per
+payload and 250 MiB across transfers, with at most 64 references per run.
+HTTP and CLI clients may use the provider's larger advertised limit.
+
+Provider IDs are limited to 2 KiB of UTF-8; use a stored reference for long
+paths. Core's sealed reference is bounded to 8 KiB. Treat provider IDs as
+untrusted selectors even on an authenticated invocation and authorize them
+against the actor. Replaying an idempotent Action returns its original grant
+and does not extend its lifetime. After expiry, use the app's recovery API or
+prepare a new Action with the current conflict policy.
+
+Stream read/write attempts have separate execution rows linked by the original
+request ID. They record direction, outcome and byte count without recording the
+content or stream reference. A read completes only when its body has been
+consumed; canceling it records an interrupted transfer.

@@ -1,3 +1,4 @@
+import { invokeCapabilityStream } from "./capability-streams";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -671,6 +672,15 @@ export const defineApp = <
               schemaHash: operation.manifest.schemaHash,
             };
           });
+        for (const kind of ["queries", "actions"] as const) {
+          server.post(`/api/_internal/capabilities/v1/streams/${kind}/:capabilityId/:verb`, capabilityAuth(kind), auth.requireOAuthScope(kind === "queries" ? "read" : "write", "admin"), async c => {
+            const actor = c.get("actor");
+            return invokeCapabilityStream({ compiled: compiledCapabilities, kind, localId: c.req.param("capabilityId") ?? "", verb: c.req.param("verb") ?? "", request: c.req.raw,
+              context: { actor, accessSubject: c.get("accessSubject"), user: actor.kind === "user" ? actor.user : actor.delegatedUser,
+                locale: resolveLocale(c.req.raw.headers, await get<string>("app.locale")),
+                requestId: normalizeInvocationRequestId(c.req.header("x-request-id")) ?? crypto.randomUUID(), origin: CapabilityOriginSchema.catch("http").parse(c.req.header(CAPABILITY_ORIGIN_HEADER)), signal: c.req.raw.signal } });
+          });
+        }
         const capabilityReadScope = auth.requireOAuthScope("read", "admin");
         const capabilityWriteScope = auth.requireOAuthScope("write", "admin");
         server.post("/api/_internal/capabilities/v1/queries/:capabilityId", capabilityAuth("queries"), capabilityReadScope, (c) =>

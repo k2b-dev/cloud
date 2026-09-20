@@ -1,3 +1,4 @@
+import { fileQueries, fileActions } from "./file-capabilities";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
@@ -8,6 +9,7 @@ import {
 import { err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { persistedEntryRefId, resolveEntryRefId } from "./data/references";
+import { markdownRevision } from "./document-assets";
 import { filesUrl } from "./frontend/urls";
 import { ENTRY_TYPE } from "./resource-ref";
 import { FilesError, filesService } from "./service";
@@ -23,6 +25,7 @@ const EntryDataSchema = z.object({
   directory: z.boolean(),
   size: z.number(),
   modified: z.string(),
+  revision: z.string().optional(),
   href: z.string(),
 });
 /** Global search fans out over every accessible base; the count of bases is the user's own membership, not user input. */
@@ -42,7 +45,9 @@ export const filesCapabilities = defineCapabilities({
       reader: "entry.read",
     },
   },
+  actions: fileActions,
   queries: {
+    ...fileQueries,
     "entry.read": {
       title: "Read file entry",
       description: "Read the current metadata of one filesv2.entry ref after checking access.",
@@ -61,6 +66,7 @@ export const filesCapabilities = defineCapabilities({
               id: input.id,
               base: { id: result.base.id, name: result.base.name, area: result.base.area },
               ...result.entry,
+              revision: markdownRevision(result.entry),
               href: entryHref(result.base.id, result.entry.path, result.entry.directory),
             },
           });

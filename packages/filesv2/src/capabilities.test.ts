@@ -124,3 +124,11 @@ test("multibyte result envelopes stay within the platform byte limit with explic
   expect(new TextEncoder().encode(JSON.stringify(result.data)).byteLength).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
   expect(capabilityResultSchema(UniversalSearchDataSchema).safeParse(result.data).success).toBe(true);
 });
+
+test("Filesv2 registers all binary and organization capabilities with documented input contracts",async()=>{
+  const {compileCapabilityManifest}=await import("@k2b/cloud/capabilities/testing");
+  const manifest=compileCapabilityManifest("filesv2",filesCapabilities);
+  expect(manifest.queries.find(item=>item.localId==="content.read")?.stream).toEqual({direction:"read",maxBytes:50*1024*1024});
+  expect(manifest.actions.find(item=>item.localId==="content.create")?.stream).toEqual({direction:"write",maxBytes:50*1024*1024});
+  expect(manifest.actions.map(item=>item.localId)).toEqual(expect.arrayContaining(["entry.rename","entry.move","entry.copy","entry.trash","trash.restore","folder.create"]));
+});

@@ -700,6 +700,15 @@ describe("capability v1 compilation", () => {
     tampered.queries[0]!.dataSchema = { type: "string" };
     expect(() => parseCapabilityManifest(tampered, "example")).toThrow("schemaHash does not match");
 
+    const writeQuery = structuredClone(manifest);
+    writeQuery.queries[0]!.stream = { direction: "write", maxBytes: 1024 };
+    expect(() => parseCapabilityManifest(writeQuery, "example")).toThrow("write streams require an idempotent Action");
+
+    const nonIdempotentWrite = structuredClone(manifest);
+    nonIdempotentWrite.actions[0]!.stream = { direction: "write", maxBytes: 1024 };
+    nonIdempotentWrite.actions[0]!.idempotency = "none";
+    expect(() => parseCapabilityManifest(nonIdempotentWrite, "example")).toThrow("write streams require an idempotent Action");
+
     const collision = structuredClone(manifest);
     collision.queries[0]!.localId = collision.types[0]!.localId;
     expect(() => parseCapabilityManifest(collision, "example")).toThrow("declared more than once");

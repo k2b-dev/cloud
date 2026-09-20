@@ -1,3 +1,4 @@
+import { uploadStreamChunks } from "./stream-chunks";
 import { createHash } from "node:crypto";
 import type { RequestActor } from "@k2b/cloud/server";
 import { type AccountIdentityGroup, type AccountIdentityPage, type AccountIdentityUser, accountIdentities, accounts, coreSettings } from "@k2b/cloud/services";
@@ -29,7 +30,7 @@ import type {
 } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
-import { operations, withRootLock } from "../data/operations";
+import { operations, withRootLock, withUploadLock } from "../data/operations";
 import { persistedEntryRefId, resolveEntryRefId } from "../data/references";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "../document-assets";
@@ -1065,6 +1066,61 @@ export function createFilesService(
       const dimension = input.size === "large" ? 1024 : 320;
       const lease = await current.root.directThumbnail(current.target, { width: dimension, height: dimension, expiresIn: 60 });
       return { url: lease.url, method: "GET", expires: lease.expires };
+    },
+    async capabilityDownload(
+      actor: RequestActor,
+      input: { baseId: string; path: string; revision: string },
+      signal: AbortSignal,
+    ): Promise<Response> {
+      const current = await authorized(actor, input.baseId, input.path, false);
+      if (markdownRevision(current.node) !== input.revision) throw new FilesError("write_conflict", 409);
+      const lease = await current.root.directDownload(current.target, { expiresIn: 60 });
+      return deps.connect(current.state.config).downloadRaw(lease, signal);
+    },
+    async capabilityUploadStatus(actor: RequestActor, input: { baseId: string; id: string }) {
+      const { row, current } = await uploadRow(actor, input.baseId, input.id);
+      if (row.state === "committed" && row.result) return { state: "completed" as const, entry: uploadResult(current, row, row.result) };
+      if (row.state === "aborted" || row.state === "expired") return { state: "aborted" as const };
+      const sessionId = uploadSessionId(row);
+      if (!sessionId) throw new FilesError("receipt_unknown", 409);
+      const session = await privateReceipt(current.root, row, sessionId);
+      checkUploadSession(current, row, session);
+      if (session.state === "committed" && session.result)
+        return { state: "completed" as const, entry: uploadResult(current, row, session.result) };
+      if (session.state === "aborted" || session.state === "expired") return { state: "aborted" as const };
+      return { state: "open" as const };
+    },
+    async capabilityUpload(
+      actor: RequestActor,
+      input: { baseId: string; id: string },
+      body: ReadableStream<Uint8Array>,
+      signal: AbortSignal,
+    ): Promise<EntryResult> {
+      return withUploadLock(input.id, async () => {
+        signal.throwIfAborted();
+        const { row, current } = await uploadRow(actor, input.baseId, input.id);
+        const session = await openUpload(current, row);
+        if (session.state !== "open") {
+          await body.cancel();
+          if (session.state !== "committed") throw new FilesError("upload_closed", 409);
+          const committed = row.result ?? (await privateReceipt(current.root, row, uploadSessionId(row)!)).result;
+          if (!committed) throw new FilesError("receipt_unknown", 409);
+          return { base: current.inspection.summary, entry: uploadResult(current, row, committed) };
+        }
+        if (!session.url) throw new FilesError("receipt_unknown", 409);
+        const direct = deps
+          .connect(current.state.config)
+          .directSession({ url: session.url, expires: session.expires, operations: ["write"] });
+        await uploadStreamChunks(body, row.size, session.chunkSize, (index, chunk) => direct.put(index, new Blob([chunk]), signal));
+        signal.throwIfAborted();
+        return publish(current.root.name, async () => {
+          const fresh = await uploadRow(actor, input.baseId, input.id);
+          return { base: fresh.current.inspection.summary, entry: await commitSession(fresh.current, fresh.row) };
+        });
+      }).catch((error) => {
+        if (error instanceof Error && error.message === "operation_busy") throw new FilesError("operation_busy", 409);
+        throw error;
+      });
     },
     async download(actor: RequestActor, input: { baseId: string; path: string }): Promise<DownloadLease> {
       if (!input.path) throw new FilesError("not_file");

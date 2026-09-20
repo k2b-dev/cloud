@@ -87,3 +87,17 @@ Cloud-Ablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur POSIX-Grup
 **Hinzufügen → Vorlage** zeigt die für dich verfügbaren Vorlagen. Wähle eine und einen Namen für eine unabhängige Datei im aktuellen Ordner. Dort brauchst du Schreibzugriff. Vorhandene Dateien werden niemals ersetzt. Eine Vorlage kann für dich verfügbar sein, auch wenn du ihre ursprüngliche Datei nicht öffnen darfst. Spätere Vorlagenänderungen verändern deine Kopie nicht. Wenn keine Vorlagen erscheinen, kann die Administration dir oder deinen Gruppen Nutzungsrechte geben.
 
 Im Terminal gibt es dafür `cld filesv2 documents markdown <ablagen-id> Notizen.md`, `cld filesv2 templates list --json` und `cld filesv2 templates use <vorlagen-id> <ablagen-id> Notizen.md`. Zum bedingten Ersetzen ergänzt du `upload` um `--replace --expected-revision <revision>`; ein Konflikt lässt die aktuelle Datei unverändert.
+
+## Dateien mit dem Assistenten nutzen
+
+Der Assistent kann deine Ablagen durchsuchen, Dateien auswerten und Ergebnisse
+in einem Ordner speichern, in den du schreiben darfst. Im Code-Modus werden
+Dateien als binäre Streams übertragen; eine Datei darf bis zu 50 MiB groß sein.
+Du kannst auch Ordner erstellen, Einträge umbenennen, verschieben, kopieren,
+in den Papierkorb legen und wiederherstellen lassen.
+
+Es gelten dieselben Zugriffsrechte wie in Files. Aktionen nutzen die gewohnte
+Freigabe im Assistenten. Neue Ergebnisse überschreiben vorhandene Dateien
+standardmäßig nicht; zum Ersetzen wird deren aktueller Stand geprüft. Nach
+einer unterbrochenen Übertragung kann der Assistent den Status prüfen, bevor
+er erneut schreibt. Endgültig löschen kann er deine Dateien nicht.

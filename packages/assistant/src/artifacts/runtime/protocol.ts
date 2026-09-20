@@ -30,6 +30,7 @@ export const WorkerMessage = z.discriminatedUnion("type", [
       "file.openFolder",
       "file.save",
       "capabilities.run",
+      "capabilities.stream",
       "http.fetch",
       "pdf",
       "database",

@@ -629,6 +629,11 @@ suite("Files service and durable bindings", () => {
     // Repeating the commit is idempotent and no longer talks to Filegate.
     sessions.delete(sessionKeys.get(opened.id)!);
     expect((await service.commitUpload(actor, { baseId, id: opened.id })).entry.path).toBe("Reports/new.txt");
+    expect(await service.capabilityUploadStatus(actor,{baseId,id:opened.id})).toMatchObject({state:"completed",entry:{path:"Reports/new.txt"}});
+    let cancelled=false;
+    const replayBody=new ReadableStream<Uint8Array>({cancel(){cancelled=true;}});
+    expect((await service.capabilityUpload(actor,{baseId,id:opened.id},replayBody,new AbortController().signal)).entry.path).toBe("Reports/new.txt");
+    expect(cancelled).toBe(true);
     await expect(service.uploadLease(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_closed" });
     // Existing names are only replaced when the client asks for it.
     await expect(service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "existing.txt", size: 1, onConflict: "error" })).rejects.toMatchObject({ status: 409 });
@@ -647,6 +652,19 @@ suite("Files service and durable bindings", () => {
     expect(privateSession(replace.id)?.state).toBe("aborted");
     await expect(service.commitUpload(actor, { baseId, id: replace.id })).rejects.toMatchObject({ code: "upload_closed" });
     await service.abortUpload(actor, { baseId, id: replace.id });
+  });
+  test("capability upload locks reject concurrent writers without exhausting domain connections",async()=>{
+    const {withUploadLock}=await import("../data/operations");
+    const release=Promise.withResolvers<void>();
+    const entered=Promise.withResolvers<void>();
+    const id=crypto.randomUUID();
+    const first=withUploadLock(id,async()=>{entered.resolve();await release.promise;});
+    try {
+      await entered.promise;
+      await expect(withUploadLock(id,async()=>{})).rejects.toThrow("operation_busy");
+      const probes=await Promise.all(Array.from({length:10},()=>sql`SELECT 1 AS value`));
+      expect(probes.every(rows=>rows[0].value===1)).toBe(true);
+    } finally {release.resolve();await first;}
   });
   test("a commit whose response was lost is recovered from the Filegate session record", async () => {
     const actor = await user("alice", "ipa");

@@ -46,3 +46,42 @@ approval. The dialog identifies the resource and explains that returned data
 can be stored in shared files or its database. Personal remembered approvals
 do not apply, and these calls cannot create a personal always-allow rule.
 Denial must leave a useful message; do not retry unchanged or bypass consent.
+
+## Binary content
+
+Some discovered operations return a `stream` beside `data`. This is the one
+binary path for any app: files, invoice PDFs, audio, and imports use the same
+mechanism. Never invent a download URL or put file bytes in capability JSON.
+
+```ts
+const source = await capabilities.run("example.content.read", {id: sourceId});
+const file = await capabilities.streams.read(source.stream); // File
+// Analyze file with the documented CSV, Excel, PDF or binary helpers.
+const output = new Blob(["name,total\nAlice,42\n"], {type:"text/csv"});
+const target = await capabilities.run("example.content.create", {
+  path: "totals.csv", size: output.size, mediaType: output.type,
+});
+const receipt = await capabilities.streams.write(target.stream, output);
+```
+
+The names and fields above illustrate the flow; discover the installed app's
+actual contract. Streams are tied to this run's capability calls. Preserve the
+returned descriptor unchanged. Reads return a `File`; writes accept a `Blob`,
+string, `ArrayBuffer` or `Uint8Array`. The payload must exactly match the approved
+byte size. The runtime accepts at most 50 MiB per payload, 250 MiB of transfers
+per run and 64 stream references. Do not split a larger file to bypass a limit.
+
+After an interrupted write, call `capabilities.streams.status(target.stream)`.
+A completed result is `{state:"completed", result: <capability envelope>}`;
+`open` means it has not completed and `aborted` means it cannot continue.
+Use `capabilities.streams.abort(target.stream)` to discard an unfinished upload.
+Never blindly repeat a write or claim success from a missing response. Stream
+references expire; request a fresh read when needed. A fresh write is a new
+Action and must follow the normal approval process.
+
+Filesv2 publishes discovery/listing and cursor-based search, `content.read`,
+`content.create`, folder creation, rename, move, copy, trash, and restore. Use
+exact returned base IDs and entry references. Overwriting requires current
+`expectedRevision`; default to creating a new output name. Follow `next` until
+null when an analysis needs every entry. Trash remains recoverable; no permanent
+delete capability is exposed.

@@ -179,3 +179,5 @@ export const resolveCommand = async (
     return unavailable(cause, undefined, clientLocale(options.headers));
   }
 };
+
+export { transferCapabilityStream, type CapabilityStreamVerb } from "./streams";

@@ -1,3 +1,5 @@
+import { sealCapabilityStream, dispatchCapabilityStream } from "./capability-streams";
+import { CapabilityStreamSchema } from "../contracts/capability-streams";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -336,6 +338,8 @@ const runCapabilityDispatch = async (
     return invalid;
   }
 
+  if (params.mandate && operation.stream) return errorResponse("STREAM_UNSUPPORTED_AUTHORITY", "Streams require an interactive user or service-account request", 403);
+
   let requestBody: string;
   try {
     requestBody = JSON.stringify({ input: input.data });
@@ -617,7 +621,17 @@ const runCapabilityDispatch = async (
     return settle(invalid, "uncertain");
   }
 
-  return settle({ body: upstreamBody.data, status: 200 }, "succeeded");
+  const body = upstreamBody.data as Record<string, unknown>;
+  if (!params.review && body.stream !== undefined) {
+    const stream = CapabilityStreamSchema.safeParse(body.stream);
+    if (!stream.success || !operation.stream || stream.data.direction !== operation.stream.direction || stream.data.size > operation.stream.maxBytes || Date.parse(stream.data.expiresAt) <= Date.now() || Date.parse(stream.data.expiresAt) > Date.now() + 86_400_000 || !params.authority)
+      return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain");
+    try {
+      body.stream = await sealCapabilityStream(stream.data, { appId: params.appId, kind: params.kind, capabilityId: params.capabilityId, schemaHash: operation.schemaHash, authority: params.authority, requestId, origin: params.origin });
+      if (Buffer.byteLength(JSON.stringify(body)) > CAPABILITY_MAX_RESULT_BYTES) throw new Error("Stream result too large");
+    } catch { return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain"); }
+  }
+  return settle({ body, status: 200 }, "succeeded");
 };
 
 const executionStatus = (status: number, code: string | null): CapabilityExecutionStatus => {
@@ -639,8 +653,9 @@ const resultDataMeta = (body: unknown) =>
  * HTTP, MCP, and assistant callers share this exact app lookup, credential
  * forwarding, schema pinning, timeout, and response validation path.
  *
- * This is the single writer of `capabilities.executions`: one invocation
- * produces exactly one row, whatever its outcome. Action reviews are a
+ * One invocation
+ * produces exactly one execution row, whatever its outcome. Binary stream
+ * continuations record their own row under the same request ID. Action reviews are a
  * read-only preview and are not executions, so they are not recorded.
  */
 export const dispatchCapability = async (params: CapabilityDispatchParams): Promise<Response> => {
@@ -705,6 +720,11 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
   return new Hono<AuthContext>()
     .use("/capabilities/v1/*", dependencies.authenticate ?? auth.requireRole("authenticated"))
     .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
+    .post("/capabilities/v1/streams/:verb", describeRoute({
+      tags:["Capabilities"],summary:"Transfer or inspect one authorized binary stream",...requiresAuth,
+      description:"POST read/write/status/abort with x-cloud-stream-id. Write sends raw bytes; read returns raw bytes. Status and abort return the upload state. No automatic retries.",
+      responses:{200:{description:"Binary content, write receipt, or transfer state"},403:{description:"Stream does not belong to this caller"},409:{description:"Transfer or contract changed"},410:{description:"Stream expired"}},
+    }), async c => dispatchCapabilityStream(c.req.raw, auth.getAuthority(c), c.req.param("verb"), dependencies))
     .get(
       "/capabilities/v1/catalog",
       describeRoute({

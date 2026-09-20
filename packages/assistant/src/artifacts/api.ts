@@ -50,7 +50,7 @@ const Grant = z.object({
 }).strict().refine(value => value.principal.type !== "public" || value.permission === "read", "Public access only supports read");
 
 export const createArtifactServiceRoutes = (caller: (context: Context<AuthContext>) => CapabilityCaller = capabilityCaller) => new Hono<AuthContext>()
-  .use("*", (c,next) => (c.req.path.endsWith("/storage/file") || c.req.path.endsWith("/runtime/pdf")) ? next() : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
+  .use("*", (c,next) => (c.req.path.endsWith("/storage/file") || c.req.path.endsWith("/runtime/pdf") || /\/runtime\/capabilities\/[^/]+\/stream\/(read|write|status|abort)$/.test(c.req.path)) ? next() : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
   .use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); await next(); })
   .onError((error,c) => {
     if (error instanceof ArtifactCompileError || error instanceof AiFileWriteError)
@@ -137,6 +137,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   })
   .post("/:id/database",v("json",DatabaseRequest),async c => respond(c,ok(await artifactDatabase.call(id(c),c.req.valid("json"),identity(c),c.req.raw.signal))))
   .post("/:id/database/inspect",v("json",DatabaseRequest),async c => respond(c,ok(await artifactDatabase.call(id(c),c.req.valid("json"),identity(c),c.req.raw.signal,"inspect"))))
+  .post("/runtime/capabilities/:callId/stream/:verb", async c => runtimeCapabilities.stream(c.req.param("callId"), z.enum(["read","write","status","abort"]).parse(c.req.param("verb")), c.req.raw.body, identity(c), caller(c)))
   .post("/runtime/capabilities",v("json",RuntimeCapabilityRequest),async c=>respond(c,ok(await runtimeCapabilities.prepare(c.req.valid("json"),identity(c),caller(c)))))
   .post("/runtime/capabilities/:callId/resolve",v("json",z.object({approved:z.boolean(),remember:z.literal("always").optional()}).strict()),async c=>respond(c,ok(await runtimeCapabilities.resolve(z.uuid().parse(c.req.param("callId")),c.req.valid("json"),identity(c),caller(c)))))
   .get("/runtime/host.js", async c => c.body(await cliHostBundle(), 200, { "Content-Type": "application/javascript; charset=utf-8" }))

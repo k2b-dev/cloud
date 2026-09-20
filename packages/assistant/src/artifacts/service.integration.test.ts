@@ -654,6 +654,31 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
     } finally {catalog.mockRestore();review.mockRestore();execute.mockRestore();}
   });
 
+  test("binary streams require this user's completed consent and fresh resource access",async()=>{
+    const resource=await artifacts.create({title:"Stream consent",source},owner);
+    await artifacts.publish(resource.id,1,owner,"Stream test");
+    const streamGrant=await artifacts.grant(resource.id,{type:"user",userId:reader.user.id},"read",owner);
+    const descriptor={id:"sealed-reference",direction:"read" as const,mediaType:"application/pdf",size:3,expiresAt:new Date(Date.now()+60000).toISOString()};
+    const manifest=compileCapabilityManifest("binary",defineCapabilities({protocolVersion:2,queries:{read:{title:"Read bytes",description:"Read a PDF",input:z.object({}).strict(),data:z.object({}),openWorld:false,
+      stream:{direction:"read",maxBytes:10,read:async()=>new Response("pdf")},run:()=>ok({data:{},stream:descriptor})}}}));
+    const catalog=spyOn(capabilityClient,"getCapabilityCatalogApp").mockResolvedValue({ok:true,data:{appId:"binary",appName:"Binary",appDescription:"",appIcon:"ti ti-file",manifest}});
+    const execute=spyOn(capabilityClient,"invokeCapability").mockResolvedValue({ok:true,data:{data:{},stream:descriptor}});
+    const transfer=spyOn(capabilityClient,"transferCapabilityStream").mockImplementation(async()=>new Response("pdf"));
+    const input={id:crypto.randomUUID(),name:"binary.read",input:{},artifactId:resource.id};
+    try {
+      expect(await runtimeCapabilities.prepare(input,reader,{})).toMatchObject({status:"approval"});
+      await expect(runtimeCapabilities.stream(input.id,"read",null,reader,{})).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      expect(transfer).not.toHaveBeenCalled();
+      await runtimeCapabilities.resolve(input.id,{approved:true},reader,{});
+      expect(await (await runtimeCapabilities.stream(input.id,"read",null,reader,{})).text()).toBe("pdf");
+      expect(transfer.mock.calls[0]?.[0]).toEqual(descriptor);
+      await expect(runtimeCapabilities.stream(input.id,"read",null,stranger,{})).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      await artifacts.changeGrant(resource.id,streamGrant!.id,null,owner);
+      await expect(runtimeCapabilities.stream(input.id,"read",null,reader,{})).rejects.toMatchObject({code:"ACCESS_DENIED"});
+      expect(transfer).toHaveBeenCalledTimes(1);
+    } finally {catalog.mockRestore();execute.mockRestore();transfer.mockRestore();}
+  });
+
   test("shared resources require consent for queries and ignore personal remembered actions",async()=>{
     const resource=await artifacts.create({title:"Shared data app",source},owner);
     await artifacts.publish(resource.id,1,owner,"Initial release");

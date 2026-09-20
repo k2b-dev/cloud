@@ -1,5 +1,5 @@
 import type { Node } from "@k2b/filegate";
-import { sql } from "bun";
+import { sql, SQL } from "bun";
 import type { Area, BaseKind } from "../contracts";
 export type Operation = {
   id: string;
@@ -21,9 +21,19 @@ export type Operation = {
   created_at: Date;
   updated_at: Date;
 };
-export async function withRootLock<T>(root: string, run: () => Promise<T>): Promise<T> {
-  const connection = await sql.reserve();
-  const key = `filesv2:${root}`;
+export const withRootLock = <T>(root: string, run: () => Promise<T>) => withFilesLock(`filesv2:${root}`, run);
+// Four slow transfers may retain advisory locks without occupying the domain query pool.
+// Reject overload before reserving a connection; do not queue unbounded request bodies.
+const uploadLocks = new SQL({ max: 4, connectionTimeout: 5 });
+let activeUploads = 0;
+export async function withUploadLock<T>(id: string, run: () => Promise<T>): Promise<T> {
+  if(activeUploads >= 4)throw new Error("operation_busy");
+  activeUploads++;
+  try { return await withFilesLock(`filesv2:upload:${id}`, run, uploadLocks); }
+  finally { activeUploads--; }
+}
+async function withFilesLock<T>(key: string, run: () => Promise<T>, pool = sql): Promise<T> {
+  const connection = await pool.reserve();
   try {
     const [lock] = await connection<{ locked: boolean }[]>`SELECT pg_try_advisory_lock(hashtextextended(${key},0)) AS locked`;
     if (!lock?.locked) return Promise.reject(new Error("operation_busy"));

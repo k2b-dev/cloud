@@ -234,3 +234,31 @@ export const reviewCapabilityAction = async <TInput = unknown>(
     return unavailable(cause, undefined, caller.locale ?? undefined);
   }
 };
+
+/** Authenticated continuation of a capability stream, with no app-specific URL handling. */
+export async function transferCapabilityStream(
+  stream: import("../contracts/capabilities").CapabilityStream,
+  verb: import("./streams").CapabilityStreamVerb,
+  caller: CapabilityCaller,
+  body?: BodyInit,
+): Promise<Response> {
+  if (caller.mandate) throw new Error("Capability streams do not support background mandates yet");
+  const path = `/api/capabilities/v1/streams/${verb}`;
+  const headers = new Headers();
+  headers.set("x-cloud-stream-id", stream.id);
+  headers.set("content-type", "application/octet-stream");
+  if (caller.locale) headers.set(LOCALE_HEADER, caller.locale);
+  if (caller.authorization) headers.set("authorization", caller.authorization);
+  if (caller.cookie) headers.set("cookie", caller.cookie);
+  const request = new Request(new URL(path, await coreOrigin()), {
+    method: "POST", headers, body, signal: caller.signal,
+    // @ts-expect-error Streaming server request bodies require duplex.
+    duplex: body instanceof ReadableStream ? "half" : undefined,
+  });
+  if (caller.authority) {
+    if (caller.cookie || caller.authorization) throw new Error("Use one authority source");
+    const { dispatchCapabilityStream } = await import("../api/capability-streams");
+    return dispatchCapabilityStream(request, caller.authority, verb);
+  }
+  return fetch(request, { redirect: "error" });
+}

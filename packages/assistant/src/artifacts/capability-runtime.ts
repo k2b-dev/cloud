@@ -1,9 +1,9 @@
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { sql } from "bun";
 import { z } from "zod";
-import { getCapabilityCatalogApp, invokeCapability, reviewCapabilityAction, type CapabilityCaller } from "@k2b/cloud/capabilities/server";
+import { getCapabilityCatalogApp, transferCapabilityStream, invokeCapability, reviewCapabilityAction, type CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { aiConversations, hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
-import { CapabilityActionReviewSchema } from "@k2b/cloud/contracts";
+import { CapabilityStreamSchema, CapabilityActionReviewSchema } from "@k2b/cloud/contracts";
 import { artifacts, ArtifactError, user, type ArtifactIdentity } from "./service";
 import { LIMITS } from "./contracts";
 
@@ -48,6 +48,17 @@ async function operation(name:string,locale?:string|null){
 }
 
 export const runtimeCapabilities={
+  async stream(id:string,verb:"read"|"write"|"status"|"abort",body:ReadableStream<Uint8Array>|null,identity:ArtifactIdentity,caller:CapabilityCaller) {
+    const actor=user(identity);
+    const [row]=await sql<Row[]>`SELECT * FROM assistant.capability_calls WHERE id=${z.uuid().parse(id)}::uuid AND user_id=${actor.id}::uuid AND status='completed'`;
+    if(!row)throw new ArtifactError("ACCESS_DENIED");
+    const request=RuntimeCapabilityRequest.parse(decoded(row.request));
+    await authorize(request,identity);
+    const result=z.object({ok:z.literal(true),data:z.object({stream:CapabilityStreamSchema})}).parse(decoded(row.result));
+    const stream=result.data.stream;
+    if(stream.size>LIMITS.inputFileBytes)throw new ArtifactError("INVALID_INPUT");
+    return transferCapabilityStream(stream,verb,caller,verb==="write" ? body ?? undefined : undefined);
+  },
   async prepare(input:unknown,identity:ArtifactIdentity,caller:CapabilityCaller){
     const request=RuntimeCapabilityRequest.parse(input),actor=user(identity);
     const resource=await authorize(request,identity);

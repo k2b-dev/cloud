@@ -37,3 +37,27 @@ cld capabilities action contacts create \
 Capabilities do not bypass app authorization. Core authenticates the caller,
 then the owning app reconstructs the actor/access subject and checks current
 resource access again.
+
+## Binary transfers
+
+A streaming operation returns `stream` beside `data`. Save that descriptor
+alone as a JSON file, keeping it private. It works with the same signed-in
+profile and scopes until its expiry; it is not a public download link.
+
+```bash
+cld capabilities stream-read --input-file ./stream.json --out ./new-output.xlsx
+cld capabilities stream-write --input-file ./upload-stream.json --file ./result.xlsx --json
+cld capabilities stream-status --input-file ./upload-stream.json --json
+cld capabilities stream-abort --input-file ./upload-stream.json --json
+```
+
+Prepare the stream through a discovered Query or Action first. Writes require
+the exact declared byte count. Read saves a complete file without overwriting
+an existing path. Transfers are binary and do not have the JSON payload limit;
+the operation's advertised maximum still applies. Interrupted writes are not
+automatically retried: inspect status and preserve a completed receipt.
+
+Filesv2 offers `bases.list`, `entry.list`, `entry.search-in-base`, `trash.list`,
+`content.read`, `content.create`, `folder.create`, `entry.rename`, `entry.move`,
+`entry.copy`, `entry.trash` and `trash.restore`. Read the live input schemas.
+These calls use the same storage permissions and conflict checks as the GUI.
