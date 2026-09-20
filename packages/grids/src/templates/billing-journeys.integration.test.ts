@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { renderFacturXHtmlToPdfWithConfig } from "@k2b/cloud/services/pdf";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createWorkflowRun } from "@k2b/cloud/workflows/store";
+import { dates } from "@k2b/stdlib";
 import { extractXml } from "@stackforge-eu/factur-x";
 import { sql } from "bun";
 import type { DocumentDefaults } from "../contracts";
@@ -801,7 +802,9 @@ journeyTest("billing reuses only invoice inputs in a fresh draft and rejects oth
   expect((await finalize({ tableId: bills.id, recordId: original.id, actorId: null, origin: "workflow" })).ok).toBe(true);
   const frozen = await get(bills.id, original.id);
   await parties.edit(partner.id, { name: "Current customer" });
+  const invoiceDateBeforeRun = dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" });
   const run = await f.invoke("Use as new invoice", inputs);
+  const invoiceDateAfterRun = dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" });
   succeeded(run);
   // Replaying a completed run must not create another draft.
   await runGridsWorkflowRun(run.runId);
@@ -816,7 +819,7 @@ journeyTest("billing reuses only invoice inputs in a fresh draft and rejects oth
   expect(copy.data[bills.ids.party_name!]).toBe("Current customer");
   expect(copy.data[bills.ids.positions!]).toEqual(frozen!.data[bills.ids.positions!]);
   expect(copy.data[bills.ids.buyer_reference!]).toBe("Order 1");
-  expect(String(copy.data[bills.ids.invoice_date!]).slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
+  expect([invoiceDateBeforeRun, invoiceDateAfterRun]).toContain(String(copy.data[bills.ids.invoice_date!]).slice(0, 10));
   expect(copy.data[bills.ids.service_date!] ?? null).toBeNull();
   expect(copy.data[bills.ids.due_date!] ?? null).toBeNull();
   expect((await f.invoke("Issue invoice", { bill: ref(bills.id, copy.id) })).state).toBe("failed");
