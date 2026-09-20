@@ -200,9 +200,14 @@ export const ViewCreateInputSchema = z
   })
   .strict();
 
+const ShowTableToUserSchema = z.boolean().default(false).describe(
+  "Show this result as a table to the user. Use true for requested results, false for research or intermediate queries. When true, do not repeat the table in Markdown.",
+);
+
 export const GqlPreviewInputSchema = z
   .object({
     ...GqlInputShape,
+    showTableToUser: ShowTableToUserSchema,
     pageSize: z.number().int().min(1).max(25).default(25).describe("Maximum preview rows to return."),
   })
   .strict();
@@ -210,6 +215,7 @@ export const GqlPreviewInputSchema = z
 export const GqlExecuteInputSchema = z
   .object({
     ...GqlInputShape,
+    showTableToUser: ShowTableToUserSchema,
     pageSize: z.number().int().min(1).max(100).default(100).describe("Maximum rows to return on this cursor page."),
     limit: z.number().int().min(1).max(1_000).optional().describe("Optional logical result cap across cursor pages."),
   })
@@ -219,6 +225,7 @@ export const GqlViewExecuteInputSchema = z
   .object({
     baseId: ShortIdSchema.describe("Public Base ID containing the saved View."),
     viewId: ShortIdSchema.describe("Public saved View ID whose exact stored GQL should execute."),
+    showTableToUser: ShowTableToUserSchema,
     pageSize: z.number().int().min(1).max(100).default(100).describe("Maximum rows to return on this cursor page."),
     cursor: CursorSchema,
   })

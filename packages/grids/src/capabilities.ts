@@ -870,6 +870,7 @@ const gqlCapabilityResult = async (
   base: Base,
   outcome: GqlCapabilityOutcome,
   context: CapabilityExecutionContext,
+  showTableToUser: boolean,
 ) => {
   const locale = context.locale;
   const t = capabilityMessagesFor(locale);
@@ -951,6 +952,7 @@ const gqlCapabilityResult = async (
     const ref = refs[index]!;
     refs[index] = { type: ref.type, id: ref.id };
   }
+  if (!showTableToUser) return ok(result);
   const presentation = CapabilityTablePresentationSchema.safeParse(
     data.columns.length
       ? {
@@ -1022,7 +1024,13 @@ const runGqlPreview = async (input: z.infer<typeof GqlPreviewInputSchema>, conte
         context: publicGqlParameterContext(input.parameters),
       },
     );
-    return await gqlCapabilityResult(result.response, base.data, { kind: "preview", queryLink: queryCapabilityHref(input) }, context);
+    return await gqlCapabilityResult(
+      result.response,
+      base.data,
+      { kind: "preview", queryLink: queryCapabilityHref(input) },
+      context,
+      input.showTableToUser,
+    );
   } catch (error) {
     return gqlUnavailable(error, context.locale);
   }
@@ -1060,6 +1068,7 @@ const runGqlExecute = async (input: z.infer<typeof GqlExecuteInputSchema>, conte
       base.data,
       { kind: "execute", queryLink: queryCapabilityHref({ ...input, query }) },
       context,
+      input.showTableToUser,
     );
   } catch (error) {
     return gqlUnavailable(error, context.locale);
@@ -1093,6 +1102,7 @@ const runGqlViewExecute = async (input: z.infer<typeof GqlViewExecuteInputSchema
         queryLink: queryCapabilityHref({ baseId: input.baseId, query: `from view {${view.shortId}}` }),
       },
       context,
+      input.showTableToUser,
     );
   } catch (error) {
     return gqlUnavailable(error, context.locale);

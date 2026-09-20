@@ -364,7 +364,7 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
   ASSISTANT_CODE_MODE_SKILL,
   ASSISTANT_DATA_ANALYSIS_SKILL,
   {
-    version: 2,
+    version: 3,
     key: "grids:cloud-grids",
     name: "cloud-grids",
     description:

@@ -788,6 +788,14 @@ beside the identity heading and use saved values.
 
 ## Assistant capabilities and approvals
 
+`gql.preview`, `gql.execute`, and `gql.view.execute` accept
+`showTableToUser` (default `false`). Set it to `true` to request the existing
+Assistant/CLI table presentation. Research and intermediate queries can omit it.
+Rows, columns, links, permissions, and pagination are unchanged; the flag only
+controls optional table presentation metadata. Clients may ignore that metadata.
+The Grids Assistant Skill requests visible tables for user-facing results and
+avoids repeating their rows in Markdown.
+
 The capability catalog supports bounded discovery and GQL, record creation and
 version-checked updates, external-identity upserts, saved Views, stored documents
 and linked correction/cancellation drafts. It deliberately does not expose

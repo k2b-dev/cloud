@@ -935,7 +935,7 @@ describe("Grids capabilities", () => {
       expect(preview.data.refs).toContainEqual(expect.objectContaining({ type: "grids.record", id: record.id, title: "First" }));
       expect(previewRow.links?.[0]?.href).toContain(`record=${record.id}`);
       expect(preview.data.summary).toContain("Previewed Grids GQL in “Capability Base”");
-      expect(preview.data.presentation).toMatchObject({ kind: "table", rowsPath: ["rows"], rowLinksPath: ["links"] });
+      expect(preview.data.presentation).toBeUndefined();
       expect(preview.data.links?.[0]?.href).toContain("/query?q=");
 
       const statusOnly = await invoke(
@@ -967,6 +967,24 @@ describe("Grids capabilities", () => {
         savedView.ok && savedView.data.data.ok && savedView.data.data.rows.some((row: { recordId?: string }) => row.recordId === record.id),
       ).toBe(true);
       if (savedView.ok) expect(savedView.data.summary).toContain("Executed saved Grids View “All items”");
+
+      for (const [operation, args] of [
+        ["gql.preview", { baseId: basePublicId, query: `from table {${tablePublicId}}` }],
+        ["gql.execute", { baseId: basePublicId, query: `from table {${tablePublicId}}` }],
+        ["gql.view.execute", { baseId: basePublicId, viewId: viewPublicId }],
+      ] as const) {
+        const hidden = await invoke("query", operation, args, context);
+        const explicitHidden = await invoke("query", operation, { ...args, showTableToUser: false }, context);
+        const visible = await invoke("query", operation, { ...args, showTableToUser: true }, context);
+        expect(hidden.ok && explicitHidden.ok && visible.ok).toBeTrue();
+        if (!hidden.ok || !explicitHidden.ok || !visible.ok) throw new Error("Expected GQL results");
+        expect(hidden.data.presentation).toBeUndefined();
+        expect(explicitHidden.data.presentation).toBeUndefined();
+        expect(visible.data.presentation).toMatchObject({ kind: "table", rowsPath: ["rows"], rowLinksPath: ["links"] });
+        expect(visible.data.data).toEqual(hidden.data.data);
+        expect(explicitHidden.data.data).toEqual(hidden.data.data);
+        expect(visible.data.links).toEqual(hidden.data.links);
+      }
 
       const missingAudit = await invoke(
         "action",

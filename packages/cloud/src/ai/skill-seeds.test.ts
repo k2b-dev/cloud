@@ -181,13 +181,13 @@ describe("Cloud AI Skill seeds", () => {
 
   test("Grids skill uses canonical Help and names only declared capabilities", async () => {
     const grids = getBuiltinAiSkillTemplate("cloud-grids")!;
-    expect(grids.version).toBe(2);
+    expect(grids.version).toBe(3);
     expect(grids.instructions).toContain("Help is the product handbook");
     expect(grids.instructions).toContain("search_help");
     expect(grids.instructions).toContain("read_help");
-    expect(grids.instructions).toContain("What is a custom app?");
+    expect(grids.instructions).toContain("For product questions");
     expect(grids.instructions).toContain("cannot change records");
-    expect(grids.instructions).toContain("Before discovery, establish");
+    expect(grids.instructions).toContain("Clarify vague goals before discovery");
     expect(grids.instructions).toContain("preserving the requested entities");
     expect(grids.instructions).toContain("includeWriteContext true");
     expect(grids.instructions).toContain("TODAY()");
