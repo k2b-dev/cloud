@@ -1,6 +1,7 @@
 import { beforeAll, expect, mock, test } from "bun:test";
 import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
+import { dispatchCapabilityStream, sealCapabilityStream } from "../api/capability-streams";
 import { invokeCapability, reviewCapabilityAction, transferCapabilityStream } from "../capabilities/server";
 import type { RequestActor } from "../server";
 import { signInvocationToken, verifyInvocationToken } from "../services/identity/invocation-token";
@@ -70,10 +71,11 @@ function fixture() {
     current = true;
   let config: AiTurnRunConfig | null = { input: "Analyze" };
   let allowedTools: string[] | null = null;
+  let cancelRequestedAt: string | null = null;
   const dispatch = mock(async (_input: Parameters<typeof import("../api/capabilities").dispatchCapability>[0]) =>
     Response.json(_input.review ? { message: "Write file?" } : { data: { found: true } }),
   );
-  const stream = mock(async (_request: Request, _authority: unknown, _verb: string) => new Response("csv"));
+  const stream = mock(async (..._args: Parameters<typeof dispatchCapabilityStream>) => new Response("csv"));
   const routes = createCodeCapabilityRoutes({
     invocation: {
       verify: (value, expected, options) => verifyInvocationToken(value, expected, { ...options, issuer, key }),
@@ -104,7 +106,7 @@ function fixture() {
           archivedAt: archived ? new Date().toISOString() : null,
           allowedTools,
         }) as AiConversation,
-      getActiveTurn: async () => ({ turn: { id: activeTurn, status } as AiTurn, liveBlocks: [], liveSeq: 0 }),
+      getActiveTurn: async () => ({ turn: { id: activeTurn, status, cancelRequestedAt } as AiTurn, liveBlocks: [], liveSeq: 0 }),
       getTurnRunConfig: async () => config,
     },
     dispatch,
@@ -115,6 +117,7 @@ function fixture() {
     dispatch,
     stream,
     set: (value: {
+      cancelRequestedAt?: string;
       archived?: boolean;
       owner?: string;
       activeTurn?: string;
@@ -123,6 +126,7 @@ function fixture() {
       config?: AiTurnRunConfig | null;
       allowedTools?: string[];
     }) => {
+      cancelRequestedAt = value.cancelRequestedAt ?? cancelRequestedAt;
       archived = value.archived ?? archived;
       owner = value.owner ?? owner;
       activeTurn = value.activeTurn ?? activeTurn;
@@ -153,7 +157,9 @@ test("Core callback binds cryptographically to target, operation, conversation, 
     expect((await f.app.fetch(request(await token(overrides)))).status).toBeGreaterThanOrEqual(400);
   }
   expect(f.dispatch).not.toHaveBeenCalled();
-  expect((await f.app.fetch(request(await token()))).status).toBe(200);
+  const success = await f.app.fetch(request(await token()));
+  expect(success.status).toBe(200);
+  expect(success.headers.get("cache-control")).toBe("no-store");
   expect(f.dispatch.mock.calls[0]?.[0]).toMatchObject({
     origin: "assistant",
     authority: { credentialKind: "session", accessSubject: { type: "user", userId } },
@@ -164,11 +170,13 @@ test("every callback checks account, owner, archive, current foreground turn and
   const jwt = await token();
   for (const change of [
     { current: false },
+    { cancelRequestedAt: new Date().toISOString() },
     { owner: crypto.randomUUID() },
     { archived: true },
     { activeTurn: crypto.randomUUID() },
     { status: "completed" },
     { config: null },
+    { config: { input: "Run", background: { taskId: "task", occurrenceId: "occurrence", context: [] } } },
     { config: { input: "Run", mandate: { id: crypto.randomUUID(), revision: 1 } } },
     { allowedTools: ["demo.other"] },
   ]) {
@@ -223,6 +231,46 @@ test("remote host routes invocation, review and binary continuations to Core wit
     expect(f.dispatch).toHaveBeenCalledTimes(2);
   } finally {
     server.stop(true);
+    if (previous === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    else process.env.CLOUD_CORE_INTERNAL_ORIGIN = previous;
+  }
+});
+
+test("signed Core callback applies current allowedTools to a real sealed stream", async () => {
+  const f = fixture();
+  const ref = await sealCapabilityStream(
+    { id: "provider-id", direction: "read", size: 1, mediaType: "text/plain", expiresAt: new Date(Date.now() + 60000).toISOString() },
+    {
+      appId: "demo",
+      kind: "queries",
+      capabilityId: "read",
+      schemaHash: "hash",
+      requestId: "policy-test",
+      authority: { actor, accessSubject: { type: "user", userId }, credentialKind: "session", scopes: [] },
+      continuation: codeCapabilityOperation(conversationId, turnId),
+      origin: "assistant",
+    },
+  );
+  f.stream.mockImplementation(dispatchCapabilityStream);
+  f.set({ allowedTools: ["demo.other"] });
+  const req = request(await token(), "streams/read");
+  req.headers.set("x-cloud-stream-id", ref.id);
+  expect((await f.app.fetch(req)).status).toBe(403);
+  f.set({ cancelRequestedAt: new Date().toISOString() });
+  const stopped = request(await token(), "streams/read");
+  stopped.headers.set("x-cloud-stream-id", ref.id);
+  expect((await f.app.fetch(stopped)).status).toBe(403);
+  expect(f.stream).toHaveBeenCalledTimes(1);
+});
+
+test("managed capability transport validates its private Core origin before execution", () => {
+  const previous = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+  try {
+    delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    expect(() => createCodeCapabilityTransport(() => ({ conversationId, turnId, token: "unused" }))).toThrow();
+    process.env.CLOUD_CORE_INTERNAL_ORIGIN = "file:///tmp/core";
+    expect(() => createCodeCapabilityTransport(() => ({ conversationId, turnId, token: "unused" }))).toThrow();
+  } finally {
     if (previous === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     else process.env.CLOUD_CORE_INTERNAL_ORIGIN = previous;
   }

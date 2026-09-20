@@ -71,12 +71,16 @@ string, `ArrayBuffer` or `Uint8Array`. The payload must exactly match the approv
 byte size. The runtime accepts at most 50 MiB per payload, 250 MiB of transfers
 per run and 64 stream references. Do not split a larger file to bypass a limit.
 
-After an interrupted write, call `capabilities.streams.status(target.stream)`.
+After an interrupted write while the same turn is active, call
+`capabilities.streams.status(target.stream)`.
 A completed result is `{state:"completed", result: <capability envelope>}`;
 `open` means it has not completed and `aborted` means it cannot continue.
 Use `capabilities.streams.abort(target.stream)` to discard an unfinished upload.
 Never blindly repeat a write or claim success from a missing response. Stream
-references expire; request a fresh read when needed. A fresh write is a new
+references expire and are bound to the current conversation and foreground
+turn. They stop working when that turn is canceled or ends; another turn cannot
+reuse them. After a stopped turn, inspect the destination before preparing a
+new write: stopping does not undo a committed file. Request a fresh read when needed. A fresh write is a new
 Action and must follow the normal approval process.
 
 Filesv2 publishes discovery/listing and cursor-based search, `content.read`,

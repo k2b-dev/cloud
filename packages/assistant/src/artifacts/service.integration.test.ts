@@ -1261,6 +1261,15 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
         expect(await wait(network)).toMatchObject({status:"done"});expect(sent).toBe(1);
       } finally {http.mockRestore();}
       await agentHost.sweep(); // Includes a browser event-loop heartbeat.
+      const cancelled = { ...call, callId: "cancelled-run", args: { code: "export default async () => { await new Promise(() => {}); }" } };
+      await agentHost.call(cancelled, context);
+      const active = await aiConversations.getActiveTurn({ conversationId });
+      if (!active) throw new Error("Missing test turn");
+      turn.mockResolvedValue({ ...active, turn: { ...active.turn, cancelRequestedAt: new Date().toISOString() } });
+      await expect(agentHost.call(cancelled, context)).rejects.toThrow("no longer active");
+      await agentHost.sweep();
+      expect((await sql`SELECT status FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid AND call_id='cancelled-run'`)[0]?.status).toBe("lost");
+      turn.mockResolvedValue(active);
       await agentHost.close();
       await sql`UPDATE assistant.artifact_agent_calls SET status='running' WHERE turn_id=${turnId}::uuid AND call_id=${call.callId}`;
       expect(await wait(call)).toMatchObject({status:"lost"});

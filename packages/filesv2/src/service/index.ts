@@ -460,7 +460,7 @@ export function createFilesService(
     if (session.result) uploadResult(current, row, session.result);
   }
   /** A commit whose response was lost is recognised from Filegate's session record; repeats are idempotent. */
-  async function commitSession(current: Awaited<ReturnType<typeof writableParent>>, row: Awaited<ReturnType<typeof uploads.get>> & object): Promise<FileEntry> {
+  async function commitSession(current: Awaited<ReturnType<typeof writableParent>>, row: Awaited<ReturnType<typeof uploads.get>> & object, signal?: AbortSignal): Promise<FileEntry> {
     const { root } = current;
     if (row.state === "committed" && row.result) return uploadResult(current, row, row.result);
     if (row.state === "aborted" || row.state === "expired") throw new FilesError("upload_closed", 409);
@@ -483,6 +483,7 @@ export function createFilesService(
       if (markdownRevision(node) !== row.expected_revision) throw new FilesError("write_conflict", 409);
     }
     if (session.received !== session.size) throw new FilesError("upload_incomplete");
+    signal?.throwIfAborted();
     const node = await root.commitSession(sessionId);
     const result = uploadResult(current, row, node);
     await uploads.finish(row.id, "committed", node);
@@ -1115,7 +1116,7 @@ export function createFilesService(
         signal.throwIfAborted();
         return publish(current.root.name, async () => {
           const fresh = await uploadRow(actor, input.baseId, input.id);
-          return { base: fresh.current.inspection.summary, entry: await commitSession(fresh.current, fresh.row) };
+          return { base: fresh.current.inspection.summary, entry: await commitSession(fresh.current, fresh.row, signal) };
         });
       }).catch((error) => {
         if (error instanceof Error && error.message === "operation_busy") throw new FilesError("operation_busy", 409);

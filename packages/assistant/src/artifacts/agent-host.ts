@@ -35,6 +35,7 @@ type Session = {
   lastUsed: number;
   busy: Set<string>;
   lastCall?: { turnId: string; callId: string };
+  capabilityTransport: ReturnType<typeof createCodeCapabilityTransport>;
   capabilityContext?: { conversationId: string; turnId: string; token: string };
   decisions: Map<string, (approved: boolean) => void>;
 };
@@ -68,6 +69,7 @@ async function authorize(context: CodeToolContext, turnId: string) {
     conversation.archivedAt ||
     !active ||
     active.turn.id !== turnId ||
+    active.turn.cancelRequestedAt ||
     !["running", "waiting_for_action"].includes(active.turn.status)
   )
     throw new Error("The code host's conversation turn is no longer active");
@@ -77,7 +79,8 @@ async function authorize(context: CodeToolContext, turnId: string) {
 async function hostFetch(context: CodeToolContext, session: Session, path: string, init?: RequestInit): Promise<Response> {
   if (context.actor.kind !== "user" || !context.conversationId) throw new Error("User required");
   const active = await aiConversations.getActiveTurn({ conversationId: context.conversationId });
-  if (!active) throw new Error("Conversation is no longer active");
+  if (!active || active.turn.cancelRequestedAt || (session.busy.size && session.lastCall?.turnId !== active.turn.id))
+    throw new Error("Conversation is no longer active");
   await authorize(context, active.turn.id);
   const url = new URL(path, "http://localhost");
   const prefix = `/api/ai/conversations/${context.conversationId}/files`;
@@ -116,11 +119,6 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
     return Response.json({ file: stored });
   }
   if (!url.pathname.startsWith("/api/assistant/artifacts/")) throw new Error("Code host request is outside its API boundary");
-  const transport = createCodeCapabilityTransport(() => {
-    const current = session.capabilityContext;
-    if (!current || current.turnId !== active.turn.id) throw new Error("Code capability authority expired");
-    return current;
-  });
   const router = new Hono<AuthContext>()
     .use("*", async (c, next) => {
       c.set("actor", context.actor);
@@ -129,7 +127,7 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
     })
     .route(
       "/api/assistant/artifacts",
-      createArtifactServiceRoutes(() => ({ transport, origin: "assistant", locale: context.locale, signal: init?.signal ?? undefined })),
+      createArtifactServiceRoutes(() => ({ transport: session.capabilityTransport, origin: "assistant", locale: context.locale, signal: init?.signal ?? undefined })),
     );
   return router.fetch(new Request(url, init));
 }
@@ -146,6 +144,10 @@ async function createSession(context: CodeToolContext): Promise<Session> {
     lastUsed: Date.now(),
     busy: new Set(),
     decisions: new Map(),
+    capabilityTransport: createCodeCapabilityTransport(() => {
+      if (!session.capabilityContext) throw new Error("Code capability authority expired");
+      return session.capabilityContext;
+    }),
     host: Promise.resolve().then(() =>
       createCliCodeHost(
         { fetch: (path, init) => hostFetch(context, session, String(path), init) },
@@ -281,7 +283,8 @@ export const agentHost = {
   async sweep() {
     for (const session of sessions.values()) {
       const active = await aiConversations.getActiveTurn({ conversationId: session.conversationId });
-      if (!active && (session.busy.size || Date.now() - session.lastUsed > IDLE_MS)) await closeSession(session);
+      if (active?.turn.cancelRequestedAt || (session.busy.size && session.lastCall?.turnId !== active?.turn.id) ||
+        (!active && Date.now() - session.lastUsed > IDLE_MS)) await closeSession(session);
       else {
         try {
           await (await session.host).health();

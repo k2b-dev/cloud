@@ -26,7 +26,8 @@ import type { CapabilityDispatchDependencies } from "./capabilities";
 const log = logger("capability-streams");
 
 const Grant = z.object({
-  purpose: z.literal("capability-stream-v1"),
+  purpose: z.literal("capability-stream-v2"),
+  continuation: z.string().nullable(),
   origin: CapabilityOriginSchema.default("http"),
   appId: z.string(),
   kind: z.enum(["queries", "actions"]),
@@ -47,10 +48,17 @@ export async function sealCapabilityStream(
     authority: RequestAuthority;
     requestId: string;
     origin?: z.infer<typeof CapabilityOriginSchema>;
+    continuation?: string;
   },
 ): Promise<CapabilityStream> {
   if (Buffer.byteLength(stream.id) > 2048) throw new Error("Provider stream ID exceeds 2 KiB");
-  const grant = Grant.parse({ ...params, purpose: "capability-stream-v1", authority: binding(params.authority), stream });
+  const grant = Grant.parse({
+    ...params,
+    purpose: "capability-stream-v2",
+    continuation: params.continuation ?? null,
+    authority: binding(params.authority),
+    stream,
+  });
   return CapabilityStreamSchema.parse({ ...stream, id: await encryptSecret(grant) });
 }
 const denied = (status = 403, code = "STREAM_DENIED") =>
@@ -61,7 +69,11 @@ export async function dispatchCapabilityStream(
   request: Request,
   authority: RequestAuthority,
   verb: string,
-  dependencies: CapabilityDispatchDependencies & { recordStreamExecution?: typeof recordCapabilityExecution } = {},
+  dependencies: CapabilityDispatchDependencies & {
+    recordStreamExecution?: typeof recordCapabilityExecution;
+    continuation?: string;
+    allow?: (operation: { appId: string; capabilityId: string }) => Promise<boolean>;
+  } = {},
 ): Promise<Response> {
   const id = request.headers.get("x-cloud-stream-id");
   if (!id || id.length > 8192 || !["read", "write", "status", "abort"].includes(verb)) return denied(400);
@@ -76,6 +88,8 @@ export async function dispatchCapabilityStream(
   } catch {
     return denied();
   }
+  if (grant.continuation !== (dependencies.continuation ?? null)) return denied();
+  if (dependencies.allow && !(await dependencies.allow(grant))) return denied();
   if (Date.parse(grant.stream.expiresAt) <= Date.now()) return denied(410, "STREAM_EXPIRED");
   if ((verb === "read") !== (grant.stream.direction === "read")) return denied();
   if (

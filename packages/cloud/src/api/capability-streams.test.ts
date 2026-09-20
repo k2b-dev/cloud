@@ -294,3 +294,19 @@ test("real HTTP upload failures are bounded errors; provider 401 never requests 
   });
   expect(denied.status).toBe(502);
 });
+
+test("Core binds turn streams to their continuation and rechecks operation policy before provider access", async () => {
+  const ref = await sealCapabilityStream({ id: "invoice-1", direction: "read", mediaType: "application/pdf", size: payload.length, expiresAt: expiresAt() }, {
+    appId: entry.appId, kind: "queries", capabilityId: "invoice.pdf", schemaHash: compiled.queries.get("invoice.pdf")!.manifest.schemaHash,
+    authority, requestId: "bound-turn", continuation: "turn:A", origin: "assistant",
+  });
+  const request = () => new Request("http://core/api/capabilities/v1/streams/read", { method: "POST", headers: { "x-cloud-stream-id": ref.id } });
+  const before = calls;
+  for (const options of [{}, { continuation: "turn:B" }, { continuation: "turn:A", allow: async () => false }]) {
+    expect((await dispatchCapabilityStream(request(), authority, "read", { ...deps, ...options })).status).toBe(403);
+  }
+  expect(calls).toBe(before);
+  const response = await dispatchCapabilityStream(request(), authority, "read", { ...deps, continuation: "turn:A", allow: async operation => operation.capabilityId === "invoice.pdf" });
+  expect(response.status).toBe(200);
+  expect((await response.arrayBuffer()).byteLength).toBe(payload.length);
+});

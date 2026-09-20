@@ -1083,6 +1083,15 @@ passes it to user code or persists it with tool arguments. Closed, cancelled or
 background turns cannot use this callback. Ordinary application callers use
 request credentials as shown below; background jobs use revocable mandates.
 
+This is a Core-only foreground-turn authority exchange: after verifying the
+callback and live turn, Core resumes dispatch under that user's authority.
+It does not create a session cookie or allow ordinary app invocation tokens to
+mint other invocations. Core rejects a requested cancellation immediately on
+subsequent callbacks. Stream continuations also recheck the conversation's
+current `allowedTools`; the provider remains responsible for current resource
+permissions.
+
+
 Server-side app code uses the Core-backed adapter. Pass only credentials and
 trace data from the current request. The adapter sends them to Core's private
 origin, where Core resolves the authority and dispatches a target-bound
@@ -1389,6 +1398,23 @@ Assistant code mode exposes `capabilities.streams.read/write/status/abort`.
 `capabilities.run` calls. The existing runtime budget applies: 50 MiB per
 payload and 250 MiB across transfers, with at most 64 references per run.
 HTTP and CLI clients may use the provider's larger advertised limit.
+
+Core binds code-mode stream references to their conversation and foreground
+turn. They cannot be replayed through the ordinary HTTP endpoint or a different
+turn, even by the same user. The host stops canceled turns and aborts their
+network transfers. Filesv2 checks cancellation again before committing an
+upload. Cancellation is not rollback: a write already committed remains
+committed, and a cancellation racing that commit can still complete.
+
+Managed hosts carry bytes over authenticated loopback HTTP with backpressure,
+without serializing whole binary bodies through process IPC. Admission is
+limited to eight simultaneous host requests per Assistant process; excess
+requests return `operation_busy` before consuming the request body. The final
+`File` returned to code still occupies memory within the runtime budget.
+
+The turn-bound grant format replaces the previous alpha format outright.
+Previously issued references are invalid after this upgrade; obtain new ones.
+
 
 Provider IDs are limited to 2 KiB of UTF-8; use a stored reference for long
 paths. Core's sealed reference is bounded to 8 KiB. Treat provider IDs as

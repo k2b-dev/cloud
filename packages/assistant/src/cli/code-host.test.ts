@@ -419,3 +419,50 @@ test("shared files cross the CLI/browser host as binary above the JSON budget",a
     expect(JSON.stringify(result)).toContain('255');
   }finally{await host.close();}
 },30000);
+
+test("native host transport reads and writes a 50 MiB binary file without IPC body copies", async () => {
+  const code = `export default async () => {
+    const source = await capabilities.run("demo.read", {});
+    const file = await capabilities.streams.read(source.stream);
+    const target = await capabilities.run("demo.write", {});
+    const result = await capabilities.streams.write(target.stream, file);
+    return { size: file.size, saved: result.data.bytes };
+  }`;
+  const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
+  const bundle = await cliHostBundle();
+  const size = 50 * 1024 * 1024;
+  let uploaded = 0;
+  const host = await createCliCodeHost({ fetch: async (input, init) => {
+    const path = String(input);
+    if (path.endsWith("host.js")) return new Response(bundle);
+    if (path.endsWith("/compile")) return Response.json(compiled);
+    if (path.endsWith("/capabilities")) {
+      const request = await new Response(init?.body).json();
+      return Response.json({ status: "completed", result: { ok: true, data: { data: {}, stream: {
+        id: request.id, direction: request.name === "demo.read" ? "read" : "write", size,
+        mediaType: "application/octet-stream", expiresAt: new Date(Date.now() + 60000).toISOString(),
+      } } } });
+    }
+    if (path.endsWith("/stream/read")) {
+      let sent = 0;
+      return new Response(new ReadableStream({ pull(controller) {
+        if (sent === size) return controller.close();
+        const chunk = new Uint8Array(64 * 1024).fill(173); sent += chunk.length; controller.enqueue(chunk);
+      } }));
+    }
+    if (path.endsWith("/stream/write")) {
+      if (!(init?.body instanceof ReadableStream)) throw new Error("Expected streaming request body");
+      for await (const chunk of init.body) {
+        if (!(chunk instanceof Uint8Array) || chunk.some(byte => byte !== 173)) throw new Error("Binary data corrupted");
+        uploaded += chunk.length;
+      }
+      return Response.json({ data: { bytes: uploaded } });
+    }
+    throw new Error(`Unexpected request ${path}`);
+  } });
+  try {
+    expect(await host.execute({ name: "code_run", callId: "large-stream", conversationId: crypto.randomUUID(), turnId: crypto.randomUUID(), args: { code } }))
+      .toMatchObject({ status: "ready", output: JSON.stringify({ size, saved: size }) });
+    expect(uploaded).toBe(size);
+  } finally { await host.close(); }
+}, 60000);

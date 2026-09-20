@@ -46,6 +46,7 @@ export const runManagedCodeTool =
     if (!app) throw new Error("Assistant code host is unavailable");
     let callback: Awaited<ReturnType<typeof signInvocationToken>> | undefined;
     const request = async (decision?: { id: string; approved: boolean }) => {
+      context.signal.throwIfAborted();
       const signed = await withActiveIdentitySigner(
         "invocation",
         (signer) =>

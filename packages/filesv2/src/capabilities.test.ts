@@ -23,6 +23,7 @@ let next: string | null = null;
 let failure = false;
 let items: FileEntry[] = [];
 let calls = 0;
+const uploadKeys: string[] = [];
 const ids = new Map<string, { baseId: string; path: string }>();
 mock.module("./data/references", () => ({
   persistedEntryRefId: async (baseId: string, path: string) => {
@@ -42,6 +43,7 @@ mock.module("./service", () => ({
   FilesError: MockFilesError,
   filesService: {
     bases: async () => ({ items: Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })) }),
+    upload: async (_actor: unknown, input: { idempotencyKey: string }) => { uploadKeys.push(input.idempotencyKey); return { id: input.idempotencyKey }; },
     list: page,
     search: page,
   },
@@ -131,4 +133,17 @@ test("Filesv2 registers all binary and organization capabilities with documented
   expect(manifest.queries.find(item=>item.localId==="content.read")?.stream).toEqual({direction:"read",maxBytes:50*1024*1024});
   expect(manifest.actions.find(item=>item.localId==="content.create")?.stream).toEqual({direction:"write",maxBytes:50*1024*1024});
   expect(manifest.actions.map(item=>item.localId)).toEqual(expect.arrayContaining(["entry.rename","entry.move","entry.copy","entry.trash","trash.restore","folder.create"]));
+});
+
+
+test("upload idempotency is stable per user and isolated between users", async () => {
+  uploadKeys.length = 0;
+  const action = filesCapabilities.actions["content.create"];
+  const input = { baseId: "base", path: "test.csv", size: 4, mediaType: "text/csv", onConflict: "error" as const };
+  const caller = { ...context, idempotencyKey: "same-key" };
+  await action.run(input, caller);
+  await action.run(input, caller);
+  await action.run(input, { ...caller, actor: { kind: "user", user: { ...user, id: "another-user" } } });
+  expect(uploadKeys[0]).toBe(uploadKeys[1]);
+  expect(uploadKeys[2]).not.toBe(uploadKeys[0]);
 });

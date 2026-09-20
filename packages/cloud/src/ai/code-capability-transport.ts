@@ -8,15 +8,16 @@ export const codeCapabilityPath = (conversationId: string, turnId: string) => `/
 export function createCodeCapabilityTransport(
   current: () => { conversationId: string; turnId: string; token: string },
 ): NonNullable<CapabilityCaller["transport"]> {
+  const configured = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+  if (!configured) throw new Error("CLOUD_CORE_INTERNAL_ORIGIN is required for the code host");
+  const origin = new URL(configured);
+  if (!["http:", "https:"].includes(origin.protocol)) throw new Error("Invalid Core origin");
   return async (request) => {
+    const target = new URL(origin);
     const context = current();
     if (!context.token) throw new Error("Code capability authority is unavailable");
     const source = new URL(request.url);
     if (!source.pathname.startsWith("/api/capabilities/v1/")) throw new Error("Invalid code capability route");
-    const configured = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
-    if (!configured) throw new Error("CLOUD_CORE_INTERNAL_ORIGIN is required for the code host");
-    const target = new URL(configured);
-    if (!["http:", "https:"].includes(target.protocol)) throw new Error("Invalid Core origin");
     target.pathname = codeCapabilityPath(context.conversationId, context.turnId) + source.pathname.slice("/api".length);
     target.search = "";
     const headers = new Headers(request.headers);

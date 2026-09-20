@@ -80,6 +80,16 @@ See [Identity key operations](/en/docs/operations/identity-key-operations) for
 signing-key rotation, KEK recovery and revocation. Keep these secrets independent;
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
+Managed Assistant code hosts validate `CLOUD_CORE_INTERNAL_ORIGIN` when a host
+is created, before launching Chromium. It must be an HTTP(S) origin reachable
+from the Assistant service. Each host also uses an authenticated ephemeral
+loopback HTTP listener inside that service; allow local networking without
+publishing these ports. Binary bodies preserve backpressure across this hop.
+Eight simultaneous host requests per process are admitted; excess requests
+receive `operation_busy`. Size memory for the existing 50 MiB per-file and
+250 MiB per-run code budgets plus Chromium; streaming transport does not remove
+the memory occupied by files loaded for analysis.
+
 ## Select applications and feature dependencies
 
 **Baseline** below means Postgres, Valkey, NATS JetStream, `APP_SECRET`, completed Core schema

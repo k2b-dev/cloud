@@ -25,6 +25,8 @@ suite("Files service and durable bindings", () => {
   let versionCounter = 0;
   let nodeRevisionCounter = 0;
   let directCounter = 0;
+  let afterSegment: (() => void) | undefined;
+  let afterSessionRead: (() => void) | undefined;
   let beforeDirectPublish: (() => void) | undefined;
   const directRequests: Array<{ root: string; path: string; precondition?: { ifMatch?: string; ifNoneMatch?: boolean } }> = [];
   let ipaIndexed = false;
@@ -95,6 +97,15 @@ suite("Files service and durable bindings", () => {
       };
       // Direct leases: bytes bypass the API and land on the storage node itself.
       if (req.pathname === "/hosting/discovery") return new Response(DISCOVERY);
+      if (parts[1] === "v1" && parts[2] === "direct" && /\.(test|renewed)$/.test(parts[3] ?? "") && init?.method === "PUT") {
+        const session = sessions.get(parts[3]!.split(".")[0]!);
+        if (!session) return Response.json({ error: "not_found" }, { status: 404 });
+        init.signal?.throwIfAborted();
+        const bytes = await new Response(init.body).arrayBuffer();
+        session.received += bytes.byteLength;
+        afterSegment?.();
+        return Response.json({ ...session, chunkSize: 4, expires: "2099-01-01T00:00:00Z", uploadedSegments: 1 });
+      }
       if (parts[1] === "signed") {
         const key = `${parts[2]}:${decodeURIComponent(parts.slice(3).join("/"))}`;
         return nodes.has(key) ? new Response(contents.get(key) ?? "") : new Response("", { status: 404 });
@@ -188,7 +199,7 @@ suite("Files service and durable bindings", () => {
           if (input.precondition?.ifNoneMatch && input.onConflict === "overwrite") return Response.json({ error: "invalid_argument" }, { status: 400 });
           const key = input.idempotencyKey;
           const prior = key ? sessions.get(sessionKeys.get(key) ?? "") : undefined;
-          if (prior) return Response.json({ session: { ...prior, chunkSize: 4, expires: "2099-01-01T00:00:00Z", uploadedSegments: 0 }, ...(prior.state === "open" ? { lease: { url: `http://localhost:4000/lease/${prior.id}`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write", "abort"] } } : {}) });
+          if (prior) return Response.json({ session: { ...prior, chunkSize: 4, expires: "2099-01-01T00:00:00Z", uploadedSegments: 0 }, ...(prior.state === "open" ? { lease: { url: `http://localhost:4000/v1/direct/${prior.id}.test`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write", "abort"] } } : {}) });
           if (nodes.has(`${root}:${input.path}`) && input.onConflict === "error")
             return Response.json({ error: "already_exists", message: "exists" }, { status: 409 });
           const id = `session-${++sessionCounter}`;
@@ -200,14 +211,14 @@ suite("Files service and durable bindings", () => {
           if (lostCreateResponse) { lostCreateResponse = false; throw new Error("lost_create_response"); }
           return Response.json({
             session: { ...sessions.get(id), chunkSize: 4, expires: "2099-01-01T00:00:00Z", uploadedSegments: 0 },
-            lease: { url: `http://localhost:4000/lease/${id}`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write", "abort"] },
+            lease: { url: `http://localhost:4000/v1/direct/${id}.test`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write", "abort"] },
           });
         }
         const session = sessions.get(sessionId);
         if (!session) return Response.json({ error: "not_found", message: "missing" }, { status: 404 });
         const requestExecution = new Headers(init?.headers).get("X-Filegate-Execution");
         if (JSON.stringify(session.execution ?? null) !== JSON.stringify(requestExecution ? JSON.parse(requestExecution) : null)) return Response.json({ error: "forbidden" }, { status: 403 });
-        if (action === "lease") return Response.json({ url: `http://localhost:4000/lease/${sessionId}/renewed`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write"] });
+        if (action === "lease") return Response.json({ url: `http://localhost:4000/v1/direct/${sessionId}.renewed`, expires: "2099-01-01T00:00:00Z", operations: ["status", "write"] });
         if (action === "commit") {
           if (session.state !== "open") return Response.json({ error: "conflict", message: "closed" }, { status: 409 });
           const old = nodes.get(`${root}:${session.path}`);
@@ -230,6 +241,7 @@ suite("Files service and durable bindings", () => {
           session.state = "aborted";
           return new Response(null, { status: 204 });
         }
+        afterSessionRead?.();
         return Response.json({ ...session, chunkSize: 4, expires: "2099-01-01T00:00:00Z", uploadedSegments: 0 });
       }
       const body = z
@@ -618,7 +630,7 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
     const baseId = (await service.bases(actor)).items[0]!.id;
     const opened = await service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "Reports/new.txt", size: 12, onConflict: "error" });
-    expect(opened).toMatchObject({ path: "Reports/new.txt", size: 12, chunkSize: 4, url: `http://localhost:4000/lease/${sessionKeys.get(opened.id)}/renewed` });
+    expect(opened).toMatchObject({ path: "Reports/new.txt", size: 12, chunkSize: 4, url: `http://localhost:4000/v1/direct/${sessionKeys.get(opened.id)}.renewed` });
     expect(privateSession(opened.id)?.ownership).toEqual({ uid: 1001, gid: 2001, mode: "0600" });
     await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_incomplete" });
     privateSession(opened.id)!.received = 12;
@@ -652,6 +664,37 @@ suite("Files service and durable bindings", () => {
     expect(privateSession(replace.id)?.state).toBe("aborted");
     await expect(service.commitUpload(actor, { baseId, id: replace.id })).rejects.toMatchObject({ code: "upload_closed" });
     await service.abortUpload(actor, { baseId, id: replace.id });
+  });
+  test("capability transfers reject stale reads, incomplete bodies, concurrent writers and cancellation before commit", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/source.txt", 1001, 2001, "0600", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    await expect(service.capabilityDownload(actor, { baseId, path: "source.txt", revision: "stale" }, new AbortController().signal)).rejects.toMatchObject({ code: "write_conflict" });
+    for (const length of [3, 5]) {
+      const upload = await service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: `bad-${length}`, size: 4, onConflict: "error" });
+      await expect(service.capabilityUpload(actor, { baseId, id: upload.id }, new Blob([new Uint8Array(length)]).stream(), new AbortController().signal)).rejects.toThrow();
+      expect(privateSession(upload.id).state).toBe("open");
+      expect(nodes.has(`freeipa:users/alice/bad-${length}`)).toBe(false);
+    }
+    const upload = await service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "cancelled.bin", size: 4, onConflict: "error" });
+    const controller = new AbortController();
+    // Abort during the final receipt read, after body consumption and initial abort check.
+    afterSegment = () => { afterSessionRead = () => controller.abort(); };
+    try {
+      await expect(service.capabilityUpload(actor, { baseId, id: upload.id }, new Blob(["1234"]).stream(), controller.signal)).rejects.toThrow();
+      expect(privateSession(upload.id).state).toBe("open");
+      expect(nodes.has("freeipa:users/alice/cancelled.bin")).toBe(false);
+    } finally { afterSegment = undefined; afterSessionRead = undefined; }
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    privateSession(upload.id).received = 0;
+    const first = service.capabilityUpload(actor, { baseId, id: upload.id }, new ReadableStream({ async pull(c) { entered.resolve(); await release.promise; c.enqueue(new TextEncoder().encode("1234")); c.close(); } }, { highWaterMark: 0 }), new AbortController().signal);
+    // The body is consumed only after the upload lock has been acquired.
+    await entered.promise;
+    try {
+      await expect(service.capabilityUpload(actor, { baseId, id: upload.id }, new Blob(["1234"]).stream(), new AbortController().signal)).rejects.toMatchObject({ code: "operation_busy" });
+    } finally { release.resolve(); }
+    expect((await first).entry.path).toBe("cancelled.bin");
   });
   test("capability upload locks reject concurrent writers without exhausting domain connections",async()=>{
     const {withUploadLock}=await import("../data/operations");

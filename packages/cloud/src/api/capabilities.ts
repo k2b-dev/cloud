@@ -224,6 +224,8 @@ const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
   });
 
 export type CapabilityDispatchParams = {
+  /** Trusted Core continuation binding; never read from client headers. */
+  continuation?: string;
   request: Request;
   kind: "queries" | "actions";
   review?: boolean;
@@ -627,7 +629,7 @@ const runCapabilityDispatch = async (
     if (!stream.success || !operation.stream || stream.data.direction !== operation.stream.direction || stream.data.size > operation.stream.maxBytes || Date.parse(stream.data.expiresAt) <= Date.now() || Date.parse(stream.data.expiresAt) > Date.now() + 86_400_000 || !params.authority)
       return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain");
     try {
-      body.stream = await sealCapabilityStream(stream.data, { appId: params.appId, kind: params.kind, capabilityId: params.capabilityId, schemaHash: operation.schemaHash, authority: params.authority, requestId, origin: params.origin });
+      body.stream = await sealCapabilityStream(stream.data, { appId: params.appId, kind: params.kind, capabilityId: params.capabilityId, schemaHash: operation.schemaHash, authority: params.authority, requestId, origin: params.origin, continuation: params.continuation });
       if (Buffer.byteLength(JSON.stringify(body)) > CAPABILITY_MAX_RESULT_BYTES) throw new Error("Stream result too large");
     } catch { return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain"); }
   }

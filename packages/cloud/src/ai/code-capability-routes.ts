@@ -25,7 +25,9 @@ export function createCodeCapabilityRoutes(
   } = {},
 ) {
   const store = dependencies.store ?? aiConversations;
-  const authority = (c: Context<AuthContext>): RequestAuthority => ({
+  // This Core-only exchange resumes the verified foreground user turn. Ordinary
+  // app invocations remain non-exchangeable; this is not an interactive cookie.
+  const foregroundTurnAuthority = (c: Context<AuthContext>): RequestAuthority => ({
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
     credentialKind: "session",
@@ -41,8 +43,9 @@ export function createCodeCapabilityRoutes(
     if (conversation?.allowedTools && !conversation.allowedTools.includes(`${appId}.${capabilityId}`)) return denied();
     return (dependencies.dispatch ?? dispatchCapability)({
       request: c.req.raw,
-      authority: authority(c),
+      authority: foregroundTurnAuthority(c),
       origin: "assistant",
+      continuation: codeCapabilityOperation(c.req.param("conversationId")!, c.req.param("turnId")!),
       review,
       kind: review || c.req.param("kind") === "actions" ? "actions" : "queries",
       appId,
@@ -52,6 +55,10 @@ export function createCodeCapabilityRoutes(
     });
   };
   return new Hono<AuthContext>()
+    .use("/:conversationId/:turnId/*", async (c, next) => {
+      await next();
+      c.header("Cache-Control", "no-store");
+    })
     .use(
       "/:conversationId/:turnId/*",
       requireInvocation((c) => {
@@ -79,6 +86,7 @@ export function createCodeCapabilityRoutes(
         conversation.archivedAt ||
         !active ||
         active.turn.id !== turnId ||
+        active.turn.cancelRequestedAt ||
         !["running", "waiting_for_action"].includes(active.turn.status) ||
         !config ||
         config.kind === "compact" ||
@@ -86,12 +94,17 @@ export function createCodeCapabilityRoutes(
         config.mandate
       )
         return denied();
-      c.header("Cache-Control", "no-store");
       await next();
     })
     .post("/:conversationId/:turnId/capabilities/v1/actions/:appId/:capabilityId/review", (c) => invoke(c, true))
     .post("/:conversationId/:turnId/capabilities/v1/:kind{queries|actions}/:appId/:capabilityId", (c) => invoke(c))
     .post("/:conversationId/:turnId/capabilities/v1/streams/:verb", (c) =>
-      (dependencies.stream ?? dispatchCapabilityStream)(c.req.raw, authority(c), c.req.param("verb")),
+      (dependencies.stream ?? dispatchCapabilityStream)(c.req.raw, foregroundTurnAuthority(c), c.req.param("verb"), {
+        continuation: codeCapabilityOperation(c.req.param("conversationId")!, c.req.param("turnId")!),
+        allow: async ({ appId, capabilityId }) => {
+          const conversation = await store.getConversation({ conversationId: c.req.param("conversationId")! });
+          return !!conversation && (!conversation.allowedTools || conversation.allowedTools.includes(`${appId}.${capabilityId}`));
+        },
+      }),
     );
 }
