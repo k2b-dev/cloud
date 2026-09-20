@@ -44,6 +44,24 @@ Read the relevant reference before constructing configuration; examples are not 
 
 For full request/response schemas, including nested table, View and Form options, use [API Docs](api-docs.md): `cld api-docs operations grids --json`, then `cld api-docs show grids <METHOD> <PATH> --json` with the exact returned method/path. Do not infer writable fields from a GET response. JSON Schema describes structural constraints; permission, lifecycle, cross-field and publication checks still apply. Run the matching validation/preview operation before applying a definition.
 
+Use the references as a map, then read only the relevant live contract:
+
+1. `cld grids <command> --help` owns accepted flags and positional arguments.
+2. A matching `reference --json`, `fields type`, or `records shape` owns its
+   configuration or value shape. For Forms, Tables, Views, and Base settings,
+   discover the exact create/update operation with API Docs, then read its
+   request schema. Use `api-docs spec grids` when a compact operation view omits
+   schema detail. A GET response is not a create payload.
+3. Read the semantic rules in the linked guide: JSON Schema alone does not
+   explain permissions, state transitions, retries, or business guarantees.
+4. Validate against the target Base and read back persisted configuration. If
+   discovery and prose disagree, use the installed contract, report the
+   discrepancy, and do not invent a flag or silently drop a property.
+
+You do not need repository source files for these steps. Do not load every
+reference or the whole OpenAPI document into one model prompt; select the
+operation and nested schema relevant to the task.
+
 The installed server and CLI may have different versions. If a reference command or property is unavailable, inspect that installation's help and API schema; do not silently substitute an invented option. These references cover administrative CLI operations as well as daily tasks; the Assistant's narrower capabilities are not the CLI feature boundary.
 
 ## Core model
@@ -86,7 +104,13 @@ restriction does not limit a separately authorized CLI agent using this Skill.
 
 Capability results may include optional table presentation metadata referencing
 their existing `data`. Programmatic consumers can ignore it; exact values,
-pagination and semantic links remain canonical. Editor links carry URL-encoded
+pagination and semantic links remain canonical. The `gql.preview`, `gql.execute`,
+and `gql.view.execute` capabilities accept `showTableToUser` (default `false`).
+Set it to `true` only when the result should be shown to the user; omit it for
+intermediate research. The flag requests `presentation.kind: "table"`; it does not
+change rows or permissions. The Assistant owns rendering. Do not duplicate a
+requested table as Markdown or claim it appeared based only on tool metadata.
+This is capability input, not a `gql run` CLI flag. Editor links carry URL-encoded
 GQL and its source; very long queries may not have a link.
 
 For an inventory, CRM, invoicing, expense or merchandise-management application, first read [Build a business application](grids-build-apps.md). It connects model choices, permissions, atomic transitions, templates and scenario-specific acceptance checks. This reference supplies the individual commands.
@@ -800,7 +824,7 @@ take characters from an edge, and `REPLACE` replaces every match.
 decimal places and accepts negative places. `SUBSTRING` uses a zero-based start. Date-time calendar operations use the request's display
 timezone; without one, Grids uses the Cloud application timezone. Date-only values remain calendar dates. `DATEADD` accepts day(s), hour(s),
 minute(s), month(s), and year(s), defaulting to days. `DATEDIFF` accepts day(s), hour(s), minute(s), and second(s), defaults to days, and
-returns `to - from`, rounded down to whole units.
+returns `to - from`, rounded down to whole units. `DATEADD` requires input and result years in 1000–9999; out-of-range values are calculation errors, not valid dates.
 
 The GQL command set is `gql reference|run|preview|compile-view|autocomplete|skill|context`. Formula commands are `formulas reference|check`.
 
@@ -1147,7 +1171,7 @@ Every input may set `label`, `description`, and `required`. Type-specific declar
 
 | Type | Declaration | Invocation value |
 | --- | --- | --- |
-| `record` | required `table` exact name or public ID | one record public ID, `disclosure:{label,defaultOpen?}` |
+| `record` | required `table` exact name or public ID | one record public ID |
 | `recordList` | required `table` exact name or public ID | ordered record public-ID list, at most 10,000 |
 | `text` | none | string |
 | `number` | none | finite number |
@@ -1690,11 +1714,19 @@ Do not invent a Grids command or use direct SQL to fill the gap.
 - Built-in Base templates (`templates list|instantiate`) are distinct from GUI
   Document layout and Workflow starters. Those starters are editable examples,
   not additional renderer types or hidden workflow actions.
-- Operator settings: `grids.max_file_size_mb` controls uploads; query resource
+- Operator settings: `grids.workflow_concurrency` is the positive integer number
+  of concurrent workflow runs per Grids process (default 10), shared by executions
+  and dry runs. Changes require restarting all Grids instances.
+  `grids.max_file_size_mb` controls uploads; query resource
   settings are `grids.query_pool_size`, `grids.query_concurrency`,
   `grids.query_queue_limit`, and `grids.query_queue_timeout_ms`. Inspect the
-  installed settings contract and restart requirements through the
-  [Administration reference](admin.md); these are not table or App properties.
+  installed settings contract via `cld api-docs show grids GET /admin/settings --json`
+  and the write body via `cld api-docs show grids PUT /admin/settings/{key} --json`.
+  The effective routes are `/api/grids/admin/settings` and
+  `/api/grids/admin/settings/{key}`; there is no dedicated `grids settings` verb.
+  These require platform administration and are not table or App properties.
+  Query-setting changes also require restarting Grids instances. Coordinate
+  restarts with the operator rather than restarting shared services automatically.
 
 ## Runtime and operational access
 
@@ -1711,7 +1743,13 @@ The app CLI covers terminal workflows; Cloud Capabilities remain a curated daily
 
 ### Use a published App
 
-Start with the App's public ID from `/apps/<id>`. No Base grant or default Base is needed:
+Start with the App's public ID from `/apps/<id>`. No Base grant or default Base is needed.
+Publishing does not grant runtime access: assign an App read grant to the intended
+user or group with `access grant app` first. Base administration alone does not
+replace that grant. An unavailable or unauthorized private App can return 404.
+Keep test Apps private; grant only the test user's account.
+
+Then discover its published page:
 
 ```bash
 cld grids apps runtime read APP001 --json

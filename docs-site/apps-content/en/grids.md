@@ -614,6 +614,14 @@ commands support bounded record reads, form submission, editable record fields,
 comments, attachments, stored document downloads, actions, scanners and scoped
 run status. They retain the published App's permission and availability checks.
 
+`cld grids fields type <type> --json` includes `filterOperators` from the current
+JSON filter compiler. Use those operators for record queries and Form relation
+selection filters. They differ from Form comparison rules: a boolean JSON filter
+uses `=`, a text equality filter uses `equals`, and a Form comparison uses `eq`.
+An empty operator list means that field type has no direct JSON filter operators;
+use GQL for computed expressions. The Cloud CLI schema reference documents the
+recursive filter tree and operand formats.
+
 Custom App authors can fetch `grids apps reference --json` for the generated
 input `definitionSchema`, including every option, enum, default and limit.
 Run `apps validate` for additional query, resource and permission checks.

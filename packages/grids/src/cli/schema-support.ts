@@ -14,6 +14,7 @@ import {
   VALUE_FIELD_TYPES,
 } from "../field-types";
 import { ObjectListConfigSchema, objectListInputValue } from "../field-types/object-list";
+import { filterOperatorsForType } from "../service/filter-compiler-validation";
 import { displayValue } from "./views-gql-support";
 
 export type FieldDependentsResponse = { dependents: unknown[]; hasBlocking: boolean };
@@ -25,6 +26,7 @@ type FieldTypeReference = {
   recordWritable: boolean;
   config: string;
   configSchema: Record<string, unknown>;
+  filterOperators: string[];
   recordValue: string;
   notes: string;
 };
@@ -178,6 +180,7 @@ export const fieldTypeReferences = (): FieldTypeReference[] =>
         category: fieldTypeCategory(type),
         recordWritable: type in RECORD_WRITABLE_FIELD_TYPES,
         configSchema: z.toJSONSchema(publicFieldConfigSchema(type), { io: "input" }),
+        filterOperators: [...filterOperatorsForType(type)],
         ...details,
       };
     });
@@ -199,6 +202,7 @@ export const printFieldTypeReference = (ctx: CloudCliContext, ref: FieldTypeRefe
   ctx.print(`record writable: ${ref.recordWritable ? "yes" : "no"}`);
   ctx.print(`config: ${ref.config}`);
   ctx.print(`record value: ${ref.recordValue}`);
+  ctx.print(`filter operators: ${ref.filterOperators.join(", ") || "none; use GQL for computed expressions"}`);
   ctx.print(`notes: ${ref.notes}`);
   ctx.print("configSchema (input; cross-field and permission checks still apply):");
   ctx.print(JSON.stringify(ref.configSchema, null, 2));

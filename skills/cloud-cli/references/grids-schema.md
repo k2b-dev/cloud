@@ -16,6 +16,7 @@ finalized captures, return to [Grids](grids.md).
 - [Typed object lists](#typed-object-lists)
 - [Display formats](#display-formats)
 - [Views](#views)
+- [JSON filters](#json-filters)
 - [Forms](#forms)
 
 ## Discover exact input
@@ -306,7 +307,7 @@ permissions, identities, links, or workflows.
 | `defaultValue` | Optional literal suggestion for newly added entries in the UI, validated and normalized by the scalar type. Selects use option-ID arrays, including single-select (for example `["C62"]`); numbers use decimal strings. Omitted or `null` means no suggestion. Calculated columns cannot have defaults; dynamic defaults such as `{ "kind": "now" }` are not supported for list columns. Existing entries and API write payloads are never filled implicitly. |
 | `formula` | Optional `{expression?, format?}`; expression references sibling columns by name or ID. A calculated column keeps its declared scalar type and validation. |
 | `width` | Optional `"fullWidth"` (default) or `"compact"`. Applies equally to inputs and calculated columns. Consecutive compact columns share space and wrap; full-width columns start a full row. No automatic type/name heuristics. |
-| `detailsOnly` | Optional boolean, default `false`; only for calculated columns. Values appear under Calculation details when the list has rows. |
+| `detailsOnly` | Optional boolean, default `false`; for optional input columns and calculated helper columns. These appear in the item details instead of the compact summary; keep required inputs visible. |
 
 Columns must have unique IDs and normalized names, without ambiguous name/ID
 references. No nested lists, JSON objects, files, principals, or relations.
@@ -418,6 +419,35 @@ see [GQL](grids.md#query-data-with-gql). For a published Custom App that consume
 a View, remember publication pins its contract; editing the source View is not
 an automatic republish of the App.
 
+## JSON filters
+
+`records query` filters and Form `relationFilter` use the same tree. A leaf is
+`{fieldId, op, value?, caseInsensitive?}`. A group is
+`{op: "AND" | "OR", filters: [leafOrGroup, ...]}`. Use public Field IDs;
+Form selection filters refer to fields of the relation's **target** table.
+Limits are 20 levels, 200 total nodes, and 100 children per group.
+
+Read `cld grids fields type <type> --json`: `filterOperators` lists the installed
+operators. An empty list means that type has no direct JSON filter operators;
+use GQL for computed expressions. Some OpenAPI renderings show recursive filters
+as `{}`; this does not mean arbitrary JSON is accepted. Use this tree contract
+and the type-specific operators, then validate against the target table.
+
+| Field type | Operators | `value` |
+| --- | --- | --- |
+| `text`, `longtext`, `id` | `equals`, `notEquals`, `contains`, `notContains`, `startsWith`, `endsWith`, `regex`, `isEmpty`, `isNotEmpty` | String; regex patterns at most 200 characters. Optional `caseInsensitive` changes text matching. |
+| `number`, `percent`, `duration` | `=`, `!=`, `<`, `<=`, `>`, `>=`, `between`, `isEmpty`, `isNotEmpty` | Finite JSON number; `between` uses `[lower, upper]` in ascending order. Use GQL typed decimal parameters when an exact decimal cannot be represented as a JSON number. |
+| `date` | `=`, `notEquals`, `before`, `after`, `onOrBefore`, `onOrAfter`, `between`, `today`, `thisWeek`, `thisMonth`, `lastNDays`, `isEmpty`, `isNotEmpty` | `YYYY-MM-DD`, or timezone-aware ISO timestamp for includeTime fields; `between` uses `[from, to]`. `lastNDays` takes a non-negative integer. |
+| `boolean` | `=`, `isEmpty`, `isNotEmpty` | JSON boolean. |
+| `select` | `is`, `isNot`, `isAnyOf`, `isNoneOf`, `isEmpty`, `isNotEmpty` | Option ID string; `isAnyOf` and `isNoneOf` take arrays of option IDs. |
+| `relation`, `principal` | `containsAny`, `notContainsAny`, `isEmpty`, `isNotEmpty` | Nonempty array of target Record public IDs for relations, Cloud identity UUIDs for principals. |
+
+Omit `value` for `isEmpty`, `isNotEmpty`, `today`, `thisWeek`, and `thisMonth`.
+These operator names differ from Form cross-field validation: use `=` for a
+boolean JSON filter, `equals` for text, and `eq` for a Form comparison rule.
+For example, a boolean eligibility filter is
+`{"fieldId":"Active","op":"=","value":true}`.
+
 ## Forms
 
 Forms guide writes to existing fields; they do not define new field types or
@@ -445,8 +475,8 @@ The complete `config` shape:
 | `titleImage` | Optional image data URL, at most 1,000,000 characters. |
 
 `user_input` entries accept `kind: "user_input"`, `fieldId` (required public
-ID), and optional `label`, `helpText`, `width`, `required`, `defaultValue`, and
-`inlineCreate`. `required` and `defaultValue` are form overrides; underlying
+ID), and optional `label`, `helpText`, `width`, `required`, `defaultValue`,
+`inlineCreate`, `section`, and `relationFilter`. `required` and `defaultValue` are form overrides; underlying
 field validation remains authoritative. Do not use a default as a protected
 value that users must not change.
 
@@ -463,6 +493,21 @@ a submitted replacement. Values still use the field's normal representation
 Only record-writable fields may be configured. Generated IDs, computed/system
 fields, and file bytes are not ordinary form JSON entries.
 
+`section` starts a group at that input. Following inputs belong to it until the
+next section. Collapsible groups start closed when empty and open when they have
+initial values. Invalid inputs open their group before receiving focus. Grouping
+does not change validation or submission. Its shape is
+`{title, description?, collapsible?}`: title is trimmed,
+1–200 characters, and description is at most 2,000 characters. For example:
+`{"section":{"title":"Contact","description":"Who should we contact?"},"kind":"user_input","fieldId":"Name01"}`.
+
+`relationFilter` restricts selectable and submitted existing records of a relation.
+Use the [JSON filter tree](#json-filters), with target-table Field IDs,
+for example `{"fieldId":"State1","op":"equals","value":"available"}` for a text
+field. The target must be a stored table in the same Base. Filtered inputs cannot
+use inline creation. The server checks the submitted selection again; this is not
+just a picker display filter. It does not grant access to target records.
+
 For a relation `user_input`, `inlineCreate` can be
 `{enabled: true, fields: [{fieldId, label?, helpText?, width?, required?, defaultValue?}]}`.
 Its fields are public IDs on the relation's target table. Enabled inline
@@ -473,12 +518,18 @@ policy still apply. Disabled inline configuration is discarded on save.
 
 Each validation is
 `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`.
-Operators: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. The two distinct fields must
+Comparison operators: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`. The two distinct fields must
 both be visible `user_input` fields of compatible comparable kinds: number
 with number, percent with percent, duration with duration, date-only with
 date-only, or date-time with date-time. `message` is trimmed, 1–240 characters.
 Optional `errorFieldId` must be one of the two fields. Empty values remain the
 responsibility of required/type validation, not cross-field comparison.
+
+`anyPresent` is a separate presence rule for two distinct visible **relation**
+inputs: at least one must contain a selection. Both may contain selections.
+It does not support arbitrary text or number inputs. Use it for “choose items,
+sets, or both”; leave the individual inputs optional. It uses the same rule shape,
+including `message` and optional `errorFieldId`.
 
 Example form body with server-enforced date ordering:
 

@@ -166,7 +166,13 @@ Important paths:
 - `snapshot`: captured record graph for issued record-template Documents, null in
   live previews. Its recursive relations do not imply document membership.
 
-Liquid is strict: unknown variables/filters fail. HTML output is escaped by
+Liquid is strict: unknown variables/filters fail. A `default` filter does not
+rescue a missing key: variable lookup fails before that filter runs. Optional
+Record fields may be absent from `record.data`; do not access them unconditionally.
+Use declared query columns with known keys (as in the example below), or omit
+optional output until its data is available. Test the template with records that
+leave optional fields empty using `preview-data`, not only a fully filled example.
+HTML output is escaped by
 default. Use `raw` only for trusted intentional HTML. Do not assume other template
 languages' functions or JavaScript execution.
 The Grids-specific filters are `json` (JSON serialization, null for nullish input)
