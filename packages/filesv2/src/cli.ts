@@ -462,16 +462,20 @@ function filesCommands(locale?: string) {
           title: flag.string({ required: true, description: t({ en: "Name shown to visitors", de: "Name, den Besucher sehen" }) }),
           "expires-in": flag.enum(["1d", "7d", "30d", "90d", "unlimited"], { default: "30d" }),
           note: flag.string({ description: t({ en: "Private management note", de: "Private Verwaltungsnotiz" }) }),
+          "password-file": flag.string({ description: t({ en: "Read an optional share password from a UTF-8 file", de: "Optionales Freigabe-Passwort aus einer UTF-8-Datei lesen" }) }),
           "public-note": flag.string({ description: t({ en: "Public note for visitors", de: "Öffentlicher Hinweis für Besucher" }) }),
           "max-file-size": flag.int({ default: 104857600, description: t({ en: "Inbox limit per file in bytes", de: "Eingangslimit pro Datei in Bytes" }) }),
           "max-total-size": flag.int({ default: 1073741824, description: t({ en: "Cumulative inbox limit in bytes", de: "Kumulatives Eingangslimit in Bytes" }) }),
           "show-upload-names": flag.boolean({ description: t({ en: "Show names of successful inbox uploads to visitors", de: "Namen erfolgreicher Eingangs-Uploads für Besucher anzeigen" }) }),
         },
         async run({ ctx, args, flags }) {
+          const passwordFile = flags["password-file"] ? Bun.file(flags["password-file"]) : null;
+          if (passwordFile && passwordFile.size > 2048) throw new Error(t({en:"Password file is too large.",de:"Die Passwortdatei ist zu groß."}));
+          const password = passwordFile ? (await passwordFile.text()).replace(/\r?\n$/, "") : undefined;
           const result = await ctx.readJson<ShareView>(
             await api(ctx).bases[":baseId"].shares.$post({
               param: { baseId: args.base },
-              json: { kind: flags.kind ?? "download", paths: (flags.kind ?? "download") === "download" ? args.paths : [], folder: flags.kind === "inbox" ? (args.paths[0] ?? "") : "", title: flags.title!, note: flags.note, publicNote: flags["public-note"], expiresIn: flags["expires-in"], maxFileSize: flags["max-file-size"], maxTotalSize: flags["max-total-size"], showUploadNames: flags["show-upload-names"] },
+              json: { kind: flags.kind ?? "download", paths: (flags.kind ?? "download") === "download" ? args.paths : [], folder: flags.kind === "inbox" ? (args.paths[0] ?? "") : "", title: flags.title!, note: flags.note, publicNote: flags["public-note"], expiresIn: flags["expires-in"], maxFileSize: flags["max-file-size"], maxTotalSize: flags["max-total-size"], showUploadNames: flags["show-upload-names"], password },
             }),
           );
           if (!printStructured(ctx, result)) ctx.print(result.url ?? "");

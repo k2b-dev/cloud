@@ -1,3 +1,4 @@
+import { useSharePasswordMessages } from "./share-password-messages";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, ButtonLink, DataTable, Format, Placeholder, prompts, StatusBadge, Tag, Tooltip, toast } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
@@ -11,6 +12,7 @@ import { filesUrl } from "./urls";
 /** Owners retain access to their link management even after losing access to its former storage. */
 export default function SharesOverview(props: { shares: SharePage | ShareView[]; baseId?: string | null; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void> }) {
   const b = useBrowserMessages();
+  const p = useSharePasswordMessages();
   const t = useFilesMessages();
   const page = () => Array.isArray(props.shares) ? { items: props.shares, next: null } : props.shares;
   const [shares, setShares] = createSignal(page().items);
@@ -86,7 +88,7 @@ export default function SharesOverview(props: { shares: SharePage | ShareView[];
             if (col.id === "title")
               return (
                 <div class="flex min-w-0 flex-col">
-                  <span class="truncate font-medium">{row.title}</span>
+                  <span class="truncate font-medium">{row.title} <Show when={row.passwordProtected}><i class="ti ti-lock" role="img" aria-label={p().protected} title={p().protected} /></Show></span>
                   <span class="truncate text-xs text-dimmed">
                     {row.kind === "inbox" ? `/${row.scope}` : b().shareItems(row.items.length)} · {b().createdBy} {row.createdBy} · {b().shareAccess(row.accessCount)}
                   </span>

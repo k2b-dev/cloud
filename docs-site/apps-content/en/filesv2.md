@@ -100,6 +100,19 @@ Existing names ask before being replaced.
 
 ## Public shares
 
+Both download links and upload inboxes support an optional password of 8–256
+characters. Share the password separately from the link. Visitors must unlock
+before seeing shared names or obtaining any transfer. Unlocking grants access
+for twelve hours in that browser; expiry, revocation and the creator's current
+permissions still apply. Reload the page to enter the password again after
+access expires. Existing links remain accessible without a password.
+
+Only an Argon2id verifier (including its random salt and parameters) is stored
+in Postgres. Neither the password nor the verifier appears in share responses.
+Unlock attempts are rate-limited. The browser receives an encrypted, share-scoped
+HttpOnly cookie; transfers retain their existing short lease lifetime.
+
+
 A share is either a download bundle of entries or an upload inbox for one
 folder, always inside one base. Download shares show the current contents,
 including later additions to shared folders. Visitors can browse those folders,

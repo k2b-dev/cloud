@@ -1,4 +1,6 @@
 const messages: Record<string, [string, string]> = {
+  share_password_required: ["Enter the share password to continue. If your access expired, reload this page.", "Gib das Freigabe-Passwort ein. Wenn dein Zugriff abgelaufen ist, lade diese Seite neu."],
+  share_password_invalid: ["The password is incorrect.", "Das Passwort ist nicht korrekt."],
   idempotency_conflict: ["This operation ID is already bound to different parameters. Check the original operation before starting another.", "Diese Vorgangs-ID gehört bereits zu anderen Parametern. Prüfe den ursprünglichen Vorgang, bevor du einen neuen startest."],
   identity_changed: ["The Unix identity changed since this operation began. Reload the folder before starting again.", "Die Unix-Identität hat sich seit Beginn des Vorgangs geändert. Lade den Ordner vor einem neuen Versuch neu."],
   operation_conflict: ["The operation conflicts with the current storage state. Refresh the folder and check the destination before retrying.", "Der Vorgang passt nicht zum aktuellen Zustand der Ablage. Aktualisiere den Ordner und prüfe das Ziel vor einem neuen Versuch."],

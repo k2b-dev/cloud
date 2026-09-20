@@ -1,3 +1,4 @@
+import { useSharePasswordMessages } from "./share-password-messages";
 import { Button, Checkbox, CopyButton, dialogCore, InlineGuidance, NoticeCard, NumberInput, PanelDialog, panelDialogOptions, TextInput, toast } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../api/client";
@@ -14,6 +15,8 @@ export function openShareDialog(options: { baseId: string; kind: "download" | "i
 
 function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: readonly string[]; folder?: string; defaultTitle: string; close: (value: ShareView | null) => void }) {
   const b = useBrowserMessages();
+  const p = useSharePasswordMessages();
+  const [password, setPassword] = createSignal("");
   const [title, setTitle] = createSignal(props.defaultTitle);
   const [note, setNote] = createSignal("");
   const [validity, setValidity] = createSignal<Validity>("30d");
@@ -39,11 +42,12 @@ function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: 
     try {
       const response = await apiClient.bases[":baseId"].shares.$post({
         param: { baseId: props.baseId },
-        json: { kind: props.kind, paths: [...(props.paths ?? [])], folder: props.folder ?? "", title: title().trim(), publicNote: note().trim() || undefined, expiresIn: validity(), maxFileSize: fileLimit, maxTotalSize: totalLimit, showUploadNames: showUploadNames() },
+        json: { kind: props.kind, paths: [...(props.paths ?? [])], folder: props.folder ?? "", title: title().trim(), publicNote: note().trim() || undefined, expiresIn: validity(), maxFileSize: fileLimit, maxTotalSize: totalLimit, showUploadNames: showUploadNames(), password: password() || undefined },
       });
       if (!response.ok) await apiFailure(response, b().shareCreateFailed);
       const share = await response.json();
       setCreated(share);
+      setPassword("");
       try {
         if (share.url) await navigator.clipboard.writeText(share.url);
         toast.success(b().copiedLink);
@@ -70,6 +74,7 @@ function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: 
           <>
             <PanelDialog.Body>
               <NoticeCard tone="success" title={b().shareCreated} detail={props.kind === "inbox" ? b().shareInboxScope : b().shareDownloadScope} />
+              <Show when={created()?.passwordProtected}><InlineGuidance icon="ti ti-lock">{p().protected}</InlineGuidance></Show>
               <InlineGuidance icon="ti ti-key">{b().linkOnce}</InlineGuidance>
               <div class="flex flex-col gap-1 text-sm">
                 <span class="font-medium">{b().shareLink}</span>
@@ -119,6 +124,7 @@ function ShareForm(props: { baseId: string; kind: "download" | "inbox"; paths?: 
               <InlineGuidance icon="ti ti-info-circle">{b().inboxQuotaHint}</InlineGuidance>
               <Checkbox label={b().showUploadNames} value={showUploadNames()} onValueChange={setShowUploadNames} />
             </Show>
+            <TextInput password label={p().password} description={p().hint} value={password} onValueChange={setPassword} minLength={8} maxLength={256} autocomplete="new-password" />
             <TextInput label={b().shareNote} description={b().shareNoteHint} value={note} onValueChange={setNote} maxLength={500} multiline lines={2} />
             <InlineGuidance icon="ti ti-info-circle">{props.kind === "inbox" ? b().shareInboxScope : b().shareDownloadScope}</InlineGuidance>
             <InlineGuidance icon="ti ti-users">{b().shareVisibility}</InlineGuidance>

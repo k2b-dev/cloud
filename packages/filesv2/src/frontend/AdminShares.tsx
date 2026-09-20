@@ -1,3 +1,4 @@
+import { useSharePasswordMessages } from "./share-password-messages";
 import { Button, DataTable, Format, NoticeCard, Placeholder, prompts, SettingsSection, StatusBadge, toast } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "../api/client";
@@ -12,6 +13,7 @@ import { useFilesMessages } from "./messages";
 export default function AdminShares(props: { shares: SharePage; uploads: NonNullable<AdminSnapshot["uploads"]> }) {
   const a = useAdminMessages();
   const b = useBrowserMessages();
+  const p = useSharePasswordMessages();
   const t = useFilesMessages();
   const [shares, setShares] = createSignal(props.shares);
   const [uploads, setUploads] = createSignal(props.uploads);
@@ -75,7 +77,7 @@ export default function AdminShares(props: { shares: SharePage; uploads: NonNull
               if (col.id === "title")
                 return (
                   <div class="min-w-0">
-                    <div class="font-medium">{row.title}</div>
+                    <div class="font-medium">{row.title} <Show when={row.passwordProtected}><i class="ti ti-lock" role="img" aria-label={p().protected} title={p().protected} /></Show></div>
                     <div class="text-xs text-dimmed">
                       {row.base.name} · {row.kind === "inbox" ? b().inboxShare : b().downloadShare}
                     </div>

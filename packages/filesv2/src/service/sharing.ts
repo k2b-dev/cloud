@@ -1,3 +1,4 @@
+import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
 import { randomBytes } from "node:crypto";
 import type { RequestActor } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
@@ -61,6 +62,7 @@ const contains = (row: ShareRow, path: string) => row.items.some((item) => path 
 const baseId = (binding: Binding) => `${binding.area}:${binding.kind}:${binding.identity_id}`;
 const shareView = (row: ShareRow, binding: Binding | null, url: string | null = null): ShareView => ({
   id: row.id,
+  passwordProtected: Boolean(row.password_hash),
   kind: row.kind,
   url,
   title: row.title,
@@ -82,13 +84,14 @@ const shareView = (row: ShareRow, binding: Binding | null, url: string | null = 
 
 /** Public bearer links name a grant; the creator's current authority is checked before every new action. */
 export function createSharingService<T extends SharingAccess>(deps: SharingDependencies<T>) {
-  async function tokenShare(token: string, kind: ShareRow["kind"]) {
+  async function tokenShare(token: string, kind: ShareRow["kind"], access?: string) {
     const row = token.length >= 16 && token.length <= 256 ? await shares.byToken(token) : null;
     if (!row || row.kind !== kind) throw new FilesError("not_found", 404);
+    await requireSharePassword(row, access);
     return row;
   }
-  async function activeShare(token: string, kind: ShareRow["kind"]) {
-    return activeRow(await tokenShare(token, kind));
+  async function activeShare(token: string, kind: ShareRow["kind"], access?: string) {
+    return activeRow(await tokenShare(token, kind, access));
   }
   async function activeRow(row: ShareRow) {
     const kind = row.kind;
@@ -229,6 +232,13 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
     return { row, userId, binding: await deps.bindings.byId(row.base_id) };
   }
   return {
+    async unlockShare(token: string, kind: "download" | "inbox", password: string) {
+      if (password.length < 1 || password.length > 256) throw new FilesError("share_password_invalid", 403);
+      const row = token.length >= 16 && token.length <= 256 ? await shares.byToken(token) : null;
+      if (!row || row.kind !== kind) throw new FilesError("not_found", 404);
+      await activeRow(row);
+      return unlockSharePassword(row, password);
+    },
     async createShare(
       actor: RequestActor,
       input: z.input<typeof CreateShareInputSchema> & { baseId: string },
@@ -259,6 +269,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const { candidate, binding } = current.inspection;
       const row = await shares.create({
         token_hash: shareTokenHash(token),
+        password_hash: parsed.password ? await hashSharePassword(parsed.password) : null,
         kind: parsed.kind,
         base_id: binding!.id,
         root: candidate.root,
@@ -294,8 +305,8 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       await shares.revoke(row.id, userId);
       return shareView((await shares.get(row.id))!, binding);
     },
-    async publicShare(token: string, kind: "download" | "inbox", input: { path?: string; after?: string } = {}): Promise<PublicShare> {
-      const active = await activeShare(token, kind);
+    async publicShare(token: string, kind: "download" | "inbox", input: { path?: string; after?: string } = {}, access?: string): Promise<PublicShare> {
+      const active = await activeShare(token, kind, access);
       const { row, actor, binding } = active;
       const path = userPath(input.path ?? "");
       const result: PublicShare = {
@@ -362,8 +373,8 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       await shares.touch(row.id);
       return result;
     },
-    async publicShareDownload(token: string, path: string): Promise<DownloadLease> {
-      const { row, actor, binding } = await activeShare(token, "download");
+    async publicShareDownload(token: string, path: string, access?: string): Promise<DownloadLease> {
+      const { row, actor, binding } = await activeShare(token, "download", access);
       const relative = userPath(path);
       if (!contains(row, relative)) throw new FilesError("not_found", 404);
       const current = await deps.authorized(actor, baseId(binding), relative, false);
@@ -371,8 +382,8 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       await shares.touch(row.id);
       return { url: lease.url, method: "GET", expires: lease.expires };
     },
-    async publicShareArchive(token: string): Promise<ArchiveDownload> {
-      const { row, actor, binding, current } = await activeShare(token, "download");
+    async publicShareArchive(token: string, access?: string): Promise<ArchiveDownload> {
+      const { row, actor, binding, current } = await activeShare(token, "download", access);
       for (const relative of row.items) await deps.authorized(actor, baseId(binding), relative);
       const client = deps.connect(current.state.config);
       const execution = deps.executionFor(current);
@@ -383,14 +394,14 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       await shares.touch(row.id);
       return { url: lease.url, method: "POST", expires: lease.expires, manifest: lease.manifest };
     },
-    async publicInboxUpload(token: string, input: { name: string; size: number; idempotencyKey: string }): Promise<UploadSession> {
-      const initial = await activeShare(token, "inbox");
+    async publicInboxUpload(token: string, input: { name: string; size: number; idempotencyKey: string }, access?: string): Promise<UploadSession> {
+      const initial = await activeShare(token, "inbox", access);
       const deadline = Date.now() + 10_000;
       for (const pending of await uploads.pendingForShare(initial.row.id)) {
         if (Date.now() >= deadline) break;
         await reconcile(deps.connect(initial.current.state.config).root(initial.row.root), pending, initial.current.state.config);
       }
-      const { row, root, current } = await activeShare(token, "inbox");
+      const { row, root, current } = await activeShare(token, "inbox", access);
       const relative = userPath(joinPath(row.scope, input.name));
       if (relative.split("/").length !== row.scope.split("/").filter(Boolean).length + 1) throw new FilesError("invalid_path");
       const reservation = await uploads.reserve({
@@ -435,8 +446,8 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         throw error;
       }
     },
-    async publicInboxLease(token: string, id: string): Promise<UploadLease> {
-      const { row, root, current } = await activeShare(token, "inbox");
+    async publicInboxLease(token: string, id: string, access?: string): Promise<UploadLease> {
+      const { row, root, current } = await activeShare(token, "inbox", access);
       const upload = await uploads.getForShare(id, row.id);
       const reconciled = upload ? await reconcile(root, upload, current.state.config) : null;
       if (!upload || !reconciled || reconciled.state !== "open" || reconciled.error_code || !uploadSessionId(reconciled))
@@ -446,16 +457,16 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const lease = await root.sessionLease(uploadSessionId(reconciled)!, { expiresIn: 300, allowAbort: true });
       return { url: lease.url, expires: lease.expires };
     },
-    async publicInboxCommit(token: string, id: string): Promise<{ name: string; size: number }> {
+    async publicInboxCommit(token: string, id: string, access?: string): Promise<{ name: string; size: number }> {
       // Terminal receipts remain queryable after expiry/revocation; publishing a new result still needs a live grant.
-      const row = await tokenShare(token, "inbox");
+      const row = await tokenShare(token, "inbox", access);
       let upload = await uploads.getForShare(id, row.id);
       if (!upload) throw new FilesError("not_found", 404);
       const config = await deps.readConfiguration();
       const root = deps.connect(config).root(row.root);
       upload = await reconcile(root, upload, config);
       if (upload.state === "committed" && upload.result) return published(upload, row, upload.result);
-      const active = await activeShare(token, "inbox");
+      const active = await activeShare(token, "inbox", access);
       const sessionId = uploadSessionId(upload);
       validateActiveUpload(upload, row, active.current);
       if (upload.error_code) throw new FilesError("upload_uncertain", 409);
@@ -475,8 +486,8 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         throw error;
       }
     },
-    async publicInboxAbort(token: string, id: string): Promise<void> {
-      const row = await tokenShare(token, "inbox");
+    async publicInboxAbort(token: string, id: string, access?: string): Promise<void> {
+      const row = await tokenShare(token, "inbox", access);
       const upload = await uploads.getForShare(id, row.id);
       if (!upload || upload.state !== "open") return;
       const config = await deps.readConfiguration();

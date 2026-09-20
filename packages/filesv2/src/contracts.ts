@@ -105,6 +105,7 @@ export const CreateShareInputSchema = z.object({
   title: z.string().trim().min(1).max(200),
   note: z.string().trim().max(500).optional(),
   publicNote: z.string().trim().max(500).optional(),
+  password: z.string().min(8).max(256).optional(),
   expiresIn: ShareValiditySchema.default("30d"),
   maxFileSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).default(104857600),
   maxTotalSize: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).default(1073741824),
@@ -112,6 +113,7 @@ export const CreateShareInputSchema = z.object({
 });
 export const ShareIdSchema = z.object({ id: z.string().uuid() });
 export type ShareView = {
+  passwordProtected: boolean;
   id: string;
   kind: "download" | "inbox";
   /** Only present in the create response; links are never recoverable from stored hashes. */

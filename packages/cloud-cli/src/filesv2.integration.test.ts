@@ -1076,3 +1076,23 @@ test("cross-area copy and strict search failures use the same CLI contract", asy
     expect(result.stdout).not.toContain('"items":[]');
   }
 });
+
+test("share passwords are read from a private file for download and inbox without echoing them", async () => {
+  const path = join(await directory(), "password.txt");
+  const password = "test share password";
+  await writeFile(path, `${password}\n`, {mode:0o600});
+  const kinds: unknown[] = [];
+  const cloud = serve(async request => {
+    expect(request.method).toBe("POST");
+    const body = await request.json();
+    expect(body.password).toBe(password);
+    kinds.push(body.kind);
+    return Response.json({id:"s1",passwordProtected:true,url:"https://cloud.test/share/filesv2/s/token"});
+  });
+  for (const kind of ["download","inbox"]) {
+    const result = await run(["filesv2","shares","create",base.id,"Docs","--kind",kind,"--title","Protected","--password-file",path],{server:cloud.url.href});
+    expect(result.exitCode,result.stderr).toBe(0);
+    expect(result.stdout+result.stderr).not.toContain(password);
+  }
+  expect(kinds).toEqual(["download","inbox"]);
+});

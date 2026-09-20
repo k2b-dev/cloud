@@ -1,3 +1,6 @@
+import { shareAccessCookie } from "../share-access-cookie";
+import PublicShareUnlock from "./PublicShareUnlock.island";
+import { sharePasswordMessages } from "./share-password-messages";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { MinimalLayout } from "@k2b/cloud/ssr";
 import { NoticeCard, Paper } from "@k2b/ui";
@@ -9,10 +12,11 @@ import { browserMessages } from "./browser-messages";
 import PublicInbox from "./PublicInbox.island";
 import PublicShareList from "./PublicShare.island";
 
-const load = async (token: string, kind: "download" | "inbox"): Promise<PublicShare | null> => {
+const load = async (token: string, kind: "download" | "inbox", access?: string): Promise<PublicShare | null | "locked"> => {
   try {
-    return await filesService.publicShare(token, kind);
+    return await filesService.publicShare(token, kind, {}, access);
   } catch (error) {
+    if (error instanceof FilesError && error.code === "share_password_required") return "locked";
     if (error instanceof FilesError && error.status === 404) return null;
     throw error;
   }
@@ -48,30 +52,27 @@ function Card(props: { locale: string; share: PublicShare | null; children?: JSX
   );
 }
 
-export const publicSharePage = ssr<AuthContext>(async (c) => {
+const publicPage = (kind: "download" | "inbox") => ssr<AuthContext>(async (c) => {
   const token = c.req.param("token") ?? "";
-  const share = await load(token, "download");
+  c.header("Cache-Control", "no-store");
+  c.header("Referrer-Policy", "no-referrer");
+  const share = await load(token, kind, shareAccessCookie(c));
   const locale = getLocale(c);
+  const t = sharePasswordMessages.resolve([locale]).t;
   if (!share) c.status(404);
   return () => (
     <MinimalLayout c={c}>
-      <Card locale={locale} share={share}>
-        {share ? <PublicShareList token={token} share={share} /> : null}
-      </Card>
+      {share === "locked" ? <main class="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-10">
+        <Paper class="flex flex-col gap-4 p-6">
+          <h1 class="text-lg font-semibold">{t.unlockTitle}</h1>
+          <p class="text-sm text-dimmed">{t.unlockHint}</p>
+          <PublicShareUnlock token={token} kind={kind} />
+        </Paper>
+      </main> : <Card locale={locale} share={share}>
+        {share ? kind === "inbox" ? <PublicInbox token={token} share={share} /> : <PublicShareList token={token} share={share} /> : null}
+      </Card>}
     </MinimalLayout>
   );
 });
-
-export const publicInboxPage = ssr<AuthContext>(async (c) => {
-  const token = c.req.param("token") ?? "";
-  const share = await load(token, "inbox");
-  const locale = getLocale(c);
-  if (!share) c.status(404);
-  return () => (
-    <MinimalLayout c={c}>
-      <Card locale={locale} share={share}>
-        {share ? <PublicInbox token={token} share={share} /> : null}
-      </Card>
-    </MinimalLayout>
-  );
-});
+export const publicSharePage = publicPage("download");
+export const publicInboxPage = publicPage("inbox");

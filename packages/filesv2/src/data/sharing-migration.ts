@@ -27,6 +27,7 @@ export async function migrateSharing(): Promise<void> {
     await tx`ALTER TABLE filesv2.shares ADD COLUMN IF NOT EXISTS max_file_size BIGINT NOT NULL DEFAULT 104857600,
       ADD COLUMN IF NOT EXISTS max_total_size BIGINT NOT NULL DEFAULT 1073741824,
       ADD COLUMN IF NOT EXISTS show_upload_names BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS password_hash TEXT,
       ADD COLUMN IF NOT EXISTS public_note TEXT`.simple();
     await tx`ALTER TABLE filesv2.uploads ADD COLUMN IF NOT EXISTS filegate_session_id TEXT,
       ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,

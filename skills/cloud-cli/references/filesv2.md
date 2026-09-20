@@ -128,6 +128,15 @@ error rather than an invented preview.
 
 ## Shares, inboxes, and trash
 
+Add `--password-file /path/to/password.txt` to `shares create` for either kind
+of link. The UTF-8 file must contain 8–256 characters; one trailing line ending
+is removed. Keep the file private and send the password separately from the
+link. Do not put passwords in command-line arguments. Lists expose only
+`passwordProtected`, never the password or its hash. Visitors unlock the public
+page in their browser; their access lasts twelve hours, subject to expiry,
+revocation and the owner's current rights.
+
+
 `shares list` returns only the caller's own shares and never returns the public
 URL again (`url` is null). Creators can revoke their links after losing file
 access. A parent-folder read permission does not expose other users' shares.

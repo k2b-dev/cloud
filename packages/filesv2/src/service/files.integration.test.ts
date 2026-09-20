@@ -460,7 +460,7 @@ suite("Files service and durable bindings", () => {
     if (
       !url ||
       new URL(process.env.DATABASE_URL ?? "postgres://invalid/").pathname !== new URL(url).pathname ||
-      !["/cloud_filesv2_backend_test", "/cloud_filesv2_transfer_test"].includes(new URL(url).pathname)
+      !["/cloud_filesv2_backend_test", "/cloud_filesv2_transfer_test", "/cloud_filesv2_password_test"].includes(new URL(url).pathname)
     )
       throw new Error("Dedicated Filesv2 backend database required");
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
@@ -1071,6 +1071,49 @@ suite("Files service and durable bindings", () => {
     config.freeipa.enabled = true;
     await sql`UPDATE filesv2.bases SET lifecycle='archived' WHERE root='freeipa' AND path='users/alice'`;
     await expect(service.publicShare(token, "download")).rejects.toMatchObject({ code: "not_found" });
+  });
+  test("password shares gate every public operation, store only a salted hash and retain revocation", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    directory("freeipa", "users/alice/Docs/a.txt", 1001, 2001, "0640", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const password = "separate secret 123";
+    const download = await service.createShare(actor, {baseId,kind:"download",paths:["Docs"],title:"Private",password});
+    const inbox = await service.createShare(actor, {baseId,kind:"inbox",folder:"Docs",title:"Private inbox",password});
+    expect(download.passwordProtected).toBe(true);
+    expect(JSON.stringify(download)).not.toContain(password);
+    const [stored] = await sql<{password_hash:string}[]>`SELECT password_hash FROM filesv2.shares WHERE id=${download.id}::uuid`;
+    expect(stored!.password_hash).toStartWith("$argon2id$");
+    expect(await Bun.password.verify(password,stored!.password_hash)).toBe(true);
+    const token = download.url.split("/").at(-1)!;
+    const inboxToken = inbox.url.split("/").at(-1)!;
+    const denied = {code:"share_password_required"};
+    await expect(service.publicShare(token,"download")).rejects.toMatchObject(denied);
+    await expect(service.publicShareDownload(token,"Docs/a.txt")).rejects.toMatchObject(denied);
+    await expect(service.publicShareArchive(token)).rejects.toMatchObject(denied);
+    await expect(service.publicShare(inboxToken,"inbox")).rejects.toMatchObject(denied);
+    await expect(service.publicInboxUpload(inboxToken,{name:"a.txt",size:8,idempotencyKey:crypto.randomUUID()})).rejects.toMatchObject(denied);
+    for (const operation of [service.publicInboxLease,service.publicInboxCommit,service.publicInboxAbort])
+      await expect(operation(inboxToken,crypto.randomUUID())).rejects.toMatchObject(denied);
+    await expect(service.unlockShare(token,"download","wrong password")).rejects.toMatchObject({code:"share_password_invalid"});
+    const access = await service.unlockShare(token,"download",password);
+    expect((await service.publicShare(token,"download",{},access)).title).toBe("Private");
+    expect((await service.publicShareDownload(token,"Docs/a.txt",access)).method).toBe("GET");
+    expect((await service.publicShareArchive(token,access)).method).toBe("POST");
+    await expect(service.publicShare(inboxToken,"inbox",{},access)).rejects.toMatchObject(denied);
+    const inboxAccess = await service.unlockShare(inboxToken,"inbox",password);
+    const opened = await service.publicInboxUpload(inboxToken,{name:"received.txt",size:8,idempotencyKey:crypto.randomUUID()},inboxAccess);
+    expect((await service.publicInboxLease(inboxToken,opened.id,inboxAccess)).url).toContain("renewed");
+    const [reservation] = await sql<{filegate_session_id:string}[]>`SELECT filegate_session_id FROM filesv2.uploads WHERE id=${opened.id}`;
+    sessions.get(reservation!.filegate_session_id)!.received = 8;
+    expect((await service.publicInboxCommit(inboxToken,opened.id,inboxAccess)).name).toBe("received.txt");
+    await service.publicInboxAbort(inboxToken,opened.id,inboxAccess);
+    await service.revokeShare(actor,{id:download.id});
+    await expect(service.publicShare(token,"download",{},access)).rejects.toMatchObject({code:"not_found"});
+    await expect(service.unlockShare(token,"download",password)).rejects.toMatchObject({code:"not_found"});
+    await sql`UPDATE filesv2.shares SET expires_at=now()-interval '1 minute' WHERE id=${inbox.id}::uuid`;
+    await expect(service.publicShare(inboxToken,"inbox",{},inboxAccess)).rejects.toMatchObject({code:"not_found"});
   });
   test("shares stay inside one base, are private to their owner, and serve leases only while active", async () => {
     const actor = await user("alice", "ipa");
