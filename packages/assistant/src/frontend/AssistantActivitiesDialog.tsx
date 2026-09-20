@@ -208,7 +208,7 @@ export function AssistantActivitiesView() {
                         <span class="assistant-activity-row__heading">
                           <span class="assistant-activity-row__title">{item.task.prompt.split(/\n|:\s/u)[0]}</span>
                           <Show when={item.unread}>
-                            <span class="assistant-activity-unread" aria-label={text("New")} />
+                            <span class="assistant-activity-unread" role="img" aria-label={text("New")} />
                           </Show>
                           <StatusBadge {...runStatus(item.occurrence.state, text)} variant="text" />
                         </span>
