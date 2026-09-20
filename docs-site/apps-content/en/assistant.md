@@ -12,6 +12,11 @@ updated: 2026-09-11
 
 ## Background tasks
 
+The built-in **scheduled-tasks** Skill guides Assistant through one-time
+reminders (“Remind me tomorrow at 09:00”), recurring work, and repairing failed
+tasks. It helps select the needed tools and propose task-specific approvals.
+You can change the instructions, timing or approvals in the normal chat.
+
 Ask Assistant to run a task once or on a recurring schedule. Each run starts
 with the completed chat context available at that moment and works independently,
 so you can continue chatting. Files, memories, Skills, and Project resources stay
@@ -39,6 +44,27 @@ confirmation. Failed runs remain available for inspection. Do not blindly repeat
 a write whose outcome is unknown. Browser interaction and Code Mode are unavailable
 in background runs. Background runs do not compact the parent chat; a run that
 exceeds its context or runtime limit reports a failure.
+
+The workspace panel opens during server rendering when a tab is selected in the URL,
+using the saved panel width. A loading placeholder reserves its space until the
+interactive content is ready.
+
+Scheduled tasks are planned and adjusted in the chat. The context panel lists tasks;
+each opens in its own reusable workspace tab with the latest result, run history, and
+allowed access. “Adjust in chat” prepares a task reference and editable message in
+the owning conversation without sending it or replacing an existing draft. Additional
+permissions still require approval. The standard approval card describes each allowed
+action and its fixed inputs using localized capability metadata instead of a JSON
+grants dump. Each permission shows its action and app on one line, followed by
+its fixed inputs or a short unrestricted-content notice.
+
+The next run is shown in relative time. Hover over it for the exact date and
+timezone. **Run now** confirms that a run was requested; its queued or running
+status and final result update in the task panel automatically.
+
+Background activities show compact answer previews. Open a run for its instructions
+and result; **Run history** opens a separate read-only chat view with tool calls.
+A neutral **Finished** status means the run ended, not that its goal succeeded.
 
 ## Studio
 

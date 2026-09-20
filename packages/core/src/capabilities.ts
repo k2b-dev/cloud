@@ -1,3 +1,4 @@
+import { taskGrantReview } from "./task-grant-presentation";
 import { dates, i18n, err, fail, ok } from "@k2b/stdlib";
 import {
   AI_SHORT_ID_PATTERN,
@@ -1211,11 +1212,7 @@ export const aiCapabilities = defineCapabilities({
               { label: "Chat", value: `${chat.title} (${chat.shortId})` },
               { label: "Schedule", value: `${schedule} (${normalized.timezone})` },
               { label: "Prompt", value: input.prompt, display: "block" },
-              {
-                label: "Capability grants (empty fixedInput means unrestricted inputs)",
-                value: JSON.stringify(input.grants, null, 2),
-                display: "block",
-              },
+              await taskGrantReview(input.grants, context.locale),
             ],
           });
         } catch (error) {
@@ -1297,11 +1294,7 @@ export const aiCapabilities = defineCapabilities({
                 value: taskScheduleLabel({ ...task, schedule: nextSchedule, timezone: normalized?.timezone ?? task.timezone }),
               },
               { label: "Prompt", value: input.prompt ?? task.prompt, display: "block" },
-              {
-                label: "Capability grants (empty fixedInput means unrestricted inputs)",
-                value: JSON.stringify(input.grants ?? task.grants, null, 2),
-                display: "block",
-              },
+              await taskGrantReview(input.grants ?? task.grants, context.locale),
             ],
           });
         } catch (error) {

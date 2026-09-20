@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
-import { CapabilityTablePresentationSchema, capabilityDataAtPath, capabilityResultSchema } from "./capabilities";
+import {
+  CapabilityActionReviewSchema,
+  CapabilityTablePresentationSchema,
+  capabilityDataAtPath,
+  capabilityResultSchema,
+} from "./capabilities";
 
 test("table metadata references canonical data without transforming exact values", () => {
   const data = [{ amount: "12345678901234567890.123400" }];
@@ -38,4 +43,14 @@ test("metadata is bounded and paths never read inherited properties or invoke ge
     CapabilityTablePresentationSchema.safeParse({ kind: "table", rowsPath: Array(17).fill("x"), columns: [{ path: [], label: "x" }] })
       .success,
   ).toBeFalse();
+});
+
+test("Markdown approval details require block display", () => {
+  const review = (display?: string) => ({
+    message: "Review access",
+    details: [{ label: "Access", value: "**Read calendar**", format: "markdown", display }],
+  });
+  expect(CapabilityActionReviewSchema.safeParse(review("block")).success).toBeTrue();
+  expect(CapabilityActionReviewSchema.safeParse(review("inline")).success).toBeFalse();
+  expect(CapabilityActionReviewSchema.safeParse(review()).success).toBeFalse();
 });

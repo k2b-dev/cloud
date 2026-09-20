@@ -1,3 +1,4 @@
+import { AssistantLiveProvider, createAssistantLiveInvalidationHub } from "../frontend/assistant-live";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
@@ -9,5 +10,5 @@ render(() => {
   controller.restore();
   if (!controller.state().tabs.length) controller.open(appTab(id, "Example"));
   if (new URL(location.href).searchParams.has("many")) for (let i = 0; i < 20; i++) controller.open({ kind: "view", key: `view-${i}`, title: `Long report number ${i}`, render: () => "Report" });
-  return createComponent(ArtifactWorkspace, { controller, userId: id, refreshKey: "initial" });
+  return createComponent(AssistantLiveProvider, { value: createAssistantLiveInvalidationHub({ onApplied: () => {} }), get children() { return createComponent(ArtifactWorkspace, { controller, userId: id, refreshKey: "initial", onEditTask: () => {} }); } });
 }, document.getElementById("root")!);

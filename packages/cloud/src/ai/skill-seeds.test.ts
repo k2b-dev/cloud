@@ -11,7 +11,7 @@ describe("Cloud AI Skill seeds", () => {
 
     await seedCloudAiSkills();
 
-    expect(seedOnce).toHaveBeenCalledTimes(10);
+    expect(seedOnce).toHaveBeenCalledTimes(11);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
     expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 47 });
@@ -40,14 +40,18 @@ describe("Cloud AI Skill seeds", () => {
       "runtime Chat ID",
       "core.ai.chat.search",
       "core.ai.chat.message",
-      "exact runtime timezone",
-      "Project and permissions",
+      "scheduled-tasks",
     ]) {
       expect(assistant?.instructions).toContain(text);
     }
+    const scheduled = inputs.find(candidate => candidate.name === "scheduled-tasks");
+    expect(scheduled).toMatchObject({ key: "assistant:scheduled-tasks", version: 1 });
+    expect(scheduled?.description).toContain("one-time reminders");
+    expect(scheduled?.instructions).toContain("fixedInput");
+    expect(scheduled?.instructions).toContain("core.ai.task.run.read");
     const coreSource = await Bun.file(new URL("../../../core/src/capabilities.ts", import.meta.url)).text();
     const declaredCoreCapabilities = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `core.${match[1]!}`));
-    for (const match of assistant?.instructions.matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
+    for (const match of [assistant?.instructions, scheduled?.instructions].join("\n").matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
       expect(declaredCoreCapabilities.has(match[1]!)).toBeTrue();
     }
 

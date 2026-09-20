@@ -18,6 +18,7 @@ export const ChatTaskOccurrenceIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).
 export const AiConversationIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character AI conversation ID.");
 
 export type AiChatTaskView = {
+  nextRunAt?: string | null;
   id: string;
   chatId: string;
   chatTitle: string;

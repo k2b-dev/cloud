@@ -110,10 +110,13 @@ const CapabilityActionReviewDetailSchema = z
     label: z.string().min(1).max(120),
     value: z.string().max(10_000),
     display: z.enum(["inline", "block"]).optional(),
-    format: z.enum(["date", "date-time"]).optional(),
+    format: z.enum(["date", "date-time", "markdown"]).optional(),
   })
   .strict()
   .superRefine((detail, context) => {
+    if (detail.format === "markdown" && detail.display !== "block") {
+      context.addIssue({ code: "custom", path: ["display"], message: "Markdown review details require block display" });
+    }
     const schema =
       detail.format === "date" ? CapabilityReviewDateSchema : detail.format === "date-time" ? CapabilityReviewDateTimeSchema : null;
     if (schema?.safeParse(detail.value).success === false) {

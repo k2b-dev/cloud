@@ -101,6 +101,7 @@ export default ssr<AuthContext>(async (c) => {
         initialDoneCount={sidebar.doneCount}
         initialConversationId={activeConversation?.shortId ?? null}
         initialArtifactPath={initialArtifactPath}
+        initialWorkspaceHref={`${url.pathname}${url.search}`}
         initialDetail={
           initialDetail
             ? {

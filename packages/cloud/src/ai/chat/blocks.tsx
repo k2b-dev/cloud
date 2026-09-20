@@ -1,7 +1,7 @@
 import { hasCapabilityTable } from "./capability-result";
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Chat, isStructuredDataValue, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, Chat, MarkdownView, isStructuredDataValue, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
@@ -290,14 +290,23 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
                 {(detail) => (
                   <section class="min-w-0" aria-label={detail.label}>
                     <h4 class="mb-1.5 font-semibold text-primary">{detail.label}</h4>
-                    <pre
-                      class="max-h-72 overflow-auto whitespace-pre-wrap break-words pr-2 font-sans text-xs leading-5 text-secondary"
-                      role="region"
-                      tabIndex={0}
-                      aria-label={`${detail.label} content`}
+                    <Show
+                      when={detail.format === "markdown"}
+                      fallback={
+                        <pre
+                          class="max-h-72 overflow-auto whitespace-pre-wrap break-words pr-2 font-sans text-xs leading-5 text-secondary"
+                          role="region"
+                          tabIndex={0}
+                          aria-label={`${detail.label} content`}
+                        >
+                          <ReviewDetailValue detail={detail} />
+                        </pre>
+                      }
                     >
-                      <ReviewDetailValue detail={detail} />
-                    </pre>
+                      <div class="max-h-72 overflow-auto text-xs text-secondary" role="region" tabIndex={0} aria-label={detail.label}>
+                        <MarkdownView class="cloud-ai-approval-detail" markdown={detail.value} headingScale="compact" allowImages={false} />
+                      </div>
+                    </Show>
                   </section>
                 )}
               </For>

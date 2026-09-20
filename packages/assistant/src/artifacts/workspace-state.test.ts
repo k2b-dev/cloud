@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appTab, contextTab, fileTab, sourceTab, openWorkspaceTab, closeWorkspaceTab, workspaceSelectionFromHref, workspaceSelectionHref } from "./workspace-state";
+import { taskTab, appTab, contextTab, fileTab, sourceTab, openWorkspaceTab, closeWorkspaceTab, workspaceSelectionFromHref, workspaceSelectionHref } from "./workspace-state";
 
 test("opening the same resource activates its existing tab without recreating peers", () => {
   const first = fileTab("chat-one","/input.csv");
@@ -17,7 +17,7 @@ test("closing selects a neighbor and never changes the resource identity", () =>
   expect(closeWorkspaceTab(state,first.key)).toEqual({ tabs: [],active: null });
 });
 test("URL selection preserves conversation and encodes file identity without execution state", () => {
-  for (const tab of [fileTab("chat","/report name.csv"),sourceTab("app","main.ts"),appTab("app","app"), contextTab("chat", "apps", "apps")]) {
+  for (const tab of [taskTab("task01", "task01"),fileTab("chat","/report name.csv"),sourceTab("app","main.ts"),appTab("app","app"), contextTab("chat", "apps", "apps")]) {
     const href = workspaceSelectionHref("/app/assistant?conversation=chat",tab);
     expect(href).toContain("conversation=chat");
     expect(workspaceSelectionFromHref(href)).toEqual(tab);

@@ -230,3 +230,16 @@
   background: var(--ui-surface-raised);
   box-shadow: var(--ui-shadow-float) !important;
 }
+
+/* Approval prose follows the surrounding review fields, not document typography. */
+.k2b-ui .k2b-content-markdown.cloud-ai-approval-detail {
+  font-size: inherit;
+  line-height: 1.6667;
+  color: var(--k2b-text-muted);
+}
+.k2b-ui .cloud-ai-approval-detail strong {
+  color: var(--k2b-text);
+  font-size: inherit;
+  font-weight: 600;
+}
+.k2b-ui .cloud-ai-approval-detail p + p { margin-top: .75rem; }

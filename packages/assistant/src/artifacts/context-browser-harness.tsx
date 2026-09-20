@@ -25,7 +25,7 @@ render(() => {
         </div>
       </AppWorkspace.MainPane>
       <AppWorkspace.MainPane id="workspace" label="Workspace" open={controller.state().tabs.length > 0} defaultSize={620}>
-        <ArtifactWorkspace controller={controller} userId="test" refreshKey="initial" onOpenView={open} conversationId="chat-one" menuItems={menuItems} />
+        <ArtifactWorkspace onEditTask={() => {}} controller={controller} userId="test" refreshKey="initial" onOpenView={open} conversationId="chat-one" menuItems={menuItems} />
       </AppWorkspace.MainPane>
     </AppWorkspace.Main></AppWorkspace.Content></AppWorkspace>
   </AssistantLiveProvider>;

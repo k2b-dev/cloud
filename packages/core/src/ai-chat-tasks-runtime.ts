@@ -30,6 +30,18 @@ const taskScheduler = lazySync((sync) => {
 
   return handle;
 });
+/** Read the existing scheduler's next slot; domain task state remains authoritative. */
+export const nextChatTaskRuns = async () => {
+  try {
+    return new Map((await taskScheduler().list())
+      .filter(schedule => schedule.id.startsWith(SCHEDULE_PREFIX))
+      .map(schedule => [schedule.id.slice(SCHEDULE_PREFIX.length), schedule.nextRunAt.toISOString()]));
+  } catch (error) {
+    log.warn("Could not read upcoming task slots", { error: error instanceof Error ? error.message : String(error) });
+    return new Map<string, string>();
+  }
+};
+
 const reconcileMutex = lazySync((sync) => sync.mutex({ id: "core:ai-chat-tasks:reconcile", ttlMs: 60_000, retry: { maxAttempts: 1 } }));
 let started = false;
 let workers: Worker[] = [];

@@ -2,6 +2,28 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  "Finished": "Beendet",
+  "Task instructions": "Auftrag",
+  "Task queued. The result will appear here and in the chat when it is ready.": "Ausführung angefordert. Sobald die Aufgabe fertig ist, erscheint das Ergebnis hier und im Chat.",
+  "Next run": "Nächster Lauf",
+  "More actions": "Weitere Aktionen",
+  "Scheduled task": "Geplante Aufgabe",
+  "Task deleted": "Aufgabe gelöscht",
+  "Ask in the chat for a reminder or a recurring task.": "Bitte den Assistenten im Chat um eine Erinnerung oder eine wiederkehrende Aufgabe.",
+  "Plan new tasks and make changes in the chat.": "Neue Aufgaben und Änderungen planst du im Chat.",
+  "Task unavailable": "Aufgabe nicht verfügbar",
+  "Review the result before retrying. The task may have completed some steps.": "Prüfe vor einem erneuten Versuch das Ergebnis. Einzelne Schritte können bereits erledigt sein.",
+  "Resolve in chat": "Im Chat klären",
+  "Latest result": "Letztes Ergebnis",
+  "The result will appear here and in the chat.": "Das Ergebnis erscheint hier und im Chat.",
+  "View task instructions": "Auftrag ansehen",
+  "No additional access.": "Keine zusätzlichen Zugriffe.",
+  "Only for this task": "Nur für diese Aufgabe",
+  "Additional access requires your approval. Your existing access rights still apply.": "Zusätzliche Freigaben brauchen deine Bestätigung. Deine bestehenden Zugriffsrechte gelten weiterhin.",
+  "Adjust in chat": "Im Chat anpassen",
+  "Please review the last run of this scheduled task with me and help me fix the problem.": "Bitte prüfe mit mir den letzten Lauf dieser geplanten Aufgabe und hilf mir, das Problem zu beheben.",
+  "Please help me adjust this scheduled task.": "Bitte passe diese geplante Aufgabe mit mir an.",
+
   "Loading…": "Wird geladen…",
   "New": "Neu",
   "Show more": "Mehr anzeigen",

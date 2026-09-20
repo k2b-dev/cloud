@@ -686,6 +686,7 @@ describe("capability tool presentation", () => {
     customReview.approval.review = {
       message: "The draft includes an external recipient.",
       details: [
+        { label: "Access", value: "**Read calendar**\n\nSpaces · Read only", display: "block", format: "markdown" },
         { label: "Subject", value: "Release follow-up" },
         { label: "Recipients", value: "Ada", display: "inline" },
         { label: "Send on", value: "2026-08-20", format: "date" },
@@ -699,6 +700,8 @@ describe("capability tool presentation", () => {
       approvalScope: "book:default",
     };
     const customHtml = renderApproval(customReview);
+    expect(customHtml).toContain("<strong>Read calendar</strong>");
+    expect(customHtml).toContain("Spaces · Read only");
     expect(customHtml).toContain("The draft includes an external recipient.");
     expect(customHtml.indexOf("The draft includes an external recipient.")).toBeLessThan(customHtml.indexOf("data-ai-approval-footer"));
     expect(customHtml).toContain('<dt class="font-semibold text-primary">Subject</dt>');

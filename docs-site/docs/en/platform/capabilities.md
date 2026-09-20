@@ -630,7 +630,7 @@ type CapabilityActionReview = {
     label: string;
     value: string;
     display?: "inline" | "block";
-    format?: "date" | "date-time";
+    format?: "date" | "date-time" | "markdown";
   }>;
   links?: CapabilitySemanticLink[];
   approvalScope?: string;
@@ -655,13 +655,19 @@ and time matter. Clients render those values in the viewer's locale and convert
 instants to the viewer's timezone. Omit `format` for ordinary text, including
 relative descriptions such as an undo window.
 
+Block review details may use `format: "markdown"` for readable emphasis and
+paragraphs inside the standard approval UI. Set `display: "block"` and escape
+dynamic text before composing Markdown. Plain text remains the default.
+Images are not loaded in approval details.
+
 The shape is intentionally fixed. Reviews have no app-defined schema, title,
-icon, severity, arbitrary JSON, HTML, Markdown, refs, pagination, or executable
-controls. `display` is only a layout hint, and `format` only selects a fixed
-plain-text date presentation; neither changes the value's trust. Clients derive
+icon, severity, arbitrary JSON, HTML, refs, pagination, or executable
+controls. `display` is only a layout hint, and `format` selects date formatting
+or block Markdown; neither changes the value's trust. Clients derive
 the title and app presentation from the live manifest and registry, and derive
-warning treatment from `openWorld` and `destructive`. Render every review value
-as escaped, untrusted plain text and keep semantic links as links rather than
+warning treatment from `openWorld` and `destructive`. Treat every review value
+as untrusted content; render plain text escaped and
+Markdown through the shared safe renderer and keep semantic links as links rather than
 flattening them into text.
 
 Cloud bounds a review to a 1,000-character message, 20 details with a

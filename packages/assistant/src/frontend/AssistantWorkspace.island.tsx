@@ -1,3 +1,5 @@
+import { assistantTaskTitle } from "./AssistantTasksDialog";
+import type { AiChatTaskView } from "@k2b/cloud/ai";
 import { ChatPresentation } from "../artifacts/ChatPresentation";
 import { resolveChatFileLink } from "./chat-file-link";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
@@ -16,7 +18,7 @@ import { audioMessages } from "./audio-messages";
 import { newComposerSession, editComposerSession, observeComposerRevision, confirmComposerSave } from "./composer-session";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Chat, Dropdown, openSpotlightSearch, prompts, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Chat, Dropdown, Placeholder, openSpotlightSearch, prompts, useLocale } from "@k2b/ui";
 import type {
   AiConversation,
   AiConversationPage,
@@ -82,7 +84,7 @@ import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantMessages } from "./messages";
 import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
 import { artifactMessages } from "../artifacts/messages";
-import { contextTab, appTab, fileTab } from "../artifacts/workspace-state";
+import { contextTab, appTab, fileTab, taskTab } from "../artifacts/workspace-state";
 import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
 
 type Status = {
@@ -116,6 +118,7 @@ type Props = {
   initialDoneCount: number;
   initialConversationId: string | null;
   initialArtifactPath: string | null;
+  initialWorkspaceHref?: string;
   initialDetail: InitialDetail | null;
   initialContext: AssistantChatContextSnapshot | null;
   projects: AiProject[];
@@ -133,8 +136,9 @@ type ProjectViewState = {
 export default function AssistantWorkspace(props: Props) {
   const locale = useLocale();
   const contextText = useAssistantText();
-  const artifactWorkspace = createArtifactWorkspace();
-  const openContextView = (view: ContextView) => artifactWorkspace.open(view.context ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project) : view.file ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title } : { ...view, kind: "view" });
+  const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
+  const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
+  const openContextView = (view: ContextView) => artifactWorkspace.open(view.task ? taskTab(view.task.id, view.title) : view.context ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project) : view.file ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title } : { ...view, kind: "view" });
   const [workspaceContext, setWorkspaceContext] = createSignal<AssistantChatContextSnapshot | null>(null);
   const openContextOverview = (category: ContextCategory, title: string) => {
     const chatId = chat.activeConversationId();
@@ -574,6 +578,7 @@ export default function AssistantWorkspace(props: Props) {
     const initialMessage = assistantMessageSeqFromHref(window.location.href);
     if (initialMessage !== null) void revealMessage(initialMessage).catch(error => chat.setError(error.message));
     artifactWorkspace.restore();
+    setWorkspaceMounted(true);
     const guardUnsaved = (event: BeforeUnloadEvent) => {
       if (artifactWorkspace.hasDirty()) { event.preventDefault(); event.returnValue = ""; }
     };
@@ -911,6 +916,26 @@ export default function AssistantWorkspace(props: Props) {
         href: resource.href,
       },
     ]);
+  };
+
+  const editScheduledTask = async (task: AiChatTaskView, repair: boolean) => {
+    if (!(await openAndFocusConversation(task.chatId))) return;
+    const key = task.chatId;
+    const attachments = composerAttachmentsFor(key);
+    const attached = attachments.some(item => item.kind === "resource" && item.ref.type === "core.ai.task" && item.ref.id === task.id);
+    if (!attached && attachments.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+      return;
+    }
+    if (!attached) setComposerAttachmentsFor(key, [...attachments, {
+      kind: "resource", id: `resource:core.ai.task:${task.id}`, name: assistantTaskTitle(task),
+      ref: { type: "core.ai.task", id: task.id }, icon: "ti ti-calendar-time",
+    }]);
+    const instruction = contextText(repair ? "Please review the last run of this scheduled task with me and help me fix the problem." : "Please help me adjust this scheduled task.");
+    const existing = composerDraft(key);
+    setComposerDraft(key, existing.trim() ? `${existing}\n\n${instruction}` : instruction);
+    artifactWorkspace.setMobile("chat");
+    focusComposer();
   };
 
   const showComposerTextAttachment = async (sessionKey: string, attachment: AiComposerAttachment) => {
@@ -1560,7 +1585,9 @@ export default function AssistantWorkspace(props: Props) {
             </Show>
             </AppWorkspace.MainPane>
             <AppWorkspace.MainPane id="workspace" label={artifactCopy().workspace} open={artifactWorkspace.state().tabs.length > 0} defaultSize={620} minSize={320} scroll={false}>
-              <ArtifactWorkspace onOpenView={openContextView} project={activeConversationProject()} conversationId={chat.activeConversationId()} controller={artifactWorkspace} userId={props.userId} refreshKey={filesRefreshKey()} menuItems={contextMenuItems()} />
+              <Show when={workspaceMounted()} fallback={<div class="flex h-full items-center justify-center"><Placeholder state="loading" title={artifactCopy().loading} /></div>}>
+              <ArtifactWorkspace onEditTask={(task, repair) => void editScheduledTask(task, repair)} onOpenView={openContextView} project={activeConversationProject()} conversationId={chat.activeConversationId()} controller={artifactWorkspace} userId={props.userId} refreshKey={filesRefreshKey()} menuItems={contextMenuItems()} />
+              </Show>
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>
         </AppWorkspace.Content>

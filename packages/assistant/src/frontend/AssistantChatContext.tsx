@@ -27,7 +27,7 @@ import {
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
 } from "./AssistantContextContent";
-import { AssistantTasksView, formatAssistantTaskSchedule } from "./AssistantTasksDialog";
+import { AssistantTasksView, assistantTaskTitle, formatAssistantTaskSchedule } from "./AssistantTasksDialog";
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
@@ -48,7 +48,7 @@ export { splitAssistantConversationSources } from "./assistant-context";
 
 const CONTEXT_PREVIEW_LIMIT = 3;
 export type ContextCategory = "apps" | "files" | "sources" | "knowledge" | "tasks";
-export type ContextView = { context?: { conversationId: string; category: ContextCategory; project?: AiProject | null }; file?: { conversationId: string; path: string }; key: string; title: string; render: () => JSX.Element };
+export type ContextView = { task?: { id: string }; context?: { conversationId: string; category: ContextCategory; project?: AiProject | null }; file?: { conversationId: string; path: string }; key: string; title: string; render: () => JSX.Element };
 type ContextNavigation = {
   onOpenView?: (view: ContextView) => void;
   category?: ContextCategory;
@@ -166,6 +166,7 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
     const file = selected;
     props.onOpenView({ file: file.scope === "chat" ? { conversationId: props.state.context()!.chat.chatId, path: file.path } : undefined, key: `${props.state.context()!.chat.chatId}:${file.id}`, title: file.displayName ?? file.path.split("/").pop()!, render: () => <FileView previewPreferencesKey="assistant.csv-preview" file={{ path: file.path }} load={() => file.source.read(file.path)} downloadHref={file.source.downloadHref?.(file.path)} /> });
   };
+  const openTask = (task: AssistantChatTask) => props.onOpenView?.({ task: { id: task.id }, key: `task:${task.id}`, title: assistantTaskTitle(task), render: () => null });
   const overview = (category: ContextCategory, title: string) => {
     const context = props.state.context();
     if (!context || !props.onOpenView) return;
@@ -452,20 +453,20 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
               </AssistantContextSection>
             </Show>
 
-            <Show when={props.category === "tasks"}><AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} /></Show>
+            <Show when={props.category === "tasks"}><AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} onOpenTask={props.onOpenView ? openTask : undefined} /></Show>
             <Show when={!props.category && section("tasks") && value().chat.tasks[0]}>
               {(task) => {
                 const status = () => taskStatus(task(), text);
                 return (
                   <AssistantContextSection title={text("Scheduled")}>
                     <AssistantContextRows>
-                      <AssistantContextRow title={task().prompt} description={formatAssistantTaskSchedule(task(), locale())}
-                        onClick={props.onOpenView ? () => overview("tasks", text("Scheduled tasks")) : undefined}
+                      <AssistantContextRow title={assistantTaskTitle(task())} description={formatAssistantTaskSchedule(task(), locale())}
+                        onClick={props.onOpenView ? () => openTask(task()) : undefined}
                         trailing={<StatusBadge label={status().label} tone={status().tone} variant="text" />} />
                       <Show when={!props.category && value().chat.tasks.length > 1}>
                         <AssistantContextViewAll
                           onClick={() =>
-                            props.onOpenView ? overview("tasks", text("Scheduled tasks")) : void prompts.dialog<void>(() => <AssistantLiveProvider value={live}><AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} /></AssistantLiveProvider>, {
+                            props.onOpenView ? overview("tasks", text("Scheduled tasks")) : void prompts.dialog<void>(() => <AssistantLiveProvider value={live}><AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} onOpenTask={props.onOpenView ? openTask : undefined} /></AssistantLiveProvider>, {
                               title: text("Scheduled tasks"),
                               icon: "ti ti-calendar-time",
                               size: "large",
