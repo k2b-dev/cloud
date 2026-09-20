@@ -165,6 +165,9 @@ if (process.argv.includes("--bootstrap")) {
     const packageRoot = join(root, "packages/grids");
     const all = [...new Bun.Glob("{src,scripts,test}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
     const phases = [
+      // The outbox reconciler claims database-wide work, so test it before other suites enqueue events.
+      // This suite owns its Sync lifecycle for the live burst test.
+      { name: "outbox", files: special.slice(6), flags: [] },
       {
         name: "workflow-concurrency",
         files: workflowConcurrency,
@@ -181,9 +184,6 @@ if (process.argv.includes("--bootstrap")) {
           .map((file) => resolve(root, file)),
         flags: ["--timeout", "30000"],
       },
-      // The outbox reconciler claims database-wide work, so test it before other suites enqueue events.
-      // This suite owns its Sync lifecycle for the live burst test.
-      { name: "outbox", files: special.slice(6), flags: [] },
       {
         name: "database-and-standard",
         files: all.filter(
