@@ -1,0 +1,17 @@
+diff --git a/dist/ods/reader.mjs b/dist/ods/reader.mjs
+index 6d01bfbc41191ca0c6a57e4a108f76ef7b2b51d2..ac418e90f1b3cf936aedeb9c061acc0908f009ec 100644
+--- a/dist/ods/reader.mjs
++++ b/dist/ods/reader.mjs
+@@ -30,6 +30,12 @@ function findChildren(el, localName) {
+ 		if (typeof child === "string") continue;
+ 		const local = child.local || child.tag;
+ 		if (local === localName) result.push(child);
++		// ODF row containers preserve document order and may be nested.
++		// Do not descend into cells, where an embedded table is separate data.
++		else if (localName === "table-row" &&
++			(local === "table-row-group" || local === "table-header-rows" || local === "table-rows")) {
++			for (const row of findChildren(child, localName)) result.push(row);
++		}
+ 	}
+ 	return result;
+ }

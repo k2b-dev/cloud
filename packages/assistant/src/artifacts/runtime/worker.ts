@@ -2,7 +2,7 @@ import { createPdf } from "./pdf";
 import { createAnalyticsUi } from "./analytics-ui";
 import { createHttp, secret } from "./http";
 import { createWork } from "./work";
-import { excel } from "./documents";
+import { excel, ods } from "./documents";
 import { z } from "zod";
 import Papa from "papaparse";
 import { datev, sepa, camt, einvoice } from "@k2b/stdlib/finance";
@@ -179,6 +179,7 @@ const api = {
   pdf: createPdf(rpc),
   sheet: {
     openExcel: excel.open,
+    openOds: ods.open,
     fromCsv: async (file: File | string, options: { delimiter?: string; encoding?: string } = {}) => {
       let content: string;
       try { content = typeof file === "string" ? file : new TextDecoder(options.encoding ?? "utf-8",{fatal:true}).decode(await file.arrayBuffer()); }

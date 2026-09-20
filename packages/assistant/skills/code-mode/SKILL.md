@@ -59,7 +59,7 @@ supported surface; links within references add related workflows when needed.
 | Task / API | Read |
 | --- | --- |
 | Source entry, input/output files, pickers, CSV, IDs | [Runtime and files](references/runtime.md) |
-| Inspect PDF pages, read PDF text/positions or XLSX cells, write XLSX | [Documents](references/documents.md) |
+| Inspect PDF pages, read PDF text/positions or XLSX/ODS cells | [Documents](references/documents.md) |
 | Generate a PDF, embed attachments, combine invoice HTML and XML | [PDF generation](references/pdf.md) |
 | Exact amounts, taxes, allocation, localized money | [Money](references/money.md) |
 | Export DATEV bookings or SEPA transfers | [DATEV and SEPA](references/finance.md) |

@@ -140,6 +140,7 @@
   "license": "AGPL-3.0-or-later",
   "trustedDependencies": [],
   "patchedDependencies": {
+    "hucre@1.1.0": "patches/hucre@1.1.0.patch",
     "@valentinkolb/filegate@2.4.0": "patches/@valentinkolb%2Ffilegate@2.4.0.patch"
   }
 }

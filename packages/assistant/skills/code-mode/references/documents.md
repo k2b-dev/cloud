@@ -1,4 +1,4 @@
-# Local PDF and Excel documents
+# Local PDF and spreadsheet documents
 
 Use this path when original documents must stay on the device. User apps select
 files with their picker; parsing runs in the isolated worker, without upload or
@@ -83,15 +83,43 @@ Formulas are never executed. Only cached values are read; missing/error caches
 may appear empty. Macros and external workbook links are not executed or fetched.
 Legacy XLS/XLSB and Excel writing are not supported. Export with `sheet.toCsv`.
 
+## OpenDocument spreadsheets (ODS, reading only)
+
+`await sheet.openOds(file: Blob)` returns the same workbook interface as
+`openExcel`: `sheetNames`, synchronous `readSheet(name)`, and `close()`.
+Read sheets as arrays of cells; the header row is included. Empty and duplicate
+headings remain unchanged. Missing sheets and reads after close throw.
+
+```js
+const workbook = await sheet.openOds(await files.read("/sales.ods"));
+try {
+  const rows = workbook.readSheet(workbook.sheetNames[0]);
+  console.log(rows.slice(0, 5));
+} finally {
+  workbook.close();
+}
+```
+
+Values are strings, JavaScript numbers, booleans, dates, or `null`. Currency
+values are numeric amounts; percentages are fractions. Durations remain ISO
+duration strings. Grouped rows and repeated rows/cells preserve their positions;
+trailing empty rows/cells may be omitted. Covered cells in merged ranges are
+`null`. Only cached formula results are read; formulas and external links are
+never executed. A formula without a cached value is `null`.
+
+ODS has no `numbers: "string"` option. Do not assume arbitrary decimal precision
+or exact integers beyond JavaScript's safe range. Formatting, formulas, and merge
+metadata are not exposed. Password-protected ODS and ODS writing are unsupported.
+
 ## Large folders
 
 `files.openFolder()` returns file references, including thousands of files.
 Use `files.path(file)` for the relative path, not the basename. Call `.text()`,
-`.arrayBuffer()`, `pdf.open`, or `sheet.openExcel` only as needed. Process one
+`.arrayBuffer()`, `pdf.open`, `sheet.openExcel`, or `sheet.openOds` only as needed. Process one
 workbook/PDF at a time and close it in `finally`. Never use `Promise.all` over a
 whole accounting folder or retain every parsed workbook.
 
-A document parser accepts at most 64 MiB per input document. XLSX expanded ZIP
+A document parser accepts at most 64 MiB per input document. XLSX/ODS expanded ZIP
 entries are checked against 128 MiB before parsing. These working-set budgets
 apply to each document, not the selected folder. This is not streaming XML/PDF
 parsing or a guarantee against all browser memory pressure. Split oversized

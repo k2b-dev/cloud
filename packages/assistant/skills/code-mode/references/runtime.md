@@ -55,7 +55,7 @@ put directory separators in output names.
 
 ## PDF and office documents
 
-For local PDF and XLSX processing, read [Documents](documents.md). These APIs
+For local PDF, XLSX, and ODS processing, read [Documents](documents.md). These APIs
 parse original files in the worker without upload. Other office formats may
 need the normal chat extraction workflow only when uploading is acceptable.
 

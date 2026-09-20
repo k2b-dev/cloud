@@ -96,6 +96,7 @@
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
         "hono": "catalog:",
+        "hucre": "1.1.0",
         "ibantools": "4.5.4",
         "papaparse": "5.7.0",
         "pdf-lib": "1.17.1",
@@ -712,6 +713,7 @@
     },
   },
   "patchedDependencies": {
+    "hucre@1.1.0": "patches/hucre@1.1.0.patch",
     "@valentinkolb/filegate@2.4.0": "patches/@valentinkolb%2Ffilegate@2.4.0.patch",
   },
   "overrides": {
@@ -1935,6 +1937,8 @@
     "http_ece": ["http_ece@1.2.0", "", {}, "sha512-JrF8SSLVmcvc5NducxgyOrKXe3EsyHMgBFgSaIUGmArKe+rwr0uphRkRXvwiom3I+fpIfoItveHrfudL8/rxuA=="],
 
     "https-proxy-agent": ["https-proxy-agent@7.0.6", "", { "dependencies": { "agent-base": "^7.1.2", "debug": "4" } }, "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw=="],
+
+    "hucre": ["hucre@1.1.0", "", { "bin": { "hucre": "./dist/cli.mjs" } }, "sha512-3HROYLWzejzhMKdGVrBuU4UWuDleVVQwpjFeYwTHzXLN8o2kptOkPS1Yq04xL5kQVwF6ELM1R2myuWW8WNu1fQ=="],
 
     "ibantools": ["ibantools@4.5.4", "", {}, "sha512-6jX1gh4aH6XH+o0ey+wtkMTzkcvsEta7DakIOZSng9voZYpMw3U+gK1+tZChk3aRcPcloEt0NOzksjaRZiqXbw=="],
 
