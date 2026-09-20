@@ -21,7 +21,7 @@ import {
   type ToastHandle,
   toast,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { type BaseSummary, type BasesResult, type BrowseOptions, type DirectoryResult, type EditorInfo, type EntryResult, ErrorSchema, type FileEntry,
 } from "../contracts";
@@ -125,7 +125,6 @@ export default function Browser(props: {
   let mounted = false;
   let syncing = false;
   const locationKey = () => JSON.stringify([baseIdentity(), folder(), props.after ?? "", props.directory.query ?? "", activeBrowse()]);
-  let previousBase = baseIdentity();
   let location = locationKey();
   let lastSource = props.source;
 
@@ -171,7 +170,7 @@ export default function Browser(props: {
             await loadBranch(path, undefined, background);
             return;
           }
-          if (!signal.aborted && baseIdentity() === location) setBranch(path, { items: Number(response.status) === 403 || Number(response.status) === 404 ? [] : previous?.items ?? [], next: null, loading: false, error: true });
+          if (!signal.aborted && baseIdentity() === location && JSON.stringify(browseQuery(activeBrowse())) === queryKey) setBranch(path, { items: Number(response.status) === 403 || Number(response.status) === 404 ? [] : previous?.items ?? [], next: null, loading: false, error: true });
           return;
         }
         const page = await response.json();
@@ -183,7 +182,7 @@ export default function Browser(props: {
       }
       setBranch(path, { items, next: next ?? null, loading: false, error: false, pages });
     } catch {
-      if (signal.aborted || baseIdentity() !== location) return;
+      if (signal.aborted || baseIdentity() !== location || JSON.stringify(browseQuery(activeBrowse())) !== queryKey) return;
       setBranch(path, { items: previous?.items ?? [], next: previous?.next ?? null, loading: false, error: true, pages: previous?.pages });
     } finally {
       if (branchRequests.get(key) === request) branchRequests.delete(key);
@@ -214,23 +213,37 @@ export default function Browser(props: {
     if (expanded && !branch(path)) void loadBranch(path);
   };
   const toggleBranch = (row: FileRow) => expandFolder(row.path, !expandedFolders().has(row.path));
-  createEffect(on(() => props.directory, () => {
-    for (const request of branchRequests.values()) request.abort();
-    branchRequests.clear();
-    setBranches({});
-  }, { defer: true }));
-  createEffect(() => {
-    if (view().view !== "tree" || searching()) return;
-    const current = folder();
-    const { items, next } = props.directory;
-    // Only navigation and a fresh listing touch the tree; branch loads must not re-run this and undo the user's collapses.
-    untrack(() => {
-      const existing = branch(current);
-      if (!existing || existing.items !== items || existing.next !== next) setBranch(current, { items, next, loading: false, error: false });
-      setExpandedFolders((set) => new Set<string>([...set, ...ancestors(current), current]));
-      for (const path of new Set(["", ...ancestors(current), ...expandedFolders()])) if (path !== current && !branch(path)) void loadBranch(path);
-    });
-  });
+  let treeContext = "";
+  let treeBase = baseIdentity();
+  let invalidateBranches = false;
+  createEffect(on(
+    () => [props.directory, view().view, searching(), baseIdentity(), JSON.stringify(browseQuery(activeBrowse()))] as const,
+    ([directory, mode, search, identity, query]) => {
+      // One owner resets and seeds the tree. Separate reset/populate effects can
+      // erase a newly seeded branch and abort its replacement request.
+      const context = JSON.stringify([identity, query]);
+      if (context !== treeContext || invalidateBranches) {
+        for (const request of branchRequests.values()) request.abort();
+        branchRequests.clear();
+        setBranches({});
+        if (identity !== treeBase) setExpandedFolders(new Set<string>());
+        treeBase = identity;
+        treeContext = context;
+        invalidateBranches = false;
+      }
+      if (mode !== "tree" || search) return;
+      const current = directory.path;
+      // The authoritative navigation snapshot supersedes an in-flight branch read.
+      const key = branchKey(current);
+      branchRequests.get(key)?.abort();
+      branchRequests.delete(key);
+      setBranch(current, { items: directory.items, next: directory.next, loading: false, error: false });
+      setExpandedFolders(set => new Set<string>([...set, ...ancestors(current), current]));
+      for (const path of new Set(["", ...ancestors(current), ...expandedFolders()])) {
+        if (path !== current && !branch(path)) void loadBranch(path);
+      }
+    },
+  ));
   // Rows keep their identity across recomputes so open thumbnails are not re-requested on every expand.
   let previousRows = new Map<string, FileRow>();
   const rows = createMemo<FileRow[]>(() => {
@@ -267,7 +280,15 @@ export default function Browser(props: {
     // A failed root listing still shows the current folder instead of nothing.
     const root = folder() ? branch("") : undefined;
     walk(folder() ? (root?.error ? props.directory.items : (root?.items ?? [])) : props.directory.items, 0);
-    if (root?.next && !root.error) push({ name: "", path: " more", directory: true, size: 0, modified: "", more: true, depth: 0 });
+    // A pending, filtered or paginated ancestor must not hide an already loaded
+    // current folder. Until its tree path is available, show its direct contents.
+    const rooted = !folder() || out.some(row => row.path === folder());
+    if (!rooted) {
+      out.length = 0;
+      reuse.clear();
+      walk(props.directory.items, 0);
+    }
+    if (rooted && root?.next && !root.error) push({ name: "", path: " more", directory: true, size: 0, modified: "", more: true, depth: 0 });
     previousRows = reuse;
     return out;
   });
@@ -298,13 +319,6 @@ export default function Browser(props: {
       setExternalPath(requestedFile());
       if (!props.preserveSelection || next !== location) selection.replace(requestedFile() ? [requestedFile()!] : []);
       syncing = false;
-      if (baseIdentity() !== previousBase) {
-        for (const request of branchRequests.values()) request.abort();
-        branchRequests.clear();
-        previousBase = baseIdentity();
-        setBranches({});
-        setExpandedFolders(new Set<string>());
-      }
       if (next !== location) {
         setOpening(null);
         setSelecting(false);
@@ -325,9 +339,7 @@ export default function Browser(props: {
   const busy = () => !!props.pending || download.loading() || upload.loading() || action.loading();
   const refresh = async (selectPath?: string | null) => {
     if (!mounted || (actionLocation && actionLocation !== locationKey())) return;
-    for (const request of branchRequests.values()) request.abort();
-    branchRequests.clear();
-    setBranches({});
+    invalidateBranches = true;
     await props.onChanged?.(selectPath);
   };
   const openFolder = (path: string) => {
@@ -1059,6 +1071,14 @@ export default function Browser(props: {
               </InlineGuidance>
             </Show>
           </header>
+          <Show when={view().view === "tree" && !searching() && folder() && (!branch("") || branch("")?.loading || branch("")?.error)}>
+            <InlineGuidance>
+              {branch("")?.error ? b().treeLoadFailed : t().loadingFiles}
+              <Show when={branch("")?.error}>
+                <Button size="xs" variant="text" onClick={() => void loadBranch("")}>{b().retry}</Button>
+              </Show>
+            </InlineGuidance>
+          </Show>
           <Show
             when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash))}
             fallback={
@@ -1106,7 +1126,7 @@ export default function Browser(props: {
                         onContextMenu={focusContext}
                         onRowClick={rowClick}
                       />
-                      <Show when={!props.directory.items.length && view().view !== "tree"}>
+                      <Show when={!props.directory.items.length && !rows().length}>
                         <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
                       </Show>
                       <Show when={filtered()}>

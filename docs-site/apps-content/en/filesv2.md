@@ -33,7 +33,10 @@ folders open on click (the opened folder's icon becomes a spinner, a leading
 info button. **List**, **Grid**, and **Tree** views and the grid tile size are remembered
 per storage location in a cookie. Tree shows the storage from its root with the current
 folder highlighted; clicking a folder name makes it current, clicking its icon
-expands or collapses it. **Select** next to the entry count switches on
+expands or collapses it. Moving between folders preserves loaded tree branches.
+While ancestors load, or if their request fails, the current folder remains
+visible; a failed tree request offers a retry. Sorting, filtering, or changing
+the storage location rebuilds the tree with the new context. **Select** next to the entry count switches on
 checkboxes in every view. Thumbnails are requested with bounded concurrency and
 retried, because Filegate rejects parallel renders beyond its capacity.
 Storage, folder, page, single selection, search query, and scope stay in the

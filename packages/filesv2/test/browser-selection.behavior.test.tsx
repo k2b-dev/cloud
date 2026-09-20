@@ -168,3 +168,94 @@ test("tree branches cannot cross full cloud base identities or accept a supersed
   await flush();
   expect(branchRequests.at(-1)).not.toBe(current);
 });
+
+test("tree navigation keeps loaded ancestors and current files through folder changes and refreshes", async () => {
+  const dom = createDomTestHarness();
+  const { default: Browser } = await import("../src/frontend/Browser");
+  const folders = ["Bilder", "Finanzen"].map(name => ({ name, path: name, directory: true, size: 0, modified: "2026-01-01T00:00:00Z" }));
+  const root = { ...initial, items: folders };
+  const [directory, setDirectory] = createSignal<DirectoryResult>(root);
+  const dispose = render(() => <Browser directory={directory()} bases={[initial.base]} cloudUrl="https://cloud.test"
+    source={`/app/filesv2?base=home&path=${directory().path}`} onNavigate={async () => {}} />, dom.root);
+  cleanup = () => { dispose(); dom.cleanup(); };
+  await flush();
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+  await flush();
+  const names = () => [...dom.root.querySelectorAll(".filesv2-list__name")].map(node => node.textContent);
+  for (const path of ["Bilder", "Finanzen", "Bilder"]) {
+    setDirectory({ ...initial, path, items: [{ ...initial.items[0]!, name: `${path}.txt`, path: `${path}/${path}.txt` }] });
+    await flush();
+    expect(names()).toContain("Bilder");
+    expect(names()).toContain("Finanzen");
+    expect(names()).toContain(`${path}.txt`);
+    expect(branchRequests).toHaveLength(0);
+  }
+  setDirectory({ ...directory(), items: [{ ...initial.items[0]!, name: "External.txt", path: "Bilder/External.txt" }] });
+  await flush();
+  expect(names()).toContain("External.txt");
+  expect(names()).not.toContain("Bilder.txt");
+  expect(names()).toContain("Finanzen.txt");
+});
+
+test("a slow or failed tree root never hides the loaded folder and can be retried", async () => {
+  const dom = createDomTestHarness();
+  const { default: Browser } = await import("../src/frontend/Browser");
+  const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
+  const dispose = render(() => <Browser directory={current} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />, dom.root);
+  cleanup = () => { dispose(); dom.cleanup(); };
+  await flush();
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+  await flush();
+  expect(dom.root.querySelector(".filesv2-list__name")?.textContent).toBe("A.txt");
+  expect(dom.root.textContent).toContain("Loading files");
+  branchRequests[0]!.resolve(Response.json({ code: "unavailable", message: "Offline" }, { status: 503 }));
+  await flush();
+  expect(dom.root.textContent).toContain("The folder tree could not be loaded");
+  expect(dom.root.querySelector(".filesv2-list__name")?.textContent).toBe("A.txt");
+  [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Try again")!.click();
+  await flush();
+  // The current folder can also be absent from a filtered or paginated root page.
+  branchRequests[1]!.resolve(Response.json({ ...initial, items: [], next: "root-page-2" }));
+  await flush();
+  expect(dom.root.querySelector(".filesv2-list__name")?.textContent).toBe("A.txt");
+  expect(dom.root.textContent).not.toContain("Loading files");
+  expect(dom.root.textContent).not.toContain("The folder tree could not be loaded");
+});
+
+test("tree query changes reject late ancestor replies and navigation supersedes a pending child", async () => {
+  const dom = createDomTestHarness();
+  const { default: Browser } = await import("../src/frontend/Browser");
+  const folder = { name: "Bilder", path: "Bilder", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
+  const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
+  const [directory, setDirectory] = createSignal<DirectoryResult>(current);
+  const [source, setSource] = createSignal("/app/filesv2?base=home&path=Bilder&sort=name");
+  const dispose = render(() => <Browser directory={directory()} source={source()} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />, dom.root);
+  cleanup = () => { dispose(); dom.cleanup(); };
+  await flush();
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+  await flush();
+  const old = branchRequests[0]!;
+  setSource("/app/filesv2?base=home&path=Bilder&sort=modified&order=desc");
+  await flush();
+  expect(old.signal.aborted).toBe(true);
+  const fresh = branchRequests.at(-1)!;
+  fresh.resolve(Response.json({ ...initial, items: [folder] }));
+  await flush();
+  old.resolve(Response.json({ ...initial, items: [{ ...folder, name: "Stale root", path: "stale" }] }));
+  await flush();
+  expect(dom.root.textContent).not.toContain("Stale root");
+  expect(dom.root.querySelectorAll(".filesv2-list__row")).toHaveLength(2);
+  const other = { ...folder, name: "Finanzen", path: "Finanzen" };
+  setDirectory({ ...initial, items: [folder, other] });
+  await flush();
+  const row = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find(node => node.querySelector(".filesv2-list__name")?.textContent === "Finanzen")!;
+  row.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.click();
+  await flush();
+  const child = branchRequests.at(-1)!;
+  setDirectory({ ...initial, path: "Finanzen", items: [{ ...initial.items[0]!, name: "Latest.txt", path: "Finanzen/Latest.txt" }] });
+  await flush();
+  expect(child.signal.aborted).toBe(true);
+  child.resolve(Response.json({ ...initial, path: "Finanzen", items: [] }));
+  await flush();
+  expect(dom.root.textContent).toContain("Latest.txt");
+});
