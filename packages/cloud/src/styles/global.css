@@ -64,6 +64,12 @@
   );
 }
 
+/* Full-page workspaces own their inner scrolling. Stop iframe scroll gestures
+   from rubber-banding the outer viewport or triggering pull-to-refresh. */
+html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
+  overscroll-behavior: none;
+}
+
 .cloud-app-canvas > :is(.layout-rail, .layout-shell-content) {
   gap: var(--ui-space-shell);
 }

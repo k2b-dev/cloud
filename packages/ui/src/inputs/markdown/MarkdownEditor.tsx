@@ -34,11 +34,15 @@ export type MarkdownEditorProps = ValueFieldProps<string> & {
   abbreviations?: Record<string, string>;
   completions?: readonly Completion[];
   showStats?: boolean;
-  variant?: "default" | "paper";
+  variant?: "default" | "paper" | "embedded";
   fill?: boolean;
+  /** Groups save and close at the end of the toolbar. The caller owns navigation and unsaved-change confirmation. */
+  onClose?: () => void;
   onSave?: () => void;
   saveDisabled?: boolean;
   saving?: boolean;
+  /** Shows a successful-save check. The caller clears it after a brief delay or the next edit. */
+  saved?: boolean;
   toolbarTrailing?: JSX.Element;
 };
 
@@ -461,7 +465,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
 
   const saveControls = (): JSX.Element => (
     <>
-      {props.toolbarTrailing}
       <Show when={props.onSave}>
         <button
           type="button"
@@ -473,7 +476,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => props.onSave?.()}
         >
-          <i class={props.saving ? "ti ti-loader-2 k2b-spin" : "ti ti-device-floppy"} aria-hidden="true" />
+          <i class={props.saving ? "ti ti-loader-2 k2b-spin" : props.saved ? "ti ti-check" : "ti ti-device-floppy"} aria-hidden="true" />
         </button>
       </Show>
     </>
@@ -497,7 +500,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
         aria-label={!props.label ? props["aria-label"] : undefined}
         data-disabled={props.disabled ? "true" : undefined}
         data-invalid={error() ? "true" : undefined}
-        data-variant={props.variant === "paper" ? "paper" : undefined}
+        data-variant={props.variant === "default" ? undefined : props.variant}
         data-fill={props.fill ? "true" : undefined}
         style={{
           "--k2b-editor-lines": String(props.lines ?? 6),
@@ -505,12 +508,34 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
         onKeyDown={(event) => {
           if (props.onSave && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
             event.preventDefault();
-            if (!props.saveDisabled && !props.saving) props.onSave();
+            if (!props.disabled && !props.saveDisabled && !props.saving) props.onSave();
           }
         }}
       >
         <Show when={!props.noToolbar}>
-          <Toolbar textarea={textareaSignal} activeFormats={activeFormats} disabled={props.disabled} trailing={saveControls()} />
+          <Toolbar
+            textarea={textareaSignal}
+            activeFormats={activeFormats}
+            disabled={props.disabled}
+            trailing={
+              <>
+                {props.toolbarTrailing}
+                {saveControls()}
+                <Show when={props.onClose}>
+                  <button
+                    type="button"
+                    class="k2b-markdown-editor__tool"
+                    title={messages().close}
+                    aria-label={messages().close}
+                    tabIndex={props.disabled ? 0 : -1}
+                    onClick={() => props.onClose?.()}
+                  >
+                    <i class="ti ti-x" aria-hidden="true" />
+                  </button>
+                </Show>
+              </>
+            }
+          />
         </Show>
         <div class="k2b-markdown-editor__surface">
           <Show when={!localValue() && props.placeholder}>

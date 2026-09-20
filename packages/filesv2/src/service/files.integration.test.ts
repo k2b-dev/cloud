@@ -11,6 +11,7 @@ import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
 import { entryRefId } from "../resource-ref";
 import { createFilesService } from ".";
+import { createTemplateService } from "./templates";
 
 const url = process.env.FILESV2_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;
@@ -94,7 +95,6 @@ suite("Files service and durable bindings", () => {
       };
       // Direct leases: bytes bypass the API and land on the storage node itself.
       if (req.pathname === "/hosting/discovery") return new Response(DISCOVERY);
-      if (req.pathname === "/cool/convert-to/png") return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { headers: { "content-type": "image/png" } });
       if (parts[1] === "signed") {
         const key = `${parts[2]}:${decodeURIComponent(parts.slice(3).join("/"))}`;
         return nodes.has(key) ? new Response(contents.get(key) ?? "") : new Response("", { status: 404 });
@@ -463,12 +463,16 @@ suite("Files service and durable bindings", () => {
       !["/cloud_filesv2_backend_test", "/cloud_filesv2_transfer_test"].includes(new URL(url).pathname)
     )
       throw new Error("Dedicated Filesv2 backend database required");
+    await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
+    await sql`DO $$ BEGIN CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, group_id uuid, service_account_id uuid, authenticated_only boolean NOT NULL DEFAULT false, permission auth.permission_level NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`.simple();
     await migrate();
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await sql`CREATE SCHEMA IF NOT EXISTS audit`.simple();
     await sql`CREATE TABLE IF NOT EXISTS audit.events(id bigserial primary key,action text,outcome text,actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
+    await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
@@ -494,7 +498,7 @@ suite("Files service and durable bindings", () => {
     config.collabora = { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
     archives.length = 0;
     lostCommitResponse = false;
-    await sql`TRUNCATE filesv2.recent,filesv2.favorites,filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
+    await sql`TRUNCATE filesv2.templates,auth.access,filesv2.recent,filesv2.favorites,filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await set(
       "linux.identity_config",
       JSON.stringify({ enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
@@ -942,6 +946,7 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs/notes.txt", 1001, 2001, "0640", false);
     await expect(service.editor(actor, { baseId, path: "Docs/notes.txt" })).rejects.toMatchObject({ code: "editor_unsupported" });
     const launch = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    if (launch.kind === "markdown") throw new Error("Expected office editor");
     expect(launch.canWrite).toBe(true);
     expect(launch.action.startsWith("http://localhost:9980/browser/abc/cool.html?WOPISrc=")).toBe(true);
     const wopiSrc = decodeURIComponent(launch.action.split("WOPISrc=")[1]!);
@@ -957,6 +962,7 @@ suite("Files service and durable bindings", () => {
     // Saving a group-writable file owned by someone else keeps that owner and mode.
     directory("freeipa", "users/alice/Docs/Minutes.odt", 999, 2001, "0664", false);
     const shared = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    if (shared.kind === "markdown") throw new Error("Expected office editor");
     expect(shared.canWrite).toBe(true);
     await service.editorSave(shared.token, fileId, { read: async () => new Blob(["group edit"]), timestamp: null });
     expect(nodes.get("freeipa:users/alice/Docs/Minutes.odt")).toMatchObject({ uid: 999, gid: 2001, mode: "0664" });
@@ -968,6 +974,7 @@ suite("Files service and durable bindings", () => {
     // Rights are read at call time: a file that becomes group-readable only opens read-only and refuses saves.
     directory("freeipa", "users/alice/Docs/Minutes.odt", 999, 2001, "0640", false);
     const readOnly = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    if (readOnly.kind === "markdown") throw new Error("Expected office editor");
     expect(readOnly.canWrite).toBe(false);
     expect((await service.editorFileInfo(readOnly.token, fileId)).UserCanWrite).toBe(false);
     await expect(service.editorSave(readOnly.token, fileId, { read: async () => new Blob(["x"]), timestamp: null })).rejects.toMatchObject({ code: "forbidden" });
@@ -1004,7 +1011,7 @@ suite("Files service and durable bindings", () => {
     await expect(service.restoreVersion(actor, { baseId, path: "Docs/shared.txt", id: "v1" })).rejects.toMatchObject({ code: "forbidden" });
     await expect(service.versions(actor, { baseId, path: "Docs/shared.txt" })).resolves.toEqual([]);
   });
-  test("recent and favorites point at bindings the user can still reach, and document previews render through Collabora", async () => {
+  test("recent and favorites point at bindings the user can still reach", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/Docs");
@@ -1023,10 +1030,7 @@ suite("Files service and durable bindings", () => {
     expect(await service.recent(actor)).toEqual([]);
     expect((await service.setFavorite(actor, { baseId, path: "Docs", favorite: false })).favorite).toBe(false);
     expect(await service.favorites(actor)).toEqual([]);
-    await expect(service.documentPreview(actor, { baseId, path: "Docs/plan2.odt" })).rejects.toMatchObject({ code: "editor_disabled" });
     config.collabora = { url: "http://localhost:9980", internalUrl: "http://collabora:9980", wopiOrigin: "", documentFormat: "odf" };
-    expect(new Uint8Array(await service.documentPreview(actor, { baseId, path: "Docs/plan2.odt" }))[1]).toBe(0x50);
-    await expect(service.documentPreview(actor, { baseId, path: "Docs/notes.txt" })).rejects.toMatchObject({ code: "preview_unsupported" });
     // Favorites of a base the user lost are hidden, not shown as reachable entries.
     await service.setFavorite(actor, { baseId, path: "Docs/notes.txt", favorite: true });
     await sql`UPDATE filesv2.bases SET lifecycle='archived' WHERE root='freeipa' AND path='users/alice'`;
@@ -1571,9 +1575,45 @@ suite("Files service and durable bindings", () => {
     config.collabora = { url: "http://localhost:9980", internalUrl: "http://collabora:9980", wopiOrigin: "http://gateway:3000", documentFormat: "odf" };
     const baseId = (await service.bases(actor)).items[0]!.id;
     const launch = await service.editor(actor, { baseId, path: "Minutes.odt" });
+    if (launch.kind === "markdown") throw new Error("Expected office editor");
     const fileId = decodeURIComponent(launch.action.split("WOPISrc=")[1]!).split("/").at(-1)!;
     return { actor, root, uid, gid, path, baseId, launch, fileId, key: `${root}:${path}` };
   };
+  test("WOPI rejects sub-millisecond stale saves before reading and preserves explicit overwrite", async () => {
+    const fixture = await editorFixture("local");
+    const node = nodes.get(fixture.key)!;
+    node.modified = "2026-09-20T10:00:00.123457789Z";
+    expect((await service.editorFileInfo(fixture.launch.token, fixture.fileId)).LastModifiedTime).toBe("2026-09-20T10:00:00.123457Z");
+    let reads = 0;
+    for (const timestamp of ["2026-09-20T10:00:00.123456Z", "", "invalid"]) {
+      expect(await service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => { reads++; return new Blob(["stale"]); } })).toEqual({ conflict: true });
+    }
+    expect(reads).toBe(0);
+    expect(contents.get(fixture.key)).toBe("original");
+    const saved = await service.editorSave(fixture.launch.token, fixture.fileId, { timestamp: null, read: async () => new Blob(["explicit overwrite"]) });
+    expect(saved).toHaveProperty("modified");
+    expect(contents.get(fixture.key)).toBe("explicit overwrite");
+    nodes.get(fixture.key)!.modified = "invalid";
+    await expect(service.editorFileInfo(fixture.launch.token, fixture.fileId)).rejects.toMatchObject({ code: "unavailable" });
+    await expect(service.editorSave(fixture.launch.token, fixture.fileId, { timestamp: "", read: async () => { reads++; return new Blob(["invalid"]); } })).rejects.toMatchObject({ code: "unavailable" });
+    expect(reads).toBe(0);
+  });
+
+  test("Cloud publications respect the shared root lock, release on failure, and retry safely", async () => {
+    const { withRootLock } = await import("../data/operations");
+    const fixture = await editorFixture("ipa");
+    const timestamp = (await service.editorFileInfo(fixture.launch.token, fixture.fileId)).LastModifiedTime;
+    const upload = await service.upload(fixture.actor, { baseId: fixture.baseId, path: "Minutes.odt", size: 0, onConflict: "overwrite", idempotencyKey: crypto.randomUUID() });
+    await withRootLock(fixture.root, async () => {
+      await expect(service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["busy"]) })).rejects.toMatchObject({ code: "operation_busy", status: 503 });
+      await expect(service.commitUpload(fixture.actor, { baseId: fixture.baseId, id: upload.id })).rejects.toMatchObject({ code: "operation_busy", status: 503 });
+      await expect(service.rename(fixture.actor, { baseId: fixture.baseId, path: "Minutes.odt", name: "Moved.odt" })).rejects.toMatchObject({ code: "operation_busy", status: 503 });
+      expect(contents.get(fixture.key)).toBe("original");
+    });
+    expect(await service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["retried"]) })).toHaveProperty("modified");
+    expect(contents.get(fixture.key)).toBe("retried");
+  });
+
   test("managed WOPI saves reject a concurrent write while reading the incoming document", async () => {
     const fixture = await editorFixture("local");
     const originalRevision = nodes.get(fixture.key)!.revision;
@@ -1587,7 +1627,7 @@ suite("Files service and durable bindings", () => {
     });
     expect(result).toEqual({ conflict: true });
     expect(contents.get(fixture.key)).toBe("concurrent document");
-    expect(directRequests.at(-1)?.precondition).toEqual({ ifMatch: originalRevision });
+    expect(directRequests).toHaveLength(0);
     expect(nodes.get(fixture.key)!.revision).not.toBe(originalRevision);
   });
   test("managed WOPI conditions remain bound between lease issuance and direct publication", async () => {
@@ -1633,4 +1673,108 @@ suite("Files service and durable bindings", () => {
     expect(directRequests.at(-1)?.precondition).toBeUndefined();
   });
 
+  test("Markdown opens without Collabora and conditional uploads reject stale drafts and changed retry intent", async () => {
+    const actor = await user("markdown", "local", true);
+    directory("cloud", "users/markdown");
+    await service.adopt(actor, { area: "cloud", kind: "users", identityId: id(actor) });
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const node = directory("cloud", "users/markdown/notes.md", 0, 0, "0600", false);
+    const launch = await service.editor(actor, { baseId, path: "notes.md" });
+    expect(launch.kind).toBe("markdown");
+    expect(launch.canWrite).toBe(true);
+    const key = crypto.randomUUID();
+    await expect(
+      service.upload(actor, { baseId, path: "notes.md", size: 0, onConflict: "overwrite", idempotencyKey: key, expectedRevision: "old" }),
+    ).rejects.toMatchObject({ code: "write_conflict" });
+    const opened = await service.upload(actor, {
+      baseId,
+      path: "notes.md",
+      size: 0,
+      onConflict: "overwrite",
+      idempotencyKey: key,
+      expectedRevision: node.revision,
+    });
+    await expect(
+      service.upload(actor, {
+        baseId,
+        path: "notes.md",
+        size: 0,
+        onConflict: "overwrite",
+        idempotencyKey: key,
+        expectedRevision: "changed",
+      }),
+    ).rejects.toMatchObject({ code: "upload_changed" });
+    directory("cloud", "users/markdown/notes.md", 0, 0, "0600", false);
+    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "write_conflict" });
+    expect(privateSession(opened.id).state).toBe("open");
+  });
+  test("template snapshots and grants are independent of source files and destination permissions", async () => {
+    const owner = await user("catalog-admin", "ipa", true);
+    await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${id(owner)}::uuid,'admins')`;
+    const reader = await user("catalog-reader", "ipa");
+    directory("freeipa", "users/catalog-admin");
+    directory("freeipa", "users/catalog-reader");
+    const sourceBase = (await service.bases(owner)).items[0]!.id;
+    const targetBase = (await service.bases(reader)).items[0]!.id;
+    directory("freeipa", "users/catalog-admin/protocol.md", 1001, 2001, "0600", false);
+    contents.set("freeipa:users/catalog-admin/protocol.md", "original template");
+    const templates = createTemplateService(service);
+    const subject = { type: "user" as const, userId: id(reader) };
+    const template = await templates.import(owner, {
+      name: "Protocol",
+      description: "Independent",
+      source: { baseId: sourceBase, path: "protocol.md" },
+    });
+    expect((await templates.list(reader, subject, { q: "" })).items).toHaveLength(0);
+    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    const grant = await templates.grant(owner, template.id, { type: "user", userId: id(reader) });
+    expect((await templates.list(reader, subject, { q: "pro" })).items.map((x) => x.id)).toEqual([template.id]);
+    nodes.delete("freeipa:users/catalog-admin/protocol.md");
+    contents.delete("freeipa:users/catalog-admin/protocol.md");
+    await templates.use(reader, subject, template.id, { baseId: targetBase, path: "copy.md" });
+    expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
+    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
+      status: 409,
+    });
+    await templates.replace(owner, template.id, { filename: "updated.md", content: Buffer.from("updated").toString("base64") });
+    expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
+    directory("freeipa", "users/catalog-reader/readonly", 999, 2001, "0550");
+    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "readonly/denied.md" })).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    await templates.revoke(owner, template.id, grant.id);
+    expect((await templates.list(reader, subject, { q: "" })).items).toHaveLength(0);
+    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "denied.md" })).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    await expect(templates.upload(reader, { name: "Denied", description: "", filename: "x", content: "" })).rejects.toThrow();
+    const [parent] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider) VALUES('catalog-parent','local') RETURNING id`;
+    const [child] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider) VALUES('catalog-child','local') RETURNING id`;
+    await sql`INSERT INTO auth.group_groups_v2(parent_group_id,child_group_id) VALUES(${parent!.id}::uuid,${child!.id}::uuid)`;
+    await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${id(reader)}::uuid,${child!.id}::uuid)`;
+    await templates.grant(owner, template.id, { type: "group", groupId: parent!.id });
+    expect((await templates.list(reader, subject, { q: "" })).items).toHaveLength(1);
+    await templates.use(reader, subject, template.id, { baseId: targetBase, path: "nested.md" });
+    expect(contents.get("freeipa:users/catalog-reader/nested.md")).toBe("updated");
+    await sql`DELETE FROM auth.group_groups_v2 WHERE parent_group_id=${parent!.id}::uuid`;
+    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "no-membership.md" })).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    await templates.update(owner, template.id, {
+      name: "Renamed",
+      description: "Atomic",
+      file: { filename: "atomic.md", content: Buffer.from("atomic").toString("base64") },
+    });
+    expect(await templates.get(owner, { type: "user", userId: id(owner) }, template.id, true)).toMatchObject({
+      name: "Renamed",
+      filename: "atomic.md",
+      size: 6,
+    });
+    await expect(templates.upload(owner, { name: "Too large", description: "", filename: "large.bin", content: Buffer.alloc(20 * 1024 * 1024 + 1).toString("base64") })).rejects.toMatchObject({code:"preview_too_large"});
+    expect((await templates.list(owner, {type:"user",userId:id(owner)}, {q:"Too large"}, true)).items).toHaveLength(0);
+    await templates.remove(owner, template.id);
+    expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
+  });
 });

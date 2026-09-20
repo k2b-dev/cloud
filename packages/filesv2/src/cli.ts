@@ -14,6 +14,7 @@ import {
 import type { ApiType } from "./api";
 import { adminLifecycleCommands } from "./cli-admin";
 import { downloadFile } from "./cli-download";
+import { templateCommands } from "./cli-templates";
 import { uploadFile } from "./cli-upload";
 import {
   type AdminResult,
@@ -81,6 +82,9 @@ function filesCommands(locale?: string) {
     name: "filesv2",
     summary: t({ en: "Browse files and administer storage.", de: "Dateien durchsuchen und Ablagen verwalten." }),
     groupSummaries: {
+      templates: t({ en: "Find and use independent file templates", de: "Unabhängige Dateivorlagen finden und nutzen" }),
+      "admin templates": t({ en: "Manage template snapshots and grants", de: "Vorlagenkopien und Nutzungsrechte verwalten" }),
+      "admin templates access": t({ en: "Manage template use permissions", de: "Nutzungsrechte für Vorlagen verwalten" }),
       bases: t({ en: "Inspect accessible homes and group directories", de: "Zugängliche Nutzer- und Gruppenablagen anzeigen" }),
       admin: t({ en: "Inspect and configure storage as an administrator", de: "Ablagen als Administrator prüfen und konfigurieren" }),
       "admin configuration": t({ en: "Read or replace the storage configuration", de: "Ablagenkonfiguration lesen oder ersetzen" }),
@@ -95,7 +99,7 @@ function filesCommands(locale?: string) {
       "admin versions": t({ en: "Inspect and permanently delete file versions", de: "Dateiversionen prüfen und endgültig löschen" }),
       "admin root": t({ en: "Refresh statistics and rebuild the root index", de: "Statistiken aktualisieren und Root-Index neu aufbauen" }),
       "admin operations": t({ en: "Resume pending directory operations", de: "Ausstehende Verzeichnisaktionen fortsetzen" }),
-      documents: t({ en: "Create office documents for the browser editor", de: "Office-Dokumente für den Browser-Editor anlegen" }),
+      documents: t({ en: "Create documents for the browser editors", de: "Dokumente für die Browser-Editoren anlegen" }),
       trash: t({ en: "List and restore entries in the trash", de: "Einträge im Papierkorb anzeigen und wiederherstellen" }),
       versions: t({ en: "Inspect, comment, download or restore file versions", de: "Dateiversionen prüfen, kommentieren, herunterladen oder wiederherstellen" }),
       shares: t({ en: "Create, list and revoke public shares and inboxes", de: "Öffentliche Freigaben und Eingänge anlegen, auflisten und widerrufen" }),
@@ -230,17 +234,20 @@ function filesCommands(locale?: string) {
             required: true,
             description: t({ en: "Target file path relative to the base", de: "Zieldateipfad relativ zur Ablage" }),
           }),
+          expectedRevision: flag.string({
+            description: t({ en: "Only replace this original revision", de: "Nur diese ursprüngliche Revision ersetzen" }),
+          }),
           replace: flag.boolean({ description: t({ en: "Replace an existing file at the target path", de: "Bestehende Datei am Zielpfad ersetzen" }) }),
         },
         examples: ["cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf"],
         async run({ ctx, args, flags }) {
           const param = { baseId: args.base };
           const result = await uploadFile(ctx, args.file, {
-            scope: JSON.stringify([ctx.options.profile, args.base, flags.to, flags.replace]),
+            scope: JSON.stringify([ctx.options.profile, args.base, flags.to, flags.replace, flags.expectedRevision]),
             open: async (size, signal, idempotencyKey) =>
               ctx.readJson<UploadSession>(
                 await api(ctx).bases[":baseId"].uploads.$post(
-                  { param, json: { path: flags.to!, size, onConflict: flags.replace ? "overwrite" : "error", idempotencyKey } },
+                  { param, json: { path: flags.to!, size, expectedRevision: flags.expectedRevision, onConflict: flags.replace ? "overwrite" : "error", idempotencyKey } },
                   { init: { signal } },
                 ),
               ),
@@ -619,6 +626,7 @@ function filesCommands(locale?: string) {
         },
       }),
       ...adminLifecycleCommands(locale),
+      ...templateCommands(locale),
     ],
   });
 }

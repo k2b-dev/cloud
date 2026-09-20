@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { type AdminBrowseResult, AdminQuerySchema, type AdminResult, type ArchivePage, type SharePage } from "../contracts";
 export const AdminLocationSchema = AdminQuerySchema.extend({
-  view: z.enum(["overview", "directories", "archive", "settings", "shares"]).default("overview"),
+  view: z.enum(["overview", "directories", "archive", "settings", "shares", "templates"]).default("overview"),
   name: z.string().max(255).optional(),
   archiveId: z.string().uuid().optional(),
   path: z.string().max(4096).default(""),

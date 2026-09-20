@@ -1,5 +1,5 @@
-import { env } from "@k2b/cloud/config";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "@k2b/cloud/config";
 import { z } from "zod";
 import { FilesError } from "./errors";
 
@@ -88,3 +88,12 @@ export async function discoverEditor(
   return target.href;
 }
 export const resetDiscoveryCache = () => cache.clear();
+
+/** Collabora stores LastModifiedTime at microsecond precision; Date alone loses it. */
+export function wopiTimestamp(value: string): string {
+  const match = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)$/.exec(value);
+  if (!match) return "";
+  const milliseconds = Date.parse(`${match[1]}${match[3]}`);
+  if (!Number.isFinite(milliseconds)) return "";
+  return `${new Date(milliseconds).toISOString().slice(0, 19)}.${(match[2] ?? "").padEnd(6, "0").slice(0, 6)}Z`;
+}

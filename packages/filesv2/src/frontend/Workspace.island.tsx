@@ -11,6 +11,7 @@ import { useBrowserMessages } from "./browser-messages";
 import { browseOptions, browseQuery, parsePreferences, type ViewPreference, viewFor } from "./browser-preferences";
 import Editor from "./Editor";
 import { IssueMessage } from "./feedback";
+import MarkdownDocument from "./MarkdownDocument";
 import { MarksMenu, MarksSidebarItem, openMarksDialog } from "./MarksMenu";
 import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
@@ -109,7 +110,9 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     setCursorNotice(true);
     await workspace.navigate(first, () => commitHistory(first, { replace: true, scroll: "manual" }));
   };
+  let editorGuard: (() => Promise<boolean>) | null = null;
   const onNavigate = async (event: LinkNavigateEvent) => {
+    if (editorGuard && !(await editorGuard())) return;
     setCursorNotice(false);
     if (event.url.pathname !== "/app/filesv2") {
       event.fallback();
@@ -123,6 +126,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     await resetCursor(target);
   };
   const go = async (target: string, replace = false) => {
+    if (editorGuard && !(await editorGuard())) return;
     setCursorNotice(false);
     await workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual" }));
     await resetCursor(target);
@@ -151,11 +155,15 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   });
   onMount(() =>
     onCleanup(
-      listenPopState(({ url }) => {
+      listenPopState(async ({ url }) => {
         if (url.pathname !== "/app/filesv2") return;
         const target = `${url.pathname}${url.search}`;
         if (target === workspace.committedSource() && !workspace.pending()) return;
         const previous = workspace.committedSource();
+        if (editorGuard && !(await editorGuard())) {
+          commitHistory(previous, { replace: true, scroll: "manual", viewTransition: false });
+          return;
+        }
         void workspace.navigate(
           target,
           () => {},
@@ -392,6 +400,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       <AppWorkspace.Content>
         <Show
           when={snapshot().editor}
+          keyed
           fallback={
             <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
               <Show when={!workspace.pending()} fallback={centered(() => <Placeholder state="loading" variant="panel" description={b().editorLoading} />)}>
@@ -402,7 +411,19 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
             </AppWorkspace.Main>
           }
         >
-          {(launch) => <Editor launch={launch()} onBack={() => void go(editorBack(launch()))} />}
+          {(launch) =>
+            launch.kind === "markdown" ? (
+              <MarkdownDocument
+                launch={launch}
+                onGuard={(guard) => {
+                  editorGuard = guard;
+                }}
+                onBack={() => void go(editorBack(launch))}
+              />
+            ) : (
+              <Editor launch={launch} onBack={() => void go(editorBack(launch))} />
+            )
+          }
         </Show>
       </AppWorkspace.Content>
     </AppWorkspace>

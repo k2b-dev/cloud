@@ -360,6 +360,12 @@
   flex-direction: column;
 }
 
+.k2b-ui .k2b-markdown-editor[data-variant="embedded"] {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .k2b-ui .k2b-markdown-editor[data-disabled="true"] {
   opacity: 0.5;
   cursor: not-allowed;

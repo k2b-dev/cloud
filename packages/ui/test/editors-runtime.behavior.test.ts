@@ -6,8 +6,7 @@ import { createDomTestHarness, type DomTestHarness } from "./dom";
 type EditorKind = "autocomplete" | "markdown";
 type Activation = "assistive-click" | "pointer-click" | "keyboard-enter" | "keyboard-tab";
 
-const nextAnimationFrame = (): Promise<void> =>
-  new Promise((resolve) => requestAnimationFrame(() => resolve()));
+const nextAnimationFrame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
 const installEditorDomSupport = (dom: DomTestHarness): void => {
   const prototype = dom.window.HTMLElement.prototype as unknown as {
@@ -186,6 +185,38 @@ describe("completion editor runtime behavior", () => {
     expect(dom.document.activeElement).not.toBe(disabledSave);
 
     dispose();
+
+    let closes = 0;
+    let saves = 0;
+    const disposeDocument = render(
+      () =>
+        createComponent(MarkdownEditor, {
+          value: "# Document",
+          fill: true,
+          variant: "embedded",
+          disabled: true,
+          onClose: () => {
+            closes++;
+          },
+          onSave: () => {
+            saves++;
+          },
+        }),
+      dom.root,
+    );
+    const documentTools = [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-markdown-editor__tool")];
+    expect(documentTools.at(-1)!.getAttribute("aria-label")).toBe("Close");
+    expect(documentTools.at(-2)!.getAttribute("aria-label")).toBe("Save");
+    expect(documentTools.at(-1)!.disabled).toBe(false);
+    expect(documentTools.at(-2)!.disabled).toBe(true);
+    documentTools.at(-1)!.click();
+    expect(closes).toBe(1);
+    dom.root
+      .querySelector("textarea")!
+      .dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "s", ctrlKey: true }));
+    expect(saves).toBe(0);
+    expect(dom.root.querySelector('[data-variant="embedded"][data-fill="true"]')).not.toBeNull();
+    disposeDocument();
     dom.cleanup();
   });
 });

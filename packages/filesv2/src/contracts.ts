@@ -65,6 +65,7 @@ export type SearchResult = DirectoryResult & { query: string; scope: "folder" | 
 export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export const UploadInputSchema = z.object({
   idempotencyKey: z.string().uuid(),
+  expectedRevision: z.string().min(1).max(512).optional(),
   path: z.string().min(1).max(4096),
   size: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   onConflict: z.enum(["error", "overwrite"]).default("error"),
@@ -83,7 +84,12 @@ export const PathsInputSchema = z.object({ paths: PathsSchema });
 export const TrashIdSchema = z.object({ id: z.union([z.string().uuid(), z.string().regex(/^fs:[A-Za-z0-9_-]+$/).max(5500)]) });
 export const CreateDocumentInputSchema = z.object({ path: PathSchema, kind: DocumentKindSchema });
 /** Everything the browser needs to load one file into Collabora; the token is bound to this user and file. */
-export type EditorLaunch = { managed?: boolean; base: BaseSummary; entry: FileEntry; action: string; token: string; tokenTtl: number; canWrite: boolean };
+export type OfficeEditorLaunch = {
+  kind?: "office";
+  managed?: boolean; base: BaseSummary; entry: FileEntry; action: string; token: string; tokenTtl: number; canWrite: boolean;
+};
+export type MarkdownLaunch = { kind: "markdown"; managed: boolean; base: BaseSummary; entry: FileEntry; canWrite: boolean; url: string };
+export type EditorLaunch = OfficeEditorLaunch | MarkdownLaunch;
 export const VersionRefSchema = z.object({ path: PathSchema, id: z.string().min(1).max(128) });
 export const VersionCommentSchema = VersionRefSchema.extend({ comment: z.string().trim().max(2000) });
 export const VersionRestoreAsSchema = VersionRefSchema.extend({ name: z.string().min(1).max(255) });

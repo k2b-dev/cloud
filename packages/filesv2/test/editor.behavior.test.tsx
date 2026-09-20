@@ -12,6 +12,7 @@ if (!isServer) {
       bases: {
         ":baseId": {
           documents: { $post: request("documents") },
+          thumbnail: { $post: request("thumbnail") },
           entry: { $get: async (input: { query: { path: string } }) => Response.json({ base: directory.base, entry: directory.items.find((item) => item.path === input.query.path) }) },
         },
       },
@@ -92,6 +93,32 @@ describe("Files v2 office editing", () => {
     requests[0]!.resolve(Response.json({ base: directory.base, entry: { name: "Budget.ods", path: "Budget.ods", directory: false, size: 808, modified: "2026-09-19T11:00:00Z" } }));
     await flush();
     expect(edited).toEqual(["Minutes.odt", "Budget.ods"]);
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
+    await flush();
+    [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node => node.textContent?.includes("New spreadsheet"))!.click();
+    await flush();
+    const delayedDialog = dom.document.querySelector("dialog")!;
+    const delayedName = delayedDialog.querySelector<HTMLInputElement>("input")!;
+    delayedName.value = "Delayed";
+    delayedName.dispatchEvent(new Event("input", {bubbles:true}));
+    delayedDialog.querySelector("form")!.dispatchEvent(new Event("submit", {bubbles:true,cancelable:true}));
+    await flush();
+    dispose(); // Leaving the browser must not let a late response navigate the new location.
+    requests[1]!.resolve(Response.json({base:directory.base,entry:{...directory.items[0]!,name:"Delayed.ods",path:"Delayed.ods"}}));
+    await flush();
+    expect(edited).toEqual(["Minutes.odt", "Budget.ods"]);
+
+  });
+
+  test("office and PDF thumbnails remain icons without network requests", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileThumbnail } = await import("../src/frontend/FileThumbnail");
+    const dispose = render(() => <><FileThumbnail baseId="test" entry={directory.items[0]!} large /><FileThumbnail baseId="test" entry={{ ...directory.items[0]!, name: "Report.pdf", path: "Report.pdf" }} large /></>, dom.root);
+    cleanup = () => { dispose(); dom.cleanup(); };
+    await flush();
+    expect(dom.root.querySelectorAll(".filesv2-thumbnail i")).toHaveLength(2);
+    expect(dom.root.querySelectorAll("img")).toHaveLength(0);
+    expect(requests).toHaveLength(0);
   });
 
   test("the editor hands Collabora the token, asks for its close button and hides comments", async () => {
@@ -114,6 +141,7 @@ describe("Files v2 office editing", () => {
     const form = dom.root.querySelector("form")!;
     expect(form.querySelector<HTMLInputElement>('input[name="access_token"]')!.value).toBe("body.signature");
     expect(form.querySelector<HTMLInputElement>('input[name="ui_defaults"]')!.value).toContain("UITheme=light");
+    expect(form.querySelector<HTMLInputElement>('input[name="ui_defaults"]')!.value).toContain("SavedUIState=false");
     expect(form.querySelector<HTMLInputElement>('input[name="css_variables"]')!.value).toContain("--co-primary-element=");
     expect(dom.root.textContent).toContain("Loading editor");
     const frame = dom.root.querySelector("iframe")!;

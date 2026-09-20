@@ -72,3 +72,11 @@ Historische Versionen lassen sich nur über die Versionsaktion im administrative
 `cld filesv2 admin shares list --json` zeigt alle Links; `admin shares revoke <share-id>` sperrt einen davon. `cld filesv2 admin uploads list --json` zeigt ungeklärte Eingangsreservierungen. Mit `--after` erreichst du weitere Seiten dieser Listen.
 
 `cld filesv2 help` zeigt die Verzeichnis-, Archiv- und Inspektionsbefehle. CLI-Aktionen benötigen dieselben Adminrechte und Bestätigungen wie ihre Entsprechungen in der Oberfläche.
+
+## Vorlagen verwalten
+
+Der Tab **Vorlagen** verwaltet wiederverwendbare Dateien unabhängig von Ablagen. Lade eine Datei hoch oder wähle eine vorhandene Datei, die du lesen darfst. Jede Vorlage ist eine eigenständige Kopie bis 20 MiB. Vergib einen Namen, optional eine Beschreibung und das Recht **Verwenden** an Nutzer, Gruppen oder alle Angemeldeten. Ohne Zugriffsregel erscheint sie nur in der Administration. Das sind Cloud-Rechte; eine POSIX-Gruppe oder Zugriff auf den ursprünglichen Ordner ist dafür nicht nötig.
+
+Nutzer wählen **Hinzufügen → Vorlage** in einem beschreibbaren Ordner. Das Vorlagenrecht ersetzt niemals das Schreibrecht im Ziel. Das Ersetzen des Vorlageninhalts oder das Löschen einer Vorlage verändert keine bereits daraus erzeugten Dateien. Auch die importierte Originaldatei kann unabhängig geändert oder entfernt werden. Vorlageninhalte und Rechte liegen in PostgreSQL und müssen in Datenbank-Backups enthalten sein.
+
+Die CLI bietet `admin templates list|upload|import|update|replace|delete` sowie `admin templates access list|grant|revoke`. Löschen erfordert `--yes`. Argumente stehen unter `--help`; die JSON-Regel für eine Berechtigung wird über `--input-file` oder `--stdin` übergeben.

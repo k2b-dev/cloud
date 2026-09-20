@@ -1,7 +1,6 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { FileEntry } from "../contracts";
-import { editableExtension } from "../documents";
 import { fileIcon, previewKind } from "./file-preview";
 
 /**
@@ -47,11 +46,9 @@ const loadImage = (url: string, signal: AbortSignal) => new Promise<string>((res
   image.src = url;
 });
 
-/** PDF and office documents get a first-page image from Cloud (via Collabora) when the editor is configured. */
-export const documentPreviewable = (entry: FileEntry) => !entry.directory && (previewKind(entry) === "pdf" || !!editableExtension(entry.name));
-type ThumbnailProps = { baseId: string; locationKey?: string; entry: FileEntry; large?: boolean; hero?: boolean; documents?: boolean };
+type ThumbnailProps = { baseId: string; locationKey?: string; entry: FileEntry; large?: boolean; hero?: boolean };
 export default function FileThumbnail(props: ThumbnailProps) {
-  return <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified, props.hero, props.documents])}>
+  return <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified, props.hero])}>
     {(_key) => <ThumbnailImage {...props} />}
   </Show>;
 }
@@ -59,27 +56,7 @@ function ThumbnailImage(props: ThumbnailProps) {
   const [url, setUrl] = createSignal<string | null>(null);
   let host: HTMLSpanElement | undefined;
   const controller = new AbortController();
-  let objectUrl: string | null = null;
-  onCleanup(() => {
-    controller.abort();
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-  });
-  const loadDocument = async () => {
-    const signal = controller.signal;
-    try { await acquire(signal); } catch { return; }
-    try {
-      const response = await apiClient.bases[":baseId"].preview.$post({ param: { baseId: props.baseId }, json: { path: props.entry.path } }, { init: { signal } });
-      if (!response.ok) return;
-      const blob = await response.blob();
-      if (signal.aborted) return;
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
-    } catch {
-      // The icon stays; previews are a convenience, not content.
-    } finally {
-      release();
-    }
-  };
+  onCleanup(() => controller.abort());
   const load = async () => {
     const signal = controller.signal;
     for (const [attempt, delay] of [0, ...RETRY_DELAYS].entries()) {
@@ -108,18 +85,16 @@ function ThumbnailImage(props: ThumbnailProps) {
   };
   onMount(() => {
     const image = previewKind(props.entry) === "image";
-    const document = !image && !!props.documents && documentPreviewable(props.entry);
-    if (!host || (!image && !document)) return;
-    const start = image ? load : loadDocument;
+    if (!host || !image) return;
     if (typeof IntersectionObserver === "undefined") {
-      void start();
+      void load();
       return;
     }
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
           observer.disconnect();
-          void start();
+          void load();
         }
       },
       { rootMargin: "120px" },

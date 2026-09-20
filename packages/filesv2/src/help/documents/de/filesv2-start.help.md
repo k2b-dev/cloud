@@ -1,8 +1,8 @@
 ---
 id: filesv2-start
-title: Dateien ansehen und herunterladen
+title: Dateien ansehen und bearbeiten
 icon: ti ti-folders
-description: Persönliche Ablagen und Gruppenablagen öffnen und einzelne Dateien herunterladen.
+description: Ablagen öffnen, Dokumente bearbeiten, Vorlagen nutzen und Dateien teilen.
 order: 100
 ---
 
@@ -20,7 +20,7 @@ Die Seitenleiste zeigt deine Ablagen mit ihren Ordnern als Baum; der aktuelle Or
 
 Ziehe einen Eintrag auf einen Ordner, um ihn dorthin zu verschieben; eine hervorgehobene oder angehakte Auswahl wandert gemeinsam. Die Zeile **..** verschiebt in den übergeordneten Ordner. Verweile kurz auf einem Ordner, dann öffnet er sich (Liste und Grid) oder klappt auf (Baum), sodass du tiefer ablegen kannst, ohne loszulassen. Dateien und Ordner von deinem Gerät werden beim Ablegen hochgeladen; die Ordnerstruktur bleibt erhalten. Große Auswahlen sind begrenzt und lassen sich abbrechen.
 
-Geöffnete oder heruntergeladene Dateien erscheinen unter **Zuletzt**; **Favoriten** sammelt deine markierten Einträge. Am Desktop öffnen sich kompakte Menüs per Hover, Fokus oder Klick, mobil Dialoge über die Navigation. Zuletzt zeigt relative Zeitangaben, Favoriten sind alphabetisch sortiert. Wähle einen Ordner, um ihn zu öffnen, oder eine Datei für ihre Details. Der ungefüllte Stern neben Vorschau und Herunterladen markiert einen Favoriten: Ein goldener Umriss zeigt den gespeicherten Zustand. Bei Hover oder Tastaturfokus erscheint ein X zum Entfernen; auf Touch genügt das Antippen des markierten Sterns. Fehlende oder nicht mehr zugängliche Einträge werden beim Aktualisieren ausgelassen. Ist der Dokumenteditor konfiguriert, zeigen PDF- und Office-Dateien im Grid, in der Liste und im Detailpanel eine Vorschau der ersten Seite.
+Geöffnete oder heruntergeladene Dateien erscheinen unter **Zuletzt**; **Favoriten** sammelt deine markierten Einträge. Am Desktop öffnen sich kompakte Menüs per Hover, Fokus oder Klick, mobil Dialoge über die Navigation. Zuletzt zeigt relative Zeitangaben, Favoriten sind alphabetisch sortiert. Wähle einen Ordner, um ihn zu öffnen, oder eine Datei für ihre Details. Der ungefüllte Stern neben Vorschau und Herunterladen markiert einen Favoriten: Ein goldener Umriss zeigt den gespeicherten Zustand. Bei Hover oder Tastaturfokus erscheint ein X zum Entfernen; auf Touch genügt das Antippen des markierten Sterns. Fehlende oder nicht mehr zugängliche Einträge werden beim Aktualisieren ausgelassen. PDF- und Office-Dateien zeigen in Liste und Grid ein Dateityp-Icon. PDFs kannst du weiterhin mit ihrem Inhalt öffnen. Bilder behalten ihre Vorschaubilder.
 
 ## Suchen
 
@@ -34,7 +34,7 @@ Mehrfachaktionen können teilweise gelingen. Erfolgreiche Änderungen bleiben be
 
 ## Dokumente gemeinsam bearbeiten
 
-Hat deine Administration Collabora Online angebunden, öffnen sich Textdokumente, Tabellen und Präsentationen (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) in einem Editor, der den Hauptbereich füllt: Doppelklick auf die Datei oder **Bearbeiten** im Detailpanel. Mehrere Personen können gleichzeitig im selben Dokument arbeiten und sehen die Änderungen der anderen. Der Dokumentname steht in der oberen Leiste; Collabora zeigt, wann es zuletzt gespeichert hat, und sein Schließen-Button (X) führt zurück in den Ordner mit ausgewählter Datei. Darfst du eine Datei nur lesen, öffnet sie sich schreibgeschützt. Auf ausschließlich durch Filegate beschriebenen Ablagen führt eine gleichzeitige Änderung zu einem Speicherkonflikt. Bei Ablagen mit externen Schreibern ist diese Erkennung nicht atomar. Jedes Speichern wird zur aktuellen Datei; die Versionsgeschichte bleibt im Detailpanel. Nach einem Themewechsel öffnest du den Editor erneut, damit er das neue Theme übernimmt.
+Hat deine Administration Collabora Online angebunden, öffnen sich Textdokumente, Tabellen und Präsentationen (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) in einem Editor, der den Hauptbereich füllt: Doppelklick auf die Datei oder **Bearbeiten** im Detailpanel. Mehrere Personen können gleichzeitig im selben Dokument arbeiten und sehen die Änderungen der anderen. Der Dokumentname steht in der oberen Leiste; Collabora zeigt, wann es zuletzt gespeichert hat, und sein Schließen-Button (X) führt zurück in den Ordner mit ausgewählter Datei. Darfst du eine Datei nur lesen, öffnet sie sich schreibgeschützt. Die Cloud prüft vor dem Speichern auf Änderungen und stimmt ihre eigenen Schreibvorgänge ab. Wurde die Datei inzwischen geändert, zeigt Collabora einen Konfliktdialog. Wähle Überschreiben nur, wenn du diese Änderungen bewusst ersetzen möchtest. Externe NFS-Schreibvorgänge lassen sich nicht vollständig koordinieren. Jedes Speichern wird zur aktuellen Datei; die Versionsgeschichte bleibt im Detailpanel. Nach einem Themewechsel öffnest du den Editor erneut, damit er das neue Theme übernimmt.
 
 Das Plus-Menü bietet dann zusätzlich **Neues Textdokument**, **Neue Tabelle** und **Neue Präsentation**. Du gibst einen Namen ein, die Dateiendung wird ergänzt, und das neue Dokument öffnet sich im Editor.
 
@@ -79,3 +79,11 @@ Melde dich mit `cld login --server <Cloud-URL>` an. `cld filesv2 bases list --js
 Ein leerer Ordner bedeutet etwas anderes als ein fehlendes oder nicht erreichbares Verzeichnis. Die Seite zeigt, ob ein Verzeichnis fehlt, zugeordnet werden muss oder derzeit nicht erreichbar ist. Kontaktiere die Administration, wenn ein Verzeichnis geprüft werden muss.
 
 Cloud-Ablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur POSIX-Gruppen können eine Gruppenablage haben. FreeIPA-Ablagen werden unabhängig konfiguriert; FreeIPA-Nutzer können zusätzlich auf zugängliche lokale Cloud-Gruppenablagen zugreifen.
+
+## Markdown bearbeiten und Vorlagen nutzen
+
+Öffne eine `.md`- oder `.markdown`-Datei im Editor über die ganze Arbeitsfläche oder wähle **Hinzufügen → Markdown-Dokument**. Das funktioniert auch ohne Office-Editor. Unterstützt werden UTF-8-Dateien bis 2 MiB. Speichere über den Editor-Button oder Strg/Cmd+S. Speichern und X stehen rechts in der Toolbar. Nach erfolgreichem Speichern erscheint kurz ein Haken; mit dem X kehrst du zum Ordner zurück. Beim Verlassen wirst du auf ungespeicherte Änderungen hingewiesen. Bei Speicherfehlern oder einer inzwischen geänderten Datei bleibt dein Entwurf erhalten: Lade die Datei neu oder speichere eine Kopie unter einem neuen Namen.
+
+**Hinzufügen → Vorlage** zeigt die für dich verfügbaren Vorlagen. Wähle eine und einen Namen für eine unabhängige Datei im aktuellen Ordner. Dort brauchst du Schreibzugriff. Vorhandene Dateien werden niemals ersetzt. Eine Vorlage kann für dich verfügbar sein, auch wenn du ihre ursprüngliche Datei nicht öffnen darfst. Spätere Vorlagenänderungen verändern deine Kopie nicht. Wenn keine Vorlagen erscheinen, kann die Administration dir oder deinen Gruppen Nutzungsrechte geben.
+
+Im Terminal gibt es dafür `cld filesv2 documents markdown <ablagen-id> Notizen.md`, `cld filesv2 templates list --json` und `cld filesv2 templates use <vorlagen-id> <ablagen-id> Notizen.md`. Zum bedingten Ersetzen ergänzt du `upload` um `--replace --expected-revision <revision>`; ein Konflikt lässt die aktuelle Datei unverändert.

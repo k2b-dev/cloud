@@ -9,13 +9,20 @@ const DISCOVERY = `<?xml version="1.0"?><wopi-discovery><net-zone name="external
 </net-zone></wopi-discovery>`;
 
 describe("editor tokens", () => {
-  const payload = { userId: "6f0f2a4e-6d0d-4b3e-9d0e-3f1a8c1f0a11", baseId: "cloud:users:u1", path: "Docs/report.odt", expiresAt: Date.now() + 60_000 };
+  const payload = {
+    userId: "6f0f2a4e-6d0d-4b3e-9d0e-3f1a8c1f0a11",
+    baseId: "cloud:users:u1",
+    path: "Docs/report.odt",
+    expiresAt: Date.now() + 60_000,
+  };
   test("round-trips and rejects tampering, foreign signatures and expiry", () => {
     const token = signEditorToken(payload);
     expect(verifyEditorToken(token)).toEqual(payload);
     const [body, signature] = token.split(".");
     expect(verifyEditorToken(`${body}.${signature!.slice(1)}x`)).toBeNull();
-    const forged = Buffer.from(JSON.stringify({ u: payload.userId, b: payload.baseId, p: "Docs/other.odt", e: payload.expiresAt })).toString("base64url");
+    const forged = Buffer.from(
+      JSON.stringify({ u: payload.userId, b: payload.baseId, p: "Docs/other.odt", e: payload.expiresAt }),
+    ).toString("base64url");
     expect(verifyEditorToken(`${forged}.${signature}`)).toBeNull();
     expect(verifyEditorToken(token, payload.expiresAt + 1)).toBeNull();
     expect(verifyEditorToken("")).toBeNull();
@@ -27,7 +34,10 @@ describe("Collabora discovery", () => {
   beforeEach(() => resetDiscoveryCache());
   test("parses edit and view actions per extension regardless of attribute order", () => {
     const actions = parseDiscovery(DISCOVERY);
-    expect(actions.get("odt")).toEqual({ edit: "http://collabora:9980/browser/abc/cool.html?", view: "http://collabora:9980/browser/abc/cool.html?" });
+    expect(actions.get("odt")).toEqual({
+      edit: "http://collabora:9980/browser/abc/cool.html?",
+      view: "http://collabora:9980/browser/abc/cool.html?",
+    });
     expect(actions.get("ods")).toEqual({ edit: "http://collabora:9980/browser/abc/cool.html?" });
     expect(actions.has("ott")).toBe(false);
   });
@@ -50,6 +60,18 @@ describe("Collabora discovery", () => {
     await expect(discoverEditor(options, transfer)).rejects.toMatchObject({ code: "editor_unsupported", status: 400 });
     const failing = (async () => new Response("", { status: 502 })) as unknown as typeof fetch;
     resetDiscoveryCache();
-    await expect(discoverEditor({ ...options, extension: "odt" }, failing)).rejects.toMatchObject({ code: "editor_unavailable", status: 503 });
+    await expect(discoverEditor({ ...options, extension: "odt" }, failing)).rejects.toMatchObject({
+      code: "editor_unavailable",
+      status: 503,
+    });
   });
+});
+
+test("WOPI timestamp comparison preserves microseconds and normalizes timezone and precision", async () => {
+  const { wopiTimestamp } = await import("./collabora");
+  expect(wopiTimestamp("2026-09-20T10:00:00.123456789Z")).toBe("2026-09-20T10:00:00.123456Z");
+  expect(wopiTimestamp("2026-09-20T12:00:00.123456+02:00")).toBe("2026-09-20T10:00:00.123456Z");
+  expect(wopiTimestamp("2026-09-20T10:00:00.123456Z")).not.toBe(wopiTimestamp("2026-09-20T10:00:00.123457Z"));
+  expect(wopiTimestamp("2026-09-20T10:00:00Z")).toBe("2026-09-20T10:00:00.000000Z");
+  expect(wopiTimestamp("not a date")).toBe("");
 });

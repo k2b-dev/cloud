@@ -255,6 +255,8 @@ suite("share authority, public privacy and durable inbox budgets", () => {
       !process.env.DATABASE_URL?.endsWith("/cloud_filesv2_sharing_test")
     )
       throw new Error("Use the isolated sharing test database");
+    await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
     await migrate();
   });
   beforeEach(async () => {

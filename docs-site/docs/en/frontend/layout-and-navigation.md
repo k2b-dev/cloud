@@ -36,7 +36,9 @@ The final breadcrumb has no link. A plain string is valid for a one-level
 title.
 
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
-surface without the footer.
+surface without the footer. Full-page and focus-mode surfaces contain viewport
+overscroll: their inner content, including embedded editors, owns scrolling
+without moving the outer Cloud shell or triggering pull-to-refresh.
 
 Do not reproduce Cloud chrome inside application content.
 

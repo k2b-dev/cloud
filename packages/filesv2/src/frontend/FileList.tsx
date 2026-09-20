@@ -29,8 +29,6 @@ export default function FileList(props: {
   /** Host attributes per row, for example drag-and-drop handlers and the attributes their styling reads. */
   rowProps?: (row: FileRow) => RowAttributes;
   virtualProps?: (row: VirtualRow) => RowAttributes;
-  /** Ask Cloud for document previews (needs the editor); images are always previewed. */
-  documents?: boolean;
   messages: { name: string; size: string; modified: string; details: (name: string) => string; toggle: (name: string) => string; select: (name: string) => string; more: string; up: string };
   /** Current order; clicking a column header asks the host to sort by it. */
   sort?: { key: "name" | "modified" | "size" | "type"; direction: "asc" | "desc" };
@@ -49,7 +47,7 @@ export default function FileList(props: {
     const busy = row.loading || props.opening === row.path;
     if (busy) return <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />;
     if (props.tree && row.directory) return <i class={row.expanded ? "ti ti-folder-open" : "ti ti-folder"} aria-hidden="true" />;
-    return <FileThumbnail baseId={props.baseId} entry={row} documents={props.documents} />;
+    return <FileThumbnail baseId={props.baseId} entry={row} />;
   };
   const ariaSort = (key: "name" | "modified" | "size") => (props.sort?.key === key ? (props.sort.direction === "asc" ? "ascending" : "descending") : undefined);
   const header = (key: "name" | "modified" | "size", label: string) => (

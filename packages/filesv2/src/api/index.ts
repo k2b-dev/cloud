@@ -1,4 +1,3 @@
-import { filegateErrorCode } from "./filegate-error";
 import {
   type AuthContext,
   auth,
@@ -53,8 +52,11 @@ import {
   VersionRefSchema,
   VersionRestoreAsSchema,
 } from "../contracts";
+import { isMarkdown } from "../document-assets";
 import { FilesError, filesService } from "../service";
+import { filegateErrorCode } from "./filegate-error";
 import { errorMessage } from "./messages";
+import { templateApi } from "./templates";
 import { wopiApi } from "./wopi";
 
 const api = new Hono<AuthContext>()
@@ -72,6 +74,20 @@ const api = new Hono<AuthContext>()
       : ["path_conflict", "idempotency_conflict", "write_conflict", "cursor_invalid", "execution_disabled", "identity_changed", "feature_disabled", "operation_conflict"].includes(code) ? 409 : 503;
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
+  .route("/templates", templateApi)
+  .post(
+    "/bases/:baseId/markdown",
+    middleware.openapi({ summary: "Create an empty Markdown document", ...requiresAuth }),
+    v("json", DirectoryInputSchema),
+    async (c) => {
+      const input = c.req.valid("json");
+      if (!isMarkdown(input.path)) throw new FilesError("editor_unsupported", 400);
+      return respond(
+        c,
+        ok(await filesService.createFromBytes(c.get("actor"), { baseId: c.req.param("baseId") ?? "", path: input.path }, new Uint8Array())),
+      );
+    },
+  )
   .get("/bases", middleware.openapi({ summary: "List accessible file bases", ...requiresAuth }), async (c) =>
     respond(c, ok(await filesService.bases(c.get("actor")))),
   )
@@ -106,15 +122,6 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Mark or unmark an entry as favorite", ...requiresAuth }),
     v("json", FavoriteInputSchema),
     async (c) => respond(c, ok(await filesService.setFavorite(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
-  )
-  .post(
-    "/bases/:baseId/preview",
-    middleware.openapi({ summary: "Render the first page of a PDF or office document as PNG", ...requiresAuth }),
-    v("json", EntryQuerySchema),
-    async (c) => {
-      const bytes = await filesService.documentPreview(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") });
-      return new Response(bytes, { headers: { "content-type": "image/png", "cache-control": "private, max-age=300" } });
-    },
   )
   .get(
     "/bases/:baseId/entry",

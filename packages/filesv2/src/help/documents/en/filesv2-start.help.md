@@ -1,8 +1,8 @@
 ---
 id: filesv2-start
-title: Browse and download files
+title: Browse and edit files
 icon: ti ti-folders
-description: Open personal and group storage and download individual files.
+description: Browse storage, edit documents, use templates, and share files.
 order: 100
 ---
 
@@ -20,7 +20,7 @@ Open **Sort and filter** using the icon button to the right of search. Its three
 
 Drag an entry onto a folder to move it there; a highlighted or checked selection moves together. The **..** row moves entries to the parent folder. Rest on a folder for a moment and it opens (list and grid) or expands (tree), so you can drop deeper without letting go. Dropping files or folders from your computer uploads them; folder uploads keep their structure. Large selections are bounded and can be cancelled.
 
-Files you open or download appear under **Recent** in the sidebar; **Favorites** collects your marked entries. On desktop these open compact menus on hover, focus, or click; on mobile they open dialogs from navigation. Recent shows relative times and favorites are alphabetical. Choose a folder to open it, or a file to open its details. The outline star beside Preview and Download marks a favorite: a gold outline means it is saved. Hover or keyboard focus shows an X to remove it; tapping the selected star also removes it. Missing or inaccessible entries are omitted when the menu refreshes. When the document editor is configured, PDF and office files show a first-page preview in the grid, the list and the details panel.
+Files you open or download appear under **Recent** in the sidebar; **Favorites** collects your marked entries. On desktop these open compact menus on hover, focus, or click; on mobile they open dialogs from navigation. Recent shows relative times and favorites are alphabetical. Choose a folder to open it, or a file to open its details. The outline star beside Preview and Download marks a favorite: a gold outline means it is saved. Hover or keyboard focus shows an X to remove it; tapping the selected star also removes it. Missing or inaccessible entries are omitted when the menu refreshes. PDF and office files use file-type icons in the list and grid. You can still open PDFs to view their contents. Images keep their thumbnails.
 
 ## Search
 
@@ -34,7 +34,7 @@ Multi-entry actions can partly succeed. Completed items stay completed; the inte
 
 ## Edit documents together
 
-When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The document name appears in the top bar; Collabora shows when it last saved, and its close button (X) returns to the folder with the file selected. If you may only read a file, it opens read-only. On storage reserved for Filegate writes, a concurrent change causes a save conflict. Storage also changed outside Filegate has only best-effort conflict detection. Every save becomes the current file; the file's version history stays in its details panel. Reopen the editor after changing theme to apply the new theme.
+When your administrator has connected Collabora Online, text documents, spreadsheets and presentations (`odt`, `ods`, `odp`, `docx`, `xlsx`, `pptx`) open in an editor that fills the main area: double-click the file or use **Edit** in its details panel. Several people can work in the same document at once and see each other's changes. The document name appears in the top bar; Collabora shows when it last saved, and its close button (X) returns to the folder with the file selected. If you may only read a file, it opens read-only. Cloud checks for changes before saving and coordinates its own writes. If someone changed the file, Collabora offers a conflict dialog; only choose Overwrite if you intend to replace those changes. External NFS writes cannot be fully coordinated. Every save becomes the current file; the file's version history stays in its details panel. Reopen the editor after changing theme to apply the new theme.
 
 The plus menu then also offers **New text document**, **New spreadsheet** and **New presentation**. You enter a name, the file extension is added for you, and the new document opens in the editor.
 
@@ -79,3 +79,11 @@ Download a file with `cld filesv2 download <base-id> Documents/report.pdf --out 
 An empty folder has a different meaning from a missing or unavailable directory. The page shows whether a directory is missing, needs assignment or cannot currently be reached. Contact your administrator when a directory needs attention.
 
 Cloud storage requires enabled local Linux identities. Only POSIX groups can have group storage. FreeIPA storage is configured independently; a FreeIPA user can also see accessible local Cloud group storage.
+
+## Edit Markdown and use templates
+
+Open a `.md` or `.markdown` file in the full workspace editor, or choose **Add → Markdown document**. Markdown editing works without the office editor. UTF-8 files up to 2 MiB are supported. Save with the editor button or Ctrl/Cmd+S. Save and X are on the right of the toolbar. A brief check confirms a successful save; X returns to the folder. Leaving asks about unsaved changes. If saving fails or the file has changed, your draft stays open: reload the file or save a copy under a new name.
+
+**Add → Template** shows the templates available to you. Choose one and a name to create an independent file in the current folder. You need write access there. Existing files are never replaced. A template may be available even when you cannot access its original file. Later changes to the template do not change your copy. If no templates appear, an administrator can grant you or your groups access.
+
+Use `cld filesv2 documents markdown <base-id> Notes.md`, `cld filesv2 templates list --json`, and `cld filesv2 templates use <template-id> <base-id> Notes.md` for the same actions in the terminal. For conditional replacement, add `--replace --expected-revision <revision>` to `upload`; a conflict leaves the current file untouched.

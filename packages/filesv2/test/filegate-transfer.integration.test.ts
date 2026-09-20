@@ -178,6 +178,37 @@ async function failureCode(run: () => Promise<unknown>) {
     statuses.segments = { count: status.uploadedSegments, pages: 2, compact: !("segments" in status) };
   });
 
+  test("Markdown direct downloads expose the revision of their bytes and stale session publication is rejected", async () => {
+    const path = `${prefix}/markdown.md`;
+    await root.put(path, new Blob(["old draft"]), { onConflict: "error" });
+    const lease = await root.directDownload(path, { expiresIn: 60 });
+    const response = await fetch(lease.url, { headers: { Origin: "http://localhost:3000" } });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("old draft");
+    const etag = response.headers.get("etag")!;
+    expect(etag).toMatch(/^"[^"\\]+"$/);
+    expect(response.headers.get("access-control-expose-headers")?.toLowerCase()).toContain("etag");
+    const opened = await root.createSession(path, 5, { onConflict: "overwrite", precondition: { ifMatch: etag.slice(1, -1) } });
+    pending.add(opened.session.id);
+    await new DirectSession(opened.lease!.url, transfer).upload(new Blob(["stale"]));
+    await root.put(path, new Blob(["newer"]), { onConflict: "overwrite" });
+    expect((await failureCode(() => root.commitSession(opened.session.id)))?.status).toBe(412);
+    expect(await (await root.contentRaw(path)).text()).toBe("newer");
+  });
+
+  test("concurrent managed writers admit exactly one save of the same revision", async () => {
+    const path = `${prefix}/parallel.md`;
+    const original = await root.put(path, new Blob(["original"]), { onConflict: "error" });
+    const results = await Promise.all(Array.from({ length: 8 }, (_, index) => failureCode(() =>
+      root.put(path, new Blob([`writer-${index}`]), { onConflict: "overwrite", precondition: { ifMatch: original.revision! } }),
+    )));
+    expect(results.filter(result => result === null)).toHaveLength(1);
+    expect(results.filter(result => result?.code === "precondition_failed")).toHaveLength(7);
+    const winner = results.findIndex(result => result === null);
+    expect(await (await root.contentRaw(path)).text()).toBe(`writer-${winner}`);
+    statuses.concurrent = { accepted: 1, conflicts: 7, preservedWinner: true };
+  });
+
   test("managed publication rejects stale revisions before changing content", async () => {
     expect((await root.info()).managed).toBe(true);
     const path = `${prefix}/conditional.txt`;

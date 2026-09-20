@@ -133,6 +133,54 @@ const inventory = {
 };
 
 describe("Filesv2 CLI integration", () => {
+  test("template commands preserve snapshots, grants, metadata and destination through the API", async () => {
+    const requests: Array<{ method: string; path: string; body: unknown }> = [];
+    const template = {
+      id: identityId,
+      name: "Minutes",
+      description: "",
+      filename: "minutes.md",
+      size: 10,
+      updatedAt: "2026-09-20T00:00:00Z",
+    };
+    const server = serve(async (request) => {
+      const path = new URL(request.url).pathname;
+      requests.push({ method: request.method, path, body: request.method === "GET" ? null : await request.json().catch(() => null) });
+      return Response.json(request.method === "GET" && path.endsWith("/templates") ? { items: [template], next: null } : template);
+    });
+    const file = join(await directory(), "minutes.md");
+    await writeFile(file, "# Minutes\n");
+    const commands = [
+      ["templates", "list"],
+      ["admin", "templates", "upload", file, "--name", "Minutes"],
+      ["admin", "templates", "import", base.id, "minutes.md", "--name", "Minutes"],
+      ["admin", "templates", "update", identityId, "--name", "Changed", "--file", file],
+      ["admin", "templates", "replace", identityId, file],
+      ["admin", "templates", "access", "grant", identityId, "--stdin"],
+      ["templates", "use", identityId, base.id, "Created.md"],
+      ["documents", "markdown", base.id, "Empty.md"],
+    ];
+    for (const args of commands) {
+      const result = await run(["--json", "filesv2", ...args], {
+        server: server.url.href,
+        stdin: args.includes("--stdin") ? JSON.stringify({ principal: { type: "authenticated" } }) : undefined,
+      });
+      expect(result.exitCode, result.stderr).toBe(0);
+    }
+    expect(requests[1]).toMatchObject({
+      method: "POST",
+      body: { filename: "minutes.md", content: Buffer.from("# Minutes\n").toString("base64"), name: "Minutes" },
+    });
+    expect(requests[2]?.body).toMatchObject({ source: { baseId: base.id, path: "minutes.md" } });
+    expect(requests[3]).toMatchObject({ method: "PATCH", body: { name: "Changed", file: { filename: "minutes.md", content: Buffer.from("# Minutes\n").toString("base64") } } });
+    expect(requests[5]?.body).toEqual({ principal: { type: "authenticated" } });
+    expect(requests[6]?.body).toEqual({ baseId: base.id, path: "Created.md" });
+    expect(requests[7]?.path).toEndWith("/markdown");
+    const denied = await run(["filesv2", "admin", "templates", "delete", identityId], { server: server.url.href });
+    expect(denied.exitCode).not.toBe(0);
+    expect(requests).toHaveLength(8);
+  }, 20_000);
+
   test("registers English and German help without authentication", async () => {
     for (const locale of ["en", "de"]) {
       const result = await run(["filesv2", "--help"], { locale });
@@ -949,7 +997,7 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
 
 test("documents create calls the API and edit-url prints the Cloud address locally", async () => {
   const seen: string[] = [];
-  const cloud = serve(async (request) => {
+  const cloud = serve(async request => {
     expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
     const url = new URL(request.url);
     seen.push(`${request.method} ${url.pathname}`);
@@ -1009,7 +1057,7 @@ test("new administration and inbox settings use the authenticated API without st
 test("cross-area copy and strict search failures use the same CLI contract", async () => {
   const requests: Array<{source:string; body:unknown}> = [];
   let denied = 403;
-  const cloud = serve(async request => {
+  const cloud = serve(async (request) => {
     expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
     const url = new URL(request.url);
     if (url.pathname.endsWith("/search")) return Response.json({code:denied === 403 ? "forbidden" : "not_found",message:"Storage changed"},{status:denied});

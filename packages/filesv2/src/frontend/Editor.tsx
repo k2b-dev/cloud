@@ -1,6 +1,6 @@
 import { AppWorkspace, Button, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import type { EditorLaunch } from "../contracts";
+import type { OfficeEditorLaunch } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
 
 /**
@@ -40,7 +40,7 @@ function cloudTheme(): string {
 const isDark = () => document.documentElement.classList.contains("dark");
 const EDITOR_LOAD_TIMEOUT_MS = 60_000;
 
-export default function Editor(props: { launch: EditorLaunch; onBack: () => void }) {
+export default function Editor(props: { launch: OfficeEditorLaunch; onBack: () => void }) {
   const b = useBrowserMessages();
   const locale = useLocale();
   const [loaded, setLoaded] = createSignal(false);
@@ -104,7 +104,7 @@ export default function Editor(props: { launch: EditorLaunch; onBack: () => void
         <input type="hidden" name="access_token" value={props.launch.token} />
         <input type="hidden" name="access_token_ttl" value={String(props.launch.tokenTtl)} />
         <input type="hidden" name="css_variables" value={theme()} />
-        <input type="hidden" name="ui_defaults" value={`UIMode=compact;TextRuler=false;TextSidebar=false;SpreadsheetSidebar=false;PresentationSidebar=false;UITheme=${dark() ? "dark" : "light"}`} />
+        <input type="hidden" name="ui_defaults" value={`SavedUIState=false;UIMode=compact;TextRuler=false;TextSidebar=false;SpreadsheetSidebar=false;PresentationSidebar=false;UITheme=${dark() ? "dark" : "light"}`} />
         <input type="hidden" name="lang" value={locale()} />
       </form>
     </AppWorkspace.Main>

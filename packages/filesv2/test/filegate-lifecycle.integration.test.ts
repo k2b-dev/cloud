@@ -7,6 +7,7 @@ import { sql } from "bun";
 import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
+import { withRootLock } from "../src/data/operations";
 import { migrate } from "../src/migrate";
 import { createFilesService } from "../src/service";
 
@@ -87,6 +88,8 @@ suite("real Filegate directory lifecycle", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS settings.entries(key text PRIMARY KEY,value text)`.simple();
+    await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
     await migrate();
     await migrateAudit();
     await sql`TRUNCATE filesv2.operations,filesv2.bases,filesv2.maintenance,auth.user_groups_v2,auth.user_posix,auth.users,auth.groups,settings.entries CASCADE`.simple();
@@ -99,6 +102,7 @@ suite("real Filegate directory lifecycle", () => {
       url: endpoint!,
       token,
       tokenConfigured: true,
+      collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
       cloud: {
         enabled: true,
         root: "cloud",
@@ -140,8 +144,12 @@ suite("real Filegate directory lifecycle", () => {
         configuration = { ...value, token: value.token || token, tokenConfigured: true };
       },
       connect: () => client,
+      publicOrigin: async () => "http://localhost:3000",
+      userById: async (userId) => ipaUser.kind === "user" && ipaUser.user.id === userId ? ipaUser.user : null,
+      transfer: fetch,
+
     });
-  });
+  }, 30_000);
   afterAll(async () => {
     if (client)
       for (const area of ["cloud", "freeipa"] as const) {
@@ -229,6 +237,36 @@ suite("real Filegate directory lifecycle", () => {
     >`SELECT action,outcome FROM audit.events WHERE actor_user_id=${id(admin)}::uuid`;
     for (const action of ["filesv2.archive", "filesv2.restore", "filesv2.delete"])
       expect(auditEvents).toContainEqual({ action, outcome: "allowed" });
+  }, 60_000);
+
+  test("WOPI and Markdown publish through real Filegate with stale-save protection on unmanaged storage", async () => {
+    configuration.collabora = { url: "http://localhost:9980", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
+    const baseId = `freeipa:users:${id(ipaUser)}`;
+    const target = `${prefix}/home/${name(ipaUser)}/Conflict.odt`;
+    const root = client.root("freeipa");
+    await root.put(target, new Blob(["original"]), { ownership: { uid, gid, mode: "0600" } });
+    const launch = await service.editor(ipaUser, { baseId, path: "Conflict.odt" });
+    if (launch.kind === "markdown") throw new Error("Expected office editor");
+    const fileId = new URL(launch.action).searchParams.get("WOPISrc")!.split("/").at(-1)!;
+    const timestamp = (await service.editorFileInfo(launch.token, fileId)).LastModifiedTime;
+    const saves = await Promise.allSettled(["writer one", "writer two"].map(value => service.editorSave(launch.token, fileId, { timestamp, read: async () => new Blob([value]) })));
+    expect(saves.filter(result => result.status === "fulfilled" && "modified" in result.value)).toHaveLength(1);
+    for (const result of saves) {
+      if (result.status === "rejected") expect(result.reason).toMatchObject({ code: "operation_busy" });
+      else if (!("modified" in result.value)) expect(result.value).toEqual({ conflict: true });
+    }
+    expect(await service.editorSave(launch.token, fileId, { timestamp, read: async () => new Blob(["stale retry"]) })).toEqual({ conflict: true });
+    const current = await root.stat(target);
+    const upload = await service.upload(ipaUser, { baseId, path: "Conflict.odt", size: 0, onConflict: "overwrite", idempotencyKey: crypto.randomUUID(), expectedRevision: `fs:${current.modified}:${current.size}` });
+    await withRootLock("freeipa", async () => {
+      await expect(service.commitUpload(ipaUser, { baseId, id: upload.id })).rejects.toMatchObject({ code: "operation_busy" });
+    });
+    const saved = await service.editorSave(launch.token, fileId, { timestamp: null, read: async () => new Blob(["confirmed overwrite"]) });
+    expect(saved).toHaveProperty("modified");
+    await expect(service.commitUpload(ipaUser, { baseId, id: upload.id })).rejects.toMatchObject({ code: "write_conflict" });
+    await service.abortUpload(ipaUser, { baseId, id: upload.id });
+    expect(await (await root.contentRaw(target)).text()).toBe("confirmed overwrite");
+    expect((await service.editorFileInfo(launch.token, fileId)).LastModifiedTime).toBe("modified" in saved ? saved.modified : "");
   }, 60_000);
 
   test("automatic Cloud creation and archival preserve daemon ownership and suppress reprovisioning", async () => {

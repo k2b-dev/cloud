@@ -77,6 +77,13 @@ const server = new Hono()
   );
 
 describe("Cloud layouts SSR", () => {
+  test("full-page workspaces contain outer viewport overscroll", async () => {
+    const html = await (await server.request("/layout")).text();
+    expect(html).toContain('data-layout-full-page="true"');
+    const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
+    expect(css).toContain('html:has(.cloud-app-canvas[data-layout-full-page="true"])');
+    expect(css).toContain("overscroll-behavior: none;");
+  });
   test("admin children inherit the request locale during SSR", async () => {
     for (const locale of ["de", "en", "de-CH"]) {
       const response = await server.request("/admin", { headers: { "Accept-Language": locale } });

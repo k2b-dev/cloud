@@ -29,14 +29,15 @@ import type {
 } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
-import { operations } from "../data/operations";
+import { operations, withRootLock } from "../data/operations";
 import { persistedEntryRefId, resolveEntryRefId } from "../data/references";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
+import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
-import { createPreviewResources } from "../preview-resource";
+import { readBoundedBody } from "../bounded-body";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
-import { discoverEditor, signEditorToken, verifyEditorToken } from "./collabora";
+import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
 import { readConfiguration, writeConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import { createDirectoryLifecycle } from "./lifecycle";
@@ -61,7 +62,6 @@ export const EDITOR_DOCUMENT_LIMIT = 256 * 1024 * 1024;
 const EDITOR_TRANSFER_TIMEOUT_MS = 5 * 60 * 1000;
 /** Tree moves, recursive removes, index rebuilds and statistics walk whole roots. */
 const SLOW_CALL_TIMEOUT_MS = 10 * 60 * 1000;
-const PREVIEW_EXTENSIONS = new Set(["pdf"]);
 const withWopiSrc = (action: string, wopiSrc: string) =>
   `${action}${action.endsWith("?") || action.endsWith("&") ? "" : action.includes("?") ? "&" : "?"}WOPISrc=${encodeURIComponent(wopiSrc)}`;
 /** Filesystem scans without an index stop here; Filegate answers 413 beyond it. */
@@ -141,7 +141,6 @@ export function createFilesService(
   },
 ) {
   const { provisionCandidate, ...lifecycle } = createDirectoryLifecycle(deps);
-  const preview = createPreviewResources();
   async function allGroups(actor: RequestActor): Promise<Group[]> {
     const result: Group[] = [];
     const deadline = Date.now() + 10_000;
@@ -391,6 +390,17 @@ export function createFilesService(
     }, AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS));
   }
 
+  // Reuse the lifecycle lock: no expiry, no per-process mutex, and the same root
+  // cannot be archived/trashed while a document publication is in progress.
+  async function publish<T>(root: string, run: () => Promise<T>): Promise<T> {
+    try {
+      return await withRootLock(root, run);
+    } catch (error) {
+      if (error instanceof Error && error.message === "operation_busy") throw new FilesError("operation_busy", 503);
+      throw error;
+    }
+  }
+
   const editorConfig = (config: Config) => {
     if (!config.collabora.url) throw new FilesError("editor_disabled", 403);
     return config.collabora;
@@ -467,6 +477,10 @@ export function createFilesService(
       throw new FilesError("upload_closed", 409);
     }
     if (session.state !== "open") throw new FilesError("upload_changed", 409);
+    if (row.expected_revision) {
+      const node = await root.stat(joinPath(current.target, current.name));
+      if (markdownRevision(node) !== row.expected_revision) throw new FilesError("write_conflict", 409);
+    }
     if (session.received !== session.size) throw new FilesError("upload_incomplete");
     const node = await root.commitSession(sessionId);
     const result = uploadResult(current, row, node);
@@ -667,7 +681,9 @@ export function createFilesService(
     },
     async upload(
       actor: RequestActor,
-      input: { baseId: string; path: string; size: number; onConflict: "error" | "overwrite"; idempotencyKey: string },
+      input: { baseId: string; path: string; size: number; onConflict: "error" | "overwrite"; idempotencyKey: string;
+        expectedRevision?: string;
+      },
     ): Promise<UploadSession> {
       if (!Number.isSafeInteger(input.size) || input.size < 0) throw new FilesError("invalid_size");
       if (!z.string().uuid().safeParse(input.idempotencyKey).success) throw new FilesError("upload_changed", 409);
@@ -677,7 +693,9 @@ export function createFilesService(
       if (previous) {
         // A managed absent target is always create-only. Both conflict choices have the same effective intent.
         const onConflict = previous.write_options?.precondition?.ifNoneMatch ? "error" : input.onConflict;
-        if (previous.share_id || previous.base_id !== current.inspection.binding!.id || previous.root !== current.root.name || previous.server_url !== current.state.config.url || previous.path !== current.relative || previous.size !== input.size || previous.write_options?.onConflict !== onConflict || !sameUploadExecution(previous.execution, executionFor(current))) throw new FilesError("upload_changed", 409);
+        if (
+          previous.expected_revision !== (input.expectedRevision ?? null) ||
+          previous.share_id || previous.base_id !== current.inspection.binding!.id || previous.root !== current.root.name || previous.server_url !== current.state.config.url || previous.path !== current.relative || previous.size !== input.size || previous.write_options?.onConflict !== onConflict || !sameUploadExecution(previous.execution, executionFor(current))) throw new FilesError("upload_changed", 409);
         await checkUploadTarget(current);
         return openUpload(current, previous);
       }
@@ -688,6 +706,8 @@ export function createFilesService(
       } catch (error) {
         if (!(error instanceof FilegateError && error.status === 404)) throw error;
       }
+      if (input.expectedRevision && (!existing || markdownRevision(existing) !== input.expectedRevision))
+        throw new FilesError("write_conflict", 409);
       if (existing && input.onConflict === "error") throw new FilesError("path_conflict", 409);
       if (existing?.directory) throw new FilesError("not_file", 409);
       if (existing && current.inspection.candidate.area === "freeipa") await checkUnix(current.root, target, current.state.unix, 2);
@@ -708,6 +728,7 @@ export function createFilesService(
         path: current.relative,
         size: input.size,
         write_options: writeOptions,
+        expected_revision: input.expectedRevision ?? null,
         execution: executionFor(current),
       });
       return openUpload(current, row);
@@ -720,22 +741,28 @@ export function createFilesService(
       return { url: session.url, expires: session.expires };
     },
     async commitUpload(actor: RequestActor, input: { baseId: string; id: string }): Promise<EntryResult> {
-      const { row, current } = await uploadRow(actor, input.baseId, input.id);
-      return { base: current.inspection.summary, entry: await commitSession(current, row) };
+      const { current } = await uploadRow(actor, input.baseId, input.id);
+      return publish(current.root.name, async () => {
+        const fresh = await uploadRow(actor, input.baseId, input.id);
+        return { base: fresh.current.inspection.summary, entry: await commitSession(fresh.current, fresh.row) };
+      });
     },
     async rename(actor: RequestActor, input: { baseId: string; path: string; name: string }): Promise<EntryResult> {
-      const source = await movable(actor, input.baseId, input.path);
-      const relative = userPath(joinPath(source.relative.split("/").slice(0, -1).join("/"), input.name));
-      if (relative.split("/").length !== source.relative.split("/").length) throw new FilesError("invalid_path");
-      const transferred = await source.root.transfer(source.target, source.inspection.candidate.root, joinPath(source.inspection.candidate.path, relative), {
-        move: true,
-        onConflict: "error",
+      const prepared = await movable(actor, input.baseId, input.path);
+      return publish(prepared.root.name, async () => {
+        const source = await movable(actor, input.baseId, input.path);
+        const relative = userPath(joinPath(source.relative.split("/").slice(0, -1).join("/"), input.name));
+        if (relative.split("/").length !== source.relative.split("/").length) throw new FilesError("invalid_path");
+        const transferred = await source.root.transfer(source.target, source.inspection.candidate.root, joinPath(source.inspection.candidate.path, relative), {
+          move: true,
+          onConflict: "error",
+        });
+        if (transferred.state !== "completed") throw new FilesError("operation_pending", 409);
+        const node = transferred.node;
+        if (!node || node.root !== source.root.name || !node.path.startsWith(`${source.inspection.candidate.path}/`)) throw new FilesError("unavailable", 503);
+        await forgetMarks(source, source.relative);
+        return { base: source.inspection.summary, entry: fileEntry(userPath(node.path.slice(source.inspection.candidate.path.length + 1)), node) };
       });
-      if (transferred.state !== "completed") throw new FilesError("operation_pending", 409);
-      const node = transferred.node;
-      if (!node || node.root !== source.root.name || !node.path.startsWith(`${source.inspection.candidate.path}/`)) throw new FilesError("unavailable", 503);
-      await forgetMarks(source, source.relative);
-      return { base: source.inspection.summary, entry: fileEntry(userPath(node.path.slice(source.inspection.candidate.path.length + 1)), node) };
     },
     async move(actor: RequestActor, input: { baseId: string; paths: string[]; folder: string }): Promise<EntriesResult> {
       const prepare = async (path: string) => {
@@ -746,7 +773,7 @@ export function createFilesService(
         return { source, destination };
       };
       const base = (await authorized(actor, input.baseId, input.folder, true)).inspection.summary;
-      const result = await runFileBatch(input.paths, prepare, async (_, path) => {
+      const result = await runFileBatch(input.paths, prepare, async (prepared, path) => publish(prepared.source.root.name, async () => {
         const { source, destination } = await prepare(path);
         if (destination.relative === source.relative) return fileEntry(source.relative, source.node);
         const transferred = await source.root.transfer(source.target, source.root.name, joinPath(destination.target, source.name), { move: true, onConflict: "error" });
@@ -755,7 +782,7 @@ export function createFilesService(
         if (!node || node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`)) throw new FilesError("unavailable", 503);
         await forgetMarks(source, source.relative);
         return fileEntry(userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node);
-      });
+      }));
       return { base, ...result };
     },
     // Copies may cross bases; moves never do.
@@ -811,8 +838,11 @@ export function createFilesService(
     },
     async restoreVersion(actor: RequestActor, input: { baseId: string; path: string; id: string }): Promise<EntryResult> {
       const current = await versionFile(actor, input.baseId, input.path, true);
-      const node = await current.root.restore(current.target, input.id);
-      return { base: current.inspection.summary, entry: fileEntry(current.relative, node) };
+      return publish(current.root.name, async () => {
+        const fresh = await versionFile(actor, input.baseId, input.path, true);
+        const node = await fresh.root.restore(fresh.target, input.id);
+        return { base: fresh.inspection.summary, entry: fileEntry(fresh.relative, node) };
+      });
     },
     async restoreVersionAs(actor: RequestActor, input: { baseId: string; path: string; id: string; name: string }): Promise<EntryResult> {
       const current = await versionFile(actor, input.baseId, input.path, false);
@@ -840,6 +870,22 @@ export function createFilesService(
       return { url: lease.url, method: "GET", expires: lease.expires };
     },
     async editor(actor: RequestActor, input: { baseId: string; path: string }): Promise<EditorLaunch> {
+      if (isMarkdown(input.path)) {
+        const current = await authorized(actor, input.baseId, input.path, false);
+        if (current.node.directory) throw new FilesError("not_file");
+        if (current.node.size > MARKDOWN_LIMIT) throw new FilesError("preview_too_large", 400);
+        const actions = await entryActions(current, current.node, current.target);
+        const lease = await current.root.directDownload(current.target, { expiresIn: 60 });
+        return {
+          kind: "markdown",
+          managed: current.info.managed,
+          base: current.inspection.summary,
+          entry: fileEntry(current.relative, current.node),
+          canWrite: actions.write,
+          url: lease.url,
+        };
+      }
+
       const current = await editableFile(actor, input.baseId, input.path);
       const collabora = editorConfig(current.state.config);
       const action = await discoverEditor(
@@ -861,7 +907,27 @@ export function createFilesService(
         managed: current.info.managed,
       };
     },
-    /** A new document starts from an empty template in the administrator's format; the extension is appended here. */
+    /** Read a bounded independent catalog snapshot with the source actor's permissions. */
+    async templateSource(actor: RequestActor, input: { baseId: string; path: string }) {
+      const current = await authorized(actor, input.baseId, input.path, false);
+      if (current.node.directory) throw new FilesError("not_file");
+      if (current.node.size > TEMPLATE_LIMIT) throw new FilesError("preview_too_large", 400);
+      const signal = AbortSignal.timeout(30_000);
+      const bytes = await readBoundedBody(await current.root.contentRaw(current.target, signal), TEMPLATE_LIMIT, signal);
+      return { bytes: new Uint8Array(bytes), filename: current.relative.split("/").at(-1)! };
+    },
+    async createFromBytes(
+      actor: RequestActor,
+      input: { baseId: string; path: string },
+      bytes: Uint8Array<ArrayBuffer>,
+    ): Promise<EntryResult> {
+      if (bytes.byteLength > TEMPLATE_LIMIT) throw new FilesError("preview_too_large", 400);
+      const current = await writableParent(actor, input.baseId, input.path);
+      const target = joinPath(current.target, current.name);
+      const node = await writeBytes({ ...current, target }, new Blob([bytes]), "error");
+      return { base: current.inspection.summary, entry: fileEntry(current.relative, node) };
+    },
+    /** A new document starts in the administrator's format; the extension is appended here. */
     async createDocument(actor: RequestActor, input: { baseId: string; path: string; kind: DocumentKind }): Promise<EntryResult> {
       const current = await writableParent(actor, input.baseId, input.path);
       const extension = documentExtension(input.kind, editorConfig(current.state.config).documentFormat);
@@ -880,6 +946,8 @@ export function createFilesService(
     async editorFileInfo(token: string, id: string) {
       const current = await wopiFile(token, id);
       const user = current.actor.user;
+      const modified = wopiTimestamp(current.node.modified);
+      if (!modified) throw new FilesError("unavailable", 503);
       return {
         BaseFileName: current.relative.split("/").at(-1)!,
         Size: current.node.size,
@@ -888,7 +956,7 @@ export function createFilesService(
         UserFriendlyName: user.displayName || user.uid,
         UserCanWrite: current.canWrite,
         UserCanNotWriteRelative: true,
-        LastModifiedTime: current.node.modified,
+        LastModifiedTime: modified,
         PostMessageOrigin: await deps.publicOrigin(),
         EnableShare: false,
         HidePrintOption: true,
@@ -910,20 +978,28 @@ export function createFilesService(
     async editorSave(token: string, id: string, input: { read: () => Promise<Blob>; timestamp: string | null }): Promise<{ modified: string } | { conflict: true }> {
       const current = await wopiFile(token, id);
       if (!current.canWrite) throw new FilesError("forbidden", 403);
-      if (input.timestamp && new Date(input.timestamp).getTime() !== new Date(current.node.modified).getTime()) return { conflict: true };
-      // The body is read only for an authorized writer, so anonymous requests never buffer a document.
+      // Collabora deliberately omits the timestamp when the user confirms
+      // "Overwrite". A present timestamp must retain its microsecond precision.
+      const timestamp = wopiTimestamp(current.node.modified);
+      if (!timestamp) throw new FilesError("unavailable", 503);
+      if (input.timestamp !== null && wopiTimestamp(input.timestamp) !== timestamp) return { conflict: true };
       const body = await input.read();
-      if (!current.info.managed) {
-        const latest = await current.root.stat(current.target);
-        if (latest.modified !== current.node.modified || latest.size !== current.node.size) return { conflict: true };
-      }
-      try {
-        const node = await writeBytes(current, body, "overwrite");
-        return { modified: node.modified };
-      } catch (error) {
-        if ((error instanceof FilesError && error.code === "write_conflict") || (error instanceof FilegateError && error.status === 412)) return { conflict: true };
-        throw error;
-      }
+      if (body.size > EDITOR_DOCUMENT_LIMIT) throw new FilesError("too_large", 400);
+      return publish(current.root.name, async () => {
+        const latest = await wopiFile(token, id);
+        if (!latest.canWrite) throw new FilesError("forbidden", 403);
+        if (latest.root.name !== current.root.name || latest.target !== current.target || latest.state.config.url !== current.state.config.url ||
+          latest.node.modified !== current.node.modified || markdownRevision(latest.node) !== markdownRevision(current.node)) return { conflict: true };
+        try {
+          const node = await writeBytes(latest, body, "overwrite");
+          const modified = wopiTimestamp(node.modified);
+          if (!modified) throw new FilesError("unavailable", 503);
+          return { modified };
+        } catch (error) {
+          if ((error instanceof FilesError && error.code === "write_conflict") || (error instanceof FilegateError && error.status === 412)) return { conflict: true };
+          throw error;
+        }
+      });
     },
     async abortUpload(actor: RequestActor, input: { baseId: string; id: string }): Promise<void> {
       const { row, current } = await uploadRow(actor, input.baseId, input.id);
@@ -982,24 +1058,6 @@ export function createFilesService(
       const current = await authorized(actor, input.baseId, path);
       await favorites.add({ user_id: self.user.id, base_id: current.inspection.binding!.id, path, name: path.split("/").at(-1)!, directory: current.node.directory });
       return { favorite: true };
-    },
-    /** First page of a PDF or office document as PNG through Collabora; nothing is stored beyond a small process cache. */
-    async documentPreview(actor: RequestActor, input: { baseId: string; path: string }): Promise<ArrayBuffer> {
-      const current = await authorized(actor, input.baseId, input.path, false);
-      const collabora = editorConfig(current.state.config);
-      const extension = current.relative.split(".").at(-1)?.toLowerCase() ?? "";
-      if (!(editableExtension(current.relative) || PREVIEW_EXTENSIONS.has(extension))) throw new FilesError("preview_unsupported", 400);
-      const converterUrl = `${(collabora.internalUrl || collabora.url).replace(/\/$/, "")}/cool/convert-to/png`;
-      return preview({
-        identity: { serverUrl: current.state.config.url, root: current.root.name, bindingId: current.inspection.binding!.id,
-          basePath: current.inspection.candidate.path, path: current.relative, modified: current.node.modified, size: current.node.size, converterUrl },
-        source: (signal) => current.root.contentRaw(current.target, signal),
-        convert: (bytes, signal) => {
-          const form = new FormData();
-          form.set("data", new Blob([bytes]), current.relative.split("/").at(-1)!);
-          return deps.transfer(converterUrl, { method: "POST", body: form, signal });
-        },
-      });
     },
     async thumbnail(actor: RequestActor, input: { baseId: string; path: string; size: "small" | "large" }): Promise<DownloadLease> {
       if (!input.path) throw new FilesError("invalid_path");

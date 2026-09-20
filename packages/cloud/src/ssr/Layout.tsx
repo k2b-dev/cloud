@@ -221,6 +221,7 @@ export default function Layout(props: LayoutProps) {
           class="cloud-app-canvas flex h-dvh w-full overflow-hidden"
           style={canvasStyle}
           data-app-id={currentApp?.id}
+          data-layout-full-page="true"
           data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
         >
           <TimezoneCookie />
@@ -238,6 +239,7 @@ export default function Layout(props: LayoutProps) {
         class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-screen lg:h-screen lg:overflow-hidden"}`}
         style={canvasStyle}
         data-app-id={currentApp?.id}
+        data-layout-full-page={fullPage ? "true" : undefined}
         data-layout-authenticated={showRail ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
       >

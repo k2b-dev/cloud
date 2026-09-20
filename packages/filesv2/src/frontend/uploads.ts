@@ -25,12 +25,19 @@ export async function uploadFile(
   baseId: string,
   path: string,
   file: Blob,
-  options: { onConflict: "error" | "overwrite"; signal: AbortSignal; fallback: string; onProgress?: (bytes: number) => void },
+  options: {
+    expectedRevision?: string;
+    onConflict: "error" | "overwrite"; signal: AbortSignal; fallback: string; onProgress?: (bytes: number) => void;
+  },
 ): Promise<EntryResult> {
   options.signal.throwIfAborted();
-  const start = await browserUploadKey(["private", baseId, path, options.onConflict], file);
+  const start = await browserUploadKey(["private", baseId, path, options.onConflict, options.expectedRevision ?? ""], file);
   const opened = await apiClient.bases[":baseId"].uploads.$post(
-    { param: { baseId }, json: { path, size: file.size, onConflict: options.onConflict, idempotencyKey: start.idempotencyKey } },
+    { param: { baseId }, json: { path,
+        expectedRevision: options.expectedRevision,
+        size: file.size, onConflict: options.onConflict, idempotencyKey: start.idempotencyKey,
+      },
+    },
     { init: { signal: requestSignal(options.signal) } },
   );
   if (options.onConflict === "error" && (await isConflict(opened))) throw new UploadConflict(path.split("/").at(-1)!);

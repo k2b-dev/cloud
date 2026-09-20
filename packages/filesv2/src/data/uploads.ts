@@ -19,6 +19,7 @@ export type Upload = {
   expires_at: Date | null;
   retain_until: Date | null;
   error_code: string | null;
+  expected_revision: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -44,11 +45,13 @@ export const normalizeExecution = (identity: ExecutionIdentity | null): Executio
 export const sameUploadExecution = (a: ExecutionIdentity | null, b: ExecutionIdentity | null) =>
   canonical(normalizeExecution(a)) === canonical(normalizeExecution(b));
 type Reservation = Pick<Upload, "id" | "base_id" | "user_id" | "root" | "path" | "size" | "server_url"> & {
+  expected_revision?: string | null;
   write_options: WriteOptions;
   execution: ExecutionIdentity | null;
 };
 function verifyReservation(row: Upload, input: Reservation & { share_id?: string | null }) {
   if (
+    row.expected_revision !== (input.expected_revision ?? null) ||
     row.base_id !== input.base_id ||
     row.user_id !== input.user_id ||
     row.root !== input.root ||
@@ -83,8 +86,8 @@ export const uploads = {
       if (existing) return verifyReservation(normalize(existing), input);
       const [row] = await tx<
         Upload[]
-      >`INSERT INTO filesv2.uploads(id,base_id,user_id,root,path,size,error_code,server_url,write_options,execution)
-        VALUES(${input.id},${input.base_id}::uuid,${input.user_id}::uuid,${input.root},${input.path},${input.size},'opening',${input.server_url},${input.write_options},${normalizeExecution(input.execution)}) RETURNING *`;
+      >`INSERT INTO filesv2.uploads(id,base_id,user_id,root,path,size,error_code,server_url,write_options,execution,expected_revision)
+        VALUES(${input.id},${input.base_id}::uuid,${input.user_id}::uuid,${input.root},${input.path},${input.size},'opening',${input.server_url},${input.write_options},${normalizeExecution(input.execution)},${input.expected_revision ?? null}) RETURNING *`;
       return normalize(row!);
     });
   },
@@ -108,8 +111,8 @@ export const uploads = {
       if ((usage?.opened ?? 0) >= 20) throw new FilesError("inbox_busy", 409);
       const [row] = await tx<
         Upload[]
-      >`INSERT INTO filesv2.uploads(id,base_id,user_id,root,path,size,share_id,error_code,server_url,write_options,execution)
-        VALUES(${input.id},${input.base_id}::uuid,${input.user_id}::uuid,${input.root},${input.path},${input.size},${input.share_id}::uuid,'opening',${input.server_url},${input.write_options},${normalizeExecution(input.execution)}) RETURNING *`;
+      >`INSERT INTO filesv2.uploads(id,base_id,user_id,root,path,size,share_id,error_code,server_url,write_options,execution,expected_revision)
+        VALUES(${input.id},${input.base_id}::uuid,${input.user_id}::uuid,${input.root},${input.path},${input.size},${input.share_id}::uuid,'opening',${input.server_url},${input.write_options},${normalizeExecution(input.execution)},${input.expected_revision ?? null}) RETURNING *`;
       return normalize(row!);
     });
   },

@@ -121,8 +121,8 @@ original content, modification time, identity, or history. `shares create --kind
 download` shares the listed entries, `--kind inbox` shares one folder as an
 anonymous upload target; both print the public URL once, only on creation.
 `stat` returns `{base, entry}` after checking current access, even when the entry
-is outside the current listing page. `thumbnail` saves a generated image preview;
-`--size` accepts `small` (320 px) or `large` (1024 px). It uses the same private
+is outside the current listing page. PDF and office files use icons in the browser,
+without a conversion endpoint. `thumbnail` saves an image thumbnail; `--size` accepts `small` (320 px) or `large` (1024 px). It uses the same private
 transfer and safe output-file rules as `download`. Unsupported images return an
 error rather than an invented preview.
 
@@ -339,3 +339,32 @@ writer uses Filegate; leave managed mode off with external writers. No Cloud
 configuration flag changes these Filegate capabilities.
 Paths and prerequisites are validated by the server. Public share and inbox
 pages have no CLI: anonymous visitors use the browser links that `shares create` prints.
+
+## Markdown and independent templates
+
+- `cld filesv2 documents markdown <base-id> <path.md>` creates an empty Markdown file. `edit-url` opens Markdown in the full workspace without Collabora.
+- `cld filesv2 templates list --search Minutes --json` lists authorized templates; follow `next` with `--after`.
+- `cld filesv2 templates get <id> --json` returns metadata, not snapshot bytes.
+- `cld filesv2 templates use <id> <base-id> <new-path>` creates an independent file, never overwrites, and requires current target write access.
+- `cld filesv2 admin templates list --json` lists the complete catalog.
+- `cld filesv2 admin templates upload ./Minutes.odt --name Minutes [--description ...]` stores an independent snapshot (one file, up to 20 MiB).
+- `cld filesv2 admin templates import <base-id> <path> --name Minutes` snapshots an accessible existing file.
+- `cld filesv2 admin templates update <id> --name Minutes [--description ...] [--file ./replacement.odt]` replaces metadata and optionally the snapshot atomically; omitted description becomes empty.
+- `cld filesv2 admin templates replace <id> ./Minutes.odt` replaces only the catalog snapshot.
+- `cld filesv2 admin templates delete <id> --yes` removes only the template and its grants.
+- `cld filesv2 admin templates access list <id> --json` reads grants.
+- `cld filesv2 admin templates access grant <id> --input-file ./grant.json` accepts `{"principal":{"type":"user","userId":"..."}}`, `group` with `groupId`, or `authenticated`. `--stdin` is also supported.
+- `cld filesv2 admin templates access revoke <id> <access-id>` revokes future use.
+
+Template grants are ordinary Cloud read permissions, independent of the source's
+POSIX/storage access. A new template has no use grants. Changing the original or
+the template never changes files already created from it. Snapshot bytes are in
+PostgreSQL and belong in database backups.
+
+For conditional saves, read `stat --json` and pass its revision to
+`upload --replace --expected-revision <revision>`. Unmanaged observation tokens
+use `fs:<modified>:<size>` and are not atomic filesystem preconditions. A stale
+revision is a conflict; preserve the draft and reload or save under another name.
+Keep the same content, expected revision and idempotency key when recovering an
+uncertain upload. For uncertain template creation, inspect the exact destination
+before retrying: the same path conflicts rather than creating duplicate copies.

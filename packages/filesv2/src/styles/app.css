@@ -464,3 +464,9 @@
   .filesv2-favorite[data-favorite="true"]:hover .filesv2-favorite__star { display: none; }
   .filesv2-favorite[data-favorite="true"]:hover .filesv2-favorite__remove { display: inline; }
 }
+
+.filesv2-template-list {
+  height: min(300px, 60dvh);
+  overflow: auto;
+  min-height: 0;
+}

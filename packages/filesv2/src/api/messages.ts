@@ -72,7 +72,6 @@ const messages: Record<string, [string, string]> = {
     "Dieser Ordner enthält zu viele Einträge für eine Download-Prüfung. Lade kleinere Ordner herunter.",
   ],
   favorites_full: ["You have reached the maximum number of favorites. Remove one first.", "Du hast die Höchstzahl an Favoriten erreicht. Entferne zuerst einen."],
-  preview_unsupported: ["No preview is available for this file type.", "Für diesen Dateityp gibt es keine Vorschau."],
   preview_too_large: ["The file is too large for a preview.", "Die Datei ist für eine Vorschau zu groß."],
   inbox_file_limit: ["This file exceeds the inbox's file-size limit.", "Diese Datei überschreitet die Dateigrößengrenze des Eingangs."],
   inbox_total_limit: ["The inbox's total upload budget is exhausted.", "Das gesamte Upload-Budget des Eingangs ist ausgeschöpft."],

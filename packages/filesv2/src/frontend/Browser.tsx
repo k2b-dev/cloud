@@ -23,8 +23,11 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../api/client";
-import { type BaseSummary, type BasesResult, type BrowseOptions, type DirectoryResult, type EditorInfo, type EntryResult, ErrorSchema, type FileEntry } from "../contracts";
+import { type BaseSummary, type BasesResult, type BrowseOptions, type DirectoryResult, type EditorInfo, type EntryResult, ErrorSchema, type FileEntry,
+} from "../contracts";
+import { isMarkdown } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
+import { useAssetMessages } from "./asset-messages";
 import { useBrowserMessages } from "./browser-messages";
 import { browseOptions, browseQuery, folderKey, parsePreferences, preferencesCookie, SORT_KEYS, type SortKey, type ViewPreference, viewFor, withView } from "./browser-preferences";
 import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
@@ -36,6 +39,7 @@ import { IssueMessage } from "./feedback";
 import { apiFailure, contentLease } from "./file-preview";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
+import { openTemplatePicker } from "./Templates";
 import { UploadConflict, uploadFile } from "./uploads";
 import { filesUrl } from "./urls";
 
@@ -80,6 +84,7 @@ export default function Browser(props: {
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
+  const assets = useAssetMessages();
   const baseId = () => props.directory.base.id;
   const baseIdentity = () => JSON.stringify([baseId(), props.directory.base.locationKey]);
   const folder = () => props.directory.path;
@@ -532,7 +537,36 @@ export default function Browser(props: {
     const name = await askName(b().newFile, b().newFileName);
     if (name) startUpload([new File([], name)]);
   };
-  const editable = (entry: FileEntry) => !!props.editor && !!props.onEdit && !entry.directory && !!editableExtension(entry.name);
+  const editable = (entry: FileEntry) => !!props.onEdit && !entry.directory && (isMarkdown(entry.name) || (!!props.editor && !!editableExtension(entry.name)));
+  const createMarkdown = async () => {
+    const name = await askName(assets().markdown, assets().filename, assets().defaultMarkdown);
+    if (!name) return;
+    runAction(async () => {
+      const path = [folder(), isMarkdown(name) ? name : `${name}.md`].filter(Boolean).join("/");
+      const response = await apiClient.bases[":baseId"].markdown.$post({ param: { baseId: baseId() }, json: { path } });
+      if (!response.ok) await apiFailure(response, assets().failed);
+      const created = await response.json();
+      if (mounted && actionLocation === locationKey()) props.onEdit?.(created.entry);
+    });
+  };
+  const createFromTemplate = async () => {
+    const source = locationKey();
+    const template = await openTemplatePicker();
+    if (!template || source !== locationKey()) return;
+    const name = await askName(assets().template, assets().filename, template.filename);
+    if (!name || source !== locationKey()) return;
+    runAction(async () => {
+      const response = await apiClient.templates[":id"].use.$post({
+        param: { id: template.id },
+        json: { baseId: baseId(), path: [folder(), name].filter(Boolean).join("/") },
+      });
+      if (!response.ok) await apiFailure(response, assets().failed);
+      const created = await response.json();
+      if (!mounted || actionLocation !== locationKey()) return;
+      if (editable(created.entry)) props.onEdit?.(created.entry);
+      else await refresh(created.entry.path);
+    });
+  };
   const createDocument = async (kind: DocumentKind, title: string) => {
     const extension = documentExtension(kind, props.editor?.documentFormat ?? "odf");
     const name = await askName(title, b().documentName(extension));
@@ -543,7 +577,7 @@ export default function Browser(props: {
       if (!response.ok) await apiFailure(response, t().unavailable);
       const created = await response.json();
       toast.success(b().documentCreated(created.entry.name));
-      props.onEdit?.(created.entry);
+      if (mounted && actionLocation === locationKey()) props.onEdit?.(created.entry);
     });
   };
   type BatchItem = { path: string; ok: boolean; error?: string };
@@ -828,7 +862,11 @@ export default function Browser(props: {
   const addItems = () => !canCreate() ? [] : [
     { label: b().upload, icon: "ti ti-upload", action: () => filePicker?.click() },
     { label: b().uploadFolder, icon: "ti ti-folder-up", action: () => folderPicker?.click() },
-    { items: [{ label: b().newFolder, icon: "ti ti-folder-plus", action: () => void createFolder() }, { label: b().newFile, icon: "ti ti-file-plus", action: () => void createFile() }] },
+    { items: [{ label: b().newFolder, icon: "ti ti-folder-plus", action: () => void createFolder() }, { label: b().newFile, icon: "ti ti-file-plus", action: () => void createFile() },
+            ],
+          },
+          { label: assets().markdown, icon: "ti ti-markdown", action: () => void createMarkdown() },
+          { label: assets().template, icon: "ti ti-file-description", action: () => void createFromTemplate() },
     ...(props.editor && props.onEdit
       ? [
           {
@@ -1054,7 +1092,7 @@ export default function Browser(props: {
                         after={virtualAfter()}
                         rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row) })}
                         virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
-                        documents={!!props.editor}
+
                         messages={listMessages()}
                         sort={{ key: view().sort, direction: view().direction }}
                         onSort={(key) => updateView(view().sort === key ? { direction: view().direction === "asc" ? "desc" : "asc" } : { sort: key, direction: "asc" })}
@@ -1103,7 +1141,7 @@ export default function Browser(props: {
                         return (
                           <>
                             {gridCheck(row)}
-                            {opening() === row.path ? <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" /> : <FileThumbnail baseId={baseId()} locationKey={props.directory.base.locationKey} entry={row} large documents={!!props.editor} />}
+                            {opening() === row.path ? <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" /> : <FileThumbnail baseId={baseId()} locationKey={props.directory.base.locationKey} entry={row} large />}
                           </>
                         );
                       }}
@@ -1165,7 +1203,7 @@ export default function Browser(props: {
             onShareInbox={props.onShareInbox ? (item) => props.onShareInbox?.(item.path) : undefined}
             onChanged={refresh}
             onMarksChanged={props.onMarksChanged}
-            documents={!!props.editor}
+
           />
         </Show>
       </AppWorkspace.Detail>

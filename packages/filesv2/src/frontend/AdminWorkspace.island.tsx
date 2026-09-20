@@ -29,13 +29,16 @@ import ArchiveTable from "./ArchiveTable";
 import { createAdminActions } from "./admin-actions";
 import { type AdminLocation, type AdminSnapshot, type AdminView, adminHref, parseAdminLocation } from "./admin-location";
 import { useAdminMessages } from "./admin-messages";
+import { useAssetMessages } from "./asset-messages";
 import Inventory from "./Inventory";
 import { useFilesMessages } from "./messages";
 import Settings from "./Settings";
+import { TemplateList } from "./Templates";
 import { createWorkspaceState } from "./workspace-state";
 
 export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
   const a = useAdminMessages();
+  const assets = useAssetMessages();
   const t = useFilesMessages();
   const [dirty, setDirty] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
@@ -151,9 +154,13 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
     { value: "directories" as const, label: a().directories, icon: "ti ti-folders" },
     { value: "archive" as const, label: a().archives, icon: "ti ti-archive" },
     { value: "shares" as const, label: a().shares, icon: "ti ti-world-share" },
+    { value: "templates" as const, label: assets().templates, icon: "ti ti-file-description" },
     { value: "settings" as const, label: a().settings, icon: "ti ti-settings" },
   ];
-  const title = () => (location().view === "archive" ? a().archives : a()[location().view]);
+  const title = () => {
+    const view = location().view;
+    return view === "templates" ? assets().templates : view === "archive" ? a().archives : a()[view];
+  };
   const description = () =>
     location().view === "shares" ? a().sharesDescription : location().view === "archive"
       ? a().archiveDescription
@@ -239,17 +246,23 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
           }
         >
           <Show
-            when={location().view !== "settings"}
+            when={location().view !== "settings" && location().view !== "templates"}
             fallback={
-              <Settings
-                configuration={result().configuration}
-                availability={result().availability}
-                onSaved={refresh}
-                onDirtyChange={(value, busy) => {
-                  setDirty(value);
-                  setSaving(busy);
-                }}
-              />
+              <Show when={location().view === "templates"} fallback={
+                <Settings
+                  configuration={result().configuration}
+                  availability={result().availability}
+                  onSaved={refresh}
+                  onDirtyChange={(value, busy) => {
+                    setDirty(value);
+                    setSaving(busy);
+                  }}
+                />
+              }>
+                <SettingsPage title={assets().templates} icon="ti ti-file-description">
+                  <TemplateList admin />
+                </SettingsPage>
+              </Show>
             }
           >
             <SettingsPage

@@ -7,7 +7,7 @@ import type { BaseSummary, EntryResult, FileEntry, FileVersion } from "../contra
 import { ENTRY_TYPE, entryRefId } from "../resource-ref";
 import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
-import FileThumbnail, { documentPreviewable } from "./FileThumbnail";
+import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, fileIcon, previewKind } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { filesUrl } from "./urls";
@@ -35,8 +35,6 @@ export default function FileInspector(props: {
   onShare?: (entry: FileEntry) => void;
   onShareInbox?: (entry: FileEntry) => void;
   onChanged: (selectPath?: string | null) => void;
-  /** Document previews are possible when the editor is configured. */
-  documents?: boolean;
 }) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
@@ -191,7 +189,7 @@ export default function FileInspector(props: {
                   }
                 />
                 <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
-                  <Show when={!item().directory && (previewKind(item()) || (props.documents && documentPreviewable(item())))}>
+                  <Show when={!item().directory && previewKind(item())}>
                     <DetailPanel.Group label={t().preview}>
                     <DetailPanel.Section
                       title={t().preview}
@@ -203,7 +201,7 @@ export default function FileInspector(props: {
                     >
                       <Show
                         keyed
-                        when={previewKind(item()) === "image" || (props.documents && !previewKind(item()) && documentPreviewable(item())) ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified]) : null}
+                        when={previewKind(item()) === "image" ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified]) : null}
                         fallback={
                           <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])}>
                             <FilePreview baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} onDownload={() => props.onDownload([item()])} />
@@ -211,7 +209,7 @@ export default function FileInspector(props: {
                         }
                       >
                         <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
-                          <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero documents={props.documents} />
+                          <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
                         </button>
                       </Show>
                     </DetailPanel.Section>

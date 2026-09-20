@@ -40,7 +40,7 @@ or continues a line.
 | `spellcheck` | `boolean` | `true` | Controls browser spellcheck. |
 | `noToolbar` | `boolean` | `false` | Hides the toolbar without disabling shortcuts. |
 | `showStats` | `boolean` | `true` | Shows line, word, and character counts. Suppressed entirely while `disabled`. |
-| `variant` | `"default" \| "paper"` | `"default"` | Matches the editor surface to its parent. |
+| `variant` | `"default" \| "paper" \| "embedded"` | `"default"` | Matches the editor surface to its parent. `embedded` removes the outer border, radius, and shadow for an existing workspace surface. |
 | `fill` | `boolean` | `false` | Fills the available parent height instead of using `lines`. |
 
 Native form and accessibility properties include `name`, `id`, `"aria-label"`,
@@ -53,6 +53,16 @@ Pass `onSave` to add a save action and enable <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <
 
 `saveDisabled` and `saving` are direct booleans. `toolbarTrailing` adds related
 controls beside the save action.
+
+`onClose?: () => void` adds an X button and groups Save and Close at the end
+of the toolbar after formatting. `toolbarTrailing` precedes these actions. Closing remains available in a read-only editor.
+The caller owns navigation, pending-save handling, and confirmation of unsaved
+changes. Combine `fill`, `variant="embedded"`, and `onClose` for a document
+workspace without a separate application toolbar.
+
+`saved?: boolean` replaces the save icon with a check after confirmed persistence.
+The caller resets it after a brief delay or the next edit; clicking Save alone
+must not report success. `saving` takes precedence.
 
 Persistence remains outside the component. Debounce or queue writes in the owning application.
 

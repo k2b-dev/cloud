@@ -5,7 +5,7 @@ section: Work
 order: 151
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-09-19
+updated: 2026-09-20
 ---
 
 # Filesv2
@@ -55,9 +55,8 @@ times; favorites are alphabetical. Entries are checked against current access
 and file existence when the menu opens. The outline star beside Preview and
 Download in the details panel turns gold for a favorite; hover or keyboard focus
 shows an X for removal. Tapping the selected star removes the favorite too. The current page is polled while the tab is visible so changes by
-others appear without a reload. With Collabora configured, PDF and office
-files get first-page previews rendered through Collabora's convert-to
-endpoint and cached briefly in the application.
+others appear without a reload. PDF and office files use file-type icons in lists and grids. Images retain
+direct Filegate thumbnails; PDF contents remain viewable in the details panel.
 
 Search always covers the subtree below the current folder; hits show their
 path relative to it. Filesv2 also answers the universal
@@ -309,10 +308,18 @@ the configured backend address; the Filegate token never leaves the backend.
 Every save replaces the file in Filegate, and the root's versioning policy
 decides which saves become versions. On managed roots, saves bind a fresh
 revision and Filegate atomically rejects a changed destination at publication.
-Unmanaged roots remain editable, but only have best-effort timestamp and size
-checks before writing. These checks cannot prevent a concurrent external writer
-from racing the save; they are not an atomic NFS conflict guarantee. An open
-Collabora editor keeps its initial theme; reopen it after a theme change.
+Cloud serializes document publication, private upload commits, moves, and
+version restores with the existing database root lock, shared with trash and
+administrative lifecycle operations. Busy publications return a retryable error;
+no process-local lock or extra lease state is required. WOPI timestamp checks
+retain microsecond precision. Collabora's explicit **Overwrite** choice remains
+supported, while changes during that save still conflict. Unmanaged roots also
+recheck timestamp and size before writing. External NFS writers do not participate
+in the Cloud lock and remain outside its guarantee.
+
+The editor uses the Cloud theme when opened, even if Collabora saved a different
+UI preference. An open Collabora editor keeps its initial theme; close and reopen
+it after a theme change. It is never reloaded automatically while editing.
 
 Several Collabora instances need sticky routing on the `WOPISrc` parameter,
 which is a Collabora deployment concern; Filesv2 scales horizontally
@@ -397,12 +404,6 @@ reuses the persisted upload identity within the receipt window. A lost commit
 response may already represent a published file; do not switch to a new upload
 identity to bypass an uncertain result.
 
-Document preview conversions accept at most 20 MiB input and 8 MiB output, with
-a 30-second deadline and two concurrent conversions per application process.
-The cache holds at most 64 MiB or 128 previews for five minutes; identical
-in-flight requests share one conversion. Current access is checked before a
-cached result is used. Busy, failed, or oversized previews leave download available.
-
 ## Current scope
 
 This version includes browsing, uploads, trash and restore, version history,
@@ -418,9 +419,9 @@ This does not establish production readiness for a particular filesystem or NFS
 export. Unmanaged external-writer conflict safety
 requires separate acceptance and has no atomic guarantee.
 
-Filegate does not generate PDF/office previews, provide a change feed, or offer
-an autosave `noVersion` option. Generated document previews continue through the
-bounded server-side conversion path, and the browser uses polling for updates.
+PDF/office thumbnail conversion is deliberately omitted; no conversion proxy
+or preview cache is needed. The browser uses polling for updates because Filegate
+has no change feed.
 Filegate's versioning cooldown determines which automatic saves become versions.
 
 The existing Files application remains independent and uses its older Filegate
@@ -430,3 +431,47 @@ existing storage to the ordinary root and relative-path configuration.
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 the Filegate and Collabora prerequisites. For the local test instances, see
 [Monorepo development](/en/docs/operations/monorepo-development#test-filegate-locally).
+
+## Markdown workspace and file templates
+
+Markdown files (`.md` and `.markdown`, UTF-8, up to 2 MiB) open in the full
+workspace using the shared Markdown editor, without a separate header or inner frame.
+Save and Close are grouped at the right of the editor toolbar. Successful saves
+briefly show a check on the Save button instead of a permanent status label. **Add → Markdown document** creates
+an empty file without requiring Collabora. Save explicitly or press Ctrl/Cmd+S.
+Unsaved changes are guarded when leaving. A failed save retains the draft;
+reload the current file or save a copy under a new name. Managed roots compare
+the revision of the downloaded bytes at publication, so a second editor cannot
+silently replace a newer revision. Unmanaged roots compare observed metadata;
+this is not an atomic filesystem precondition. Direct external NFS editing
+remains outside Cloud's coordination guarantees.
+
+**Add → Template** is always present and loads only templates the signed-in
+user can use. Select one and a new file name in the current folder. The target
+must be writable; an existing file is never overwritten. Editable formats open
+in their editor after creation. If a response is lost, inspect the destination
+before retrying; the same name cannot create a second copy or replace the first.
+
+Administrators manage the catalog in **File administration → Templates**.
+Upload a file or import one from an accessible storage base. Each template stores
+an independent binary snapshot in PostgreSQL, with a maximum of 20 MiB per file.
+Changing, moving or deleting the original cannot alter that snapshot. Replacing
+or deleting a template leaves previously created files unchanged. Catalog lists
+load metadata only and use cursor pagination; snapshot bytes belong in the
+application database backup. Catalog upload/import is a bounded administrative
+operation; ordinary file transfers still use direct Filegate leases.
+
+Template use is granted through Cloud's ordinary `read` permissions to users,
+groups (including nested membership), or all authenticated users. These grants
+are independent of source and destination storage permissions. No grant means
+administration-only visibility. Creating a file additionally checks the current
+target's write permissions and applies its Unix execution identity and ownership.
+Template permissions do not change permissions on the resulting file.
+
+The CLI exposes `templates list|get|use`,
+`admin templates list|upload|import|update|replace|delete`,
+`admin templates access list|grant|revoke`, and `documents markdown`.
+`upload --replace --expected-revision <revision>` adds a save precondition;
+read the revision with `stat`. Keep the same revision and idempotency key when
+recovering an uncertain upload. For unmanaged files, the observation token is
+`fs:<modified>:<size>` from the stat response.
