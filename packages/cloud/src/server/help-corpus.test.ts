@@ -14,6 +14,7 @@ const helpPackages = [
   "dashboard",
   "faq",
   "files",
+  "filesv2",
   "gateway-ops",
   "grids",
   "ipa-hosts",

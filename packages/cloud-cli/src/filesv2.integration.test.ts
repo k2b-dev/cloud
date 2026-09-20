@@ -1064,8 +1064,8 @@ test("cross-area copy and strict search failures use the same CLI contract", asy
     requests.push({source:decodeURIComponent(url.pathname.split("/").at(-2)!),body:await request.json()});
     return Response.json({base,entries:[entry],results:[{path:entry.path,ok:true,entry}]});
   });
-  for (const [source,target] of [[`cloud:groups:${identityId}`,`freeipa:users:${identityId}`],[`freeipa:users:${identityId}`,`cloud:groups:${identityId}`]]) {
-    const result = await run(["--json","filesv2","copy",source!,entry.path,"--target-base",target!,"--to","Documents"],{server:cloud.url.href});
+  for (const [source,target] of [[`cloud:groups:${identityId}`,`freeipa:users:${identityId}`],[`freeipa:users:${identityId}`,`cloud:groups:${identityId}`]] as const) {
+    const result = await run(["--json","filesv2","copy",source,entry.path,"--target-base",target,"--to","Documents"],{server:cloud.url.href});
     expect(result.exitCode,result.stderr).toBe(0);
     expect(requests.at(-1)).toEqual({source,body:{paths:[entry.path],targetBaseId:target,folder:"Documents"}});
   }
