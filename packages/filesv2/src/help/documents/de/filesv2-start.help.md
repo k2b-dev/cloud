@@ -10,7 +10,7 @@ Files v2 zeigt deine zugänglichen Cloud- und FreeIPA-Verzeichnisse in einer Obe
 
 ## Ordnerbeschreibungen und Vorschauen {icon="file-description"}
 
-Lege eine `README.md` in einem Ordner ab, um zu erklären, was dort hingehört. Groß- und Kleinschreibung spielen dabei keine Rolle. Der Inhalt erscheint in einem kompakten Bereich über Liste, Grid oder Baum. Lange Beschreibungen werden unten mit einem Verlauf ausgeblendet. Über **Alles anzeigen** öffnest du die vollständige Beschreibung. Die README bleibt eine normale Datei, die du bearbeiten, verschieben oder löschen kannst.
+Lege eine `README.md` in einem Ordner ab, um zu erklären, was dort hingehört. Groß- und Kleinschreibung spielen dabei keine Rolle. Der Inhalt erscheint in einem kompakten Bereich über Liste oder Grid. Im Baum entfällt diese Vorschau; dort kannst du die README weiterhin als normale Datei öffnen. Lange Beschreibungen werden unten mit einem Verlauf ausgeblendet. Über **Alles anzeigen** öffnest du die vollständige Beschreibung. Die README bleibt eine normale Datei, die du bearbeiten, verschieben oder löschen kannst.
 
 Das Detailpanel zeigt fünf Textzeilen oder fünf CSV-Datensätze plus Kopfzeile. Über **… weitere Zeilen** öffnest du die größere Vorschau. In langen CSV-Tabellen blätterst du mit **Zurück** und **Weiter**. Die bisherigen Größenlimits für Vorschauen gelten weiterhin. Tabellen zeigen höchstens 50 Spalten; bei weiteren Spalten erscheint ein Hinweis zum Herunterladen.
 

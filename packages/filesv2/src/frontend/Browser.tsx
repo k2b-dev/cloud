@@ -1071,7 +1071,7 @@ export default function Browser(props: {
               </InlineGuidance>
             </Show>
           </header>
-          <Show when={props.directory.readme}>
+          <Show when={view().view !== "tree" && props.directory.readme}>
             {(readme) => {
               const [overflowing, setOverflowing] = createSignal(false);
               let viewport!: HTMLDivElement;

@@ -19,9 +19,10 @@ The details panel shows five text lines or CSV data rows, followed by the number
 of remaining lines. Open the expanded preview to read more; CSV tables paginate
 through 200 rows at a time. Existing preview size and column limits still apply.
 
-A readable `README.md` in the current folder appears below the view controls and above list, grid, and tree
+A readable `README.md` in the current folder appears below the view controls and above list and grid
 content, without a frame, with compact headings, tighter paragraph spacing, and a fixed preview height of 20vh.
 The preview reserves this space while loading to keep the file listing in place.
+Tree view hides this preview and reserves no space; the README remains accessible as a normal file.
 Folders without a readable README reserve no space. File-name matching ignores
 case and is independent of the visible page and filters. If several variants
 exist, `README.md` takes precedence, then `readme.md`, then the remaining names

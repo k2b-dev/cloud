@@ -10,7 +10,7 @@ Files v2 brings your accessible Cloud and FreeIPA directories into one view. The
 
 ## Folder descriptions and previews {icon="file-description"}
 
-Add a `README.md` to a folder to explain what belongs there. Uppercase and lowercase spelling both work. Its content appears above the list, grid, or tree in a compact area. Long descriptions fade out at the bottom. Use **Show all** to read the full description. The README stays a normal file that you can edit, move, or delete.
+Add a `README.md` to a folder to explain what belongs there. Uppercase and lowercase spelling both work. Its content appears above the list or grid in a compact area. Tree view hides this preview; you can still open the README as a normal file. Long descriptions fade out at the bottom. Use **Show all** to read the full description. The README stays a normal file that you can edit, move, or delete.
 
 The details panel shows five lines of text or five CSV records plus the header. The **… more lines** button opens the larger preview. In long CSV tables, use **Previous** and **Next** to read further pages. Existing preview size limits still apply; tables show at most 50 columns and tell you when more columns require downloading the file.
 
