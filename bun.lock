@@ -133,7 +133,7 @@
     },
     "packages/cloud": {
       "name": "@k2b/cloud",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.1.9",
         "@hono/standard-validator": "0.2.2",
@@ -141,7 +141,7 @@
         "@k2b/ssr": "0.14.0",
         "@k2b/stdlib": "0.25.0",
         "@k2b/sync": "6.4.0",
-        "@k2b/ui": "0.2.0",
+        "@k2b/ui": "0.3.0",
         "@modelcontextprotocol/sdk": "1.30.0",
         "@napi-rs/canvas": "1.0.8",
         "@nats-io/transport-node": "3.4.0",
@@ -625,7 +625,7 @@
     },
     "packages/ui": {
       "name": "@k2b/ui",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@fontsource/ibm-plex-mono": "5.3.0",
         "@fontsource/ibm-plex-sans": "5.3.0",
