@@ -58,7 +58,7 @@ describe("server capability client", () => {
     let body: BodyInit | null | undefined;
     globalThis.fetch = (async (input, init) => {
       forwarded.push(input instanceof Request ? input : new Request(input, init));
-      body = init?.body;
+      body = await (input instanceof Request ? input : new Request(input, init)).clone().text();
       return Response.json({ data: { id: "one" } });
     }) as typeof fetch;
 
@@ -115,7 +115,7 @@ describe("server capability client", () => {
     let body: BodyInit | null | undefined;
     globalThis.fetch = (async (input, init) => {
       request = input instanceof Request ? input : new Request(input, init);
-      body = init?.body;
+      body = await (input instanceof Request ? input : new Request(input, init)).clone().text();
       return Response.json({ data: { id: "one" } });
     }) as typeof fetch;
 

@@ -1,15 +1,16 @@
 import { isDeepStrictEqual } from "node:util";
+import {
+  aiConversations,
+  createAiConversationArtifact,
+  createCodeCapabilityTransport,
+  listAiConversationFiles,
+  parseCodeToolInput,
+  readAiConversationFile,
+} from "@k2b/cloud/ai";
+import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
-import {
-  aiConversations,
-  listAiConversationFiles,
-  readAiConversationFile,
-  createAiConversationArtifact,
-  parseCodeToolInput,
-} from "@k2b/cloud/ai";
-import type { AuthContext, RequestAuthority } from "@k2b/cloud/server";
 import { createCliCodeHost } from "../cli/code-host";
 import { createArtifactServiceRoutes } from "./api";
 import type { CodeToolContext } from "./code-tools";
@@ -34,6 +35,7 @@ type Session = {
   lastUsed: number;
   busy: Set<string>;
   lastCall?: { turnId: string; callId: string };
+  capabilityContext?: { conversationId: string; turnId: string; token: string };
   decisions: Map<string, (approved: boolean) => void>;
 };
 const sessions = new Map<string, Session>();
@@ -114,7 +116,11 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
     return Response.json({ file: stored });
   }
   if (!url.pathname.startsWith("/api/assistant/artifacts/")) throw new Error("Code host request is outside its API boundary");
-  const authority: RequestAuthority = { actor: context.actor, accessSubject: context.accessSubject, credentialKind: "session", scopes: [] };
+  const transport = createCodeCapabilityTransport(() => {
+    const current = session.capabilityContext;
+    if (!current || current.turnId !== active.turn.id) throw new Error("Code capability authority expired");
+    return current;
+  });
   const router = new Hono<AuthContext>()
     .use("*", async (c, next) => {
       c.set("actor", context.actor);
@@ -123,7 +129,7 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
     })
     .route(
       "/api/assistant/artifacts",
-      createArtifactServiceRoutes(() => ({ authority, origin: "assistant", locale: context.locale, signal: init?.signal ?? undefined })),
+      createArtifactServiceRoutes(() => ({ transport, origin: "assistant", locale: context.locale, signal: init?.signal ?? undefined })),
     );
   return router.fetch(new Request(url, init));
 }
@@ -201,6 +207,8 @@ export const agentHost = {
     }
     if (!row) {
       session = await createSession(context);
+      if (context.capabilityToken)
+        session.capabilityContext = { conversationId: context.conversationId!, turnId: call.turnId, token: context.capabilityToken };
       if (session.busy.size) return { status: "busy", phase: "busy", approvals: [] };
       session.busy.add(key);
       session.lastCall = { turnId: call.turnId, callId: call.callId };
@@ -243,6 +251,8 @@ export const agentHost = {
       } else session.busy.delete(key);
       return { status: "running", phase: session.phase, approvals: [] };
     }
+    if (session && context.capabilityToken)
+      session.capabilityContext = { conversationId: context.conversationId!, turnId: call.turnId, token: context.capabilityToken };
     if (session)
       await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message)
       SELECT ${call.turnId}::uuid,${call.callId},a.id,a.message FROM assistant.artifact_agent_approvals a

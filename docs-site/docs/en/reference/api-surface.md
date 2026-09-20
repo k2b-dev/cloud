@@ -275,6 +275,10 @@ do not protect a route. Use `auth` middleware.
 The `@k2b/cloud/ai` export `CODE_SOURCE_TOOLS` and its `CodeSourceToolName` type
 define the flat inputs for direct Assistant server tools. See
 [Assistant code tools](/en/docs/ai/chat-interface) for loading and execution.
+`createCodeCapabilityTransport` and `CODE_CAPABILITY_TOKEN_HEADER` on this
+entry point are platform-owned managed-host helpers, not application APIs.
+They keep the turn-bound callback credential outside the sandbox and route
+capability calls through Core; see [App capabilities](/en/docs/platform/capabilities).
 
 
 PDF applications use `renderHtmlToPdf`, `renderFacturXHtmlToPdf` and

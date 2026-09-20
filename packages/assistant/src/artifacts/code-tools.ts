@@ -13,7 +13,7 @@ import { artifactMessages } from "./messages";
 import { sourceDiagnostics, sourceManifest } from "./source";
 import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
 
-export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal; review?: boolean };
+export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal; review?: boolean; capabilityToken?: string };
 const links = (id: string) => ({
   refs: [{ type: "assistant.artifact", id }],
   links: [{ rel: "open" as const, href: `/app/assistant?workspace=${encodeURIComponent(JSON.stringify(["app", id]))}` }],

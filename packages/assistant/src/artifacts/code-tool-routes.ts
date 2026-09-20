@@ -4,7 +4,7 @@ import { z } from "zod";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { type AuthContext, requireInvocation, getLocale } from "@k2b/cloud/server";
-import { CODE_SOURCE_TOOLS, aiConversations } from "@k2b/cloud/ai";
+import { CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS, aiConversations } from "@k2b/cloud/ai";
 import { artifactCodeHandlers, type CodeToolContext } from "./code-tools";
 import { LIMITS } from "./contracts";
 
@@ -41,6 +41,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
           locale: getLocale(c),
           review: envelope.review,
           signal: c.req.raw.signal,
+          capabilityToken: c.req.header(CODE_CAPABILITY_TOKEN_HEADER),
         }),
       );
     },

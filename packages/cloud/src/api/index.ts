@@ -18,6 +18,7 @@ import { Hono } from "hono";
 import { prettyJSON } from "hono/pretty-json";
 import { createAiApprovalPreferenceRoutes } from "../ai/approval-routes";
 import { aiProjectsRoutes } from "../ai/projects-routes";
+import { createCodeCapabilityRoutes } from "../ai/code-capability-routes";
 import { aiRoutes } from "../ai/routes";
 import { aiSkillsRoutes } from "../ai/skills-routes";
 import accountsEntitiesRoutes from "./accounts-entities";
@@ -81,6 +82,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/ai/approval-preferences", approvalPreferenceRoutes)
     .route("/ai/projects", aiProjectsRoutes)
     .route("/ai/skills", aiSkillsRoutes)
+    .route("/_internal/ai/code", createCodeCapabilityRoutes())
     .route("/ai", aiRoutes)
     .route("/", helpRoutes)
     .route("/", capabilityRoutes)

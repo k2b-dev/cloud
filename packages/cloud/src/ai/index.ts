@@ -356,3 +356,6 @@ export { getAiChatQuotas } from "./chat-quotas";
 
 export { AiFileLocation, AiFileReference } from "./file-reference-contracts";
 export { aiFileContentVersion, AiFileWriteError, AiFileVersionConflict } from "./file-content-version";
+
+// Framework-owned managed execution host transport.
+export { createCodeCapabilityTransport, CODE_CAPABILITY_TOKEN_HEADER } from "./code-capability-transport";

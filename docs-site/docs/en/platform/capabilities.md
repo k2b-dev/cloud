@@ -1067,13 +1067,21 @@ const result = await invokeCapabilityWithDataSchema(
 if (!result.ok) throw new Error(result.error.message);
 ```
 
-A server-owned execution host may instead pass `authority` resolved by Cloud's
-verified request middleware, plus its `origin`. This uses the same permission,
-review, idempotency, invocation-signing and audit dispatcher in process. Never
-construct authority from JSON, tool arguments, worker messages or browser state.
-Do not mix it with credentials or a mandate. It is appropriate for an active
-request-owned execution; durable background jobs still require a revocable
-mandate. User code runs in a sandbox and receives neither authority nor credentials.
+Only **Core-owned** code may pass verified `authority` for in-process dispatch.
+It invokes Core's permission, review, idempotency, signing, and audit machinery;
+this is not a credential bridge for independently deployed application hosts.
+Never construct authority from JSON, tool arguments, workers, or browser state,
+and never mix it with credentials, a mandate or `transport`.
+
+Framework-owned execution hosts can supply a server-only `transport(request)`
+to the capability client. It handles Queries, Actions, reviews, and binary
+continuations through Core. Managed Assistant execution uses a short-lived,
+Core-issued callback bound to its conversation and foreground turn. Core checks
+the current account, conversation ownership and active turn on every callback.
+The host refreshes this credential through Core's polling requests; it never
+passes it to user code or persists it with tool arguments. Closed, cancelled or
+background turns cannot use this callback. Ordinary application callers use
+request credentials as shown below; background jobs use revocable mandates.
 
 Server-side app code uses the Core-backed adapter. Pass only credentials and
 trace data from the current request. The adapter sends them to Core's private

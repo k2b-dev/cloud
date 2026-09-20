@@ -1,12 +1,13 @@
-import { z } from "zod";
 import type { ToolContext } from "@k2b/nessi";
-import type { RequestActor } from "../server";
-import { getApp } from "../_internal/registry";
+import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { getApp } from "../_internal/registry";
+import type { RequestActor } from "../server";
 import { signInvocationToken } from "../services/identity/invocation-token";
+import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
 import { resolveAiCapabilityActor } from "./capability-execution";
+import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
 import { aiConversations } from "./store";
 
 const Reply = z.object({
@@ -43,6 +44,7 @@ export const runManagedCodeTool =
     await context.reportProgress?.(context.locale?.startsWith("de") ? "Ausführungshost verbinden" : "Connecting execution host");
     const app = await getApp("assistant");
     if (!app) throw new Error("Assistant code host is unavailable");
+    let callback: Awaited<ReturnType<typeof signInvocationToken>> | undefined;
     const request = async (decision?: { id: string; approved: boolean }) => {
       const signed = await withActiveIdentitySigner(
         "invocation",
@@ -65,7 +67,31 @@ export const runManagedCodeTool =
           }),
         { signal: context.signal, timeoutMs: 5000 },
       );
+      if (!callback || callback.claims.exp * 1000 - Date.now() < 10_000) {
+        callback = await withActiveIdentitySigner(
+          "invocation",
+          (signer) =>
+            signInvocationToken({
+              targetAppId: "core",
+              callingAppId: "assistant",
+              operation: codeCapabilityOperation(context.conversationId!, context.turnId!),
+              schemaHash: null,
+              authority: {
+                sub: actor.user.id,
+                principal_type: "user",
+                access_subject_type: "user",
+                access_subject_id: actor.user.id,
+                credential_kind: "session",
+                scopes: [],
+              },
+              signer,
+              issuer: signer.issuer,
+            }),
+          { signal: context.signal, timeoutMs: 5000 },
+        );
+      }
       const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });
+      headers.set(CODE_CAPABILITY_TOKEN_HEADER, callback.token);
       if (context.locale) headers.set(LOCALE_HEADER, context.locale);
       const response = await fetch(new URL(`/_internal/assistant/tools/${name}`, app.baseUrl), {
         method: "POST",

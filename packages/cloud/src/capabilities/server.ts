@@ -1,9 +1,14 @@
 import { z } from "zod";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getApp, getCapability } from "../_internal/registry";
-import type { RequestAuthority } from "../server";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
-import { type CapabilityOrigin, CAPABILITY_FRAMEWORK_ERROR_CODES, CapabilityActionReviewSchema, capabilityResultSchema } from "../contracts/capabilities";
+import {
+  CAPABILITY_FRAMEWORK_ERROR_CODES,
+  CapabilityActionReviewSchema,
+  type CapabilityOrigin,
+  capabilityResultSchema,
+} from "../contracts/capabilities";
+import type { RequestAuthority } from "../server";
 import { get } from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { publicCloudOrigin } from "../shared/app-url";
@@ -30,8 +35,10 @@ export type {
 } from "./types";
 
 export type CapabilityCaller = {
-  /** Server-only authority from verified request middleware; never accept this from a request body or worker. */
+  /** Core-only in-process authority; other applications must use a Core transport. */
   authority?: RequestAuthority;
+  /** Trusted server transport to Core. Never supplied by a browser or sandbox. */
+  transport?: (request: Request) => Promise<Response>;
   origin?: CapabilityOrigin;
 
   authorization?: string | null;
@@ -115,37 +122,47 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
       : `/api/capabilities/v1/${invocation.kind === "query" ? "queries" : "actions"}/${encodeURIComponent(invocation.appId)}/${encodeURIComponent(invocation.capabilityId)}`;
     const request = await callerRequest(caller, path, invocation.idempotencyKey, invocation.signal);
     if (caller.authority) {
-      if (caller.authorization || caller.cookie || caller.mandate) throw new Error("Use exactly one capability authority source");
-      const outcome = await dispatchCapability({request,kind:invocation.kind === "query" ? "queries" : "actions",
-        appId:invocation.appId,capabilityId:invocation.capabilityId,input:invocation.input,authority:caller.authority,
-        locale:caller.locale ?? undefined,origin:caller.origin ?? "app"});
-      return readCapabilityResponse(outcome,capabilityResultSchema(dataSchema,{consumer:true}));
+      if (caller.authorization || caller.cookie || caller.mandate || caller.transport)
+        throw new Error("Use exactly one capability authority source");
+      const outcome = await dispatchCapability({
+        request,
+        kind: invocation.kind === "query" ? "queries" : "actions",
+        appId: invocation.appId,
+        capabilityId: invocation.capabilityId,
+        input: invocation.input,
+        authority: caller.authority,
+        locale: caller.locale ?? undefined,
+        origin: caller.origin ?? "app",
+      });
+      return readCapabilityResponse(outcome, capabilityResultSchema(dataSchema, { consumer: true }));
     }
-    const response = await fetch(request, {
-      body: JSON.stringify(
-        caller.mandate
-          ? {
-              kind: invocation.kind,
-              targetApp: invocation.appId,
-              capabilityId: invocation.capabilityId,
-              input: invocation.input,
-              mandateId: caller.mandate.id,
-              mandateRevision: caller.mandate.revision,
-              ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
-              ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
-                ? {
-                    metadata: {
-                      ...(caller.requestId ? { requestId: caller.requestId } : {}),
-                      ...(caller.traceparent ? { traceparent: caller.traceparent } : {}),
-                      ...(caller.tracestate ? { tracestate: caller.tracestate } : {}),
-                      ...(caller.locale ? { locale: caller.locale } : {}),
-                    },
-                  }
-                : {}),
-            }
-          : { input: invocation.input },
-      ),
-    });
+    const response = await (caller.transport ?? fetch)(
+      new Request(request, {
+        body: JSON.stringify(
+          caller.mandate
+            ? {
+                kind: invocation.kind,
+                targetApp: invocation.appId,
+                capabilityId: invocation.capabilityId,
+                input: invocation.input,
+                mandateId: caller.mandate.id,
+                mandateRevision: caller.mandate.revision,
+                ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
+                ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
+                  ? {
+                      metadata: {
+                        ...(caller.requestId ? { requestId: caller.requestId } : {}),
+                        ...(caller.traceparent ? { traceparent: caller.traceparent } : {}),
+                        ...(caller.tracestate ? { tracestate: caller.tracestate } : {}),
+                        ...(caller.locale ? { locale: caller.locale } : {}),
+                      },
+                    }
+                  : {}),
+              }
+            : { input: invocation.input },
+        ),
+      }),
+    );
     return readCapabilityResponse(response, capabilityResultSchema(dataSchema, { consumer: true }));
   } catch (cause) {
     return unavailable(cause, invocation, caller.locale ?? undefined);
@@ -213,21 +230,32 @@ export const reviewCapabilityAction = async <TInput = unknown>(
 ): Promise<CapabilityReviewClientResult> => {
   try {
     if (caller.authority) {
-      if (caller.authorization || caller.cookie || caller.mandate) throw new Error("Use exactly one capability authority source");
-      const request = await callerRequest(caller,"/api/capabilities/review",undefined,invocation.signal);
-      const outcome = await dispatchCapability({request,kind:"actions",review:true,
-        appId:invocation.appId,capabilityId:invocation.capabilityId,input:invocation.input,authority:caller.authority,
-        locale:caller.locale ?? undefined,origin:caller.origin ?? "app"});
-      return readCapabilityResponse(outcome,CapabilityActionReviewSchema);
+      if (caller.authorization || caller.cookie || caller.mandate || caller.transport)
+        throw new Error("Use exactly one capability authority source");
+      const request = await callerRequest(caller, "/api/capabilities/review", undefined, invocation.signal);
+      const outcome = await dispatchCapability({
+        request,
+        kind: "actions",
+        review: true,
+        appId: invocation.appId,
+        capabilityId: invocation.capabilityId,
+        input: invocation.input,
+        authority: caller.authority,
+        locale: caller.locale ?? undefined,
+        origin: caller.origin ?? "app",
+      });
+      return readCapabilityResponse(outcome, CapabilityActionReviewSchema);
     }
-    const response = await fetch(
-      await callerRequest(
-        caller,
-        `/api/capabilities/v1/actions/${encodeURIComponent(invocation.appId)}/${encodeURIComponent(invocation.capabilityId)}/review`,
-        undefined,
-        invocation.signal,
+    const response = await (caller.transport ?? fetch)(
+      new Request(
+        await callerRequest(
+          caller,
+          `/api/capabilities/v1/actions/${encodeURIComponent(invocation.appId)}/${encodeURIComponent(invocation.capabilityId)}/review`,
+          undefined,
+          invocation.signal,
+        ),
+        { body: JSON.stringify({ input: invocation.input }) },
       ),
-      { body: JSON.stringify({ input: invocation.input }) },
     );
     return readCapabilityResponse(response, CapabilityActionReviewSchema);
   } catch (cause) {
@@ -251,14 +279,17 @@ export async function transferCapabilityStream(
   if (caller.authorization) headers.set("authorization", caller.authorization);
   if (caller.cookie) headers.set("cookie", caller.cookie);
   const request = new Request(new URL(path, await coreOrigin()), {
-    method: "POST", headers, body, signal: caller.signal,
+    method: "POST",
+    headers,
+    body,
+    signal: caller.signal,
     // @ts-expect-error Streaming server request bodies require duplex.
     duplex: body instanceof ReadableStream ? "half" : undefined,
   });
   if (caller.authority) {
-    if (caller.cookie || caller.authorization) throw new Error("Use one authority source");
+    if (caller.cookie || caller.authorization || caller.transport) throw new Error("Use one authority source");
     const { dispatchCapabilityStream } = await import("../api/capability-streams");
     return dispatchCapabilityStream(request, caller.authority, verb);
   }
-  return fetch(request, { redirect: "error" });
+  return caller.transport ? caller.transport(request) : fetch(request, { redirect: "error" });
 }
