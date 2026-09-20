@@ -149,20 +149,24 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     expect(serviceReport.items[0]?.status).toBe("exhausted");
   });
   test("report sorts and filters a multi-page cohort before pagination", async () => {
+    const now = new Date("2026-09-20T12:00:00.000Z");
+    // Keep all calls inside the report window: PostgreSQL's clock_timestamp()
+    // has finer precision than JavaScript's millisecond report cutoff.
+    const startedAt = new Date(now.getTime() - 1000);
     const users = Array.from({ length: 30 }, (_, i) => ({ id: crypto.randomUUID(), uid: `report-${i}`, display_name: `Report ${i}` }));
     await sql`INSERT INTO auth.users ${sql(users, "id", "uid", "display_name")}`;
     try {
       await save([rule("a", 15)]);
-      await sql`INSERT INTO ai.inference_calls ${sql(users.map((u, i) => ({ id: crypto.randomUUID(), user_id: u.id, model_profile_id: "a", input: i, output: 0, kind: "chat", task: "chat", provider_model: "a", lease_expires_at: new Date(), cost: i })))}`;
-      const first = await quotaReport({ search: "Report", sort: "cost", direction: "desc" });
-      const second = await quotaReport({ ...first.query, page: 2 });
+      await sql`INSERT INTO ai.inference_calls ${sql(users.map((u, i) => ({ id: crypto.randomUUID(), user_id: u.id, model_profile_id: "a", input: i, output: 0, kind: "chat", task: "chat", provider_model: "a", started_at: startedAt, lease_expires_at: now, cost: i })))}`;
+      const first = await quotaReport({ search: "Report", sort: "cost", direction: "desc" }, now);
+      const second = await quotaReport({ ...first.query, page: 2 }, now);
       expect(first.total).toBe(30);
       expect(first.items).toHaveLength(25);
       expect(second.items).toHaveLength(5);
-      expect(first.items[0]?.input).toBe(29);
-      expect(second.items[0]?.input).toBe(4);
+      expect(first.items.map((item) => item.input)).toEqual(Array.from({ length: 25 }, (_, i) => 29 - i));
+      expect(second.items.map((item) => item.input)).toEqual([4, 3, 2, 1, 0]);
       expect(new Set([...first.items, ...second.items].map((r) => r.id)).size).toBe(30);
-      const blocked = await quotaReport({ search: "Report", status: "exhausted", page: 2 });
+      const blocked = await quotaReport({ search: "Report", status: "exhausted", page: 2 }, now);
       expect(blocked.total).toBe(15);
       expect(blocked.page).toBe(1);
       expect(blocked.items.every((r) => r.input >= 15)).toBe(true);
