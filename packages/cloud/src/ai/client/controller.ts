@@ -286,7 +286,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
     reduceEvent(conversationId, event);
     if (event.type === "state" && loadingConversationId() === conversationId) setLoadingConversationId(null);
-    if (runStatusRaw() && runStatusRaw() !== "stopping") setRunStatusRaw(null);
+    if (runStatusRaw() && (runStatusRaw() !== "stopping" || !state.activeTurn)) setRunStatusRaw(null);
 
     if (event.type === "turn_finished") {
       setRunStatusRaw(null);
@@ -415,6 +415,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     };
     cache.set(conversationId, next);
     setState(reconcile(next, { key: "id", merge: true }));
+    if (!next.activeTurn && runStatusRaw() === "stopping") setRunStatusRaw(null);
   };
 
   const openConversation = async (conversationId: string) => {

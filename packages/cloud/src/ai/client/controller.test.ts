@@ -707,3 +707,29 @@ describe("AI controller steering reconciliation", () => {
     ]);
   });
 });
+
+for (const recovery of ["snapshot", "refresh"] as const) test.skipIf(isServer)(`unlocks the composer after abort completes through ${recovery}`, async () => {
+  const current = conversation("Chat01");
+  let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+  globalThis.fetch = Object.assign(async () => Response.json({ conversation: current, messages: [], activeTurn: null }), { preconnect: originalFetch.preconnect });
+  let dispose!: () => void;
+  const controller = createRoot(cleanup => {
+    dispose = cleanup;
+    return createAiChatController({
+      baseUrl: "/api/ai", initialConversationId: current.id,
+      initialDetail: { conversation: current, messages: [], activeTurn: { turnId: "running", attempt: 1, seq: 1, status: "waiting_for_action", blocks: [], modelProfileId: null, createdAt: "2026-09-20T00:00:00Z" } },
+      streamTransport: { subscribe: input => { emit = input.onEvent; return { close() {} }; } },
+    });
+  });
+  try {
+    expect(await controller.abort()).toBe(true);
+    expect(controller.runStatus()).toBe("stopping");
+    emit({ type: "state", conversation: current, messages: [], activeTurn: controller.activeTurn() });
+    expect(controller.runStatus()).toBe("stopping");
+    if (recovery === "snapshot") emit({ type: "state", conversation: current, messages: [], activeTurn: null });
+    else await controller.refreshActiveConversation();
+    expect(controller.activeTurn()).toBeNull();
+    expect(controller.runStatus()).toBe("idle");
+    expect(controller.running()).toBe(false);
+  } finally { dispose(); }
+});
