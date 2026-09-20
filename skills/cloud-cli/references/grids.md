@@ -1836,3 +1836,9 @@ must be updated and republished to use this flow; no stored definition migration
 is performed.
 
 `createRecord` can copy selected inputs from an existing record in the same table: supply `copyFrom: inputs.original` with `copyFields: [Positions]`. Select up to 100 stored value fields. IDs, unique fields, files, relations and calculated fields cannot be copied. Object-list inputs are copied and their formulas recalculated. Explicit `values` override copies and retain normal write validation. The source remains unchanged; replaying the same workflow step returns the same new record. This option belongs to the standalone action, not entries inside `atomicRecords`.
+
+## Document content streams
+
+Use `document.content.read` for stored artifact bytes and `document.read` for
+metadata. See [Document content streams](grids-documents.md#document-content-streams)
+for artifact selection, Code Mode and transfer limits.

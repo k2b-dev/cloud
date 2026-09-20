@@ -819,9 +819,23 @@ receipt confirms acceptance; read its run status before reporting completion.
 Capability writes also attach the originating Cloud request ID to Grids audit
 rows, allowing operators to correlate domain changes with capability executions.
 
-The bundled `cloud-grids` Assistant Skill is version 2. Startup updates an
+The bundled `cloud-grids` Assistant Skill is version 4. Startup updates an
 unchanged managed copy, including its query reference. User-edited copies remain
 untouched and require deliberate reconciliation with the current template.
+
+### Read document files
+
+Use `document.content.read` to retrieve one stored artifact as an authenticated
+binary stream. Supply the public document `id` and optionally an `artifactKey`
+from `document.read`; omission selects the primary artifact. The result contains
+artifact metadata and a stream, without rendering or issuing a new document.
+Permissions are checked again when downloading. In Assistant code mode, use
+`capabilities.streams.read` with the stream returned by the current run to obtain
+a `File`. This does not extract PDF text. Code mode permits 50 MiB per payload
+and 250 MiB across transfers; Grids advertises its existing 100 MiB artifact
+budget for HTTP/CLI consumers. References expire after one hour and are not
+supported for mandate-backed background work. A generated CSV/XML artifact is
+supported; this is not an arbitrary GQL-to-CSV export capability.
 
 ### Coordinated capability upgrade
 

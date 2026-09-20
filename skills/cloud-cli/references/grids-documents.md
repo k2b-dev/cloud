@@ -578,3 +578,17 @@ Limits fail explicitly rather than silently truncating an export.
 For detailed UI help, load **Documents & PDFs**, **Workflows**, **Evidence exports**,
 and **Retention and preservation** through the Cloud help tools. This reference
 covers operational inputs; it does not certify tax, bank, or legal compliance.
+
+## Document content streams
+
+Use `document.content.read` to retrieve one stored artifact as an authenticated
+binary stream. Supply the public document `id` and optionally an `artifactKey`
+from `document.read`; omission selects the primary artifact. The result contains
+artifact metadata and a stream, without rendering or issuing a new document.
+Permissions are checked again when downloading. In Assistant code mode, use
+`capabilities.streams.read` with the stream returned by the current run to obtain
+a `File`. This does not extract PDF text. Code mode permits 50 MiB per payload
+and 250 MiB across transfers; Grids advertises its existing 100 MiB artifact
+budget for HTTP/CLI consumers. References expire after one hour and are not
+supported for mandate-backed background work. A generated CSV/XML artifact is
+supported; this is not an arbitrary GQL-to-CSV export capability.

@@ -17,6 +17,7 @@ import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { fileResponse } from "./api/download-response";
 import { DocumentCapabilityDataSchema } from "./api/document-public-contracts";
 import { documentActor, loadTemplateAndTable, projectDocuments } from "./api/documents-api-shared";
 import { publicGqlParameterContext } from "./api/gql-public";
@@ -71,6 +72,7 @@ import { isRecordWritableFieldType } from "./field-types";
 import { ObjectListConfigSchema } from "./field-types/object-list";
 import { queryCapabilityHref } from "./query-capability-link";
 import { gridsService } from "./service";
+import { MAX_DOCUMENT_ARTIFACT_BYTES } from "./service/document-artifact-drafts";
 import { decodeDocumentCursor } from "./service/document-values";
 import { toPublicGqlResponse } from "./service/gql-public-result";
 import { projectPublicId, resolvePublicId, resolvePublicIds } from "./service/public-resources";
@@ -95,6 +97,12 @@ const pageInput = {
   limit: z.number().int().min(1).max(20).default(10).describe("Maximum candidates inspected on this page."),
 };
 const documentData = DocumentCapabilityDataSchema;
+const documentContentInput = readInput.extend({
+  artifactKey: documentData.shape.artifacts.element.shape.key
+    .optional()
+    .describe("Artifact key from document.read; defaults to the primary artifact."),
+});
+const documentStreamSource = documentContentInput.required();
 const templateData = z.object({ id: ShortIdSchema, tableId: ShortIdSchema, name: z.string(), enabled: z.boolean() }).strict();
 const recordActionInput = z
   .object({
@@ -249,6 +257,58 @@ export const dailyCapabilities = defineCapabilities({
         if (!document) return missing();
         const gate = await gateBaseAtAccess(context, document.baseId, "read");
         return gate.ok ? ok(await documentResult(document)) : gate;
+      },
+    },
+    "document.content.read": {
+      title: "Read document content",
+      description:
+        "Read one stored immutable artifact as an authenticated binary stream. Use a document ID from document.list/read/create and optionally an artifact key from document.read. Does not render, issue, extract text or send a document.",
+      input: documentContentInput,
+      data: documentData.shape.artifacts.element,
+      openWorld: false,
+      stream: {
+        direction: "read",
+        maxBytes: MAX_DOCUMENT_ARTIFACT_BYTES,
+        async read(stream, context) {
+          context.signal.throwIfAborted();
+          const source = documentStreamSource.parse(JSON.parse(stream.id));
+          const document = await gridsService.document.getDocumentByShortId(source.id);
+          if (!document) throw err.notFound("Document");
+          const gate = await gateBaseAtAccess(context, document.baseId, "read");
+          if (!gate.ok) throw gate.error;
+          const artifact = await gridsService.document.getDocumentArtifact(document.id, source.artifactKey, context.locale);
+          if (!artifact.ok) throw artifact.error;
+          context.signal.throwIfAborted();
+          return fileResponse(artifact.data.bytes, artifact.data.filename, artifact.data.mimeType);
+        },
+      },
+      async run(input, context) {
+        context.signal.throwIfAborted();
+        const document = await gridsService.document.getDocumentByShortId(input.id);
+        if (!document) return missing();
+        const gate = await gateBaseAtAccess(context, document.baseId, "read");
+        if (!gate.ok) return gate;
+        const key = input.artifactKey ?? document.primaryArtifactKey;
+        const artifact = document.artifacts.find((item) => item.key === key);
+        if (!artifact) return missing();
+        return ok({
+          data: documentData.shape.artifacts.element.parse({
+            key: artifact.key,
+            filename: artifact.filename,
+            mimeType: artifact.mimeType,
+            sizeBytes: artifact.sizeBytes,
+            sha256: artifact.sha256,
+          }),
+          refs: [{ type: "grids.document", id: document.shortId }],
+          stream: {
+            id: JSON.stringify({ id: document.shortId, artifactKey: key }),
+            direction: "read" as const,
+            name: artifact.filename,
+            mediaType: artifact.mimeType,
+            size: artifact.sizeBytes,
+            expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          },
+        });
       },
     },
     "workflow.record-actions": {

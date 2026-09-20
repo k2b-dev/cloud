@@ -194,6 +194,22 @@ describe("Grids capabilities", () => {
       const document = zDocument(first.data.data);
       const read = await invoke("query", "document.read", { id: document.id }, context);
       expect(read).toEqual(first);
+      const content = await invoke("query", "document.content.read", { id: document.id }, context);
+      if (!content.ok || !content.data.stream) throw new Error("Expected artifact stream");
+      const stream = content.data.stream;
+      const transfer = gridsCapabilities.queries["document.content.read"].stream.read;
+      expect(stream).toMatchObject({ direction: "read", mediaType: "application/pdf", size: new TextEncoder().encode("%PDF-1.7\ntest artifact").length });
+      expect(await (await transfer(stream, context)).text()).toBe("%PDF-1.7\ntest artifact");
+      expect((await invoke("query", "document.content.read", { id: document.id, artifactKey: "missing" }, context)).ok).toBe(false);
+      expect((await invoke("query", "document.content.read", { id: document.id }, outsider)).ok).toBe(false);
+      await expect(transfer(stream, outsider)).rejects.toBeDefined();
+      const explicit = await invoke("query", "document.content.read", { id: document.id, artifactKey: "pdf" }, context);
+      expect(explicit.ok && explicit.data.data).toEqual(content.data.data);
+      await expect(transfer({ ...stream, id: JSON.stringify({ id: document.id, artifactKey: "missing" }) }, context)).rejects.toBeDefined();
+      await expect(transfer({ ...stream, id: "invalid" }, context)).rejects.toBeDefined();
+      await expect(transfer(stream, { ...context, signal: AbortSignal.abort() })).rejects.toBeDefined();
+
+
       expect((await invoke("query", "document.read", { id: document.id }, outsider)).ok).toBe(false);
       expect(JSON.stringify(first)).not.toContain(tableId);
       expect(JSON.stringify(first)).not.toContain(recordId);
@@ -258,6 +274,7 @@ describe("Grids capabilities", () => {
       expect(JSON.stringify(runStatus)).not.toContain(recordId);
       expect((await invoke("action", "workflow.record-action", { ...actionInput, recordId: otherPublicId }, keyed)).ok).toBe(false);
       await sql`DELETE FROM grids.base_access WHERE base_id=${baseId}::uuid`;
+      await expect(transfer(stream, context)).rejects.toBeDefined();
       expect((await invoke("action", "document.create", input, keyed)).ok).toBe(false);
       expect((await invoke("query", "document.read", { id: document.id }, context)).ok).toBe(false);
     } finally {
@@ -274,6 +291,7 @@ describe("Grids capabilities", () => {
       "base.list",
       "base.read",
       "base.search",
+      "document.content.read",
       "document.list",
       "document.read",
       "document.templates",

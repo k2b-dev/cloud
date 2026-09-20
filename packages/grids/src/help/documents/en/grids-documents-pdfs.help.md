@@ -505,3 +505,5 @@ These are safety ceilings, not layout targets. For a document with thousands of 
 :::note Use GQL for data, Liquid for layout
 Keep filtering, sorting, joins, and grouping in GQL. Keep Liquid focused on loops, conditions, text, tables, images, barcodes, headers, footers, and CSS.
 :::
+
+Agents use `document.content.read` for stored PDF, XML or CSV bytes. Choose an artifact key from `document.read`, or omit it for the primary file. Code mode reads the returned stream as a File, with a 50 MiB per-file limit. Downloading does not extract PDF text, issue or send a document. Current read permission is checked again at download.

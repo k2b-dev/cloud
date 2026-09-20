@@ -34,3 +34,10 @@ test("Grids Skill separates query results, context and turn-local reference load
   expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("Custom App @auth/@time context is not injected here");
   expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("'days'");
 });
+
+test("Grids Skill distinguishes file bytes from inspected contents", () => {
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("grids.document.content.read");
+  expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("capabilities.streams.read");
+  expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("does not extract PDF text");
+  expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("50 MiB");
+});

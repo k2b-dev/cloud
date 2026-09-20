@@ -53,6 +53,14 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
             "id": "Öffentliche ID des gespeicherten Dokuments.",
           },
         },
+        "document.content.read": {
+          title: "Dokumentinhalt lesen",
+          description: "Ein gespeichertes unveränderliches Artefakt als authentifizierten Binärstream lesen. Erstellt oder versendet kein Dokument und extrahiert keinen Text.",
+          input: {
+            id: "Öffentliche Dokument-ID aus document.list/read/create.",
+            artifactKey: "Artefakt-Schlüssel aus document.read; standardmäßig das primäre Artefakt.",
+          },
+        },
         "workflow.record-actions": {
           title: "Record-Aktionen finden",
           description:

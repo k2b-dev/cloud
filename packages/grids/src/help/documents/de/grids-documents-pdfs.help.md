@@ -507,3 +507,5 @@ Dies sind Sicherheitsobergrenzen und keine Layoutziele. Teste bei einem Dokument
 :::note GQL für Daten, Liquid für Layout verwenden
 Lege Filterung, Sortierung, Joins und Gruppierung in GQL ab. Beschränke Liquid auf Schleifen, Bedingungen, Text, Tabellen, Bilder, Barcodes, Kopfzeilen, Fußzeilen und CSS.
 :::
+
+Agents lesen mit `document.content.read` gespeicherte PDF-, XML- oder CSV-Dateien. Der Artefakt-Schlüssel kommt aus `document.read`; ohne Schlüssel wird die primäre Datei gewählt. Code Mode liest den Stream als File, mit höchstens 50 MiB pro Datei. Ein Download extrahiert keinen PDF-Text und erstellt oder versendet kein Dokument. Die aktuelle Leseberechtigung wird beim Download erneut geprüft.
