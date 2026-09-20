@@ -53,3 +53,46 @@ else
       dom.cleanup();
     }
   });
+
+if (!isServer) test("compact CSV counts hidden records and full preview pages through every row", async () => {
+  const dom = createDomTestHarness();
+  const { default: FileView } = await import("../src/content/FileView");
+  const content = "name,note\n" + Array.from({ length: 205 }, (_, i) => `${i},"two\nlines"`).join("\n");
+  let expanded = false;
+  const mount = (previewLines?: number) => render(() => createComponent(FileView, {
+    file: { path: "test.csv" }, previewLines, onExpandPreview: () => { expanded = true; },
+    load: async () => ({ encoding: "utf8", content, mediaType: "text/csv" }),
+  }), dom.root);
+  let dispose = mount(5);
+  try {
+    await Bun.sleep(30);
+    expect(dom.root.querySelectorAll("tbody tr")).toHaveLength(5);
+    const more = Array.from(dom.root.querySelectorAll("button")).find(b => b.textContent?.includes("200 more lines"));
+    expect(more).toBeDefined(); more!.click(); expect(expanded).toBe(true);
+    dispose(); dispose = mount(); await Bun.sleep(30);
+    expect(dom.root.querySelectorAll("tbody tr")).toHaveLength(200);
+    Array.from(dom.root.querySelectorAll("button")).find(b => b.textContent === "Next")!.click();
+    expect(dom.root.querySelectorAll("tbody tr")).toHaveLength(5);
+    expect(dom.root.querySelector("tbody td")?.textContent).toBe("200");
+  } finally { dispose(); dom.cleanup(); }
+});
+
+if (!isServer) test("compact Markdown keeps its heading scale and expands without modifying the source", async () => {
+  const dom = createDomTestHarness();
+  const { default: FileView } = await import("../src/content/FileView");
+  const content = "# Title\n\none\ntwo\nthree\nfour\nfive";
+  const mount = (previewLines?: number) => render(() => createComponent(FileView, {
+    file: { path: "README.md" }, previewLines, headingScale: previewLines ? "compact" : "normal",
+    load: async () => ({ encoding: "utf8", content, mediaType: "text/markdown" }),
+  }), dom.root);
+  let dispose = mount(5);
+  try {
+    await Bun.sleep(30);
+    expect(dom.root.textContent).toContain("2 more lines");
+    expect(dom.root.textContent).not.toContain("five");
+    expect(dom.root.querySelector('[data-heading-scale="compact"]')).not.toBeNull();
+    dispose(); dispose = mount(); await Bun.sleep(30);
+    expect(dom.root.textContent).toContain("five");
+    expect(dom.root.querySelector('[data-heading-scale="compact"]')).toBeNull();
+  } finally { dispose(); dom.cleanup(); }
+});

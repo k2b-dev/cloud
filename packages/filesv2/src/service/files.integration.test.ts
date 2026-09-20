@@ -665,6 +665,27 @@ suite("Files service and durable bindings", () => {
     await expect(service.commitUpload(actor, { baseId, id: replace.id })).rejects.toMatchObject({ code: "upload_closed" });
     await service.abortUpload(actor, { baseId, id: replace.id });
   });
+  test("folder readmes ignore listing filters and pages, select casing deterministically and obey Unix read access", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/nested");
+    directory("freeipa", "users/alice/nested/README.md", 1001, 2001, "0600", false);
+    directory("freeipa", "users/alice/ReAdMe.Md", 1001, 2001, "0600", false);
+    directory("freeipa", "users/alice/readme.md", 1001, 2001, "0600", false);
+    directory("freeipa", "users/alice/README.md", 1001, 2001, "0600", false);
+    for (let i = 0; i < 1001; i++) directory("freeipa", `users/alice/000-${i}`, 1001, 2001, "0600", false);
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    expect((await service.list(actor, { baseId, type: "directories" })).readme?.name).toBe("README.md");
+    expect((await service.search(actor, { baseId, q: "000", scope: "folder" })).readme?.name).toBe("README.md");
+    nodes.delete("freeipa:users/alice/README.md");
+    expect((await service.list(actor, { baseId })).readme?.name).toBe("readme.md");
+    nodes.delete("freeipa:users/alice/readme.md");
+    expect((await service.list(actor, { baseId })).readme?.name).toBe("ReAdMe.Md");
+    nodes.get("freeipa:users/alice/ReAdMe.Md")!.mode = "0000";
+    expect((await service.list(actor, { baseId })).readme).toBeNull();
+    for (let i = 1001; i < 10001; i++) directory("freeipa", `users/alice/000-${i}`, 1001, 2001, "0600", false);
+    expect((await service.list(actor, { baseId, type: "directories" })).readme).toBeNull();
+  });
   test("capability transfers reject stale reads, incomplete bodies, concurrent writers and cancellation before commit", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");

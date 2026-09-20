@@ -8,6 +8,12 @@ order: 100
 
 Files v2 brings your accessible Cloud and FreeIPA directories into one view. The label beside each storage name identifies its source.
 
+## Folder descriptions and previews {icon="file-description"}
+
+Add a `README.md` to a folder to explain what belongs there. Uppercase and lowercase spelling both work. Its content appears above the list, grid, or tree in a compact area. Long descriptions fade out at the bottom. Use **Show all** to read the full description. The README stays a normal file that you can edit, move, or delete.
+
+The details panel shows five lines of text or five CSV records plus the header. The **… more lines** button opens the larger preview. In long CSV tables, use **Previous** and **Next** to read further pages. Existing preview size limits still apply; tables show at most 50 columns and tell you when more columns require downloading the file.
+
 ## Find your way around {icon="folders"}
 
 The sidebar lists your storage locations and their folders as a tree; the current folder is highlighted and a folder you open shows a spinner in place of its icon. Click a folder in the list to open it; the first row **..** leads back to the parent folder. Click a file to open its details panel on the right, or use the small info button at the end of any row for folders too. Close the panel with the X; that also clears the selection.

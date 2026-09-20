@@ -5,6 +5,8 @@ export const browserMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      folderReadme: "Folder description",
+      showAll: "Show all",
       list: "List",
       grid: "Grid",
       view: "View",
@@ -273,6 +275,8 @@ export const browserMessages = i18n.define({
       uploadUnavailable: "Uploads wait until the current action or search is finished.",
     },
     de: {
+      folderReadme: "Ordnerbeschreibung",
+      showAll: "Alles anzeigen",
       list: "Liste",
       grid: "Grid",
       view: "Ansicht",

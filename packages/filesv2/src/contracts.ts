@@ -53,7 +53,7 @@ export type FileEntry = { revision?: string; name: string; path: string; directo
 /** Present when an administrator configured Collabora; the browser then offers editing and new documents. */
 export type EditorInfo = { documentFormat: DocumentFormat };
 export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[]; editor: EditorInfo | null };
-export type DirectoryResult = { base: BaseSummary; path: string; items: FileEntry[]; next: string | null; actions?: { create: boolean } };
+export type DirectoryResult = { readme?: FileEntry | null; base: BaseSummary; path: string; items: FileEntry[]; next: string | null; actions?: { create: boolean } };
 export type DownloadLease = { url: string; method: "GET"; expires: string };
 export type EntryResult = { base: BaseSummary; entry: FileEntry; favorite?: boolean; resourceId?: string };
 /** A recent or favorite pointer the user may still reach; the base is resolved fresh on every read. */

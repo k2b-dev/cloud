@@ -60,7 +60,7 @@ unknown text stays ordinary Markdown. Use
 
 The component does not impose a reading width. The parent owns width, scrolling, and surrounding layout.
 
-Set `headingScale` to `"compact"`, `"normal"`, or `"large"`. Compact headings fit embedded content such as comments and dialogs, normal is the default prose hierarchy, and large gives standalone pages a stronger hierarchy. The scale changes presentation only; Markdown heading levels remain intact. Use `class` for other context-specific text sizing.
+Set `headingScale` to `"compact"`, `"normal"`, or `"large"`. Compact mode uses smaller headings and tighter paragraph spacing for embedded content such as comments and dialogs. Normal is the default prose hierarchy, and large gives standalone pages a stronger hierarchy. The scale changes presentation only; Markdown heading levels remain intact. Use `class` for other context-specific text sizing.
 
 ## Editing and preview
 

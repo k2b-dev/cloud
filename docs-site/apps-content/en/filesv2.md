@@ -15,6 +15,21 @@ Cloud and FreeIPA directories in one file browser. Administrators manage
 directory creation, assignments, and archives separately from everyday browsing.
 File transfers use short-lived Filegate 6 leases.
 
+The details panel shows five text lines or CSV data rows, followed by the number
+of remaining lines. Open the expanded preview to read more; CSV tables paginate
+through 200 rows at a time. Existing preview size and column limits still apply.
+
+A readable `README.md` in the current folder appears below the view controls and above list, grid, and tree
+content, without a frame, with compact headings, tighter paragraph spacing, and a fixed preview height of 20vh.
+The preview reserves this space while loading to keep the file listing in place.
+Folders without a readable README reserve no space. File-name matching ignores
+case and is independent of the visible page and filters. If several variants
+exist, `README.md` takes precedence, then `readme.md`, then the remaining names
+in lexical order. Detection scans at most 10,000 immediate entries and omits the
+README if that scan is incomplete. The file remains in the normal listing;
+when the description overflows, a fade and **Show all** action appear at the bottom.
+The action opens its full preview with normal-sized headings.
+
 Open `/app/filesv2` to choose an accessible home or group directory from the
 workspace sidebar. On mobile, the Cloud menu contains the same storage choices.
 Switching storage, opening folders, and changing pages update the workspace

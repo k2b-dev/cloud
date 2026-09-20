@@ -7,7 +7,7 @@ import { contentLease, previewFile, previewKind, readPreview } from "./file-prev
 import { useFilesMessages } from "./messages";
 
 /** Mounted for one selected revision; closing it aborts text/PDF reads. */
-type PreviewProps = { baseId: string; locationKey?: string; entry: FileEntry; onDownload: () => void };
+type PreviewProps = { variant?: "default" | "plain"; previewLines?: number; onExpandPreview?: () => void; headingScale?: "compact" | "normal"; baseId: string; locationKey?: string; entry: FileEntry; onDownload: () => void };
 export default function FilePreview(props: PreviewProps) {
   return <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified])}>
     {(_key) => <RevisionPreview {...props} />}
@@ -91,6 +91,10 @@ function RevisionPreview(props: PreviewProps) {
         <Match when={kind()}>
           <FileView
             file={previewFile(props.entry)}
+            variant={props.variant}
+            previewLines={props.previewLines}
+            onExpandPreview={props.onExpandPreview}
+            headingScale={props.headingScale ?? (props.previewLines ? "compact" : "normal")}
             previewPreferencesKey="filesv2-preview"
             load={async () => ({
               encoding: "utf8",

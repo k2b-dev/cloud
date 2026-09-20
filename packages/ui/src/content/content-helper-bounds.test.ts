@@ -267,33 +267,33 @@ describe("file-view-preview bounds", () => {
   });
 
   test("delimited parsing handles empty, single-cell and trailing-newline input", () => {
-    expect(parseDelimitedText("", ",")).toEqual({ rows: [], truncated: false });
-    expect(parseDelimitedText("a", ",")).toEqual({ rows: [["a"]], truncated: false });
+    expect(parseDelimitedText("", ",")).toMatchObject({ rows: [], truncated: false });
+    expect(parseDelimitedText("a", ",")).toMatchObject({ rows: [["a"]], truncated: false });
     // A trailing newline must not emit a phantom empty row.
-    expect(parseDelimitedText("a,b\n", ",")).toEqual({ rows: [["a", "b"]], truncated: false });
+    expect(parseDelimitedText("a,b\n", ",")).toMatchObject({ rows: [["a", "b"]], truncated: false });
     // Bare CR is a line ending too.
-    expect(parseDelimitedText("a\rb", ",")).toEqual({ rows: [["a"], ["b"]], truncated: false });
+    expect(parseDelimitedText("a\rb", ",")).toMatchObject({ rows: [["a"], ["b"]], truncated: false });
     // Empty fields are preserved.
-    expect(parseDelimitedText("a,,c", ",")).toEqual({ rows: [["a", "", "c"]], truncated: false });
+    expect(parseDelimitedText("a,,c", ",")).toMatchObject({ rows: [["a", "", "c"]], truncated: false });
   });
 
   test("quotes only open a quoted field at the field start", () => {
-    expect(parseDelimitedText('a"b"c,d', ",")).toEqual({ rows: [['a"b"c', "d"]], truncated: false });
+    expect(parseDelimitedText('a"b"c,d', ",")).toMatchObject({ rows: [['a"b"c', "d"]], truncated: false });
     // An unterminated quote yields the rest of the input as one field.
-    expect(parseDelimitedText('"abc', ",")).toEqual({ rows: [["abc"]], truncated: false });
+    expect(parseDelimitedText('"abc', ",")).toMatchObject({ rows: [["abc"]], truncated: false });
     // A lone empty quoted field produces no row at all: the trailing flush only
     // fires when a field or row has accumulated content.
-    expect(parseDelimitedText('""', ",")).toEqual({ rows: [], truncated: false });
+    expect(parseDelimitedText('""', ",")).toMatchObject({ rows: [], truncated: false });
     // With a sibling column it survives, so this only affects fully empty input.
-    expect(parseDelimitedText('"",x', ",")).toEqual({ rows: [["", "x"]], truncated: false });
+    expect(parseDelimitedText('"",x', ",")).toMatchObject({ rows: [["", "x"]], truncated: false });
   });
 
   test("column and row caps flag truncation without dropping the kept cells", () => {
-    expect(parseDelimitedText("a,b,c", ",", { columns: 2 })).toEqual({ rows: [["a", "b"]], truncated: true });
+    expect(parseDelimitedText("a,b,c", ",", { columns: 2 })).toMatchObject({ rows: [["a", "b"]], truncated: true });
     // Exactly at the cap is not truncation.
-    expect(parseDelimitedText("a\nb", ",", { rows: 2 })).toEqual({ rows: [["a"], ["b"]], truncated: false });
+    expect(parseDelimitedText("a\nb", ",", { rows: 2 })).toMatchObject({ rows: [["a"], ["b"]], truncated: false });
     // A zero/negative cap floors at 1 rather than returning nothing.
-    expect(parseDelimitedText("a,b\nc,d", ",", { rows: 0 })).toEqual({ rows: [["a", "b"]], truncated: true });
-    expect(parseDelimitedText("a,b", ",", { columns: 0 })).toEqual({ rows: [["a"]], truncated: true });
+    expect(parseDelimitedText("a,b\nc,d", ",", { rows: 0 })).toMatchObject({ rows: [["a", "b"]], truncated: true });
+    expect(parseDelimitedText("a,b", ",", { columns: 0 })).toMatchObject({ rows: [["a"]], truncated: true });
   });
 });

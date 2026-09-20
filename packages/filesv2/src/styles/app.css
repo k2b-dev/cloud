@@ -470,3 +470,31 @@
   overflow: auto;
   min-height: 0;
 }
+
+.filesv2-folder-readme {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 0.25rem 0.75rem 0.75rem;
+}
+.filesv2-folder-readme__content {
+  height: 20vh;
+  overflow: hidden;
+}
+.k2b-ui .filesv2-folder-readme .k2b-content-markdown[data-heading-scale] > :first-child {
+  margin-block-start: 0;
+}
+.filesv2-folder-readme__content[data-overflow="true"] {
+  mask-image: linear-gradient(to bottom, black calc(100% - 4rem), transparent calc(100% - 1.5rem));
+}
+.filesv2-folder-readme__expand {
+  position: absolute;
+  inset-inline: 0.75rem;
+  bottom: 0.75rem;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.filesv2-folder-readme__expand button {
+  color: var(--k2b-text-secondary);
+}

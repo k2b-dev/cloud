@@ -129,12 +129,14 @@ export const canPreviewFile = (file: FileViewFile): boolean => getFileViewPrevie
 export type DelimitedTextPreview = {
   rows: string[][];
   truncated: boolean;
+  totalRows: number;
+  columnsTruncated: boolean;
 };
 
 export const parseDelimitedText = (
   input: string,
   delimiter: string,
-  limits: { rows?: number; columns?: number } = {},
+  limits: { rows?: number; columns?: number; offset?: number } = {},
 ): DelimitedTextPreview => {
   const maxRows = Math.max(1, limits.rows ?? 201);
   const maxColumns = Math.max(1, limits.columns ?? 50);
@@ -143,15 +145,18 @@ export const parseDelimitedText = (
   let field = "";
   let quoted = false;
   let truncated = false;
+  let totalRows = 0;
+  let columnsTruncated = false;
 
   const pushField = () => {
     if (row.length < maxColumns) row.push(field);
-    else truncated = true;
+    else { truncated = true; columnsTruncated = true; }
     field = "";
   };
   const pushRow = () => {
-    if (rows.length < maxRows) rows.push(row);
+    if (rows.length < maxRows && (totalRows === 0 || totalRows > (limits.offset ?? 0))) rows.push(row);
     else truncated = true;
+    totalRows++;
     row = [];
   };
 
@@ -175,10 +180,6 @@ export const parseDelimitedText = (
       pushField();
       pushRow();
       if (character === "\r" && input[index + 1] === "\n") index += 1;
-      if (rows.length >= maxRows && index < input.length - 1) {
-        truncated = true;
-        break;
-      }
     } else {
       field += character;
     }
@@ -189,5 +190,5 @@ export const parseDelimitedText = (
     pushRow();
   }
 
-  return { rows, truncated };
+  return { rows, truncated, totalRows, columnsTruncated };
 };

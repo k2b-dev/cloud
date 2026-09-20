@@ -27,6 +27,7 @@ import {
 import { prompts } from "../feedback/prompts";
 import { toast } from "../feedback/toast";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
+import { Button } from "../actions/Button";
 import { Select } from "../inputs/Select";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
@@ -41,6 +42,12 @@ export { canPreviewFile, getFileViewPreviewKind } from "./file-view-preview";
 export type FileViewContent = { encoding: "utf8" | "base64"; content: string; mediaType: string };
 
 export type FileViewProps = {
+  /** Plain previews inherit the surrounding surface without a frame or inset padding. */
+  variant?: "default" | "plain";
+  /** Read-only excerpt limit; omitted renders the complete preview. */
+  previewLines?: number;
+  onExpandPreview?: () => void;
+  headingScale?: "compact" | "normal" | "large";
   /** Optional browser-local preference scope, owned by the host. */
   previewPreferencesKey?: string;
   file: FileViewFile;
@@ -66,6 +73,10 @@ export type FileViewProps = {
 };
 
 export type FileViewRendererProps = {
+  /** Read-only excerpt limit; omitted renders the complete preview. */
+  previewLines?: number;
+  onExpandPreview?: () => void;
+  headingScale?: "compact" | "normal" | "large";
   /** Optional browser-local preference scope, owned by the host. */
   previewPreferencesKey?: string;
   file: FileViewFile;
@@ -181,6 +192,28 @@ function EditorToolButton(props: { icon: string; title: string; onClick: () => v
 
 // ── Built-in renderers ──────────────────────────────────────────────────────
 
+function MoreLines(props: { count: number; onClick?: () => void }) {
+  const messages = useUiMessages();
+  return <Show when={props.count > 0}><div class="k2b-content-file-view__truncated">
+    <Show when={props.onClick} fallback={<span>{messages().previewMoreLines(props.count)}</span>}>
+      <Button size="sm" variant="ghost" onClick={props.onClick}>{messages().previewMoreLines(props.count)}</Button>
+    </Show>
+  </div></Show>;
+}
+function TextExcerpt(props: { renderer: FileViewRendererProps; text: string; markdown?: boolean }) {
+  const lines = createMemo(() => props.text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n"));
+  const limit = () => props.renderer.previewLines === undefined ? lines().length : Math.max(1, props.renderer.previewLines);
+  const text = () => lines().slice(0, limit()).join("\n");
+  return <>
+    <div classList={{ "k2b-content-file-view__excerpt": props.renderer.previewLines !== undefined }}>
+      <Show when={props.markdown} fallback={<CodeDisplay code={text()} language={codeLanguage(props.renderer.file.path)} />}>
+        <MarkdownView markdown={text()} headingScale={props.renderer.headingScale ?? "compact"} />
+      </Show>
+    </div>
+    <MoreLines count={lines().length - limit()} onClick={props.renderer.onExpandPreview} />
+  </>;
+}
+
 function MarkdownRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
   const [editing, setEditing] = createSignal(false);
@@ -199,7 +232,7 @@ function MarkdownRenderer(props: FileViewRendererProps) {
           }
         >
           <div class="k2b-content-file-view__document">
-            <MarkdownView markdown={stripFrontmatter(props.editor?.draft() ?? props.content.content)} headingScale="compact" />
+            <TextExcerpt renderer={props} text={stripFrontmatter(props.editor?.draft() ?? props.content.content)} markdown />
           </div>
         </OverlayPanel>
       }
@@ -234,7 +267,7 @@ function TextRenderer(props: FileViewRendererProps) {
       when={props.editor}
       fallback={
         <OverlayPanel actions={<DownloadAction {...props} />}>
-          <CodeDisplay code={props.content.content} language={codeLanguage(props.file.path)} />
+          <TextExcerpt renderer={props} text={props.content.content} />
         </OverlayPanel>
       }
     >
@@ -310,8 +343,8 @@ function JsonRenderer(props: FileViewRendererProps) {
   return (
     <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__document">
-        <Show when={parsed().ok} fallback={<CodeDisplay code={props.content.content} language="text" />}>
-          <StructuredDataPreview data={parsedValue()} maxRows={200} />
+        <Show when={parsed().ok} fallback={<TextExcerpt renderer={props} text={props.content.content} />}>
+          <Show when={props.previewLines === undefined} fallback={<TextExcerpt renderer={props} text={JSON.stringify(parsedValue(), null, 2)} />}><StructuredDataPreview data={parsedValue()} maxRows={200} /></Show>
         </Show>
       </div>
     </OverlayPanel>
@@ -336,7 +369,10 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
   const delimiter = () => preferences().delimiter === "auto"
     ? (fileViewExtension(props.file.path) === "tsv" || props.content.mediaType === "text/tab-separated-values" ? "\t" : ",")
     : preferences().delimiter;
-  const preview = createMemo(() => parseDelimitedText(text(), delimiter()));
+  const [page, setPage] = createSignal(0);
+  createEffect(() => { text(); delimiter(); props.previewLines; setPage(0); });
+  const pageSize = () => props.previewLines === undefined ? 200 : Math.max(1, props.previewLines);
+  const preview = createMemo(() => parseDelimitedText(text(), delimiter(), { rows: pageSize() + 1, offset: page() * pageSize() }));
   const settings = () => prompts.dialog(() => <div class="k2b-content-file-view__settings">
     <Select label={messages().csvEncoding} value={preferences().encoding} disabled={props.content.encoding !== "base64"}
       options={["utf-8", "windows-1252", "utf-16le", "utf-16be"]} onValueChange={(value) => { if (value) update({ encoding: value }); }} />
@@ -353,7 +389,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
 
   return (
     <OverlayPanel actions={<><OverlayAction icon="ti-adjustments-horizontal" title={messages().csvSettings} onClick={() => void settings()} /><DownloadAction {...props} /></>}>
-      <Show when={preferences().view === "table"} fallback={<CodeDisplay code={text()} language="text" />}>
+      <Show when={preferences().view === "table"} fallback={<TextExcerpt renderer={props} text={text()} />}>
       <Show
         when={headers().length > 0}
         fallback={<Placeholder icon="ti ti-table" title={messages().emptyFile} description={messages().delimitedFileEmpty} />}
@@ -381,9 +417,14 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
               </For>
             </tbody>
           </table>
-          <Show when={preview().truncated}>
-            <p class="k2b-content-file-view__truncated">{messages().previewLimited}</p>
-          </Show>
+          <Show when={preview().columnsTruncated}><div class="k2b-content-file-view__truncated">{messages().previewColumnsLimited}</div></Show>
+          <Show when={props.previewLines !== undefined} fallback={
+            <Show when={preview().totalRows > 201}><div class="k2b-content-file-view__pagination">
+              <Button size="sm" variant="ghost" disabled={page() === 0} onClick={() => setPage(page() - 1)}>{messages().previous}</Button>
+              <span>{page() * pageSize() + 1}–{Math.min((page() + 1) * pageSize(), preview().totalRows - 1)} / {preview().totalRows - 1}</span>
+              <Button size="sm" variant="ghost" disabled={(page() + 1) * pageSize() >= preview().totalRows - 1} onClick={() => setPage(page() + 1)}>{messages().next}</Button>
+            </div></Show>
+          }><MoreLines count={preview().totalRows - rows().length - 1} onClick={props.onExpandPreview} /></Show>
         </div>
       </Show>
       </Show>
@@ -609,7 +650,7 @@ export default function FileView(props: FileViewProps) {
       : null;
 
   return (
-    <div class={`k2b-content-file-view ${props.class ?? ""}`}>
+    <div class={`k2b-content-file-view ${props.class ?? ""}`} data-variant={props.variant} data-excerpt={props.previewLines !== undefined ? "true" : undefined}>
       <Switch>
         <Match when={content.loading && content() === undefined}>
           <Placeholder icon="ti ti-loader-2" title={messages().loading} />
@@ -622,6 +663,9 @@ export default function FileView(props: FileViewProps) {
             const Renderer = active().component;
             return (
               <Renderer
+                previewLines={props.previewLines}
+                onExpandPreview={props.onExpandPreview}
+                headingScale={props.headingScale}
                 previewPreferencesKey={props.previewPreferencesKey}
                 file={props.file}
                 content={resolvedContent()!}

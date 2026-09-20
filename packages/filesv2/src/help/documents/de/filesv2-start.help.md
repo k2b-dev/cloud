@@ -8,6 +8,12 @@ order: 100
 
 Files v2 zeigt deine zugänglichen Cloud- und FreeIPA-Verzeichnisse in einer Oberfläche. Die Kennzeichnung neben dem Namen einer Ablage zeigt ihre Herkunft.
 
+## Ordnerbeschreibungen und Vorschauen {icon="file-description"}
+
+Lege eine `README.md` in einem Ordner ab, um zu erklären, was dort hingehört. Groß- und Kleinschreibung spielen dabei keine Rolle. Der Inhalt erscheint in einem kompakten Bereich über Liste, Grid oder Baum. Lange Beschreibungen werden unten mit einem Verlauf ausgeblendet. Über **Alles anzeigen** öffnest du die vollständige Beschreibung. Die README bleibt eine normale Datei, die du bearbeiten, verschieben oder löschen kannst.
+
+Das Detailpanel zeigt fünf Textzeilen oder fünf CSV-Datensätze plus Kopfzeile. Über **… weitere Zeilen** öffnest du die größere Vorschau. In langen CSV-Tabellen blätterst du mit **Zurück** und **Weiter**. Die bisherigen Größenlimits für Vorschauen gelten weiterhin. Tabellen zeigen höchstens 50 Spalten; bei weiteren Spalten erscheint ein Hinweis zum Herunterladen.
+
 ## Zurechtfinden {icon="folders"}
 
 Die Seitenleiste zeigt deine Ablagen mit ihren Ordnern als Baum; der aktuelle Ordner ist hervorgehoben, und ein Ordner, den du öffnest, zeigt statt seines Symbols kurz einen Ladekreis. Ein Klick auf einen Ordner in der Liste öffnet ihn; die erste Zeile **..** führt zurück in den übergeordneten Ordner. Ein Klick auf eine Datei öffnet rechts das Detailpanel, für Ordner nutzt du dafür den kleinen Info-Button am Zeilenende. Das X schließt das Panel und hebt die Auswahl auf.

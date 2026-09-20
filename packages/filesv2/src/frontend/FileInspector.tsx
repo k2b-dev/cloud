@@ -204,7 +204,7 @@ export default function FileInspector(props: {
                         when={previewKind(item()) === "image" ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified]) : null}
                         fallback={
                           <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])}>
-                            <FilePreview baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} onDownload={() => props.onDownload([item()])} />
+                            <FilePreview previewLines={5} onExpandPreview={() => void expand(item())} baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} onDownload={() => props.onDownload([item()])} />
                           </Show>
                         }
                       >

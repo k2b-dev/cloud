@@ -1071,6 +1071,33 @@ export default function Browser(props: {
               </InlineGuidance>
             </Show>
           </header>
+          <Show when={props.directory.readme}>
+            {(readme) => {
+              const [overflowing, setOverflowing] = createSignal(false);
+              let viewport!: HTMLDivElement;
+              let content!: HTMLDivElement;
+              onMount(() => {
+                const measure = () => setOverflowing(content.scrollHeight > viewport.clientHeight);
+                const observer = new ResizeObserver(measure);
+                observer.observe(viewport);
+                observer.observe(content);
+                measure();
+                onCleanup(() => observer.disconnect());
+              });
+              return <section class="filesv2-folder-readme" aria-label={b().folderReadme}>
+                <div ref={viewport} class="filesv2-folder-readme__content" data-overflow={overflowing()}>
+                  <div ref={content}>
+                    <FilePreview baseId={baseId()} locationKey={props.directory.base.locationKey} entry={readme()} headingScale="compact" variant="plain" onDownload={() => startDownload([readme()])} />
+                  </div>
+                </div>
+                <Show when={overflowing()}>
+                  <div class="filesv2-folder-readme__expand">
+                    <Button size="sm" variant="text" onClick={() => void prompts.dialog(() => <FilePreview baseId={baseId()} locationKey={props.directory.base.locationKey} entry={readme()} onDownload={() => startDownload([readme()])} />, { title: readme().name, size: "large" })}>{b().showAll}</Button>
+                  </div>
+                </Show>
+              </section>;
+            }}
+          </Show>
           <Show when={view().view === "tree" && !searching() && folder() && (!branch("") || branch("")?.loading || branch("")?.error)}>
             <InlineGuidance>
               {branch("")?.error ? b().treeLoadFailed : t().loadingFiles}

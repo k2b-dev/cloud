@@ -152,6 +152,7 @@ type FileViewFile = {
 type FileViewPreviewKind = "markdown" | "image" | "pdf" | "json" | "delimited-text" | "audio" | "video" | "text";
 
 type FileViewRendererProps = {
+  previewLines?: number; onExpandPreview?: () => void; headingScale?: "compact" | "normal" | "large";
   file: FileViewFile; content: FileViewContent; previewHref: string | null; downloadHref: string | null;
   editor: {
     draft: () => string;
@@ -168,6 +169,8 @@ type FileViewRenderer = {
 };
 
 type FileViewProps = {
+  variant?: "default" | "plain";
+  previewLines?: number; onExpandPreview?: () => void; headingScale?: "compact" | "normal" | "large";
   file: FileViewFile; load: () => Promise<FileViewContent>; revision?: unknown;
   registerRefresh?: (refresh: () => Promise<void>) => void | (() => void);
   save?: (content: string) => Promise<void>; previewHref?: string | null; downloadHref?: string | null;
@@ -290,3 +293,20 @@ on cross-origin media requests. `onPreviewError` reports native image/audio/vide
 load errors so the host can request a fresh URL and offer retry. These options
 leave existing media behavior unchanged when omitted. PDF and text content can
 instead be fetched by the host with an abort signal and explicit byte limit.
+
+## Compact previews
+
+Pass `previewLines={5}` and `onExpandPreview` to `FileView` for a detail-panel
+excerpt. Text and Markdown show five source lines; CSV/TSV show five data rows
+plus the header. The remaining-line button calls `onExpandPreview`. Omit
+`previewLines` in the expanded view. CSV/TSV then paginate through all loaded
+records, 200 per page, retaining the header. The 50-column limit is displayed
+when columns are omitted; existing file-size limits still apply.
+
+`headingScale="compact"` uses smaller Markdown headings and tighter paragraph spacing in a small surface.
+Use `headingScale="normal"` for a full-document view. The default remains
+`compact`. These options also reach custom renderers through
+`FileViewRendererProps`.
+
+Use `variant="plain"` to embed a preview in an existing surface without a frame,
+background, or document padding. The default retains the preview frame.

@@ -327,6 +327,37 @@ export function createFilesService(
     if (current.inspection.candidate.area !== "freeipa") return true;
     return permits(current.node, await current.root.getACL(current.target, "access"), current.state.unix!, 3);
   }
+  async function folderReadme(current: Awaited<ReturnType<typeof authorized>>): Promise<FileEntry | null> {
+    const candidates: Node[] = [];
+    let after: string | undefined;
+    let pages = 0;
+    do {
+      const page = await current.root.list(current.target, { type: "files", sort: "name", order: "asc", limit: 1000, maxEntries: SEARCH_SCAN_LIMIT, after }).catch((error) => {
+        if (error instanceof FilegateError && error.code === "limit_exceeded") return null;
+        throw error;
+      });
+      if (!page) return null;
+      for (const node of page.items) {
+        const name = node.path.slice(current.target.length + 1);
+        if (node.path.startsWith(`${current.target}/`) && !node.directory && name.toLowerCase() === "readme.md") candidates.push(node);
+      }
+      pages++;
+      after = page.next ?? undefined;
+    } while (after && pages < Math.ceil(SEARCH_SCAN_LIMIT / 1000));
+    // Never choose from an incomplete observation.
+    if (after) return null;
+    const rank = (node: Node) => node.path.split("/").at(-1) === "README.md" ? 0 : node.path.split("/").at(-1) === "readme.md" ? 1 : 2;
+    candidates.sort((a, b) => rank(a) - rank(b) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    for (const node of candidates) {
+      try {
+        const actions = await entryActions(current, node, node.path);
+        if (actions.share) return { ...fileEntry(node.path.slice(current.inspection.candidate.path.length + 1), node), actions };
+      } catch (error) {
+        if (!(error instanceof FilegateError && [403, 404].includes(error.status))) throw error;
+      }
+    }
+    return null;
+  }
   async function entryActions(current: Awaited<ReturnType<typeof authorized>>, node = current.node, target = current.target, parentWritable?: boolean): Promise<NonNullable<FileEntry["actions"]>> {
     if (current.inspection.candidate.area !== "freeipa") return { write: true, move: true, share: true };
     const acl = await current.root.getACL(target, "access");
@@ -651,7 +682,7 @@ export function createFilesService(
         if (!relative || relative.split("/")[0] === "trash") continue;
         items.push({ ...fileEntry(relative, node), actions: await entryActions(current, node, node.path, create) });
       }
-      return { base: current.inspection.summary, path: current.relative, items, next: page.next ?? null, actions: { create } };
+      return { base: current.inspection.summary, path: current.relative, items, next: page.next ?? null, actions: { create }, readme: await folderReadme(current) };
     },
     async search(actor: RequestActor, input: { baseId: string; path?: string; q: string; scope?: "folder" | "tree" } & BrowseInput): Promise<SearchResult> {
       const current = await authorized(actor, input.baseId, input.path ?? "", true);
@@ -674,7 +705,7 @@ export function createFilesService(
         if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
         items.push({ ...fileEntry(relative, node), actions });
       }
-      return { base: current.inspection.summary, path: current.relative, query: input.q, scope: input.scope ?? "tree", items, next: page.next ?? null };
+      return { base: current.inspection.summary, path: current.relative, query: input.q, scope: input.scope ?? "tree", items, next: page.next ?? null, readme: await folderReadme(current) };
     },
     async mkdir(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
       const current = await writableParent(actor, input.baseId, input.path);
