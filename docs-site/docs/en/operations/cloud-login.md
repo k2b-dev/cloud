@@ -53,10 +53,15 @@ Changing either origin requires reviewing the existing pairings.
 
 ## Protect the app
 
-The first **Add Cloud** action opens PIN setup before pairing starts. Enter a
-six-digit PIN twice; leading zeroes count. One PIN protects every connected
-Cloud on this device. Entering the sixth digit in the unlock dialog starts
-unlocking automatically. Wrong PINs leave the app locked and impose a local
+The first **Add Cloud** action offers PIN setup before pairing starts. Choose
+**Continue without PIN** or enter a six-digit PIN twice; leading zeroes count.
+The choice is saved, so adding another Cloud does not ask again. Without a PIN,
+the app opens directly and does not lock automatically or offer **Lock app**.
+Anyone who can open the app can approve sign-ins; its stored vault key has no
+PIN protection.
+
+One PIN protects every connected Cloud on this device. Entering the sixth digit
+in the unlock dialog starts unlocking automatically. Wrong PINs leave the app locked and impose a local
 delay rising from one to thirty seconds.
 
 A six-digit PIN has at most one million combinations. Argon2id makes guessing
@@ -64,16 +69,17 @@ more expensive but cannot prevent offline guessing against copied app data.
 The retry delay survives reloads, but clearing or changing browser data can
 bypass it; it is not a hardware guess limit.
 
-The unlock dialog opens on startup or return to the locked app. The app starts
-locked after a reload and locks after one minute in the background, on page
+With a PIN, the unlock dialog opens on startup or return to the locked app.
+The app starts locked after a reload and locks after one minute in the background, on page
 exit, after five minutes without interaction, or through **Lock app**. Locking
 hides account details, closes sensitive dialogs, and stops polling. Other open
 tabs receive the lock as well.
 
-**App security** asks for the current PIN before setting a new one. The new PIN
+**App security** lets you add a PIN later without pairing again. If a PIN is
+already set, it asks for the current PIN before setting a new one. The new PIN
 must successfully unlock before it is saved. Cloud pairings remain unchanged.
-If no usable PIN is stored, the app offers an explicit reset and re-pairing
-path. Nothing is deleted automatically.
+If the stored protection method is unsupported, the app offers an explicit
+reset and re-pairing path. Nothing is deleted automatically.
 
 Changing app protection does not secure copies of browser data that an attacker
 already obtained. After suspected compromise, revoke the devices in Cloud and
@@ -153,3 +159,8 @@ and the app on the devices and browsers you support.
 For troubleshooting, open **Settings** and note the version shown below the
 appearance control. Release images show their tag and source revision; local
 development shows `dev`.
+
+## Touch gestures
+
+Cloud Login disables page pinch zoom, including in dialogs. Touch scrolling
+remains available.

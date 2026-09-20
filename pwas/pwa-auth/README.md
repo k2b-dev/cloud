@@ -2,7 +2,8 @@
 
 An installable web app for approving sign-ins to multiple Clouds. Pair each
 account once, compare the sign-in code, and approve or deny the request.
-A six-digit app PIN protects all connected accounts on this device.
+An optional six-digit app PIN protects all connected accounts on this device.
+Choose it before the first pairing or add it later through **App security**.
 
 Deployment address: **[cloud-login.pwa.k2b.dev](https://cloud-login.pwa.k2b.dev)**.
 Each Cloud must enable app sign-in and trust this exact origin.

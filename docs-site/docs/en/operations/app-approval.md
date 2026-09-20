@@ -102,6 +102,14 @@ Use `appApproval.vault` to encrypt stored device credentials.
 `vault.unlock(config, method, pin?, signal?)` roundtrip succeeds. At least one
 method is required; at most one PIN and one passkey are supported.
 
+For an explicitly unprotected vault, use `session.local()` and persist it as
+its only method. Reopen with `vault.unlock(config, "local")`. This stores the raw
+vault key alongside the encrypted records and provides no protection against
+someone reading browser storage. Never combine a local method with PIN or
+passkey methods; validation rejects that configuration. To add a PIN later,
+reopen the local session, create and verify its PIN method, and atomically
+replace the config with only that method. Existing records keep the same key.
+
 `vault.capability()` returns `supported`, `unsupported`, or `unknown`. It checks
 browser capabilities without opening a credential dialog. Actual support still
 requires a credential with PRF enabled and a successful PRF evaluation.
@@ -123,11 +131,12 @@ own a different storage-protection policy.
 Encryption uses AES-256-GCM, fresh random 12-byte IVs, and 128-bit tags. Envelope
 AAD binds version, vault ID, method, salt and KDF/credential ID. Record AAD binds
 version, vault ID and caller context. Public and private signing keys are checked
-for correspondence on import. Neither raw vault keys, PINs, PRF outputs nor
-private key material belong in durable storage, logs or Cloud API requests.
+for correspondence on import. Only the explicit local method stores a raw vault key in browser storage.
+PINs, PRF outputs and unencrypted private signing keys must not be stored.
+Never send key material to logs or Cloud API requests.
 
-Call `session.lock()` on lock, hidden/page-exit lifecycle transitions and stale
-async results. It invalidates session operations and SDK signing with keys from
+For protected vaults, call `session.lock()` on lock and hidden/page-exit
+lifecycle transitions. Always lock stale async results and disposed sessions. It invalidates session operations and SDK signing with keys from
 that session. JavaScript memory cleanup is best effort, not guaranteed secure
 zeroization. Consumers must also abort requests, close sensitive UI, drop all
 runtime records, and prevent late unlock results from reactivating a session.

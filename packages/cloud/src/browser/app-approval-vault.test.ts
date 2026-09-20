@@ -10,6 +10,27 @@ const setup = async () => {
 };
 const record = (value: unknown) => value;
 describe("appApproval vault", () => {
+  test("local vault survives reopening and adding a PIN preserves paired keys", async () => {
+    const original = await appApproval.vault.create();
+    const key = await original.createKey();
+    const blob = await original.sealRecord({ key, label: "My Cloud" }, "pairing");
+    const local = appApproval.vault.parseConfig({ version: 1, id: original.id, methods: [original.local()] });
+    original.lock();
+    const reopened = await appApproval.vault.unlock(local, "local");
+    expect(await reopened.openRecord(blob, "pairing", record)).toMatchObject({ label: "My Cloud", key: { publicKey: key.publicKey } });
+    const pin = await reopened.pin("012345");
+    expect(() => appApproval.vault.parseConfig({ ...local, methods: [...local.methods, pin] })).toThrow();
+    const protectedConfig = appApproval.vault.parseConfig({ ...local, methods: [pin] });
+    reopened.lock();
+    await expect(appApproval.vault.unlock(protectedConfig, "local")).rejects.toThrow();
+    const protectedSession = await appApproval.vault.unlock(protectedConfig, "pin", "012345");
+    expect(await protectedSession.openRecord(blob, "pairing", record)).toMatchObject({
+      label: "My Cloud",
+      key: { publicKey: key.publicKey },
+    });
+    protectedSession.lock();
+    expect(() => protectedSession.local()).toThrow();
+  });
   test("PIN key derivation matches independently maintained Argon2id vector", async () => {
     // Published hash-wasm Argon2id known-answer fixture (test/argon2.test.ts).
     expect(

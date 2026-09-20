@@ -22,7 +22,7 @@ Your Cloud administrator must first [enable app sign-in](/en/docs/accounts/app-s
 and choose the authenticator address. Use the app configured by your Cloud.
 
 1. Open Cloud Login and choose **Install app** from its menu, or continue in your browser.
-2. Choose **Add Cloud** and set up a six-digit app PIN.
+2. Choose **Add Cloud** and set up a six-digit app PIN or choose **Continue without PIN**.
 3. On your Cloud profile, open **Security → Pair a device**. Scan the QR code or
    paste its link into Cloud Login, then compare and confirm the codes.
 4. When you start a sign-in, open Cloud Login. Compare the code shown in the
@@ -33,8 +33,10 @@ or disconnect an account through **Manage accounts**.
 
 ## Protect and recover
 
-One six-digit app PIN protects all connected accounts on this device. You can
-change it through **App security** after entering your current PIN.
+An optional six-digit app PIN protects all connected accounts on this device.
+Without a PIN, anyone who can open this app can approve sign-ins. Add a PIN
+later through **App security** without pairing again. To change an existing PIN,
+enter the current one first.
 
 Keep another sign-in method available. If you lose your device or reset the
 app, sign in to each Cloud another way, revoke the old device, and pair again.

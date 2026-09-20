@@ -23,6 +23,7 @@ export function App(props: { preferences: Preferences }) {
   const showUnlock = async () => {
     if (
       vault.status() !== "locked" ||
+      !vault.protectedByPin() ||
       document.visibilityState !== "visible" ||
       unlockOpen ||
       pairingOpen ||
@@ -142,7 +143,7 @@ export function App(props: { preferences: Preferences }) {
                   void openSecurity(vault, props.preferences, "manage");
                 },
               },
-              { label: t().lockApp, icon: "ti ti-lock", action: () => vault.lock() },
+              ...(vault.protectedByPin() ? [{ label: t().lockApp, icon: "ti ti-lock", action: () => vault.lock() }] : []),
             ],
           },
         ]

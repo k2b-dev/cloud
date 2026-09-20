@@ -28,11 +28,13 @@ const pinSchema = z
 const passkeySchema = z
   .object({ type: z.literal("passkey"), credentialId: z.string().min(1).max(2048), salt: base64(32), wrapped: blobSchema })
   .strict();
-const methodSchema = z.discriminatedUnion("type", [pinSchema, passkeySchema]);
+const localSchema = z.object({ type: z.literal("local"), key: base64(32) }).strict();
+const methodSchema = z.discriminatedUnion("type", [pinSchema, passkeySchema, localSchema]);
 const configSchema = z
   .object({ version: z.literal(1), id: base64(16), methods: z.array(methodSchema).min(1).max(2) })
   .strict()
-  .refine((c) => new Set(c.methods.map((m) => m.type)).size === c.methods.length);
+  .refine((c) => new Set(c.methods.map((m) => m.type)).size === c.methods.length)
+  .refine((c) => !c.methods.some((m) => m.type === "local") || c.methods.length === 1);
 export type AppVaultConfig = z.infer<typeof configSchema>;
 export type AppVaultBlob = z.infer<typeof blobSchema>;
 export type AppVaultMethod = AppVaultConfig["methods"][number];
@@ -89,7 +91,7 @@ async function pinKey(pin: string, salt: string) {
 function wrapContext(id: string, method: Omit<z.infer<typeof pinSchema>, "wrapped"> | Omit<z.infer<typeof passkeySchema>, "wrapped">) {
   return JSON.stringify(["cloud-login-vault", 1, id, method.type, method.salt, method.type === "pin" ? method.kdf : method.credentialId]);
 }
-function methodContext(id: string, method: AppVaultMethod) {
+function methodContext(id: string, method: Exclude<AppVaultMethod, { type: "local" }>) {
   return wrapContext(
     id,
     method.type === "pin"
@@ -238,6 +240,11 @@ function session(id: string, raw: Uint8Array<ArrayBuffer>, key: CryptoKey) {
         plain.fill(0);
       }
     },
+    /** Persists the vault key without PIN protection. Never combine with protected methods. */
+    local(): AppVaultMethod {
+      check();
+      return { type: "local", key: encode(raw) };
+    },
     async pin(pin: string): Promise<AppVaultMethod> {
       check();
       const method = { type: "pin" as const, salt: encode(bytes(16)), kdf: "argon2id-64m-t3-p1" as const };
@@ -281,13 +288,18 @@ async function create() {
   const raw = bytes(32);
   return session(encode(bytes(16)), raw, await aes(raw));
 }
-async function unlock(config: AppVaultConfig, type: "pin" | "passkey", pin?: string, signal?: AbortSignal) {
+async function unlock(config: AppVaultConfig, type: AppVaultMethod["type"], pin?: string, signal?: AbortSignal) {
   const value = configSchema.parse(config);
   const method = value.methods.find((m) => m.type === type);
   if (!method) throw invalid();
-  const wrapping =
-    method.type === "pin" ? await pinKey(pin ?? "", method.salt) : await passkeyKey(method.credentialId, method.salt, signal);
-  const raw = await decrypt(wrapping, method.wrapped, methodContext(value.id, method));
+  const raw =
+    method.type === "local"
+      ? decode(method.key)
+      : await decrypt(
+          method.type === "pin" ? await pinKey(pin ?? "", method.salt) : await passkeyKey(method.credentialId, method.salt, signal),
+          method.wrapped,
+          methodContext(value.id, method),
+        );
   if (raw.length !== 32) {
     raw.fill(0);
     throw invalid();

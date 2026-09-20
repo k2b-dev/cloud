@@ -5,7 +5,9 @@ html {
   color-scheme: light dark;
 }
 
+/* Apply at every scroll surface, including portalled dialogs. */
 * {
+  touch-action: pan-x pan-y;
   box-sizing: border-box;
 }
 

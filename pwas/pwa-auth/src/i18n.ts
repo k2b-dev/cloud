@@ -4,6 +4,8 @@ export const authMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      optionalPinHelp: "Protect your Clouds with an app PIN, or continue without one. You can add a PIN later under App security.",
+      continueWithoutPin: "Continue without PIN",
       pinRetry: "Try your PIN again in",
       security: "App security",
       securitySection: "Security",
@@ -147,6 +149,9 @@ export const authMessages = i18n.define({
       javascriptRequired: "Enable JavaScript to use Cloud Login.",
     },
     de: {
+      optionalPinHelp:
+        "Schütze deine Clouds mit einer App-PIN oder fahre ohne fort. Du kannst später unter App-Sicherheit eine PIN hinzufügen.",
+      continueWithoutPin: "Ohne PIN fortfahren",
       pinRetry: "PIN erneut versuchen in",
       security: "App-Sicherheit",
       securitySection: "Sicherheit",
