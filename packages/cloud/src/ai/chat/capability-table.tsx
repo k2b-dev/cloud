@@ -1,16 +1,8 @@
+import { capabilityTable } from "./capability-result";
 import { ButtonLink, DataTable, type DataTableColumn, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
-import { CapabilitySemanticLinkSchema, CapabilityTablePresentationSchema, capabilityDataAtPath } from "../../contracts/capabilities";
+import { CapabilitySemanticLinkSchema, capabilityDataAtPath } from "../../contracts/capabilities";
 import { aiChatMessages } from "./messages";
-
-export const capabilityTable = (result: unknown) => {
-  if (!result || typeof result !== "object") return null;
-  const presentation = CapabilityTablePresentationSchema.safeParse(capabilityDataAtPath(result, ["presentation"]));
-  if (!presentation.success) return null;
-  const rows = capabilityDataAtPath(capabilityDataAtPath(result, ["data"]), presentation.data.rowsPath);
-  if (!Array.isArray(rows)) return null;
-  return { presentation: presentation.data, rows };
-};
 
 export const capabilityCellText = (value: unknown): string => {
   if (value === undefined || value === null) return "—";

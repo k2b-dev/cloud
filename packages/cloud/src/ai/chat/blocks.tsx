@@ -1,3 +1,4 @@
+import { hasCapabilityTable } from "./capability-result";
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, Chat, isStructuredDataValue, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
@@ -8,7 +9,7 @@ import { groupToolBlocks, isFailedTool, summarizeToolGroup } from "./tool-groups
 import type { AiTurnBlock } from "../protocol";
 import { isRenderableTurnBlock } from "../protocol";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
-import { capabilityTable, CapabilityTablePreview } from "./capability-table";
+import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -497,9 +498,6 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           </Show>
         </Show>
       </Show>
-      <Show when={props.block.status !== "running" && !props.block.isError}>
-        <CapabilityTablePreview result={props.block.result} label={label()} />
-      </Show>
     </>
   );
 }
@@ -624,84 +622,93 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
   const fetchError = () =>
     props.block.name === "fetch_file" && props.block.isError ? fetchFileErrorPresentation(props.block.result) : undefined;
   return (
-    <Switch
-      fallback={
-        <ToolResultDisclosure
-          blockId={props.block.id}
-          name={displayToolName(props.block.name)}
-          toolName={props.block.name}
-          args={props.block.args}
-          result={props.block.result}
-          isError={Boolean(props.block.isError)}
-          errorLabel={fetchError()?.label}
-          errorDescription={fetchError()?.description}
-        />
-      }
-    >
-      <Match when={status() === "awaiting_approval"}>
-        <ApprovalBlockView turnId={props.turnId} block={props.block} />
-      </Match>
-      <Match when={status() === "rejected"}>
-        <RejectedToolView block={props.block} />
-      </Match>
-      <Match when={props.block.presentation?.kind === "capability"}>
-        <CapabilityToolView block={props.block} />
-      </Match>
-      <Match when={actions.renderCodePresentation && props.block.name === "code_present" && status() === "completed" && !props.block.isError}>
-        {actions.renderCodePresentation?.(props.block.result)}
-      </Match>
-      <Match when={props.block.name === "present" && !props.block.isError}>
-        <PresentToolBlock block={props.block} />
-      </Match>
-      <Match when={props.block.name === "web_search" && !props.block.isError}>
-        <WebSearchToolBlock block={props.block} />
-      </Match>
-      <Match when={props.block.name === "web_extract" && !props.block.isError}>
-        <WebExtractToolBlock block={props.block} />
-      </Match>
-      <Match when={props.block.name === "fetch_file" && !props.block.isError}>
-        <FetchFileToolBlock block={props.block} />
-      </Match>
-      <Match when={props.block.name === "memory"}>
-        <MemoryToolView block={props.block} />
-      </Match>
-      <Match when={hasSpecializedBuiltinToolView(props.block.name, props.block.result) && status() === "completed" && !props.block.isError}>
-        <SpecializedBuiltinToolBlock block={props.block} />
-      </Match>
-      <Match when={isCardToolName(props.block.name) && !props.block.isError}>
-        <CloudCardBlock args={props.block.args} />
-      </Match>
-      <Match when={isSurveyToolName(props.block.name) && !props.block.isError}>
-        <SurveyToolView turnId={props.turnId} block={props.block} active={props.active} />
-      </Match>
-      <Match when={isTextEditorToolName(props.block.name)}>
-        <TextEditorToolView turnId={props.turnId} block={props.block} active={props.active} />
-      </Match>
-      <Match when={status() === "running" || status() === "awaiting_client"}>
-        <Chat.Activity label={displayToolName(props.block.name)} icon={aiToolIcon(props.block.name)} busy />
-      </Match>
-    </Switch>
+    <>
+      <Switch
+        fallback={
+          <ToolResultDisclosure
+            blockId={props.block.id}
+            name={displayToolName(props.block.name)}
+            toolName={props.block.name}
+            args={props.block.args}
+            result={props.block.result}
+            isError={Boolean(props.block.isError)}
+            errorLabel={fetchError()?.label}
+            errorDescription={fetchError()?.description}
+          />
+        }
+      >
+        <Match when={status() === "awaiting_approval"}>
+          <ApprovalBlockView turnId={props.turnId} block={props.block} />
+        </Match>
+        <Match when={status() === "rejected"}>
+          <RejectedToolView block={props.block} />
+        </Match>
+        <Match when={props.block.presentation?.kind === "capability"}>
+          <CapabilityToolView block={props.block} />
+        </Match>
+        <Match when={actions.renderCodePresentation && props.block.name === "code_present" && status() === "completed" && !props.block.isError}>
+          {actions.renderCodePresentation?.(props.block.result)}
+        </Match>
+        <Match when={props.block.name === "present" && !props.block.isError}>
+          <PresentToolBlock block={props.block} />
+        </Match>
+        <Match when={props.block.name === "web_search" && !props.block.isError}>
+          <WebSearchToolBlock block={props.block} />
+        </Match>
+        <Match when={props.block.name === "web_extract" && !props.block.isError}>
+          <WebExtractToolBlock block={props.block} />
+        </Match>
+        <Match when={props.block.name === "fetch_file" && !props.block.isError}>
+          <FetchFileToolBlock block={props.block} />
+        </Match>
+        <Match when={props.block.name === "memory"}>
+          <MemoryToolView block={props.block} />
+        </Match>
+        <Match when={hasSpecializedBuiltinToolView(props.block.name, props.block.result) && status() === "completed" && !props.block.isError}>
+          <SpecializedBuiltinToolBlock block={props.block} />
+        </Match>
+        <Match when={isCardToolName(props.block.name) && !props.block.isError}>
+          <CloudCardBlock args={props.block.args} />
+        </Match>
+        <Match when={isSurveyToolName(props.block.name) && !props.block.isError}>
+          <SurveyToolView turnId={props.turnId} block={props.block} active={props.active} />
+        </Match>
+        <Match when={isTextEditorToolName(props.block.name)}>
+          <TextEditorToolView turnId={props.turnId} block={props.block} active={props.active} />
+        </Match>
+        <Match when={status() === "running" || status() === "awaiting_client"}>
+          <Chat.Activity label={displayToolName(props.block.name)} icon={aiToolIcon(props.block.name)} busy />
+        </Match>
+      </Switch>
+      <Show when={hasCapabilityTable(props.block)}>
+        <CapabilityTablePreview result={props.block.result} label={props.block.presentation?.title ?? displayToolName(props.block.name)} />
+      </Show>
+    </>
   );
 }
 
 /** Render one unified turn block. Shared by persisted assistant groups and the live turn. */
 export function AiTurnBlockView(props: { block: AiTurnBlock; turnId: string; streaming?: boolean; active?: boolean }) {
-  // block.kind is immutable for a given block id, so this switch may run once.
-  const block = props.block;
-  switch (block.kind) {
-    case "text":
-      return <AssistantMarkdownBlock html={markdown.renderSync(block.text)} />;
-    case "thinking":
-      return <ThinkingBlockView text={block.text} streaming={props.streaming} />;
-    case "steer_message":
-      return null;
-    case "steer_applied":
-      return <Chat.Activity label="Conversation steered" icon="ti ti-route" tone="ai" />;
-    case "tool":
-      return <ToolBlockView turnId={props.turnId} block={block} active={props.active} />;
-    case "compaction":
-      return <CompactionBlockView block={block} />;
-  }
+  // The id/kind remain stable while the immutable block value changes during a turn.
+  return (
+    <Switch>
+      <Match when={props.block.kind === "text" && props.block}>
+        {block => <AssistantMarkdownBlock html={markdown.renderSync(block().text)} />}
+      </Match>
+      <Match when={props.block.kind === "thinking" && props.block}>
+        {block => <ThinkingBlockView text={block().text} streaming={props.streaming} />}
+      </Match>
+      <Match when={props.block.kind === "steer_applied"}>
+        <Chat.Activity label="Conversation steered" icon="ti ti-route" tone="ai" />
+      </Match>
+      <Match when={props.block.kind === "tool" && props.block}>
+        {block => <ToolBlockView turnId={props.turnId} block={block()} active={props.active} />}
+      </Match>
+      <Match when={props.block.kind === "compaction" && props.block}>
+        {block => <CompactionBlockView block={block()} />}
+      </Match>
+    </Switch>
+  );
 }
 
 function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
@@ -752,7 +759,7 @@ export function AiTurnBlockList(props: {
   active?: boolean;
   disclosureState?: AiToolDisclosureState;
 }) {
-  const groups = createMemo(() => groupToolBlocks(props.blocks.filter(isRenderableTurnBlock), (block) => Boolean(capabilityTable(block.result))));
+  const groups = createMemo(() => groupToolBlocks(props.blocks.filter(isRenderableTurnBlock)));
   const keyedGroups = createMemo(() => new Map(groups().map(group => [group.kind === "tools" ? `tools:${group.blocks[0]!.id}` : `block:${group.block.id}`, group])));
   const keys = createMemo(() => [...keyedGroups().keys()]);
   const disclosureState = props.disclosureState ?? createAiToolDisclosureState();

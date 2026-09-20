@@ -1,3 +1,4 @@
+import { hasCapabilityTable } from "./capability-result";
 import type { AiTurnBlock } from "../protocol";
 import { isCardToolName, isSurveyToolName, isTextEditorToolName } from "./message-utils";
 
@@ -11,7 +12,7 @@ export function isFailedTool(tool: Tool): boolean {
 }
 
 /** Visible content and interactive decisions are boundaries; model request boundaries are not. */
-export function groupToolBlocks(blocks: readonly AiTurnBlock[], hasUi: (tool: Tool) => boolean = () => false): Group[] {
+export function groupToolBlocks(blocks: readonly AiTurnBlock[]): Group[] {
   const groups: Group[] = [];
   for (const block of blocks) {
     const ordinary =
@@ -22,7 +23,7 @@ export function groupToolBlocks(blocks: readonly AiTurnBlock[], hasUi: (tool: To
       !isCardToolName(block.name) &&
       !isSurveyToolName(block.name) &&
       !isTextEditorToolName(block.name) &&
-      !hasUi(block);
+      !hasCapabilityTable(block);
     if (ordinary) {
       const last = groups.at(-1);
       if (last?.kind === "tools") last.blocks.push(block);

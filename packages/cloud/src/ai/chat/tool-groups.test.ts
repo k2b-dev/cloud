@@ -43,3 +43,14 @@ test("chat visualizations remain visible outside tool disclosures", () => {
   const groups = groupToolBlocks([tool("run", "code_run"), tool("view", "code_present"), tool("read")]);
   expect(groups.map(group => group.kind)).toEqual(["tools", "block", "tools"]);
 });
+
+test("only successful requested tables interrupt compact tool summaries", () => {
+  const result = { data: { rows: [{ name: "Visible" }] }, presentation: { kind: "table", rowsPath: ["rows"], columns: [{ path: ["name"], label: "Name" }] } };
+  const table = { ...tool("table", "grids__query__gql_dot_execute"), result };
+  const groups = groupToolBlocks([tool("before"), table, tool("after")]);
+  expect(groups.map(group => group.kind)).toEqual(["tools", "block", "tools"]);
+  expect(groupToolBlocks([{ ...table, result: { data: result.data } }])[0]?.kind).toBe("tools");
+  expect(groupToolBlocks([{ ...table, isError: true, status: "failed" }])[0]?.kind).toBe("tools");
+  expect(groupToolBlocks([{ ...table, status: "running" }])[0]?.kind).toBe("tools");
+  expect(groupToolBlocks([{ ...table, result: { ...result, data: { rows: null } } }])[0]?.kind).toBe("tools");
+});

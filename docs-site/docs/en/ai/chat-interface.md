@@ -194,6 +194,12 @@ controls. Surveys, cards, presented files, editors, and capability tables remain
 visible results. The saved presentation remains readable when an application
 is temporarily unavailable. Ordinary Nessi tools use generic tool labels.
 
+A successful result with valid `presentation.kind: "table"` renders inline,
+outside tool summaries. Rendering depends on the result itself, including in
+restored history without optional application branding. Live updates replace
+the previous block content without duplicating its table. Results without table
+presentation remain compact; errors and approval requests retain their own UI.
+
 `AiChatActions.renderCodePresentation(result)` lets the application render a
 completed `code_present` result inline. The host owns validation, authorized
 loading, durable storage, and sandbox lifecycle. It must not execute saved code
