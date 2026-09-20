@@ -345,7 +345,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
       <Show when={!pinned() && hasContent()}>
         <button type="button" class="k2b-chat-timeline__latest" onClick={scrollToLatest}>
           <i class="ti ti-arrow-down" aria-hidden="true" />
-          Jump to latest
+          {messages().jumpToLatest}
         </button>
       </Show>
     </section>
