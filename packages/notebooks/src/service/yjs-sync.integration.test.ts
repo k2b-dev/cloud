@@ -115,9 +115,9 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
           reason: "unload",
         });
         const poisonDeadline = Date.now() + 25_000;
-        while (Date.now() < poisonDeadline) {
-          const letters = await sync.job(SNAPSHOT_JOB_CONFIG).deadLetters.list();
-          if (letters.some((letter) => letter.data.key.startsWith(`${poisonedId}:`))) break;
+        // Observe the handler, then drain its settlement before reading the DLQ.
+        // Repeated DLQ scans would create a new ordered consumer on every poll.
+        while (!adopt.mock.calls.some(([input]) => input.noteId === poisonedId) && Date.now() < poisonDeadline) {
           await Bun.sleep(25);
         }
         await yjsSnapshotWorker.stop();
