@@ -17,6 +17,7 @@ import { StatusBadge } from "@k2b/ui";
 ## Labels and icons
 
 Pass `label` as visible status text. Default icons follow the tone and can be replaced or removed with `icon`.
+The neutral tone uses `ti ti-alert-square-rounded`.
 
 `title` adds supporting detail without replacing the visible label.
 

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onMount, onCleanup, untrack, Show } from "solid-js";
+import { children, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onMount, onCleanup, untrack, Show } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { SelectChip } from "../inputs/SelectChip";
 import { useUiMessages } from "../intl/messages";
@@ -90,6 +90,8 @@ const attachmentIcon = (attachment: ChatAttachment): string =>
   attachment.icon ?? (attachment.kind === "image" ? "ti ti-photo" : attachment.kind === "resource" ? "ti ti-link" : "ti ti-file");
 
 export function ChatComposer(props: ChatComposerProps): JSX.Element {
+  const accessory = children(() => props.accessory);
+  const hasAccessory = () => accessory.toArray().some(item => item != null && typeof item !== "boolean" && item !== "");
   const messages = useUiMessages();
   const commandListId = `k2b-chat-commands-${createUniqueId().replace(/[^A-Za-z0-9_-]/g, "-")}`;
   const [selectedCommandIndex, setSelectedCommandIndex] = createSignal(0);
@@ -418,9 +420,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   return (
     <div class="k2b-chat-composer-shell">
-    <Show when={commandsOpen() || props.accessory}>
+    <Show when={commandsOpen() || hasAccessory()}>
       <div class="k2b-chat-composer-slot">
-      <div style={{ visibility: commandsOpen() ? "hidden" : undefined }} inert={commandsOpen()}>{props.accessory}</div>
+      <div style={{ visibility: commandsOpen() ? "hidden" : undefined }} inert={commandsOpen()}>{accessory()}</div>
       <Show when={commandsOpen()}><div class="k2b-chat-composer-accessory">
         <div ref={commandListRef} id={commandListId} class="k2b-chat-composer__commands" role="listbox" aria-label={messages().commands}>
           <For each={commandMatches()}>{(command, index) =>

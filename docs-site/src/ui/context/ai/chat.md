@@ -301,7 +301,8 @@ control its ranges with `mentions` and `onMentionsChange`. The submitted text is
 untrimmed so UTF-16 range offsets remain valid. A modified reference becomes
 plain text; undo/redo restores both text and reference identity.
 
-Pass the task list through `accessory`. Suggestions use that same location and
+Pass the task list through `accessory`. An empty conditional accessory reserves no
+row or spacing, including after hydration. Suggestions use that same location and
 restore the task list without changing its open state. Set `draftKey` when
 switching conversations so undo cannot bring content from another chat back.
 

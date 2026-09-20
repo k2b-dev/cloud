@@ -18,7 +18,7 @@ const DEFAULT_ICONS: Record<StatusTone, string> = {
   error: "ti ti-alert-circle",
   degraded: "ti ti-plug-connected-x",
   running: "ti ti-loader-2",
-  neutral: "ti ti-minus",
+  neutral: "ti ti-alert-square-rounded",
 };
 
 export function StatusBadge(props: StatusBadgeProps): JSX.Element {

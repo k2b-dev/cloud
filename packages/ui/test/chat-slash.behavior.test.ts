@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createComponent, createSignal } from "solid-js";
+import { createComponent, createSignal, Show } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
 import type { ChatMention, ChatSubmitInput } from "../src/chat/types";
 import type { ChatCommand } from "../src/chat/ChatComposer";
@@ -114,4 +114,22 @@ test("a command can replace the draft and request submission after its action co
   await Promise.resolve(); await Promise.resolve();
   expect(submitted).toEqual(["Hello"]);
   dispose(); dom.cleanup();
+});
+
+
+test("an empty reactive accessory does not add a composer row after hydration", async () => {
+  const dom = createHarness();
+  const { ChatComposer } = await import("../src/chat/ChatComposer");
+  const [visible, setVisible] = createSignal(false);
+  const dispose = render(() => createComponent(ChatComposer, {
+    value: "", onValueChange() {}, onSubmit() {},
+    get accessory() { return createComponent(Show, { get when() { return visible(); }, children: "Tasks" }); },
+  }), dom.root);
+  try {
+    expect(dom.root.querySelector(".k2b-chat-composer-slot")).toBeNull();
+    setVisible(true);
+    expect(dom.root.querySelector(".k2b-chat-composer-slot")?.textContent).toBe("Tasks");
+    setVisible(false);
+    expect(dom.root.querySelector(".k2b-chat-composer-slot")).toBeNull();
+  } finally { dispose(); dom.cleanup(); }
 });
