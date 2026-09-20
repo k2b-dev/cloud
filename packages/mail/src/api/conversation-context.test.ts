@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { redis } from "bun";
+import * as platformServices from "@k2b/cloud/services";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { generateSpecs } from "hono-openapi";
@@ -29,6 +31,25 @@ const user = {
 afterEach(() => mock.restore());
 
 describe("Mail conversation context OpenAPI contract", () => {
+  beforeEach(() => {
+    spyOn(platformServices, "get").mockResolvedValue(100);
+    spyOn(redis, "send").mockImplementation(async (command) => {
+      if (command !== "EVAL") throw new Error(`Unexpected Redis command: ${command}`);
+      return [1, 0, "1"];
+    });
+  });
+
+  test("requires authentication before reading conversation context", async () => {
+    const related = spyOn(conversationContext, "listRelatedConversations");
+    const response = await app.request("/mailboxes/mbx123/conversations/cnv123/related");
+    expect(response.status).toBe(401);
+    expect(response.headers.get("X-RateLimit-Limit")).toBe("100");
+    expect(platformServices.get).toHaveBeenCalledTimes(1);
+    expect(platformServices.get).toHaveBeenCalledWith("security.rate_limit_per_second");
+    expect(redis.send).toHaveBeenCalledTimes(1);
+    expect(related).not.toHaveBeenCalled();
+  });
+
   test("publishes authenticated Contacts and Spaces context routes", async () => {
     const spec = await generateSpecs(app);
     const history = spec.paths?.[`${base}/contacts/{bookId}/{contactId}/history`]?.get;
