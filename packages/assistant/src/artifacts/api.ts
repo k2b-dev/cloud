@@ -1,3 +1,5 @@
+import { chatPresentations } from "./chat-presentations";
+import { ChatPresentationInput } from "./chat-presentation-contracts";
 import { studioFiles } from "./file-transfer";
 import { AiFileWriteError, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { GotenbergRenderError } from "@k2b/cloud/services";
@@ -72,6 +74,12 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       : code === "CONFLICT" || code === "LAST_MANAGER" ? 409 : code === "REQUEST_FAILED" ? 500 : 400;
     if (code === "REQUEST_FAILED") console.error("Assistant artifact request failed", error);
     return respond(c,{ ok: false, code, status, error: artifactMessages.resolve([getLocale(c)]).t[code] });
+  })
+  .post("/presentations", v("json", ChatPresentationInput), async c => c.json(await chatPresentations.save(c.req.valid("json"), identity(c))))
+  .get("/presentations/:presentationId", async c => c.json(await chatPresentations.read(z.uuid().parse(c.req.param("presentationId")), z.string().min(1).parse(c.req.query("conversationId")), identity(c))))
+  .get("/presentations/:presentationId/input", async c => {
+    const file = await chatPresentations.input(z.uuid().parse(c.req.param("presentationId")), z.string().min(1).parse(c.req.query("conversationId")), z.string().min(1).parse(c.req.query("path")), identity(c));
+    return new Response(new Uint8Array(file.data), { headers: { "Content-Type": file.mediaType, "Content-Disposition": "attachment", "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" } });
   })
   .post("/runtime/pdf", async (c,next) => {
     await studioPdf.authorize({ resourceId: c.req.query("resourceId"), conversationId: c.req.query("conversationId") }, identity(c));

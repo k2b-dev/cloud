@@ -1,3 +1,4 @@
+import { chatPresentations } from "./chat-presentations";
 import { readdir } from "node:fs/promises";
 import { studioFiles } from "./file-transfer";
 import { Hono } from "hono";
@@ -1102,6 +1103,31 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       expect(result.history.filter(entry=>entry.message.role==="tool_result"&&entry.message.name==="code_interact").length).toBeGreaterThanOrEqual(3);
     } finally {await agentHost.close();conversation.mockRestore();turn.mockRestore();}
   },1_230_000);
+  test("chat presentations retain input bytes, deduplicate and enforce chat ownership", async () => {
+    const conversationId = crypto.randomUUID();
+    await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
+    const conversation = spyOn(aiConversations,"getConversation").mockImplementation(async request => request.ownerUserId !== owner.user.id || request.conversationId !== conversationId ? null : ({
+      id:conversationId,shortId:"abc234",title:"Presentation",titleSource:"user",description:"",descriptionSource:"user",keywords:[],pinnedAt:null,done:null,isDone:false,lastUsedAt:"2026-09-14T00:00:00.000Z",archivedAt:null,
+      runStatus:"idle",runError:null,unreadCompletion:false,projectId:null,draft:{content:[],revision:1,updatedAt:null},createdByUserId:owner.user.id,
+      createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
+    }));
+    try {
+      await sql`INSERT INTO ai.files(conversation_id,path,bytes,size,media_type,origin,version) VALUES(${conversationId}::uuid,'/data.csv',${new TextEncoder().encode("value\n12")},8,'text/csv','user',1)`;
+      const input = { conversationId, callId:"present-once", title:"Report", code:"export default () => ui.stat({label:'Value',value:12})", nodes:[{id:"value",type:"stat",label:"Value",value:12}], inputs:[{path:"/data.csv",version:1}] };
+      const [first, duplicate] = await Promise.all([chatPresentations.save(input, owner), chatPresentations.save(input, owner)]);
+      expect(first).toEqual(duplicate);
+      await sql`UPDATE ai.files SET bytes=${new TextEncoder().encode("changed")},version=2 WHERE conversation_id=${conversationId}::uuid`;
+      const saved = await chatPresentations.read(first.presentationId, conversationId, owner);
+      expect(saved.nodes[0]).toMatchObject({type:"stat",value:12});
+      expect(new TextDecoder().decode((await chatPresentations.input(first.presentationId, conversationId,"/data.csv",owner)).data)).toBe("value\n12");
+      await expect(chatPresentations.read(first.presentationId, conversationId, stranger)).rejects.toThrow();
+      await expect(chatPresentations.read(first.presentationId, crypto.randomUUID(), owner)).rejects.toThrow();
+      await expect(chatPresentations.save({...input,callId:"stale"},owner)).rejects.toThrow("version");
+      await sql`DELETE FROM ai.conversations WHERE id=${conversationId}::uuid`;
+      expect((await sql`SELECT id FROM assistant.chat_presentations WHERE id=${first.presentationId}::uuid`).length).toBe(0);
+      expect((await sql`SELECT path FROM assistant.chat_presentation_inputs WHERE presentation_id=${first.presentationId}::uuid`).length).toBe(0);
+    } finally { conversation.mockRestore(); }
+  });
   test("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
     const conversationId=crypto.randomUUID(),turnId=crypto.randomUUID();
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
@@ -1129,8 +1155,17 @@ const isolated = /\/cloud_assistant_artifacts_test(?:\?|$)/.test(process.env.DAT
       const result=observers[0]!;
       expect(result).toMatchObject({status:"done",result:{status:"ready",output:'{"answer":42,"serverProcess":"undefined"}'}});
       expect(await wait(call)).toEqual(result);
+      const visual = await wait({...call,callId:"visual-run",args:{code:"export default () => { const n=ui.stat({id:'total',label:'Total',value:20}); ui.button({id:'double',label:'Double',onClick:()=>n.setValue(40)}); }"}});
+      expect(visual).toMatchObject({status:"done",result:{status:"ready",userVisible:false}});
+      const presentCall = {...call,name:"code_present" as const,callId:"visual-present",args:{runId:"visual-run",title:"Interactive result"}};
+      const shown = await wait(presentCall);
+      expect(shown).toMatchObject({status:"done",result:{title:"Interactive result",userVisible:true}});
+      expect(await wait(presentCall)).toEqual(shown);
+      const [presentation] = await sql`SELECT title,nodes FROM assistant.chat_presentations WHERE conversation_id=${conversationId}::uuid AND call_id='visual-present'`;
+      expect(presentation?.title).toBe("Interactive result");
+      expect(presentation?.nodes[0]).toMatchObject({id:"total",value:20});
       const [count]=await sql<{count:number}[]>`SELECT count(*)::int AS count FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid`;
-      expect(count!.count).toBe(1);
+      expect(count!.count).toBe(3);
       const syntax = await wait({...call,callId:"syntax-error",args:{code:"export default () => { const broken = ; }"}});
       expect(syntax).toMatchObject({status:"done",result:{error:expect.stringContaining("Unexpected")}});
       expect(JSON.stringify(syntax)).not.toContain("artifact request failed");

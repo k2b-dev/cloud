@@ -1,6 +1,9 @@
 import { i18n } from "@k2b/stdlib";
 export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
   en: {
+    visualization: "Visualization", visualizationUnavailable: "Visualization unavailable", visualizationInvalid: "Invalid visualization.",
+    visualizationLoadFailed: "Could not load visualization.", visualizationLoading: "Loading visualization…", visualizationInteract: "Interact",
+    visualizationInputUnavailable: "This saved input is no longer available.", visualizationWait: "Wait until the data has finished loading.",
     PUBLIC_READ_ONLY: "Public access only allows running the published app. Manage cannot be public.",
     openApp: "Open fullscreen", copyAppLink: "Copy app link",
     publicAccessTitle: "Public access is restricted",
@@ -72,6 +75,9 @@ export const artifactMessages = i18n.define({ baseLocale: "en", messages: {
     REQUEST_FAILED: "The artifact request failed. Please try again.",
   },
   de: {
+    visualization: "Visualisierung", visualizationUnavailable: "Visualisierung nicht verfügbar", visualizationInvalid: "Ungültige Visualisierung.",
+    visualizationLoadFailed: "Visualisierung konnte nicht geladen werden.", visualizationLoading: "Visualisierung wird geladen …", visualizationInteract: "Interagieren",
+    visualizationInputUnavailable: "Diese gespeicherte Eingabe ist nicht mehr verfügbar.", visualizationWait: "Bitte warte, bis die Daten vollständig geladen sind.",
     PUBLIC_READ_ONLY: "Öffentlicher Zugriff erlaubt nur das Ausführen der veröffentlichten App. Verwalten kann nicht öffentlich sein.",
     openApp: "Vollbild öffnen", copyAppLink: "App-Link kopieren",
     publicAccessTitle: "Öffentlicher Zugriff ist eingeschränkt",

@@ -86,9 +86,21 @@ For a new app, read Source workflow and the closest complete example before
 writing source, plus only the API references it uses. For analytical reports or
 dashboards, also load `assistant-data-analysis` for metrics and source validation.
 
+## Choose the delivery
+
+For a one-off chart, calculator, or interactive analysis in this conversation,
+use `code_run({code,inputPaths})`, test the controls, then
+`code_present({runId,title})`. Read [Chat visualizations](references/chat.md).
+A successful run is visible to the agent only; present it before saying the
+user can see it. No saved App or chat file is necessary.
+
+Use a Studio App when the user needs an independently accessible, reusable
+application. Use `files.save`, `code_export`, and `present` when the requested
+result is a file. These are separate delivery choices.
+
 ## Verify and deliver
 
-Run the actual saved revision and test relevant controls with IDs returned by
+Run the actual source (the saved revision for Apps) and test relevant controls with IDs returned by
 `code_run`/`code_interact`, including invalid inputs and picker fixtures. Creating,
 compiling or saving source does not verify behavior. If `work.status` is
 `running`, wait with `code_inspect({runId,waitMs:30000})`; do not restart the job.

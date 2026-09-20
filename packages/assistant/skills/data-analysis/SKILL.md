@@ -6,7 +6,9 @@ description: Analyze source data, explain metrics and comparisons, and build evi
 # Analyze data and deliver an inspectable result
 
 Start with the question the reader needs to answer. Choose a direct answer,
-a one-off analysis, an exported file, or a reusable Studio app accordingly.
+an interactive visualization in this chat, an exported file, or a reusable Studio app accordingly.
+For a one-time visual analysis, prefer a chat visualization; filters and buttons
+do not by themselves require a Studio App.
 Load `assistant-code-mode` for execution and read its `references/analytics.md`
 for the built-in UI. Loading this skill does not install a library or grant access.
 
@@ -70,7 +72,7 @@ empty results, and recovery from a failed load. Reconcile displayed values with
 the reviewed totals and check that filters describe the data actually displayed.
 A successful schema validation does not establish analytical correctness.
 
-Validate the saved source revision, rather than pasting its formulas into a
+Validate the actual presented source (the saved revision for Apps), rather than pasting its formulas into a
 second test script. Keep an independent expectation from the input data: row
 counts, unmatched joins, totals and representative boundary cases. For targets,
 state their grain (for example month × region) and aggregate each target once;
@@ -82,7 +84,7 @@ until display formatting. Test reset, one/multiple/all selections, empty results
 and complete versus partial periods. A newly generated timestamp is not source
 freshness: keep the real retrieval or file-snapshot timestamp stable.
 
-For a data snapshot, export the validated dataset with `files.save` and
+For a Studio App data snapshot, export the validated dataset with `files.save` and
 `code_export`, then copy its exact path/version into the resource with
 `code_write({id,expectedRevision,files:[{path:"data.json",fromFile:reference}]})`.
 Obtain the exact reference with `code_file_stat`; importing private files into
@@ -96,7 +98,14 @@ from external loading; an Apply button can avoid a request for every slider move
 
 ## Save, share, and hand off
 
-Reuse one Cloud resource for later revisions of the same report or dashboard.
+For chat visualizations, test `code_run` and relevant `code_interact` controls,
+then deliver with `code_present({runId,title})`. A successful run alone is not
+visible to the user. Retain source identity, reviewed input data and their real
+retrieval timestamp. Put writes and external reloads behind explicit buttons;
+opening an old result must not repeat earlier actions. The user can download the
+current view as PDF/HTML or an individual chart as SVG.
+
+For reusable Studio Apps, reuse one Cloud resource for later revisions of the same report or dashboard.
 Save its source, test that revision, and use the normal Code Mode publication
 workflow when publication is requested. Publishing a version and granting reader
 access are separate operations. Preserve existing access; a dashboard request
@@ -108,7 +117,7 @@ output file. A live app must implement its loader and display the retrieval time
 loading once is not continuous monitoring. No background refresh exists unless
 implemented through an appropriate supported workflow.
 
-Return the resource link or exported file, the data timestamp, and material
+Present the chat visualization, resource link or exported file, the data timestamp, and material
 coverage limitations. Say whether it is a snapshot or reloads from its sources.
 If publication fails, retain the tested resource and report the failed stage;
 do not claim success or create a different public destination. Sites-specific

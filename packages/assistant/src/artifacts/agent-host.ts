@@ -19,7 +19,7 @@ export const AgentHostRequest = z
   .object({
     turnId: z.uuid(),
     callId: z.string().min(1).max(180),
-    name: z.enum(["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_export"]),
+    name: z.enum(["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_export", "code_present"]),
     args: z.unknown(),
     decision: z.object({ id: z.uuid(), approved: z.boolean() }).optional(),
   })
@@ -90,7 +90,7 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
         conversationId: context.conversationId,
         ownerUserId: context.actor.user.id,
         path: filePath,
-        version: stat.version,
+        version: url.searchParams.has("version") ? z.coerce.number().int().positive().parse(url.searchParams.get("version")) : stat.version,
       }));
     return file
       ? new Response(new Uint8Array(file.bytes).buffer, { headers: { "content-type": file.mediaType } })

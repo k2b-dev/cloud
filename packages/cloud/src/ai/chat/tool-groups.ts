@@ -18,7 +18,7 @@ export function groupToolBlocks(blocks: readonly AiTurnBlock[], hasUi: (tool: To
       block.kind === "tool" &&
       !block.approval &&
       block.status !== "awaiting_approval" &&
-      !["present", "view_image", "code_secret"].includes(block.name) &&
+      !["present", "code_present", "view_image", "code_secret"].includes(block.name) &&
       !isCardToolName(block.name) &&
       !isSurveyToolName(block.name) &&
       !isTextEditorToolName(block.name) &&

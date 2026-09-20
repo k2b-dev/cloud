@@ -440,6 +440,7 @@ export type AiClientToolId =
   | "code_interact"
   | "code_stop"
   | "code_open"
+  | "code_present"
   | "code_export"
   | "code_secret";
 

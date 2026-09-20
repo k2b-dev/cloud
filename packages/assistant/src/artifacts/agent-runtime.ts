@@ -1,3 +1,4 @@
+import { ChatPresentationResult } from "./chat-presentation-contracts";
 import { inspectAnalytics } from "./runtime/analytics-inspect";
 import { AnalyticsEvent } from "./runtime/analytics-contracts";
 import { runHttp, type HttpHost } from "./http-host";
@@ -16,7 +17,7 @@ const Claim = z.discriminatedUnion("status", [
   z.object({ status: z.literal("execute") }), z.object({ status: z.literal("pending") }),
   z.object({ status: z.literal("interrupted") }), z.object({ status: z.literal("done"), result: z.json() }),
 ]);
-type Entry = { session: ArtifactSession; container: HTMLElement; artifactId?: string; revision: number; conversationId: string; resourceId?: string; outputSchema?: z.ZodType };
+type Entry = { code?: string; inputs: { path: string; version: number }[]; session: ArtifactSession; container: HTMLElement; artifactId?: string; revision: number; conversationId: string; resourceId?: string; outputSchema?: z.ZodType };
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const text = (value: string, max = 1000) => value.length > max ? `${value.slice(0, max)}…` : value;
 
@@ -29,6 +30,7 @@ function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset
   const selected = nodeId ? state.nodes.filter((node) => node.id === nodeId) : state.nodes.slice(offset, offset + limit);
   if (nodeId && !selected.length) throw new Error("UI node not found");
   return {
+    userVisible: false, delivery: "Use code_present for a one-off visualization, code_export then present for files, or code_open for a saved app.",
     runId, id: entry.artifactId, revision: entry.artifactId ? entry.revision : undefined, resourceId: entry.resourceId, status: invalidOutput ? "error" : state.status, busy: state.busy, work: state.work,
     error: invalidOutput ? "Action output does not match its schema. Effects may have completed; inspect state before retrying." : state.error ? text(state.error, 6000) : null, modal: state.modal ? { ...state.modal, id: state.modalId } : null,
     totalNodes: state.nodes.length, nextNodeOffset: !nodeId && offset + limit < state.nodes.length ? offset + limit : null,
@@ -101,7 +103,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       const dataId = input.resourceId ?? input.id;
       const current = invocation?.resource ?? (input.id ? await artifactClient.get(input.id, false, input.version, conversationId) : undefined);
       const source = conversationFileSource("/api/ai", conversationId);
-      const listed = input.inputPaths.length ? await source.list() : [];
+      const listed = input.inputPaths.length ? await source.listFiles() : [];
       const selected = input.inputPaths.map((path) => {
         const file = listed.find((file) => file.path === path);
         if (!file) throw new Error(`Input not found: ${path}`);
@@ -112,7 +114,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       const readInput=async(path:string,readSignal:AbortSignal)=>{
         const file=selected.find(file=>file.path===path);
         if(!file)throw new Error("Input was not selected for this run");
-        const response=await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${new URLSearchParams({path:file.path})}`,{signal:readSignal});
+        const response=await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${new URLSearchParams({path:file.path,version:String(file.version)})}`,{signal:readSignal});
         if(!response.ok)throw new Error(`Input could not be read: ${file.path} (HTTP ${response.status})`);
         const blob=await response.blob();
         readSignal.throwIfAborted();
@@ -152,7 +154,7 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
         throw error;
       }
       const runId = callId;
-      const entry = { session, container, artifactId: input.id, resourceId: input.resourceId, revision: current?.sourceRevision ?? 0, conversationId,
+      const entry = { code: input.code, inputs: selected.map(({path,version}) => ({path,version})), session, container, artifactId: input.id, resourceId: input.resourceId, revision: current?.sourceRevision ?? 0, conversationId,
         outputSchema: invocation ? z.fromJSONSchema(invocation.outputSchema) : undefined };
       runs.set(runId, entry);
       await waitFor(entry, () => session.snapshot().status !== "starting" || session.snapshot().work?.status === "running");
@@ -204,6 +206,15 @@ export function createArtifactAgentRuntime(open: ((tab: WorkspaceTab) => void) |
       if (current.error || current.modal || current.work?.status === "running") break;
       }
       return {...inspect(input.runId,entry),completedSteps,nextStep:completedSteps<steps.length?completedSteps:null};
+    } else if (input.operation === "present") {
+      const state = entry.session.snapshot();
+      if (!entry.code || entry.artifactId || entry.resourceId) throw new Error("Present a one-off code run without app data. Use code_open for a saved app.");
+      if (state.status !== "ready" || state.error || state.busy || state.inputPending || state.approvalPending || state.pendingRequests || state.work?.status === "running" || state.modal || !state.nodes.length || state.nodes.some(node => node.loading || (node.type === "group" && node.error)))
+        throw new Error("Wait for a successful, settled run with visible UI before presenting it.");
+      const response = await fetch("/api/assistant/artifacts/presentations", { method: "POST", signal,
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, callId, title: input.title, code: entry.code, nodes: state.nodes, inputs: entry.inputs }) });
+      if (!response.ok) throw new Error(`Could not present visualization: HTTP ${response.status}`);
+      return { ...ChatPresentationResult.parse(await response.json()), userVisible: true };
     } else if (input.operation === "export") {
       const file = entry.session.files().find((file) => file.name === input.name);
       if (!file) throw new Error("Captured output not found");

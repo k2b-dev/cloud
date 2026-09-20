@@ -383,3 +383,9 @@
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
 }
+
+.assistant-chat-presentation { border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-lg, 1rem); padding: 1rem; min-width: 0; }
+.assistant-chat-presentation > header, .assistant-chat-presentation > footer { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.assistant-chat-presentation > header { justify-content: space-between; margin-bottom: .75rem; }
+.assistant-chat-presentation > footer { margin-top: .75rem; }
+.assistant-chat-presentation__preview { display: block; width: 100%; height: min(480px, 65dvh); border: 0; background: white; }

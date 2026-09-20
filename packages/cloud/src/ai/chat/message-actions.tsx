@@ -28,6 +28,8 @@ type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput)
 type RetrySteerHandler = (block: Extract<AiTurnBlock, { kind: "steer_message" }>) => void | Promise<void>;
 
 export type AiChatActions = {
+  /** Host-owned visualizations, persisted independently of the execution session. */
+  renderCodePresentation?: (result: unknown) => JSX.Element;
   /** Prevents turn-continuation actions while the current turn is stopping. */
   actionDisabled?: () => boolean;
   onApproval?: ApprovalHandler;

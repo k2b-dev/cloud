@@ -861,3 +861,22 @@ message link in a new tab. Chats remain private to their owner, including when
 they belong to a shared Project. Search results do not advertise a resource reader.
 
 Cmd/Ctrl+Shift+K searches the open chat, falling back to all chats outside a chat. Cmd/Ctrl+Alt+N creates a chat in the current project; D toggles done when the chat is idle and focus is outside an input. Search actions update the open palette in place. Actions for the selected object appear before page actions.
+
+### Interactive results in chat
+
+A one-off Code Mode run can be delivered with `code_present({runId,title})`.
+It appears in the conversation without creating a Studio App or a chat file.
+A test run alone remains agent inspection, not a delivered visualization.
+
+The chat retains source, a UI preview and copies of selected input versions.
+Opening history displays the preview without executing code. Choose **Interact**
+to start the saved program with its default controls; **Stop** releases its
+worker. Leaving the chat also stops it. Interactive state is temporary. Put
+external writes in explicit buttons, not program initialization. Existing
+capability permissions and approvals still apply.
+
+Use **PDF** or **HTML** to download the current view, or **SVG** for a chart.
+Document exports include filter values and source context, omit action controls,
+and render the complete current table. These downloads need no chat-file entry.
+Saved Apps and runs with App data context continue to use Studio. Chat results
+have a 250 MiB per-conversation storage budget, including retained inputs.

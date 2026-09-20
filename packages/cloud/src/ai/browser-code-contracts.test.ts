@@ -20,7 +20,7 @@ test("UI interactions use structured events without legacy list action fields", 
   expect(parseCodeToolInput("code_interact", {runId:"run", id:"dialog", answer:"Example"})).toMatchObject({answer:"Example"});
 });
 test("code tools accept flat arguments and reject legacy envelopes", () => {
-  const inputs = [{ id }, {id,action:"double",publishedVersion:1,input:2}, { runId: "run" }, { runId: "run", id: "@modal:1", answer: { count: 2 } }, { runId: "run" }, { id }, { runId: "run", name: "report.csv" }, {name:"crm",origin:"https://api.example.com"}];
+  const inputs = [{ id }, {id,action:"double",publishedVersion:1,input:2}, { runId: "run" }, { runId: "run", id: "@modal:1", answer: { count: 2 } }, { runId: "run" }, { id }, { runId: "run", name: "report.csv" }, {runId:"run",title:"Overview"}, {name:"crm",origin:"https://api.example.com"}];
   for (const [index, name] of CODE_RUNTIME_TOOL_NAMES.entries()) {
     expect(String(parseCodeToolInput(name, inputs[index]).operation)).toEqual(name.slice(5));
     expect(() => parseCodeToolInput(name, { ...inputs[index], operation: name.slice(5) })).toThrow();

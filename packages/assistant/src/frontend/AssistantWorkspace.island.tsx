@@ -1,3 +1,4 @@
+import { ChatPresentation } from "../artifacts/ChatPresentation";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import { assistantComposerCommands } from "./composer-commands";
 import { type ChatMention, reconcileChatMentions } from "@k2b/ui";
@@ -1456,6 +1457,7 @@ export default function AssistantWorkspace(props: Props) {
                           fallback={
                             <AiChatActionsProvider
                               actions={{
+                                renderCodePresentation: result => <ChatPresentation result={result} conversationId={chat.activeConversationId()!} httpHost={browserHttpHost} />,
                                 actionDisabled: () => chat.runStatus() === "stopping",
                                 onApproval: async (request, input) => {
                                   if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);

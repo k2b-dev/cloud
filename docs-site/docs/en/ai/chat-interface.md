@@ -194,6 +194,12 @@ controls. Surveys, cards, presented files, editors, and capability tables remain
 visible results. The saved presentation remains readable when an application
 is temporarily unavailable. Ordinary Nessi tools use generic tool labels.
 
+`AiChatActions.renderCodePresentation(result)` lets the application render a
+completed `code_present` result inline. The host owns validation, authorized
+loading, durable storage, and sandbox lifecycle. It must not execute saved code
+automatically when rendering the preview. These results remain outside ordinary
+tool disclosures.
+
 Completed turns preserve the same ordered timeline and show their elapsed
 wall-clock duration. They do not move earlier Markdown into a second outer
 work disclosure. Explicit disclosure choices survive streaming updates and a

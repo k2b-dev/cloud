@@ -619,6 +619,7 @@ function MemoryToolView(props: { block: ToolBlock }) {
 }
 
 function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
+  const actions = useAiChatActions();
   const status = () => props.block.status;
   const fetchError = () =>
     props.block.name === "fetch_file" && props.block.isError ? fetchFileErrorPresentation(props.block.result) : undefined;
@@ -645,6 +646,9 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       </Match>
       <Match when={props.block.presentation?.kind === "capability"}>
         <CapabilityToolView block={props.block} />
+      </Match>
+      <Match when={actions.renderCodePresentation && props.block.name === "code_present" && status() === "completed" && !props.block.isError}>
+        {actions.renderCodePresentation?.(props.block.result)}
       </Match>
       <Match when={props.block.name === "present" && !props.block.isError}>
         <PresentToolBlock block={props.block} />

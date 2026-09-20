@@ -3,7 +3,7 @@ import { z } from "zod";
 export const CodeResourceId = z.string().regex(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/).describe("Public resource short ID returned by code_create or code_list.");
 const id = CodeResourceId;
 const runId = z.string().min(1).max(180).describe("Run ID returned by code_run in this conversation execution host.");
-export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_open", "code_export", "code_secret"] as const;
+export const CODE_RUNTIME_TOOL_NAMES = ["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_open", "code_export", "code_present", "code_secret"] as const;
 export const CodeRunInput = z.object({
   id: id.optional(),
   resourceId: id.optional().describe("Optional data context for one-off code. Requires Manage; uses this resource database and shared files/KV without changing its source. Local storage stays temporary."),
@@ -39,6 +39,7 @@ export const CodeInteractInput = CodeInteraction.partial({id:true}).extend({
 }).strict().refine(input=>input.steps ? input.id===undefined && input.event===undefined && input.answer===undefined : input.id!==undefined && (input.event===undefined || input.answer===undefined),"Supply steps OR one id with event/answer.");
 export const CodeStopInput = z.object({ runId }).strict();
 export const CodeOpenInput = z.object({ id }).strict();
+export const CodePresentInput = z.object({ runId, title: z.string().trim().min(1).max(120) }).strict();
 export const CodeExportInput = z.object({ runId, name: z.string().min(1).max(180).describe("Captured output filename returned by the snapshot.") }).strict();
 
 export const CodeSecretInput = z.object({
@@ -58,6 +59,7 @@ export const CodeRuntimeInput = z.discriminatedUnion("operation", [
   CodeStopInput.extend({ operation: z.literal("stop") }),
   CodeOpenInput.extend({ operation: z.literal("open") }),
   CodeSecretInput.extend({ operation: z.literal("secret") }),
+  CodePresentInput.extend({ operation: z.literal("present") }),
   CodeExportInput.extend({ operation: z.literal("export") }),
 ]);
 export type CodeRuntimeInput = z.infer<typeof CodeRuntimeInput>;
@@ -70,6 +72,7 @@ export function parseCodeToolInput(name: string, args: unknown): CodeRuntimeInpu
     case "code_interact": return { operation: "interact", ...CodeInteractInput.parse(args) };
     case "code_stop": return { operation: "stop", ...CodeStopInput.parse(args) };
     case "code_open": return { operation: "open", ...CodeOpenInput.parse(args) };
+    case "code_present": return { operation: "present", ...CodePresentInput.parse(args) };
     case "code_export": return { operation: "export", ...CodeExportInput.parse(args) };
     default: throw new Error("Unknown code tool");
   }

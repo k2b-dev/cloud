@@ -3,6 +3,16 @@ import { withAiShortIdForDb } from "@k2b/cloud/ai";
 
 export async function migrateArtifacts() {
   await sql`CREATE SCHEMA IF NOT EXISTS assistant`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS assistant.chat_presentations (
+    id UUID PRIMARY KEY, conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
+    call_id TEXT NOT NULL, title TEXT NOT NULL, code TEXT NOT NULL, nodes JSONB NOT NULL,
+    bytes BIGINT NOT NULL CHECK(bytes >= 0), created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(conversation_id,call_id)
+  )`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS assistant.chat_presentation_inputs (
+    presentation_id UUID NOT NULL REFERENCES assistant.chat_presentations(id) ON DELETE CASCADE,
+    path TEXT NOT NULL, data BYTEA NOT NULL, media_type TEXT NOT NULL, PRIMARY KEY(presentation_id,path)
+  )`.simple();
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,

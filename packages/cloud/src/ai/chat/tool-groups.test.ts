@@ -38,3 +38,8 @@ test("summary deduplicates categories without claiming success for a failed test
 test("a completed code tool reporting a runtime error counts as failed work",()=>{
   expect(summarizeToolGroup([{id:"code",kind:"tool",name:"code_run",callId:"code",status:"completed",result:{status:"error",error:"Invalid UI"}}],"en")).toContain("1 failed");
 });
+
+test("chat visualizations remain visible outside tool disclosures", () => {
+  const groups = groupToolBlocks([tool("run", "code_run"), tool("view", "code_present"), tool("read")]);
+  expect(groups.map(group => group.kind)).toEqual(["tools", "block", "tools"]);
+});
