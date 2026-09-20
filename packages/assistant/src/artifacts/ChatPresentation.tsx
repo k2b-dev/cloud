@@ -95,25 +95,25 @@ export function ChatPresentation(props: { result: unknown; conversationId: strin
   }
   return <ErrorBoundary fallback={error => <NoticeCard tone="danger" title={t().visualizationUnavailable} detail={String(error)} />}><section class="assistant-chat-presentation" aria-label={descriptor().success ? ChatPresentationResult.parse(props.result).title : t().visualization}>
     <div ref={container} />
-    <Show when={data()} fallback={<p role="status">{!descriptor().success ? t().visualizationInvalid : data.error ? String(data.error) : t().visualizationLoading}</p>}>
-      <header><strong>{data()?.title}</strong>
-        <Show when={interactive()} fallback={
-          <Dropdown.Root items={downloads()} position="bottom-right">
-            <Dropdown.Trigger variant="ghost" iconOnly label={t().visualizationDownloads} loading={downloading()}><i class="ti ti-download" aria-hidden="true" /></Dropdown.Trigger>
-          </Dropdown.Root>
-        }>
-          <SplitButton variant="ghost" loading={loading()} onClick={() => active() ? stop() : void start()}
-            items={downloads()} menuLabel={t().visualizationDownloads} menuIcon={<i class="ti ti-dots" aria-hidden="true" />} menuPosition="bottom-right">
-            {active() ? t().stop : t().visualizationInteract}
-          </SplitButton>
-        </Show>
-      </header>
-      <ScrollArea class="assistant-chat-presentation__body" scrollFade>
-      <RuntimeView nodes={nodes()} busy={!active() || unsettled()} event={event => {
-        if (active()) void session?.event(event).catch(error => setError(String(error)));
-      }} />
-      </ScrollArea>
-    </Show>
-    <Show when={error() || state()?.error}><NoticeCard tone="danger" title={t().visualization} detail={error() || state()?.error} /></Show>
+    <ScrollArea class="assistant-chat-presentation__body" scrollFade>
+      <Show when={data()} fallback={<p role="status">{!descriptor().success ? t().visualizationInvalid : data.error ? String(data.error) : t().visualizationLoading}</p>}>
+        <header><strong>{data()?.title}</strong>
+          <Show when={interactive()} fallback={
+            <Dropdown.Root items={downloads()} position="bottom-right">
+              <Dropdown.Trigger variant="ghost" iconOnly label={t().visualizationDownloads} loading={downloading()}><i class="ti ti-download" aria-hidden="true" /></Dropdown.Trigger>
+            </Dropdown.Root>
+          }>
+            <SplitButton variant="ghost" loading={loading()} onClick={() => active() ? stop() : void start()}
+              items={downloads()} menuLabel={t().visualizationDownloads} menuIcon={<i class="ti ti-dots" aria-hidden="true" />} menuPosition="bottom-right">
+              {active() ? t().stop : t().visualizationInteract}
+            </SplitButton>
+          </Show>
+        </header>
+        <RuntimeView nodes={nodes()} busy={!active() || unsettled()} event={event => {
+          if (active()) void session?.event(event).catch(error => setError(String(error)));
+        }} />
+      </Show>
+      <Show when={error() || state()?.error}><NoticeCard tone="danger" title={t().visualization} detail={error() || state()?.error} /></Show>
+    </ScrollArea>
   </section></ErrorBoundary>;
 }

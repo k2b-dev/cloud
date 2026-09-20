@@ -870,8 +870,9 @@ Cmd/Ctrl+Shift+K searches the open chat, falling back to all chats outside a cha
 
 A one-off Code Mode run can be delivered with `code_present({runId,title})`.
 It appears in the conversation without creating a Studio App or a chat file.
-The frame reserves 30% of the viewport height while loading and scrolls longer
-content internally, keeping the surrounding chat in place.
+The frame reserves 45% of the viewport height, capped at 600 pixels, while
+loading. Its title, actions and content scroll together inside the frame,
+keeping the surrounding chat in place.
 A test run alone remains agent inspection, not a delivered visualization.
 
 The chat retains source, a UI preview and copies of selected input versions.

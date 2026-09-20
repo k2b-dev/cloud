@@ -385,10 +385,10 @@
 }
 
 .assistant-chat-presentation { border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-surface); padding: 1rem; min-width: 0; }
-.assistant-chat-presentation > header { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-.assistant-chat-presentation > header { justify-content: space-between; margin-bottom: .75rem; }
+.assistant-chat-presentation__body > header { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.assistant-chat-presentation__body > header { justify-content: space-between; margin-bottom: .75rem; }
 
-.assistant-chat-presentation { height: 30vh; height: 30dvh; box-sizing: border-box; display: flex; flex-direction: column; }
-.assistant-chat-presentation > header { flex: none; }
-.assistant-chat-presentation > header > strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-chat-presentation { height: min(600px, 45vh); height: min(600px, 45dvh); box-sizing: border-box; display: flex; flex-direction: column; }
+.assistant-chat-presentation__body > header { flex: none; }
+.assistant-chat-presentation__body > header > strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-chat-presentation__body { flex: 1; min-height: 0; overflow: auto; }
