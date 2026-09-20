@@ -1,7 +1,16 @@
+import { lockFinalizedSchema } from "./finalized-schema";
+import { refreshLocalCalculations } from "./local-calculation-storage";
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { parseFormula } from "../formula/parser";
 import { aggregate, get, group, list } from "./records";
+
+// Raw SQL fixtures must materialize the same stored calculations as normal writes.
+const materialize = (tableId: string) =>
+  sql.begin(async (tx) => {
+    await lockFinalizedSchema(tx, tableId);
+    await refreshLocalCalculations(tx, tableId);
+  });
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 
@@ -109,6 +118,10 @@ const insertSqlFormulaFixture = async (): Promise<TestShape> => {
     INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
     VALUES (${recordId}::uuid, ${relationId}::uuid, ${targetRecordId}::uuid, 0)
   `;
+    await lockFinalizedSchema(sql, tableId);
+    await refreshLocalCalculations(sql, tableId);
+    await lockFinalizedSchema(sql, targetTableId);
+    await refreshLocalCalculations(sql, targetTableId);
   });
 
   return {
@@ -194,6 +207,7 @@ describe("records SQL formula projection integration", () => {
         END
         WHERE id IN (${fixture.subtotalId}::uuid, ${fixture.grossId}::uuid)
       `;
+      await materialize(fixture.tableId);
 
       const result = await list({ tableId: fixture.tableId, limit: 10 });
       expect(result.ok).toBe(true);
@@ -287,6 +301,7 @@ describe("records SQL formula projection integration", () => {
         INSERT INTO grids.records (id, short_id, table_id, data, version)
         VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
       `;
+      await materialize(fixture.tableId);
 
       const filtered = await list({
         tableId: fixture.tableId,
@@ -388,6 +403,7 @@ describe("records SQL formula projection integration", () => {
         INSERT INTO grids.records (id, short_id, table_id, data, version)
         VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
       `;
+      await materialize(fixture.tableId);
 
       const first = await group({
         tableId: fixture.tableId,
@@ -423,6 +439,7 @@ describe("records SQL formula projection integration", () => {
           (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "0.10", [fixture.quantityId]: "2.00" }}::jsonb, 1),
           (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "2.00", [fixture.quantityId]: "1.00" }}::jsonb, 1)
       `;
+      await materialize(fixture.tableId);
 
       const request = {
         tableId: fixture.tableId,

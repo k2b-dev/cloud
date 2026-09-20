@@ -1,3 +1,4 @@
+import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { beforeAll, expect, spyOn } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
@@ -152,7 +153,7 @@ postgresTest(
             revision: capability.revision,
             timeZone: "UTC",
             ...(["issue", "lookup-check"].includes(actionId)
-              ? { background: true as const, recordId: pageParams.bill_id }
+              ? { background: true as const, recordId: pageParams.bill_id, requestFingerprint: await hashWorkflowJson({}) }
               : recordId
                 ? { recordId }
                 : {}),

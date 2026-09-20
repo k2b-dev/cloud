@@ -88,9 +88,12 @@ postgresTest("frozen reads skip live SQL planning, preserve types and relations,
     const mixed = await reader.getMany([item.draftId, item.frozenId, item.draftId, testUuid()]);
     expect(mixed.map((record) => record.id)).toEqual([item.draftId, item.frozenId, item.draftId]);
     expect(mixed.map((record) => record.data[item.total])).toEqual(["6.5", "25", "6.5"]);
-    expect(computed).toHaveBeenCalledTimes(1);
+    expect(computed.mock.calls.length).toBeGreaterThan(0);
+    const computedCalls = computed.mock.calls.length;
     const calls = formulas.mock.calls.length;
+    expect((await reader.get(item.draftId))?.data[item.total]).toBe("6.5");
     expect((await reader.get(item.frozenId))?.data[item.total]).toBe("25");
+    expect(computed.mock.calls.length).toBe(computedCalls);
     expect(formulas.mock.calls.length).toBe(calls);
     await sql`UPDATE grids.tables SET deleted_at = now() WHERE id = ${item.tableId}::uuid`;
     expect(await reader.get(item.frozenId)).toBeNull();

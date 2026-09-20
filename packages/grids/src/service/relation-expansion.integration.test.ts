@@ -1,3 +1,5 @@
+import { lockFinalizedSchema } from "./finalized-schema";
+import { refreshLocalCalculations } from "./local-calculation-storage";
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
@@ -7,6 +9,13 @@ import { createReader } from "./record-read";
 import { attachRelationExpansion } from "./relation-expansion";
 import { lookupRecords } from "./relation-labels";
 import type { GridRecord } from "./types";
+
+// Raw SQL fixtures must materialize the same stored calculations as normal writes.
+const materialize = (tableId: string) =>
+  sql.begin(async (tx) => {
+    await lockFinalizedSchema(tx, tableId);
+    await refreshLocalCalculations(tx, tableId);
+  });
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
@@ -52,6 +61,7 @@ describe("relation expansion integration", () => {
         VALUES (${sourceRecordId}::uuid, ${relationFieldId}::uuid, ${targetRecordId}::uuid, 0)
       `;
 
+      await materialize(targetTableId);
       const sourceFields = await listByTable(sourceTableId);
       const record = (): GridRecord => ({
         id: sourceRecordId,

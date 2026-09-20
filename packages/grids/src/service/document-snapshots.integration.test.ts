@@ -1,3 +1,5 @@
+import { lockFinalizedSchema } from "./finalized-schema";
+import { refreshLocalCalculations } from "./local-calculation-storage";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { toPublicRecord } from "../api/public-dto";
@@ -8,6 +10,13 @@ import { createReader } from "./record-read";
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
+
+// Raw SQL fixtures must materialize the same stored calculations as normal writes.
+const materialize = (tableId: string) =>
+  sql.begin(async (tx) => {
+    await lockFinalizedSchema(tx, tableId);
+    await refreshLocalCalculations(tx, tableId);
+  });
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
@@ -39,6 +48,7 @@ describe("record snapshot relation access", () => {
       // Represents a retained row after its column constraints became stricter.
       const value = [{ Amount: null }];
       await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, ${{ [fieldId]: value }}::jsonb)`;
+      await materialize(tableId);
       const reader = await createReader(tableId);
       const record = await reader.get(recordId);
       if (!record) throw new Error("Missing record");
@@ -246,6 +256,7 @@ describe("record snapshot relation access", () => {
           ) AS links(from_id, to_id)
         `;
 
+        await materialize(tableId);
         const snapshot = await createRecordSnapshot({
           baseId,
           tableId,

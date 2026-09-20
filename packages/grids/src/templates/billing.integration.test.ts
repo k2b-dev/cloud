@@ -50,11 +50,13 @@ for (const locale of ["en", "de"]) {
           const apps = await sql`SELECT id, published_definition FROM grids.custom_apps
             WHERE base_id = ${baseId}::uuid AND published_definition IS NOT NULL`;
           expect(apps).toHaveLength(1);
-          expect(apps[0].published_definition.pages).toHaveLength(9);
-          const workflows = await sql`SELECT w.id FROM grids.workflow_profile p
+          expect(apps[0].published_definition.pages.map((page: { id: string }) => page.id)).toEqual([
+            "invoices", "bill", "balances", "partners", "partner", "partner-new", "payment",
+          ]);
+          const workflows = await sql<Array<{ name: string }>>`SELECT w.name FROM grids.workflow_profile p
             JOIN workflows.workflow w ON w.id = p.id
             WHERE p.base_id = ${baseId}::uuid AND w.active_version_id IS NOT NULL`;
-          expect(workflows).toHaveLength(8);
+          expect(workflows.map((workflow) => workflow.name).sort()).toEqual((definition.workflows ?? []).map((workflow) => workflow.name).sort());
           const navigation = await getBaseNavigation(baseId);
           expect(navigation?.groups).toHaveLength(3);
           expect(navigation?.revision).toBe(1);

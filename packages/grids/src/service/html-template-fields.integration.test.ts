@@ -1,3 +1,5 @@
+import { lockFinalizedSchema } from "./finalized-schema";
+import { refreshLocalCalculations } from "./local-calculation-storage";
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
@@ -10,6 +12,13 @@ import { enrichRecordsWithHtmlTemplates } from "./html-template-fields";
 import { checkHtmlTemplate } from "./html-template-preview";
 import { createReader } from "./record-read";
 import { list } from "./records";
+
+// Raw SQL fixtures must materialize the same stored calculations as normal writes.
+const materialize = (tableId: string) =>
+  sql.begin(async (tx) => {
+    await lockFinalizedSchema(tx, tableId);
+    await refreshLocalCalculations(tx, tableId);
+  });
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
@@ -50,6 +59,7 @@ describe("HTML template field integration", () => {
         VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, ${{ [nameFieldId]: "Camera" }}::jsonb)
       `;
 
+      await materialize(tableId);
       const result = await list({ tableId, limit: 1 });
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -91,6 +101,7 @@ describe("HTML template field integration", () => {
           INSERT INTO grids.records (id, short_id, table_id, data, created_at, updated_at)
           VALUES (${latestRecordId}::uuid, ${latestRecordShortId}, ${tableId}::uuid, ${{ [nameFieldId]: "Tripod" }}::jsonb, '2030-01-01', '2030-01-01')
         `;
+        await materialize(tableId);
         const latest = await checkHtmlTemplate({
           tableId,
           fieldId: htmlFieldId,
@@ -106,6 +117,7 @@ describe("HTML template field integration", () => {
                  jsonb_build_object(${nameFieldId}::text, 'Product ' || sequence::text)
           FROM generate_series(1, 500) sequence
         `;
+        await materialize(tableId);
         const exported = await exportRecords({
           tableId,
           format: "csv",
