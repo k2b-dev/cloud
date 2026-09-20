@@ -10,7 +10,9 @@ import { app } from "../src/config";
 import type { GqlRuntimeTraceEnd } from "../src/api/gql-observability";
 import { executeGqlSourceForContext } from "../src/api/gql-runtime";
 import { readDocumentArtifact } from "../src/service/document-issuance";
-import { create, update } from "../src/service/records";
+import { create } from "../src/service/records";
+import { update as updateBase } from "../src/service/bases";
+import { refreshLocalCalculations } from "../src/service/local-calculation-storage";
 import { instantiateDefinition } from "../src/service/templates";
 import { invokeGridsWorkflow, startWorkflowRuntime, stopWorkflowRuntime } from "../src/service/workflow-runtime";
 import { createBillingTemplate } from "../src/templates/billing";
@@ -129,6 +131,8 @@ try {
     await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
       SELECT id, ${items.field("category").id}::uuid, ${category.id}::uuid, 0 FROM grids.records
       WHERE table_id = ${items.id}::uuid AND short_id BETWEEN ${`D${String(first).padStart(5, "0")}`} AND ${`D${String(last).padStart(5, "0")}`}`;
+    // Bulk fixture inserts bypass record writes; populate their stored formulas before measuring reads.
+    await refreshLocalCalculations(sql, items.id);
     await sql`ANALYZE grids.records`;
     await sql`ANALYZE grids.record_links`;
   };
@@ -175,21 +179,21 @@ try {
   const issuePosition = await inventory.workflow("issue_position");
 
   const billing = await install(createBillingTemplate("en"));
-  const settings = await billing.resolve("settings"),
-    parties = await billing.resolve("parties"),
+  const parties = await billing.resolve("parties"),
     bills = await billing.resolve("bills");
-  const [issuer] = await sql<Array<{ id: string }>>`SELECT id::text FROM grids.records WHERE table_id = ${settings.id}::uuid`;
-  assert(issuer);
   const address = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
-  must(
-    await update(
-      settings.id,
-      issuer.id,
-      settings.values({ ...address, name: "Diagnostic issuer", vat_id: "DE123456789", ready: true }),
-      actorId,
-      "workflow",
-    ),
-  );
+  must(await updateBase(billing.base.id, {
+    documentDefaults: {
+      legalName: "Diagnostic issuer",
+      vatId: "DE123456789",
+      address: address.street,
+      postalCode: address.postal_code,
+      city: address.city,
+      countryCode: "DE",
+      iban: address.iban,
+      accountName: address.account_name,
+    },
+  }, actorId));
   const party = must(
     await create(parties.id, parties.values({ ...address, name: "Diagnostic buyer", vat_id: "DE987654321" }), actorId, "workflow"),
   );
@@ -201,13 +205,12 @@ try {
           bills.id,
           bills.values({
             kind: ["invoice"],
-            settings: [issuer.id],
             party: [party.id],
             invoice_date: "2026-09-16",
             service_date: "2026-09-01",
             due_date: "2026-09-30",
             buyer_reference: `DIAG-${i}`,
-            positions: [{ Label1: "Diagnostic service", Unit01: ["C62"], Qty001: "1.25", Price1: "19.99", Vat001: ["vat007"] }],
+            positions: [{ Label1: "Diagnostic service", Unit01: ["C62"], Qty001: "2", Price1: "19.99", Vat001: ["vat007"] }],
           }),
           actorId,
           "workflow",
@@ -367,7 +370,7 @@ try {
     >`SELECT id::text, primary_artifact_key, snapshot_id::text, profile_output FROM grids.documents WHERE workflow_run_id = ${result.runId}::uuid`;
     assert.equal(documents.length, 1);
     assert(documents[0]!.snapshot_id);
-    assert.equal(documents[0]!.profile_output.grossAmount, "26.74");
+    assert.equal(documents[0]!.profile_output.grossAmount, "42.78");
     const artifact = must(await readDocumentArtifact(documents[0]!.id, documents[0]!.primary_artifact_key));
     const path = join(directory, `invoice-${index + 1}.pdf`);
     await Bun.write(path, artifact.bytes);
