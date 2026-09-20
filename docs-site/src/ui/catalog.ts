@@ -282,7 +282,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 113;
+export const portableUiComponentCount = 114;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -373,7 +373,6 @@ export const documentedOnlyUiCatalogExports = {
   isPanesItemVisible: "Documented Panes visibility helper.",
   openFileBrowser: "Documented imperative FileBrowserPanel opener.",
   openFloatingWindow: "Documented imperative FloatingWindow opener.",
-  panelDialogFixedOptions: "Documented PanelDialog fixed-mode preset.",
   panelDialogFixedPanelClass: "Documented PanelDialog fixed-mode class helper.",
   panelDialogOptions: "Documented PanelDialog default preset.",
   panelDialogPanelClass: "Documented PanelDialog default class helper.",
