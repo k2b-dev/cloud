@@ -1,8 +1,14 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { sql } from "bun";
 import { z } from "zod";
 import { RecordAuditContextSchema } from "../contracts";
 import { parseJsonbRow } from "./jsonb";
 import type { AuditAction, AuditEntry } from "./types";
+
+// Correlate domain writes with their originating capability call.
+// AsyncLocalStorage isolates concurrent invocations; background work owns its own context.
+const auditRequest = new AsyncLocalStorage<string>();
+export const withAuditRequest = <T>(requestId: string, run: () => T): T => auditRequest.run(requestId, run);
 
 type DbRow = Record<string, unknown>;
 
@@ -63,7 +69,7 @@ type LogAuditInput = {
  */
 export const logAudit = async (input: LogAuditInput, client: SqlClient = sql): Promise<void> => {
   await client`
-    INSERT INTO grids.audit_log (base_id, table_id, record_id, user_id, action, diff, context, ip, user_agent)
+    INSERT INTO grids.audit_log (base_id, table_id, record_id, user_id, action, diff, context, ip, user_agent, request_id)
     VALUES (
       ${input.baseId ?? null}::uuid,
       ${input.tableId ?? null}::uuid,
@@ -73,7 +79,8 @@ export const logAudit = async (input: LogAuditInput, client: SqlClient = sql): P
       ${input.diff ?? null}::jsonb,
       ${input.context ?? null}::jsonb,
       ${input.ip ?? null},
-      ${input.userAgent ?? null}
+      ${input.userAgent ?? null},
+      ${auditRequest.getStore() ?? null}
     )
   `;
 };

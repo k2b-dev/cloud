@@ -994,7 +994,7 @@ are available only for a primary PDF; other formats require authorized downloads
 Profile renderers own filenames, so `document.filename` is `null` while building
 their input. Read the completed Document's `filename` after generation.
 
-The installed `de.zugferd.en16931@1` renderer accepts outgoing German EUR invoices with German seller and buyer addresses, standard VAT rates, bank transfer, and exact string decimals. It emits both the hybrid PDF/A-3b and `factur-x.xml`, validates the XML against the pinned XSD, then verifies the embedded XML. Use four decimal places for quantities and unit prices and two for tax rates. Version 1 excludes corrections, replacements, tax exemptions, allowances, charges, prepayments, discounts, foreign currencies, incoming invoices, and filings. These technical checks are not tax or legal approval. The invoice issuer is responsible for the content and for checking whether this renderer fits the intended use. Do not interpret a valid report as a compliance certificate.
+The installed `de.zugferd.en16931@1` renderer accepts outgoing German EUR invoices with German seller and buyer addresses, standard VAT rates, bank transfer, and exact string decimals. It emits both the hybrid PDF/A-3b and `factur-x.xml`, delegates rendering to Gotenberg without post-render XSD or embedded-XML verification. Use four decimal places for quantities and unit prices and two for tax rates. Version 1 excludes corrections, replacements, tax exemptions, allowances, charges, prepayments, discounts, foreign currencies, incoming invoices, and filings. These technical checks are not tax or legal approval. The invoice issuer is responsible for the content and for checking whether this renderer fits the intended use. Do not interpret a valid report as a compliance certificate.
 
 Renderer `de.zugferd.en16931@2` retains the version 1 fields. Each line additionally accepts optional `description` (1–4,000 characters) and `unitCode` (`C62` units, `HUR` hours, `DAY` days, `KGM` kilograms; default `C62`). It also requires `serviceDate` (`YYYY-MM-DD`) and one strict `billing` object:
 
@@ -1583,52 +1583,6 @@ cld grids workflows restore "Check in" --revision 2 --yes --json
 ```
 
 Restore copies the selected definition into a new current revision. It uses the current revision as an optimistic concurrency guard and fails if somebody saves the workflow first.
-
-### Read a CAMT bank report
-
-The read-only `parseDocument` action supports exactly `camt.052.001.08` UTF-8 XML.
-Use `record: inputs.<record>`, a bound File `field`, `format`, and optional `saveAs`.
-That field must contain exactly one attachment. A dry run checks the Record but
-does not parse/capture the file. Example:
-
-```yaml
-inputs:
-  selected: { type: record, table: BankImports, required: true }
-steps:
-  - parseDocument:
-      record: inputs.selected
-      field: BankFile
-      format: camt.052.001.08
-      saveAs: bank
-  - generateDocument:
-      data: bank
-      output: { kind: json }
-```
-
-The public step result is `{kind:"fileSnapshot",stepKey,sha256,rowCount,capturedAt}`.
-Use the run's Short ID with `stepKey`; capture UUIDs stay internal. `rowCount` counts account reports.
-Full rows are `{report:<typed CAMT report>}`; balances, entries and transaction
-details remain nested. Original bytes are retained alongside parsed data under
-the cumulative 5 MiB capture budget. No silent truncation or fallback parser.
-DTD, malformed XML, non-UTF-8 and other CAMT versions are rejected.
-
-Amounts remain decimal strings with currency and separate CRDT/DBIT direction.
-Missing detail amounts stay absent; never add both an entry and its transaction
-details. Preserve bank status, reversals and message/report pagination. A captured
-file is not proof of complete pages or a settled payment. No payment creation,
-matching or invoice status update happens automatically.
-
-```bash
-cld grids workflow-runs steps <run>
-cld grids workflow-runs file <run> <step-key> --sha256 <capture-hash> --json
-cld grids workflow-runs download-file <run> <step-key> --sha256 <capture-hash> --out bank.xml
-```
-
-Text output shows an account-report table; JSON exposes the hierarchy. Both CLI
-and GUI use the authorized run/capture/hash API; the original download remains
-available if the attachment was detached. Read Help `grids-camt` for the full
-contract. Capturing bank XML does not infer Document membership from IDs inside
-the XML.
 
 ### Invoke and inspect runs
 

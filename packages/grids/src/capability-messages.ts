@@ -93,6 +93,7 @@ export const gridsCapabilityMessages = i18n.define({
         `Updated ${count} ${i18n.plural(count, "en", { one: "Field", other: "Fields" })} on Record ${id} in “${table}”; the Record is now version ${version}.`,
       reviewExternalRecord: ({ table }: { table: string }) =>
         `Create or conditionally update one externally identified Record in ${table}.`,
+      reviewCreateRecord: ({ table }: { table: string }) => `Create one Record in ${table}.`,
       reviewUpdateRecord: ({ table }: { table: string }) => `Update one Record in ${table}.`,
       provider: "Provider",
       providerAccount: "Provider account",
@@ -191,6 +192,7 @@ export const gridsCapabilityMessages = i18n.define({
       updatedRecord: ({ count, id, table, version }) =>
         `${count} ${i18n.plural(count, "de", { one: "Feld", other: "Felder" })} am Datensatz ${id} in „${table}“ aktualisiert; der Datensatz hat nun Version ${version}.`,
       reviewExternalRecord: ({ table }) => `Einen extern identifizierten Datensatz in ${table} erstellen oder bedingt aktualisieren.`,
+      reviewCreateRecord: ({ table }) => `Einen Datensatz in ${table} erstellen.`,
       reviewUpdateRecord: ({ table }) => `Einen Datensatz in ${table} aktualisieren.`,
       provider: "Anbieter",
       providerAccount: "Anbieterkonto",

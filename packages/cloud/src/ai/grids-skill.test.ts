@@ -20,6 +20,9 @@ test("Grids Skill explains typed values without expanding query-chat authority",
   expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("not proof that its source record was finalized");
   expect(CLOUD_GRIDS_QUERY_REFERENCE).toContain("grids-custom-app-api");
   expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("They cannot change records");
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("grids.workflow.run.read");
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("accepted, not completed");
+  expect(CLOUD_GRIDS_INSTRUCTIONS).toContain("never manufacture approval");
 });
 
 test("Grids Skill separates query results, context and turn-local reference loading", () => {

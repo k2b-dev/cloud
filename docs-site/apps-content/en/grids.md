@@ -785,3 +785,24 @@ A record heading may set `heading.title` for an editable draft. The heading fiel
 becomes its subtitle; an issued document number still takes precedence. A finalized
 record without a document does not display the draft heading. Preview actions sit
 beside the identity heading and use saved values.
+
+## Assistant capabilities and approvals
+
+The capability catalog supports bounded discovery and GQL, record creation and
+version-checked updates, external-identity upserts, saved Views, stored documents
+and linked correction/cancellation drafts. It deliberately does not expose
+schema administration, arbitrary workflow execution or financial-export approval.
+Use the existing authorized UI or CLI for those tasks.
+
+Record creation reviews resolve field IDs to names. Large write reviews keep
+within Cloud's 20-detail budget and explicitly summarize additional values.
+Record updates and external upserts may remember approval for one table; all
+permission, validation, version and finalization checks still run. Document
+issuance and record workflow actions require individual approval. A workflow
+receipt confirms acceptance; read its run status before reporting completion.
+Capability writes also attach the originating Cloud request ID to Grids audit
+rows, allowing operators to correlate domain changes with capability executions.
+
+The bundled `cloud-grids` Assistant Skill is version 2. Startup updates an
+unchanged managed copy, including its query reference. User-edited copies remain
+untouched and require deliberate reconciliation with the current template.

@@ -495,7 +495,7 @@ Actions declare the mutation's objective behavior:
 | `destructive` | `true` when the effect is irreversible or externally visible; `false` for reversible in-Cloud state changes |
 | `openWorld` | `true` when the Action may interact with an open world of external entities; `false` when its interaction domain is closed |
 | `idempotency` | Retry contract: `none` or `required` |
-| `approval` | Optional Cloud client policy; `"rememberable"` lets a user remember approval for this closed-world Action |
+| `approval` | Optional Cloud client policy: omitted asks each time; `"rememberable"` offers scoped approval; `"none"` allows autonomous closed-world, non-destructive execution |
 | `review` | Optional read-only description of the concrete effect for human review |
 
 Query and Action kinds project to the MCP `readOnlyHint`; `destructive` and
@@ -535,7 +535,7 @@ treatment, but that behavior belongs to the client. See the official
 [MCP ToolAnnotations schema](https://modelcontextprotocol.io/specification/2025-11-25/schema#toolannotations)
 and [AI tools and approvals](/en/docs/ai/tools-and-approvals).
 
-`approval` is deliberately optional and has one value. Without it, AI Core
+`approval` is deliberately optional. Without it, AI Core
 asks for every Action call. `approval: "rememberable"` lets a supporting client
 offer an explicit **Always approve** choice after showing the Action review.
 That review must return an opaque, app-owned `approvalScope`. A remembered

@@ -30,31 +30,13 @@ Task map:
 - [Batch PDFs and free CSV/JSON/XML](#batch-pdfs-and-free-csvjsonxml)
 - [SEPA transfers and DATEV bookings](#sepa-transfers-and-datev-bookings)
 - [E-invoices, corrections, and self-billing](#e-invoices-corrections-and-self-billing)
-- [Read bank reports](#read-bank-reports)
 - [Limits and recovery](#limits-and-recovery)
 
-## Read bank reports
-
-`parseDocument` reads an existing Record attachment as `camt.052.001.08`.
-It produces a `fileSnapshot`, not a new Document or payment. Each captured
-row contains one typed `report`; entries and transaction details stay nested.
-Statuses, credit/debit direction, reversals, missing values, currencies, and
-bank pagination must be interpreted explicitly by the workflow author.
-
-Use the [CAMT workflow reference](grids.md#read-a-camt-bank-report) and the
-in-app `grids-camt` Help page for the full action contract. Inspect a capture
-with `cld grids workflow-runs file <run-id> <capture-id> --sha256 <hash> --json`;
-download its original with `workflow-runs download-file` and `--out bank.xml`.
-The immutable reference comes from the run's step result. It is scoped to the
-Base and run, and remains available if the original attachment is detached.
-No automatic invoice matching or payment creation takes place.
-
-Financial serializers use the public stdlib implementation; Grids retains
-authorization, frozen inputs, numbering, approval, and export claims. XSD
-validation and checking the XML actually embedded in the rendered PDF remain
-enabled. These checks are not accounting certification or proof that a bank
-or accounting installation will accept the file. Use `grids-financial-formats`
-Help for the supported inputs and format limits.
+Financial serializers use the public stdlib implementation. Grids owns
+permissions, frozen inputs, numbering, approval and export claims. Invoice PDFs
+are rendered by Gotenberg; Grids does not run post-render XSD or embedded-XML
+verification. An `unchecked` validation status is not a compliance certificate.
+Use `grids-financial-formats` Help for supported inputs and format limits.
 
 ## Create or edit templates
 

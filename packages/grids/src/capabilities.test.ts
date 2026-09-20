@@ -299,7 +299,7 @@ describe("Grids capabilities", () => {
       Object.entries(gridsCapabilities.actions ?? {})
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id),
-    ).toEqual(["document.create", "workflow.record-action", "view.create", "record.upsert-external", "record.update"]);
+    ).toEqual(["document.create", "workflow.record-action", "view.create", "record.create", "record.upsert-external", "record.update"]);
     expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for Base-scoped Grids work");
     expect(gridsCapabilities.queries?.["gql.context"]?.description).toContain("request tables first");
     expect(gridsCapabilities.queries?.["gql.execute"]?.description).toContain("normally gql.preview");
@@ -1130,6 +1130,45 @@ describe("Grids capabilities", () => {
       expect(new Set([...firstIds, ...secondIds]).size).toBe(30);
       expect(secondIds.some((id: string) => firstIds.includes(id))).toBe(false);
 
+      // Reviews must stay usable with opaque IDs, long labels and wide records.
+      const wideValues: Record<string, string> = {};
+      for (let index = 0; index < 25; index++) {
+        const publicId = shortId("W");
+        await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+          VALUES (${uuid()}::uuid, ${publicId}, ${tableId}::uuid, ${`${index}-${"Label".repeat(35)}`}, 'text', '{}'::jsonb, ${index + 100})`;
+        wideValues[publicId] = `Value ${index}`;
+      }
+      for (const [action, input] of [
+        ["record.create", { tableId: tablePublicId, values: wideValues }],
+        ["record.update", { tableId: tablePublicId, recordId: record.id, values: wideValues, ifVersion: 3 }],
+        ["record.upsert-external", { ...externalInput, values: wideValues, ifVersion: 3 }],
+      ] as const) {
+        const checked = await review(action, input, context);
+        expect(checked.ok).toBeTrue();
+        if (checked.ok) {
+          expect(checked.data.details!.length).toBeLessThanOrEqual(20);
+          expect(checked.data.details!.every((detail) => detail.label.length <= 120)).toBeTrue();
+          expect(checked.data.details!.at(-1)!.value).toContain("Value 24");
+        }
+      }
+      const createReview = await review("record.create", { tableId: tablePublicId, values: { [fieldPublicId]: "Reviewed only" } }, context);
+      expect(createReview).toMatchObject({
+        ok: true,
+        data: { details: expect.arrayContaining([{ label: "Name", value: "Reviewed only" }]) },
+      });
+      const requestIds = [uuid(), uuid()];
+      const concurrentCreates = await Promise.all(
+        requestIds.map((requestId) =>
+          invoke("action", "record.create", { tableId: tablePublicId, values: { [fieldPublicId]: requestId } }, { ...context, requestId }),
+        ),
+      );
+      expect(concurrentCreates.every((result) => result.ok)).toBeTrue();
+      const correlated = await sql<{ request_id: string; value: string }[]>`
+        SELECT a.request_id, r.data->>${fieldId}::text AS value FROM grids.audit_log a
+        JOIN grids.records r ON r.id = a.record_id
+        WHERE a.table_id = ${tableId}::uuid AND a.request_id = ANY(${sql.array(requestIds, "TEXT")})`;
+      expect(correlated).toHaveLength(2);
+      for (const entry of correlated) expect(entry.value).toBe(entry.request_id);
       const reviewInput = { [fieldPublicId]: "changed" };
       const updateReview = await review(
         "record.update",

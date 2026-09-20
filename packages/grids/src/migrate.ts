@@ -450,6 +450,7 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       CONSTRAINT audit_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL
     )
   `.simple();
+  await sql`ALTER TABLE grids.audit_log ADD COLUMN IF NOT EXISTS request_id text`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_audit_record ON grids.audit_log USING btree (record_id, created_at DESC) WHERE (record_id IS NOT NULL)
   `.simple();

@@ -1,3 +1,4 @@
+import { withAuditRequest } from "./service/audit";
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -328,19 +329,21 @@ export const dailyCapabilities = defineCapabilities({
         });
       },
       async run(input, context) {
-        if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
-        const loaded = await loadIssuance(input, context, true);
-        if (!loaded.ok) return loaded;
-        const result = await gridsService.document.createDocumentForRecord({
-          ...loaded.data,
-          recordId: loaded.data.record.id,
-          actor: documentActor(context.actor),
-          idempotencyKey: operationKey(context, "document.create"),
-          viewer: actorViewerFor(context),
-          dateConfig: await dateConfig(context),
-          canReadTable: async (target, client) => (await gateBaseAtAccess(context, target.baseId, "read", client)).ok,
+        return withAuditRequest(context.requestId, async () => {
+          if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
+          const loaded = await loadIssuance(input, context, true);
+          if (!loaded.ok) return loaded;
+          const result = await gridsService.document.createDocumentForRecord({
+            ...loaded.data,
+            recordId: loaded.data.record.id,
+            actor: documentActor(context.actor),
+            idempotencyKey: operationKey(context, "document.create"),
+            viewer: actorViewerFor(context),
+            dateConfig: await dateConfig(context),
+            canReadTable: async (target, client) => (await gateBaseAtAccess(context, target.baseId, "read", client)).ok,
+          });
+          return result.ok ? ok(await documentResult(result.data)) : result;
         });
-        return result.ok ? ok(await documentResult(result.data)) : result;
       },
     },
     "workflow.record-action": {
@@ -365,28 +368,30 @@ export const dailyCapabilities = defineCapabilities({
         });
       },
       async run(input, context) {
-        if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
-        const loaded = await loadRecordAction(input, context);
-        if (!loaded.ok) return loaded;
-        const result = await invokeRecordLauncher({
-          launcherId: loaded.data.launcher.id,
-          recordId: loaded.data.record.id,
-          expectedRevision: input.expectedRevision,
-          principal: loaded.data.principal,
-          locale: context.locale,
-          operationId: operationKey(context, "workflow.record-action"),
-          mode: "execute",
+        return withAuditRequest(context.requestId, async () => {
+          if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
+          const loaded = await loadRecordAction(input, context);
+          if (!loaded.ok) return loaded;
+          const result = await invokeRecordLauncher({
+            launcherId: loaded.data.launcher.id,
+            recordId: loaded.data.record.id,
+            expectedRevision: input.expectedRevision,
+            principal: loaded.data.principal,
+            locale: context.locale,
+            operationId: operationKey(context, "workflow.record-action"),
+            mode: "execute",
+          });
+          if (!result.ok) return result;
+          const data = await toPublicWorkflowReceipt(result.data);
+          return ok({ data, refs: [{ type: "grids.workflow-run", id: data.runId }] });
         });
-        if (!result.ok) return result;
-        const data = await toPublicWorkflowReceipt(result.data);
-        return ok({ data, refs: [{ type: "grids.workflow-run", id: data.runId }] });
       },
     },
   },
 });
 const GQL_CAPABILITY_RESULT_BUDGET_BYTES = CAPABILITY_MAX_RESULT_BYTES - 32 * 1024;
 const REVIEW_VALUES_MAX_CHARS = 9_000;
-const REVIEW_VISIBLE_FIELDS = 16;
+const REVIEW_FIELD_DETAILS = 17;
 
 const capabilityDateConfig = async (locale?: string) => ({
   timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC"),
@@ -1127,22 +1132,31 @@ const recordValuesReview = (
   values: Record<string, unknown>,
   fields: ReadonlyArray<Field>,
   locale?: string,
+  detailBudget = REVIEW_FIELD_DETAILS,
 ): NonNullable<CapabilityActionReview["details"]> => {
   const t = capabilityMessagesFor(locale);
   const fieldsByShortId = new Map(fields.map((field) => [field.shortId, field]));
-  const entries = Object.entries(values);
-  const visible = entries.slice(0, REVIEW_VISIBLE_FIELDS).map(([fieldId, value]) => {
+  const entries = Object.entries(values).map(([id, value]) => {
+    const field = fieldsByShortId.get(id);
+    if (field?.type !== "select" || !Array.isArray(value)) return [id, value] as const;
+    const labels = new Map(selectOptions(field).map((option) => [option.id, option.label]));
+    return [
+      id,
+      value.map((option) => (typeof option === "string" && labels.has(option) ? `${labels.get(option)} (${option})` : option)),
+    ] as const;
+  });
+  const visible = entries.slice(0, detailBudget - 1).map(([fieldId, value]) => {
     const field = fieldsByShortId.get(fieldId);
     const text = boundedRecordReviewValue(value, locale);
     if (field?.type === "date" && typeof value === "string") {
       return {
-        label: field.name,
+        label: field.name.slice(0, 120),
         value,
         format: field.config.includeTime === true ? ("date-time" as const) : ("date" as const),
       };
     }
     return {
-      label: field?.name ?? fieldId,
+      label: (field?.name ?? fieldId).slice(0, 120),
       value: text,
       ...(((typeof value === "string" && !value.includes("\n") && value.length <= 160) ||
         typeof value === "number" ||
@@ -1153,7 +1167,7 @@ const recordValuesReview = (
         : { display: "block" as const }),
     };
   });
-  const remaining = entries.slice(REVIEW_VISIBLE_FIELDS);
+  const remaining = entries.slice(detailBudget - 1);
   if (remaining.length === 0) return visible;
   const additional = remaining
     .map(([fieldId, value]) => `${fieldsByShortId.get(fieldId)?.name ?? fieldId}\n${recordReviewValue(value, locale)}`)
@@ -1231,120 +1245,126 @@ const resolveRecordValues = async (tableId: string, values: Record<string, unkno
 };
 
 const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, context: CapabilityExecutionContext) => {
-  const t = capabilityMessagesFor(context.locale);
-  const access = accessContext(context);
-  const table = await requireTable(input.tableId, access, "write", context.locale);
-  if (!table.ok) return table;
-  const values = await resolveRecordValues(table.data.id, input.values, context.locale);
-  if (!values.ok) return values;
-  const dateConfig = await capabilityDateConfig(context.locale);
-  const result = await gridsService.record.create(table.data.id, values.data.values, accessActorUser(access)?.id ?? null, "direct", {
-    dateConfig,
-    viewer: actorViewerFor(access),
+  return withAuditRequest(context.requestId, async () => {
+    const t = capabilityMessagesFor(context.locale);
+    const access = accessContext(context);
+    const table = await requireTable(input.tableId, access, "write", context.locale);
+    if (!table.ok) return table;
+    const values = await resolveRecordValues(table.data.id, input.values, context.locale);
+    if (!values.ok) return values;
+    const dateConfig = await capabilityDateConfig(context.locale);
+    const result = await gridsService.record.create(table.data.id, values.data.values, accessActorUser(access)?.id ?? null, "direct", {
+      dateConfig,
+      viewer: actorViewerFor(access),
+    });
+    if (!result.ok) return result;
+    return recordResult(result.data, table.data, t.createdRecord({ id: result.data.shortId, table: table.data.name }));
   });
-  if (!result.ok) return result;
-  return recordResult(result.data, table.data, t.createdRecord({ id: result.data.shortId, table: table.data.name }));
 };
 
 const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpsertInputSchema>, context: CapabilityExecutionContext) => {
-  const t = capabilityMessagesFor(context.locale);
-  if (!context.idempotencyKey) return fail(err.badInput(t.idempotencyRequired));
-  const access = accessContext(context);
-  const table = await requireTable(input.tableId, access, "write", context.locale);
-  if (!table.ok) return table;
-  const operationScope = `capability:record.upsert-external:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`;
-  const requestHash = gridsService.record.external.externalRecordRequestHash(input);
-  const replay = await gridsService.record.external.replay({
-    operationScope,
-    operationKey: context.idempotencyKey,
-    requestHash,
-    conflictKind: "capability",
-  });
-  if (!replay.ok) return replay;
-  const receipt = replay.data;
-  if (receipt) {
+  return withAuditRequest(context.requestId, async () => {
+    const t = capabilityMessagesFor(context.locale);
+    if (!context.idempotencyKey) return fail(err.badInput(t.idempotencyRequired));
+    const access = accessContext(context);
+    const table = await requireTable(input.tableId, access, "write", context.locale);
+    if (!table.ok) return table;
+    const operationScope = `capability:record.upsert-external:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`;
+    const requestHash = gridsService.record.external.externalRecordRequestHash(input);
+    const replay = await gridsService.record.external.replay({
+      operationScope,
+      operationKey: context.idempotencyKey,
+      requestHash,
+      conflictKind: "capability",
+    });
+    if (!replay.ok) return replay;
+    const receipt = replay.data;
+    if (receipt) {
+      const base = await gridsService.base.get(table.data.baseId);
+      return ok({
+        data: {
+          recordId: receipt.recordShortId,
+          tableId: table.data.shortId,
+          version: receipt.version,
+          created: receipt.created,
+          changed: receipt.changed,
+          replayed: true,
+        },
+        summary: t.replayedExternalRecord({ id: receipt.recordShortId, table: table.data.name, version: receipt.version }),
+        refs: [{ type: "grids.record", id: receipt.recordShortId }],
+        ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, receipt.recordShortId) }] } : {}),
+      });
+    }
+    const values = await resolveRecordValues(table.data.id, input.values, context.locale);
+    if (!values.ok) return values;
+    const result = await gridsService.record.external.put({
+      tableId: table.data.id,
+      identity: input.externalRef,
+      operationScope,
+      operationKey: context.idempotencyKey,
+      requestHash,
+      conflictKind: "capability",
+      values: values.data.values,
+      ifVersion: input.ifVersion,
+      audit: input.audit,
+      actorId: accessActorUser(access)?.id ?? null,
+      dateConfig: await capabilityDateConfig(context.locale),
+      viewer: actorViewerFor(access),
+    });
+    if (!result.ok) return result;
     const base = await gridsService.base.get(table.data.baseId);
+    const outcome = result.data.replayed ? t.replayed : result.data.created ? t.created : result.data.changed ? t.updated : t.kept;
     return ok({
       data: {
-        recordId: receipt.recordShortId,
+        recordId: result.data.recordShortId,
         tableId: table.data.shortId,
-        version: receipt.version,
-        created: receipt.created,
-        changed: receipt.changed,
-        replayed: true,
+        version: result.data.version,
+        created: result.data.created,
+        changed: result.data.changed,
+        replayed: result.data.replayed,
       },
-      summary: t.replayedExternalRecord({ id: receipt.recordShortId, table: table.data.name, version: receipt.version }),
-      refs: [{ type: "grids.record", id: receipt.recordShortId }],
-      ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, receipt.recordShortId) }] } : {}),
+      summary: t.externalRecordOutcome({
+        outcome,
+        id: result.data.recordShortId,
+        table: table.data.name,
+        version: result.data.version,
+      }),
+      refs: [{ type: "grids.record", id: result.data.recordShortId }],
+      ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, result.data.recordShortId) }] } : {}),
     });
-  }
-  const values = await resolveRecordValues(table.data.id, input.values, context.locale);
-  if (!values.ok) return values;
-  const result = await gridsService.record.external.put({
-    tableId: table.data.id,
-    identity: input.externalRef,
-    operationScope,
-    operationKey: context.idempotencyKey,
-    requestHash,
-    conflictKind: "capability",
-    values: values.data.values,
-    ifVersion: input.ifVersion,
-    audit: input.audit,
-    actorId: accessActorUser(access)?.id ?? null,
-    dateConfig: await capabilityDateConfig(context.locale),
-    viewer: actorViewerFor(access),
-  });
-  if (!result.ok) return result;
-  const base = await gridsService.base.get(table.data.baseId);
-  const outcome = result.data.replayed ? t.replayed : result.data.created ? t.created : result.data.changed ? t.updated : t.kept;
-  return ok({
-    data: {
-      recordId: result.data.recordShortId,
-      tableId: table.data.shortId,
-      version: result.data.version,
-      created: result.data.created,
-      changed: result.data.changed,
-      replayed: result.data.replayed,
-    },
-    summary: t.externalRecordOutcome({
-      outcome,
-      id: result.data.recordShortId,
-      table: table.data.name,
-      version: result.data.version,
-    }),
-    refs: [{ type: "grids.record", id: result.data.recordShortId }],
-    ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, result.data.recordShortId) }] } : {}),
   });
 };
 
 const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, context: CapabilityExecutionContext) => {
-  const t = capabilityMessagesFor(context.locale);
-  if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
-  const access = accessContext(context);
-  const table = await requireTable(input.tableId, access, "write", context.locale);
-  if (!table.ok) return table;
-  const record = await gridsService.record.getByShortId(input.recordId);
-  if (!record || record.tableId !== table.data.id) return fail(notFoundError(t.recordNotFound));
-  const values = await resolveRecordValues(table.data.id, input.values, context.locale);
-  if (!values.ok) return values;
-  const dateConfig = await capabilityDateConfig(context.locale);
-  const result = await gridsService.record.update(
-    table.data.id,
-    record.id,
-    values.data.values,
-    accessActorUser(access)?.id ?? null,
-    "direct",
-    input.ifVersion,
-    { dateConfig, viewer: actorViewerFor(access), audit: input.audit },
-  );
-  const fieldCount = Object.keys(input.values).length;
-  return result.ok
-    ? recordResult(
-        result.data,
-        table.data,
-        t.updatedRecord({ count: fieldCount, id: result.data.shortId, table: table.data.name, version: result.data.version }),
-      )
-    : result;
+  return withAuditRequest(context.requestId, async () => {
+    const t = capabilityMessagesFor(context.locale);
+    if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
+    const access = accessContext(context);
+    const table = await requireTable(input.tableId, access, "write", context.locale);
+    if (!table.ok) return table;
+    const record = await gridsService.record.getByShortId(input.recordId);
+    if (!record || record.tableId !== table.data.id) return fail(notFoundError(t.recordNotFound));
+    const values = await resolveRecordValues(table.data.id, input.values, context.locale);
+    if (!values.ok) return values;
+    const dateConfig = await capabilityDateConfig(context.locale);
+    const result = await gridsService.record.update(
+      table.data.id,
+      record.id,
+      values.data.values,
+      accessActorUser(access)?.id ?? null,
+      "direct",
+      input.ifVersion,
+      { dateConfig, viewer: actorViewerFor(access), audit: input.audit },
+    );
+    const fieldCount = Object.keys(input.values).length;
+    return result.ok
+      ? recordResult(
+          result.data,
+          table.data,
+          t.updatedRecord({ count: fieldCount, id: result.data.shortId, table: table.data.name, version: result.data.version }),
+        )
+      : result;
+  });
 };
 
 const prepareViewCreate = async (input: z.infer<typeof ViewCreateInputSchema>, context: CapabilityExecutionContext) => {
@@ -1508,19 +1528,21 @@ export const gridsCapabilities = defineCapabilities({
         });
       },
       run: async (input, context) => {
-        const prepared = await prepareViewCreate(input, context);
-        if (!prepared.ok) return prepared;
-        const { compiled, user } = prepared.data;
-        const created = await gridsService.view.create(
-          { tableId: compiled.tableId, name: input.name, source: compiled.source, ownerUserId: input.shared ? null : (user?.id ?? null) },
-          user?.id ?? null,
-          context.locale,
-        );
-        if (!created.ok) return created;
-        const result = await runViewRead({ id: created.data.shortId }, context);
-        return result.ok
-          ? ok({ ...result.data, summary: capabilityMessagesFor(context.locale).savedView({ name: created.data.name }) })
-          : result;
+        return withAuditRequest(context.requestId, async () => {
+          const prepared = await prepareViewCreate(input, context);
+          if (!prepared.ok) return prepared;
+          const { compiled, user } = prepared.data;
+          const created = await gridsService.view.create(
+            { tableId: compiled.tableId, name: input.name, source: compiled.source, ownerUserId: input.shared ? null : (user?.id ?? null) },
+            user?.id ?? null,
+            context.locale,
+          );
+          if (!created.ok) return created;
+          const result = await runViewRead({ id: created.data.shortId }, context);
+          return result.ok
+            ? ok({ ...result.data, summary: capabilityMessagesFor(context.locale).savedView({ name: created.data.name }) })
+            : result;
+        });
       },
     },
     "record.create": {
@@ -1532,6 +1554,17 @@ export const gridsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
+      async review(input, context) {
+        const table = await requireTable(input.tableId, accessContext(context), "write", context.locale);
+        if (!table.ok) return table;
+        const values = await resolveRecordValues(table.data.id, input.values, context.locale);
+        if (!values.ok) return values;
+        const t = capabilityMessagesFor(context.locale);
+        return ok({
+          message: t.reviewCreateRecord({ table: table.data.name }),
+          details: [{ label: t.table, value: table.data.name }, ...recordValuesReview(input.values, values.data.fields, context.locale)],
+        });
+      },
       run: runRecordCreate,
     },
     "record.upsert-external": {
@@ -1562,7 +1595,7 @@ export const gridsCapabilities = defineCapabilities({
             { label: t.resourceKind, value: input.externalRef.resourceKind },
             { label: t.externalId, value: input.externalRef.externalId },
             ...(input.ifVersion === undefined ? [] : [{ label: t.expectedVersion, value: String(input.ifVersion) }]),
-            ...recordValuesReview(input.values, values.data.fields, context.locale),
+            ...recordValuesReview(input.values, values.data.fields, context.locale, 14),
           ],
         });
       },
