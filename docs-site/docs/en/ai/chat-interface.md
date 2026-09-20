@@ -206,6 +206,13 @@ loading, durable storage, and sandbox lifecycle. It must not execute saved code
 automatically when rendering the preview. These results remain outside ordinary
 tool disclosures.
 
+Hosts can supply `AiChatActions.resolveFileLink(href)` to resolve a Markdown link
+against the current conversation file manifest. Return `{path, href}` with a
+reloadable host workspace URL, or `null` for ordinary links. Plain clicks invoke
+`onOpenFile(path)`; modified clicks retain native navigation to that workspace
+URL. Assistant resolves only existing current-chat files and same-origin links.
+Conversation file paths are not website URLs; agents deliver files with `present`.
+
 Completed turns preserve the same ordered timeline and show their elapsed
 wall-clock duration. They do not move earlier Markdown into a second outer
 work disclosure. Explicit disclosure choices survive streaming updates and a

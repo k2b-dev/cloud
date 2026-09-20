@@ -30,15 +30,21 @@ inputPaths rather than retyping truncated tool output. The per-chat presentation
 budget is 250 MiB including source, previews and input copies; ordinary per-file
 and runtime message limits apply.
 
-Opening chat history only shows the saved preview. The user chooses Interact
+Opening chat history only shows the saved preview. Interaction is detected from
+the saved UI: controls, file pickers, selectable charts, tables and explorers
+can be activated. Text, statistics and charts without selectable marks stay
+static and never start a worker. Do not add a dummy control to enable interaction;
+add an explicit refresh button only when refreshing data is useful. No extra
+`code_present` argument is needed. For interactive views, the user chooses Interact
 to start the program from its entry point; previous slider values and execution
 state are not restored. Put external actions in explicit callbacks, never in
 initialization. Startup should build the useful default view from retained data.
 Cloud capabilities and HTTP calls keep their normal permission and approval
 checks. Chat visualizations have no App database or shared storage.
 
-Users can download the current view as PDF or static HTML, and individual charts
-as SVG. Exports preserve filter values, sources and data timestamps, omit action
+The Downloads menu offers the current view as PDF or static HTML, and individual
+charts as SVG. Interactive views place it beside Interact/Stop; static views show
+only the download icon. Exports preserve filter values, sources and data timestamps, omit action
 buttons, and render complete current tables. A download does not create a chat
 file. If the agent must hand off an actual file, use the existing file workflow.
 

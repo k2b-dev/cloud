@@ -190,3 +190,15 @@ test("KPI handles retain raw numeric values, default to unavailable and reject i
   expect(runtime.snapshot()[0]).toMatchObject({value:123.4567});
   expect(()=>runtime.ui.text({id:"revenue",value:"duplicate"})).toThrow('Duplicate UI id "revenue"');
 });
+
+
+test("inspection reports only supported interactive nodes", async () => {
+  const { analyticsInteractions } = await import("./analytics-inspect");
+  const chart = { id: "chart", type: "chart", data: { options: { kind: "bar", data: [{ label: "A", value: 3 }] } } };
+  expect(analyticsInteractions(AnalyticsNode.parse(chart))).toEqual([]);
+  expect(analyticsInteractions(AnalyticsNode.parse({ ...chart, data: { ...chart.data, marks: [{ role: "item", index: 0, key: "a", rowKey: "a" }] } }))).toHaveLength(1);
+  expect(analyticsInteractions(AnalyticsNode.parse({ id: "stat", type: "stat", label: "Total", value: 3 }))).toEqual([]);
+  expect(analyticsInteractions(AnalyticsNode.parse({ id: "pick", type: "filePicker", label: "Choose" }))).toEqual([{ id: "pick" }]);
+  expect(analyticsInteractions(AnalyticsNode.parse({ id: "button", type: "button", label: "Refresh", disabled: true }))).toEqual([]);
+  expect(analyticsInteractions(AnalyticsNode.parse({ id: "slider", type: "slider", label: "Range", min: 0, max: 10, value: 3 }))).toHaveLength(1);
+});

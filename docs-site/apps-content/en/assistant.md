@@ -552,7 +552,11 @@ under `cld assistant studio-admin`.
 
 ### Process large local document folders
 
-Code Mode includes bundled PDF.js text extraction and read-only XLSX parsing.
+Code Mode includes bundled PDF.js text extraction and read-only XLSX/ODS parsing.
+`sheet.openOds(file)` returns `sheetNames`, `readSheet(name)`, and `close()`, like
+`sheet.openExcel(file)`. It reads typed cell values and cached formula results,
+including grouped and repeated rows. ODS numbers use JavaScript numeric precision;
+the Excel-only `numbers: "string"` option is not available for ODS.
 Apps can select thousands of files, including subfolders, without uploading
 original documents. File references cross the worker bridge; bytes are read on
 demand. Relative paths distinguish equal basenames. Scripts may instead select
@@ -566,9 +570,9 @@ host can interrupt work. Completed external writes are not undone by stopping.
 Agents and CLI steps can wait with `code_inspect` and `waitMs` (up to 30 seconds).
 The returned work status distinguishes running, completed, cancelled, and failed.
 
-Parsing budgets apply per document: 64 MiB input and, for XLSX, 128 MiB expanded
+Parsing budgets apply per document: 64 MiB input and, for XLSX/ODS, 128 MiB expanded
 ZIP entries. Process and close documents sequentially to bound memory. There is
-no OCR, Excel formula execution, XLS/XLSB support, or Excel writer. Use CSV for
+no OCR, spreadsheet formula execution, XLS/XLSB support, or XLSX/ODS writer. Use CSV for
 exports. PDF text includes page and position information; format-specific
 invoice parsers still need representative document validation.
 
@@ -866,16 +870,22 @@ Cmd/Ctrl+Shift+K searches the open chat, falling back to all chats outside a cha
 
 A one-off Code Mode run can be delivered with `code_present({runId,title})`.
 It appears in the conversation without creating a Studio App or a chat file.
+The frame reserves 30% of the viewport height while loading and scrolls longer
+content internally, keeping the surrounding chat in place.
 A test run alone remains agent inspection, not a delivered visualization.
 
 The chat retains source, a UI preview and copies of selected input versions.
-Opening history displays the preview without executing code. Choose **Interact**
+Opening history displays the saved data with the same layout and theme as the
+interactive view, without executing code. Controls stay disabled until activation.
+Views with controls, selectable charts, tables or explorers offer **Interact**.
+Static views show only a download menu and never start a worker. Choose **Interact**
 to start the saved program with its default controls; **Stop** releases its
 worker. Leaving the chat also stops it. Interactive state is temporary. Put
 external writes in explicit buttons, not program initialization. Existing
 capability permissions and approvals still apply.
 
-Use **PDF** or **HTML** to download the current view, or **SVG** for a chart.
+Open the **Downloads** menu beside **Interact** (or the download icon in static
+views) for **PDF**, **HTML** and individual chart **SVG** exports.
 Document exports include filter values and source context, omit action controls,
 and render the complete current table. These downloads need no chat-file entry.
 Saved Apps and runs with App data context continue to use Studio. Chat results

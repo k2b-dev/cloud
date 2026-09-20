@@ -1,5 +1,5 @@
-import { ErrorBoundary, createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
+import { ErrorBoundary, createEffect, createResource, createSignal, onCleanup, Show } from "solid-js";
+import { Dropdown, SplitButton, ScrollArea, NoticeCard, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
 import { ChatPresentation as PresentationSchema, ChatPresentationResult } from "./chat-presentation-contracts";
 import { artifactClient } from "./client";
@@ -8,6 +8,7 @@ import { artifactMessages } from "./messages";
 import { pickFiles } from "./ArtifactPanel";
 import { RuntimeView } from "./RuntimeView";
 import { presentationHtml, presentationChartSvg } from "./presentation-export";
+import { analyticsInteractions } from "./runtime/analytics-inspect";
 import { runCapability } from "./runtime/capabilities";
 import { approveInModal } from "./CapabilityApproval";
 import { openArtifactModal } from "./modal-host";
@@ -40,10 +41,14 @@ export function ChatPresentation(props: { result: unknown; conversationId: strin
   createEffect(() => { props.conversationId; stop(); setState(undefined); });
   const unsettled = () => Boolean(loading() || (active() && (state()?.status !== "ready" || state()?.busy || state()?.pendingRequests || state()?.inputPending || state()?.approvalPending || state()?.work?.status === "running")));
   const nodes = () => state()?.nodes.length ? state()!.nodes : data()?.nodes ?? [];
-  const preview = () => {
-    try { return { html: presentationHtml(nodes(), data()?.title ?? "", locale()), error: "" }; }
-    catch (error) { return { html: "", error: String(error) }; }
-  };
+  const interactive = () => data()?.nodes.some(node => analyticsInteractions(node).length > 0);
+  const downloads = () => [
+    ...(["pdf", "html"] as const).map(format => ({ label: format.toUpperCase(), icon: `ti ti-file-type-${format}`, disabled: unsettled() || downloading(), action: () => { void download(format); } })),
+    ...nodes().filter(node => node.type === "chart" || node.type === "explorer").map((node, index) => ({
+      label: `SVG · ${node.label || (node.type === "chart" && "title" in node.data.options ? node.data.options.title : undefined) || `${t().visualizationChart} ${index + 1}`}`,
+      icon: "ti ti-file-type-svg", disabled: unsettled() || downloading(), action: () => { void download("html", node.id); },
+    })),
+  ];
   async function start() {
     stop();
     const token = generation;
@@ -91,17 +96,23 @@ export function ChatPresentation(props: { result: unknown; conversationId: strin
   return <ErrorBoundary fallback={error => <NoticeCard tone="danger" title={t().visualizationUnavailable} detail={String(error)} />}><section class="assistant-chat-presentation" aria-label={descriptor().success ? ChatPresentationResult.parse(props.result).title : t().visualization}>
     <div ref={container} />
     <Show when={data()} fallback={<p role="status">{!descriptor().success ? t().visualizationInvalid : data.error ? String(data.error) : t().visualizationLoading}</p>}>
-      <header><strong>{data()?.title}</strong><Button variant="ghost" loading={loading()} onClick={() => active() ? stop() : void start()}>{active() ? t().stop : t().visualizationInteract}</Button></header>
-      <Show when={active()} fallback={<Show when={!preview().error} fallback={<NoticeCard tone="warning" title={t().visualization} detail={preview().error} />}><iframe title={data()?.title} sandbox="" srcdoc={preview().html} class="assistant-chat-presentation__preview" /></Show>}>
-        <RuntimeView nodes={nodes()} busy={Boolean(state()?.busy || state()?.status !== "ready")} event={event => { void session?.event(event).catch(error => setError(String(error))); }} />
-      </Show>
-      <footer>
-        <Button variant="ghost" loading={downloading()} disabled={unsettled()} onClick={() => void download("pdf")}>PDF</Button>
-        <Button variant="ghost" disabled={downloading() || unsettled()} onClick={() => void download("html")}>HTML</Button>
-        <For each={nodes().filter(node => node.type === "chart" || node.type === "explorer")}>
-          {node => <Button variant="ghost" disabled={downloading() || unsettled()} onClick={() => void download("html", node.id)}>SVG · {node.label || node.id}</Button>}
-        </For>
-      </footer>
+      <header><strong>{data()?.title}</strong>
+        <Show when={interactive()} fallback={
+          <Dropdown.Root items={downloads()} position="bottom-right">
+            <Dropdown.Trigger variant="ghost" iconOnly label={t().visualizationDownloads} loading={downloading()}><i class="ti ti-download" aria-hidden="true" /></Dropdown.Trigger>
+          </Dropdown.Root>
+        }>
+          <SplitButton variant="ghost" loading={loading()} onClick={() => active() ? stop() : void start()}
+            items={downloads()} menuLabel={t().visualizationDownloads} menuIcon={<i class="ti ti-dots" aria-hidden="true" />} menuPosition="bottom-right">
+            {active() ? t().stop : t().visualizationInteract}
+          </SplitButton>
+        </Show>
+      </header>
+      <ScrollArea class="assistant-chat-presentation__body" scrollFade>
+      <RuntimeView nodes={nodes()} busy={!active() || unsettled()} event={event => {
+        if (active()) void session?.event(event).catch(error => setError(String(error)));
+      }} />
+      </ScrollArea>
     </Show>
     <Show when={error() || state()?.error}><NoticeCard tone="danger" title={t().visualization} detail={error() || state()?.error} /></Show>
   </section></ErrorBoundary>;

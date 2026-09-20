@@ -1,20 +1,21 @@
 import type { AnalyticsEvent, AnalyticsNode } from "./analytics-contracts";
-function interactions(node: AnalyticsNode): Array<{ id: string; event?: AnalyticsEvent }> {
+export function analyticsInteractions(node: AnalyticsNode): Array<{ id: string; event?: AnalyticsEvent }> {
   if (node.disabled) return [];
   const action = (event: AnalyticsEvent) => ({ id: node.id, event });
   switch (node.type) {
-    case "button": return [{ id: node.id }];
+    case "button": case "filePicker": return [{ id: node.id }];
     case "input": case "number": case "slider": case "dateRange": case "select": case "multiSelect":
       return [action({ type: "change", value: node.value })];
     case "explorer": return [action({ type: "view", value: node.view === "chart" ? "table" : "chart" }), action({ type: "select", key: null })];
-    case "table": case "chart": return [action({ type: "select", key: null })];
+    case "chart": return node.data.marks?.length ? [action({ type: "select", key: null })] : [];
+    case "table": return [action({ type: "select", key: null })];
     case "group": return [action({ type: "refresh" }), action({ type: "request", request: node.desired })];
     default: return [];
   }
 }
 
 export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: number, detail: boolean) {
-  const base = { type: node.type, label: node.label, description: node.description, disabled: node.disabled, loading: node.loading, interactions: interactions(node) };
+  const base = { type: node.type, label: node.label, description: node.description, disabled: node.disabled, loading: node.loading, interactions: analyticsInteractions(node) };
   switch (node.type) {
     case "group":
       return {

@@ -1,4 +1,5 @@
 import { ChatPresentation } from "../artifacts/ChatPresentation";
+import { resolveChatFileLink } from "./chat-file-link";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import { assistantComposerCommands } from "./composer-commands";
 import { type ChatMention, reconcileChatMentions } from "@k2b/ui";
@@ -1488,6 +1489,13 @@ export default function AssistantWorkspace(props: Props) {
                                 },
                                 onOpenScheduledTaskRun: (taskId, occurrenceId) => void openAssistantTaskRun(taskId, occurrenceId, liveHub),
                                 onOpenFile: (path) => void openFiles(path),
+                                resolveFileLink: href => {
+                                  const context = workspaceContext() ?? props.initialContext;
+                                  const conversationId = chat.activeConversationId();
+                                  return conversationId && context?.chatId === conversationId
+                                    ? resolveChatFileLink(href, window.location.href, conversationId, context.files.map(file => file.path))
+                                    : null;
+                                },
                                 fileUrl: chat.fileContentUrl,
                               }}
                             >

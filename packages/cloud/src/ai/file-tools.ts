@@ -342,7 +342,7 @@ export const CloudAiPresentOutputSchema = z.object({ path: z.string(), size: z.n
 export const createCloudAiPresentTool = () =>
   defineAiTool({
     name: "present",
-    description: "Present a conversation file to the user as an openable and downloadable chat attachment.",
+    description: "Present a conversation file to the user as an openable and downloadable chat attachment. The returned path is a conversation-local file identifier, not a website URL. Refer to the delivered attachment by title; do not turn its path into a Markdown link.",
     inputSchema: CloudAiPresentInputSchema,
     outputSchema: CloudAiPresentOutputSchema,
     approval: "never",

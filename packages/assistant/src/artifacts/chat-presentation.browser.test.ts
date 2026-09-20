@@ -9,12 +9,15 @@ test("chat preview survives reload without execution; controls run on demand and
   if (await build.exited) throw new Error(buildError);
   const code = `export default () => {
     const total = ui.stat({id:"total",label:"Total",value:20});
+    ui.row({id:"metrics",children:[total,ui.stat({id:"available",label:"Available",value:21}),ui.stat({id:"maintenance",label:"Maintenance",value:4}),ui.stat({id:"value",label:"Value",value:21960})]});
     ui.slider({id:"quantity",label:"Quantity",min:1,max:20,value:2,onChange:value=>total.setValue(value*10)});
     ui.button({id:"reset",label:"Reset",onClick:()=>total.setValue(20)});
   }`;
   const source = await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
-  const nodes = [{id:"total",type:"stat",label:"Total",value:20}, {id:"quantity",type:"slider",label:"Quantity",min:1,max:20,value:2}].map(node=>AnalyticsNode.parse(node));
-  let starts=0, pdfHtml="";
+  const nodes = [{id:"total",type:"stat",label:"Total",value:20}, {id:"available",type:"stat",label:"Available",value:21}, {id:"maintenance",type:"stat",label:"Maintenance",value:4}, {id:"value",type:"stat",label:"Value",value:21960}, {id:"metrics",type:"layout",layout:"row",children:["total","available","maintenance","value"]}, {id:"reset",type:"button",label:"Reset"}, {id:"quantity",type:"slider",label:"Quantity",min:1,max:20,value:2}].map(node=>AnalyticsNode.parse(node));
+  let starts=0, pdfHtml="", staticView=false;
+  let releasePresentation: (() => void) | undefined;
+  const presentationReady = new Promise<void>(resolve => { releasePresentation = resolve; });
   const server = Bun.serve({hostname:"127.0.0.1",port:0,async fetch(req) {
     const path = new URL(req.url).pathname;
     if(path==="/bundle.js")return new Response(bundle,{headers:{"content-type":"application/javascript"}});
@@ -25,7 +28,7 @@ test("chat preview survives reload without execution; controls run on demand and
       const form=await req.formData(); pdfHtml=JSON.parse(String(form.get("request"))).html;
       return new Response("%PDF-1.4\nfixture",{headers:{"Content-Type":"application/pdf"}});
     }
-    if(path.startsWith("/api/assistant/artifacts/presentations/"))return Response.json({id:"00000000-0000-4000-8000-000000000001",conversationId:"abc234",title:"Inventory",code,nodes,inputs:[]});
+    if(path.startsWith("/api/assistant/artifacts/presentations/")){await presentationReady; return Response.json({id:"00000000-0000-4000-8000-000000000001",conversationId:"abc234",title:"Inventory",code,nodes:staticView ? nodes.filter(node=>node.type!=="button" && node.type!=="slider") : nodes,inputs:[]});}
     return new Response('<!doctype html><html lang="de"><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script></body></html>',{headers:{"Content-Type":"text/html"}});
   }});
   const browser = await chromium.launch({channel:"chrome",headless:true});
@@ -33,25 +36,40 @@ test("chat preview survives reload without execution; controls run on demand and
     const page = await browser.newPage({viewport:{width:900,height:800}});
     const errors:string[]=[]; page.on("pageerror",error=>errors.push(error.message));
     await page.goto(server.url.href);
+    await page.locator(".assistant-chat-presentation").waitFor();
+    const loadingHeight=(await page.locator(".assistant-chat-presentation").boundingBox())!.height;
+    expect(loadingHeight).toBe(240);
+    releasePresentation?.();
     await page.getByRole("button",{name:"Interagieren",exact:true}).waitFor();
+    expect((await page.locator(".assistant-chat-presentation").boundingBox())!.height).toBe(loadingHeight);
+    expect(await page.locator(".assistant-chat-presentation__body").evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     expect(starts).toBe(0);
-    expect(await page.frameLocator("iframe").locator("body").textContent()).toContain("Total");
+    expect(await page.locator("iframe").count()).toBe(0);
+    expect(await page.locator('[data-artifact-id="total"]').textContent()).toContain("Total");
+    expect(await page.getByRole("button",{name:"Reset",exact:true}).isDisabled()).toBe(true);
+    expect(await page.getByRole("slider").isDisabled()).toBe(true);
+    const previewMetric = await page.locator('[data-artifact-id="total"]').boundingBox();
+    const previewStyles = await page.locator('[data-artifact-id="total"]').evaluate(el => ({font:getComputedStyle(el).fontSize,color:getComputedStyle(el).color}));
     await page.reload();
     await page.getByRole("button",{name:"Interagieren",exact:true}).waitFor();
     expect(starts).toBe(0);
     await page.getByRole("button",{name:"Interagieren",exact:true}).click();
-    await page.getByRole("button",{name:"Reset",exact:true}).waitFor();
+    await page.locator('[data-artifact-id="reset"] button:not([disabled])').waitFor();
     expect(starts).toBe(1);
+    expect(await page.locator('[data-artifact-id="total"]').boundingBox()).toEqual(previewMetric);
+    expect(await page.locator('[data-artifact-id="total"]').evaluate(el => ({font:getComputedStyle(el).fontSize,color:getComputedStyle(el).color}))).toEqual(previewStyles);
     await page.getByRole("slider").focus();
     await page.getByRole("slider").press("ArrowRight");
     await page.waitForFunction(()=>document.querySelector('[data-artifact-id="total"]')?.textContent?.includes("30"));
     const downloaded=page.waitForEvent("download");
-    await page.getByRole("button",{name:"HTML",exact:true}).click();
+    await page.getByRole("button",{name:"Downloads",exact:true}).click();
+    await page.getByRole("menuitem",{name:"HTML",exact:true}).click();
     const download=await downloaded;
     const exported=await Bun.file((await download.path())!).text();
     expect(exported).toContain("30"); expect(exported).not.toContain("<button"); expect(exported).not.toContain("<input");
     const pdfDownload = page.waitForEvent("download");
-    await page.getByRole("button",{name:"PDF",exact:true}).click();
+    await page.getByRole("button",{name:"Downloads",exact:true}).click();
+    await page.getByRole("menuitem",{name:"PDF",exact:true}).click();
     expect((await pdfDownload).suggestedFilename()).toBe("Inventory.pdf");
     expect(pdfHtml).toContain("30");
     expect(pdfHtml).not.toContain("<input");
@@ -63,10 +81,24 @@ test("chat preview survives reload without execution; controls run on demand and
     await page.screenshot({path:"/tmp/assistant-chat-presentation.png",fullPage:true});
     await page.getByRole("button",{name:"Stoppen",exact:true}).click();
     expect(await page.locator('iframe[title="Isolated artifact runtime"]').count()).toBe(0);
+    expect(await page.getByRole("button",{name:"Reset",exact:true}).isDisabled()).toBe(true);
+    expect(await page.locator('[data-artifact-id="total"]').textContent()).toContain("20");
     await page.getByRole("button",{name:"Interagieren",exact:true}).click();
     await page.getByRole("button",{name:"Reset",exact:true}).waitFor();
     await page.getByRole("button",{name:"Leave chat",exact:true}).click();
     expect(await page.locator("iframe").count()).toBe(0);
+    staticView=true;
+    const beforeStatic=starts;
+    await page.reload();
+    await page.getByRole("button",{name:"Downloads",exact:true}).waitFor();
+    expect(await page.getByRole("button",{name:"Interagieren",exact:true}).count()).toBe(0);
+    expect(await page.locator("iframe").count()).toBe(0);
+    expect(await page.locator(".assistant-chat-presentation > footer").count()).toBe(0);
+    await page.getByRole("button",{name:"Downloads",exact:true}).click();
+    const staticDownload=page.waitForEvent("download");
+    await page.getByRole("menuitem",{name:"HTML",exact:true}).click();
+    expect(await Bun.file((await (await staticDownload).path())!).text()).toContain("21960");
+    expect(starts).toBe(beforeStatic);
     expect(errors).toEqual([]);
   } finally {await browser.close();await server.stop(true);}
 },60000);

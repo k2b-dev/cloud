@@ -42,6 +42,8 @@ export type AiChatActions = {
   onOpenScheduledTaskRun?: (taskId: string, occurrenceId: string) => void;
   /** Open a conversation VFS file in the host application's artifact surface. */
   onOpenFile?: (path: string) => void;
+  /** Resolve a Markdown link only when it identifies a known conversation file. */
+  resolveFileLink?: (href: string) => { path: string; href: string } | null;
   /** Download URL for a conversation VFS file (present blocks, attachment chips). */
   fileUrl?: (path: string) => string | null;
 };
