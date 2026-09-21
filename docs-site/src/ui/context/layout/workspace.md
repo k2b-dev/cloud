@@ -76,6 +76,11 @@ the host can restore the same navigation state on the next mount.
 
 Set `scrollPreserveKey` on scrolling sidebar bodies when enhanced navigation should restore their position.
 
+Across document navigations, `SidebarBody` restores its own scroll offset
+before the first paint: it remembers the offset in `sessionStorage` per path
+segment and sidebar position, then keeps the item marked `aria-current="page"`
+in view. Nothing outlives the tab, and no prop is needed.
+
 `SidebarBody` fades its top and bottom edges automatically while more content
 is available in that direction. Scrolling, resizing, and live content changes
 update the hint without reserving layout space. Set `scrollFade={false}` to
