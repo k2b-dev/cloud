@@ -90,26 +90,27 @@ receive `operation_busy`. Size memory for the existing 50 MiB per-file and
 250 MiB per-run code budgets plus Chromium; streaming transport does not remove
 the memory occupied by files loaded for analysis.
 
-### Assistant Chromium sandbox
+### Assistant Chromium isolation
 
-Assistant runs Chromium in the same container as an unprivileged `bun` user,
-with Chromium's sandbox enabled. It needs neither privileged mode, root,
-`SYS_ADMIN`, a Docker socket nor nested containers. Both Compose configurations
-use `deployment/chromium-seccomp.json`, drop all Linux capabilities and enable
-`no-new-privileges`. Keep that profile beside Compose when deploying.
-
-The profile follows [Playwright's Docker sandbox profile](https://github.com/microsoft/playwright/blob/v1.62.0/utils/docker/seccomp_profile.json),
-allowing user namespace creation and `chroot` inside that namespace. The latter
-must remain available even when the container's capability bounding set is empty.
-The host kernel must allow unprivileged user namespaces. A sandbox startup failure
-is an execution error; there is no fallback to unsandboxed Chromium. Existing
-custom Assistant deployments must adopt these settings before using Code Mode.
+Assistant runs headless Chromium in its own container as the unprivileged
+`bun` user with `--no-sandbox`. Both Compose configurations set `user: bun`,
+drop all Linux capabilities and enable `no-new-privileges`; the container keeps
+the runtime-default seccomp profile. Chromium's inner sandbox stays off, so no
+custom seccomp profile, unprivileged user namespaces or node preparation is
+needed, and the service needs neither privileged mode, root, `SYS_ADMIN`, a
+Docker socket nor nested containers. Existing custom Assistant deployments must
+adopt these settings before using Code Mode. The equivalent Kubernetes
+`securityContext` is `runAsNonRoot: true` with a non-root `runAsUser`,
+`capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false` and
+`seccompProfile.type: RuntimeDefault`.
 
 Each foreground chat host and scheduled turn has a separate browser process
-and ephemeral host credential.
-This is browser sandbox isolation within one application container, not a
-separate VM per user. Keep one Assistant replica for now; lost hosts are not
-replayed. Studio previews continue running in the user's browser.
+and ephemeral host credential. This is process isolation within one
+capability-free application container, not a separate VM per user; the
+residual risk of an unsandboxed renderer inside that container is accepted and
+tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
+Chromium into a dedicated sidecar. Keep one Assistant replica for now; lost
+hosts are not replayed. Studio previews continue running in the user's browser.
 
 ## Select applications and feature dependencies
 

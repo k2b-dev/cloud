@@ -14,12 +14,14 @@ export async function createBrowserCodeHost(
   const browser: Browser = await chromium
     .launch({
       headless: true,
-      chromiumSandbox: true,
+      // The container is the boundary: non-root, all capabilities dropped,
+      // no-new-privileges. Chromium's inner sandbox stays off (see #47).
+      chromiumSandbox: false,
       ...(appEnv.CLOUD_CLI_CHROMIUM ? { executablePath: appEnv.CLOUD_CLI_CHROMIUM } : {}),
     })
     .catch((cause) => {
       throw new Error(
-        "Code mode could not start sandboxed Chromium. Install Chromium or set CLOUD_CLI_CHROMIUM. On Linux, enable unprivileged user namespaces and the documented container seccomp profile.",
+        "Code mode could not start Chromium. Install it with playwright install chromium, or set CLOUD_CLI_CHROMIUM to an installed Chromium executable.",
         { cause },
       );
     });
