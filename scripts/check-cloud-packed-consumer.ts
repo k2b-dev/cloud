@@ -143,6 +143,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
   await checkPackedRuntime(root, consumer, cleanEnv);
   // Gateway shares these scripts but provides its plugin without defineApp().
   await Bun.write(join(consumer, "src/config.ts"), await Bun.file(join(root, "packages/gateway/src/config.ts")).text());
+  await Bun.write(join(consumer, "src/env.ts"), await Bun.file(join(root, "packages/gateway/src/env.ts")).text());
   await Bun.write(join(consumer, "src/index.ts"), `export default { fetch: () => new Response("ok") };\n`);
   await run(
     "Load plugin-only config through the installed preload",

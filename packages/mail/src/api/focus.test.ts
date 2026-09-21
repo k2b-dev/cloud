@@ -95,6 +95,7 @@ describe("Mail focus API", () => {
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
+    spyOn(publicResources, "publicIds").mockImplementation(async (_table, ids) => new Map(ids.map((id) => [id, String(id)])));
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(conversationId);
     const loadDetail = spyOn(workspace, "loadMailboxConversationDetail").mockResolvedValue(null);

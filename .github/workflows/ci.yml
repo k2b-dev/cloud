@@ -122,7 +122,7 @@ jobs:
           name: ui-dist
           path: packages/ui/dist
       - name: Install the Playwright browser used by Assistant code-host tests
-        run: bunx playwright install --with-deps chromium
+        run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
       - run: bun run test --shard ${{ matrix.shard }}/3
 
   integration:
@@ -162,7 +162,7 @@ jobs:
       - name: Start NATS JetStream and install poppler
         run: |
           set -euo pipefail
-          docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+          docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils
           curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
@@ -213,8 +213,8 @@ jobs:
           # Match the connection budget in compose.yml and compose.sync-test.yml.
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
             --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
-            postgres:17-alpine -c max_connections=300
-          docker run --detach --name grids-nats --publish 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+            postgres:15-alpine -c max_connections=300
+          docker run --detach --name grids-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           timeout 60s bash -c 'until docker exec grids-postgres pg_isready -U grids_test -d grids_test; do sleep 1; done'
           curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
       - run: bun ci
@@ -320,7 +320,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - run: docker run --detach --name packed-nats --publish 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+      - run: docker run --detach --name packed-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
       - run: bun ci
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -372,7 +372,7 @@ jobs:
           docker network create cloud-smoke
           docker run --detach --name postgres --network cloud-smoke \
             --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine
-          docker run --detach --name nats --network cloud-smoke nats:2.14.3-alpine -js
+          docker run --detach --name nats --network cloud-smoke --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           docker run --detach --name valkey --network cloud-smoke valkey/valkey:8-alpine
           timeout 60s bash -c 'until docker exec postgres pg_isready -U ipa -d ipa; do sleep 1; done'
           # compose.dev.yml x-env with the service names of this throwaway network.

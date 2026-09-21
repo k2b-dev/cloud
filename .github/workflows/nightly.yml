@@ -57,7 +57,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: |
           set -euo pipefail
-          docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+          docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils
       - run: bun ci
@@ -96,7 +96,7 @@ jobs:
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
             --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
             postgres:15-alpine -c max_connections=300
-          docker run --detach --name grids-nats --publish 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+          docker run --detach --name grids-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           timeout 60s bash -c 'until docker exec grids-postgres pg_isready -U grids_test -d grids_test; do sleep 1; done'
       - run: bun ci
       - run: bun run --cwd packages/ui build

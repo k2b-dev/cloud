@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { PermissionLevel, User } from "@k2b/cloud/contracts";
 import type { ServiceAccount } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
+import { natsSuite } from "../../../../scripts/fixtures/test-infra";
 
 const cloudServices = await import("@k2b/cloud/services");
 const cloud = await import("@k2b/cloud");
@@ -261,7 +262,8 @@ describe("notebook resource API keys", () => {
   });
 });
 
-describe("notebook reindex runtime", () => {
+// Binds the process Sync runtime, so it needs a real NATS target.
+natsSuite()("notebook reindex runtime", () => {
   test("submits scheduled reindex work without a startup backfill", async () => {
     await reindexRuntime.start();
 
