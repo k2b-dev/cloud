@@ -4,10 +4,11 @@ name: CI
 # it fails when any needed job failed or was cancelled, and treats path-skipped
 # jobs as success.
 
+# Pull requests run the gate on the branch; the merge queue runs it once more
+# on the exact merge result and merges only when it passed. main itself is
+# never re-verified here: main.yml starts straight from the push.
 on:
   pull_request:
-  push:
-    branches: [main]
   merge_group:
   workflow_dispatch:
 

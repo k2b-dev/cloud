@@ -16,8 +16,10 @@ hand; release-please derives them from squash-commit titles.
 ## Branch and merge
 
 `main` is protected. Work on a feature branch, open a pull request, and let the
-`gate` check pass. Pull requests are squash-merged, so the PR title becomes the
-commit on `main`.
+`gate` check pass. A green pull request enters the merge queue, which runs the
+gate once more on the exact merge result and squash-merges it, so the PR title
+becomes the commit on `main`. `main` itself is not verified again; `main.yml`
+starts straight from the push.
 
 The title is a [Conventional Commit](https://www.conventionalcommits.org/) of
 the form `type(scope): outcome`:
