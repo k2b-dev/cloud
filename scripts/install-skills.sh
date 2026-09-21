@@ -4,6 +4,9 @@
 # Symlinks rather than copies on purpose: edits under skills/ are visible to
 # every agent immediately, with no reinstall step. Note that `bunx skills add`
 # installs a *copy* and would shadow these links with a frozen snapshot.
+#
+# Only symlinks are ever replaced. A real directory at a target path is left
+# untouched and reported; remove it yourself if the link should supersede it.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,6 +18,7 @@ TARGET_DIRS=(
   "${CLAUDE_HOME:-$HOME/.claude}/skills"
 )
 
+status=0
 for target_dir in "${TARGET_DIRS[@]}"; do
   mkdir -p "$target_dir"
 
@@ -26,12 +30,12 @@ for target_dir in "${TARGET_DIRS[@]}"; do
     action="linked"
 
     if [ -L "$target_path" ]; then
-      rm -f "$target_path"
+      rm "$target_path"
       action="relinked"
     elif [ -e "$target_path" ]; then
-      # A real directory here is an installed copy; the symlink supersedes it.
-      rm -rf "$target_path"
-      action="replaced copy"
+      echo "  skipped  $target_path exists and is not a symlink; remove it to install the link" >&2
+      status=1
+      continue
     fi
 
     ln -s "$skill_dir" "$target_path"
@@ -40,3 +44,4 @@ for target_dir in "${TARGET_DIRS[@]}"; do
 done
 
 echo "done — ${#TARGET_DIRS[@]} directories"
+exit "$status"

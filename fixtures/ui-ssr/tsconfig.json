@@ -1,19 +1,5 @@
 {
-  "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.AsyncIterable"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "noUncheckedIndexedAccess": true
-  },
+  "extends": "../../tsconfig.base.json",
   "include": ["./src/**/*.ts", "./src/**/*.tsx", "./scripts/**/*.ts"],
   "exclude": ["./dist", "./node_modules"]
 }

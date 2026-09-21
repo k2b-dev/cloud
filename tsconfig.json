@@ -1,6 +1,4 @@
 {
   "files": [],
-  "references": [
-    { "path": "./packages/cloud" }
-  ]
+  "references": [{ "path": "./packages/cloud" }]
 }
