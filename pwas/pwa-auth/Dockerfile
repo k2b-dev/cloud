@@ -5,6 +5,7 @@ WORKDIR /workspace
 COPY package.json bun.lock bunfig.toml ./
 COPY patches/ patches/
 COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
+COPY tsconfig.base.json ./
 COPY packages/ui/tsconfig.json packages/ui/tsconfig.build.json packages/ui/
 RUN bun install --frozen-lockfile --ignore-scripts --filter @k2b/pwa-auth
 

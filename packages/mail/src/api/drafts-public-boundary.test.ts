@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
-import { commands, drafts, publicResources } from "../service";
+import { commands, drafts, mailboxAccess, publicResources } from "../service";
 import app from ".";
 
 const user = {
@@ -32,6 +32,8 @@ describe("Mail draft public boundary", () => {
     const mailboxId = "22222222-2222-4222-8222-222222222222";
     const conversationId = "33333333-3333-4333-8333-333333333333";
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
+    spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(conversationId);
     const listConversationDrafts = spyOn(drafts, "listConversationDrafts").mockResolvedValue(ok([]));
@@ -53,6 +55,8 @@ describe("Mail command public boundary", () => {
     const folderId = "44444444-4444-4444-8444-444444444444";
     const commandId = "55555555-5555-4555-8555-555555555555";
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
+    spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
     spyOn(publicResources, "resolveMailboxPublicIds").mockResolvedValue([folderId]);
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(messageId);

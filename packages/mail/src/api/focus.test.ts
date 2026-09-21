@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
+import { ok } from "@k2b/stdlib";
 import { generateSpecs } from "hono-openapi";
-import { focus, publicResources } from "../service";
+import { focus, mailboxAccess, publicResources } from "../service";
 import * as workspace from "../service/workspace";
 import app from ".";
 
@@ -41,6 +42,8 @@ describe("Mail focus API", () => {
     const conversationId = "22222222-2222-4222-8222-222222222222";
     const mailboxId = "33333333-3333-4333-8333-333333333333";
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
+    spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(focus, "listFocusConversations").mockResolvedValue({
       ok: true,
       data: {
@@ -90,6 +93,8 @@ describe("Mail focus API", () => {
     const mailboxId = "33333333-3333-4333-8333-333333333333";
     const conversationId = "22222222-2222-4222-8222-222222222222";
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
+    spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(conversationId);
     const loadDetail = spyOn(workspace, "loadMailboxConversationDetail").mockResolvedValue(null);

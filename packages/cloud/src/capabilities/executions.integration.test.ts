@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
-import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import {
   listCapabilityExecutions,
   migrateCloudCapabilities,
@@ -10,8 +10,12 @@ import {
 } from "./executions";
 
 const suite = databaseSuite();
+// Summaries and pruning cover the whole execution table, so the file owns a private database.
 beforeAll(async () => {
   if (!testInfra.database) return;
+  await useFreshDatabase("capability_executions");
+  const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
+  await runCoreSetup();
   await migrateCloudCapabilities();
 });
 

@@ -2,7 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import { sql } from "bun";
-import { databaseSuite, suiteFor } from "../../../scripts/fixtures/test-infra";
+import { databaseSuite, suiteFor, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { createAiNotificationService } from "./ai-notifications";
 import { app } from "./config";
@@ -12,6 +12,10 @@ const suite = databaseSuite();
 
 suite("Core AI completion notifications", () => {
   beforeAll(async () => {
+    // Recovery scans every completed chat, so the file owns a private database.
+    await useFreshDatabase("core_ai_notifications");
+    const { runCoreSetup } = await import("../runtime-helpers");
+    await runCoreSetup();
     await migrateCloudAi();
     await registerNotificationDefinitions(app.meta.id, app.notifications);
   });

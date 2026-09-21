@@ -7,6 +7,7 @@ WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
 COPY patches/ patches/
 COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
+COPY tsconfig.base.json ./
 
 # --ignore-scripts: skip postinstall hooks. The base image already
 # ships bun, but `bun-plugin-tailwind` declares `bun >=1.0.0` as a peer dep, so

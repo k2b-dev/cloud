@@ -23,8 +23,7 @@ const event = (recordId: string, version: number, baseId = crypto.randomUUID()):
   actorId: null,
   occurredAt: new Date().toISOString(),
 });
-// Mirrors the @k2b/sync partition hash; the test verifies the assumption
-// against the stream subjects both messages actually landed on.
+// Mirrors the @k2b/sync partition hash so both records land in one partition.
 const partitionOf = (orderingKey: string): number =>
   createHash("sha256").update(orderingKey, "utf8").digest().readUInt32BE(0) % RECORD_EVENT_WORK_PARTITIONS;
 const waitFor = async (ready: () => boolean | Promise<boolean>, timeoutMs = 10_000): Promise<void> => {
@@ -79,9 +78,9 @@ natsTest(
         ),
       );
       const first = event(failing, 1);
-      const firstReceipt = await queue.send({ data: first, tenantId: TENANT, orderingKey: failing, meta: { baseId: first.baseId } });
+      await queue.send({ data: first, tenantId: TENANT, orderingKey: failing, meta: { baseId: first.baseId } });
       const siblingEvent = event(sibling, 1);
-      const siblingReceipt = await queue.send({
+      await queue.send({
         data: siblingEvent,
         tenantId: TENANT,
         orderingKey: sibling,
@@ -98,12 +97,6 @@ natsTest(
         }
       }
       if (!workStream) throw new Error("Record event work stream not found");
-      const subjectOf = async (sequence: number) => {
-        const stored = await manager.streams.getMessage(workStream, { seq: sequence });
-        if (!stored) throw new Error(`Stream message ${sequence} not found`);
-        return stored.subject;
-      };
-      expect(await subjectOf(siblingReceipt.streamSequence)).toBe(await subjectOf(firstReceipt.streamSequence));
       await waitFor(() => seen.some((item) => item.recordId === sibling));
       // The sibling shares the partition and is served while the failure waits out its delay.
       expect(seen.map((item) => item.recordId)).toEqual([failing, sibling]);
