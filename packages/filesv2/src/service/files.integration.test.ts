@@ -22,6 +22,7 @@ suite("Files service and durable bindings", () => {
   let lostMoveResponse = false;
   let failMove = false;
   let leases = 0;
+  const downloadRequests: unknown[] = [];
   let sessionCounter = 0;
   let versionCounter = 0;
   let nodeRevisionCounter = 0;
@@ -242,7 +243,9 @@ suite("Files service and durable bindings", () => {
           : new Response("", { status: 404 });
       if (operation === "downloads" || operation === "thumbnail") {
         leases++;
-        const target = z.object({ path: z.string().optional() }).parse(init?.body ? JSON.parse(String(init.body)) : {});
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (operation === "downloads") downloadRequests.push(body);
+        const target = z.object({ path: z.string().optional() }).parse(body);
         return Response.json({
           method: "GET",
           url: `http://localhost:4000/signed/${root}/${target.path ?? ""}`,
@@ -735,6 +738,7 @@ suite("Files service and durable bindings", () => {
     failMove = false;
     nodes.clear();
     leases = 0;
+    downloadRequests.length = 0;
     reconciliations = 0;
     for (const root of ["cloud", "freeipa"]) {
       directory(root, ".", 0, 0, "0755");
@@ -752,6 +756,9 @@ suite("Files service and durable bindings", () => {
     const listed = await service.list(actor, { baseId });
     expect(listed.items[0]?.name).toBe("report");
     expect((await service.download(actor, { baseId, path: "report" })).method).toBe("GET");
+    expect(leases).toBe(1);
+    expect(downloadRequests).toEqual([{ path: "users/alice/report", expiresIn: 60, fileName: "report" }]);
+    await expect(service.download(actor, { baseId, path: "" })).rejects.toMatchObject({ code: "not_file" });
     expect(leases).toBe(1);
     directory("freeipa", "users/alice/report", 999, 999, "0600", false);
     await expect(service.download(actor, { baseId, path: "report" })).rejects.toMatchObject({ code: "forbidden" });
