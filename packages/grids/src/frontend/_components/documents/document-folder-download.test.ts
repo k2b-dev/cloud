@@ -133,3 +133,19 @@ test("looping cursors and invalid folder paths fail instead of looping", async (
     }),
   ).rejects.toThrow("incomplete");
 });
+
+test("folder names cannot create parent-directory archive entries", async () => {
+  const entries = await collectDocumentFolder({
+    path: [],
+    signal: signal(),
+    onProgress() {},
+    loadPage: async (path) =>
+      path.length
+        ? page([document("DOC001")])
+        : page([], {
+            folders: [{ kind: "year", key: ".. ", label: "Folder", path: ["2026"], count: 1 }],
+          }),
+    download: async () => new Response("pdf"),
+  });
+  expect(entries[0]?.filename).toBe("_/DOC001-same.pdf");
+});

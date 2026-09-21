@@ -14,8 +14,8 @@ export class FolderDownloadError extends Error {
 const safeSegment = (value: string) =>
   value
     .replace(/[\x00-\x1f\x7f/\\:*?"<>|]/g, "_")
-    .replace(/^\.+$/, "_")
-    .trim() || "document";
+    .trim()
+    .replace(/^\.+$/, "_") || "document";
 
 type Entry = { filename: string; source: Uint8Array };
 type Options = {
