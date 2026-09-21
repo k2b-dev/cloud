@@ -80,8 +80,7 @@ databaseSuite()("aiSkills (integration)", () => {
     }
   });
 
-  // Never ran in CI before the release train; expectations drifted from the current ranking and id set. Tracked in #5.
-  test.todo("Project links grant read/use and survive their creator losing access", async () => {
+  test("Project links grant read/use and survive their creator losing access", async () => {
     const ownerId = await insertUser("project-owner"),
       memberId = await insertUser("project-member"),
       successorId = await insertUser("successor");
@@ -117,7 +116,7 @@ databaseSuite()("aiSkills (integration)", () => {
       expect(await aiSkills.loadForTurn(turn!.id, skill.name, member)).toMatchObject({ instructions: "Reconcile statements." });
       expect(await aiSkills.listTurnFiles(turn!.id, member)).toHaveLength(1);
       await aiSkills.setEnabled(skill.id, member, false);
-      expect((await aiSkills.search(member, "reconciliation")).skills).toEqual([]);
+      expect((await aiSkills.search(member, "reconciliation")).skills.map((item) => item.id)).not.toContain(skill.id);
       expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();
       await aiSkills.setEnabled(skill.id, member, true);
       expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).not.toBeNull();
@@ -158,7 +157,7 @@ databaseSuite()("aiSkills (integration)", () => {
     }
   });
 
-  test.todo("search ranks names and descriptions, tolerates typos, and checks access before limiting", async () => {
+  test("search ranks names and descriptions, tolerates typos, and checks access before limiting", async () => {
     const userId = await insertUser("search"),
       otherId = await insertUser("search-other");
     const owner = { type: "user" as const, userId },
@@ -190,17 +189,24 @@ databaseSuite()("aiSkills (integration)", () => {
           instructions: "Do the work.",
         }),
       );
+      // Built-in Skills seeded for every authenticated user share the catalog; rank only the fixture rows among them.
+      const fixtureIds = (result: { skills: { id: string }[] }) =>
+        result.skills.map((skill) => skill.id).filter((id) => skills.some((skill) => skill.id === id));
       const exact = await aiSkills.search(owner, `zz-invoices-${suffix}`, 1);
       expect(exact.skills.map((skill) => skill.id)).toEqual([skills[0]!.id]);
+      // A typo in the name outranks the same typo in a description.
+      expect(fixtureIds(await aiSkills.search(owner, "invioces"))).toEqual([skills[0]!.id, skills[1]!.id]);
+      // The other user's Skill ranks highest for this query but must not consume the single slot.
       const fuzzy = await aiSkills.search(owner, "invioces", 1);
-      expect(fuzzy.skills.map((skill) => skill.id)).toEqual([skills[0]!.id]);
+      expect(fuzzy.skills).toHaveLength(1);
+      expect(fuzzy.skills[0]!.id).not.toBe(skills[2]!.id);
       expect(fuzzy.more).toBe(true);
-      expect((await aiSkills.search(owner, "reciepts transactions")).skills.map((skill) => skill.id)).toEqual([skills[0]!.id]);
+      expect(fixtureIds(await aiSkills.search(owner, "reciepts transactions"))).toEqual([skills[0]!.id]);
       expect((await aiSkills.search(owner, "secret")).skills).toEqual([]);
       expect((await aiSkills.search(owner, "Private instructions")).skills).toEqual([]);
       expect((await aiSkills.search(owner, "%%%")).skills).toEqual([]);
       await aiSkills.setEnabled(skills[0]!.id, owner, false);
-      expect((await aiSkills.search(owner, "receipts")).skills).toEqual([]);
+      expect(fixtureIds(await aiSkills.search(owner, "receipts"))).toEqual([]);
       expect((await aiSkills.list(owner)).some((skill) => skill.id === skills[0]!.id && !skill.enabled)).toBe(true);
       await aiSkills.setEnabled(skills[0]!.id, owner, true);
       // The result must remain discoverable beyond the old 200-row catalog cap.
@@ -211,8 +217,8 @@ databaseSuite()("aiSkills (integration)", () => {
         SELECT padding.id, original.access_id, padding.short_id FROM ai.skills padding
         CROSS JOIN ai.skill_access original WHERE original.skill_id = ${skills[0]!.id}::uuid
         AND padding.name LIKE ${"a-padding-" + suffix + "-%"} `;
-      expect((await aiSkills.search(owner, "receipts")).skills.map((skill) => skill.id)).toEqual([skills[0]!.id]);
-      expect((await aiSkills.search(owner, "reciepts")).skills.map((skill) => skill.id)).toEqual([skills[0]!.id]);
+      expect(fixtureIds(await aiSkills.search(owner, "receipts"))).toEqual([skills[0]!.id]);
+      expect(fixtureIds(await aiSkills.search(owner, "reciepts"))).toEqual([skills[0]!.id]);
     } finally {
       await sql`DELETE FROM ai.skills WHERE name LIKE ${"a-padding-" + suffix + "-%"}`;
       for (const skill of skills) await aiSkills.admin.delete(skill.id);
@@ -452,6 +458,42 @@ databaseSuite()("aiSkills (integration)", () => {
     } finally {
       if (skillId) await aiSkills.admin.delete(skillId);
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${rescuerId}::uuid)`;
+    }
+  });
+
+  test("search ranks a typo'd name above a description word that shares a prefix", async () => {
+    const userId = await insertUser("typo-rank");
+    const owner = { type: "user" as const, userId };
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const skills: Awaited<ReturnType<typeof aiSkills.create>>[] = [];
+    try {
+      skills.push(
+        await aiSkills.create({
+          subject: owner,
+          name: `zz-invoices-${suffix}`,
+          description: "Match receipts to bank transactions.",
+          instructions: "Do the work.",
+        }),
+      );
+      // "invioces" is closer to the partial extent "invi…" of "invitations" than to the whole word "invoices",
+      // and "spaces" adds a small name hit; the typo'd name must still win.
+      skills.push(
+        await aiSkills.create({
+          subject: owner,
+          name: `aa-spaces-${suffix}`,
+          description: "Send calendar invitations for events.",
+          instructions: "Do the work.",
+        }),
+      );
+      const result = await aiSkills.search(owner, "invioces");
+      expect(result.skills[0]?.id).toBe(skills[0]!.id);
+      expect(result.skills.map((skill) => skill.id).filter((id) => skills.some((skill) => skill.id === id))).toEqual([
+        skills[0]!.id,
+        skills[1]!.id,
+      ]);
+    } finally {
+      for (const skill of skills) await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
 });

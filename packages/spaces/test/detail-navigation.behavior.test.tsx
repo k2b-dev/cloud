@@ -108,6 +108,44 @@ describe("Spaces detail navigation", () => {
     dom.cleanup();
   });
 
+  test("a search result selection preserves the current list search instead of the SSR query", async () => {
+    detailGet = async () => Response.json(detail(SERIES_ID));
+    const dom = createDomTestHarness();
+    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    const initialSource = `/app/spaces/${SPACE_ID}?view=list&q=initial`;
+    dom.window.history.replaceState(null, "", `/app/spaces/${SPACE_ID}?view=list&q=current&status=all`);
+
+    const dispose = render(
+      () =>
+        createComponent(ItemDetailRoute, {
+          spaceId: SPACE_ID,
+          initialSource,
+          currentUserId: "user",
+          columns: [],
+          tags: [],
+          wormholes: [],
+          initialDetail: null,
+          canWrite: false,
+          mailIntegrationAvailable: false,
+        }),
+      dom.root,
+    );
+    try {
+      const request: { target: { href: string }; handled?: Promise<boolean> } = {
+        target: { href: `/app/spaces/${SPACE_ID}?item=${SERIES_ID}` },
+      };
+      dom.window.dispatchEvent(new dom.window.CustomEvent("cloud.search.navigate", { detail: request }));
+      await expect(request.handled).resolves.toBe(true);
+      const url = new URL(dom.window.location.href);
+      expect(url.searchParams.get("q")).toBe("current");
+      expect(url.searchParams.get("status")).toBe("all");
+      expect(url.searchParams.get("item")).toBe(SERIES_ID);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("replaces an SSR occurrence URL with its canonical override without another read", async () => {
     const requests: unknown[] = [];
     detailGet = async () => {

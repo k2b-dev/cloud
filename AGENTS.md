@@ -94,7 +94,7 @@ further questions:
   ```bash
   git fetch origin
   git worktree add ../cloud-wt/<slug> -b type/<slug> origin/main
-  cd ../cloud-wt/<slug> && bun install --frozen-lockfile
+  cd ../cloud-wt/<slug> && bun install --frozen-lockfile && bun run --cwd packages/ui build
   ```
 
 - `dev:*` and `dev:cld` belong to this checkout; Compose mounts its sources.

@@ -262,9 +262,7 @@ suite("aiFileStore integration", () => {
     }
   });
 
-  // Never ran in CI before the release train; the stored message shape moved on. Tracked in #5.
-
-  test.todo("migrates historical inline images into referenced user files", async () => {
+  test("migrates historical inline images into referenced user files", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
 
@@ -280,6 +278,8 @@ suite("aiFileStore integration", () => {
         userMessage: { role: "user", content: [{ type: "file", mediaType: "image/png", data: "AQID" }] },
       });
       await sql`UPDATE ai.turns SET status = 'completed' WHERE conversation_id = ${conversation.id}::uuid`;
+      // Alpha installations stored the message as a JSON string inside jsonb; reproduce that historical layout.
+      await sql`UPDATE ai.messages SET message = to_jsonb(message::text) WHERE conversation_id = ${conversation.id}::uuid AND role = 'user'`;
 
       const [before] = await sql<{ message: string; json_type: string; content_type: string | null }[]>`
         SELECT message, jsonb_typeof(message) AS json_type, jsonb_typeof(message->'content') AS content_type

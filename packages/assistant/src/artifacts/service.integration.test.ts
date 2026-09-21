@@ -2001,20 +2001,24 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       name: "code_run" as const,
       args: { code: "export default () => ({answer:42,serverProcess:typeof process})" },
     };
+    // Polls the durable call record until it settles; the bound is wall-clock,
+    // not an iteration count, so slow polls do not shorten it (#37).
     const wait = async (input: Parameters<typeof agentHost.call>[0]) => {
-      for (let i = 0; i < 200; i++) {
-        const result = await agentHost.call(input, { ...context, signal: new AbortController().signal });
-        if (result.status !== "running" && result.status !== "busy") return result;
+      const deadline = Date.now() + 10_000;
+      let last: Awaited<ReturnType<typeof agentHost.call>> | undefined;
+      while (Date.now() < deadline) {
+        last = await agentHost.call(input, { ...context, signal: new AbortController().signal });
+        if (last.status !== "running" && last.status !== "busy") return last;
         await Bun.sleep(25);
       }
-      throw new Error("Managed host test did not finish");
+      throw new Error(`Managed host call ${input.callId} did not settle: ${JSON.stringify(last)}`);
     };
     try {
       const starts = await Promise.all([agentHost.call(call, context), agentHost.call(call, context)]);
       expect(starts.every((result) => ["running", "busy"].includes(result.status))).toBe(true);
       abort.abort(); // Detaching the HTTP caller must not terminate the owned execution.
       const observers = await Promise.all(Array.from({ length: 8 }, () => wait(call)));
-      expect(observers.every((result) => result.status === "done")).toBe(true);
+      expect(observers.map((result) => result.status)).toEqual(Array.from({ length: 8 }, () => "done"));
       const result = observers[0]!;
       expect(result).toMatchObject({ status: "done", result: { status: "ready", output: '{"answer":42,"serverProcess":"undefined"}' } });
       expect(await wait(call)).toEqual(result);
