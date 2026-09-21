@@ -61,7 +61,7 @@
     "@types/bun": "1.4.2",
     "babel-preset-solid": "1.9.12",
     "bun-plugin-tailwind": "0.1.2",
-    "happy-dom": "20.11.1",
+    "happy-dom": "20.11.2",
     "hono": "4.12.32",
     "seroval": "1.6.0",
     "solid-js": "1.9.14",

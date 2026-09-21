@@ -111,6 +111,11 @@ describe("@k2b/ui feedback runtime", () => {
     expect(dom.document.body.style.overflow).toBe("hidden");
     expect(dom.document.documentElement.style.overflow).toBe("hidden");
 
+    // A collection between observe() and the removal used to drop the mutation:
+    // happy-dom < 20.11.2 held the observer callback only through a WeakRef, so
+    // this test timed out whenever CI happened to run the GC here. Force it so
+    // a regression fails deterministically instead of once a week.
+    Bun.gc(true);
     dom.root.remove();
     // The disconnect observer delivers through a microtask, so the open promise
     // is the disposal signal itself. Waiting on happy-dom's whole task queue
