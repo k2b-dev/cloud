@@ -2,19 +2,19 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "files",
-  name: "Files",
+  name: "Files (legacy)",
   icon: "ti ti-folders",
-  description: "Browse, upload, move, and manage files across accessible bases.",
+  description: "Browse, upload, move, and manage files across accessible bases. This application is being replaced by Files.",
   presentation: {
     baseLocale: "en",
     translations: {
       de: {
-        name: "Dateien",
-        description: "Dateien in zugänglichen Ablagen durchsuchen, hochladen, verschieben und verwalten.",
+        name: "Dateien (alt)",
+        description:
+          "Dateien in zugänglichen Ablagen durchsuchen, hochladen, verschieben und verwalten. Diese Anwendung wird durch Dateien abgelöst.",
       },
     },
   },
-  appearance: { accent: "#1d4ed8", background: { from: "#2563eb", to: "#38bdf8", angle: 135 } },
   basePath: "/app/files",
   baseUrl: "http://app-files:3000",
   adminHref: "/admin/files",

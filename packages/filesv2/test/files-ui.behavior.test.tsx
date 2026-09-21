@@ -70,7 +70,7 @@ const directory: DirectoryResult = {
 };
 
 // These tests exercise real components with controlled API responses, not a live browser.
-describe("Files v2 interactions", () => {
+describe("Filesv2 interactions", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
     return;

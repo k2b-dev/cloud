@@ -6,7 +6,7 @@ description: Filegate verbinden, Verzeichnisse prüfen und Archiv sowie Lebenszy
 order: 200
 ---
 
-Öffne **Dateiverwaltung**, um Files v2 zu verwalten. Die Ansichten trennen Speicherinformationen, aktuelle Verzeichnisse, archivierte Verzeichnisse, öffentliche Freigaben und Einstellungen. Filter, Ordner und Seiten bleiben in der Adresse erhalten, auch beim Vor- und Zurücknavigieren.
+Öffne **Dateiverwaltung**, um die Dateien-App zu verwalten. Die Ansichten trennen Speicherinformationen, aktuelle Verzeichnisse, archivierte Verzeichnisse, öffentliche Freigaben und Einstellungen. Filter, Ordner und Seiten bleiben in der Adresse erhalten, auch beim Vor- und Zurücknavigieren.
 
 ## Ablagen unter Einstellungen verbinden {icon="plug"}
 
@@ -22,7 +22,7 @@ Cloud-Ablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur berechtigt
 
 Die Übersicht zeigt Kapazität, verfügbaren Speicher, aktive Uploads, Anzahlen und Größen für den ausgewählten Root. Unbekannte Werte bleiben unbekannt. Anzahlen und Größen setzen einen vollständigen beobachteten Scan voraus; unvollständige Summen oder Summen unbekannter Aktualität gelten nicht als aktuelle Anzahlen. Die Beobachtungsdaten beschreiben Quelle und Zeitraum, keine atomare Quote. Statistiken gelten für den gesamten Root, auch für Pfade außerhalb des Basispfads eines Bereichs.
 
-Index, Versionshistorie, Managed-Modus und Unix-Ausführung werden in Filegate konfiguriert. FreeIPA benötigt aktivierte Unix-Ausführung und einen ausdrücklich dafür konfigurierten Daemon, der Unix-Identitäten wechseln kann. Fehlt das, verweigert Filesv2 den Zugriff, statt das Servicekonto zu verwenden. Managed gilt nur für Roots, deren sämtliche Schreibzugriffe über Filegate laufen; bei direkten externen Schreibern bleibt es aus. Es ermöglicht atomare Prüfungen zwischen Filegate-Aktionen, schützt aber nicht vor gleichzeitigen externen NFS-Schreibzugriffen. Der Editor bleibt auf nicht verwalteten Roots mit nicht atomarer Konflikterkennung nutzbar. **Aktualisieren** fordert eine neue Zusammenfassung an. **Index neu aufbauen** verlangt eine Bestätigung, weil die Aktion den gesamten Root betrifft.
+Index, Versionshistorie, Managed-Modus und Unix-Ausführung werden in Filegate konfiguriert. FreeIPA benötigt aktivierte Unix-Ausführung und einen ausdrücklich dafür konfigurierten Daemon, der Unix-Identitäten wechseln kann. Fehlt das, verweigert die Dateien-App den Zugriff, statt das Servicekonto zu verwenden. Managed gilt nur für Roots, deren sämtliche Schreibzugriffe über Filegate laufen; bei direkten externen Schreibern bleibt es aus. Es ermöglicht atomare Prüfungen zwischen Filegate-Aktionen, schützt aber nicht vor gleichzeitigen externen NFS-Schreibzugriffen. Der Editor bleibt auf nicht verwalteten Roots mit nicht atomarer Konflikterkennung nutzbar. **Aktualisieren** fordert eine neue Zusammenfassung an. **Index neu aufbauen** verlangt eine Bestätigung, weil die Aktion den gesamten Root betrifft.
 
 ## Verzeichnisse prüfen {icon="folders"}
 

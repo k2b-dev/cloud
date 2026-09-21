@@ -56,7 +56,7 @@ cannot be upstreamed.
 | Patch | Reason | Remove when |
 | --- | --- | --- |
 | `hucre@1.1.0` | The ODS reader skipped rows nested in `table-row-group`, `table-header-rows`, and `table-rows`; Assistant code mode read incomplete workbooks. Added in `feat(assistant): read ODS workbooks in code mode`. | An upstream `hucre` release walks nested row containers. |
-| `@valentinkolb/filegate@2.4.0` | Bun rejects a `Uint8Array` view over a shared buffer as a fetch body; the patch copies upload bodies. Added in `fix(files): patch Filegate upload bodies and enforce full typechecking`. | The `files` application moves to the Filegate v6 client used by Filesv2, or the v2 client copies bodies upstream. |
+| `@valentinkolb/filegate@2.4.0` | Bun rejects a `Uint8Array` view over a shared buffer as a fetch body; the patch copies upload bodies. Added in `fix(files): patch Filegate upload bodies and enforce full typechecking`. | The `files` application moves to the Filegate v6 client used by Files (`filesv2`), or the v2 client copies bodies upstream. |
 
 To change a patch, edit the installed package under `node_modules`, run
 `bun patch --commit <package>`, and describe the reason in the pull request.

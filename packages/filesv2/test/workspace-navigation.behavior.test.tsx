@@ -30,7 +30,7 @@ const flush = async () => {
 };
 type Request = { source: string; signal: AbortSignal; resolve: (value: WorkspaceSnapshot) => void; reject: (error: Error) => void };
 
-describe("Files v2 progressive navigation", () => {
+describe("Filesv2 progressive navigation", () => {
   if (isServer) {
     test.skip("requires DOM runner", () => {});
     return;

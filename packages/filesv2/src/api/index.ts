@@ -340,7 +340,7 @@ const api = new Hono<AuthContext>()
   )
   .put(
     "/admin/configuration",
-    middleware.openapi({ summary: "Save Files v2 configuration", ...requiresAdmin }),
+    middleware.openapi({ summary: "Save Files configuration", ...requiresAdmin }),
     v("json", ConfigurationInputSchema),
     async (c) => {
       await filesService.saveConfiguration(c.get("actor"), c.req.valid("json"));

@@ -6,7 +6,7 @@ description: Ablagen öffnen, Dokumente bearbeiten, Vorlagen nutzen und Dateien 
 order: 100
 ---
 
-Files v2 zeigt deine zugänglichen Cloud- und FreeIPA-Verzeichnisse in einer Oberfläche. Die Kennzeichnung neben dem Namen einer Ablage zeigt ihre Herkunft.
+Die Dateien-App zeigt deine zugänglichen Cloud- und FreeIPA-Verzeichnisse in einer Oberfläche. Die Kennzeichnung neben dem Namen einer Ablage zeigt ihre Herkunft.
 
 ## Ordnerbeschreibungen und Vorschauen {icon="file-description"}
 

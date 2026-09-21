@@ -4,7 +4,7 @@ import { renderToString } from "solid-js/web";
 import AdminIssue from "../src/frontend/AdminIssue";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
 
-describe("Files v2 server-rendered feedback", () => {
+describe("Filesv2 server-rendered feedback", () => {
   test("all inventory states have readable localized labels independent of color", () => {
     const html = renderToString(() => (
       <LocaleProvider locale="de">

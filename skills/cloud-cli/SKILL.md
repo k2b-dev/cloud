@@ -1,6 +1,6 @@
 ---
 name: cloud-cli
-description: Use the Cloud CLI (`cld`) to work with a user's Cloud content from a terminal. Use this skill whenever an agent needs to use installed Cloud app commands, sign in or select a Cloud profile, choose safe CLI input/output, inspect Cloud API documentation, or complete Assistant, Contacts, FAQ, Filesv2, Grids, Mail, Notebooks, Pulse, Spaces, or Tools workflows for the user.
+description: Use the Cloud CLI (`cld`) to work with a user's Cloud content from a terminal. Use this skill whenever an agent needs to use installed Cloud app commands, sign in or select a Cloud profile, choose safe CLI input/output, inspect Cloud API documentation, or complete Assistant, Contacts, FAQ, Files, Grids, Mail, Notebooks, Pulse, Spaces, or Tools workflows for the user.
 ---
 
 # Cloud CLI
@@ -34,7 +34,7 @@ Read the app reference for the current task. Follow specialized links inside it 
 - Read [Assistant](references/assistant.md) for one-shot streaming chat, chat history, approvals, files, personalization, and Projects.
 - Read [Contacts](references/contacts.md) for contact books, contacts, tags, notes, exports, and access grants.
 - Read [FAQ](references/faq.md) to list and manage localized, audience-aware FAQ entries as an administrator.
-- Read [Filesv2](references/filesv2.md) to browse Cloud and FreeIPA storage, download files directly, and administer directory provisioning, archives, permanent deletion, root maintenance, and storage configuration.
+- Read [Files](references/filesv2.md) (`cld filesv2`) to browse Cloud and FreeIPA storage, download files directly, and administer directory provisioning, archives, permanent deletion, root maintenance, and storage configuration.
 - Read [Grids](references/grids.md) to create bases from templates and manage schema, records, GQL, views, forms, Custom Apps, documents, access, and workflows.
 - For a complete Grids business application, also read [Build a business application](references/grids-build-apps.md): inventory, CRM, invoicing, expense reimbursement, and merchandise-management model choices and verification.
 - For Grids configuration, read [Schema and records](references/grids-schema.md): table options, every field type, ID assignment, formats, Views, Forms and finalization. For files and financial exports, read [Documents and exports](references/grids-documents.md): templates, Liquid, profiles, SEPA, DATEV, membership and download links. The main Grids reference routes Custom App and Workflow configuration to their complete machine-readable schemas.

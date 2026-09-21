@@ -44,7 +44,7 @@ workflow, CLI, and API contracts. Agents should discover and read those Help
 pages rather than infer options from a UI label.
 
 The **Cloud resource** field (`resource`) links one resource from another Cloud
-application, for example a Filesv2 entry. Its config is `{}`. Values contain
+application, for example a Files entry. Its config is `{}`. Values contain
 `type`, `id`, and optionally `title`; discover these through Cloud search or the
 owning application's capabilities. The retained title is a label, not a live
 snapshot. Opening resolves the current canonical reader and checks access in

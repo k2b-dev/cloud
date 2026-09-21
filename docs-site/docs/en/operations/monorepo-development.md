@@ -53,7 +53,7 @@ available for quick restarts. Stop the infrastructure explicitly with
 
 ## Test Filegate locally
 
-Development infrastructure includes Filegate 6.1.0 for Filesv2 development.
+Development infrastructure includes Filegate 6.1.0 for Files (`filesv2`) development.
 To prepare its backend token and start only Filegate:
 
 ```bash
@@ -88,16 +88,16 @@ numeric ownership, setgid, and POSIX ACLs. It is not a production privilege
 recommendation or proof of NFS behavior.
 The published image uses `linux/amd64`; Docker Desktop uses emulation on ARM.
 
-The existing `files` app uses the Filegate v2 API and cannot use this v6 daemon.
+Files (legacy), the `files` app, uses the Filegate v2 API and cannot use this v6 daemon.
 Do not point that app at the new roots. Its old Docker volumes are not migrated
-or attached. Filesv2 remains a separate application with its own configuration.
+or attached. Files (`filesv2`) remains a separate application with its own configuration.
 
 ## Test Collabora locally
 
-Development infrastructure also includes Collabora Online (CODE) for Filesv2
+Development infrastructure also includes Collabora Online (CODE) for Files
 document editing. It listens on `http://localhost:9980` for browsers, while
 Collabora itself reaches Cloud through the `gateway` service name. Point
-Filesv2 at it with the administrator CLI:
+Files at it with the administrator CLI:
 
 ```bash
 bun run dev:cld -- filesv2 admin configuration get --json > filesv2.json
@@ -323,7 +323,7 @@ development PostgreSQL:
 docker compose -f compose.yml exec postgres createdb -U postgres cloud_test
 ```
 
-Filesv2, Grids PDF rendering, and Assistant Studio suites additionally read
+Files (`filesv2`), Grids PDF rendering, and Assistant Studio suites additionally read
 `CLOUD_TEST_FILEGATE_URL`, `CLOUD_TEST_GOTENBERG_URL`, and `CLOUD_TEST_RSQL_URL`.
 [Testing](/en/docs/contributing/testing) lists every variable and what the pull
 request gate and the nightly run execute.

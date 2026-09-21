@@ -5,7 +5,7 @@ export const filesMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      files: "Files v2",
+      files: "Files",
       admin: "File administration",
       storage: "Storage",
       home: "Home",
@@ -99,7 +99,7 @@ export const filesMessages = i18n.define({
       rootScope: "These values cover the entire Filegate root, including paths outside the configured base prefix.",
     },
     de: {
-      files: "Files v2",
+      files: "Dateien",
       admin: "Dateiverwaltung",
       storage: "Ablagen",
       home: "Persönlich",

@@ -6,7 +6,7 @@ description: Browse storage, edit documents, use templates, and share files.
 order: 100
 ---
 
-Files v2 brings your accessible Cloud and FreeIPA directories into one view. The label beside each storage name identifies its source.
+Files brings your accessible Cloud and FreeIPA directories into one view. The label beside each storage name identifies its source.
 
 ## Folder descriptions and previews {icon="file-description"}
 
