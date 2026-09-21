@@ -1,20 +1,15 @@
-import { afterAll, beforeAll, expect } from "bun:test";
+import { beforeAll, expect } from "bun:test";
 import { getProcessSync } from "@k2b/cloud";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
-import { startGridsTestSync } from "../sync-test-utils";
 import { FIELD_INDEX_MAINTENANCE_LOCK, runFieldIndexMaintenanceBatch } from "./field-indexes";
 
+// Runs in the `database-and-standard` phase, whose preload binds the one
+// process Sync; this file must not bind a second instance.
 const maintenanceTest = testFor("database", "nats");
-let stopSync: (() => Promise<void>) | undefined;
 
 beforeAll(async () => {
-  if (!testInfra.database || !testInfra.nats) return;
-  await migrate();
-  stopSync = await startGridsTestSync();
-});
-afterAll(async () => {
-  await stopSync?.();
+  if (testInfra.database) await migrate();
 });
 
 /** Another Grids process holding the maintenance lease with a short TTL. */
