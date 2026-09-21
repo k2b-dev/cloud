@@ -110,7 +110,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2]
     # API-level unit tests go through the rate limiter, whose Bun redis client
     # waits for a server; a throwaway Valkey keeps them honest and fast.
     services:
@@ -134,7 +134,7 @@ jobs:
           path: packages/ui/dist
       - name: Install the Playwright browser used by Assistant code-host tests
         run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
-      - run: bun run test --shard ${{ matrix.shard }}/3
+      - run: bun run test --shard ${{ matrix.shard }}/2
         env:
           # Unit tests of encrypted settings and grants derive keys from the application secret.
           APP_SECRET: ${{ env.TEST_SECRET }}
@@ -198,7 +198,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2]
     services:
       valkey:
         image: valkey/valkey:8-alpine
@@ -236,7 +236,7 @@ jobs:
         with:
           name: ui-dist
           path: packages/ui/dist
-      - run: bun run --cwd packages/grids test:all --shard ${{ matrix.shard }}/3
+      - run: bun run --cwd packages/grids test:all --shard ${{ matrix.shard }}/2
         env:
           GRIDS_VERIFY_REPORTS_DIR: ${{ runner.temp }}/grids-certification
       - if: failure()
