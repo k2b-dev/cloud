@@ -97,6 +97,19 @@ const user = {
 };
 
 describe("loadGridsWorkspaceState — GQL-backed views", () => {
+  test("keeps resolved relation names in the initial query payload for public projection", async () => {
+    spyOn(gridsService.relations, "buildLabelCache").mockResolvedValue({ [selectedRecordId]: "Customer name" });
+    lookupTable = table;
+    const state = await loadWorkspaceState({
+      user,
+      baseShortId: base.shortId,
+      href: `/app/grids/${base.shortId}/table/${table.shortId}`,
+      activeTableSlug: table.shortId,
+    });
+    expect(state.kind).toBe("ok");
+    if (state.kind !== "ok" || state.route.kind !== "records") throw new Error("Expected records route");
+    expect(state.route.initialData.relationLabels).toEqual({ [selectedRecordId]: "Customer name" });
+  });
   beforeEach(() => {
     baseLevel = "read";
     catalogTables = [table];

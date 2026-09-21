@@ -320,6 +320,7 @@ const buildRecordsRoute = async (params: {
     },
     initialData: {
       items: initial.records.items,
+      relationLabels: initial.relationLabels,
       buckets: initial.groupedBuckets,
       aggregates: initial.aggregates,
       nextCursor: initial.records.nextCursor,
