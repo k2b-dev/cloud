@@ -1,12 +1,12 @@
-import type { CalendarView } from "@k2b/ui";
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
+import type { CalendarView } from "@k2b/ui";
 import { ssr } from "../../config";
-import { venueService } from "../../service";
 import { venueMessages } from "../../messages";
+import { venueService } from "../../service";
 import VenueWorkspace from "../_components/VenueWorkspace.island";
 import { venueDashboardRouteScope } from "../dashboard-query";
 

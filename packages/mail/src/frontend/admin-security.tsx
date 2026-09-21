@@ -1,8 +1,8 @@
-import { dates } from "@k2b/stdlib";
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { dates } from "@k2b/stdlib";
+import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../config";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport } from "../security-contracts";
 import { type MailRequestContext, security } from "../service";

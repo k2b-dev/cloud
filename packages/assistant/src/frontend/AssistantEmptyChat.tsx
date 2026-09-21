@@ -1,5 +1,5 @@
-import { Button, useLocale } from "@k2b/ui";
 import type { AiProject } from "@k2b/cloud/ai";
+import { Button, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { assistantMessages } from "./messages";
 
@@ -11,12 +11,12 @@ export type AssistantStarterAction = {
 };
 
 export const assistantStarterActions: readonly AssistantStarterAction[] = (() => {
-  const t=assistantMessages.resolve(["en"]).t;
+  const t = assistantMessages.resolve(["en"]).t;
   return [
-    {label:t.analyzeFiles,prompt:t.analyzeFilesPrompt,icon:"ti ti-file-analytics",skill:"assistant-code-mode"},
-    {label:t.buildApp,prompt:t.buildAppPrompt,icon:"ti ti-app-window",skill:"assistant-code-mode"},
-    {label:t.discover,prompt:t.discoverPrompt,icon:"ti ti-sparkles"},
-    {label:t.followMail,prompt:t.followMailPrompt,icon:"ti ti-mail-forward"},
+    { label: t.analyzeFiles, prompt: t.analyzeFilesPrompt, icon: "ti ti-file-analytics", skill: "assistant-code-mode" },
+    { label: t.buildApp, prompt: t.buildAppPrompt, icon: "ti ti-app-window", skill: "assistant-code-mode" },
+    { label: t.discover, prompt: t.discoverPrompt, icon: "ti ti-sparkles" },
+    { label: t.followMail, prompt: t.followMailPrompt, icon: "ti ti-mail-forward" },
   ];
 })();
 
@@ -32,10 +32,10 @@ export default function AssistantEmptyChat(props: {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const starters = (): readonly AssistantStarterAction[] => [
-    {label:t().analyzeFiles,prompt:t().analyzeFilesPrompt,icon:"ti ti-file-analytics",skill:"assistant-code-mode"},
-    {label:t().buildApp,prompt:t().buildAppPrompt,icon:"ti ti-app-window",skill:"assistant-code-mode"},
-    {label:t().discover,prompt:t().discoverPrompt,icon:"ti ti-sparkles"},
-    {label:t().followMail,prompt:t().followMailPrompt,icon:"ti ti-mail-forward"},
+    { label: t().analyzeFiles, prompt: t().analyzeFilesPrompt, icon: "ti ti-file-analytics", skill: "assistant-code-mode" },
+    { label: t().buildApp, prompt: t().buildAppPrompt, icon: "ti ti-app-window", skill: "assistant-code-mode" },
+    { label: t().discover, prompt: t().discoverPrompt, icon: "ti ti-sparkles" },
+    { label: t().followMail, prompt: t().followMailPrompt, icon: "ti ti-mail-forward" },
   ];
   const selectedProject = () => props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
 
@@ -75,11 +75,7 @@ export default function AssistantEmptyChat(props: {
 
         <div class="assistant-starters" role="group" aria-label={t().starters}>
           {starters().map((starter) => (
-            <Button
-              variant="subtle"
-              class="assistant-starter"
-              onClick={() => props.onStarter(starter)}
-            >
+            <Button variant="subtle" class="assistant-starter" onClick={() => props.onStarter(starter)}>
               <i class={starter.icon} aria-hidden="true" />
               <span>{starter.label}</span>
             </Button>

@@ -1,9 +1,9 @@
-import { hasBillableAiPricing } from "../shared/ai-costs";
-import { readAiSettingsState } from "./settings";
 import type { AccessSubject } from "../server/services/access";
+import { hasBillableAiPricing } from "../shared/ai-costs";
 import type { AiChatQuotaSnapshot } from "../shared/ai-quotas";
 import { listAssistantAiModels } from "./assistant-models";
 import { aiQuotas } from "./quotas";
+import { readAiSettingsState } from "./settings";
 
 /** Own allowances only. Grant identities and unavailable model profiles stay private. */
 export async function getAiChatQuotas(subject: AccessSubject): Promise<AiChatQuotaSnapshot> {

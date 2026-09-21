@@ -1,7 +1,7 @@
-import type { Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { freeipa } from "@k2b/cloud/server/services";
 import { getFreeIpaConfig, logger, get as settingsGet, set as settingsSet, trace } from "@k2b/cloud/services";
+import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 
 type DbRow = Record<string, unknown>;

@@ -1,6 +1,6 @@
-import { escapeXml, type ChartDatum } from "@k2b/stdlib";
-import { chartRenderHeight, renderChartSvg, type ChartKind, type ChartRenderOptions } from "./Chart";
-import { isChartDatum, type ChartSelection, type ChartTooltip, type ChartTooltipFormatter } from "./chart-inspection";
+import { type ChartDatum, escapeXml } from "@k2b/stdlib";
+import { type ChartKind, type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./Chart";
+import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./chart-inspection";
 
 /** Trusted output of prepareChartSnapshot; never accept arbitrary user SVG. */
 export type ChartSnapshot = {

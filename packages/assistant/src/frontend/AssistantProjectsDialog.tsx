@@ -1,6 +1,6 @@
-import { prompts, toast } from "@k2b/ui";
 import type { AiProject } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
+import { prompts, toast } from "@k2b/ui";
 import { assistantBrowserText } from "./ui-copy";
 
 const readError = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {

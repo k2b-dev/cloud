@@ -16,8 +16,8 @@ import { tableColumnCompletionSource } from "../../../../lib/editor/table-column
 import { tableFormulaCompletionSource } from "../../../../lib/editor/table-formulas";
 import { buildTagCompletionSource } from "../../../../lib/editor/tag-autocomplete";
 import { slashCommands } from "./commands";
-import type { SlashCommand, SlashCommandContext } from "./types";
 import { slashCommandMessages } from "./messages";
+import type { SlashCommand, SlashCommandContext } from "./types";
 
 /**
  * CodeMirror autocomplete adapter that turns `/<name>` typed at line start

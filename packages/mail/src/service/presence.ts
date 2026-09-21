@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { lazySync } from "@k2b/cloud";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { ConversationPresenceHeartbeat, ConversationPresenceMode } from "../contracts";
 import { type MailRequestContext, userBackedActor } from "./auth";

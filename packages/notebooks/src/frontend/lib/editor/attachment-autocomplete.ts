@@ -27,8 +27,8 @@ import {
 import { formatBytes } from "@k2b/cloud/shared";
 import { apiClient } from "@/api/client";
 import { createNotebookFetchCache } from "./_lib/notebook-fetch-cache";
-import { isInsideFencedCode } from "./editor-scope";
 import { withIcon } from "./completion-icon";
+import { isInsideFencedCode } from "./editor-scope";
 
 /** Lightweight attachment projection — only what the picker needs. */
 type AttRef = {

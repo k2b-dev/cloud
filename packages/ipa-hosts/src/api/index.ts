@@ -4,8 +4,8 @@ import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
-  createPagination,
   CreateHostgroupSchema,
+  createPagination,
   ErrorResponseSchema,
   FqdnParamSchema,
   HostgroupCnParamSchema,

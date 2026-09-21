@@ -14,17 +14,21 @@ import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, FileDropzone, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { notebookWorkspaceMessages } from "../../messages";
 import { EDITOR_INSERT_ATTACHMENT_EVENT } from "../detail/events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, uploadFile } from "./attachments-client";
-import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   notebookId: string;
   close: () => void;
 };
 
-const fetchList = async (notebookId: string, signal: AbortSignal, loadError: (input: { status: number }) => string): Promise<Attachment[]> => {
+const fetchList = async (
+  notebookId: string,
+  signal: AbortSignal,
+  loadError: (input: { status: number }) => string,
+): Promise<Attachment[]> => {
   const res = await apiClient[":id"].attachments.$get({ param: { id: notebookId } }, { init: { signal } });
   if (!res.ok) throw new Error(loadError({ status: res.status }));
   return await res.json();

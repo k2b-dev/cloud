@@ -1,7 +1,6 @@
 import { useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { renderMarkupCanvas } from "./markup";
-import { imageProcessorMessages } from "./messages";
 import {
   findMarkupAtPoint,
   type MarkupResizeHandle,
@@ -12,6 +11,7 @@ import {
   strokeIdsAtPoint,
   translateMarkupElementInCanvas,
 } from "./markup-interaction";
+import { imageProcessorMessages } from "./messages";
 import type { MarkupElement, MarkupPoint, MarkupShapeKind, MarkupTool } from "./types";
 
 type MarkupOverlayProps = {

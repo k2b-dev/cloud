@@ -212,7 +212,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   };
 
   const resumeDismissTimer = () => {
-    if (dismissed || currentProgress !== null || currentDuration === 0 || remainingDuration <= 0 || pausedByPointer || pausedByFocus) return;
+    if (dismissed || currentProgress !== null || currentDuration === 0 || remainingDuration <= 0 || pausedByPointer || pausedByFocus)
+      return;
     clearDismissTimer();
     timerStartedAt = Date.now();
     dismissTimer = setTimeout(() => dismiss(), remainingDuration);
@@ -243,7 +244,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   const renderProgress = () => {
     progressElement.hidden = currentProgress === null;
     progressElement.setAttribute("aria-label", titleElement.textContent || descriptionElement.textContent || "");
-    if (typeof currentProgress === "number") progressElement.value = Number.isFinite(currentProgress) ? Math.max(0, Math.min(1, currentProgress)) : 0;
+    if (typeof currentProgress === "number")
+      progressElement.value = Number.isFinite(currentProgress) ? Math.max(0, Math.min(1, currentProgress)) : 0;
     else progressElement.removeAttribute("value");
   };
   contentElement.append(progressElement);
@@ -302,7 +304,9 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     resetDismissTimer(currentDuration);
   };
 
-  toastElement.addEventListener("click", () => { if (currentProgress === null) dismiss(); });
+  toastElement.addEventListener("click", () => {
+    if (currentProgress === null) dismiss();
+  });
   closeButton.addEventListener("click", (event) => {
     event.stopPropagation();
     dismiss();

@@ -8,8 +8,8 @@ export { defineHelp, defineHelpCollection, type HelpCollection, type HelpDefinit
 export { DEFAULT_LOCALE, getLocale, LOCALE_COOKIE, LOCALE_HEADER, locale, preferredLocale, resolveLocale } from "./locale";
 export type {
   AuthContext,
-  InvocationProvenance,
   InvocationExpectation,
+  InvocationProvenance,
   RateLimitConfig,
   RateLimitRouteOverride,
   RequestActor,
@@ -26,8 +26,8 @@ export {
   openApiMeta,
   rateLimit,
   rejectReservedWorkloadCredential,
-  requireInvocation,
   requestLogger,
+  requireInvocation,
   requiresAdmin,
   requiresAuth,
   requiresIpa,

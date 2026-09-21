@@ -1,6 +1,6 @@
-import { NotFoundState } from "@k2b/ui";
-import { Layout } from "@k2b/cloud/ssr";
 import { getLocale } from "@k2b/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
+import { NotFoundState } from "@k2b/ui";
 import { ssr } from "../config";
 import { corePageMessages } from "./messages";
 

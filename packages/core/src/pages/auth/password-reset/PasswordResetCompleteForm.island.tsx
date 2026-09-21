@@ -1,10 +1,10 @@
-import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, useLocale } from "@k2b/ui";
 import { apiClient } from "@k2b/cloud/clients/core";
+import { mutation as mutations } from "@k2b/stdlib/solid";
+import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import { PasswordSetupFields } from "../PasswordSetupFields";
-import { authMessages } from "../messages";
 import { afterSignInHref } from "../login-redirect";
+import { authMessages } from "../messages";
+import { PasswordSetupFields } from "../PasswordSetupFields";
 
 type PasswordResetCompleteFormProps = {
   token: string;

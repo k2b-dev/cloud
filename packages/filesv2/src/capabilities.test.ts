@@ -43,7 +43,10 @@ mock.module("./service", () => ({
   FilesError: MockFilesError,
   filesService: {
     bases: async () => ({ items: Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })) }),
-    upload: async (_actor: unknown, input: { idempotencyKey: string }) => { uploadKeys.push(input.idempotencyKey); return { id: input.idempotencyKey }; },
+    upload: async (_actor: unknown, input: { idempotencyKey: string }) => {
+      uploadKeys.push(input.idempotencyKey);
+      return { id: input.idempotencyKey };
+    },
     list: page,
     search: page,
   },
@@ -127,14 +130,21 @@ test("multibyte result envelopes stay within the platform byte limit with explic
   expect(capabilityResultSchema(UniversalSearchDataSchema).safeParse(result.data).success).toBe(true);
 });
 
-test("Filesv2 registers all binary and organization capabilities with documented input contracts",async()=>{
-  const {compileCapabilityManifest}=await import("@k2b/cloud/capabilities/testing");
-  const manifest=compileCapabilityManifest("filesv2",filesCapabilities);
-  expect(manifest.queries.find(item=>item.localId==="content.read")?.stream).toEqual({direction:"read",maxBytes:50*1024*1024});
-  expect(manifest.actions.find(item=>item.localId==="content.create")?.stream).toEqual({direction:"write",maxBytes:50*1024*1024});
-  expect(manifest.actions.map(item=>item.localId)).toEqual(expect.arrayContaining(["entry.rename","entry.move","entry.copy","entry.trash","trash.restore","folder.create"]));
+test("Filesv2 registers all binary and organization capabilities with documented input contracts", async () => {
+  const { compileCapabilityManifest } = await import("@k2b/cloud/capabilities/testing");
+  const manifest = compileCapabilityManifest("filesv2", filesCapabilities);
+  expect(manifest.queries.find((item) => item.localId === "content.read")?.stream).toEqual({
+    direction: "read",
+    maxBytes: 50 * 1024 * 1024,
+  });
+  expect(manifest.actions.find((item) => item.localId === "content.create")?.stream).toEqual({
+    direction: "write",
+    maxBytes: 50 * 1024 * 1024,
+  });
+  expect(manifest.actions.map((item) => item.localId)).toEqual(
+    expect.arrayContaining(["entry.rename", "entry.move", "entry.copy", "entry.trash", "trash.restore", "folder.create"]),
+  );
 });
-
 
 test("upload idempotency is stable per user and isolated between users", async () => {
   uploadKeys.length = 0;

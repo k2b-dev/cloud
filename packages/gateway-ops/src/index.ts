@@ -1,5 +1,5 @@
-import { routes } from "@k2b/ssr/hono";
 import { type AuthContext, auth, getLocale, middleware } from "@k2b/cloud/server";
+import { routes } from "@k2b/ssr/hono";
 import { type Context, Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { apiRoutes } from "./api";
@@ -19,8 +19,8 @@ import logsPage from "./observability/logs/page";
 import loggingWidgetRoutes, { loggingErrorsWidgetHandler } from "./observability/logs/widgets";
 import { metricsEndpoint } from "./observability/metrics/endpoint";
 import metricsPage from "./observability/metrics/page";
-import natsPage from "./observability/nats/page";
 import natsApiRoutes from "./observability/nats/api";
+import natsPage from "./observability/nats/page";
 import notificationsApiRoutes from "./observability/notifications/api";
 import notificationsPage from "./observability/notifications/page";
 import observabilityOverviewPage from "./observability/page";

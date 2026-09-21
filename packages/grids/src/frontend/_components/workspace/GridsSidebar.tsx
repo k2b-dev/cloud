@@ -1,10 +1,10 @@
-import GridsNavigation from "./GridsNavigation.island";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import { navigationMessages } from "../../../navigation-messages";
 import BaseSettingsButton from "../sidebar/BaseSettingsButton.island";
 import FormSidebarEntry from "../sidebar/FormSidebarEntry.island";
 import NewResourceButton from "../sidebar/NewResourceButton.island";
 import SidebarTableMeta from "../sidebar/SidebarTableMeta";
+import GridsNavigation from "./GridsNavigation.island";
 import GroupedNavigation from "./GroupedNavigation.island";
 import { workspaceMessages } from "./messages";
 import { activeNavigationKey, navigationResources } from "./navigation-catalog";

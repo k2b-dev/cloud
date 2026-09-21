@@ -14,14 +14,12 @@ import type {
   PulsePublicDashboardWidget,
 } from "../contracts";
 import type { pulseMessages } from "../messages";
-import { intervalToMs } from "../query-dsl/interval";
 import { formatDashboardConditionText, matchDashboardCondition } from "./dashboard-conditions";
 import { publicDashboardEventSubject, publicDashboardStateRowId, sanitizePublicDashboardMarkdown } from "./public-dashboard-runtime";
 import { usePulseMessages } from "./use-messages";
 import { queryBucketMaxGap } from "./workspace/chart-data";
 import { formatQueryBucket } from "./workspace/date-format";
 import {
-  compactDate,
   compactDateWithDelta,
   dashboardCellSpan,
   formatMetricValue,

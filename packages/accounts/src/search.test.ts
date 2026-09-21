@@ -3,6 +3,7 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { UniversalSearchDataSchema, type User } from "@k2b/cloud/contracts";
 import { accountsCapabilities } from "./capabilities";
 import { searchAccounts } from "./search";
+
 const user: User = {
   id: "user",
   uid: "viewer",

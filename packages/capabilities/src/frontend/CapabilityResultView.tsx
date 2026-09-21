@@ -1,3 +1,10 @@
+import type {
+  CapabilityPage,
+  CapabilitySemanticLink,
+  CloudResourceRef,
+  CloudResourceView,
+  UniversalSearchData,
+} from "@k2b/cloud/contracts";
 import {
   CopyButton,
   DescriptionList,
@@ -9,13 +16,6 @@ import {
   StructuredDataPreview,
   useLocale,
 } from "@k2b/ui";
-import type {
-  CapabilityPage,
-  CapabilitySemanticLink,
-  CloudResourceRef,
-  CloudResourceView,
-  UniversalSearchData,
-} from "@k2b/cloud/contracts";
 import { For, Show } from "solid-js";
 import type { SelectedCapability } from "../catalog";
 import { resolveCapabilityDataPresentation } from "../result-presentation";
@@ -120,13 +120,7 @@ function UniversalSearchResults(props: { items: UniversalSearchData }) {
 
       <Show
         when={props.items.length > 0}
-        fallback={
-          <Placeholder
-            icon="ti ti-search-off"
-            title={t().noResults}
-            description={t().noResultsDescription}
-          />
-        }
+        fallback={<Placeholder icon="ti ti-search-off" title={t().noResults} description={t().noResultsDescription} />}
       >
         <ul class="flex flex-col gap-1">
           <For each={props.items}>{(item) => <SearchResultRow item={item} />}</For>
@@ -173,7 +167,11 @@ function PageSummary(props: { page: CapabilityPage }) {
       <div class="min-w-0 flex-1">
         <p class="text-xs font-medium text-secondary">{props.page.hasMore ? t().moreResults : t().finalPage}</p>
         <Show when={props.page.hasMore ? props.page.nextCursor : undefined}>
-          {(cursor) => <code class="mt-0.5 block truncate text-[10px] text-dimmed">{t().cursor}: {cursor()}</code>}
+          {(cursor) => (
+            <code class="mt-0.5 block truncate text-[10px] text-dimmed">
+              {t().cursor}: {cursor()}
+            </code>
+          )}
         </Show>
       </div>
       <Show when={props.page.hasMore ? props.page.nextCursor : undefined}>

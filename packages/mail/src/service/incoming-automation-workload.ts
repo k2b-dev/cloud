@@ -1,3 +1,4 @@
+import { env } from "@k2b/cloud/config";
 import { mandates } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { hasCurrentMailboxUserPermission } from "./collaborators";
@@ -9,7 +10,7 @@ export type IncomingAutomationMandateCaller = {
 
 export const incomingAutomationMandateCaller = (
   mandate: { id: string; revision: number },
-  credential = process.env.CLOUD_APP_CREDENTIAL,
+  credential = env.CLOUD_APP_CREDENTIAL,
 ): IncomingAutomationMandateCaller => {
   const token = credential?.trim();
   if (!token) {

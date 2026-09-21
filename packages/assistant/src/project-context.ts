@@ -1,5 +1,5 @@
 import { type AiProjectFile, type AiProjectKnowledge, type AiProjectReference, aiProjects, aiSkills } from "@k2b/cloud/ai";
-import { artifacts, type ArtifactIdentity } from "./artifacts/service";
+import { type ArtifactIdentity, artifacts } from "./artifacts/service";
 
 export type AssistantProjectContextSnapshot = {
   projectId: string;
@@ -27,7 +27,9 @@ export const loadAssistantProjectContextSnapshot = async (
   return {
     projectId,
     apps,
-    skills: skills ? { ...skills, items:skills.items.map(skill=>({...skill,id:skill.shortId})) } : { items:[],page:1,hasNext:false },
+    skills: skills
+      ? { ...skills, items: skills.items.map((skill) => ({ ...skill, id: skill.shortId })) }
+      : { items: [], page: 1, hasNext: false },
     knowledge: knowledge.map((item) => ({ ...item, id: item.shortId, projectId })),
     files: files.map((item) => ({ ...item, id: item.shortId, projectId })),
     references: references.map((item) => ({ ...item, id: item.shortId, projectId })),

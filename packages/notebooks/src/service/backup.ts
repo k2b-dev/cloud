@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { type LogEntry, logger, get as settingsGet, settingsService } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
+import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { exportNotebookZip, type NotebookExport } from "./export";
 
@@ -62,6 +62,7 @@ export type NotebookBackupPaths = {
 };
 
 export type NotebookBackupManifest = {
+  /** Stable persisted format identifier; existing backups carry it, so it never changes with branding. */
   format: "stuve.notebook.backup";
   version: 1;
   exportedAt: string;

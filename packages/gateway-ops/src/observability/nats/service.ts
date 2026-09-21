@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import { env } from "@k2b/cloud/config";
 import { connect, credsAuthenticator, nkeyAuthenticator } from "@nats-io/transport-node";
 import { z } from "zod";
+import { appEnv } from "../../env";
 
 // The system JSZ API paginates accounts, not streams. Never request account
 // expansion there: account inventory uses the separately authenticated JS API.
@@ -109,16 +111,15 @@ export type NatsDiagnostics = {
 };
 export type NatsDiagnosticsOptions = { streamOffset?: number; consumerStream?: string; consumerOffset?: number };
 export const natsDiagnosticsConfig = (): NatsDiagnosticsConfig => {
-  const connection = (prefix: "NATS" | "NATS_ADMIN"): NatsConnectionConfig => ({
-    servers: (process.env[`${prefix}_SERVERS`] ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-    credsFile: process.env[`${prefix}_CREDS_FILE`] || undefined,
-    ...(prefix === "NATS_ADMIN" ? { seedFile: process.env.NATS_ADMIN_NKEY_SEED_FILE || undefined } : {}),
-    tlsCaFile: process.env[`${prefix}_TLS_CA_FILE`] || undefined,
-  });
-  return { admin: connection("NATS_ADMIN"), application: connection("NATS") };
+  return {
+    admin: {
+      servers: appEnv.NATS_ADMIN_SERVERS,
+      credsFile: appEnv.NATS_ADMIN_CREDS_FILE,
+      seedFile: appEnv.NATS_ADMIN_NKEY_SEED_FILE,
+      tlsCaFile: appEnv.NATS_ADMIN_TLS_CA_FILE,
+    },
+    application: { servers: env.NATS_SERVERS, credsFile: env.NATS_CREDS_FILE, tlsCaFile: env.NATS_TLS_CA_FILE },
+  };
 };
 const dial = (config: NatsConnectionConfig, role: string) => {
   if (config.credsFile && config.seedFile) throw new Error("NATS diagnostics authentication modes are mutually exclusive");

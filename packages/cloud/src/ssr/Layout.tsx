@@ -1,9 +1,8 @@
-import { getLayoutHelp } from "./help";
-import { navigationSearchItems } from "../browser/navigation-search";
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
+import { navigationSearchItems } from "../browser/navigation-search";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
 import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
@@ -18,6 +17,7 @@ import { visibleNavigationApps } from "./app-navigation";
 import BrowserPushRegistration from "./BrowserPushRegistration.island";
 import GlobalAnnouncements from "./GlobalAnnouncements.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
+import { getLayoutHelp } from "./help";
 import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";

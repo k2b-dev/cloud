@@ -13,8 +13,8 @@
  * Supported types: note, info, success, warning, danger
  */
 
-import type { MarkedExtension, Tokens } from "marked";
 import { NOTICE_CARD_CLASSES, NOTICE_CARD_ICONS, type NoticeTone } from "@k2b/ui";
+import type { MarkedExtension, Tokens } from "marked";
 import { escapeHtml } from "../shared";
 
 type BlockType = "note" | "info" | "success" | "warning" | "danger";

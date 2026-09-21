@@ -1,3 +1,4 @@
+import { env } from "@k2b/cloud/config";
 import { accounts, isAccountCategoryAllowed, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { sql } from "bun";
@@ -128,7 +129,7 @@ export const cleanupAuthorityGrants = async (): Promise<number> => {
 };
 
 const getOAuthVerificationKey = async (): Promise<jose.JWTVerifyGetKey> => {
-  const configuredOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN?.trim();
+  const configuredOrigin = env.CLOUD_OAUTH_JWKS_ORIGIN;
   if (configuredOrigin) {
     const url = new URL("/.well-known/jwks.json", configuredOrigin);
     const cacheKey = url.toString();
@@ -332,7 +333,7 @@ export const verifyAccessToken = async (params: { token: string; issuer: string 
     });
     return payload;
   } catch (error) {
-    if (error instanceof jose.errors.JWKSNoMatchingKey && !process.env.CLOUD_OAUTH_JWKS_ORIGIN?.trim()) {
+    if (error instanceof jose.errors.JWKSNoMatchingKey && !env.CLOUD_OAUTH_JWKS_ORIGIN) {
       const now = Date.now();
       if (now - lastUnknownKeyRefreshAt < 1_000) return null;
       lastUnknownKeyRefreshAt = now;

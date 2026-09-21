@@ -1,9 +1,9 @@
+import { useLocale } from "@k2b/ui";
 import type { IpaHost, IpaHostgroup } from "@/contracts";
-import EditHostgroup from "./EditHostgroup.island";
 import DeleteHostgroup from "./DeleteHostgroup.island";
+import EditHostgroup from "./EditHostgroup.island";
 import HostsTable from "./HostsTable";
 import { hostMessages } from "./messages";
-import { useLocale } from "@k2b/ui";
 
 type Props = {
   hostgroup: IpaHostgroup;

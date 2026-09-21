@@ -1,5 +1,5 @@
 import type { DataTableColumn } from "@k2b/ui";
-import { Show, type Accessor, type JSX } from "solid-js";
+import { type Accessor, type JSX, Show } from "solid-js";
 import type { PulseCurrentState, PulseMetricSeries, PulseRecordedEvent } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
 import {
@@ -8,8 +8,8 @@ import {
   formatMetricValue,
   formatSignalValue,
   formatValue,
-  signalSubject,
   type PulseDateContext,
+  signalSubject,
 } from "./helpers";
 
 type TableCellRenderer<Row> = (row: Row, col: DataTableColumn<Row>, render: (value: unknown) => JSX.Element) => JSX.Element;

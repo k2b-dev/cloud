@@ -1,8 +1,8 @@
-import { Button, DataTable, FilterChip, TextInput, type DataTableColumn, type FilterChipSection, useLocale } from "@k2b/ui";
+import { Button, DataTable, type DataTableColumn, FilterChip, type FilterChipSection, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import type { PulseInventory, PulseResourceSummary } from "../../contracts";
-import { compactDateWithDelta, dimensionsSummary, type PulseDateContext } from "./helpers";
 import { usePulseMessages } from "../use-messages";
+import { compactDateWithDelta, dimensionsSummary, type PulseDateContext } from "./helpers";
 
 type Props = {
   search: () => string;

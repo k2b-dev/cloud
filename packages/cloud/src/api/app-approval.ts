@@ -14,8 +14,8 @@ import {
   AppPairingReferenceSchema,
   AppPairingStartSchema,
 } from "../contracts/app-approval";
-import { auth, type AuthContext, rateLimit, v } from "../server";
-import { appApproval, AppApprovalError, type AppApprovalActor, type createAppApprovalService } from "../services/app-approval";
+import { type AuthContext, auth, rateLimit, v } from "../server";
+import { type AppApprovalActor, AppApprovalError, appApproval, type createAppApprovalService } from "../services/app-approval";
 
 const PairingIdSchema = z.object({ pairingId: z.string().uuid() }).strict();
 const DevicePageSchema = z.object({ after: z.string().uuid().optional() }).strict();

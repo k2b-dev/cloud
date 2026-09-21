@@ -1,5 +1,4 @@
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../commands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { dropzone, mutation as mutations, query, timed } from "@k2b/stdlib/solid";
@@ -24,6 +23,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../commands";
 import type {
   ComposePreview,
   ComposeSafetyApproval,

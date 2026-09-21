@@ -1,3 +1,5 @@
+import { renderLiquidTemplate } from "@k2b/cloud/shared";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -23,8 +25,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { renderLiquidTemplate } from "@k2b/cloud/shared";
-import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import {

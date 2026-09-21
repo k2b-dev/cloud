@@ -1,6 +1,8 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { isDateNowDefault } from "../field-defaults";
+
 export { materializeFieldDefault } from "../field-defaults";
+
 import { sql } from "bun";
 import { getFieldType, getRecordWritableFieldType } from "../field-types";
 import { ObjectListConfigSchema, objectListInputValue } from "../field-types/object-list";
@@ -9,7 +11,6 @@ import { normalizeRefKey } from "../ref-syntax";
 import { getGridsCrudMessages } from "./crud-messages";
 import { compileFormulaAstToSql } from "./formula-sql-compiler";
 import { compileObjectListRow } from "./object-list-sql";
-import type { Field } from "./types";
 
 export const validateFieldConfig = (type: string, config: Record<string, unknown>, locale?: string): Result<unknown> => {
   const messages = getGridsCrudMessages(locale);

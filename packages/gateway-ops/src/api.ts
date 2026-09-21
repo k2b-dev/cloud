@@ -1,12 +1,7 @@
-import { err, fail, ok } from "@k2b/stdlib";
 import { listApps } from "@k2b/cloud";
 import { type AuthContext, auth, getLocale, rateLimit, respond, v } from "@k2b/cloud/server";
-import {
-  latestGatewayRouteSnapshot,
-  settingsDeleteLegacyKeys,
-  settingsListLegacyKeys,
-  settingsService,
-} from "@k2b/cloud/services";
+import { latestGatewayRouteSnapshot, settingsDeleteLegacyKeys, settingsListLegacyKeys, settingsService } from "@k2b/cloud/services";
+import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
 import { buildGatewayHealth } from "./health";

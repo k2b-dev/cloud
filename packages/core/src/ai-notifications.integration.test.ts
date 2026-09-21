@@ -1,30 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import { sql } from "bun";
-import { app } from "./config";
+import { databaseSuite, suiteFor } from "../../../scripts/fixtures/test-infra";
+import "../../../scripts/fixtures/authorization-preload";
 import { createAiNotificationService } from "./ai-notifications";
-
-const canRun = async (): Promise<boolean> => {
-  if (!process.env.APP_SECRET) return false;
-  try {
-    const [row] = await sql<{ users: string | null; definitions: string | null }[]>`
-      SELECT to_regclass('auth.users')::text AS users,
-             to_regclass('notifications.definitions')::text AS definitions
-    `;
-    if (!row?.users || !row.definitions) return false;
-    await migrateCloudAi();
-    await registerNotificationDefinitions(app.meta.id, app.notifications);
-    return true;
-  } catch {
-    return false;
-  }
-};
+import { app } from "./config";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canRun()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Core AI completion notifications", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+    await registerNotificationDefinitions(app.meta.id, app.notifications);
+  });
   test("recovers each completed personal chat once and skips non-chat runs", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`
@@ -172,16 +162,7 @@ suite("Core AI completion notifications", () => {
   });
 });
 
-const costTestDb = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
-const costTestCache = new URL(process.env.VALKEY_URL ?? process.env.REDIS_URL ?? "redis://localhost:6379");
-const costSuite =
-  ["127.0.0.1", "localhost"].includes(costTestDb.hostname) &&
-  /^\/cloud_ai_pricing_verify_[a-z0-9_]+$/.test(costTestDb.pathname) &&
-  ["127.0.0.1", "localhost"].includes(costTestCache.hostname) &&
-  Boolean(costTestCache.port) &&
-  costTestCache.port !== "6379"
-    ? describe
-    : describe.skip;
+const costSuite = suiteFor("database", "valkey");
 
 costSuite("background cost alert recovery", () => {
   test("sends only to current local and IPA admins; partial delivery retries do not duplicate events", async () => {

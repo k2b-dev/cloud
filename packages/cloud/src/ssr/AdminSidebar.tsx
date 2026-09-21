@@ -1,9 +1,9 @@
-import WorkspaceNavigation from "./WorkspaceNavigation.island";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import { activeAdminHref } from "./admin-active-link";
 import { type AdminLink, buildAdminGroups } from "./admin-navigation";
-import type { RuntimeContext } from "./runtime";
 import { platformMessages } from "./platform-messages";
+import type { RuntimeContext } from "./runtime";
+import WorkspaceNavigation from "./WorkspaceNavigation.island";
 
 const AdminNavigation = (props: { currentPath: string; groups: ReturnType<typeof buildAdminGroups> }) => {
   const activeHref = activeAdminHref(

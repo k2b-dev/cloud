@@ -1,7 +1,7 @@
-import { AppWorkspace, Placeholder, ScrollArea } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { AppWorkspace, Placeholder, ScrollArea } from "@k2b/ui";
 import type { Context } from "hono";
 import type { DirectoryListing, FileBaseInfo, FileInfo } from "@/contracts";
 import { filesService } from "@/service";
@@ -12,8 +12,8 @@ import FileDetailPanel from "../../_components/FileDetailPanel.island";
 import FileList from "../../_components/FileList.island";
 import FileSettings, { parseFileSettings } from "../../_components/FileSettings.island";
 import FileToolbar from "../../_components/FileToolbar.island";
-import { filePageBaseUrl, filePageUrl } from "../../url";
 import { filesMessages } from "../../messages";
+import { filePageBaseUrl, filePageUrl } from "../../url";
 
 /**
  * Build breadcrumbs for file navigation.

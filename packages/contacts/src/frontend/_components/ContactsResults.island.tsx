@@ -12,7 +12,6 @@ import ContactsList from "./ContactsList";
 import { listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresContactsResultsRefresh } from "./contacts-live";
 import { createContactsResultsNavigation, selectContactsResultsSnapshot } from "./contacts-results-navigation";
-import { type ResultsMessages, resultsMessages } from "./results-messages";
 import {
   buildContactsPageHref,
   buildContactsPaginationBaseHref,
@@ -21,6 +20,7 @@ import {
   contactsResultSignature,
 } from "./contacts-search";
 import { syncContactDetailFromUrl } from "./context";
+import { type ResultsMessages, resultsMessages } from "./results-messages";
 
 type Props = {
   bookId?: string;
@@ -98,12 +98,7 @@ const reachOptions = (t: ResultsMessages): FilterChipSection[] => [
   },
 ];
 
-const fetchContactsResults = async (
-  props: Pick<Props, "bookId" | "perPage">,
-  href: string,
-  signal: AbortSignal,
-  errorFallback: string,
-) => {
+const fetchContactsResults = async (props: Pick<Props, "bookId" | "perPage">, href: string, signal: AbortSignal, errorFallback: string) => {
   const url = new URL(href, window.location.origin);
   const options = readContactsQueryOptions(href);
   const queryParams = {

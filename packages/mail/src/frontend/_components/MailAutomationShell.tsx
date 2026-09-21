@@ -1,5 +1,5 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { createNavigation, type NavigationItem, AppWorkspace, useLocale } from "@k2b/ui";
+import { AppWorkspace, createNavigation, type NavigationItem, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
 import { openMailboxSettingsDialog } from "./MailboxSettingsDialog";

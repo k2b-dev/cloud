@@ -13,8 +13,8 @@
  * responsible for `notebook.permission.get(...)` checks before calling.
  */
 
-import { fileIcons } from "@k2b/stdlib";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { fileIcons } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateUniqueShortId } from "../lib/short-id";
 

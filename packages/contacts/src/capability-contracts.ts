@@ -8,8 +8,7 @@ const LimitSchema = z.number().int().min(1).max(100).default(25).describe("Maxim
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
 const ContactOpenHrefSchema = z.string().regex(/^\/app\/contacts\/.*/);
 export const ResourceShortIdSchema = z.string().regex(/^[0-9A-Za-z]{6}$/);
-const resourceRef = <Type extends string>(type: Type) =>
-  z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
+const resourceRef = <Type extends string>(type: Type) => z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
 export const CONTACT_COLLECTION_LIMIT = 20;
 export const CONTACT_TAG_LIMIT = 100;
 
@@ -189,7 +188,9 @@ export const ContactListInputSchema = z
   .strict();
 
 export const ContactReadInputSchema = z
-  .object({ id: ResourceShortIdSchema.describe("Contact ID returned by contact search, suggest, resolve, list, or a contacts.contact ref.") })
+  .object({
+    id: ResourceShortIdSchema.describe("Contact ID returned by contact search, suggest, resolve, list, or a contacts.contact ref."),
+  })
   .strict();
 
 export const ContactBookReadInputSchema = z

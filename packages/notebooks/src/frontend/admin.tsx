@@ -1,7 +1,7 @@
-import { DataPanel, DataTable, type DataTableColumn, Pagination, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { DataPanel, DataTable, type DataTableColumn, Pagination, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../config";
 import { notebooksService } from "../service";
 import AdminNotebookActions from "./_components/AdminNotebookActions.island";

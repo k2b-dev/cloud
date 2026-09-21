@@ -27,8 +27,11 @@ export const emptyProjection = (conversation: AiConversation | null = null): AiC
 export const messagesWithPendingSend = (messages: AiStoredMessage[], pending?: AiStoredMessage): AiStoredMessage[] => {
   if (!pending) return messages;
   const revision = pending.meta?.submittedDraftRevision;
-  const confirmed = messages.some(message => message.id === pending.id ||
-    (revision !== undefined && message.message.role === "user" && message.meta?.submittedDraftRevision === revision));
+  const confirmed = messages.some(
+    (message) =>
+      message.id === pending.id ||
+      (revision !== undefined && message.message.role === "user" && message.meta?.submittedDraftRevision === revision),
+  );
   return confirmed ? messages : [...messages, pending];
 };
 
@@ -84,9 +87,9 @@ export const mergeActiveTurn = (previous: AiActiveTurn | null, incoming: AiActiv
   if (previous.attempt !== incoming.attempt) return incoming.attempt > previous.attempt ? incoming : previous;
   if (incoming.seq < previous.seq) return previous;
   // Locally submitted steering may not have reached the snapshot yet.
-  const pendingSteers = previous.blocks.filter(block => block.kind === "steer_message" && block.status !== "consumed");
-  const known = new Set(incoming.blocks.map(block => block.id));
-  const blocks = [...incoming.blocks, ...pendingSteers.filter(block => !known.has(block.id))];
+  const pendingSteers = previous.blocks.filter((block) => block.kind === "steer_message" && block.status !== "consumed");
+  const known = new Set(incoming.blocks.map((block) => block.id));
+  const blocks = [...incoming.blocks, ...pendingSteers.filter((block) => !known.has(block.id))];
   return { ...incoming, blocks, status: deriveStatus(blocks) };
 };
 
@@ -171,7 +174,11 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
 
   if (event.type === "message_saved") {
     if (!active || active.turnId !== event.turnId || !isNewerWireEvent(event, active)) return state;
-    return { ...state, messages: mergeMessages(state.messages, [event.message]), activeTurn: { ...active, seq: event.seq, attempt: event.attempt } };
+    return {
+      ...state,
+      messages: mergeMessages(state.messages, [event.message]),
+      activeTurn: { ...active, seq: event.seq, attempt: event.attempt },
+    };
   }
 
   // block_set / block_delta

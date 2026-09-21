@@ -1,3 +1,5 @@
+import type { TraceEvent, TraceSpan } from "@k2b/cloud/services";
+import { formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import {
   DescriptionList,
@@ -9,8 +11,6 @@ import {
   type StructuredDataValue,
   useLocale,
 } from "@k2b/ui";
-import type { TraceEvent, TraceSpan } from "@k2b/cloud/services";
-import { formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import type { JSX } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 

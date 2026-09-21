@@ -1,5 +1,5 @@
-import { Button, prompts, SegmentedControl, toast } from "@k2b/ui";
 import { clipboard } from "@k2b/stdlib/browser";
+import { Button, prompts, SegmentedControl, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { usePulseMessages } from "../use-messages";
 import { openResolvedPublicDisplay } from "./public-display-window";
@@ -53,9 +53,7 @@ export const openPublicDashboardDisplayDialog = async (options: OpenPublicDashbo
 
         return (
           <div class="flex w-full min-w-0 max-w-xl flex-col gap-4 overflow-hidden">
-            <p class="max-w-full text-sm leading-relaxed text-dimmed">
-              {t().publicDisplayDescription}
-            </p>
+            <p class="max-w-full text-sm leading-relaxed text-dimmed">{t().publicDisplayDescription}</p>
 
             <div class="flex min-w-0 flex-col gap-2">
               <p class="text-sm font-medium text-primary">{t().theme}</p>
@@ -79,9 +77,7 @@ export const openPublicDashboardDisplayDialog = async (options: OpenPublicDashbo
                   { value: "full", label: t().fullHeight, icon: "ti ti-device-tv" },
                 ]}
               />
-              <p class="text-xs leading-relaxed text-dimmed">
-                {t().fullHeightDescription}
-              </p>
+              <p class="text-xs leading-relaxed text-dimmed">{t().fullHeightDescription}</p>
             </div>
 
             <div class="flex flex-wrap justify-end gap-2 pt-2">

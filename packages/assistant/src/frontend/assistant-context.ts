@@ -3,8 +3,9 @@ import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 
 export const splitAssistantConversationSources = (items: AiConversationSource[]) => ({
-  sources: items.filter((item) => item.kind === "web" || item.kind === "activity")
-    .map(item => item.kind === "activity" && item.key === "web_search" ? { ...item, icon: "ti ti-search" } : item),
+  sources: items
+    .filter((item) => item.kind === "web" || item.kind === "activity")
+    .map((item) => (item.kind === "activity" && item.key === "web_search" ? { ...item, icon: "ti ti-search" } : item)),
   references: items.filter((item) => item.kind === "resource"),
 });
 
@@ -31,5 +32,8 @@ export const assistantChatContextFor = (
 ): AssistantChatContextSnapshot | null => (snapshot?.chatId === chatId ? snapshot : null);
 
 export const visibleAssistantReferences = (items: AiConversationSource[], chatId: string, visibleTaskId?: string) =>
-  items.filter((source) => !(source.ref?.type === "core.ai.chat" && source.ref.id === chatId)
-    && !(source.ref?.type === "core.ai.task" && source.ref.id === visibleTaskId));
+  items.filter(
+    (source) =>
+      !(source.ref?.type === "core.ai.chat" && source.ref.id === chatId) &&
+      !(source.ref?.type === "core.ai.task" && source.ref.id === visibleTaskId),
+  );

@@ -1,10 +1,10 @@
-import { shortcutLabel } from "./command-shortcuts";
 import { query, timed } from "@k2b/stdlib/solid";
 import { Button, IconButton, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { SearchItem, SearchResponse } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
 import { LOCALE_HEADER } from "../shared/locale";
+import { shortcutLabel } from "./command-shortcuts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";

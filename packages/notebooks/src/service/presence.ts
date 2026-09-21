@@ -1,7 +1,7 @@
-import { SnapshotOverflowError } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { logger } from "@k2b/cloud/services";
+import { SnapshotOverflowError } from "@k2b/sync";
 import { getNotebookPresenceColor } from "../lib/yjs";
 import { NODE_ID } from "./yjs-sync";
 

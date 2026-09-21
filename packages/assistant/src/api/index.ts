@@ -1,11 +1,11 @@
-import { type AuthContext, getLocale, auth, err, fail, ok, rateLimit, respond } from "@k2b/cloud/server";
+import { type AuthContext, auth, err, fail, getLocale, ok, rateLimit, respond } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
+import { artifactApi } from "../artifacts/api";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
-import { loadAssistantSidebarPreview } from "../sidebar-preview";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
-import { artifactApi } from "../artifacts/api";
+import { loadAssistantSidebarPreview } from "../sidebar-preview";
 
 const actorUser = (c: Context<AuthContext>) => {
   const actor = c.get("actor");
@@ -35,7 +35,10 @@ const app = new Hono<AuthContext>()
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Conversation")));
   })
   .get("/workspace/projects/:projectId/context", async (c) => {
-    const snapshot = await loadAssistantProjectContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, c.req.param("projectId")!);
+    const snapshot = await loadAssistantProjectContextSnapshot(
+      { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
+      c.req.param("projectId")!,
+    );
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Project")));
   });
 

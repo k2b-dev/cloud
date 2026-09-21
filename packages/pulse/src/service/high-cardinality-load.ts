@@ -283,7 +283,8 @@ const main = async (): Promise<void> => {
     `;
 
     if (numeric(counts?.events) !== eventCount) throw new Error("Event row count does not match the requested load");
-    if (numeric(counts?.actors) < Math.min(eventCount, 100_000) || numeric(counts?.sessions) < Math.min(eventCount, 100_000)) throw new Error("Identity cardinality is too low");
+    if (numeric(counts?.actors) < Math.min(eventCount, 100_000) || numeric(counts?.sessions) < Math.min(eventCount, 100_000))
+      throw new Error("Identity cardinality is too low");
     if (numeric(counts?.ip_hashes) < Math.min(eventCount, 1_000_000)) throw new Error("Attribute cardinality is too low");
     if (catalog?.fields !== 12 || catalog.resources !== 0 || catalog.series !== 0 || catalog.idempotency !== 1) {
       throw new Error("Bounded catalog, resource, series, or idempotency invariant failed");

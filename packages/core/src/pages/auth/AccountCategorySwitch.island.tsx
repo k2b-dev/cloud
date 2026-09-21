@@ -1,5 +1,5 @@
-import { SegmentedControl } from "@k2b/ui";
 import type { AccountCategory } from "@k2b/cloud/contracts";
+import { SegmentedControl } from "@k2b/ui";
 
 export default function AccountCategorySwitch(props: {
   options: { value: AccountCategory; label: string; href: string }[];

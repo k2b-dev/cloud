@@ -1,9 +1,9 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, IconButton, toast, type ToastHandle, useLocale } from "@k2b/ui";
+import { Button, Dropdown, IconButton, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, Index, onCleanup, Show } from "solid-js";
+import { type AssistantLiveInvalidation, type createAssistantLiveInvalidationHub, matchesAssistantInvalidation } from "./assistant-live";
 import { audioMessages } from "./audio-messages";
 import { startAudioRecording } from "./audio-recorder";
-import { type AssistantLiveInvalidation, type createAssistantLiveInvalidationHub, matchesAssistantInvalidation } from "./assistant-live";
 
 type Dictation = {
   id: string;

@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import type { Recurrence, SpaceColumn, SpaceItem, SpaceTag, SpaceItemResourceReferenceInput } from "@/contracts";
+import type { Recurrence, SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceTag } from "@/contracts";
 
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type ItemType = "task" | "event";

@@ -1,4 +1,3 @@
-import { err, fail, ok, type Paginated, type Result } from "@k2b/stdlib";
 import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -12,6 +11,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { type AuditActor, audit, weatherService } from "@k2b/cloud/services";
+import { err, fail, ok, type Paginated, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import { weatherCapabilityPresentation } from "./capability-presentation";
 import { CurrentWeatherSchema, WeatherDataSchema, WeatherIconSchema, WeatherLocationIdSchema } from "./contracts";

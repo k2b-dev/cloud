@@ -1,6 +1,17 @@
 import { documentNavigate } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, dialogCore, IconButton, MultiSelectInput, PanelDialog, panelDialogOptions, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import {
+  Button,
+  dialogCore,
+  IconButton,
+  MultiSelectInput,
+  PanelDialog,
+  panelDialogOptions,
+  prompts,
+  Tooltip,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactTag } from "../../service";

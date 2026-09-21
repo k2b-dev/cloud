@@ -1,4 +1,4 @@
-import { HttpRequest, HttpResult, SecretReference, HTTP_BYTES } from "../http-contracts";
+import { HTTP_BYTES, HttpRequest, HttpResult, SecretReference } from "../http-contracts";
 
 export function secret(name: string, options: { prefix?: string } = {}): SecretReference {
   const reference = SecretReference.parse({ secret: name, prefix: options.prefix ?? "" });

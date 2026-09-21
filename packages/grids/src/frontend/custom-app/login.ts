@@ -1,4 +1,4 @@
-import { gateCustomAppAtAccess, type GridsAccessContext } from "../../api/permissions";
+import { type GridsAccessContext, gateCustomAppAtAccess } from "../../api/permissions";
 import { resolveCustomAppPage } from "../../custom-apps/routing";
 import { gridsService } from "../../service";
 

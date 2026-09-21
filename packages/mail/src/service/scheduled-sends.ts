@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { audit, logger } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import type {
@@ -11,8 +11,8 @@ import type {
   ScheduledSendPage,
 } from "../contracts";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
-import { enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { requireMailboxCollaborationPermission } from "./collaboration";
+import { enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { publishMailMailboxEvent } from "./events";
 import { removeUnsentOutboundMessage } from "./outbound-message-projection";
 
@@ -337,9 +337,7 @@ const cancelScheduledSendBy = async (params: {
       `;
       await removeUnsentOutboundMessage(tx, outbox.id);
       const projectionSnapshotId =
-        params.input.disposition === "draft"
-          ? await queueDraftProjectionInTransaction({ db: tx, draftId: outbox.draft_id })
-          : null;
+        params.input.disposition === "draft" ? await queueDraftProjectionInTransaction({ db: tx, draftId: outbox.draft_id }) : null;
       await tx`
         INSERT INTO mail.activity_events (
           mailbox_id, conversation_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata

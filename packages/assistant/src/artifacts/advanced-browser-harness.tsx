@@ -1,7 +1,8 @@
 import { render } from "solid-js/web";
-import Apps from "./Apps.island";
 import AssistantEmptyChat from "../frontend/AssistantEmptyChat";
+import Apps from "./Apps.island";
 import { ArtifactStorage } from "./runtime/storage";
+
 const source = {
   entry: "main.ts",
   files: [
@@ -24,16 +25,26 @@ const item = {
 };
 const view = location.pathname.endsWith("/edit") ? "edit" : location.pathname.endsWith("/database") ? "database" : "app";
 render(
-  () => location.pathname === "/starters" ? <AssistantEmptyChat composer={<div>Ask the Assistant</div>} projects={[]} selectedProjectId={null} onChooseProject={()=>{}} onStarter={()=>{}} /> : (
-    <Apps
-      userId="test"
-      conversations={[]} doneCount={0}
-      projects={[]}
-      initialApp={{ ...item, source, sourceRevision: 1 }}
-      view={view}
-      databaseStatus={{ configured: true, connected: true, overview: null, unavailable: null, generation: null, dataRevision: null }}
-    />
-  ),
+  () =>
+    location.pathname === "/starters" ? (
+      <AssistantEmptyChat
+        composer={<div>Ask the Assistant</div>}
+        projects={[]}
+        selectedProjectId={null}
+        onChooseProject={() => {}}
+        onStarter={() => {}}
+      />
+    ) : (
+      <Apps
+        userId="test"
+        conversations={[]}
+        doneCount={0}
+        projects={[]}
+        initialApp={{ ...item, source, sourceRevision: 1 }}
+        view={view}
+        databaseStatus={{ configured: true, connected: true, overview: null, unavailable: null, generation: null, dataRevision: null }}
+      />
+    ),
   document.getElementById("root")!,
 );
 if (location.pathname === "/reader") {

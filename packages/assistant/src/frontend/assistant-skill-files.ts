@@ -1,4 +1,4 @@
-import { createZip, downloadFileFromContent, extractZip } from "@k2b/stdlib/browser";
+import type { AiSkill } from "@k2b/cloud/ai";
 import {
   AI_SKILL_REFERENCE_MAX_ITEMS,
   AI_SKILL_REFERENCES_MAX_CHARS,
@@ -8,7 +8,7 @@ import {
   serializeAiSkillMarkdown,
   validateAiSkillReferences,
 } from "@k2b/cloud/ai/browser";
-import type { AiSkill } from "@k2b/cloud/ai";
+import { createZip, downloadFileFromContent, extractZip } from "@k2b/stdlib/browser";
 import { assistantBrowserCopy, assistantBrowserText } from "./ui-copy";
 
 export type AiSkillImport = AiSkillDocument & { references: AiSkillReferenceInput[] };

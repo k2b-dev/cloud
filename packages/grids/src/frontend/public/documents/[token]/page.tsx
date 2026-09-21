@@ -1,6 +1,6 @@
-import { ButtonLink, NoticeCard, Paper, useLocale } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { MinimalLayout } from "@k2b/cloud/ssr";
+import { ButtonLink, NoticeCard, Paper, useLocale } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import { ssr } from "../../../../config";
 import { gridsService } from "../../../../service";

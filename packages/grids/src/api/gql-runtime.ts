@@ -1,3 +1,4 @@
+import { env } from "@k2b/cloud/config";
 import { type AuthContext, getDateConfig, type PermissionLevel } from "@k2b/cloud/server";
 import type { DateContext } from "@k2b/stdlib";
 import type { Context } from "hono";
@@ -282,7 +283,7 @@ const decodeRuntimeCursor = (
 };
 
 const gqlCursorSigningKey = (): string => {
-  const key = process.env.APP_SECRET?.trim();
+  const key = env.APP_SECRET;
   if (!key) throw new Error("APP_SECRET is required for GQL result pagination");
   return key;
 };

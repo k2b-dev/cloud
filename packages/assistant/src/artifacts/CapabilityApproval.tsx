@@ -1,46 +1,106 @@
 import { AiChatActionsProvider, AiTurnBlockView } from "@k2b/cloud/ai/ui";
 import { NoticeCard, prompts, useLocale } from "@k2b/ui";
-import { createSignal, For, Show, onCleanup } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
+import { artifactMessages } from "./messages";
 import type { ApproveCapability, CapabilityApproval, CapabilityDecision } from "./runtime/capabilities";
 
-import { artifactMessages } from "./messages";
-
-function Approval(props:{request:CapabilityApproval;respond:(value:CapabilityDecision)=>void}){
-  const locale=useLocale(),t=()=>artifactMessages.resolve([locale()]).t;
-  return <><Show when={props.request.resource}>{resource=><NoticeCard tone="warning" title={resource().title} detail={t().sharedCodeHelp}/>}</Show><AiChatActionsProvider actions={{onApproval:(_request,input)=>props.respond(input)}}>
-    <AiTurnBlockView active turnId={props.request.id} block={{id:props.request.id,kind:"tool",callId:props.request.id,
-      name:props.request.name,args:props.request.input,status:"awaiting_approval",
-      approval:{message:props.request.review?.message??props.request.title,review:props.request.review??undefined,allowAlways:props.request.allowAlways}}}/>
-  </AiChatActionsProvider></>;
+function Approval(props: { request: CapabilityApproval; respond: (value: CapabilityDecision) => void }) {
+  const locale = useLocale(),
+    t = () => artifactMessages.resolve([locale()]).t;
+  return (
+    <>
+      <Show when={props.request.resource}>
+        {(resource) => <NoticeCard tone="warning" title={resource().title} detail={t().sharedCodeHelp} />}
+      </Show>
+      <AiChatActionsProvider actions={{ onApproval: (_request, input) => props.respond(input) }}>
+        <AiTurnBlockView
+          active
+          turnId={props.request.id}
+          block={{
+            id: props.request.id,
+            kind: "tool",
+            callId: props.request.id,
+            name: props.request.name,
+            args: props.request.input,
+            status: "awaiting_approval",
+            approval: {
+              message: props.request.review?.message ?? props.request.title,
+              review: props.request.review ?? undefined,
+              allowAlways: props.request.allowAlways,
+            },
+          }}
+        />
+      </AiChatActionsProvider>
+    </>
+  );
 }
 
-export const approveInModal:ApproveCapability=async(request,signal)=>{
-  let decision:CapabilityDecision={approved:false};
-  await prompts.dialog<void>(close=>{
-    const abort=()=>close();signal.addEventListener("abort",abort,{once:true});
-    onCleanup(()=>signal.removeEventListener("abort",abort));
-    if(signal.aborted)close();
-    return <Approval request={request} respond={value=>{decision=value;signal.removeEventListener("abort",abort);close();}}/>;
-  },{title:request.resource ? `${request.resource.title} · ${request.title}` : request.title,size:"medium"});
+export const approveInModal: ApproveCapability = async (request, signal) => {
+  let decision: CapabilityDecision = { approved: false };
+  await prompts.dialog<void>(
+    (close) => {
+      const abort = () => close();
+      signal.addEventListener("abort", abort, { once: true });
+      onCleanup(() => signal.removeEventListener("abort", abort));
+      if (signal.aborted) close();
+      return (
+        <Approval
+          request={request}
+          respond={(value) => {
+            decision = value;
+            signal.removeEventListener("abort", abort);
+            close();
+          }}
+        />
+      );
+    },
+    { title: request.resource ? `${request.resource.title} · ${request.title}` : request.title, size: "medium" },
+  );
   return decision;
 };
 
-export function createCodeApprovals(){
-  type Pending={request:CapabilityApproval;conversationId?:string;respond:(value:CapabilityDecision)=>void};
-  const [pending,setPending]=createSignal<Pending[]>([]);
-  const ask:ApproveCapability=(request,signal,conversationId)=>new Promise((resolve,reject)=>{
-    const remove=()=>setPending(items=>items.filter(item=>item.request.id!==request.id));
-    const abort=()=>{remove();reject(new Error("Run stopped"));};
-    signal.addEventListener("abort",abort,{once:true});
-    if(signal.aborted)return abort();
-    setPending(items=>[...items,{request,conversationId,respond:value=>{signal.removeEventListener("abort",abort);remove();resolve(value);}}]);
-  });
-  const View=(props:{conversationTitle:(id:string)=>string|undefined})=>{
-    const locale=useLocale(),t=()=>artifactMessages.resolve([locale()]).t;
-    return <For each={pending()}>{item=><section>
-      <p>{t().approvalChat({title:item.conversationId ? props.conversationTitle(item.conversationId) ?? t().otherChat : t().otherChat})}</p>
-      <Approval request={item.request} respond={item.respond}/>
-    </section>}</For>;
+export function createCodeApprovals() {
+  type Pending = { request: CapabilityApproval; conversationId?: string; respond: (value: CapabilityDecision) => void };
+  const [pending, setPending] = createSignal<Pending[]>([]);
+  const ask: ApproveCapability = (request, signal, conversationId) =>
+    new Promise((resolve, reject) => {
+      const remove = () => setPending((items) => items.filter((item) => item.request.id !== request.id));
+      const abort = () => {
+        remove();
+        reject(new Error("Run stopped"));
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) return abort();
+      setPending((items) => [
+        ...items,
+        {
+          request,
+          conversationId,
+          respond: (value) => {
+            signal.removeEventListener("abort", abort);
+            remove();
+            resolve(value);
+          },
+        },
+      ]);
+    });
+  const View = (props: { conversationTitle: (id: string) => string | undefined }) => {
+    const locale = useLocale(),
+      t = () => artifactMessages.resolve([locale()]).t;
+    return (
+      <For each={pending()}>
+        {(item) => (
+          <section>
+            <p>
+              {t().approvalChat({
+                title: item.conversationId ? (props.conversationTitle(item.conversationId) ?? t().otherChat) : t().otherChat,
+              })}
+            </p>
+            <Approval request={item.request} respond={item.respond} />
+          </section>
+        )}
+      </For>
+    );
   };
-  return {ask,View};
+  return { ask, View };
 }

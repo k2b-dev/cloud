@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import type { MessageMeta } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { latestTopicCursor } from "@k2b/cloud/services";
+import type { MessageMeta } from "@k2b/sync";
 import { sql } from "bun";
 import { z } from "zod";
 import { projectPublicIds } from "./public-resources";

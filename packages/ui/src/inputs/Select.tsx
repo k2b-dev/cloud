@@ -232,7 +232,12 @@ export function Select(props: SelectProps): JSX.Element {
         </button>
         <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
         <Show when={hasClearAction()}>
-          <button type="button" class="k2b-choice-control__clear k2b-input-clear-action" aria-label={messages().clearSelection} onClick={clear}>
+          <button
+            type="button"
+            class="k2b-choice-control__clear k2b-input-clear-action"
+            aria-label={messages().clearSelection}
+            onClick={clear}
+          >
             <i class="ti ti-x" aria-hidden="true" />
           </button>
         </Show>

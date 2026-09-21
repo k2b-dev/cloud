@@ -69,7 +69,9 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
     },
     onSuccess: (result) => {
       if (result.failures.length > 0) {
-        prompts.error(t().importPartialFailure({ created: result.created, failed: result.failures.length, first: result.failures[0] ?? "" }));
+        prompts.error(
+          t().importPartialFailure({ created: result.created, failed: result.failures.length, first: result.failures[0] ?? "" }),
+        );
       }
       props.close(result.created);
     },

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@k2b/cloud";
-import { notifications, renderTemplate, type AppDeviceEnrollmentNotice } from "@k2b/cloud/services";
+import { type AppDeviceEnrollmentNotice, notifications, renderTemplate } from "@k2b/cloud/services";
 import type { AccountLifecycleNotificationSender } from "@k2b/cloud/services/account-lifecycle/notification-sender";
 import type { AuthNotificationSender } from "@k2b/cloud/services/auth-flows";
 import * as settings from "@k2b/cloud/services/settings";
@@ -51,7 +51,7 @@ const notificationMessages = i18n.define({
 });
 
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
-const configuredLocale = (locale?: string): Promise<string> => locale ? Promise.resolve(locale) : settings.get<string>("app.locale");
+const configuredLocale = (locale?: string): Promise<string> => (locale ? Promise.resolve(locale) : settings.get<string>("app.locale"));
 
 const accountExtensionUrl = async (): Promise<string> => {
   const configured = (await settings.get<string>("app.url")).trim();
@@ -143,10 +143,7 @@ export const NOTIFICATIONS = {
     recipient: "user",
     label: "Account expiry reminders",
     description: "Required notice before an account expires and access is removed.",
-    presentation: presentation(
-      "Erinnerungen an den Kontoablauf",
-      "Erforderlicher Hinweis, bevor ein Konto abläuft und der Zugriff endet.",
-    ),
+    presentation: presentation("Erinnerungen an den Kontoablauf", "Erforderlicher Hinweis, bevor ein Konto abläuft und der Zugriff endet."),
     delivery: requiredEmail,
     data: z.object({
       firstName: z.string(),

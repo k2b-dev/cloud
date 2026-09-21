@@ -1,5 +1,5 @@
-import { createNavigation, useLocale } from "@k2b/ui";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
+import { createNavigation, useLocale } from "@k2b/ui";
 import { createToolSearch, toolSearchMessages } from "./tool-search";
 import { categoryOrder, resolveRegistry } from "./tools/registry";
 

@@ -5,8 +5,8 @@ import { DangerZone } from "./DangerZone";
 import { ExportSection } from "./ExportSection";
 import { FeaturesSection } from "./FeaturesSection";
 import { GeneralSection } from "./GeneralSection";
-import type { NotebookSettingsProps } from "./types";
 import { notebookSettingsMessages } from "./messages";
+import type { NotebookSettingsProps } from "./types";
 
 export const openNotebookSettingsDialog = (props: NotebookSettingsProps): Promise<void> =>
   prompts.dialog<void>((close) => <NotebookSettingsBody {...props} close={() => close()} />, {
@@ -63,12 +63,7 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
               onDirtyChange={setGeneralDirty}
             />
           </SettingsModal.Tab>
-          <SettingsModal.Tab
-            id="features"
-            title={t().viewBehavior}
-            icon="ti ti-toggle-right"
-            description={t().viewBehaviorDescription}
-          >
+          <SettingsModal.Tab id="features" title={t().viewBehavior} icon="ti ti-toggle-right" description={t().viewBehaviorDescription}>
             <FeaturesSection notebook={notebook()} isAdmin={props.isAdmin} onNotebookChange={setNotebook} />
           </SettingsModal.Tab>
         </SettingsModal.Group>
@@ -79,23 +74,13 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
               <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
                 <PermissionsSection notebook={notebook()} />
               </SettingsModal.Tab>
-              <SettingsModal.Tab
-                id="api-keys"
-                title={t().apiKeys}
-                icon="ti ti-key"
-                description={t().apiKeysDescription}
-              >
+              <SettingsModal.Tab id="api-keys" title={t().apiKeys} icon="ti ti-key" description={t().apiKeysDescription}>
                 <ApiKeysSection notebook={notebook()} />
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
             <SettingsModal.Group title={t().data}>
-              <SettingsModal.Tab
-                id="export"
-                title={t().exportSnapshots}
-                icon="ti ti-download"
-                description={t().exportSnapshotsDescription}
-              >
+              <SettingsModal.Tab id="export" title={t().exportSnapshots} icon="ti ti-download" description={t().exportSnapshotsDescription}>
                 <ExportSection notebook={notebook()} onDirtyChange={setExportDirty} />
               </SettingsModal.Tab>
             </SettingsModal.Group>

@@ -10,6 +10,7 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../scripts/fixtures/test-infra";
 import { DocumentCapabilityDataSchema } from "./api/document-public-contracts";
 import { gridsCapabilities } from "./capabilities";
 import {
@@ -26,8 +27,8 @@ import { enable as enableFinalization, finalize as finalizeRecord } from "./serv
 
 const zDocument = (value: unknown) => DocumentCapabilityDataSchema.parse(value);
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
-if (process.env.GRIDS_DB_TEST === "1") setDefaultTimeout(60_000);
+const postgresTest = testFor("database");
+if (testInfra.database) setDefaultTimeout(60_000);
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
@@ -107,7 +108,7 @@ const existingAuthUserId = async (): Promise<string> => {
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("Grids capabilities", () => {
@@ -198,7 +199,11 @@ describe("Grids capabilities", () => {
       if (!content.ok || !content.data.stream) throw new Error("Expected artifact stream");
       const stream = content.data.stream;
       const transfer = gridsCapabilities.queries["document.content.read"].stream.read;
-      expect(stream).toMatchObject({ direction: "read", mediaType: "application/pdf", size: new TextEncoder().encode("%PDF-1.7\ntest artifact").length });
+      expect(stream).toMatchObject({
+        direction: "read",
+        mediaType: "application/pdf",
+        size: new TextEncoder().encode("%PDF-1.7\ntest artifact").length,
+      });
       expect(await (await transfer(stream, context)).text()).toBe("%PDF-1.7\ntest artifact");
       expect((await invoke("query", "document.content.read", { id: document.id, artifactKey: "missing" }, context)).ok).toBe(false);
       expect((await invoke("query", "document.content.read", { id: document.id }, outsider)).ok).toBe(false);
@@ -208,7 +213,6 @@ describe("Grids capabilities", () => {
       await expect(transfer({ ...stream, id: JSON.stringify({ id: document.id, artifactKey: "missing" }) }, context)).rejects.toBeDefined();
       await expect(transfer({ ...stream, id: "invalid" }, context)).rejects.toBeDefined();
       await expect(transfer(stream, { ...context, signal: AbortSignal.abort() })).rejects.toBeDefined();
-
 
       expect((await invoke("query", "document.read", { id: document.id }, outsider)).ok).toBe(false);
       expect(JSON.stringify(first)).not.toContain(tableId);

@@ -1,3 +1,5 @@
+import type { AiApprovalPreferenceView, AiMemory, AiMemoryKind, AiUserPrefs } from "@k2b/cloud/ai";
+import { coreClient } from "@k2b/cloud/clients/core";
 import {
   Button,
   confirmDiscardIfDirty,
@@ -16,13 +18,11 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { AiApprovalPreferenceView, AiMemory, AiMemoryKind, AiUserPrefs } from "@k2b/cloud/ai";
-import { coreClient } from "@k2b/cloud/clients/core";
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { assistantConversationHref } from "./assistant-navigation";
 import { openAssistantMemoryLearningActivity } from "./AssistantMemoryLearningActivity";
 import { AssistantSkillEditor, type AssistantSkillEditorRequest, AssistantSkillsSettings } from "./AssistantSkillsSettings";
+import { assistantConversationHref } from "./assistant-navigation";
 import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 // Kept in sync with the server limits; browser code does not import server-only constants.
@@ -117,7 +117,9 @@ function SystemPromptPanel() {
   return (
     <SettingsGroup
       title={text("Effective instructions")}
-      description={text("The complete prompt for a new chat with the current model, enabled Skills, personalization, and organization rules.")}
+      description={text(
+        "The complete prompt for a new chat with the current model, enabled Skills, personalization, and organization rules.",
+      )}
     >
       <Show when={prompt.loading}>
         <Placeholder state="loading" title={text("Loading system prompt")} />
@@ -170,7 +172,9 @@ const openAddPersonalizationDialog = (): Promise<{ kind: EditableMemoryKind; con
             if (value) close({ kind: kind(), content: value });
           }}
         >
-          <p class="text-sm text-secondary">{text("Add a durable fact about you or a preference for future answers. New entries start pinned.")}</p>
+          <p class="text-sm text-secondary">
+            {text("Add a durable fact about you or a preference for future answers. New entries start pinned.")}
+          </p>
           <Select
             label={text("Type")}
             value={kind}
@@ -305,7 +309,10 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
   };
 
   const removeMemory = async (memory: AiMemory) => {
-    if (!(await prompts.confirm(copy().deleteNamed({ name: memory.content }), { title: text("Delete personalization"), variant: "danger" }))) return;
+    if (
+      !(await prompts.confirm(copy().deleteNamed({ name: memory.content }), { title: text("Delete personalization"), variant: "danger" }))
+    )
+      return;
     setBusyId(memory.id);
     try {
       await assistantApi.deleteMemory(memory.id);
@@ -321,7 +328,10 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
   return (
     <>
       <div class="flex flex-col gap-6" aria-busy={Boolean(busyId()) || memories.loading}>
-        <SettingsGroup title={text("Use personalization")} description={text("Choose how Assistant uses and learns durable context about you.")}>
+        <SettingsGroup
+          title={text("Use personalization")}
+          description={text("Choose how Assistant uses and learns durable context about you.")}
+        >
           <Switch
             label={text("Use personalization in Assistant chats")}
             description={text("Relevant personal facts, preferences, and workflow defaults are added to new turns.")}
@@ -331,7 +341,9 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
           />
           <Switch
             label={text("Learn personalization from private chats")}
-            description={text("After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults.")}
+            description={text(
+              "After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults.",
+            )}
             value={learningEnabled}
             onValueChange={setLearningEnabled}
             disabled={Boolean(busyId())}
@@ -349,7 +361,10 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
           </Show>
         </SettingsGroup>
 
-        <SettingsGroup title={text("Saved personalization")} description={text("Facts, preferences, and workflow defaults Assistant may carry into future conversations.")}>
+        <SettingsGroup
+          title={text("Saved personalization")}
+          description={text("Facts, preferences, and workflow defaults Assistant may carry into future conversations.")}
+        >
           <Show when={memories.loading}>
             <Placeholder state="loading" title={text("Loading personalization")} />
           </Show>
@@ -455,7 +470,12 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
                               { label: text("Delete"), icon: "ti ti-trash", variant: "danger", action: () => void removeMemory(memory) },
                             ]}
                           >
-                            <Dropdown.Trigger appearance="plain" iconOnly label={text("Personalization actions")} title={text("Personalization actions")}>
+                            <Dropdown.Trigger
+                              appearance="plain"
+                              iconOnly
+                              label={text("Personalization actions")}
+                              title={text("Personalization actions")}
+                            >
                               <i class="ti ti-dots" aria-hidden="true" />
                             </Dropdown.Trigger>
                           </Dropdown.Root>

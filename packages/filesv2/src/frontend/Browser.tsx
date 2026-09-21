@@ -23,13 +23,32 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
-import { type BaseSummary, type BasesResult, type BrowseOptions, type DirectoryResult, type EditorInfo, type EntryResult, ErrorSchema, type FileEntry,
+import {
+  type BaseSummary,
+  type BasesResult,
+  type BrowseOptions,
+  type DirectoryResult,
+  type EditorInfo,
+  type EntryResult,
+  ErrorSchema,
+  type FileEntry,
 } from "../contracts";
 import { isMarkdown } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { useAssetMessages } from "./asset-messages";
 import { useBrowserMessages } from "./browser-messages";
-import { browseOptions, browseQuery, folderKey, parsePreferences, preferencesCookie, SORT_KEYS, type SortKey, type ViewPreference, viewFor, withView } from "./browser-preferences";
+import {
+  browseOptions,
+  browseQuery,
+  folderKey,
+  parsePreferences,
+  preferencesCookie,
+  SORT_KEYS,
+  type SortKey,
+  type ViewPreference,
+  viewFor,
+  withView,
+} from "./browser-preferences";
 import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
 import FileList, { type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
@@ -45,7 +64,8 @@ import { filesUrl } from "./urls";
 
 type Directory = DirectoryResult & { query?: string; scope?: "folder" | "tree" };
 type Branch = { items: FileEntry[]; next: string | null; loading: boolean; error: boolean; pages?: number };
-const nameValid = (value: string | undefined) => !!value && !value.includes("/") && value.trim() === value && value !== "." && value !== "..";
+const nameValid = (value: string | undefined) =>
+  !!value && !value.includes("/") && value.trim() === value && value !== "." && value !== "..";
 const parentPath = (path: string) => path.split("/").slice(0, -1).join("/");
 const ancestors = (path: string) => {
   const parts = path.split("/").filter(Boolean);
@@ -91,14 +111,24 @@ export default function Browser(props: {
   const searching = () => !!props.directory.query;
   // View settings belong to one storage base; a cookie remembers the latest bases.
   const [preferences, setPreferences] = createSignal(props.preferences ?? {});
-  const activeBrowse = createMemo(() => browseOptions(new URL(props.source ?? "", "https://files.invalid").searchParams, viewFor(preferences(), baseId())));
+  const activeBrowse = createMemo(() =>
+    browseOptions(new URL(props.source ?? "", "https://files.invalid").searchParams, viewFor(preferences(), baseId())),
+  );
   const [requestedBrowse, setRequestedBrowse] = createSignal<BrowseOptions | null>(null);
   const view = createMemo(() => {
     const browse = requestedBrowse() ?? activeBrowse();
     return { ...viewFor(preferences(), baseId()), ...browse, direction: browse.order, ...(searching() ? { view: "list" as const } : {}) };
   });
-  createEffect(on(() => props.source, () => setRequestedBrowse(null), { defer: true }));
-  createEffect(() => { if (props.error) setRequestedBrowse(null); });
+  createEffect(
+    on(
+      () => props.source,
+      () => setRequestedBrowse(null),
+      { defer: true },
+    ),
+  );
+  createEffect(() => {
+    if (props.error) setRequestedBrowse(null);
+  });
   const updateView = (next: Partial<ViewPreference>) => {
     const updated = { ...view(), ...next };
     const value = withView(preferences(), baseId(), updated);
@@ -137,9 +167,12 @@ export default function Browser(props: {
   const [expandedFolders, setExpandedFolders] = createSignal<ReadonlySet<string>>(new Set<string>());
   const branchKey = (path: string, base = baseIdentity()) => JSON.stringify([base, path]);
   const branch = (path: string) => branches()[branchKey(path)];
-  const setBranch = (path: string, value: Branch, base = baseIdentity()) => setBranches((current) => ({ ...current, [branchKey(path, base)]: value }));
+  const setBranch = (path: string, value: Branch, base = baseIdentity()) =>
+    setBranches((current) => ({ ...current, [branchKey(path, base)]: value }));
   const branchRequests = new Map<string, AbortController>();
-  onCleanup(() => { for (const request of branchRequests.values()) request.abort(); });
+  onCleanup(() => {
+    for (const request of branchRequests.values()) request.abort();
+  });
   const loadBranch = async (path: string, after?: string | null, background?: AbortSignal) => {
     const base = baseId();
     const location = baseIdentity();
@@ -152,15 +185,19 @@ export default function Browser(props: {
     branchRequests.set(key, request);
     const previous = branch(path);
     const signal = background ? AbortSignal.any([background, request.signal]) : request.signal;
-    if (!background) setBranch(path, { items: previous?.items ?? [], next: previous?.next ?? null, loading: true, error: false, pages: previous?.pages });
+    if (!background)
+      setBranch(path, { items: previous?.items ?? [], next: previous?.next ?? null, loading: true, error: false, pages: previous?.pages });
     try {
       const items = after ? [...(previous?.items ?? [])] : [];
       let next = after ?? undefined;
-      const pageCount = background ? previous?.pages ?? 1 : 1;
-      let pages = after ? previous?.pages ?? 1 : 0;
+      const pageCount = background ? (previous?.pages ?? 1) : 1;
+      let pages = after ? (previous?.pages ?? 1) : 0;
       for (let index = 0; index < pageCount; index++) {
         signal.throwIfAborted();
-        const response = await apiClient.bases[":baseId"].entries.$get({ param: { baseId: base }, query: { path, after: next, ...query } }, { init: { signal } });
+        const response = await apiClient.bases[":baseId"].entries.$get(
+          { param: { baseId: base }, query: { path, after: next, ...query } },
+          { init: { signal } },
+        );
         if (!response.ok) {
           const error = ErrorSchema.safeParse(await response.clone().json());
           if (next && error.success && error.data.code === "cursor_invalid" && !signal.aborted) {
@@ -170,7 +207,13 @@ export default function Browser(props: {
             await loadBranch(path, undefined, background);
             return;
           }
-          if (!signal.aborted && baseIdentity() === location && JSON.stringify(browseQuery(activeBrowse())) === queryKey) setBranch(path, { items: Number(response.status) === 403 || Number(response.status) === 404 ? [] : previous?.items ?? [], next: null, loading: false, error: true });
+          if (!signal.aborted && baseIdentity() === location && JSON.stringify(browseQuery(activeBrowse())) === queryKey)
+            setBranch(path, {
+              items: Number(response.status) === 403 || Number(response.status) === 404 ? [] : (previous?.items ?? []),
+              next: null,
+              loading: false,
+              error: true,
+            });
           return;
         }
         const page = await response.json();
@@ -196,7 +239,12 @@ export default function Browser(props: {
     for (const path of [...expandedFolders()]) {
       if (signal.aborted || baseIdentity() !== identity || view().view !== "tree") return;
       if (path === current || !branch(path) || !expandedFolders().has(path)) continue;
-      if (ancestors(path).slice(0, -1).some(parent => !expandedFolders().has(parent))) continue;
+      if (
+        ancestors(path)
+          .slice(0, -1)
+          .some((parent) => !expandedFolders().has(parent))
+      )
+        continue;
       await loadBranch(path, undefined, signal);
     }
   };
@@ -216,34 +264,36 @@ export default function Browser(props: {
   let treeContext = "";
   let treeBase = baseIdentity();
   let invalidateBranches = false;
-  createEffect(on(
-    () => [props.directory, view().view, searching(), baseIdentity(), JSON.stringify(browseQuery(activeBrowse()))] as const,
-    ([directory, mode, search, identity, query]) => {
-      // One owner resets and seeds the tree. Separate reset/populate effects can
-      // erase a newly seeded branch and abort its replacement request.
-      const context = JSON.stringify([identity, query]);
-      if (context !== treeContext || invalidateBranches) {
-        for (const request of branchRequests.values()) request.abort();
-        branchRequests.clear();
-        setBranches({});
-        if (identity !== treeBase) setExpandedFolders(new Set<string>());
-        treeBase = identity;
-        treeContext = context;
-        invalidateBranches = false;
-      }
-      if (mode !== "tree" || search) return;
-      const current = directory.path;
-      // The authoritative navigation snapshot supersedes an in-flight branch read.
-      const key = branchKey(current);
-      branchRequests.get(key)?.abort();
-      branchRequests.delete(key);
-      setBranch(current, { items: directory.items, next: directory.next, loading: false, error: false });
-      setExpandedFolders(set => new Set<string>([...set, ...ancestors(current), current]));
-      for (const path of new Set(["", ...ancestors(current), ...expandedFolders()])) {
-        if (path !== current && !branch(path)) void loadBranch(path);
-      }
-    },
-  ));
+  createEffect(
+    on(
+      () => [props.directory, view().view, searching(), baseIdentity(), JSON.stringify(browseQuery(activeBrowse()))] as const,
+      ([directory, mode, search, identity, query]) => {
+        // One owner resets and seeds the tree. Separate reset/populate effects can
+        // erase a newly seeded branch and abort its replacement request.
+        const context = JSON.stringify([identity, query]);
+        if (context !== treeContext || invalidateBranches) {
+          for (const request of branchRequests.values()) request.abort();
+          branchRequests.clear();
+          setBranches({});
+          if (identity !== treeBase) setExpandedFolders(new Set<string>());
+          treeBase = identity;
+          treeContext = context;
+          invalidateBranches = false;
+        }
+        if (mode !== "tree" || search) return;
+        const current = directory.path;
+        // The authoritative navigation snapshot supersedes an in-flight branch read.
+        const key = branchKey(current);
+        branchRequests.get(key)?.abort();
+        branchRequests.delete(key);
+        setBranch(current, { items: directory.items, next: directory.next, loading: false, error: false });
+        setExpandedFolders((set) => new Set<string>([...set, ...ancestors(current), current]));
+        for (const path of new Set(["", ...ancestors(current), ...expandedFolders()])) {
+          if (path !== current && !branch(path)) void loadBranch(path);
+        }
+      },
+    ),
+  );
   // Rows keep their identity across recomputes so open thumbnails are not re-requested on every expand.
   let previousRows = new Map<string, FileRow>();
   const rows = createMemo<FileRow[]>(() => {
@@ -262,7 +312,9 @@ export default function Browser(props: {
         known.expanded === row.expanded &&
         known.loading === row.loading &&
         known.more === row.more &&
-        known.actions?.write === row.actions?.write && known.actions?.move === row.actions?.move && known.actions?.share === row.actions?.share;
+        known.actions?.write === row.actions?.write &&
+        known.actions?.move === row.actions?.move &&
+        known.actions?.share === row.actions?.share;
       const value = same ? known : row;
       reuse.set(row.path, value);
       out.push(value);
@@ -282,13 +334,14 @@ export default function Browser(props: {
     walk(folder() ? (root?.error ? props.directory.items : (root?.items ?? [])) : props.directory.items, 0);
     // A pending, filtered or paginated ancestor must not hide an already loaded
     // current folder. Until its tree path is available, show its direct contents.
-    const rooted = !folder() || out.some(row => row.path === folder());
+    const rooted = !folder() || out.some((row) => row.path === folder());
     if (!rooted) {
       out.length = 0;
       reuse.clear();
       walk(props.directory.items, 0);
     }
-    if (rooted && root?.next && !root.error) push({ name: "", path: " more", directory: true, size: 0, modified: "", more: true, depth: 0 });
+    if (rooted && root?.next && !root.error)
+      push({ name: "", path: " more", directory: true, size: 0, modified: "", more: true, depth: 0 });
     previousRows = reuse;
     return out;
   });
@@ -300,12 +353,22 @@ export default function Browser(props: {
     onChange: (paths) => {
       if (!mounted || syncing || location !== locationKey()) return;
       if (externalPath() && !paths.includes(externalPath()!)) setExternalPath(null);
-      const source = filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, props.directory.query, props.directory.scope, activeBrowse());
+      const source = filesUrl(
+        baseId(),
+        folder(),
+        props.after,
+        paths.length === 1 ? paths[0] : null,
+        props.directory.query,
+        props.directory.scope,
+        activeBrowse(),
+      );
       commitHistory(source, { replace: true, scroll: "manual", viewTransition: false });
       props.onSelectionSource?.(source);
     },
   });
-  onCleanup(() => { mounted = false; });
+  onCleanup(() => {
+    mounted = false;
+  });
   onMount(() => {
     mounted = true;
     // The SSR seed may be older than a view change made before visiting trash or shares.
@@ -331,8 +394,8 @@ export default function Browser(props: {
     if (!props.pending && props.error) setOpening(null);
   });
   const canCreate = () => props.directory.actions?.create !== false;
-  const movable = (items: readonly FileEntry[]) => items.every(item => item.actions?.move !== false);
-  const shareable = (items: readonly FileEntry[]) => items.every(item => item.actions?.share !== false);
+  const movable = (items: readonly FileEntry[]) => items.every((item) => item.actions?.move !== false);
+  const shareable = (items: readonly FileEntry[]) => items.every((item) => item.actions?.share !== false);
   const selectedPaths = createMemo(() => [...selection.selected()]);
   const selected = createMemo(() => entries().filter((row) => selection.selected().has(row.path)));
   let actionLocation: string | null = null;
@@ -362,7 +425,10 @@ export default function Browser(props: {
         link.remove();
         return;
       }
-      const response = await apiClient.bases[":baseId"].archive.$post({ param: { baseId: baseId() }, json: { paths: normalizedPaths(items.map((item) => item.path)) } }, { init: { signal: abortSignal } });
+      const response = await apiClient.bases[":baseId"].archive.$post(
+        { param: { baseId: baseId() }, json: { paths: normalizedPaths(items.map((item) => item.path)) } },
+        { init: { signal: abortSignal } },
+      );
       if (!response.ok) return apiFailure(response, t().downloadFailed);
       downloadArchive(await response.json());
     },
@@ -388,12 +454,15 @@ export default function Browser(props: {
       const conflicts = files.filter((file) => !relativeName(file).includes("/") && known.has(file.name)).length;
       let policy: "ask" | "overwrite" | "skip" = "ask";
       const decide = async (name: string, count: number) => {
-        const choice = await prompts.confirm(count > 1 ? b().replaceManyQuestion({ count, total: files.length }) : b().replaceQuestion(name), {
-          title: count > 1 ? b().replaceManyTitle : b().replaceTitle,
-          confirmText: b().replaceAll,
-          cancelText: files.length > count ? b().onlyNew(files.length - count) : b().skip,
-          variant: "danger",
-        });
+        const choice = await prompts.confirm(
+          count > 1 ? b().replaceManyQuestion({ count, total: files.length }) : b().replaceQuestion(name),
+          {
+            title: count > 1 ? b().replaceManyTitle : b().replaceTitle,
+            confirmText: b().replaceAll,
+            cancelText: files.length > count ? b().onlyNew(files.length - count) : b().skip,
+            variant: "danger",
+          },
+        );
         abortSignal.throwIfAborted();
         return choice === undefined ? null : choice ? ("overwrite" as const) : ("skip" as const);
       };
@@ -407,7 +476,12 @@ export default function Browser(props: {
         const parts = relativeName(file).split("/").slice(0, -1);
         for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
       }
-      const handle: ToastHandle = toast(b().uploadingTitle, { title: b().upload, progress: "indeterminate", duration: 0, action: { label: b().cancel, onClick: () => upload.abort() } });
+      const handle: ToastHandle = toast(b().uploadingTitle, {
+        title: b().upload,
+        progress: "indeterminate",
+        duration: 0,
+        action: { label: b().cancel, onClick: () => upload.abort() },
+      });
       let createdFolders = 0;
       let uploaded = 0;
       let skipped = 0;
@@ -415,7 +489,10 @@ export default function Browser(props: {
       let last: string | null = null;
       try {
         for (const path of [...folders].sort()) {
-          const response = await apiClient.bases[":baseId"].directories.$post({ param: { baseId: base }, json: { path: root ? `${root}/${path}` : path } }, { init: { signal: abortSignal } });
+          const response = await apiClient.bases[":baseId"].directories.$post(
+            { param: { baseId: base }, json: { path: root ? `${root}/${path}` : path } },
+            { init: { signal: abortSignal } },
+          );
           if (!response.ok && (response.status as number) !== 409) await apiFailure(response, t().unavailable);
           if (response.ok) createdFolders++;
         }
@@ -423,14 +500,27 @@ export default function Browser(props: {
           const file = files[index]!;
           const path = root ? `${root}/${relativeName(file)}` : relativeName(file);
           const report = (bytes: number) =>
-            handle.update(b().uploading({ done: index, total: files.length, name: file.name, percent: file.size ? Math.floor((bytes / file.size) * 100) : 100 }), {
-              progress: (index + (file.size ? bytes / file.size : 1)) / files.length,
-            });
+            handle.update(
+              b().uploading({
+                done: index,
+                total: files.length,
+                name: file.name,
+                percent: file.size ? Math.floor((bytes / file.size) * 100) : 100,
+              }),
+              {
+                progress: (index + (file.size ? bytes / file.size : 1)) / files.length,
+              },
+            );
           report(0);
           let onConflict: "error" | "overwrite" = policy === "overwrite" ? "overwrite" : "error";
           for (;;) {
             try {
-              const result = await uploadFile(base, path, file, { onConflict, signal: abortSignal, fallback: b().uploadFailed(file.name), onProgress: report });
+              const result = await uploadFile(base, path, file, {
+                onConflict,
+                signal: abortSignal,
+                fallback: b().uploadFailed(file.name),
+                onProgress: report,
+              });
               uploaded++;
               last = result.entry.path;
               break;
@@ -455,14 +545,26 @@ export default function Browser(props: {
             }
           }
         }
-        handle.update(b().uploadSummary({ uploaded, skipped, failed }), { variant: failed ? "error" : "success", progress: null, duration: 5000, action: null });
-      } catch (error) {
-        handle.update(uploaded ? b().uploadSummary({ uploaded, skipped, failed }) : abortSignal.aborted ? b().uploadCancelled : b().uploadFailed(files[0]?.name ?? ""), {
+        handle.update(b().uploadSummary({ uploaded, skipped, failed }), {
+          variant: failed ? "error" : "success",
           progress: null,
-          duration: 4000,
+          duration: 5000,
           action: null,
-          variant: abortSignal.aborted ? undefined : "error",
         });
+      } catch (error) {
+        handle.update(
+          uploaded
+            ? b().uploadSummary({ uploaded, skipped, failed })
+            : abortSignal.aborted
+              ? b().uploadCancelled
+              : b().uploadFailed(files[0]?.name ?? ""),
+          {
+            progress: null,
+            duration: 4000,
+            action: null,
+            variant: abortSignal.aborted ? undefined : "error",
+          },
+        );
         if (!abortSignal.aborted) throw error;
       } finally {
         if ((uploaded || createdFolders) && uploadLocation === locationKey()) void refresh(last);
@@ -486,28 +588,48 @@ export default function Browser(props: {
   const onExternalDrop: typeof drop.handlers.onDrop = (event) => {
     drop.handlers.onDrop(event);
     if (!event.dataTransfer || busy() || searching() || !canCreate()) return;
-    const entries = Array.from(event.dataTransfer.items ?? []).map(item => item.webkitGetAsEntry?.()).filter((entry): entry is FileSystemEntry => !!entry);
-    if (!entries.some(entry => entry.isDirectory)) { startUpload(Array.from(event.dataTransfer.files)); return; }
+    const entries = Array.from(event.dataTransfer.items ?? [])
+      .map((item) => item.webkitGetAsEntry?.())
+      .filter((entry): entry is FileSystemEntry => !!entry);
+    if (!entries.some((entry) => entry.isDirectory)) {
+      startUpload(Array.from(event.dataTransfer.files));
+      return;
+    }
     dropPreparation?.abort();
     const request = new AbortController();
     dropPreparation = request;
     const source = locationKey();
     const timer = setTimeout(() => request.abort(), 30_000);
-    const notice = toast(b().readingDrop, { duration: 0, progress: "indeterminate", action: { label: b().cancel, onClick: () => request.abort() } });
-    void readDroppedEntries(entries, request.signal).then(result => {
-      if (request.signal.aborted || source !== locationKey()) return;
-      if (result.errors.length) toast.error(result.errors.join("\n"));
-      startUpload(result.files, result.directories);
-    }).catch(error => {
-      if (!request.signal.aborted) toast.error(error instanceof Error && error.message === "drop_too_large" ? b().dropTooLarge : b().loadFailed);
-    }).finally(() => { clearTimeout(timer); notice.dismiss(); });
+    const notice = toast(b().readingDrop, {
+      duration: 0,
+      progress: "indeterminate",
+      action: { label: b().cancel, onClick: () => request.abort() },
+    });
+    void readDroppedEntries(entries, request.signal)
+      .then((result) => {
+        if (request.signal.aborted || source !== locationKey()) return;
+        if (result.errors.length) toast.error(result.errors.join("\n"));
+        startUpload(result.files, result.directories);
+      })
+      .catch((error) => {
+        if (!request.signal.aborted)
+          toast.error(error instanceof Error && error.message === "drop_too_large" ? b().dropTooLarge : b().loadFailed);
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        notice.dismiss();
+      });
   };
 
   // Mutations on the selection run through one loading state and one error surface.
   const action = mutation.create({
     mutation: async (run: () => Promise<void>) => {
       actionLocation = locationKey();
-      try { await run(); } finally { actionLocation = null; }
+      try {
+        await run();
+      } finally {
+        actionLocation = null;
+      }
     },
     onError: (error) => toast.error(error.message),
   });
@@ -529,7 +651,14 @@ export default function Browser(props: {
               </InlineGuidance>
             ),
           },
-          name: { type: "text", label, required: true, maxLength: 255, default: initial, validate: (value) => (nameValid(value) ? null : b().newFolderInvalid) },
+          name: {
+            type: "text",
+            label,
+            required: true,
+            maxLength: 255,
+            default: initial,
+            validate: (value) => (nameValid(value) ? null : b().newFolderInvalid),
+          },
         },
       })
       .then((values) => (values && source === locationKey() ? String(values.name) : null));
@@ -549,7 +678,8 @@ export default function Browser(props: {
     const name = await askName(b().newFile, b().newFileName);
     if (name) startUpload([new File([], name)]);
   };
-  const editable = (entry: FileEntry) => !!props.onEdit && !entry.directory && (isMarkdown(entry.name) || (!!props.editor && !!editableExtension(entry.name)));
+  const editable = (entry: FileEntry) =>
+    !!props.onEdit && !entry.directory && (isMarkdown(entry.name) || (!!props.editor && !!editableExtension(entry.name)));
   const createMarkdown = async () => {
     const name = await askName(assets().markdown, assets().filename, assets().defaultMarkdown);
     if (!name) return;
@@ -593,23 +723,30 @@ export default function Browser(props: {
     });
   };
   type BatchItem = { path: string; ok: boolean; error?: string };
-  const normalizedPaths = (paths: readonly string[]) => [...new Set(paths)].filter(path => !paths.some(parent => parent !== path && path.startsWith(`${parent}/`)));
+  const normalizedPaths = (paths: readonly string[]) =>
+    [...new Set(paths)].filter((path) => !paths.some((parent) => parent !== path && path.startsWith(`${parent}/`)));
   const runBatches = async (paths: readonly string[], send: (batch: string[]) => Promise<BatchItem[]>) => {
     const results: BatchItem[] = [];
     for (let index = 0; index < paths.length; index += 100) {
       const batch = paths.slice(index, index + 100);
-      try { results.push(...await send(batch)); }
-      catch (error) { results.push(...batch.map(path => ({ path, ok: false, error: error instanceof Error ? error.message : t().unavailable }))); }
+      try {
+        results.push(...(await send(batch)));
+      } catch (error) {
+        results.push(...batch.map((path) => ({ path, ok: false, error: error instanceof Error ? error.message : t().unavailable })));
+      }
     }
     return results;
   };
   const finishBatch = async (results: readonly BatchItem[], message: (count: number) => string, selectPath: string | null = null) => {
-    const failures = results.filter(result => !result.ok);
+    const failures = results.filter((result) => !result.ok);
     const succeeded = results.length - failures.length;
     if (succeeded) toast.success(message(succeeded));
-    if (failures.length) toast.error(failures.map(result => `${result.path}: ${result.error ?? t().unavailable}`).join("\n"));
+    if (failures.length) toast.error(failures.map((result) => `${result.path}: ${result.error ?? t().unavailable}`).join("\n"));
     await refresh(failures[0]?.path ?? selectPath);
-    if (mounted && failures.length && actionLocation === locationKey()) { setSelecting(true); selection.replace(failures.map(result => result.path)); }
+    if (mounted && failures.length && actionLocation === locationKey()) {
+      setSelecting(true);
+      selection.replace(failures.map((result) => result.path));
+    }
   };
   const moveIntoNewFolder = async (items: readonly FileEntry[]) => {
     const name = await askName(b().moveToNewFolder, b().newFolderName);
@@ -619,7 +756,7 @@ export default function Browser(props: {
       const made = await apiClient.bases[":baseId"].directories.$post({ param: { baseId: baseId() }, json: { path } });
       if (!made.ok) await apiFailure(made, t().unavailable);
       const base = baseId();
-      const results = await runBatches(normalizedPaths(items.map(item => item.path)), async paths => {
+      const results = await runBatches(normalizedPaths(items.map((item) => item.path)), async (paths) => {
         const moved = await apiClient.bases[":baseId"].move.$post({ param: { baseId: base }, json: { paths, folder: path } });
         if (!moved.ok) await apiFailure(moved, t().unavailable);
         return (await moved.json()).results;
@@ -629,13 +766,22 @@ export default function Browser(props: {
   };
   const moveOrCopy = async (items: readonly FileEntry[], copyOnly = false) => {
     const source = locationKey();
-    const destination = await openDestinationDialog({ bases: props.bases, sourceBaseId: baseId(), sourcePaths: items.map((item) => item.path), initialFolder: folder(), copyOnly });
+    const destination = await openDestinationDialog({
+      bases: props.bases,
+      sourceBaseId: baseId(),
+      sourcePaths: items.map((item) => item.path),
+      initialFolder: folder(),
+      copyOnly,
+    });
     if (!destination || source !== locationKey()) return;
     runAction(async () => {
       const base = baseId();
-      const results = await runBatches(normalizedPaths(items.map(item => item.path)), async paths => {
+      const results = await runBatches(normalizedPaths(items.map((item) => item.path)), async (paths) => {
         const response = destination.copy
-          ? await apiClient.bases[":baseId"].copy.$post({ param: { baseId: base }, json: { paths, targetBaseId: destination.baseId, folder: destination.folder } })
+          ? await apiClient.bases[":baseId"].copy.$post({
+              param: { baseId: base },
+              json: { paths, targetBaseId: destination.baseId, folder: destination.folder },
+            })
           : await apiClient.bases[":baseId"].move.$post({ param: { baseId: base }, json: { paths, folder: destination.folder } });
         if (!response.ok) await apiFailure(response, t().unavailable);
         return (await response.json()).results;
@@ -654,7 +800,7 @@ export default function Browser(props: {
     if (!confirmed || source !== locationKey()) return;
     runAction(async () => {
       const base = baseId();
-      const results = await runBatches(normalizedPaths(items.map(item => item.path)), async paths => {
+      const results = await runBatches(normalizedPaths(items.map((item) => item.path)), async (paths) => {
         const response = await apiClient.bases[":baseId"].delete.$post({ param: { baseId: base }, json: { paths } });
         if (!response.ok) await apiFailure(response, t().unavailable);
         return (await response.json()).results;
@@ -674,7 +820,10 @@ export default function Browser(props: {
   };
   const duplicate = (item: FileEntry) =>
     runAction(async () => {
-      const response = await apiClient.bases[":baseId"].copy.$post({ param: { baseId: baseId() }, json: { paths: [item.path], targetBaseId: baseId(), folder: parentPath(item.path) } });
+      const response = await apiClient.bases[":baseId"].copy.$post({
+        param: { baseId: baseId() },
+        json: { paths: [item.path], targetBaseId: baseId(), folder: parentPath(item.path) },
+      });
       if (!response.ok) await apiFailure(response, t().unavailable);
       const result = await response.json();
       await finishBatch(result.results, () => b().duplicated, result.entries[0]?.path ?? null);
@@ -752,7 +901,12 @@ export default function Browser(props: {
         };
   const canDrop = (target: string) => {
     const paths = dragging();
-    return !!paths && !paths.includes(target) && !paths.some((path) => target.startsWith(`${path}/`)) && !paths.every((path) => parentPath(path) === target);
+    return (
+      !!paths &&
+      !paths.includes(target) &&
+      !paths.some((path) => target.startsWith(`${path}/`)) &&
+      !paths.every((path) => parentPath(path) === target)
+    );
   };
   const dropProps = (target: string, hover?: () => void): RowAttributes => ({
     onDragOver: (event) => {
@@ -782,12 +936,14 @@ export default function Browser(props: {
     "data-drop-target": dropTarget() === target && dragging() ? "true" : undefined,
   });
   const folderDrop = (row: FileEntry): RowAttributes =>
-    row.directory && !searching() && !virtualOf(row) ? dropProps(row.path, () => (view().view === "tree" ? expandFolder(row.path, true) : openFolder(row.path))) : {};
+    row.directory && !searching() && !virtualOf(row)
+      ? dropProps(row.path, () => (view().view === "tree" ? expandFolder(row.path, true) : openFolder(row.path)))
+      : {};
   const upDrop = (): RowAttributes => (folder() ? dropProps(parentPath(folder()), goUp) : {});
   const movePaths = (paths: readonly string[], target: string) =>
     runAction(async () => {
       const base = baseId();
-      const results = await runBatches(normalizedPaths(paths), async paths => {
+      const results = await runBatches(normalizedPaths(paths), async (paths) => {
         const response = await apiClient.bases[":baseId"].move.$post({ param: { baseId: base }, json: { paths, folder: target } });
         if (!response.ok) await apiFailure(response, t().unavailable);
         return (await response.json()).results;
@@ -805,7 +961,17 @@ export default function Browser(props: {
       props.onEdit?.(entry);
       return;
     }
-    void prompts.dialog(() => <FilePreview baseId={baseId()} locationKey={props.directory.base.locationKey} entry={entry} onDownload={() => startDownload([entry])} />, { title: entry.name, size: "large" });
+    void prompts.dialog(
+      () => (
+        <FilePreview
+          baseId={baseId()}
+          locationKey={props.directory.base.locationKey}
+          entry={entry}
+          onDownload={() => startDownload([entry])}
+        />
+      ),
+      { title: entry.name, size: "large" },
+    );
   };
   // Entering or leaving select mode starts clean; outside it a click only highlights one entry for its details.
   const toggleSelecting = (on: boolean) => {
@@ -837,17 +1003,38 @@ export default function Browser(props: {
   const selectionItems = () => {
     const items = selected();
     return [
-      { label: items.length === 1 && !items[0]!.directory ? t().download : b().downloadZip, icon: "ti ti-download", action: () => startDownload(items) },
+      {
+        label: items.length === 1 && !items[0]!.directory ? t().download : b().downloadZip,
+        icon: "ti ti-download",
+        action: () => startDownload(items),
+      },
       ...(searching()
         ? []
         : [
-            { disabled: !canCreate() || !movable(items), label: b().moveToNewFolder, icon: "ti ti-folder-plus", action: () => void moveIntoNewFolder(items) },
+            {
+              disabled: !canCreate() || !movable(items),
+              label: b().moveToNewFolder,
+              icon: "ti ti-folder-plus",
+              action: () => void moveIntoNewFolder(items),
+            },
             { disabled: !movable(items), label: b().moveTo, icon: "ti ti-arrow-move-right", action: () => void moveOrCopy(items) },
             { label: b().copyTo, icon: "ti ti-copy", action: () => void moveOrCopy(items, true) },
           ]),
-      ...(props.onShare && shareable(items) ? [{ label: b().shareSelection, icon: "ti ti-world-share", action: () => props.onShare?.(items.map((item) => item.path)) }] : []),
+      ...(props.onShare && shareable(items)
+        ? [{ label: b().shareSelection, icon: "ti ti-world-share", action: () => props.onShare?.(items.map((item) => item.path)) }]
+        : []),
       { label: b().clear, icon: "ti ti-x", action: selection.clear },
-      { items: [{ disabled: !movable(items), label: b().trashSelection, icon: "ti ti-trash", variant: "danger" as const, action: () => void trashItems(items) }] },
+      {
+        items: [
+          {
+            disabled: !movable(items),
+            label: b().trashSelection,
+            icon: "ti ti-trash",
+            variant: "danger" as const,
+            action: () => void trashItems(items),
+          },
+        ],
+      },
     ];
   };
   const contextItems = () => {
@@ -858,7 +1045,12 @@ export default function Browser(props: {
     return [
       { label: b().open, icon: item.directory ? "ti ti-folder-open" : "ti ti-eye", action: () => open(item) },
       { label: b().details, icon: "ti ti-info-circle", action: () => selection.select(item.path) },
-      ...(searching() ? [] : [{ disabled: item.actions?.move === false, label: b().rename, icon: "ti ti-pencil", action: () => void rename(item) }, { disabled: !canCreate(), label: b().duplicate, icon: "ti ti-copy", action: () => duplicate(item) }]),
+      ...(searching()
+        ? []
+        : [
+            { disabled: item.actions?.move === false, label: b().rename, icon: "ti ti-pencil", action: () => void rename(item) },
+            { disabled: !canCreate(), label: b().duplicate, icon: "ti ti-copy", action: () => duplicate(item) },
+          ]),
       ...selectionItems(),
     ];
   };
@@ -871,34 +1063,51 @@ export default function Browser(props: {
   };
   const parentOf = (path: string) => parentPath(path) || props.directory.base.name;
   const detailOpen = () => selectedPaths().length > 0;
-  const addItems = () => !canCreate() ? [] : [
-    { label: b().upload, icon: "ti ti-upload", action: () => filePicker?.click() },
-    { label: b().uploadFolder, icon: "ti ti-folder-up", action: () => folderPicker?.click() },
-    { items: [{ label: b().newFolder, icon: "ti ti-folder-plus", action: () => void createFolder() }, { label: b().newFile, icon: "ti ti-file-plus", action: () => void createFile() },
+  const addItems = () =>
+    !canCreate()
+      ? []
+      : [
+          { label: b().upload, icon: "ti ti-upload", action: () => filePicker?.click() },
+          { label: b().uploadFolder, icon: "ti ti-folder-up", action: () => folderPicker?.click() },
+          {
+            items: [
+              { label: b().newFolder, icon: "ti ti-folder-plus", action: () => void createFolder() },
+              { label: b().newFile, icon: "ti ti-file-plus", action: () => void createFile() },
             ],
           },
           { label: assets().markdown, icon: "ti ti-markdown", action: () => void createMarkdown() },
           { label: assets().template, icon: "ti ti-file-description", action: () => void createFromTemplate() },
-    ...(props.editor && props.onEdit
-      ? [
-          {
-            items: [
-              { label: b().newDocument, icon: "ti ti-file-text", action: () => void createDocument("text", b().newDocument) },
-              { label: b().newSpreadsheet, icon: "ti ti-table", action: () => void createDocument("spreadsheet", b().newSpreadsheet) },
-              { label: b().newPresentation, icon: "ti ti-presentation", action: () => void createDocument("presentation", b().newPresentation) },
-            ],
-          },
-        ]
-      : []),
-  ];
+          ...(props.editor && props.onEdit
+            ? [
+                {
+                  items: [
+                    { label: b().newDocument, icon: "ti ti-file-text", action: () => void createDocument("text", b().newDocument) },
+                    {
+                      label: b().newSpreadsheet,
+                      icon: "ti ti-table",
+                      action: () => void createDocument("spreadsheet", b().newSpreadsheet),
+                    },
+                    {
+                      label: b().newPresentation,
+                      icon: "ti ti-presentation",
+                      action: () => void createDocument("presentation", b().newPresentation),
+                    },
+                  ],
+                },
+              ]
+            : []),
+        ];
   const goUp = () => {
     setOpening("up");
     selection.clear();
     props.onOpenDirectory?.(parentPath(folder()));
   };
-  const virtualBefore = (): VirtualRow[] => (folder() && !searching() && view().view !== "tree" ? [{ key: "up", label: "..", icon: "ti ti-folder-up", onClick: goUp }] : []);
+  const virtualBefore = (): VirtualRow[] =>
+    folder() && !searching() && view().view !== "tree" ? [{ key: "up", label: "..", icon: "ti ti-folder-up", onClick: goUp }] : [];
   const virtualAfter = (): VirtualRow[] =>
-    !folder() && !searching() && props.onOpenTrash ? [{ key: "trash", label: b().trashTitle, icon: "ti ti-trash", onClick: () => props.onOpenTrash?.() }] : [];
+    !folder() && !searching() && props.onOpenTrash
+      ? [{ key: "trash", label: b().trashTitle, icon: "ti ti-trash", onClick: () => props.onOpenTrash?.() }]
+      : [];
   // Virtual rows join the tile grid as entries with a reserved path; they are never selectable.
   const virtualKey = (row: VirtualRow) => `\u0000${row.key}`;
   const gridRows = createMemo<FileEntry[]>(() => [
@@ -910,7 +1119,11 @@ export default function Browser(props: {
   const gridCheck = (row: FileEntry) => (
     <Show when={selecting()}>
       <span class="filesv2-grid-check">
-        <Checkbox value={selection.selected().has(row.path)} label={<span class="sr-only">{b().selectEntry(row.name)}</span>} onValueChange={() => selection.toggle(row.path)} />
+        <Checkbox
+          value={selection.selected().has(row.path)}
+          label={<span class="sr-only">{b().selectEntry(row.name)}</span>}
+          onValueChange={() => selection.toggle(row.path)}
+        />
       </span>
     </Show>
   );
@@ -927,13 +1140,25 @@ export default function Browser(props: {
     },
   };
   const sortLabel = (key: SortKey) => (key === "modified" ? b().sortModified : key === "size" ? b().sortSize : b().sortName);
-  const filterLabel = (key: TypeFilter) =>
-    key === "directories" ? b().filterFolders : key === "files" ? b().filterFiles : b().filterAll;
-  const listMessages = () => ({ name: t().name, size: t().size, modified: t().modified, details: b().detailsFor, toggle: b().toggleFolder, select: b().selectEntry, more: b().more, up: b().parentFolderUp });
+  const filterLabel = (key: TypeFilter) => (key === "directories" ? b().filterFolders : key === "files" ? b().filterFiles : b().filterAll);
+  const listMessages = () => ({
+    name: t().name,
+    size: t().size,
+    modified: t().modified,
+    details: b().detailsFor,
+    toggle: b().toggleFolder,
+    select: b().selectEntry,
+    more: b().more,
+    up: b().parentFolderUp,
+  });
   return (
     <>
       <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
-        <div class="filesv2-browser__surface" data-dragging={drop.isDragging() && !dragging() && !searching() ? "true" : undefined} {...(dragging() ? {} : { ...drop.handlers, onDrop: onExternalDrop })}>
+        <div
+          class="filesv2-browser__surface"
+          data-dragging={drop.isDragging() && !dragging() && !searching() ? "true" : undefined}
+          {...(dragging() ? {} : { ...drop.handlers, onDrop: onExternalDrop })}
+        >
           <Show when={drop.isDragging() && !dragging() && !searching()}>
             <div class="filesv2-browser__drop" aria-hidden="true">
               <i class="ti ti-upload" />
@@ -942,8 +1167,31 @@ export default function Browser(props: {
           </Show>
           <header class="filesv2-browser__header">
             <div class="flex items-center gap-2">
-              <input ref={filePicker} type="file" multiple class="sr-only" tabIndex={-1} aria-hidden="true" onChange={(event) => { startUpload(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} />
-              <input ref={folderPicker} type="file" multiple class="sr-only" tabIndex={-1} aria-hidden="true" {...{ webkitdirectory: "" }} onChange={(event) => { startUpload(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} />
+              <input
+                ref={filePicker}
+                type="file"
+                multiple
+                class="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+                onChange={(event) => {
+                  startUpload(Array.from(event.currentTarget.files ?? []));
+                  event.currentTarget.value = "";
+                }}
+              />
+              <input
+                ref={folderPicker}
+                type="file"
+                multiple
+                class="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+                {...{ webkitdirectory: "" }}
+                onChange={(event) => {
+                  startUpload(Array.from(event.currentTarget.files ?? []));
+                  event.currentTarget.value = "";
+                }}
+              />
               <Dropdown.Root items={addItems()}>
                 <Dropdown.Trigger iconOnly label={b().add} variant="input" disabled={busy() || searching() || !canCreate()}>
                   <i class="ti ti-plus" aria-hidden="true" />
@@ -996,7 +1244,9 @@ export default function Browser(props: {
                 ]}
               />
             </div>
-            <Show when={props.notice}><InlineGuidance tone="info">{props.notice}</InlineGuidance></Show>
+            <Show when={props.notice}>
+              <InlineGuidance tone="info">{props.notice}</InlineGuidance>
+            </Show>
             <div class="filesv2-toolbar">
               <Show
                 when={selecting()}
@@ -1084,25 +1334,54 @@ export default function Browser(props: {
                 measure();
                 onCleanup(() => observer.disconnect());
               });
-              return <section class="filesv2-folder-readme" aria-label={b().folderReadme}>
-                <div ref={viewport} class="filesv2-folder-readme__content" data-overflow={overflowing()}>
-                  <div ref={content}>
-                    <FilePreview baseId={baseId()} locationKey={props.directory.base.locationKey} entry={readme()} headingScale="compact" variant="plain" onDownload={() => startDownload([readme()])} />
+              return (
+                <section class="filesv2-folder-readme" aria-label={b().folderReadme}>
+                  <div ref={viewport} class="filesv2-folder-readme__content" data-overflow={overflowing()}>
+                    <div ref={content}>
+                      <FilePreview
+                        baseId={baseId()}
+                        locationKey={props.directory.base.locationKey}
+                        entry={readme()}
+                        headingScale="compact"
+                        variant="plain"
+                        onDownload={() => startDownload([readme()])}
+                      />
+                    </div>
                   </div>
-                </div>
-                <Show when={overflowing()}>
-                  <div class="filesv2-folder-readme__expand">
-                    <Button size="sm" variant="text" onClick={() => void prompts.dialog(() => <FilePreview baseId={baseId()} locationKey={props.directory.base.locationKey} entry={readme()} onDownload={() => startDownload([readme()])} />, { title: readme().name, size: "large" })}>{b().showAll}</Button>
-                  </div>
-                </Show>
-              </section>;
+                  <Show when={overflowing()}>
+                    <div class="filesv2-folder-readme__expand">
+                      <Button
+                        size="sm"
+                        variant="text"
+                        onClick={() =>
+                          void prompts.dialog(
+                            () => (
+                              <FilePreview
+                                baseId={baseId()}
+                                locationKey={props.directory.base.locationKey}
+                                entry={readme()}
+                                onDownload={() => startDownload([readme()])}
+                              />
+                            ),
+                            { title: readme().name, size: "large" },
+                          )
+                        }
+                      >
+                        {b().showAll}
+                      </Button>
+                    </div>
+                  </Show>
+                </section>
+              );
             }}
           </Show>
           <Show when={view().view === "tree" && !searching() && folder() && (!branch("") || branch("")?.loading || branch("")?.error)}>
             <InlineGuidance>
               {branch("")?.error ? b().treeLoadFailed : t().loadingFiles}
               <Show when={branch("")?.error}>
-                <Button size="xs" variant="text" onClick={() => void loadBranch("")}>{b().retry}</Button>
+                <Button size="xs" variant="text" onClick={() => void loadBranch("")}>
+                  {b().retry}
+                </Button>
               </Show>
             </InlineGuidance>
           </Show>
@@ -1119,7 +1398,10 @@ export default function Browser(props: {
             }
           >
             <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
-              <ScrollArea class="h-full" scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}>
+              <ScrollArea
+                class="h-full"
+                scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}
+              >
                 <Show
                   when={view().view === "grid"}
                   fallback={
@@ -1139,10 +1421,15 @@ export default function Browser(props: {
                         after={virtualAfter()}
                         rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row) })}
                         virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
-
                         messages={listMessages()}
                         sort={{ key: view().sort, direction: view().direction }}
-                        onSort={(key) => updateView(view().sort === key ? { direction: view().direction === "asc" ? "desc" : "asc" } : { sort: key, direction: "asc" })}
+                        onSort={(key) =>
+                          updateView(
+                            view().sort === key
+                              ? { direction: view().direction === "asc" ? "desc" : "asc" }
+                              : { sort: key, direction: "asc" },
+                          )
+                        }
                         onOpen={open}
                         onToggle={toggleBranch}
                         onLoadMore={(row) => {
@@ -1170,7 +1457,9 @@ export default function Browser(props: {
                       label={t().files}
                       size={view().size}
                       onOpen={(row) => (virtualOf(row) ? virtualOf(row)!.onClick() : open(row))}
-                      itemProps={(row) => (virtualOf(row) ? (virtualOf(row)!.key === "up" ? upDrop() : {}) : { ...dragProps(row), ...folderDrop(row) })}
+                      itemProps={(row) =>
+                        virtualOf(row) ? (virtualOf(row)!.key === "up" ? upDrop() : {}) : { ...dragProps(row), ...folderDrop(row) }
+                      }
                       onContextMenu={(row) => !virtualOf(row) && focusContext(row)}
                       onRowClick={(row) => {
                         const virtual = virtualOf(row);
@@ -1188,12 +1477,18 @@ export default function Browser(props: {
                         return (
                           <>
                             {gridCheck(row)}
-                            {opening() === row.path ? <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" /> : <FileThumbnail baseId={baseId()} locationKey={props.directory.base.locationKey} entry={row} large />}
+                            {opening() === row.path ? (
+                              <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" />
+                            ) : (
+                              <FileThumbnail baseId={baseId()} locationKey={props.directory.base.locationKey} entry={row} large />
+                            )}
                           </>
                         );
                       }}
                       renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
-                      renderMeta={(row) => (searching() && !virtualOf(row) ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null)}
+                      renderMeta={(row) =>
+                        searching() && !virtualOf(row) ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null
+                      }
                     />
                     <Show when={!props.directory.items.length}>
                       <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
@@ -1208,13 +1503,25 @@ export default function Browser(props: {
           </Show>
           <nav class="filesv2-browser__pagination" aria-label={t().files}>
             <Show when={props.after}>
-              <ButtonLink href={filesUrl(baseId(), folder(), null, null, props.directory.query, props.directory.scope, activeBrowse())} navigation="enhanced" onNavigate={props.onNavigate} size="sm" variant="secondary">
+              <ButtonLink
+                href={filesUrl(baseId(), folder(), null, null, props.directory.query, props.directory.scope, activeBrowse())}
+                navigation="enhanced"
+                onNavigate={props.onNavigate}
+                size="sm"
+                variant="secondary"
+              >
                 {t().first}
               </ButtonLink>
             </Show>
             <Show when={props.directory.next}>
               {(next) => (
-                <ButtonLink href={filesUrl(baseId(), folder(), next(), null, props.directory.query, props.directory.scope, activeBrowse())} navigation="enhanced" onNavigate={props.onNavigate} size="sm" variant="secondary">
+                <ButtonLink
+                  href={filesUrl(baseId(), folder(), next(), null, props.directory.query, props.directory.scope, activeBrowse())}
+                  navigation="enhanced"
+                  onNavigate={props.onNavigate}
+                  size="sm"
+                  variant="secondary"
+                >
                   {t().next}
                   <i class="ti ti-chevron-right" aria-hidden="true" />
                 </ButtonLink>
@@ -1250,7 +1557,6 @@ export default function Browser(props: {
             onShareInbox={props.onShareInbox ? (item) => props.onShareInbox?.(item.path) : undefined}
             onChanged={refresh}
             onMarksChanged={props.onMarksChanged}
-
           />
         </Show>
       </AppWorkspace.Detail>

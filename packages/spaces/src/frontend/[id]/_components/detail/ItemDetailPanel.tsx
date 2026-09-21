@@ -1,5 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { spaceCommandMessages } from "../../../../commands";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
@@ -20,7 +20,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type {
@@ -35,6 +34,7 @@ import type {
   WormholeTransferResult,
 } from "@/contracts";
 import { summarizeRecurrence } from "@/presentation/recurrence";
+import { spaceCommandMessages } from "../../../../commands";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";

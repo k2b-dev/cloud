@@ -10,7 +10,7 @@ import type {
   ShiftTemplateInput,
   UpcomingSlot,
 } from "../../../contracts";
-import { venueMessages, type VenueMessages } from "../../../messages";
+import { type VenueMessages, venueMessages } from "../../../messages";
 import { timeZoneDateConfig, todayDateKey } from "./utils";
 
 export function ProgressBar(props: { slot: UpcomingSlot; compact?: boolean }) {

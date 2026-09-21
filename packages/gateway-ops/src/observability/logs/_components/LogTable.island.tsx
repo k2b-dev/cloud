@@ -1,5 +1,5 @@
-import { type DateContext } from "@k2b/stdlib";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
+import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
   CopyButton,
@@ -14,9 +14,9 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
+import { gatewayOpsMessages } from "../../../messages";
 import LogFilterBar from "./LogFilterBar";
 import type { LogFilterState } from "./types";
-import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   entries: LogTableEntry[];

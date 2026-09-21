@@ -1,4 +1,4 @@
-import { type AppContext, type AuthContext, middleware, auth } from "@k2b/cloud/server";
+import { type AppContext, type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { filesCapabilities } from "./capabilities";

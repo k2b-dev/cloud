@@ -1,3 +1,4 @@
+import { env } from "../../config/env";
 import { publicCloudOrigin } from "../../shared/app-url";
 import { get as getSetting } from "../settings";
 import { CLOUD_INVOCATION_JWKS_PATH, CLOUD_OAUTH_JWKS_PATH, CLOUD_SESSION_JWKS_PATH } from "./constants";
@@ -28,7 +29,7 @@ const normalizeGroups = (value: unknown): string[] => {
   return groups.length > 0 ? groups : ["admins"];
 };
 
-const resolveCoreJwksUrl = (issuer: string, path: string, transportOrigin = process.env.CLOUD_IDENTITY_JWKS_ORIGIN?.trim()): URL => {
+const resolveCoreJwksUrl = (issuer: string, path: string, transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN): URL => {
   if (!transportOrigin) return new URL(path, issuer);
   const origin = new URL(transportOrigin);
   if (origin.protocol !== "http:" && origin.protocol !== "https:") {
@@ -37,13 +38,13 @@ const resolveCoreJwksUrl = (issuer: string, path: string, transportOrigin = proc
   return new URL(path, origin);
 };
 
-export const resolveSessionJwksUrl = (issuer: string, transportOrigin = process.env.CLOUD_IDENTITY_JWKS_ORIGIN?.trim()): URL =>
+export const resolveSessionJwksUrl = (issuer: string, transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN): URL =>
   resolveCoreJwksUrl(issuer, CLOUD_SESSION_JWKS_PATH, transportOrigin);
 
-export const resolveInvocationJwksUrl = (issuer: string, transportOrigin = process.env.CLOUD_IDENTITY_JWKS_ORIGIN?.trim()): URL =>
+export const resolveInvocationJwksUrl = (issuer: string, transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN): URL =>
   resolveCoreJwksUrl(issuer, CLOUD_INVOCATION_JWKS_PATH, transportOrigin);
 
-export const resolveOAuthJwksUrl = (issuer: string, transportOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN?.trim()): URL => {
+export const resolveOAuthJwksUrl = (issuer: string, transportOrigin = env.CLOUD_OAUTH_JWKS_ORIGIN): URL => {
   if (!transportOrigin) return new URL(CLOUD_OAUTH_JWKS_PATH, issuer);
 
   const url = new URL(CLOUD_OAUTH_JWKS_PATH, transportOrigin);
@@ -56,7 +57,7 @@ export const resolveOAuthJwksUrl = (issuer: string, transportOrigin = process.en
 const load = async (): Promise<IdentityRuntimeConfig> => {
   const [appUrl, rawGroupsAdmin] = await Promise.all([getSetting<string>("app.url"), getSetting<unknown>("freeipa.groups.admin")]);
   const issuer = publicCloudOrigin(appUrl);
-  if (process.env.NODE_ENV === "production" && new URL(issuer).protocol !== "https:") {
+  if (env.NODE_ENV === "production" && new URL(issuer).protocol !== "https:") {
     throw new Error("Cloud identity issuer must use HTTPS in production");
   }
   return {

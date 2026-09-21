@@ -3,13 +3,13 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, type EditorView, WidgetType } from "@codemirror/view";
 import mermaid from "mermaid";
+import { notebookWorkspaceMessages } from "../../[id]/messages";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
-import { notebookWorkspaceMessages } from "../../[id]/messages";
 
 let isMermaidInitialized = false;
 

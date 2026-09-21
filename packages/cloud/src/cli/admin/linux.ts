@@ -1,4 +1,4 @@
-import { LinuxIdentityConfigurationSchema, type LinuxIdentityConfiguration } from "../../contracts/posix";
+import { type LinuxIdentityConfiguration, LinuxIdentityConfigurationSchema } from "../../contracts/posix";
 import { cliText, command, confirmFlag, flag, printStructured, readCliInput } from "../index";
 import { apiGet, apiJson, queryString } from "./shared";
 
@@ -10,7 +10,9 @@ export const linuxCommands = [
     flags: {
       after: flag.string({ description: "Continue after the previous page's nextCursor" }),
       search: flag.string({ description: "Filter by username substring" }),
-      scope: flag.enum(["ready", "all"] as const, { description: "Show eligible accounts missing Linux attributes or all accounts (default)" }),
+      scope: flag.enum(["ready", "all"] as const, {
+        description: "Show eligible accounts missing Linux attributes or all accounts (default)",
+      }),
     },
     async run({ ctx, flags }) {
       const result = await apiGet<unknown>(ctx, `${path}${queryString({ after: flags.after, search: flags.search, scope: flags.scope })}`);

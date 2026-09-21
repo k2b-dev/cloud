@@ -1,6 +1,6 @@
 /** Admin access to application-owned Sync diagnostics and recovery. */
 import type { SyncDeadLetterEntry, SyncDeadLetterKind, SyncDeadLetterStoreView, SyncScheduleView } from "../../services/sync-ops";
-import { arg, command, confirmFlag, flag, type CloudCliContext } from "../index";
+import { arg, type CloudCliContext, command, confirmFlag, flag } from "../index";
 import { apiGet, apiJson, printJsonOrTable, queryString } from "./shared";
 
 export type SyncOverview = {

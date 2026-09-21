@@ -1,9 +1,5 @@
+import { type LiquidTemplateFilter, renderLiquidTemplate, validateLiquidTemplate as validateSharedLiquidTemplate } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
-import {
-  type LiquidTemplateFilter,
-  renderLiquidTemplate,
-  validateLiquidTemplate as validateSharedLiquidTemplate,
-} from "@k2b/cloud/shared";
 import { type BarcodeFormat, BarcodeRenderError, barcodeDataUrl } from "../barcode-rendering";
 import type { DocumentTemplate } from "../contracts";
 import { documentServiceText, isGermanDocumentLocale } from "./document-messages";

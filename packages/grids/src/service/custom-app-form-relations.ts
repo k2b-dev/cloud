@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
+import type { FilterTree } from "../contracts";
 import { stableCustomAppValue } from "../custom-apps/stable-value";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
 import { normalizeRefKey } from "../ref-syntax";
-import type { FilterTree } from "../contracts";
-import { compileFilter } from "./filter-compiler";
 import { listByTable } from "./fields";
+import { compileFilter } from "./filter-compiler";
 import type { Form } from "./forms";
 import { relationLabelFields } from "./relation-targets";
 import { get as getTable } from "./tables";

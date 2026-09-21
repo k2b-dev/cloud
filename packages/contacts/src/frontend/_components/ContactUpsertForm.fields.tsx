@@ -1,7 +1,6 @@
 import { Button, IconButton, PanelDialog, RemoveButton, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import type { Accessor, Setter } from "solid-js";
 import { Index } from "solid-js";
-import { type ContactFormText, contactFormMessages, contactRowLabels } from "./contact-form-messages";
 import {
   type EditableAddress,
   type EditableBankAccount,
@@ -14,6 +13,7 @@ import {
   emptyPhoneRow,
   emptyWebsiteRow,
 } from "./ContactUpsertForm.model";
+import { type ContactFormText, contactFormMessages, contactRowLabels } from "./contact-form-messages";
 
 type RowsProps<T> = {
   rows: Accessor<T[]>;

@@ -1,11 +1,11 @@
-import type { AccessSubject } from "../server";
-import { inferenceProvider } from "./quota-provider";
 import type { Input, LoopAggregate, StructuredMeta, Usage } from "@k2b/nessi";
 import { nessi, StructuredOutputError } from "@k2b/nessi";
 import type { z } from "zod";
+import type { AccessSubject } from "../server";
 import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
 import { trace } from "../services/logging";
+import { inferenceProvider } from "./quota-provider";
 import { resolveAiModel } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
 import type { AiResolvedModel } from "./types";

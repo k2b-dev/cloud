@@ -1,4 +1,3 @@
-import { NoteComposeInputSchema } from "./commands";
 import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -50,6 +49,7 @@ import {
 } from "./capability-contracts";
 import { notebookCapabilityMessages } from "./capability-messages";
 import { notebooksCapabilityPresentation } from "./capability-presentation";
+import { NoteComposeInputSchema } from "./commands";
 import { noteContentHash, summarizeNoteEditBlocks } from "./lib/note-edit";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
 import { resolveNotebookApiKeyPermission } from "./service/api-key-permissions";

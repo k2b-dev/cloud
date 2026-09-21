@@ -21,8 +21,10 @@ const CONNECT_TIMEOUT_MS = 10_000;
 export async function* parseAiSse(response: Response, signal: AbortSignal): AsyncGenerator<AiStreamEvent> {
   const reader = response.body?.getReader();
   if (!reader) return;
-  const cancel = () => { void reader.cancel().catch(() => undefined); };
-  signal.addEventListener("abort", cancel, {once:true});
+  const cancel = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
   const decoder = new TextDecoder();
   let buffer = "";

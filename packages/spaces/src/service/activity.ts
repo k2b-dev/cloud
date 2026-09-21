@@ -76,15 +76,18 @@ const actorShape = (actor: SpaceActivityIdentity) => {
   if ((actor.kind === "system") !== (actor.id === null)) throw new Error("Invalid Spaces activity actor");
 };
 
-export const record = async (params: {
-  spaceId: string;
-  itemId?: string | null;
-  actor: SpaceActivityIdentity;
-  action: string;
-  metadata?: Record<string, unknown>;
-  bucketStartedAt?: Date | null;
-  occurredAt?: Date;
-}, db: SqlExecutor = sql): Promise<string> => {
+export const record = async (
+  params: {
+    spaceId: string;
+    itemId?: string | null;
+    actor: SpaceActivityIdentity;
+    action: string;
+    metadata?: Record<string, unknown>;
+    bucketStartedAt?: Date | null;
+    occurredAt?: Date;
+  },
+  db: SqlExecutor = sql,
+): Promise<string> => {
   actorShape(params.actor);
   const action = params.action.trim();
   if (!action || action.length > 200) throw new Error("Activity action must be between 1 and 200 characters");

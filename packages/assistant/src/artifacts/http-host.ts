@@ -1,5 +1,5 @@
 import { artifactClient } from "./client";
-import { HttpRequest, type HttpScope, type HttpReview, type SecretMetadata } from "./http-contracts";
+import { HttpRequest, type HttpReview, type HttpScope, type SecretMetadata } from "./http-contracts";
 
 export type HttpApproval = HttpReview & { type: "http"; name: string };
 export type HttpHost = {

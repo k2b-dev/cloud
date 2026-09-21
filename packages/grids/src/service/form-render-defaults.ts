@@ -4,11 +4,7 @@ import type { Form } from "./forms";
 import type { Field } from "./types";
 
 /** Resolve display defaults once on the server, never mutate stored config. */
-export const materializeFormRenderDefaults = (
-  form: Form,
-  fields: Field[],
-  options: { dateConfig?: DateContext; now?: Date },
-): Form => {
+export const materializeFormRenderDefaults = (form: Form, fields: Field[], options: { dateConfig?: DateContext; now?: Date }): Form => {
   const byId = new Map(fields.map((field) => [field.id, field]));
   const now = options.now ?? new Date();
   return {
@@ -18,9 +14,7 @@ export const materializeFormRenderDefaults = (
       fields: form.config.fields.map((entry) => {
         const field = byId.get(entry.fieldId);
         if (entry.kind !== "user_input" || field?.type !== "date" || entry.defaultValue === undefined) return entry;
-        return { ...entry, defaultValue: materializeFieldDefault(
-          { ...field, defaultValue: entry.defaultValue }, { ...options, now },
-        ) };
+        return { ...entry, defaultValue: materializeFieldDefault({ ...field, defaultValue: entry.defaultValue }, { ...options, now }) };
       }),
     },
   };

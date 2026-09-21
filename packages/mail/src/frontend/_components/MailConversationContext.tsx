@@ -1,9 +1,9 @@
 import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { mailCommandMessages } from "../../commands";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, DetailPanel, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { mailCommandMessages } from "../../commands";
 import type { MailConversationContext } from "../../contracts";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";

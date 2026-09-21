@@ -10,8 +10,8 @@ import {
   publicDashboardRefreshDelayMs,
   resolvePublicDashboardRefreshSeconds,
 } from "./public-dashboard-runtime";
-import { defaultPulseDateContext } from "./workspace/helpers";
 import { usePulseMessages } from "./use-messages";
+import { defaultPulseDateContext } from "./workspace/helpers";
 
 type Props = {
   token: string;

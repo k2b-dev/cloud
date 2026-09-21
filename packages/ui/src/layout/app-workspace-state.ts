@@ -170,4 +170,5 @@ export const appWorkspaceLayoutStyle = (state: AppWorkspaceLayoutState | null | 
   ].filter(Boolean);
   return declarations.length ? declarations.join(";") : undefined;
 };
+
 import { assertStableUiId, isStableUiId } from "./stable-id";

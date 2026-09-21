@@ -1039,6 +1039,70 @@ exit 0
     }
   });
 
+  test("reports fd0 failures even when fd0 exits without reading stdin", async () => {
+    const state: MockServerState = {
+      refreshCalls: 0,
+      revokeCalls: 0,
+      meCalls: 0,
+      // Larger than the pipe buffer so the stdin write blocks and fails with EPIPE once fd0 exits.
+      tokenResponse: {
+        access_token: "new-access",
+        token_type: "Bearer",
+        expires_in: 3600,
+        id_token: null,
+        scope: "openid",
+        refresh_token: "r".repeat(512 * 1024),
+      },
+    };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const binDir = join(dir, "bin");
+    const fd0Path = join(binDir, "fd0");
+
+    try {
+      await mkdir(binDir, { recursive: true });
+      await writeFile(
+        fd0Path,
+        `#!/bin/sh
+if [ "$1" = "get" ]; then
+  printf '%s\n' old-refresh
+  exit 0
+fi
+if [ "$1" = "set" ]; then
+  echo "fd0 rejected the secret" >&2
+  exit 1
+fi
+exit 0
+`,
+        { mode: 0o700 },
+      );
+      await chmod(fd0Path, 0o700);
+      await writeConfig(configPath, {
+        currentProfile: "default",
+        profiles: {
+          default: {
+            server: `http://127.0.0.1:${server.port}`,
+            oauth: {
+              accessToken: "old-access",
+              accessTokenExpiresAt: "2000-01-01T00:00:00.000Z",
+              refreshTokenFd0: { name: "cloud-default-oauth-refresh-token" },
+              scope: "openid",
+            },
+          },
+        },
+      });
+
+      const result = await runCli(configPath, ["account", "whoami", "--json"], { PATH: `${binDir}:${process.env.PATH ?? ""}` });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("fd0 rejected the secret");
+      expect(result.stderr).not.toContain("EPIPE");
+      expect(state.revokeCalls).toBe(1);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("removes fd0 refresh tokens non-interactively during logout", async () => {
     const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
     const server = startMockServer(state);

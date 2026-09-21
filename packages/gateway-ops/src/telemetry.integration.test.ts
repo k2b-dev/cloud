@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../scripts/fixtures/test-infra";
 
-const dbTest = process.env.GATEWAY_OPS_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest("cleanupTelemetry deletes expired rows in bounded batches and heartbeats after each batch", async () => {
   const { cleanupTelemetry } = await import("./telemetry");

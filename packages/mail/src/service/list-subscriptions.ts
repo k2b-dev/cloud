@@ -1,11 +1,7 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
+import { type NetworkLookup, type PublicNetworkAddress, resolvePublicNetworkAddresses } from "@k2b/cloud/services/network-security";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import {
-  type NetworkLookup,
-  type PublicNetworkAddress,
-  resolvePublicNetworkAddresses,
-} from "@k2b/cloud/services/network-security";
 import { sql } from "bun";
 import { z } from "zod";
 import {
@@ -334,7 +330,7 @@ const performOneClickRequest: OneClickTransport = async (url, addresses, timeout
           Accept: "text/plain, */*;q=0.1",
           "Content-Type": "application/x-www-form-urlencoded",
           "Content-Length": Buffer.byteLength(body),
-          "User-Agent": "StuVe-Cloud-Mail/1.0",
+          "User-Agent": "Cloud-Mail/1.0",
         },
         lookup(_hostname, _options, callback) {
           callback(null, addresses[0]!.address, addresses[0]!.family);

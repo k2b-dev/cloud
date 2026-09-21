@@ -1,7 +1,6 @@
-import { MailDraftCalendarInputSchema } from "./commands";
 import { expect, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { MailComposeCommandInputSchema } from "./commands";
+import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
 
 test("Mail Command is discoverable empty and carries only a contact reference", () => {
   const manifest = compileCapabilityManifest("mail", {

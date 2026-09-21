@@ -6,7 +6,12 @@ import dashboardPage from "./frontend/page";
 import { dashboardHelp } from "./help";
 import { migrate } from "./migrate";
 
-const pageRoutes = new Hono<AuthContext>().get("/", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...dashboardPage);
+const pageRoutes = new Hono<AuthContext>().get(
+  "/",
+  auth.requireRole("authenticated", ssr.access),
+  auth.requireUser(ssr.access),
+  ...dashboardPage,
+);
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())

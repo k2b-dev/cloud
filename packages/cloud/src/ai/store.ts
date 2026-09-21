@@ -1,12 +1,12 @@
-import { parseAiTodoPlan } from "./todo-contracts";
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
-import { sql, type SQL } from "bun";
+import { type SQL, sql } from "bun";
 import { type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import type { AiTurnBlock } from "./protocol";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
+import { parseAiTodoPlan } from "./todo-contracts";
 import type {
   AiConversation,
   AiConversationDraft,
@@ -527,7 +527,7 @@ const visibleToTurn = (turnId?: string) => sql`(
 )`;
 
 const rowToConversation = (row: ConversationRow): AiConversation => ({
-  ...(row.activity ? {activity:row.activity} : {}),
+  ...(row.activity ? { activity: row.activity } : {}),
   id: row.id,
   hasActiveSchedule: Boolean(row.has_active_schedule),
   shortId: row.short_id,
@@ -539,19 +539,24 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
   pinnedAt: row.pinned_at ? iso(row.pinned_at) : null,
   archivedAt: row.archived_at ? iso(row.archived_at) : null,
   done: row.done,
-  isDone: row.pinned_at ? false : row.is_done ?? row.done ?? (
-    new Date(row.last_used_at).getTime() <= Date.now() - 7 * 86400000
-    && !row.has_active_schedule
-    && !["queued", "running", "waiting_for_action"].includes(row.latest_turn_status ?? "")
-  ),
+  isDone: row.pinned_at
+    ? false
+    : (row.is_done ??
+      row.done ??
+      (new Date(row.last_used_at).getTime() <= Date.now() - 7 * 86400000 &&
+        !row.has_active_schedule &&
+        !["queued", "running", "waiting_for_action"].includes(row.latest_turn_status ?? ""))),
   lastUsedAt: iso(row.last_used_at),
   runStatus: conversationRunStatus(row.latest_turn_status, row.latest_browser_pending),
   runError: row.latest_turn_status === "failed" ? row.latest_turn_error?.trim() || "Assistant response failed." : null,
   unreadCompletion:
-    Boolean(row.background_received_at && (!row.last_viewed_at || new Date(row.background_received_at).getTime() > new Date(row.last_viewed_at).getTime())) ||
-    row.latest_turn_status === "completed" &&
-    Boolean(row.latest_turn_completed_at) &&
-    (!row.last_viewed_at || new Date(row.latest_turn_completed_at!).getTime() > new Date(row.last_viewed_at).getTime()),
+    Boolean(
+      row.background_received_at &&
+        (!row.last_viewed_at || new Date(row.background_received_at).getTime() > new Date(row.last_viewed_at).getTime()),
+    ) ||
+    (row.latest_turn_status === "completed" &&
+      Boolean(row.latest_turn_completed_at) &&
+      (!row.last_viewed_at || new Date(row.latest_turn_completed_at!).getTime() > new Date(row.last_viewed_at).getTime())),
   projectId: row.project_id,
   draft: {
     content: parseJsonValue<AiConversationDraft["content"]>(row.draft_content ?? []),
@@ -859,12 +864,13 @@ const appendTurnOwnedMessage = async (input: {
   modelProfileId?: string | null;
   meta?: AiStoredMessage["meta"];
 }): Promise<AiStoredMessage | null> => {
-  return sql.begin(async tx => {
-  if (!input.background) await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid FOR UPDATE`;
-  const { usage, providerModel, stopReason } = messageColumns(input.message);
-  const rows = await withAiShortIdForDb(tx,
-    "idx_ai_messages_conversation_short_id",
-    (attempt, shortId) => attempt<MessageRow[]>`
+  return sql.begin(async (tx) => {
+    if (!input.background) await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid FOR UPDATE`;
+    const { usage, providerModel, stopReason } = messageColumns(input.message);
+    const rows = await withAiShortIdForDb(
+      tx,
+      "idx_ai_messages_conversation_short_id",
+      (attempt, shortId) => attempt<MessageRow[]>`
     INSERT INTO ${sql(input.background ? "ai.task_messages" : "ai.messages")} (
       short_id,
       conversation_id,
@@ -883,7 +889,7 @@ const appendTurnOwnedMessage = async (input: {
       ${shortId},
       ${input.conversationId},
       CASE
-        WHEN NOT ${Boolean(input.background)} AND ${input.kind === 'summary'} AND ${input.seq ?? null}::int IS NOT NULL AND ${input.seq ?? null}::int > 0 THEN ${input.seq ?? null}::int
+        WHEN NOT ${Boolean(input.background)} AND ${input.kind === "summary"} AND ${input.seq ?? null}::int IS NOT NULL AND ${input.seq ?? null}::int > 0 THEN ${input.seq ?? null}::int
         ELSE (SELECT COALESCE(MAX(seq), 0) + 1 FROM ${sql(input.background ? "ai.task_messages" : "ai.messages")} WHERE conversation_id = ${input.conversationId} AND seq > 0 AND (NOT ${Boolean(input.background)} OR loop_id = ${input.turnId}))
       END,
       ${input.kind ?? "message"},
@@ -905,12 +911,12 @@ const appendTurnOwnedMessage = async (input: {
     )
     RETURNING *
   `,
-  );
-  if (rows[0]) {
-    if (!input.background) await tx`UPDATE ai.conversations SET updated_at = now() WHERE id = ${input.conversationId}`;
-    return rowToMessage(rows[0]);
-  }
-  return null;
+    );
+    if (rows[0]) {
+      if (!input.background) await tx`UPDATE ai.conversations SET updated_at = now() WHERE id = ${input.conversationId}`;
+      return rowToMessage(rows[0]);
+    }
+    return null;
   });
 };
 
@@ -1776,7 +1782,8 @@ export const aiConversations: AiConversationService = {
           SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
             AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1
         `;
-        const [pending] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+        const [pending] =
+          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
         if (active || pending) return { ok: false as const, reason: "active_turn" as const };
       }
       await tx`UPDATE ai.conversations
@@ -2378,7 +2385,16 @@ export const aiConversations: AiConversationService = {
       await insertMessageLocked(
         {
           conversationId: input.conversationId,
-          message: todoPlan && input.summary.role === "assistant" ? { ...input.summary, content: [...input.summary.content, { type: "text", text: `Working plan at this checkpoint:\n${JSON.stringify(todoPlan)}` }] } : input.summary,
+          message:
+            todoPlan && input.summary.role === "assistant"
+              ? {
+                  ...input.summary,
+                  content: [
+                    ...input.summary.content,
+                    { type: "text", text: `Working plan at this checkpoint:\n${JSON.stringify(todoPlan)}` },
+                  ],
+                }
+              : input.summary,
           kind: "summary",
           seq: checkpointSeq,
           loopId: null,
@@ -2390,20 +2406,25 @@ export const aiConversations: AiConversationService = {
     });
   },
 
-  createCompactionTurn: async (input) => sql.begin(async (tx) => {
-    const [conversation] = await tx<{ id: string }[]>`
+  createCompactionTurn: async (input) =>
+    sql.begin(async (tx) => {
+      const [conversation] = await tx<{ id: string }[]>`
       SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid AND archived_at IS NULL FOR UPDATE
     `;
-    if (!conversation) throw new Error("Conversation not found.");
-    const rows = await withAiShortIdForDb(tx, "idx_ai_turns_conversation_short_id", (attempt, shortId) => attempt<TurnRow[]>`
+      if (!conversation) throw new Error("Conversation not found.");
+      const rows = await withAiShortIdForDb(
+        tx,
+        "idx_ai_turns_conversation_short_id",
+        (attempt, shortId) => attempt<TurnRow[]>`
       INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
       VALUES (${shortId}, ${input.conversationId}, ${input.modelProfileId}, 'queued',
         (${input.runConfig ? JSON.stringify(input.runConfig) : null}::text)::jsonb)
       RETURNING *
-    `);
-    await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${input.conversationId}::uuid`;
-    return rowToTurn(rows[0]!);
-  }),
+    `,
+      );
+      await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${input.conversationId}::uuid`;
+      return rowToTurn(rows[0]!);
+    }),
 
   submitChatTurn: async (input) => {
     return await sql.begin(async (tx) => {
@@ -2412,12 +2433,17 @@ export const aiConversations: AiConversationService = {
       `;
       if (!conversation) throw new Error("Conversation not found.");
       if (input.queuedMessageId) {
-        const [head] = await tx<{id:string;status:string}[]>`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY position LIMIT 1`;
-        const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
-        if (!head || head.id !== input.queuedMessageId || head.status !== 'pending' || busy) throw new Error("Queued message is no longer ready.");
+        const [head] = await tx<
+          { id: string; status: string }[]
+        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY position LIMIT 1`;
+        const [busy] =
+          await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
+        if (!head || head.id !== input.queuedMessageId || head.status !== "pending" || busy)
+          throw new Error("Queued message is no longer ready.");
       }
       if (!input.queuedMessageId) {
-        const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+        const [queued] =
+          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
         if (queued) throw new Error("Queued messages must be sent first.");
       }
       if (input.expectedDraftRevision !== undefined && Number(conversation.draft_revision) !== input.expectedDraftRevision) {
@@ -2456,16 +2482,19 @@ export const aiConversations: AiConversationService = {
       `,
       );
       // Queue acceptance already recorded the user's interaction time.
-      if (!input.queuedMessageId) await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${input.conversationId}::uuid`;
+      if (!input.queuedMessageId)
+        await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${input.conversationId}::uuid`;
       const turn = rowToTurn(turnRows[0]!);
       const attachedFiles = input.runConfig.files?.attached ?? [];
       for (const file of attachedFiles) {
         const copied = input.queuedMessageId
-          ? await tx<{path:string}[]>`INSERT INTO ai.turn_files(turn_id,path,bytes,media_type,size,origin,dictation_recorded_at,updated_at,version)
+          ? await tx<
+              { path: string }[]
+            >`INSERT INTO ai.turn_files(turn_id,path,bytes,media_type,size,origin,dictation_recorded_at,updated_at,version)
               SELECT ${turn.id}::uuid,path,bytes,media_type,size,origin,dictation_recorded_at,updated_at,version FROM ai.queued_message_files
               WHERE message_id = ${input.queuedMessageId}::uuid AND path = ${file.path} RETURNING path`
           : input.retrySourceTurnId
-          ? await tx<{ path: string }[]>`
+            ? await tx<{ path: string }[]>`
           INSERT INTO ai.turn_files (turn_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version)
           SELECT ${turn.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version
           FROM ai.turn_files
@@ -2476,7 +2505,7 @@ export const aiConversations: AiConversationService = {
             AND version = ${file.version ?? -1}
           RETURNING path
         `
-          : await tx<{ path: string }[]>`
+            : await tx<{ path: string }[]>`
           INSERT INTO ai.turn_files (turn_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version)
           SELECT ${turn.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version
           FROM ai.files
@@ -2548,7 +2577,9 @@ export const aiConversations: AiConversationService = {
   },
 
   getLatestTurn: async (input) => {
-    const [row] = await sql<TurnRow[]>`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false)
+    const [row] = await sql<
+      TurnRow[]
+    >`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false)
       ORDER BY created_at DESC, id DESC LIMIT 1`;
     return row ? rowToTurn(row) : null;
   },
@@ -3223,17 +3254,19 @@ export const aiConversations: AiConversationService = {
       if (input.background && input.turnId) {
         const own = await aiConversations.listTurnMessages({ conversationId: input.conversationId, loopId: input.turnId });
         const context = input.background.context;
-        return [...context, ...own.map(row => ({ seq: context.length + row.seq, kind: row.kind, message: row.message }))];
+        return [...context, ...own.map((row) => ({ seq: context.length + row.seq, kind: row.kind, message: row.message }))];
       }
       // Results delivered after this turn started belong to the next turn's context.
       // Compare durable message sequences rather than wall-clock timestamps.
       const rows = input.turnId
-        ? (await sql<MessageRow[]>`
+        ? (
+            await sql<MessageRow[]>`
             SELECT * FROM ai.messages
             WHERE conversation_id = ${input.conversationId}::uuid AND compacted_at IS NULL
               AND ${visibleToTurn(input.turnId)}
             ORDER BY seq ASC
-          `).map(rowToMessage)
+          `
+          ).map(rowToMessage)
         : await aiConversations.listContextMessages({ conversationId: input.conversationId });
       return rows.map((row) => ({
         seq: row.seq,

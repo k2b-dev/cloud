@@ -30,9 +30,9 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Vorlagen einer Tabelle aus gql.context finden. Aktivierte Vorlagen mit document.create verwenden oder gespeicherte Dokumente mit document.list lesen.",
           input: {
-            "tableId": "Öffentliche Tabellen-ID aus gql.context.",
-            "offset": "Position der nächsten Seite aus der vorherigen Antwort.",
-            "limit": "Maximale Anzahl von Vorlagen pro Seite.",
+            tableId: "Öffentliche Tabellen-ID aus gql.context.",
+            offset: "Position der nächsten Seite aus der vorherigen Antwort.",
+            limit: "Maximale Anzahl von Vorlagen pro Seite.",
           },
         },
         "document.list": {
@@ -40,9 +40,9 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine begrenzte Dokumentseite einer Vorlage aus document.templates lesen. Dokumentreferenzen mit document.read öffnen; es wird kein neues Dokument erzeugt.",
           input: {
-            "templateId": "Öffentliche Vorlagen-ID aus document.templates.",
-            "cursor": "Cursor aus der vorherigen Dokumentseite.",
-            "limit": "Maximale Anzahl von Dokumenten pro Seite.",
+            templateId: "Öffentliche Vorlagen-ID aus document.templates.",
+            cursor: "Cursor aus der vorherigen Dokumentseite.",
+            limit: "Maximale Anzahl von Dokumenten pro Seite.",
           },
         },
         "document.read": {
@@ -50,12 +50,13 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Metadaten und Prüfsummen einer Dokumentreferenz lesen. Der authentifizierte Download liefert gespeicherte PDF-Bytes, keine neue Darstellung.",
           input: {
-            "id": "Öffentliche ID des gespeicherten Dokuments.",
+            id: "Öffentliche ID des gespeicherten Dokuments.",
           },
         },
         "document.content.read": {
           title: "Dokumentinhalt lesen",
-          description: "Ein gespeichertes unveränderliches Artefakt als authentifizierten Binärstream lesen. Erstellt oder versendet kein Dokument und extrahiert keinen Text.",
+          description:
+            "Ein gespeichertes unveränderliches Artefakt als authentifizierten Binärstream lesen. Erstellt oder versendet kein Dokument und extrahiert keinen Text.",
           input: {
             id: "Öffentliche Dokument-ID aus document.list/read/create.",
             artifactKey: "Artefakt-Schlüssel aus document.read; standardmäßig das primäre Artefakt.",
@@ -66,9 +67,9 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Ausführbare Record-Aktionen einer Basis aus base.list finden. Auch bei leeren gefilterten Seiten nextOffset folgen. Tabelle und Revision anschließend mit workflow.record-action verwenden.",
           input: {
-            "baseId": "Öffentliche Basis-ID aus base.list.",
-            "offset": "Position der nächsten Seite aus der vorherigen Antwort; auch leeren Seiten folgen.",
-            "limit": "Maximale Anzahl von Record-Aktionen pro Seite.",
+            baseId: "Öffentliche Basis-ID aus base.list.",
+            offset: "Position der nächsten Seite aus der vorherigen Antwort; auch leeren Seiten folgen.",
+            limit: "Maximale Anzahl von Record-Aktionen pro Seite.",
           },
         },
         "workflow.run.read": {
@@ -76,7 +77,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Status einer Laufreferenz aus workflow.record-action lesen. Benötigt Lesezugriff auf die Basis; interne Eingaben, Ergebnisse und Ereignisse werden nicht ausgegeben.",
           input: {
-            "id": "Öffentliche ID der angenommenen Workflow-Ausführung.",
+            id: "Öffentliche ID der angenommenen Workflow-Ausführung.",
           },
         },
         "base.list": {
@@ -101,7 +102,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Suchen Sie eine zugängliche Grids-Basis anhand des Namens, der Beschreibung oder der Kurzform ID, wenn der ID unbekannt ist. Verwenden Sie zurückgegebene grids.base refs mit base.read oder deren IDs mit gql.context- und GQL-Abfragen.",
           input: {
-            "scope": "Optionaler Ressourcenkontext, der die Suche einschränkt.",
+            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
             "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
             "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
             query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
@@ -135,8 +136,9 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Führen Sie das erlaubnissichere GQL nach gql.context und normalerweise nach gql.preview aus. Wählen Sie nur benötigte Felder aus; zurückgegebenes grids.record refs kann mit record.read geöffnet werden, und nextCursor setzt bytebegrenzte Seiten fort.",
           input: {
-            "showTableToUser": "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
-            "parameters": "Werte für @params.name: Skalare, exakte {decimal: string}-Werte oder flache Listen. Kein Authentifizierungs- oder Seitenkontext; parametrisierte Ergebnisse enthalten keinen Editor-Link.",
+            showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
+            parameters:
+              "Werte für @params.name: Skalare, exakte {decimal: string}-Werte oder flache Listen. Kein Authentifizierungs- oder Seitenkontext; parametrisierte Ergebnisse enthalten keinen Editor-Link.",
             baseId: "Öffentliche Basis ID, in der die GQL-Quelle aufgelöst ist.",
             query: "Grids Query Auszuführende Sprachquelle.",
             currentTableId: "Optionale öffentliche Tabelle ID, die verwendet wird, wenn die Quelle eine explizite from-Klausel weglässt.",
@@ -151,8 +153,9 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Validieren Sie das berechtigungssichere GQL, nachdem IDs mit gql.context geladen wurde. Gibt eine kleine Probe oder umsetzbare Diagnose ohne Mutation zurück; Übergeben Sie gültiges GQL unverändert an gql.execute.",
           input: {
-            "showTableToUser": "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
-            "parameters": "Werte für @params.name: Skalare, exakte {decimal: string}-Werte oder flache Listen. Kein Authentifizierungs- oder Seitenkontext; parametrisierte Ergebnisse enthalten keinen Editor-Link.",
+            showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
+            parameters:
+              "Werte für @params.name: Skalare, exakte {decimal: string}-Werte oder flache Listen. Kein Authentifizierungs- oder Seitenkontext; parametrisierte Ergebnisse enthalten keinen Editor-Link.",
             baseId: "Öffentliche Basis ID, in der die GQL-Quelle aufgelöst ist.",
             query: "Grids Query Auszuführende Sprachquelle.",
             currentTableId: "Optionale öffentliche Tabelle ID, die verwendet wird, wenn die Quelle eine explizite from-Klausel weglässt.",
@@ -166,7 +169,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Führen Sie die genaue gespeicherte Abfrage für eine Basis-ID und eine Ansichts-ID aus, die von gql.context-Typansichten zurückgegeben werden. Dies ist der direkte Pfad zur gespeicherten Ansicht. Verwenden Sie gql.execute für Ad-hoc-GQL und nextCursor für weitere Seiten.",
           input: {
-            "showTableToUser": "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
+            showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
             baseId: "Öffentliche Basis ID, die die gespeicherte Ansicht enthält.",
             viewId: "Öffentliche gespeicherte Ansicht ID, deren genau gespeicherter GQL ausgeführt werden soll.",
             pageSize: "Maximale Anzahl an Zeilen, die auf dieser Cursorseite zurückgegeben werden sollen.",
@@ -204,11 +207,11 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine geprüfte GQL-Abfrage als persönliche oder geteilte Ansicht speichern. Erfordert Base-Adminrechte und Bestätigung. Ändert keine Tabellen oder Datensätze. Bei ungewissem Ergebnis zuerst vorhandene Ansichten prüfen, nicht blind wiederholen.",
           input: {
-            "baseId": "Öffentliche Basis-ID der neuen Ansicht.",
-            "query": "Geprüfte GQL-Abfrage für die gespeicherte Ansicht.",
-            "currentSource": "Tabellen- oder Ansichtsquelle für eine Abfrage ohne from-Klausel.",
-            "name": "Name der neuen gespeicherten Ansicht.",
-            "shared": "Mit Lesern der Basis teilen; sonst persönlich speichern. Beides erfordert Verwaltungsrechte für die Basis.",
+            baseId: "Öffentliche Basis-ID der neuen Ansicht.",
+            query: "Geprüfte GQL-Abfrage für die gespeicherte Ansicht.",
+            currentSource: "Tabellen- oder Ansichtsquelle für eine Abfrage ohne from-Klausel.",
+            name: "Name der neuen gespeicherten Ansicht.",
+            shared: "Mit Lesern der Basis teilen; sonst persönlich speichern. Beides erfordert Verwaltungsrechte für die Basis.",
           },
         },
         "document.create": {
@@ -216,8 +219,8 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Ein Dokument aus einer Vorlage und einem Record ausstellen. Eine vergebene Nummer bleibt dauerhaft. Jede Ausstellung einzeln bestätigen; denselben Idempotenzschlüssel nur für Wiederholungen desselben Auftrags verwenden. Keine Konformitätsgarantie oder externe Zustellung.",
           input: {
-            "templateId": "Öffentliche ID der auszustellenden Dokumentvorlage.",
-            "recordId": "Öffentliche ID des Quelldatensatzes.",
+            templateId: "Öffentliche ID der auszustellenden Dokumentvorlage.",
+            recordId: "Öffentliche ID des Quelldatensatzes.",
           },
         },
         "workflow.record-action": {
@@ -225,9 +228,9 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Mit der gefundenen Revision einen verknüpften Korrektur- oder Storno-Entwurf zu einem abgeschlossenen Original anlegen. Das Original bleibt unverändert; keine Ausstellung oder Zustellung. Immer ausdrücklich bestätigen; keine beliebigen Workflow-Quellen oder zusätzlichen Eingaben.",
           input: {
-            "launcherId": "Öffentliche ID der gefundenen Record-Aktion.",
-            "recordId": "Öffentliche ID des Quelldatensatzes.",
-            "expectedRevision": "Revision aus workflow.record-actions; bei Konflikten erneut laden und prüfen.",
+            launcherId: "Öffentliche ID der gefundenen Record-Aktion.",
+            recordId: "Öffentliche ID des Quelldatensatzes.",
+            expectedRevision: "Revision aus workflow.record-actions; bei Konflikten erneut laden und prüfen.",
           },
         },
         "record.create": {

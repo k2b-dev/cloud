@@ -1,3 +1,4 @@
+import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { documentNavigate } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
@@ -17,7 +18,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type {

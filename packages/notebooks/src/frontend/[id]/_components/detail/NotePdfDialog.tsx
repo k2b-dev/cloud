@@ -148,7 +148,13 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
       <PanelDialog.Body>
         <PanelDialog.Section title={t().printStyle} subtitle={t().printStyleDescription} icon="ti ti-template">
           <div class="flex flex-col gap-4">
-            <Select label={t().template} icon="ti ti-template" value={templateId} onValueChange={selectTemplate} options={templateOptions()} />
+            <Select
+              label={t().template}
+              icon="ti ti-template"
+              value={templateId}
+              onValueChange={selectTemplate}
+              options={templateOptions()}
+            />
             <Show when={templateId() === "custom"}>
               <AutocompleteEditor
                 label={t().customCss}

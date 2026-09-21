@@ -1,17 +1,18 @@
-import { requestGlobalSearch } from "./search-bridge";
 import { toast } from "@k2b/ui";
 import { resolveCommand } from "../capabilities/client";
-import { clearCommand, CommandOptionsSchema, readCommand, type CommandOptions } from "../contracts/commands";
-import { resourceSearchMessages } from "./resource-search-messages";
+import { type CommandOptions, CommandOptionsSchema, clearCommand, readCommand } from "../contracts/commands";
 import {
-  collectContextAwareCommands,
-  requestContextCommandExecution,
   type ContextAwareCommand,
+  collectContextAwareCommands,
   requestCommandHandling,
+  requestContextCommandExecution,
 } from "./command-bridge";
-export { registerCommandHandler, registerContextAwareCommand } from "./command-bridge";
-export type { CommandTarget, ContextAwareCommand } from "./command-bridge";
+import { resourceSearchMessages } from "./resource-search-messages";
+import { requestGlobalSearch } from "./search-bridge";
+
 export type { CommandOptions } from "../contracts/commands";
+export type { CommandTarget, ContextAwareCommand } from "./command-bridge";
+export { registerCommandHandler, registerContextAwareCommand } from "./command-bridge";
 
 /** Opens locally only when a mounted owner explicitly accepts; otherwise follows the app's URL. */
 export const openCommand = async (command: string, input: unknown = {}, options: CommandOptions = {}): Promise<void> => {

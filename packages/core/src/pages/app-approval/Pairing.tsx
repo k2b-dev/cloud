@@ -1,7 +1,7 @@
-import { qr } from "@k2b/stdlib/qr";
-import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, Placeholder, toast, useLocale } from "@k2b/ui";
 import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { AppPairingInspectionSchema, AppPairingPayloadSchema } from "@k2b/cloud/contracts";
+import { qr } from "@k2b/stdlib/qr";
+import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogOptions, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";
@@ -232,7 +232,12 @@ export default function Pairing(props: {
   };
   const content = (close: () => void) => (
     <PanelDialog>
-      <PanelDialog.Header title={t().pair} subtitle={props.actorId !== props.userId ? props.name : undefined} icon="ti ti-device-mobile" close={close} />
+      <PanelDialog.Header
+        title={t().pair}
+        subtitle={props.actorId !== props.userId ? props.name : undefined}
+        icon="ti ti-device-mobile"
+        close={close}
+      />
       <PanelDialog.Body>
         <Show when={!checkingIdentity()} fallback={<Placeholder state="loading" title={t().checkingIdentity} />}>
           <div class="flex flex-col gap-4">

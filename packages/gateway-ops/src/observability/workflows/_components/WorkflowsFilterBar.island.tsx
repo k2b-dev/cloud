@@ -14,21 +14,29 @@ type Props = {
 
 export default function WorkflowsFilterBar(props: Props) {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  const stateOptions: FilterChipSection[] = [{ options: [
-    { value: "all", label: t.allStates, icon: "ti ti-list" },
-    { value: "failed", label: t.failed, icon: "ti ti-alert-triangle" },
-    { value: "needs_attention", label: t.needsAttentionLabel, icon: "ti ti-hand-stop" },
-    { value: "waiting", label: t.waiting, icon: "ti ti-clock-pause" },
-    { value: "running", label: t.running, icon: "ti ti-player-play" },
-    { value: "queued", label: t.queued, icon: "ti ti-hourglass" },
-    { value: "succeeded", label: t.succeeded, icon: "ti ti-check" },
-    { value: "canceled", label: t.canceled, icon: "ti ti-ban" },
-  ] }];
-  const modeOptions: FilterChipSection[] = [{ options: [
-    { value: "all", label: t.anyMode, icon: "ti ti-arrows-shuffle" },
-    { value: "execute", label: t.execute, icon: "ti ti-bolt" },
-    { value: "dryRun", label: t.dryRun, icon: "ti ti-eye" },
-  ] }];
+  const stateOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.allStates, icon: "ti ti-list" },
+        { value: "failed", label: t.failed, icon: "ti ti-alert-triangle" },
+        { value: "needs_attention", label: t.needsAttentionLabel, icon: "ti ti-hand-stop" },
+        { value: "waiting", label: t.waiting, icon: "ti ti-clock-pause" },
+        { value: "running", label: t.running, icon: "ti ti-player-play" },
+        { value: "queued", label: t.queued, icon: "ti ti-hourglass" },
+        { value: "succeeded", label: t.succeeded, icon: "ti ti-check" },
+        { value: "canceled", label: t.canceled, icon: "ti ti-ban" },
+      ],
+    },
+  ];
+  const modeOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.anyMode, icon: "ti ti-arrows-shuffle" },
+        { value: "execute", label: t.execute, icon: "ti ti-bolt" },
+        { value: "dryRun", label: t.dryRun, icon: "ti ti-eye" },
+      ],
+    },
+  ];
   const appOptions = (): FilterChipSection[] => [
     {
       options: [

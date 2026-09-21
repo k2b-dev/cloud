@@ -7,7 +7,8 @@ export async function readBinaryResponse(response: Response, maximumBytes: numbe
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         size += chunk.byteLength;
-        if (size > maximumBytes) throw new AiFileWriteError("STORAGE_FULL", "The exported file exceeds the destination file limit; nothing was written.");
+        if (size > maximumBytes)
+          throw new AiFileWriteError("STORAGE_FULL", "The exported file exceeds the destination file limit; nothing was written.");
         controller.enqueue(chunk);
       },
     }),

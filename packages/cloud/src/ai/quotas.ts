@@ -1,8 +1,8 @@
+import { type SQL, sql } from "bun";
+import { type AccessSubject, buildAccessPrincipalCondition } from "../server/services/access";
 import { hasBillableAiPricing } from "../shared/ai-costs";
+import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaIdentity, type AiQuotaSnapshot } from "../shared/ai-quotas";
 import { readAiSettingsState } from "./settings";
-import { sql, type SQL } from "bun";
-import { buildAccessPrincipalCondition, type AccessSubject } from "../server/services/access";
-import { AiQuotaConfigSchema, type AiQuotaConfig, type AiQuotaSnapshot, type AiQuotaIdentity } from "../shared/ai-quotas";
 
 export class AiQuotaError extends Error {
   constructor(

@@ -311,6 +311,7 @@ const getSql = (): DesktopSql => {
   const { Database } = requireFn("bun:sqlite") as { Database: new (path: string) => any };
   const { dirname, resolve } = requireFn("node:path") as typeof import("node:path");
   const { mkdirSync } = requireFn("node:fs") as typeof import("node:fs");
+  // Declared in the platform registry; this browser-safe module must not import zod-backed config.
   const dbPath = process.env.CLOUD_DESKTOP_SQLITE_PATH ?? resolve(process.cwd(), ".local", "desktop.sqlite");
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);

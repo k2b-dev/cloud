@@ -1,14 +1,14 @@
-import { editAiDraftText } from "./draft-content";
-import { aiQuotas, AiQuotaError } from "./quotas";
-import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
-import { aiInputToUserMessage, aiTurnInputToContent } from "./http";
-import { canonicalizeAiConversationAttachments } from "./file-context";
-import { aiResourceMarker } from "./resource-markers";
 import { sql } from "bun";
-import type { AiConversationService, AiDraftContentPart } from "./types";
-import { aiConversations } from "./store";
 import { logger } from "../services/logging";
+import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
+import { editAiDraftText } from "./draft-content";
+import { canonicalizeAiConversationAttachments } from "./file-context";
 import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT } from "./files-store";
+import { aiInputToUserMessage, aiTurnInputToContent } from "./http";
+import { AiQuotaError, aiQuotas } from "./quotas";
+import { aiResourceMarker } from "./resource-markers";
+import { aiConversations } from "./store";
+import type { AiConversationService, AiDraftContentPart } from "./types";
 
 const log = logger("ai:message-queue");
 export const AI_MESSAGE_QUEUE_LIMIT = 32;
@@ -112,15 +112,26 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
     const parts = content.map((part) =>
       part.type === "text"
         ? part
-        : part.type === "project-file" ? { type: "text" as const, text: `Project file: ${part.path}` }
-        : part.type === "file"
-          ? { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size }
-          : { type: "text" as const, text: aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }) },
+        : part.type === "project-file"
+          ? { type: "text" as const, text: `Project file: ${part.path}` }
+          : part.type === "file"
+            ? { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size }
+            : { type: "text" as const, text: aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }) },
     );
     const { message } = aiInputToUserMessage(aiTurnInputToContent({ content: parts }));
     const userMessage = canonicalizeAiConversationAttachments(message, row.submission.runConfig.files);
     if (userMessage.role !== "user") throw new Error("Queued message must be a user message.");
-    const submission = { ...row.submission, userMessage, runConfig: { ...row.submission.runConfig, input: userMessage.content, selectedSkillIds: [...new Set(content.flatMap(part => part.type === "resource" && part.ref.type === "core.ai.skill" ? [part.ref.id] : []))] } };
+    const submission = {
+      ...row.submission,
+      userMessage,
+      runConfig: {
+        ...row.submission.runConfig,
+        input: userMessage.content,
+        selectedSkillIds: [
+          ...new Set(content.flatMap((part) => (part.type === "resource" && part.ref.type === "core.ai.skill" ? [part.ref.id] : []))),
+        ],
+      },
+    };
     await tx`UPDATE ai.queued_messages SET submission = (${JSON.stringify(submission)}::text)::jsonb,
     content = (${JSON.stringify(content)}::text)::jsonb WHERE id = ${id}::uuid`;
     return true;

@@ -1,16 +1,16 @@
-import { Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../config";
 import { createPagination } from "../contracts";
 import { ipaHostsService } from "../service";
 import HostgroupCard from "./HostgroupCard";
 import HostSettings from "./HostSettings.island";
 import HostsTable from "./HostsTable";
+import { hostMessages } from "./messages";
 import NewHostgroup from "./NewHostgroup.island";
 import SyncHosts from "./SyncHosts.island";
-import { hostMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = hostMessages.resolve([getLocale(c)]);

@@ -1,6 +1,6 @@
-import { ssr } from "../config";
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { ssr } from "../config";
 import weatherDetailPage from "./[id]/page";
 import weatherAdminPage from "./admin";
 import weatherDisplayPage from "./display/page";

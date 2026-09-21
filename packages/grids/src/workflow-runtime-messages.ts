@@ -74,7 +74,8 @@ export const workflowRuntimeMessages = i18n.define({
         "Das vollständige Abfrageergebnis für spätere Dokumentschritte speichern. Die Daten werden beim Ausführen des Workflows gelesen.",
       tableUnavailable: "Die Workflow-Tabelle ist nicht mehr verfügbar",
       recordReferenceRequired: ({ path }) => `${path} muss in einen Datensatz aufgelöst werden`,
-      atomicLocksInvalid: "Sperren müssen Datensätze oder Datensatzlisten mit insgesamt höchstens 100 unterschiedlichen Datensätzen referenzieren.",
+      atomicLocksInvalid:
+        "Sperren müssen Datensätze oder Datensatzlisten mit insgesamt höchstens 100 unterschiedlichen Datensätzen referenzieren.",
       recordUnavailable: "Der Workflow-Datensatz ist nicht mehr verfügbar",
       stableBindingMissing: ({ path }) => `Für ${path} fehlt eine stabile Bindung`,
       stableTargetBindingMissing: ({ path }) => `Für ${path} fehlt eine stabile Zielbindung`,

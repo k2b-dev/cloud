@@ -5,8 +5,9 @@
  * page or send a colleague the exact call that failed. Paging is keyset-based,
  * matching the store: the cursor travels in the URL instead of a page number.
  */
-import { createUrlFilter, flag, oneOf, text, type UrlFilterField } from "@k2b/cloud/ssr/url-filter";
+
 import type { CapabilityExecutionFilter } from "@k2b/cloud/capabilities/store";
+import { createUrlFilter, flag, oneOf, text, type UrlFilterField } from "@k2b/cloud/ssr/url-filter";
 import { z } from "zod";
 
 export const CAPABILITIES_BASE_PATH = "/admin/observability/capabilities";

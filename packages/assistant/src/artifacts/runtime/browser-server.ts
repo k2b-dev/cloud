@@ -1,8 +1,8 @@
-import { browserHttpHost } from "../SecretsDialog";
-import { runHttp } from "../http-host";
 import { approveInModal } from "../CapabilityApproval";
-import { runCapability } from "./capabilities";
 import { artifactClient } from "../client";
+import { runHttp } from "../http-host";
+import { browserHttpHost } from "../SecretsDialog";
+import { runCapability } from "./capabilities";
 import type { SessionOptions } from "./session";
 
 /** Loaded only for an explicitly authorized app run. Every endpoint rechecks access. */

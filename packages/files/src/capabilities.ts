@@ -1,4 +1,3 @@
-import { fail, ok } from "@k2b/stdlib";
 import {
   type CapabilityExecutionContext,
   type CloudResourceView,
@@ -7,6 +6,7 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { filesCapabilityPresentation } from "./capability-presentation";
 import { filesService } from "./service";

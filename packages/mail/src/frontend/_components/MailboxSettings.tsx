@@ -1,3 +1,4 @@
+import { PermissionEditor } from "@k2b/cloud/access/ui";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -14,7 +15,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { PermissionEditor } from "@k2b/cloud/access/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConfigurableFolderRole, Mailbox } from "../../contracts";

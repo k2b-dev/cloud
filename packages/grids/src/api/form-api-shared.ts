@@ -10,13 +10,13 @@ import type { Form } from "../service/forms";
 import { fromPublicRecordValues, fromPublicRelationValues, projectPublicId, resolvePublicId } from "../service/public-resources";
 import type { ExpansionViewer } from "../service/relation-access";
 import { apiMessages } from "./messages";
-import { fromPublicRecordQuery } from "./public-query";
 import {
   PublicFormSchema as AuthenticatedPublicFormSchema,
   type PublicForm,
   PublicFormConfigSchema,
   toPublicForm as toPublicStoredForm,
 } from "./public-dto";
+import { fromPublicRecordQuery } from "./public-query";
 
 type PublicFormConfig = PublicForm["config"];
 

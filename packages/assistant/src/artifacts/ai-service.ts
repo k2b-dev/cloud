@@ -8,9 +8,11 @@ export async function runCodeAi(input: unknown, scopeInput: unknown, identity: A
   signal.throwIfAborted();
   const modelId = await selectAssistantAiModelId(identity.accessSubject, request.modelProfileId);
   const result = await executeAiTask(request, {
-    taskPrefix: "code", appId: "assistant", signal,
+    taskPrefix: "code",
+    appId: "assistant",
+    signal,
     requestedModelId: modelId,
-    resolveModel: id => resolveAiModel(personalAiModelPolicy, id),
+    resolveModel: (id) => resolveAiModel(personalAiModelPolicy, id),
     usageSubject: identity.accessSubject,
     attribution: { userId: actor.id, conversationId: scope.conversationId },
   });

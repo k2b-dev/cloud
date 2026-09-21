@@ -64,9 +64,7 @@ const createSafeRenderer = (options: MarkdownRenderOptions = {}): Renderer => {
   const renderTable = renderer.table.bind(renderer);
   renderer.table = (token: Tokens.Table) => {
     const table = renderTable(token);
-    const content = token.header.every((cell) => !cell.text.trim())
-      ? table.replace(/<thead>[\s\S]*?<\/thead>\n?/, "")
-      : table;
+    const content = token.header.every((cell) => !cell.text.trim()) ? table.replace(/<thead>[\s\S]*?<\/thead>\n?/, "") : table;
     return `<div class="k2b-content-markdown__table" tabindex="0">${content}</div>`;
   };
   renderer.html = ({ text }: Tokens.HTML | Tokens.Tag) => escapeHtml(text);

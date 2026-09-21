@@ -1,6 +1,6 @@
-import { createProfileActions } from "./profile-actions";
 import { Avatar, Dropdown } from "@k2b/ui";
 import type { CloudTheme } from "../shared/theme";
+import { createProfileActions } from "./profile-actions";
 
 type ProfilePreferencesProps = {
   avatarSrc?: string;

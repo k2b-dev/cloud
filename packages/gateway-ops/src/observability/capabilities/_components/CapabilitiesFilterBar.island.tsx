@@ -39,7 +39,8 @@ export default function CapabilitiesFilterBar(props: Props) {
   const windowOptions = () => section(["1h", "24h", "7d", "30d", "90d"].map((value) => ({ value, label: value, icon: "ti ti-clock" })));
   const listOptions = (values: string[], allLabel: string, icon: string) =>
     section([{ value: "", label: allLabel, icon: "ti ti-list" }, ...values.map((value) => ({ value, label: value, icon }))]);
-  const go = (map: Record<string, string>, value: string | undefined, fallback: string) => navigateTo(map[value ?? fallback] ?? map[fallback] ?? "");
+  const go = (map: Record<string, string>, value: string | undefined, fallback: string) =>
+    navigateTo(map[value ?? fallback] ?? map[fallback] ?? "");
 
   return (
     <div class="flex flex-wrap items-center gap-2">

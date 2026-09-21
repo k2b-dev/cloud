@@ -14,7 +14,6 @@ import {
 } from "@k2b/cloud/shared";
 import { navigateTo } from "@k2b/ssr/nav";
 import {
-  Tabs,
   Button,
   ButtonLink,
   CopyButton,
@@ -30,6 +29,7 @@ import {
   Select,
   StatCell,
   StatGrid,
+  Tabs,
   TextInput,
   useLocale,
 } from "@k2b/ui";

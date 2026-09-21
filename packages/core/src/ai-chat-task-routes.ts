@@ -1,23 +1,23 @@
-import { taskGrantPresentation } from "./task-grant-presentation";
 import {
   AiChatTaskIdempotencyConflictError,
   AiConversationIdSchema,
+  aiChatTasks,
+  ChatTaskGrantsSchema,
   ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
-  ChatTaskGrantsSchema,
-  ChatTaskScheduleInputSchema as ScheduleInputSchema,
-  aiChatTasks,
   chatTaskCreateFingerprint,
   getChatTaskTimezone,
   normalizeChatTaskSchedule,
+  ChatTaskScheduleInputSchema as ScheduleInputSchema,
   toAiChatTaskOccurrenceView,
   toAiChatTaskView,
 } from "@k2b/cloud/ai";
 import { CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
-import { type AuthContext, getLocale, auth, err, fail, ok, rateLimit, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, err, fail, getLocale, ok, rateLimit, respond, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { aiChatTaskRuntime, nextChatTaskRuns, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
+import { taskGrantPresentation } from "./task-grant-presentation";
 
 const APP_ID = "core";
 const CreateSchema = z
@@ -65,8 +65,18 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));
     const query = c.req.valid("query");
     const tasks = await aiChatTasks.list({ userId: owner, ...query });
-    const nextRuns = tasks.some(task => task.state === "active" && task.schedule.kind === "cron") ? await nextChatTaskRuns() : new Map<string, string>();
-    return respond(c, ok(tasks.map(task => ({ ...toAiChatTaskView(task), nextRunAt: task.state !== "active" ? null : task.schedule.kind === "once" ? task.schedule.runAt : nextRuns.get(task.id) ?? null }))));
+    const nextRuns = tasks.some((task) => task.state === "active" && task.schedule.kind === "cron")
+      ? await nextChatTaskRuns()
+      : new Map<string, string>();
+    return respond(
+      c,
+      ok(
+        tasks.map((task) => ({
+          ...toAiChatTaskView(task),
+          nextRunAt: task.state !== "active" ? null : task.schedule.kind === "once" ? task.schedule.runAt : (nextRuns.get(task.id) ?? null),
+        })),
+      ),
+    );
   })
   .get(
     "/tasks/activities",
@@ -169,7 +179,15 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     return respond(
       c,
       ok({
-        task: { ...toAiChatTaskView(task), nextRunAt: task.state !== "active" ? null : task.schedule.kind === "once" ? task.schedule.runAt : (await nextChatTaskRuns()).get(task.id) ?? null },
+        task: {
+          ...toAiChatTaskView(task),
+          nextRunAt:
+            task.state !== "active"
+              ? null
+              : task.schedule.kind === "once"
+                ? task.schedule.runAt
+                : ((await nextChatTaskRuns()).get(task.id) ?? null),
+        },
         permissions: await taskGrantPresentation(task.grants, getLocale(c)),
         occurrences: (occurrences ?? []).map((entry) => toAiChatTaskOccurrenceView(entry, task.shortId)),
       }),

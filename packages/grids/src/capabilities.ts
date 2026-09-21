@@ -1,4 +1,3 @@
-import { withAuditRequest } from "./service/audit";
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -17,9 +16,9 @@ import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
-import { fileResponse } from "./api/download-response";
 import { DocumentCapabilityDataSchema } from "./api/document-public-contracts";
 import { documentActor, loadTemplateAndTable, projectDocuments } from "./api/documents-api-shared";
+import { fileResponse } from "./api/download-response";
 import { publicGqlParameterContext } from "./api/gql-public";
 import {
   buildPermissionedGqlResolverContextForAccess,
@@ -72,6 +71,7 @@ import { isRecordWritableFieldType } from "./field-types";
 import { ObjectListConfigSchema } from "./field-types/object-list";
 import { queryCapabilityHref } from "./query-capability-link";
 import { gridsService } from "./service";
+import { withAuditRequest } from "./service/audit";
 import { MAX_DOCUMENT_ARTIFACT_BYTES } from "./service/document-artifact-drafts";
 import { decodeDocumentCursor } from "./service/document-values";
 import { toPublicGqlResponse } from "./service/gql-public-result";

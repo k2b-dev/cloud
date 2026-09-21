@@ -6,8 +6,8 @@ import { resolveProviderProfile } from "../accounts/base-user";
 import { managedGroupIdsSubquery } from "../accounts/group-sql";
 import { buildIpaUserData, emptyIpaUserData, userIpaDataColumns, userIpaDataJoin } from "../accounts/ipa-data";
 import { resolveAccountExpires } from "../accounts/model";
-import { setRailCacheVersion } from "../rail-snapshot";
 import { toPgTextArray } from "../postgres";
+import { setRailCacheVersion } from "../rail-snapshot";
 
 type DbRow = Record<string, unknown>;
 

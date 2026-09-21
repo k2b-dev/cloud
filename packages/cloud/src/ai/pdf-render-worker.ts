@@ -1,9 +1,10 @@
 // Standalone subprocess. No server imports or application credentials.
-import { dirname, join } from "node:path";
+
 import { createRequire } from "node:module";
-import { z } from "zod";
+import { dirname, join } from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { z } from "zod";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const inputSchema = z.object({

@@ -7,8 +7,8 @@ import type { DslResolvedSqlGroupBy, DslResolvedSqlGroupSort, DslResolvedSqlSort
 import type { DslResolvedRelationJoin } from "./resolver-joins";
 import type { DslJoinedColumn, DslOutputColumn } from "./resolver-output";
 import type { DslResolvedSqlSearch } from "./resolver-search";
-import type { DslWherePredicate } from "./resolver-where";
 import type { DslSummaryJoin } from "./resolver-summary-joins";
+import type { DslWherePredicate } from "./resolver-where";
 
 type DslResolvedQueryPlan = {
   source: DslTableSource | DslViewSource;

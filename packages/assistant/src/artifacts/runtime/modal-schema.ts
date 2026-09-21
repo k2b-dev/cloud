@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LIMITS } from "../contracts";
+
 const text = z.string().max(LIMITS.text);
 const label = text.trim().min(1);
 const base = {

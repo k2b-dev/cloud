@@ -1,8 +1,3 @@
-import { parseAiResourceMarker } from "./resource-markers";
-import { aiQuotas } from "./quotas";
-import { drainQueuedMessages } from "./message-queue";
-import { coreSettings } from "../services/settings/api";
-import { startAiDictationRuntime } from "./dictation-runtime";
 import { isDeepStrictEqual } from "node:util";
 import type { InboundEvent, Input, Message } from "@k2b/nessi";
 import type { QueueMessage } from "@k2b/sync";
@@ -11,12 +6,16 @@ import { lazySync } from "../_internal/process-sync";
 import type { RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
-
+import { coreSettings } from "../services/settings/api";
 import { type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
+import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { startAiInvalidationRuntime, stopAiInvalidationRuntime } from "./live-outbox";
+import { drainQueuedMessages } from "./message-queue";
+import { aiQuotas } from "./quotas";
+import { parseAiResourceMarker } from "./resource-markers";
 import { isAiVisionModelConfigured } from "./settings";
 import { aiConversations } from "./store";
 import { publishAiTurnAbort, publishAiWireEvent } from "./stream";
@@ -144,10 +143,14 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
   if (input.assistantChat && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id);
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
-    selectedSkillIds: [...new Set((userMessage.role === "user" ? userMessage.content : []).flatMap(part => {
-      const marker = parseAiResourceMarker(typeof part === "string" ? part : part.type === "text" ? part.text : "");
-      return marker?.ref.type === "core.ai.skill" ? [marker.ref.id] : [];
-    }))],
+    selectedSkillIds: [
+      ...new Set(
+        (userMessage.role === "user" ? userMessage.content : []).flatMap((part) => {
+          const marker = parseAiResourceMarker(typeof part === "string" ? part : part.type === "text" ? part.text : "");
+          return marker?.ref.type === "core.ai.skill" ? [marker.ref.id] : [];
+        }),
+      ),
+    ],
     ...(input.assistantChat ? { assistantChat: true } : {}),
     input: canonicalInput,
     chatId: input.chatId,
@@ -421,14 +424,21 @@ const processMessage = async (
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
   let heartbeatFailed = false;
   const touch = setInterval(() => {
-    void message.heartbeat().then(() => { heartbeatFailed = false; }).catch(() => {
-      if (!heartbeatFailed && !signal.aborted) {
-        log.warn("AI queue heartbeat failed", {
-          code: "queue_heartbeat_failed", conversationId: message.data.conversationId, turnId: message.data.turnId,
-        });
-      }
-      heartbeatFailed = true;
-    });
+    void message
+      .heartbeat()
+      .then(() => {
+        heartbeatFailed = false;
+      })
+      .catch(() => {
+        if (!heartbeatFailed && !signal.aborted) {
+          log.warn("AI queue heartbeat failed", {
+            code: "queue_heartbeat_failed",
+            conversationId: message.data.conversationId,
+            turnId: message.data.turnId,
+          });
+        }
+        heartbeatFailed = true;
+      });
   }, AI_TURN_HEARTBEAT_MS);
   if (typeof touch === "object" && "unref" in touch) touch.unref();
   try {
@@ -457,7 +467,13 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
     type: "turn_finished",
     status,
     error: status === "failed" ? (turn.error ?? "AI turn failed.") : null,
-  }).catch(() => log.warn("AI completion notification failed", {code:"completion_publish_failed",conversationId:turn.conversationId,turnId:turn.turnId}));
+  }).catch(() =>
+    log.warn("AI completion notification failed", {
+      code: "completion_publish_failed",
+      conversationId: turn.conversationId,
+      turnId: turn.turnId,
+    }),
+  );
 };
 
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
@@ -465,7 +481,9 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
   await drainQueuedMessages(enqueueAiTurn);
   const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
   await Promise.all([
-    ...sweep.requeued.map((job) => enqueueAiTurn(job).catch(() => log.warn("AI recovery enqueue failed", {code:"recovery_enqueue_failed",...job}))),
+    ...sweep.requeued.map((job) =>
+      enqueueAiTurn(job).catch(() => log.warn("AI recovery enqueue failed", { code: "recovery_enqueue_failed", ...job })),
+    ),
     ...sweep.failed.map((turn) => publishSweepFinished(turn, "failed")),
     ...sweep.aborted.map((turn) => publishSweepFinished(turn, "aborted")),
   ]);

@@ -1,9 +1,9 @@
+import type { WorkflowJsonValue, WorkflowRunState } from "@k2b/cloud/workflows";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, prompts, toast, useLocale } from "@k2b/ui";
-import type { WorkflowJsonValue, WorkflowRunState } from "@k2b/cloud/workflows";
-import { apiClient } from "../api-client";
 import { gatewayOpsMessages } from "../../../messages";
+import { apiClient } from "../api-client";
 
 type AttentionStep = {
   stepKey: string;
@@ -26,15 +26,12 @@ export default function WorkflowRunActions(props: Props) {
   const { t } = gatewayOpsMessages.resolve([locale()]);
   const cancel = mutation.create<{ canceled: true }, void>({
     mutation: async () => {
-      const confirmed = await prompts.confirm(
-        t.cancelRunWarning,
-        {
-          title: t.cancelRunQuestion,
-          icon: "ti ti-player-stop",
-          confirmText: t.cancelRun,
-          variant: "danger",
-        },
-      );
+      const confirmed = await prompts.confirm(t.cancelRunWarning, {
+        title: t.cancelRunQuestion,
+        icon: "ti ti-player-stop",
+        confirmText: t.cancelRun,
+        variant: "danger",
+      });
       if (!confirmed) throw new DOMException("Canceled", "AbortError");
 
       const response = await apiClient.runs[":id"].cancel.$post({ param: { id: props.runId } });

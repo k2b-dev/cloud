@@ -1,10 +1,10 @@
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, FilterChip, type FilterChipSection, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { gatewayOpsMessages } from "../../../messages";
 import { apiClient as loggingClient } from "../api-client";
 import { buildLogFilterUrl, defaultLogFilter, hasActiveLogFilters, type LogFilterState } from "./types";
-import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   filter: LogFilterState;
@@ -14,13 +14,17 @@ type Props = {
 
 export default function LogFilterBar(props: Props) {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  const levelOptions: FilterChipSection[] = [{ options: [
-    { value: "all", label: t.all, icon: "ti ti-list" },
-    { value: "debug", label: t.debug, icon: "ti ti-bug" },
-    { value: "info", label: t.info, icon: "ti ti-info-circle" },
-    { value: "warn", label: t.warn, icon: "ti ti-alert-triangle" },
-    { value: "error", label: t.error, icon: "ti ti-alert-circle" },
-  ] }];
+  const levelOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.all, icon: "ti ti-list" },
+        { value: "debug", label: t.debug, icon: "ti ti-bug" },
+        { value: "info", label: t.info, icon: "ti ti-info-circle" },
+        { value: "warn", label: t.warn, icon: "ti ti-alert-triangle" },
+        { value: "error", label: t.error, icon: "ti ti-alert-circle" },
+      ],
+    },
+  ];
   const baseUrl = "/admin/observability/logs";
   const { filter } = props;
 

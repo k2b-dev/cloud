@@ -11,7 +11,8 @@ import {
   NoticeCard,
   NumberInput,
   ProgressBar,
-  prompts,ScrollArea,
+  prompts,
+  ScrollArea,
   SegmentedControl,
   Slider,
   SplitButton,
@@ -332,9 +333,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
           <header class="flex flex-none flex-wrap items-center justify-between gap-3 px-[var(--ui-space-shell)] py-[var(--ui-space-section)]">
             <div class="min-w-0">
               <h1 class="text-base font-semibold text-primary">{t().heading}</h1>
-              <p class="text-xs text-dimmed">
-                {images().length === 0 ? t().emptySubtitle : t().imageCount({ count: images().length })}
-              </p>
+              <p class="text-xs text-dimmed">{images().length === 0 ? t().emptySubtitle : t().imageCount({ count: images().length })}</p>
             </div>
             <div class="flex items-center gap-2">
               <Show when={images().length > 0}>

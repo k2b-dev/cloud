@@ -1,3 +1,5 @@
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AiSkill, AiSkillExtraFrontmatter, AiSkillReferenceInput, AiSkillSummary } from "@k2b/cloud/ai";
 import { files as browserFiles } from "@k2b/stdlib/browser";
 import {
   Button,
@@ -16,8 +18,6 @@ import {
   TextInput,
   toast,
 } from "@k2b/ui";
-import { PermissionEditor } from "@k2b/cloud/access/ui";
-import type { AiSkill, AiSkillExtraFrontmatter, AiSkillReferenceInput, AiSkillSummary } from "@k2b/cloud/ai";
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { type AiSkillImport, downloadAiSkillMarkdown, downloadAiSkillZip, readAiSkillImport } from "./assistant-skill-files";
@@ -62,10 +62,12 @@ const referencePath = (name: string): string => `references/${normalizedReferenc
 
 const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
   const text = assistantBrowserText;
-  const access = await Promise.all([assistantApi.listSkillAccess(skill.id), assistantApi.linkedSkillProjects(skill.id)]).catch(async (error) => {
-    await prompts.error(error instanceof Error ? error.message : text("Failed to load skill access"));
-    return null;
-  });
+  const access = await Promise.all([assistantApi.listSkillAccess(skill.id), assistantApi.linkedSkillProjects(skill.id)]).catch(
+    async (error) => {
+      await prompts.error(error instanceof Error ? error.message : text("Failed to load skill access"));
+      return null;
+    },
+  );
   if (!access) return;
   const [entries, projects] = access;
   await prompts.dialog<void>(
@@ -73,10 +75,21 @@ const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
       <div class="flex min-h-0 flex-col gap-3">
         <p class="text-sm text-secondary">{text("Share this skill through Cloud permissions. At least one administrator must remain.")}</p>
         <Show when={projects.length}>
-          <NoticeCard tone="info" title={text("Access through projects")} detail={text("Members of these projects can read and use this Skill. Editing permissions stay unchanged.")}>
-            <ul class="flex flex-col gap-1"><For each={projects}>{project => <li class="flex items-center gap-2 text-sm">
-              <i class="ti ti-folders" aria-hidden="true" />{project.name ?? text("Project without access to its details")}
-            </li>}</For></ul>
+          <NoticeCard
+            tone="info"
+            title={text("Access through projects")}
+            detail={text("Members of these projects can read and use this Skill. Editing permissions stay unchanged.")}
+          >
+            <ul class="flex flex-col gap-1">
+              <For each={projects}>
+                {(project) => (
+                  <li class="flex items-center gap-2 text-sm">
+                    <i class="ti ti-folders" aria-hidden="true" />
+                    {project.name ?? text("Project without access to its details")}
+                  </li>
+                )}
+              </For>
+            </ul>
           </NoticeCard>
         </Show>
         <PermissionEditor
@@ -131,7 +144,14 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
   };
 
   const remove = async (skill: AiSkillSummary) => {
-    if (!(await prompts.confirm(copy().deleteNamed({ name: skill.name }), { title: text("Delete skill"), variant: "danger", confirmText: text("Delete") }))) return;
+    if (
+      !(await prompts.confirm(copy().deleteNamed({ name: skill.name }), {
+        title: text("Delete skill"),
+        variant: "danger",
+        confirmText: text("Delete"),
+      }))
+    )
+      return;
     setBusyId(skill.id);
     try {
       await assistantApi.deleteSkill(skill.id);
@@ -163,7 +183,9 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
       <NoticeCard
         tone="info"
         title={text("Skills teach Assistant how to handle specific tasks")}
-        detail={text("Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Assistant to use.")}
+        detail={text(
+          "Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Assistant to use.",
+        )}
       />
       <div class="flex items-center gap-2">
         <TextInput
@@ -212,7 +234,9 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
         <SettingsCollection
           title={<span class="sr-only">{text("Available skills")}</span>}
           class="[&>.k2b-settings-collection__header]:sr-only"
-          empty={text(query().trim() ? "No matching skills. Try a different search." : "No skills yet. Create or import one to get started.")}
+          empty={text(
+            query().trim() ? "No matching skills. Try a different search." : "No skills yet. Create or import one to get started.",
+          )}
         >
           <For each={filtered()}>
             {(skill) => (
@@ -272,7 +296,12 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
                         : []),
                     ]}
                   >
-                    <Dropdown.Trigger appearance="plain" iconOnly label={`${text("Actions for")} ${skill.name}`} title={`${text("Actions for")} ${skill.name}`}>
+                    <Dropdown.Trigger
+                      appearance="plain"
+                      iconOnly
+                      label={`${text("Actions for")} ${skill.name}`}
+                      title={`${text("Actions for")} ${skill.name}`}
+                    >
                       <i class={busyId() === skill.id ? "ti ti-loader-2 k2b-spin" : "ti ti-dots"} aria-hidden="true" />
                     </Dropdown.Trigger>
                   </Dropdown.Root>
@@ -328,7 +357,9 @@ function AssistantSkillReferenceEditor(props: {
     <PanelDialog>
       <PanelDialog.Header
         title={text(props.reference ? "Edit reference" : "Create reference")}
-        subtitle={text(props.readOnly ? "View supporting context for this Skill." : "Add supporting context Assistant can read when needed.")}
+        subtitle={text(
+          props.readOnly ? "View supporting context for this Skill." : "Add supporting context Assistant can read when needed.",
+        )}
         icon="ti ti-file-text"
         close={() => void requestClose()}
       />
@@ -568,9 +599,9 @@ export function AssistantSkillEditor(props: {
     <PanelDialog>
       <PanelDialog.Header
         title={props.request.skillId ? (detail()?.name ?? text("Edit skill")) : text(imported ? "Import skill" : "Create skill")}
-        subtitle={
-          text(readOnly() ? "You can view and export this shared Skill." : "Define reusable instructions and optional supporting references.")
-        }
+        subtitle={text(
+          readOnly() ? "You can view and export this shared Skill." : "Define reusable instructions and optional supporting references.",
+        )}
         icon="ti ti-sparkles"
         close={() => void requestClose()}
         closeDisabled={saving()}
@@ -588,11 +619,17 @@ export function AssistantSkillEditor(props: {
                   <NoticeCard
                     tone="info"
                     title={text("Description controls when this Skill loads")}
-                    detail={text("Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.")}
+                    detail={text(
+                      "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.",
+                    )}
                   />
                 }
               >
-                <NoticeCard tone="neutral" title={text("This Skill is read only")} detail={text("You can view and export it, but you cannot change it.")} />
+                <NoticeCard
+                  tone="neutral"
+                  title={text("This Skill is read only")}
+                  detail={text("You can view and export it, but you cannot change it.")}
+                />
               </Show>
               <div class="flex flex-col gap-4">
                 <TextInput
@@ -623,7 +660,9 @@ export function AssistantSkillEditor(props: {
               <MarkdownEditor
                 class="min-h-[18rem] flex-1"
                 label={text("Instructions")}
-                description={text("Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Assistant should work.")}
+                description={text(
+                  "Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Assistant should work.",
+                )}
                 value={() => fields().instructions}
                 onValueChange={(instructions) => setFields((current) => ({ ...current, instructions }))}
                 placeholder={text("Explain the workflow, constraints, and expected output.")}

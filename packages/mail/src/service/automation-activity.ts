@@ -86,7 +86,8 @@ export const projectMailWorkflowActivity = (params: {
     status: run.state,
     occurredAt: run.createdAt.toISOString(),
     durationMs: run.durationMs,
-    detail: workflowErrorMessage(run, params.locale) ?? (run.eventType ? sentenceCase(run.eventType.split(".").at(-1) ?? run.eventType) : null),
+    detail:
+      workflowErrorMessage(run, params.locale) ?? (run.eventType ? sentenceCase(run.eventType.split(".").at(-1) ?? run.eventType) : null),
     href: `/app/mail/${mailboxId}/automations/${section}`,
   };
 };
@@ -123,9 +124,7 @@ export const projectMailBackfillActivity = (params: {
     status,
     occurredAt: span.startedAt,
     durationMs: span.durationMs,
-    detail:
-      span.statusMessage ??
-      (typeof dispatched === "number" ? t.dispatched({ count: dispatched }) : null),
+    detail: span.statusMessage ?? (typeof dispatched === "number" ? t.dispatched({ count: dispatched }) : null),
     href: `/app/mail/${mailboxId}/automations/incoming`,
   };
 };

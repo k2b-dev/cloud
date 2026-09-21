@@ -1,6 +1,6 @@
-export { default as SearchBar } from "./SearchBar";
-export { provideWorkspaceNavigation } from "../workspace-navigation";
 export { default as WorkspaceNavigationProvider } from "../WorkspaceNavigationProvider";
+export { provideWorkspaceNavigation } from "../workspace-navigation";
+export { default as SearchBar } from "./SearchBar";
 
 import { AppLaunchpadButton, AppLaunchpadProvider } from "../AppLaunchpad.island";
 import { LayoutHelpDocuments, LayoutHelpPage } from "../LayoutHelp";

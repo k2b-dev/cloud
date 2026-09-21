@@ -36,8 +36,7 @@ export function ChoiceGroups(props: {
       buttons[index]?.scrollIntoView({ block: "nearest", inline: "nearest" });
     });
   };
-  const move = (index: number, direction: 1 | -1) =>
-    choose((index + direction + props.choices.length) % props.choices.length, true);
+  const move = (index: number, direction: 1 | -1) => choose((index + direction + props.choices.length) % props.choices.length, true);
   const focusEdge = (last: boolean) => choose(last ? props.choices.length - 1 : 0, true);
 
   const scrollFromPointer = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
@@ -75,13 +74,7 @@ export function ChoiceGroups(props: {
 
   return (
     <div class="k2b-choice-groups-shell" onPointerEnter={syncScrollbar} onFocusIn={syncScrollbar}>
-      <div
-        ref={viewport}
-        class="k2b-choice-groups"
-        role="radiogroup"
-        aria-label={props.ariaLabel}
-        onScroll={syncScrollbar}
-      >
+      <div ref={viewport} class="k2b-choice-groups" role="radiogroup" aria-label={props.ariaLabel} onScroll={syncScrollbar}>
         <For each={props.choices}>
           {(group, index) => (
             <button

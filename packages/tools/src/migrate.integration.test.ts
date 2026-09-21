@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../scripts/fixtures/test-infra";
 import { migrate } from "./migrate";
 
-const dbTest = process.env.APP_JSONB_MIGRATION_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest("discards malformed webhook logs while preserving endpoints and valid logs across startup", async () => {
   await migrate();

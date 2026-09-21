@@ -1,7 +1,10 @@
 export type { ChatContextPopupProps } from "./ChatContextPopup";
+
 import { ChatContextPopup } from "./ChatContextPopup";
 import { ChatTasks } from "./ChatTasks";
+
 export type { ChatTask, ChatTasksProps } from "./ChatTasks";
+
 import { ChatComposer } from "./ChatComposer";
 import { ChatActivity, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
@@ -16,9 +19,9 @@ export type {
   ChatAction,
   ChatActivityTone,
   ChatAttachment,
-  ChatMention,
   ChatComposerState,
   ChatContextUsageData,
+  ChatMention,
   ChatMessageStatus,
   ChatModelOption,
   ChatRole,

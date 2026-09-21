@@ -1,7 +1,7 @@
 import { createEffect, createSignal, createUniqueId, For, Show } from "solid-js";
-import { Slider } from "../inputs/ChoiceInputs";
-import { FilterChip } from "../actions/FilterChip";
 import { Button } from "../actions/Button";
+import { FilterChip } from "../actions/FilterChip";
+import { Slider } from "../inputs/ChoiceInputs";
 import { useUiMessages } from "../intl/messages";
 import type { ChartExplorerRequest } from "./chart-explorer";
 

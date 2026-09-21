@@ -1,4 +1,3 @@
-import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
 import { randomBytes } from "node:crypto";
 import type { RequestActor } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
@@ -31,6 +30,7 @@ import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import { joinPath, relativePath, userPath } from "./paths";
 import type { UnixIdentity } from "./posix";
+import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
 
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
 export type SharingAccess = {
@@ -305,7 +305,12 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       await shares.revoke(row.id, userId);
       return shareView((await shares.get(row.id))!, binding);
     },
-    async publicShare(token: string, kind: "download" | "inbox", input: { path?: string; after?: string } = {}, access?: string): Promise<PublicShare> {
+    async publicShare(
+      token: string,
+      kind: "download" | "inbox",
+      input: { path?: string; after?: string } = {},
+      access?: string,
+    ): Promise<PublicShare> {
       const active = await activeShare(token, kind, access);
       const { row, actor, binding } = active;
       const path = userPath(input.path ?? "");
@@ -394,7 +399,11 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       await shares.touch(row.id);
       return { url: lease.url, method: "POST", expires: lease.expires, manifest: lease.manifest };
     },
-    async publicInboxUpload(token: string, input: { name: string; size: number; idempotencyKey: string }, access?: string): Promise<UploadSession> {
+    async publicInboxUpload(
+      token: string,
+      input: { name: string; size: number; idempotencyKey: string },
+      access?: string,
+    ): Promise<UploadSession> {
       const initial = await activeShare(token, "inbox", access);
       const deadline = Date.now() + 10_000;
       for (const pending of await uploads.pendingForShare(initial.row.id)) {

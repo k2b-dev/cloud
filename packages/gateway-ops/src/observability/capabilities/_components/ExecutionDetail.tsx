@@ -1,11 +1,11 @@
-import { ButtonLink, DescriptionList, DetailPanel, IconButtonLink, StatusBadge, useLocale } from "@k2b/ui";
-import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import type { CapabilityExecution } from "@k2b/cloud/capabilities/store";
+import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
+import { ButtonLink, DescriptionList, DetailPanel, IconButtonLink, StatusBadge, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
+import { statusLabel } from "../labels";
 import { type CapabilityOpsMessages, capabilityOpsMessages } from "../ops-messages";
 import { ORIGIN_ICON, STATUS_TONE, valueShape } from "../presentation";
-import { statusLabel } from "../labels";
 
 const shapeText = (meta: CapabilityExecution["inputMeta"], t: CapabilityOpsMessages, locale: string): string => {
   const shape = valueShape(meta);
@@ -39,11 +39,7 @@ const mono = (value: string | null): JSX.Element =>
  * timing and shape only — the store never holds the payloads, and the detail
  * must not imply that it does.
  */
-export default function ExecutionDetail(props: {
-  executions: CapabilityExecution[];
-  closeHref: string;
-  dateConfig?: DateContext;
-}) {
+export default function ExecutionDetail(props: { executions: CapabilityExecution[]; closeHref: string; dateConfig?: DateContext }) {
   const locale = useLocale()();
   const { t } = capabilityOpsMessages.resolve([locale]);
   return (
@@ -67,9 +63,7 @@ export default function ExecutionDetail(props: {
                   <i class={ORIGIN_ICON[execution.origin]} /> {execution.origin}
                 </span>
                 <span class="text-xs text-secondary">{execution.kind === "action" ? t.kindAction : t.kindQuery}</span>
-                {execution.destructive ? (
-                  <StatusBadge tone="warning" label={t.destructive} variant="dot" />
-                ) : null}
+                {execution.destructive ? <StatusBadge tone="warning" label={t.destructive} variant="dot" /> : null}
               </div>
               <DescriptionList
                 layout="rows"
@@ -88,9 +82,7 @@ export default function ExecutionDetail(props: {
                   },
                   {
                     term: t.accessSubject,
-                    description: execution.accessSubjectId
-                      ? `${execution.accessSubjectType ?? "—"} · ${execution.accessSubjectId}`
-                      : "—",
+                    description: execution.accessSubjectId ? `${execution.accessSubjectType ?? "—"} · ${execution.accessSubjectId}` : "—",
                   },
                   { term: t.user, description: mono(execution.userId) },
                   { term: t.startedAt, description: formatDateTime(execution.startedAt, props.dateConfig) },

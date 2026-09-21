@@ -1,6 +1,6 @@
-import { ssr } from "../config";
 import { type AuthContext, auth, rateLimit, v } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { ssr } from "../config";
 import oauthRoutes from "../oauth";
 import consentPage from "./consent";
 import { ConsentDecisionSchema, completeConsent } from "./consent-action";

@@ -118,5 +118,4 @@ export async function migrate(): Promise<void> {
   await migrateTrash();
   await migrateSharing();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
-
 }

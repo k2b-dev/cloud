@@ -1,4 +1,5 @@
-import { aiReferenceCost, AiModelPricingSchema } from "@k2b/cloud/shared";
+import { AiModelPricingSchema, aiReferenceCost } from "@k2b/cloud/shared";
+
 /**
  * Core settings admin form.
  *
@@ -11,6 +12,19 @@ import { aiReferenceCost, AiModelPricingSchema } from "@k2b/cloud/shared";
  * own settings build their own bespoke admin forms (DIY HTTP route + UI).
  */
 
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AiEnrichmentOverview } from "@k2b/cloud/ai";
+import type { AiModelAccessDraft, AiModelAccessMap } from "@k2b/cloud/ai/admin";
+import { coreClient } from "@k2b/cloud/clients/core";
+import type { AccessEntry } from "@k2b/cloud/contracts/shared";
+import {
+  ACCOUNT_ACTION_NOTICE_SAMPLE,
+  AccountActionNoticeSchema,
+  AI_PLATFORM_PROMPT_TEMPLATE,
+  formatBytes,
+  renderAccountActionNotice,
+  renderLiquidTemplate,
+} from "@k2b/cloud/shared";
 import { img } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -20,7 +34,6 @@ import {
   DataTable,
   type DataTableColumn,
   dialogCore,
-  panelDialogOptions,
   IconButton,
   ImageInput,
   MultiSelectInput,
@@ -28,6 +41,7 @@ import {
   NumberInput,
   PanelDialog,
   Panes,
+  panelDialogOptions,
   panelDialogWideOptions,
   prompts,
   readSettingsError,
@@ -52,31 +66,18 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { PermissionEditor } from "@k2b/cloud/access/ui";
-import type { AiEnrichmentOverview } from "@k2b/cloud/ai";
-import type { AiModelAccessDraft, AiModelAccessMap } from "@k2b/cloud/ai/admin";
-import { coreClient } from "@k2b/cloud/clients/core";
-import type { AccessEntry } from "@k2b/cloud/contracts/shared";
-import {
-  ACCOUNT_ACTION_NOTICE_SAMPLE,
-  AccountActionNoticeSchema,
-  AI_PLATFORM_PROMPT_TEMPLATE,
-  formatBytes,
-  renderAccountActionNotice,
-  renderLiquidTemplate,
-} from "@k2b/cloud/shared";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
-import { accountSettingsSection } from "./account-settings";
-import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
-import { aiSettingsMessages } from "./ai-settings-messages";
-import CacheNotice from "../../CacheNotice.island";
-import { LegacySettingsSection } from "./LegacySettingsPanel.island";
-import DocumentationLink from "./DocumentationLink";
-import { settingsMessages } from "./messages";
-import { localizeSettingField } from "./setting-copy";
 import ApprovalStatus from "../../../app-approval/ApprovalStatus";
 import type { ApprovalAvailability } from "../../../app-approval/availability";
 import { appApprovalMessages } from "../../../app-approval/messages";
+import CacheNotice from "../../CacheNotice.island";
+import { accountSettingsSection } from "./account-settings";
+import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
+import { aiSettingsMessages } from "./ai-settings-messages";
+import DocumentationLink from "./DocumentationLink";
+import { LegacySettingsSection } from "./LegacySettingsPanel.island";
+import { settingsMessages } from "./messages";
+import { localizeSettingField } from "./setting-copy";
 
 type SettingValueSource = "custom" | "env" | "default";
 

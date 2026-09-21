@@ -1,4 +1,3 @@
-import adminAiQuotaRoutes from "./admin-ai-quotas";
 /**
  * Core platform API surface — owned by cloud-lib, mounted by the core-app.
  *
@@ -17,23 +16,24 @@ import adminAiQuotaRoutes from "./admin-ai-quotas";
 import { Hono } from "hono";
 import { prettyJSON } from "hono/pretty-json";
 import { createAiApprovalPreferenceRoutes } from "../ai/approval-routes";
-import { aiProjectsRoutes } from "../ai/projects-routes";
 import { createCodeCapabilityRoutes } from "../ai/code-capability-routes";
+import { aiProjectsRoutes } from "../ai/projects-routes";
 import { aiRoutes } from "../ai/routes";
 import { aiSkillsRoutes } from "../ai/skills-routes";
 import accountsEntitiesRoutes from "./accounts-entities";
-import adminAiUsageRoutes from "./admin-ai-usage";
 import adminAiProjectsRoutes from "./admin-ai-projects";
+import adminAiQuotaRoutes from "./admin-ai-quotas";
 import adminAiSkillsRoutes from "./admin-ai-skills";
-import adminRailRoutes from "./admin-rail";
+import adminAiUsageRoutes from "./admin-ai-usage";
 import adminCoreSettingsRoutes from "./admin-core-settings";
 import adminIdentityRoutes from "./admin-identity";
 import adminLifecycleRoutes from "./admin-lifecycle";
 import adminLinuxIdentityRoutes from "./admin-linux-identities";
+import adminRailRoutes from "./admin-rail";
 import { adminAnnouncementRoutes, announcementRoutes } from "./announcements";
+import { createAppApprovalRoutes } from "./app-approval";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
-import { createAppApprovalRoutes } from "./app-approval";
 import { createCapabilityRoutes } from "./capabilities";
 import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";

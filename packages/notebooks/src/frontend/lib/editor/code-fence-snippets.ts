@@ -24,8 +24,8 @@
  * to CLOSE a fence shouldn't surface the language picker.
  */
 import { type Completion, type CompletionContext, type CompletionResult, snippetCompletion } from "@codemirror/autocomplete";
-import { isInsideFencedCodeBody } from "./editor-scope";
 import { withIcon } from "./completion-icon";
+import { isInsideFencedCodeBody } from "./editor-scope";
 
 /**
  * Each fence-language entry. `name` is what we insert into the

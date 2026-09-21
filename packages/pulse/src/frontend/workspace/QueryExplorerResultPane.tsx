@@ -9,12 +9,10 @@ import {
   type PulseRecordedEvent,
 } from "../../contracts";
 import type { pulseMessages } from "../../messages";
-import { intervalToMs } from "../../query-dsl/interval";
 import { usePulseMessages } from "../use-messages";
 import { queryBucketMaxGap } from "./chart-data";
 import { formatQueryBucket } from "./date-format";
 import {
-  compactDate,
   formatMetricValue,
   gaugeMax,
   type PulseDateContext,

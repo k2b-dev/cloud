@@ -1,3 +1,4 @@
+import type { AiMemoryLearningChange, AiMemoryLearningRun } from "@k2b/cloud/ai";
 import {
   Button,
   DataTable,
@@ -5,13 +6,11 @@ import {
   dialogCore,
   IconButton,
   PanelDialog,
-  panelDialogWideOptions,
   Placeholder,
+  panelDialogWideOptions,
   StatusBadge,
-  type StatusTone,
   useLocale,
 } from "@k2b/ui";
-import type { AiMemoryLearningChange, AiMemoryLearningRun } from "@k2b/cloud/ai";
 import { createMemo, createResource, createSignal, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantConversationHref } from "./assistant-navigation";
@@ -58,16 +57,17 @@ function MemoryLearningRunDetails(props: { run: AiMemoryLearningRun; close: () =
     {
       id: "resource",
       header: text("Cloud resource"),
-      value: (change) => change.resourceRef ? `${change.resourceRef.type}:${change.resourceRef.id}` : "",
+      value: (change) => (change.resourceRef ? `${change.resourceRef.type}:${change.resourceRef.id}` : ""),
     },
     { id: "previousContent", header: text("Previous value"), value: "previousContent" },
   ];
-  const status = () => ({
-    running: { label: text("Running"), tone: "running" as const },
-    ok: { label: text("Learned"), tone: "ok" as const },
-    skipped: { label: text("No changes"), tone: "neutral" as const },
-    failed: { label: text("Failed"), tone: "error" as const },
-  })[props.run.status];
+  const status = () =>
+    ({
+      running: { label: text("Running"), tone: "running" as const },
+      ok: { label: text("Learned"), tone: "ok" as const },
+      skipped: { label: text("No changes"), tone: "neutral" as const },
+      failed: { label: text("Failed"), tone: "error" as const },
+    })[props.run.status];
   return (
     <PanelDialog>
       <PanelDialog.Header
@@ -91,7 +91,13 @@ function MemoryLearningRunDetails(props: { run: AiMemoryLearningRun; close: () =
           </Show>
           <Show
             when={props.run.changes.length > 0}
-            fallback={<Placeholder state="empty" title={text("No personalization changed")} description={text("This run found nothing durable to save.")} />}
+            fallback={
+              <Placeholder
+                state="empty"
+                title={text("No personalization changed")}
+                description={text("This run found nothing durable to save.")}
+              />
+            }
           >
             <DataTable
               rows={props.run.changes}
@@ -117,7 +123,9 @@ function MemoryLearningRunDetails(props: { run: AiMemoryLearningRun; close: () =
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button variant="secondary" size="sm" onClick={props.close}>{text("Close")}</Button>
+        <Button variant="secondary" size="sm" onClick={props.close}>
+          {text("Close")}
+        </Button>
       </PanelDialog.Footer>
     </PanelDialog>
   );
@@ -163,7 +171,11 @@ function MemoryLearningActivity(props: { close: () => void }) {
             state="error"
             title={text("Could not load learning activity")}
             description={activity.error.message}
-            action={<Button size="xs" variant="secondary" onClick={() => void refetch()}>{text("Retry")}</Button>}
+            action={
+              <Button size="xs" variant="secondary" onClick={() => void refetch()}>
+                {text("Retry")}
+              </Button>
+            }
           />
         </Show>
         <Show when={!activity.loading && !activity.error}>
@@ -184,7 +196,9 @@ function MemoryLearningActivity(props: { close: () => void }) {
                   >
                     {row.conversationTitle}
                   </a>
-                ) : row.conversationTitle;
+                ) : (
+                  row.conversationTitle
+                );
               }
               if (col.id === "status") {
                 const status = {
@@ -197,7 +211,11 @@ function MemoryLearningActivity(props: { close: () => void }) {
               }
               if (col.id === "details") {
                 return (
-                  <IconButton label={`${text("View details for")} ${row.conversationTitle}`} title={text("View learning run details")} onClick={() => void openRunDetails(row)}>
+                  <IconButton
+                    label={`${text("View details for")} ${row.conversationTitle}`}
+                    title={text("View learning run details")}
+                    onClick={() => void openRunDetails(row)}
+                  >
                     <i class="ti ti-info-circle" aria-hidden="true" />
                   </IconButton>
                 );

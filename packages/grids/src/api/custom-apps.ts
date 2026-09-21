@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { env } from "@k2b/cloud/config";
 import { type AuthContext, auth, getDateConfig, getLocale, respond } from "@k2b/cloud/server";
 import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
@@ -940,7 +941,7 @@ export const createCustomAppsApi = (
     )
     .get("/runtime/:shortId/:pageId/:blockId/files/:token", loadOptionalActor, async (c) => {
       const runtime = await resolvePublishedRuntime(c);
-      const secret = process.env.APP_SECRET?.trim();
+      const secret = env.APP_SECRET;
       const token = secret ? verifyCustomAppFileToken(c.req.param("token") ?? "", secret) : null;
       if (
         !runtime ||

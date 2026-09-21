@@ -1,6 +1,6 @@
-import { artifactMessages } from "../artifacts/messages";
-import type { GlobalSearchOptions } from "@k2b/cloud/browser/search";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
+import type { GlobalSearchOptions } from "@k2b/cloud/browser/search";
+import { artifactMessages } from "../artifacts/messages";
 import { assistantCommandMessages } from "../commands";
 import { assistantMessages } from "./messages";
 

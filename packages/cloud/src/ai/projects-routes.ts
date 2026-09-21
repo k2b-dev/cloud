@@ -71,16 +71,12 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
   new Hono<AuthContext>()
     .use(dependencies.limit ?? rateLimit())
     .use("*", dependencies.authenticate ?? auth.requireRole("authenticated"))
-    .get("/", async (c) =>
-      respond(c, ok({ projects: (await aiProjects.list(c.get("accessSubject") ?? null)).map(publicProject) })),
-    )
+    .get("/", async (c) => respond(c, ok({ projects: (await aiProjects.list(c.get("accessSubject") ?? null)).map(publicProject) })))
     .post("/", dependencies.authenticate ?? auth.requireRole("authenticated"), v("json", ProjectFieldsSchema), async (c) =>
       respond(
         c,
         ok({
-          project: publicProject(
-            await aiProjects.create({ subject: c.get("accessSubject"), ...c.req.valid("json") }),
-          ),
+          project: publicProject(await aiProjects.create({ subject: c.get("accessSubject"), ...c.req.valid("json") })),
         }),
         201,
       ),
@@ -108,9 +104,7 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
     })
     .post("/:projectId/access", v("json", ProjectAccessSchema), async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null, "admin");
-      const access = project
-        ? await aiProjects.grantAccess(project.id, c.get("accessSubject") ?? null, c.req.valid("json"))
-        : null;
+      const access = project ? await aiProjects.grantAccess(project.id, c.get("accessSubject") ?? null, c.req.valid("json")) : null;
       return access ? respond(c, ok({ access }), 201) : notFound(c);
     })
     .patch("/:projectId/access/:accessId", v("json", ProjectAccessUpdateSchema), async (c) => {
@@ -133,8 +127,7 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
     .delete("/:projectId/access/:accessId", async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null, "admin");
       try {
-        return project &&
-          (await aiProjects.revokeAccess(project.id, c.req.param("accessId")!, c.get("accessSubject") ?? null))
+        return project && (await aiProjects.revokeAccess(project.id, c.req.param("accessId")!, c.get("accessSubject") ?? null))
           ? respond(c, ok({ deleted: true }))
           : notFound(c, "Access entry");
       } catch (error) {
@@ -148,35 +141,27 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
       return respond(
         c,
         ok({
-          knowledge: (
-            await aiProjects.listKnowledge(project.id, c.get("accessSubject") ?? null, c.req.valid("query").q)
-          ).map((item) => publicKnowledge(item, project.shortId)),
+          knowledge: (await aiProjects.listKnowledge(project.id, c.get("accessSubject") ?? null, c.req.valid("query").q)).map((item) =>
+            publicKnowledge(item, project.shortId),
+          ),
         }),
       );
     })
     .post("/:projectId/knowledge", v("json", KnowledgeSchema), async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null, "write");
-      const knowledge = project
-        ? await aiProjects.createKnowledge(project.id, c.get("accessSubject") ?? null, c.req.valid("json"))
-        : null;
+      const knowledge = project ? await aiProjects.createKnowledge(project.id, c.get("accessSubject") ?? null, c.req.valid("json")) : null;
       return knowledge ? respond(c, ok({ knowledge: publicKnowledge(knowledge, project!.shortId) }), 201) : notFound(c);
     })
     .patch("/:projectId/knowledge/:knowledgeId", v("json", UpdateKnowledgeSchema), async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null, "write");
       const knowledge =
         project &&
-        (await aiProjects.updateKnowledge(
-          project.id,
-          c.req.param("knowledgeId")!,
-          c.get("accessSubject") ?? null,
-          c.req.valid("json"),
-        ));
+        (await aiProjects.updateKnowledge(project.id, c.req.param("knowledgeId")!, c.get("accessSubject") ?? null, c.req.valid("json")));
       return knowledge ? respond(c, ok({ knowledge: publicKnowledge(knowledge, project!.shortId) })) : notFound(c, "Knowledge entry");
     })
     .delete("/:projectId/knowledge/:knowledgeId", async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null, "write");
-      return project &&
-        (await aiProjects.deleteKnowledge(project.id, c.req.param("knowledgeId")!, c.get("accessSubject") ?? null))
+      return project && (await aiProjects.deleteKnowledge(project.id, c.req.param("knowledgeId")!, c.get("accessSubject") ?? null))
         ? respond(c, ok({ deleted: true }))
         : notFound(c, "Knowledge entry");
     })
@@ -186,20 +171,14 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
       return respond(
         c,
         ok({
-          files: (await aiProjects.listFiles(project.id, c.get("accessSubject") ?? null)).map((file) =>
-            publicFile(file, project.shortId),
-          ),
+          files: (await aiProjects.listFiles(project.id, c.get("accessSubject") ?? null)).map((file) => publicFile(file, project.shortId)),
         }),
       );
     })
     .post("/:projectId/files", v("json", ProjectFileSchema), async (c) => {
       const body = c.req.valid("json");
       try {
-        const project = await aiProjects.getByShortId(
-          c.req.param("projectId")!,
-          c.get("accessSubject") ?? null,
-          "write",
-        );
+        const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null, "write");
         const file = project
           ? await aiProjects.writeFile(project.id, c.get("accessSubject") ?? null, {
               path: body.path,
@@ -214,9 +193,7 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
     })
     .get("/:projectId/files/:fileId", async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null);
-      const file = project
-        ? await aiProjects.readFile(project.id, c.req.param("fileId")!, c.get("accessSubject") ?? null)
-        : null;
+      const file = project ? await aiProjects.readFile(project.id, c.req.param("fileId")!, c.get("accessSubject") ?? null) : null;
       if (!file) return notFound(c, "Project file");
       return respond(
         c,
@@ -229,8 +206,7 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
     })
     .delete("/:projectId/files/:fileId", async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null, "write");
-      return project &&
-        (await aiProjects.deleteFile(project.id, c.req.param("fileId")!, c.get("accessSubject") ?? null))
+      return project && (await aiProjects.deleteFile(project.id, c.req.param("fileId")!, c.get("accessSubject") ?? null))
         ? respond(c, ok({ deleted: true }))
         : notFound(c, "Project file");
     })
@@ -265,8 +241,7 @@ const buildAiProjectsRoutes = (dependencies: AiProjectsRouteDependencies = {}) =
     })
     .delete("/:projectId/references/:referenceId", async (c) => {
       const project = await aiProjects.getByShortId(c.req.param("projectId")!, c.get("accessSubject") ?? null, "write");
-      return project &&
-        (await aiProjects.deleteReference(project.id, c.req.param("referenceId")!, c.get("accessSubject") ?? null))
+      return project && (await aiProjects.deleteReference(project.id, c.req.param("referenceId")!, c.get("accessSubject") ?? null))
         ? respond(c, ok({ deleted: true }))
         : notFound(c, "Project reference");
     });

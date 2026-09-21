@@ -1,18 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../scripts/fixtures/test-infra";
 import { shortIdsFinalized } from "./lib/short-id";
 import { migrate } from "./migrate";
 
-const canUseDatabase = async () => {
-  try {
-    await sql`SELECT 1`;
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Contacts short-ID migration", () => {
   test("is idempotent and leaves every deployed resource resolvable", async () => {

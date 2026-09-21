@@ -1,9 +1,9 @@
-import { DataTable, IconButton, Tooltip, type DataTableColumn } from "@k2b/ui";
-import { type Accessor, type JSX } from "solid-js";
+import { DataTable, type DataTableColumn, IconButton, Tooltip } from "@k2b/ui";
+import type { Accessor, JSX } from "solid-js";
 import type { PulseMetricSummary } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
 import { compactDateWithDelta, formatSignalValue, formatValue, type PulseDateContext } from "./helpers";
-import { SignalCatalogTabs, SignalCatalogToolbar, type SignalCatalogKind, type SignalCatalogTab } from "./SignalCatalogChrome";
+import { type SignalCatalogKind, type SignalCatalogTab, SignalCatalogTabs, SignalCatalogToolbar } from "./SignalCatalogChrome";
 import type { ActivityEventGroup, ActivityStateGroup } from "./types";
 
 type MetricScope = {

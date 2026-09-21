@@ -1,10 +1,10 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { createEffect, onCleanup } from "solid-js";
-import { createSpaceCommands } from "../../../space-commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { DateContext } from "@k2b/stdlib";
-import { spaceCommandMessages } from "../../../../commands";
 import { createNavigation, useLocale } from "@k2b/ui";
+import { createEffect, onCleanup } from "solid-js";
+import { spaceCommandMessages } from "../../../../commands";
+import { createSpaceCommands } from "../../../space-commands";
 import { useSpaceMessages } from "../../messages";
 import { createSpaceSearch } from "../search/SearchButton";
 import { createIcalCopy } from "./CopyICalButton";

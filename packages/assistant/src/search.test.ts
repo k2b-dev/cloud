@@ -95,29 +95,51 @@ test("inaccessible scopes and non-user subjects cannot fall back to unscoped sea
       await searchAssistant(
         { ...input, scope: { type: "assistant.chat", id: "Chat01" } },
         { ...context, accessSubject: { type: "user", userId: "other" } },
-        store, projects,
+        store,
+        projects,
       )
     ).ok,
   ).toBe(false);
   expect(calls).toEqual([{ shortId: "Chat01", ownerUserId: "other" }]);
   calls.length = 0;
-  expect((await searchAssistant({ ...input, scope: { type: "notebooks.notebook", id: "Chat01" } }, context, store, projects)).ok).toBe(false);
+  expect((await searchAssistant({ ...input, scope: { type: "notebooks.notebook", id: "Chat01" } }, context, store, projects)).ok).toBe(
+    false,
+  );
   expect(calls).toEqual([]);
   expect(
-    (await searchAssistant(input, { ...context, accessSubject: { type: "service_account", serviceAccountId: "service" } }, store, projects)).ok,
+    (await searchAssistant(input, { ...context, accessSubject: { type: "service_account", serviceAccountId: "service" } }, store, projects))
+      .ok,
   ).toBe(false);
   expect(calls).toEqual([]);
 });
 
 test("project search authorizes the project and filters owned chats before limiting", async () => {
   calls.length = 0;
-  const project = { id: "project-internal", shortId: "Proj01", name: "Work", description: "", icon: "ti ti-folders", instructions: "", defaultModelProfileId: null, permission: "read" as const, revision: 1, createdAt: "", updatedAt: "" };
+  const project = {
+    id: "project-internal",
+    shortId: "Proj01",
+    name: "Work",
+    description: "",
+    icon: "ti ti-folders",
+    instructions: "",
+    defaultModelProfileId: null,
+    permission: "read" as const,
+    revision: 1,
+    createdAt: "",
+    updatedAt: "",
+  };
   const result = await searchAssistant({ ...input, scope: { type: "assistant.project", id: "Proj01" } }, context, store, {
-    getByShortId: async (id, subject) => { expect(id).toBe("Proj01"); expect(subject).toEqual(context.accessSubject); return project; },
+    getByShortId: async (id, subject) => {
+      expect(id).toBe("Proj01");
+      expect(subject).toEqual(context.accessSubject);
+      return project;
+    },
   });
   expect(result.ok).toBe(true);
   expect(calls).toEqual([{ ownerUserId: "owner", search: "launch", limit: 1, projectId: "project-internal" }]);
   calls.length = 0;
-  expect((await searchAssistant({ ...input, scope: { type: "assistant.project", id: "missing" } }, context, store, projects)).ok).toBe(false);
+  expect((await searchAssistant({ ...input, scope: { type: "assistant.project", id: "missing" } }, context, store, projects)).ok).toBe(
+    false,
+  );
   expect(calls).toEqual([]);
 });

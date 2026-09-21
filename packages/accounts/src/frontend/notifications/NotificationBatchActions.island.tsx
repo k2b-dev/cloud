@@ -1,6 +1,6 @@
+import { formatNumber } from "@k2b/cloud/shared";
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, Checkbox, NoticeCard, prompts, useLocale } from "@k2b/ui";
-import { formatNumber } from "@k2b/cloud/shared";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { useAccountsMessages } from "../messages";

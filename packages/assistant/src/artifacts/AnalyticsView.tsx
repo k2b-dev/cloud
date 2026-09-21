@@ -1,12 +1,12 @@
-import { createMemo, createSignal, For, Show, type JSX } from "solid-js";
 import {
   Button,
-  DateRangePicker,
+  type ChartCursor,
   ChartExplorer,
   ChartFilterControls,
   ChartSnapshotView,
   createChartCursor,
   DataTable,
+  DateRangePicker,
   MarkdownView,
   MultiSelectInput,
   NumberInput,
@@ -15,12 +15,12 @@ import {
   StatCell,
   TextInput,
   useLocale,
-  type ChartCursor,
 } from "@k2b/ui";
-import { chartSnapshot, explorerChart } from "./analytics-chart";
-import { formatValue, type AnalyticsNode, type AnalyticsEvent, type SourceContext, type Row } from "./runtime/analytics-contracts";
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
+import { chartSnapshot, explorerChart } from "./analytics-chart";
 import { artifactMessages } from "./messages";
+import { type AnalyticsEvent, type AnalyticsNode, formatValue, type Row, type SourceContext } from "./runtime/analytics-contracts";
 
 export function AnalyticsView(props: {
   node: AnalyticsNode;
@@ -176,9 +176,18 @@ export function AnalyticsView(props: {
   }
   return (
     <>
-      <Show when={stat()}>{node=><div aria-busy={node().loading}><StatCell label={node().label}
-        value={node().loading ? "…" : formatValue(node().value,node().format,locale())}
-        sub={node().description} trend={node().trend} /></div>}</Show>
+      <Show when={stat()}>
+        {(node) => (
+          <div aria-busy={node().loading}>
+            <StatCell
+              label={node().label}
+              value={node().loading ? "…" : formatValue(node().value, node().format, locale())}
+              sub={node().description}
+              trend={node().trend}
+            />
+          </div>
+        )}
+      </Show>
       <Show when={text()}>
         {(n) => (
           <Show when={n().markdown} fallback={<p class="whitespace-pre-wrap">{n().value}</p>}>

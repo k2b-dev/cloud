@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { env } from "@k2b/cloud/config";
 import { isAccountCategoryAllowed } from "@k2b/cloud/services";
 import { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import * as settings from "@k2b/cloud/services/settings";
@@ -249,7 +250,7 @@ type Dependencies = {
 
 const defaultDependencies: Dependencies = {
   authenticate: (token) => {
-    const secret = process.env.CLOUD_OAUTH_BROKER_SECRET?.trim();
+    const secret = env.CLOUD_OAUTH_BROKER_SECRET;
     // OAuth is optional. Missing or malformed configuration disables its broker.
     if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret) || !token || !/^[a-fA-F0-9]{64}$/.test(token)) return false;
     return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));

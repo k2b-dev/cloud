@@ -1,25 +1,5 @@
-import { assistantTaskTitle } from "./AssistantTasksDialog";
-import type { AiChatTaskView } from "@k2b/cloud/ai";
-import { ChatPresentation } from "../artifacts/ChatPresentation";
-import { resolveChatFileLink } from "./chat-file-link";
-import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
-import { assistantComposerCommands } from "./composer-commands";
-import { type ChatMention, reconcileChatMentions } from "@k2b/ui";
-import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { ChatComposeInputSchema, assistantCommandMessages } from "../commands";
-import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
-import { parseAiTodoPlan } from "@k2b/cloud/ai/browser";
-import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
-import { createCodeApprovals } from "../artifacts/CapabilityApproval";
-import { useAssistantText } from "./ui-copy";
-import { CODE_RUNTIME_TOOL_NAMES } from "@k2b/cloud/ai/browser";
-import { createAssistantDictation } from "./assistant-dictation";
-import { audioMessages } from "./audio-messages";
-import { newComposerSession, editComposerSession, observeComposerRevision, confirmComposerSave } from "./composer-session";
-import { navigate, navigateTo } from "@k2b/ssr/nav";
-import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Chat, Dropdown, Placeholder, openSpotlightSearch, prompts, useLocale } from "@k2b/ui";
 import type {
+  AiChatTaskView,
   AiConversation,
   AiConversationPage,
   AiConversationTimelineEntry,
@@ -28,6 +8,7 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
+import { CODE_RUNTIME_TOOL_NAMES, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { type AiLiveConnection, createAiChatController, createAiLiveConnection } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -39,32 +20,57 @@ import {
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
+  aiComposerDraft,
   aiComposerFileAccept,
   aiComposerSendInput,
-  aiComposerDraft,
   aiLatestUsageSnapshot,
   createAiChatTimeline,
   createAiPastedTextFile,
   readAiComposerFiles,
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
+import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
-import { createEffect, createMemo, createSignal, onCleanup, onMount, on, Show } from "solid-js";
+import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
+import { navigate, navigateTo } from "@k2b/ssr/nav";
+import { mutation, query } from "@k2b/stdlib/solid";
+import {
+  AppWorkspace,
+  Button,
+  Chat,
+  type ChatMention,
+  Dropdown,
+  openSpotlightSearch,
+  Placeholder,
+  prompts,
+  reconcileChatMentions,
+  useLocale,
+} from "@k2b/ui";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
+import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
+import { createCodeApprovals } from "../artifacts/CapabilityApproval";
+import { ChatPresentation } from "../artifacts/ChatPresentation";
+import { artifactMessages } from "../artifacts/messages";
+import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
+import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
+import { appTab, contextTab, fileTab, taskTab } from "../artifacts/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
+import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
-import { AssistantChatContextContent, type ContextCategory, type ContextView, AssistantChatContextPanel } from "./AssistantChatContext";
-import { assistantMessageAnchorSeq } from "./message-anchor";
-import { assistantSearchOptions } from "./assistant-search";
-import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
+import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
+import { AssistantChatContextContent, AssistantChatContextPanel, type ContextCategory, type ContextView } from "./AssistantChatContext";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
+import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
+import { assistantTaskTitle } from "./AssistantTasksDialog";
+import { createAssistantDictation } from "./assistant-dictation";
 import {
   type AssistantLiveInvalidation,
   AssistantLiveProvider,
@@ -72,20 +78,23 @@ import {
   matchesAssistantInvalidation,
 } from "./assistant-live";
 import {
-  assistantMessageSeqFromHref,
   assistantArtifactHref,
   assistantArtifactPathFromHref,
   assistantConversationHref,
   assistantConversationIdFromHref,
+  assistantMessageSeqFromHref,
   assistantProjectHref,
   assistantProjectIdFromHref,
 } from "./assistant-navigation";
 import { submitAssistantProjectMessage } from "./assistant-project-chat";
+import { assistantSearchOptions } from "./assistant-search";
+import { audioMessages } from "./audio-messages";
+import { resolveChatFileLink } from "./chat-file-link";
+import { assistantComposerCommands } from "./composer-commands";
+import { confirmComposerSave, editComposerSession, newComposerSession, observeComposerRevision } from "./composer-session";
+import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
-import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
-import { artifactMessages } from "../artifacts/messages";
-import { contextTab, appTab, fileTab, taskTab } from "../artifacts/workspace-state";
-import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
+import { useAssistantText } from "./ui-copy";
 
 type Status = {
   ok: boolean;
@@ -138,24 +147,69 @@ export default function AssistantWorkspace(props: Props) {
   const contextText = useAssistantText();
   const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
-  const openContextView = (view: ContextView) => artifactWorkspace.open(view.task ? taskTab(view.task.id, view.title) : view.context ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project) : view.file ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title } : { ...view, kind: "view" });
+  const openContextView = (view: ContextView) =>
+    artifactWorkspace.open(
+      view.task
+        ? taskTab(view.task.id, view.title)
+        : view.context
+          ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project)
+          : view.file
+            ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
+            : { ...view, kind: "view" },
+    );
   const [workspaceContext, setWorkspaceContext] = createSignal<AssistantChatContextSnapshot | null>(null);
   const openContextOverview = (category: ContextCategory, title: string) => {
     const chatId = chat.activeConversationId();
     if (!chatId) return;
     const project = activeConversationProject();
-    openContextView({ context: { conversationId: chatId, category, project }, key: `${chatId}:${category}`, title, render: () => <AssistantChatContextContent chatId={chatId} project={project} category={category} onOpenView={openContextView} onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))} /> });
+    openContextView({
+      context: { conversationId: chatId, category, project },
+      key: `${chatId}:${category}`,
+      title,
+      render: () => (
+        <AssistantChatContextContent
+          chatId={chatId}
+          project={project}
+          category={category}
+          onOpenView={openContextView}
+          onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
+        />
+      ),
+    });
   };
   const artifactCopy = () => artifactMessages.resolve([locale()]).t;
   const t = () => assistantMessages.resolve([locale()]).t;
-  const contextMenuItems = () => ([
-    {label:"Secrets",icon:"ti ti-key",action:()=>{const conversationId=chat.activeConversationId();if(conversationId)void openSecretsDialog({conversationId});}},
+  const contextMenuItems = () => [
+    {
+      label: "Secrets",
+      icon: "ti ti-key",
+      action: () => {
+        const conversationId = chat.activeConversationId();
+        if (conversationId) void openSecretsDialog({ conversationId });
+      },
+    },
     { label: artifactCopy().apps, icon: "ti ti-app-window", action: () => openContextOverview("apps", artifactCopy().apps) },
     { label: artifactCopy().files, icon: "ti ti-files", action: () => openContextOverview("files", artifactCopy().files) },
     { label: contextText("Sources"), icon: "ti ti-link", action: () => openContextOverview("sources", contextText("Sources")) },
-    ...(activeConversationProject() ? [{ label: contextText("Project knowledge"), icon: "ti ti-bulb", action: () => openContextOverview("knowledge", contextText("Project knowledge")) }] : []),
-    ...(workspaceContext()?.chatId === chat.activeConversationId() && workspaceContext()?.tasks.length ? [{ label: contextText("Scheduled tasks"), icon: "ti ti-calendar-time", action: () => openContextOverview("tasks", contextText("Scheduled tasks")) }] : []),
-  ]);
+    ...(activeConversationProject()
+      ? [
+          {
+            label: contextText("Project knowledge"),
+            icon: "ti ti-bulb",
+            action: () => openContextOverview("knowledge", contextText("Project knowledge")),
+          },
+        ]
+      : []),
+    ...(workspaceContext()?.chatId === chat.activeConversationId() && workspaceContext()?.tasks.length
+      ? [
+          {
+            label: contextText("Scheduled tasks"),
+            icon: "ti ti-calendar-time",
+            action: () => openContextOverview("tasks", contextText("Scheduled tasks")),
+          },
+        ]
+      : []),
+  ];
   const audioCopy = () => audioMessages.resolve([locale()]).t;
   const isSelectable = (modelId: string | null | undefined): modelId is string =>
     Boolean(modelId && props.models.some((model) => model.id === modelId));
@@ -169,7 +223,11 @@ export default function AssistantWorkspace(props: Props) {
     },
     onFailed: (attempt, error) => {
       setLiveError(t().liveRetry);
-      if (attempt === 1) console.warn("Assistant live refresh failed", {code:"live_refresh_failed",errorType:error instanceof Error ? error.name : "unknown"});
+      if (attempt === 1)
+        console.warn("Assistant live refresh failed", {
+          code: "live_refresh_failed",
+          errorType: error instanceof Error ? error.name : "unknown",
+        });
     },
   });
   liveConnection = createAiLiveConnection({
@@ -184,7 +242,7 @@ export default function AssistantWorkspace(props: Props) {
     onFatal: (error) => setLiveError(error.message),
   });
 
-  const codeApprovals=createCodeApprovals();
+  const codeApprovals = createCodeApprovals();
   const chat = createAiChatController({
     baseUrl: "/api/ai",
     initialConversationId: props.initialConversationId,
@@ -194,11 +252,17 @@ export default function AssistantWorkspace(props: Props) {
     trackViewedState: true,
     streamTransport: liveConnection.streamTransport,
     clientToolIds: [...CODE_RUNTIME_TOOL_NAMES],
-    frontendTools: createArtifactAgentRuntime(artifactWorkspace.open,codeApprovals.ask,"chat-tool",browserHttpHost),
+    frontendTools: createArtifactAgentRuntime(artifactWorkspace.open, codeApprovals.ask, "chat-tool", browserHttpHost),
   });
 
   const quotas = createAssistantQuota(props.initialQuotas);
-  createEffect(on(() => chat.running(), () => quotas.refresh(), { defer: true }));
+  createEffect(
+    on(
+      () => chat.running(),
+      () => quotas.refresh(),
+      { defer: true },
+    ),
+  );
 
   const sidebar = query.create<string, AssistantSidebarSnapshot, AssistantLiveInvalidation>({
     source: () => "/api/assistant/workspace/sidebar",
@@ -234,7 +298,9 @@ export default function AssistantWorkspace(props: Props) {
       const conversationId = chat.activeConversationId();
       return Boolean(conversationId && (!invalidation.conversationIds || invalidation.conversationIds.has(conversationId)));
     },
-    invalidate: async () => { await Promise.all([chat.refreshActiveConversation(), queuedMessages.refresh()]); },
+    invalidate: async () => {
+      await Promise.all([chat.refreshActiveConversation(), queuedMessages.refresh()]);
+    },
   });
   onMount(() => liveConnection?.connect());
   onCleanup(() => {
@@ -278,7 +344,8 @@ export default function AssistantWorkspace(props: Props) {
   const [composerAttachments, setComposerAttachments] = createSignal<Record<string, AiComposerAttachment[]>>({});
   const queuedMessages = query.create({
     source: () => chat.activeConversationId(),
-    load: (conversationId, {abortSignal}) => conversationId ? assistantApi.loadQueuedMessages(conversationId, abortSignal) : Promise.resolve([]),
+    load: (conversationId, { abortSignal }) =>
+      conversationId ? assistantApi.loadQueuedMessages(conversationId, abortSignal) : Promise.resolve([]),
   });
   const [sendingQueuedId, setSendingQueuedId] = createSignal<string | null>(null);
   const [composerSubmitting, setComposerSubmitting] = createSignal(false);
@@ -301,7 +368,7 @@ export default function AssistantWorkspace(props: Props) {
       return false;
     }
     if (!current()) return false;
-    const message = chat.usageMessages().find(item => item.seq === messageSeq);
+    const message = chat.usageMessages().find((item) => item.seq === messageSeq);
     if (!message) throw unavailable();
     const seq = assistantMessageAnchorSeq(message, chat.timeline());
     if (!(await chat.loadHistoryThroughSeq(seq))) {
@@ -329,8 +396,6 @@ export default function AssistantWorkspace(props: Props) {
     return true;
   };
 
-
-
   const canUseComposer = createMemo(() => props.status.ok && props.status.enabled && props.models.length > 0);
   const usageSnapshot = createMemo(() => aiLatestUsageSnapshot(chat.usageMessages()));
   const usageModel = createMemo(() => {
@@ -356,7 +421,7 @@ export default function AssistantWorkspace(props: Props) {
   const mentionsFor = (key: string) => composerMentions()[key] ?? [];
   const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
     editComposerSession(session(key));
-    setComposerMentions(all => ({ ...all, [key]: mentions }));
+    setComposerMentions((all) => ({ ...all, [key]: mentions }));
   };
   const setComposerDraft = (key: string, value: string) => {
     setMentionsFor(key, reconcileChatMentions(composerDraft(key), value, mentionsFor(key)));
@@ -371,9 +436,9 @@ export default function AssistantWorkspace(props: Props) {
 
   const hydrateComposer = (key: string, draft: AiConversation["draft"]) => {
     const restored = aiComposerDraft(draft.content);
-    setComposerDrafts(current => ({ ...current, [key]: restored.text }));
-    setComposerAttachments(current => ({ ...current, [key]: restored.attachments }));
-    setComposerMentions(current => ({ ...current, [key]: restored.mentions }));
+    setComposerDrafts((current) => ({ ...current, [key]: restored.text }));
+    setComposerAttachments((current) => ({ ...current, [key]: restored.attachments }));
+    setComposerMentions((current) => ({ ...current, [key]: restored.mentions }));
     const local = session(key);
     local.editGeneration++;
     local.baseRevision = draft.revision;
@@ -408,7 +473,12 @@ export default function AssistantWorkspace(props: Props) {
     return next;
   };
   const composerInput = (key: string) =>
-    aiComposerSendInput({ intent: "send", text: composerDraft(key), mentions: mentionsFor(key), attachments: aiChatAttachments(composerAttachmentsFor(key)) });
+    aiComposerSendInput({
+      intent: "send",
+      text: composerDraft(key),
+      mentions: mentionsFor(key),
+      attachments: aiChatAttachments(composerAttachmentsFor(key)),
+    });
   const saveComposer = (key: string, target: string) =>
     serializeComposer(key, async () => {
       const local = session(key);
@@ -489,23 +559,31 @@ export default function AssistantWorkspace(props: Props) {
   });
   const createAndFocusConversation = () => createConversation(true);
   onMount(() => {
-    onCleanup(registerCommandHandler("assistant.chat.compose", ChatComposeInputSchema, async input => {
-      if (input.projectId && !projects().some(project => project.id === input.projectId)) throw new Error(assistantCommandMessages.resolve([locale()]).t.unavailable);
-      const result = await createConversation(true, input.projectId);
-      if (!result) throw new Error(assistantCommandMessages.resolve([locale()]).t.failed);
-    }));
+    onCleanup(
+      registerCommandHandler("assistant.chat.compose", ChatComposeInputSchema, async (input) => {
+        if (input.projectId && !projects().some((project) => project.id === input.projectId))
+          throw new Error(assistantCommandMessages.resolve([locale()]).t.unavailable);
+        const result = await createConversation(true, input.projectId);
+        if (!result) throw new Error(assistantCommandMessages.resolve([locale()]).t.failed);
+      }),
+    );
     void consumeCommandLink();
   });
   createEffect(() => {
     if (newConversation.loading()) return;
     const project = activeProject() ?? projects().find((project) => project.id === activeConversation()?.projectId);
-    onCleanup(registerContextAwareCommand({ id: "assistant.chat.compose", title: t().newChat,
-      description: project
-        ? assistantCommandMessages.resolve([locale()]).t.newProjectChatDescription({ name: project.name })
-        : assistantCommandMessages.resolve([locale()]).t.newChatDescription,
-      icon: "ti ti-plus", shortcut: "mod+alt+n",
-      action: { command: "assistant.chat.compose", input: project ? { projectId: project.id } : {} },
-    }));
+    onCleanup(
+      registerContextAwareCommand({
+        id: "assistant.chat.compose",
+        title: t().newChat,
+        description: project
+          ? assistantCommandMessages.resolve([locale()]).t.newProjectChatDescription({ name: project.name })
+          : assistantCommandMessages.resolve([locale()]).t.newChatDescription,
+        icon: "ti ti-plus",
+        shortcut: "mod+alt+n",
+        action: { command: "assistant.chat.compose", input: project ? { projectId: project.id } : {} },
+      }),
+    );
   });
   const canSend = createMemo(
     () => canUseComposer() && !newConversation.loading() && !chat.loadingConversation() && !chat.running() && !chat.activeTurn(),
@@ -561,26 +639,35 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   onMount(() => {
-    onCleanup(() => { revealRequest++; navigationRequest++; });
-    onCleanup(registerSearchNavigation(async ({ href, ref }) => {
-      if (ref?.type !== "assistant.chat" && ref?.type !== "assistant.message") return false;
-      const target = new URL(href, props.cloudUrl);
-      if (target.origin !== new URL(props.cloudUrl).origin || target.pathname !== "/app/assistant") return false;
-      const conversationId = assistantConversationIdFromHref(href);
-      if (!conversationId) return false;
-      const generation = navigationRequest + 1;
-      if (!(await openAndFocusConversation(conversationId))) return true;
-      const seq = assistantMessageSeqFromHref(href);
-      if (seq !== null && !(await revealMessage(seq))) return true;
-      if (navigationRequest === generation && chat.activeConversationId() === conversationId) navigate(href, { scroll: "manual", viewTransition: false });
-      return true;
-    }));
+    onCleanup(() => {
+      revealRequest++;
+      navigationRequest++;
+    });
+    onCleanup(
+      registerSearchNavigation(async ({ href, ref }) => {
+        if (ref?.type !== "assistant.chat" && ref?.type !== "assistant.message") return false;
+        const target = new URL(href, props.cloudUrl);
+        if (target.origin !== new URL(props.cloudUrl).origin || target.pathname !== "/app/assistant") return false;
+        const conversationId = assistantConversationIdFromHref(href);
+        if (!conversationId) return false;
+        const generation = navigationRequest + 1;
+        if (!(await openAndFocusConversation(conversationId))) return true;
+        const seq = assistantMessageSeqFromHref(href);
+        if (seq !== null && !(await revealMessage(seq))) return true;
+        if (navigationRequest === generation && chat.activeConversationId() === conversationId)
+          navigate(href, { scroll: "manual", viewTransition: false });
+        return true;
+      }),
+    );
     const initialMessage = assistantMessageSeqFromHref(window.location.href);
-    if (initialMessage !== null) void revealMessage(initialMessage).catch(error => chat.setError(error.message));
+    if (initialMessage !== null) void revealMessage(initialMessage).catch((error) => chat.setError(error.message));
     artifactWorkspace.restore();
     setWorkspaceMounted(true);
     const guardUnsaved = (event: BeforeUnloadEvent) => {
-      if (artifactWorkspace.hasDirty()) { event.preventDefault(); event.returnValue = ""; }
+      if (artifactWorkspace.hasDirty()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
     };
     window.addEventListener("beforeunload", guardUnsaved);
     onCleanup(() => window.removeEventListener("beforeunload", guardUnsaved));
@@ -605,14 +692,18 @@ export default function AssistantWorkspace(props: Props) {
       }
       if (projectView() || conversationId !== chat.activeConversationId()) {
         const generation = navigationRequest + 1;
-        void openAndFocusConversation(conversationId).then(async (opened) => {
-          if (!opened || navigationRequest !== generation) return;
-          if (messageSeq !== null && !(await revealMessage(messageSeq))) return;
-          if (navigationRequest === generation && artifactPath) void openFiles(artifactPath);
-        }).catch(() => { if (navigationRequest === generation) navigateTo(window.location.href); });
+        void openAndFocusConversation(conversationId)
+          .then(async (opened) => {
+            if (!opened || navigationRequest !== generation) return;
+            if (messageSeq !== null && !(await revealMessage(messageSeq))) return;
+            if (navigationRequest === generation && artifactPath) void openFiles(artifactPath);
+          })
+          .catch(() => {
+            if (navigationRequest === generation) navigateTo(window.location.href);
+          });
         return;
       }
-      if (messageSeq !== null) void revealMessage(messageSeq).catch(error => chat.setError(error.message));
+      if (messageSeq !== null) void revealMessage(messageSeq).catch((error) => chat.setError(error.message));
       if (artifactPath) void openFiles(artifactPath);
     };
     window.addEventListener("popstate", handlePopState);
@@ -703,9 +794,21 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   const queuedMessagesFor = (conversationId: string): AssistantQueuedMessage[] =>
-    conversationId === chat.activeConversationId() ? (queuedMessages.data() ?? []).map(message => ({
-      ...message, editableText:aiComposerDraft(message.content).text, text:message.content.map(part => part.type === "text" ? part.text : (part.type === "file" || part.type === "project-file") ? part.path : part.title ?? part.ref.id).join(" · "),
-    })) : [];
+    conversationId === chat.activeConversationId()
+      ? (queuedMessages.data() ?? []).map((message) => ({
+          ...message,
+          editableText: aiComposerDraft(message.content).text,
+          text: message.content
+            .map((part) =>
+              part.type === "text"
+                ? part.text
+                : part.type === "file" || part.type === "project-file"
+                  ? part.path
+                  : (part.title ?? part.ref.id),
+            )
+            .join(" · "),
+        }))
+      : [];
   const queueMessage = async (input: AiComposerSendInput) => {
     const conversationId = chat.activeConversationId();
     if (!conversationId || composerSubmitting()) return false;
@@ -716,7 +819,12 @@ export default function AssistantWorkspace(props: Props) {
         if (local.conflict) return false;
         local.saving = true;
         try {
-          const accepted = await chat.queueMessage({...input,conversationId,expectedDraftRevision:local.baseRevision,modelProfileId:selectedModelId() || undefined});
+          const accepted = await chat.queueMessage({
+            ...input,
+            conversationId,
+            expectedDraftRevision: local.baseRevision,
+            modelProfileId: selectedModelId() || undefined,
+          });
           if (accepted && chat.conversation()?.id === conversationId) local.baseRevision = chat.conversation()!.draft.revision;
           // Acceptance is durable even if refreshing the visible queue fails.
           void queuedMessages.refresh().catch(() => chat.setError(t().chatActionFailed));
@@ -726,9 +834,11 @@ export default function AssistantWorkspace(props: Props) {
           touchSession();
         }
       });
-    } finally { setComposerSubmitting(false); }
+    } finally {
+      setComposerSubmitting(false);
+    }
   };
-  const changeQueuedMessage = async (message:AssistantQueuedMessage, action:"cancel"|"retry"|"edit") => {
+  const changeQueuedMessage = async (message: AssistantQueuedMessage, action: "cancel" | "retry" | "edit") => {
     const conversationId = chat.activeConversationId();
     if (!conversationId || sendingQueuedId()) return;
     setSendingQueuedId(message.id);
@@ -736,13 +846,15 @@ export default function AssistantWorkspace(props: Props) {
       if (action === "edit") {
         const text = await prompts.prompt(t().editQueued, message.editableText ?? message.text);
         if (!text?.trim()) return;
-        await assistantApi.editQueuedMessage(conversationId,message.id,text.trim());
-      }
-      else if (action === "cancel") await assistantApi.cancelQueuedMessage(conversationId,message.id);
-      else await assistantApi.retryQueuedMessage(conversationId,message.id);
+        await assistantApi.editQueuedMessage(conversationId, message.id, text.trim());
+      } else if (action === "cancel") await assistantApi.cancelQueuedMessage(conversationId, message.id);
+      else await assistantApi.retryQueuedMessage(conversationId, message.id);
       await queuedMessages.refresh();
-    } catch (error) { chat.setError(error instanceof Error ? error.message : t().chatActionFailed); }
-    finally {setSendingQueuedId(null);}
+    } catch (error) {
+      chat.setError(error instanceof Error ? error.message : t().chatActionFailed);
+    } finally {
+      setSendingQueuedId(null);
+    }
   };
 
   const activeConversation = () =>
@@ -754,8 +866,10 @@ export default function AssistantWorkspace(props: Props) {
     for (const stored of chat.messages()) {
       if (stored.seq <= (checkpoint?.seq ?? -1)) continue;
       const message = stored.message;
-      const plan = message.role === "tool_result" && message.name === "todo_write" && !message.isError
-        ? parseAiTodoPlan(message.result) : stored.meta?.todoPlan;
+      const plan =
+        message.role === "tool_result" && message.name === "todo_write" && !message.isError
+          ? parseAiTodoPlan(message.result)
+          : stored.meta?.todoPlan;
       if (plan) todos = plan.todos;
     }
     for (const block of chat.activeTurn()?.blocks ?? []) {
@@ -766,7 +880,7 @@ export default function AssistantWorkspace(props: Props) {
     }
     return todos;
   };
-  const hasOpenTodos = createMemo(() => todoItems().some(item => item.status === "pending" || item.status === "in_progress"));
+  const hasOpenTodos = createMemo(() => todoItems().some((item) => item.status === "pending" || item.status === "in_progress"));
   const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
   createEffect(() => {
     chat.activeConversationId();
@@ -775,8 +889,9 @@ export default function AssistantWorkspace(props: Props) {
     setTodoOpen(false);
   });
   const todoProgress = () => {
-    const todos = todoItems(), done = todos.filter(item => item.status === "completed").length;
-    const cancelled = todos.filter(item => item.status === "cancelled").length;
+    const todos = todoItems(),
+      done = todos.filter((item) => item.status === "completed").length;
+    const cancelled = todos.filter((item) => item.status === "cancelled").length;
     const de = locale().startsWith("de");
     return `${done}/${todos.length - cancelled} ${de ? "erledigt" : "complete"}${cancelled ? ` · ${cancelled} ${de ? "verworfen" : "cancelled"}` : ""}`;
   };
@@ -850,15 +965,25 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   const useStarter = async (starter: AssistantStarterAction) => {
-    const key=composerSessionKey();
-    const current=composerDraft(key);
-    setComposerDraft(key,current.trim() ? `${current}\n\n${starter.prompt}` : starter.prompt);
+    const key = composerSessionKey();
+    const current = composerDraft(key);
+    setComposerDraft(key, current.trim() ? `${current}\n\n${starter.prompt}` : starter.prompt);
     focusComposer();
-    if(starter.skill) try {
-      const skill=(await assistantApi.listSkills()).find(skill=>skill.enabled && skill.name===starter.skill);
-      if(!skill || composerSessionKey()!==key || composerAttachmentsFor(key).some(item=>item.kind==="resource" && item.ref.type==="core.ai.skill" && item.ref.id===skill.id))return;
-      await addResolvedComposerResource(key,{type:"core.ai.skill",id:skill.id});
-    } catch { chat.setError(t().attachResourceFailed); }
+    if (starter.skill)
+      try {
+        const skill = (await assistantApi.listSkills()).find((skill) => skill.enabled && skill.name === starter.skill);
+        if (
+          !skill ||
+          composerSessionKey() !== key ||
+          composerAttachmentsFor(key).some(
+            (item) => item.kind === "resource" && item.ref.type === "core.ai.skill" && item.ref.id === skill.id,
+          )
+        )
+          return;
+        await addResolvedComposerResource(key, { type: "core.ai.skill", id: skill.id });
+      } catch {
+        chat.setError(t().attachResourceFailed);
+      }
   };
   const addComposerFiles = async (sessionKey: string, files: readonly File[]) => {
     const current = composerAttachmentsFor(sessionKey);
@@ -922,16 +1047,27 @@ export default function AssistantWorkspace(props: Props) {
     if (!(await openAndFocusConversation(task.chatId))) return;
     const key = task.chatId;
     const attachments = composerAttachmentsFor(key);
-    const attached = attachments.some(item => item.kind === "resource" && item.ref.type === "core.ai.task" && item.ref.id === task.id);
+    const attached = attachments.some((item) => item.kind === "resource" && item.ref.type === "core.ai.task" && item.ref.id === task.id);
     if (!attached && attachments.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
-    if (!attached) setComposerAttachmentsFor(key, [...attachments, {
-      kind: "resource", id: `resource:core.ai.task:${task.id}`, name: assistantTaskTitle(task),
-      ref: { type: "core.ai.task", id: task.id }, icon: "ti ti-calendar-time",
-    }]);
-    const instruction = contextText(repair ? "Please review the last run of this scheduled task with me and help me fix the problem." : "Please help me adjust this scheduled task.");
+    if (!attached)
+      setComposerAttachmentsFor(key, [
+        ...attachments,
+        {
+          kind: "resource",
+          id: `resource:core.ai.task:${task.id}`,
+          name: assistantTaskTitle(task),
+          ref: { type: "core.ai.task", id: task.id },
+          icon: "ti ti-calendar-time",
+        },
+      ]);
+    const instruction = contextText(
+      repair
+        ? "Please review the last run of this scheduled task with me and help me fix the problem."
+        : "Please help me adjust this scheduled task.",
+    );
     const existing = composerDraft(key);
     setComposerDraft(key, existing.trim() ? `${existing}\n\n${instruction}` : instruction);
     artifactWorkspace.setMobile("chat");
@@ -1129,24 +1265,53 @@ export default function AssistantWorkspace(props: Props) {
           </div>
         </Show>
         <Chat.Composer
-          accessory={<Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
-          <Chat.Tasks items={todoItems()} open={todoOpen()} onOpenChange={setTodoOpen}
-            label={locale().startsWith("de") ? "Aufgaben" : "Tasks"} progressLabel={todoProgress()}
-            statusLabels={locale().startsWith("de")
-              ? { pending: "Offen", in_progress: chat.activeTurn()?.status === "running" ? "In Arbeit" : "Aktueller Schritt", completed: "Erledigt", cancelled: "Verworfen" }
-              : { pending: "Pending", in_progress: chat.activeTurn()?.status === "running" ? "In progress" : "Current step", completed: "Completed", cancelled: "Cancelled" }} />
-        </Show>}
+          accessory={
+            <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
+              <Chat.Tasks
+                items={todoItems()}
+                open={todoOpen()}
+                onOpenChange={setTodoOpen}
+                label={locale().startsWith("de") ? "Aufgaben" : "Tasks"}
+                progressLabel={todoProgress()}
+                statusLabels={
+                  locale().startsWith("de")
+                    ? {
+                        pending: "Offen",
+                        in_progress: chat.activeTurn()?.status === "running" ? "In Arbeit" : "Aktueller Schritt",
+                        completed: "Erledigt",
+                        cancelled: "Verworfen",
+                      }
+                    : {
+                        pending: "Pending",
+                        in_progress: chat.activeTurn()?.status === "running" ? "In progress" : "Current step",
+                        completed: "Completed",
+                        cancelled: "Cancelled",
+                      }
+                }
+              />
+            </Show>
+          }
           draftKey={sessionKey()}
           mentions={mentionsFor(sessionKey())}
-          onMentionsChange={mentions => setMentionsFor(sessionKey(), mentions)}
+          onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
           commands={[
-            { name: "compact", description: locale().startsWith("de") ? "Chat-Kontext kompaktieren" : "Compact chat context", icon: "ti ti-fold",
+            {
+              name: "compact",
+              description: locale().startsWith("de") ? "Chat-Kontext kompaktieren" : "Compact chat context",
+              icon: "ti ti-fold",
               disabled: projectComposer() || chat.running() || !chat.messages().length,
-              action: async () => { if (!await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })) throw new Error(t().chatActionFailed); } },
-            { name: "fork", description: locale().startsWith("de") ? "Chat ab der letzten Antwort abzweigen" : "Fork at the latest response", icon: "ti ti-git-fork",
-              disabled: projectComposer() || chat.running() || !chat.messages().some(message => message.message.role === "assistant"),
               action: async () => {
-                const target = [...chat.messages()].reverse().find(message => message.message.role === "assistant");
+                if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
+                  throw new Error(t().chatActionFailed);
+              },
+            },
+            {
+              name: "fork",
+              description: locale().startsWith("de") ? "Chat ab der letzten Antwort abzweigen" : "Fork at the latest response",
+              icon: "ti ti-git-fork",
+              disabled: projectComposer() || chat.running() || !chat.messages().some((message) => message.message.role === "assistant"),
+              action: async () => {
+                const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
                 if (!target) return;
                 const key = sessionKey();
                 const saved = await saveComposer(key, key);
@@ -1156,43 +1321,63 @@ export default function AssistantWorkspace(props: Props) {
                 if (!fork) throw new Error(t().chatActionFailed);
                 hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
                 editComposerSession(session(fork.id));
-                if (!await saveComposer(fork.id, fork.id)) throw new Error(t().chatActionFailed);
+                if (!(await saveComposer(fork.id, fork.id))) throw new Error(t().chatActionFailed);
                 if (chat.activeConversationId() === fork.id) focusComposer();
-              } },
-            { name: "new", description: locale().startsWith("de") ? "Neuen Chat öffnen" : "Open a new chat", icon: "ti ti-plus",
+              },
+            },
+            {
+              name: "new",
+              description: locale().startsWith("de") ? "Neuen Chat öffnen" : "Open a new chat",
+              icon: "ti ti-plus",
               action: async () => {
                 const key = sessionKey();
-                if (chat.activeConversationId() && !projectComposer() && !await saveComposer(key, key)) throw new Error(t().chatActionFailed);
+                if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
+                  throw new Error(t().chatActionFailed);
                 if (sessionKey() !== key) return;
                 await createAndFocusConversation();
-              } },
-          ]}
-          searchCommands={(query, signal) => assistantComposerCommands({ query, signal, locale: locale(),
-            conversationId: projectComposer() ? undefined : chat.activeConversationId() ?? undefined,
-            projectId: composerProps.projectId ?? chat.conversation()?.projectId, projects: projects(), running: chat.running(),
-            assignProject: async projectId => {
-              const key = sessionKey();
-              const text = composerDraft(key), attachments = composerAttachmentsFor(key), mentions = mentionsFor(key);
-              const existing = chat.activeConversationId();
-              const created = existing ? null : await createConversation(false);
-              const conversationId = existing ?? created?.id;
-              if (!conversationId) throw new Error(t().chatActionFailed);
-              if (created) {
-                setComposerDraft(conversationId, text);
-                setComposerAttachmentsFor(conversationId, attachments);
-                setMentionsFor(conversationId, mentions);
-                session(conversationId).baseRevision = created.draft.revision;
-              }
-              if (!await saveComposer(conversationId, conversationId)) throw new Error(t().chatActionFailed);
-              if (chat.activeConversationId() !== conversationId) return;
-              const updated = await assistantApi.assignProject(conversationId, projectId);
-              if (chat.activeConversationId() === conversationId) setEmptyProjectId(updated.projectId);
-              await Promise.all([
-                chat.refreshActiveConversation(),
-                sidebar.invalidate({ cursor: null, domains: new Set(["conversation-list"]), conversationIds: new Set([updated.id]), projectIds: null }),
-              ]);
+              },
             },
-          })}
+          ]}
+          searchCommands={(query, signal) =>
+            assistantComposerCommands({
+              query,
+              signal,
+              locale: locale(),
+              conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
+              projectId: composerProps.projectId ?? chat.conversation()?.projectId,
+              projects: projects(),
+              running: chat.running(),
+              assignProject: async (projectId) => {
+                const key = sessionKey();
+                const text = composerDraft(key),
+                  attachments = composerAttachmentsFor(key),
+                  mentions = mentionsFor(key);
+                const existing = chat.activeConversationId();
+                const created = existing ? null : await createConversation(false);
+                const conversationId = existing ?? created?.id;
+                if (!conversationId) throw new Error(t().chatActionFailed);
+                if (created) {
+                  setComposerDraft(conversationId, text);
+                  setComposerAttachmentsFor(conversationId, attachments);
+                  setMentionsFor(conversationId, mentions);
+                  session(conversationId).baseRevision = created.draft.revision;
+                }
+                if (!(await saveComposer(conversationId, conversationId))) throw new Error(t().chatActionFailed);
+                if (chat.activeConversationId() !== conversationId) return;
+                const updated = await assistantApi.assignProject(conversationId, projectId);
+                if (chat.activeConversationId() === conversationId) setEmptyProjectId(updated.projectId);
+                await Promise.all([
+                  chat.refreshActiveConversation(),
+                  sidebar.invalidate({
+                    cursor: null,
+                    domains: new Set(["conversation-list"]),
+                    conversationIds: new Set([updated.id]),
+                    projectIds: null,
+                  }),
+                ]);
+              },
+            })
+          }
           submitTools={<dictation.Control />}
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}
@@ -1252,7 +1437,7 @@ export default function AssistantWorkspace(props: Props) {
           onSubmit={(input) =>
             composerProps.projectId
               ? sendProjectMessage(composerProps.projectId, aiComposerSendInput(input))
-              : (input.intent === "queue" || (input.intent === "send" && Boolean(queuedMessages.data()?.length)))
+              : input.intent === "queue" || (input.intent === "send" && Boolean(queuedMessages.data()?.length))
                 ? queueMessage(aiComposerSendInput(input))
                 : input.intent === "steer"
                   ? steer(input.text)
@@ -1289,19 +1474,29 @@ export default function AssistantWorkspace(props: Props) {
                 ]
               : []),
           ]}
-          contextActions={!projectComposer() && todoItems().length > 0 && !hasOpenTodos() ? [{
-            id: "toggle-completed-tasks",
-            icon: "ti ti-list-check",
-            label: locale().startsWith("de")
-              ? showCompletedTodos() ? "Aufgaben ausblenden" : "Aufgaben anzeigen"
-              : showCompletedTodos() ? "Hide tasks" : "Show tasks",
-            pressed: showCompletedTodos(),
-            onSelect: () => {
-              const visible = !showCompletedTodos();
-              setShowCompletedTodos(visible);
-              setTodoOpen(visible);
-            },
-          }] : []}
+          contextActions={
+            !projectComposer() && todoItems().length > 0 && !hasOpenTodos()
+              ? [
+                  {
+                    id: "toggle-completed-tasks",
+                    icon: "ti ti-list-check",
+                    label: locale().startsWith("de")
+                      ? showCompletedTodos()
+                        ? "Aufgaben ausblenden"
+                        : "Aufgaben anzeigen"
+                      : showCompletedTodos()
+                        ? "Hide tasks"
+                        : "Show tasks",
+                    pressed: showCompletedTodos(),
+                    onSelect: () => {
+                      const visible = !showCompletedTodos();
+                      setShowCompletedTodos(visible);
+                      setTodoOpen(visible);
+                    },
+                  },
+                ]
+              : []
+          }
           contextPopupAction={
             !projectComposer() && activeConversation()
               ? {
@@ -1344,16 +1539,31 @@ export default function AssistantWorkspace(props: Props) {
     const conversation = activeConversation();
     if (!conversation || activeProject()) return;
     const copy = assistantCommandMessages.resolve([locale()]).t;
-    onCleanup(registerContextAwareCommand({ id: `assistant.${conversation.id}.search`, title: t().searchThisChat,
-      description: copy.searchChatDescription({ title: conversation.title }), icon: "ti ti-search",
-      scope: "selection", shortcut: "mod+shift+k",
-      action: { search: assistantSearchOptions(locale(), conversation) },
-    }));
+    onCleanup(
+      registerContextAwareCommand({
+        id: `assistant.${conversation.id}.search`,
+        title: t().searchThisChat,
+        description: copy.searchChatDescription({ title: conversation.title }),
+        icon: "ti ti-search",
+        scope: "selection",
+        shortcut: "mod+shift+k",
+        action: { search: assistantSearchOptions(locale(), conversation) },
+      }),
+    );
     if (!["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus))
-      onCleanup(registerContextAwareCommand({ id: `assistant.${conversation.id}.done`, title: conversation.isDone ? copy.reopen : copy.done,
-        description: conversation.isDone ? copy.reopenDescription({ title: conversation.title }) : copy.doneDescription({ title: conversation.title }),
-        scope: "selection", shortcut: "d", icon: "ti ti-check", action: async () => updateConversation(await assistantApi.setConversationDone(conversation.id, !conversation.isDone)),
-      }));
+      onCleanup(
+        registerContextAwareCommand({
+          id: `assistant.${conversation.id}.done`,
+          title: conversation.isDone ? copy.reopen : copy.done,
+          description: conversation.isDone
+            ? copy.reopenDescription({ title: conversation.title })
+            : copy.doneDescription({ title: conversation.title }),
+          scope: "selection",
+          shortcut: "d",
+          icon: "ti ti-check",
+          action: async () => updateConversation(await assistantApi.setConversationDone(conversation.id, !conversation.isDone)),
+        }),
+      );
   });
 
   const archiveConversation = (archived: AiConversation) => {
@@ -1421,7 +1631,9 @@ export default function AssistantWorkspace(props: Props) {
         emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
         viewportRef={setTimelineViewport}
         contentRef={setTimelineContent}
-        scrollToAnchorRef={(scrollToAnchor) => { scrollToMessageAnchor = scrollToAnchor; }}
+        scrollToAnchorRef={(scrollToAnchor) => {
+          scrollToMessageAnchor = scrollToAnchor;
+        }}
         onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
         navigation={
           <AiChatTurnNavigator
@@ -1463,130 +1675,168 @@ export default function AssistantWorkspace(props: Props) {
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
             <AppWorkspace.MainPane id="chat" label={artifactCopy().chat} scroll={false} class="assistant-chat-pane flex min-h-0 flex-col">
-            <Show
-              keyed
-              when={projectView()}
-              fallback={
-                <Chat class="assistant-chat-shell min-h-0 flex-1">
-                  <Show when={activeConversation()}>
-                    <div class="assistant-context-open">
-                      <Dropdown.Root items={contextMenuItems()}>
-                        <Dropdown.Trigger iconOnly label={artifactCopy().open}><i class="ti ti-plus" aria-hidden="true" /></Dropdown.Trigger>
-                      </Dropdown.Root>
-                    </div>
-                  </Show>
-                  <div class="assistant-chat-layout">
-                    <div class="contents">
-                      <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
-                        <Show
-                          when={emptyChat()}
-                          fallback={
-                            <AiChatActionsProvider
-                              actions={{
-                                renderCodePresentation: result => <ChatPresentation result={result} conversationId={chat.activeConversationId()!} httpHost={browserHttpHost} />,
-                                actionDisabled: () => chat.runStatus() === "stopping",
-                                onApproval: async (request, input) => {
-                                  if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
-                                },
-                                onFrontendToolResult: async (request, result) => {
-                                  if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);
-                                },
-                                onForkMessage: async (entry, input) => {
-                                  const conversation = await chat.forkMessage(entry.id, input);
-                                  if (!conversation) throw new Error(t().forkFailed);
-                                  if (chat.activeConversationId() === conversation.id) commitConversationUrl(conversation.id);
-                                },
-                                onRetryMessage: async (entry, input) => {
-                                  const retried = await chat.retryUserMessage(entry.id, {
-                                    ...input,
-                                    modelProfileId: selectedModelId() || undefined,
-                                  });
-                                  if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
-                                },
-                                onMessageFeedback: async (entry, feedback) => {
-                                  const saved = feedback
-                                    ? await chat.setMessageFeedback(entry.id, feedback)
-                                    : await chat.clearMessageFeedback(entry.id);
-                                  if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
-                                },
-                                onRetrySteer: async (block) => {
-                                  if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
-                                },
-                                onOpenScheduledTaskRun: (taskId, occurrenceId) => void openAssistantTaskRun(taskId, occurrenceId, liveHub),
-                                onOpenFile: (path) => void openFiles(path),
-                                resolveFileLink: href => {
-                                  const context = workspaceContext() ?? props.initialContext;
-                                  const conversationId = chat.activeConversationId();
-                                  return conversationId && context?.chatId === conversationId
-                                    ? resolveChatFileLink(href, window.location.href, conversationId, context.files.map(file => file.path))
-                                    : null;
-                                },
-                                fileUrl: chat.fileContentUrl,
-                              }}
-                            >
-                              <ConversationTimeline />
-                            </AiChatActionsProvider>
-                          }
-                        >
-                          <AssistantEmptyChat
-                            composer={<AssistantComposer />}
-                            notices={<ComposerNotices />}
-                            projects={projects()}
-                            selectedProjectId={emptyProjectId()}
-                            choosingProject={choosingProject()}
-                            onChooseProject={() => void chooseEmptyChatProject()}
-                            onStarter={useStarter}
+              <Show
+                keyed
+                when={projectView()}
+                fallback={
+                  <Chat class="assistant-chat-shell min-h-0 flex-1">
+                    <Show when={activeConversation()}>
+                      <div class="assistant-context-open">
+                        <Dropdown.Root items={contextMenuItems()}>
+                          <Dropdown.Trigger iconOnly label={artifactCopy().open}>
+                            <i class="ti ti-plus" aria-hidden="true" />
+                          </Dropdown.Trigger>
+                        </Dropdown.Root>
+                      </div>
+                    </Show>
+                    <div class="assistant-chat-layout">
+                      <div class="contents">
+                        <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
+                          <Show
+                            when={emptyChat()}
+                            fallback={
+                              <AiChatActionsProvider
+                                actions={{
+                                  renderCodePresentation: (result) => (
+                                    <ChatPresentation
+                                      result={result}
+                                      conversationId={chat.activeConversationId()!}
+                                      httpHost={browserHttpHost}
+                                    />
+                                  ),
+                                  actionDisabled: () => chat.runStatus() === "stopping",
+                                  onApproval: async (request, input) => {
+                                    if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
+                                  },
+                                  onFrontendToolResult: async (request, result) => {
+                                    if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);
+                                  },
+                                  onForkMessage: async (entry, input) => {
+                                    const conversation = await chat.forkMessage(entry.id, input);
+                                    if (!conversation) throw new Error(t().forkFailed);
+                                    if (chat.activeConversationId() === conversation.id) commitConversationUrl(conversation.id);
+                                  },
+                                  onRetryMessage: async (entry, input) => {
+                                    const retried = await chat.retryUserMessage(entry.id, {
+                                      ...input,
+                                      modelProfileId: selectedModelId() || undefined,
+                                    });
+                                    if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
+                                  },
+                                  onMessageFeedback: async (entry, feedback) => {
+                                    const saved = feedback
+                                      ? await chat.setMessageFeedback(entry.id, feedback)
+                                      : await chat.clearMessageFeedback(entry.id);
+                                    if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
+                                  },
+                                  onRetrySteer: async (block) => {
+                                    if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
+                                  },
+                                  onOpenScheduledTaskRun: (taskId, occurrenceId) =>
+                                    void openAssistantTaskRun(taskId, occurrenceId, liveHub),
+                                  onOpenFile: (path) => void openFiles(path),
+                                  resolveFileLink: (href) => {
+                                    const context = workspaceContext() ?? props.initialContext;
+                                    const conversationId = chat.activeConversationId();
+                                    return conversationId && context?.chatId === conversationId
+                                      ? resolveChatFileLink(
+                                          href,
+                                          window.location.href,
+                                          conversationId,
+                                          context.files.map((file) => file.path),
+                                        )
+                                      : null;
+                                  },
+                                  fileUrl: chat.fileContentUrl,
+                                }}
+                              >
+                                <ConversationTimeline />
+                              </AiChatActionsProvider>
+                            }
+                          >
+                            <AssistantEmptyChat
+                              composer={<AssistantComposer />}
+                              notices={<ComposerNotices />}
+                              projects={projects()}
+                              selectedProjectId={emptyProjectId()}
+                              choosingProject={choosingProject()}
+                              onChooseProject={() => void chooseEmptyChatProject()}
+                              onStarter={useStarter}
+                            />
+                          </Show>
+                          <codeApprovals.View
+                            conversationTitle={(id) => conversations().find((c) => c.id === id || c.shortId === id)?.title}
                           />
-                        </Show>
-                        <codeApprovals.View conversationTitle={id=>conversations().find(c=>c.id===id || c.shortId===id)?.title}/>
-                      </section>
+                        </section>
 
-                      <Show when={!emptyChat()}>
-                        <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
-                          <div class="mx-auto flex max-w-3xl flex-col gap-2">
-                            <ComposerNotices />
-                            <AssistantComposer />
-
+                        <Show when={!emptyChat()}>
+                          <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
+                            <div class="mx-auto flex max-w-3xl flex-col gap-2">
+                              <ComposerNotices />
+                              <AssistantComposer />
+                            </div>
                           </div>
-                        </div>
+                        </Show>
+                      </div>
+                      <Show when={activeConversation()}>
+                        {(conversation) => (
+                          <div class="contents">
+                            <AssistantChatContextPanel
+                              onOpenView={openContextView}
+                              onSnapshotChange={setWorkspaceContext}
+                              onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
+                              chatId={conversation().id}
+                              project={activeConversationProject()}
+                              initial={props.initialContext?.chatId === conversation().id ? props.initialContext : null}
+                            />
+                          </div>
+                        )}
                       </Show>
                     </div>
-                    <Show when={activeConversation()}>
-                      {(conversation) => (
-                        <div class="contents">
-                          <AssistantChatContextPanel
-                            onOpenView={openContextView}
-                            onSnapshotChange={setWorkspaceContext}
-                            onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
-                            chatId={conversation().id}
-                            project={activeConversationProject()}
-                            initial={props.initialContext?.chatId === conversation().id ? props.initialContext : null}
-                          />
-                        </div>
-                      )}
-                    </Show>
-                  </div>
-                </Chat>
-              }
-            >
-              {(view) => (
-                <Show when={projects().find((project) => project.id === view.projectId)}>
-                  {(project) => (
-                    <AssistantProjectView
-                      project={project()}
-                      initialPage={view.page}
-                      initialContext={view.context}
-                      composer={<AssistantComposer projectId={project().id} projectName={project().name} />}
-                      onOpenConversation={openAndFocusConversation}
-                    />
-                  )}
-                </Show>
-              )}
-            </Show>
+                  </Chat>
+                }
+              >
+                {(view) => (
+                  <Show when={projects().find((project) => project.id === view.projectId)}>
+                    {(project) => (
+                      <AssistantProjectView
+                        project={project()}
+                        initialPage={view.page}
+                        initialContext={view.context}
+                        composer={<AssistantComposer projectId={project().id} projectName={project().name} />}
+                        onOpenConversation={openAndFocusConversation}
+                      />
+                    )}
+                  </Show>
+                )}
+              </Show>
             </AppWorkspace.MainPane>
-            <AppWorkspace.MainPane id="workspace" label={artifactCopy().workspace} open={artifactWorkspace.state().tabs.length > 0} defaultSize={620} minSize={320} scroll={false}>
-              <Show when={workspaceMounted()} fallback={<div class="flex h-full items-center justify-center"><Placeholder state="loading" title={artifactCopy().loading} /></div>}>
-              <ArtifactWorkspace onEditTask={(task, repair) => void editScheduledTask(task, repair)} onOpenView={openContextView} project={activeConversationProject()} conversationId={chat.activeConversationId()} controller={artifactWorkspace} userId={props.userId} refreshKey={filesRefreshKey()} menuItems={contextMenuItems()} />
+            <AppWorkspace.MainPane
+              id="workspace"
+              label={artifactCopy().workspace}
+              open={artifactWorkspace.state().tabs.length > 0}
+              defaultSize={620}
+              minSize={320}
+              scroll={false}
+            >
+              <Show
+                when={workspaceMounted()}
+                fallback={
+                  <div class="flex h-full items-center justify-center">
+                    <Placeholder state="loading" title={artifactCopy().loading} />
+                  </div>
+                }
+              >
+                <ArtifactWorkspace
+                  onEditTask={(task, repair) => void editScheduledTask(task, repair)}
+                  onOpenView={openContextView}
+                  project={activeConversationProject()}
+                  conversationId={chat.activeConversationId()}
+                  controller={artifactWorkspace}
+                  userId={props.userId}
+                  refreshKey={filesRefreshKey()}
+                  menuItems={contextMenuItems()}
+                />
               </Show>
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>

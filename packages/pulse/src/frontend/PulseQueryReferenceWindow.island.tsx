@@ -1,7 +1,7 @@
-import { AppWorkspace, Select } from "@k2b/ui";
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr/islands";
 import { navigate } from "@k2b/ssr/nav";
+import { AppWorkspace, Select } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type {
   PulseCurrentState,
@@ -89,9 +89,21 @@ export default function PulseQueryReferenceWindow(props: Props) {
 
   return (
     <AppWorkspace class="h-screen">
-      <div class="p-3 lg:hidden"><Select label={t().pulseReference}
-        options={referenceTabs(props.includeDashboardDsl, { overview: t().overview, query: t().queryDsl, dashboard: t().dashboardDsl, inventory: t().inventory }).map(tab => ({ id: tab.value, label: tab.label }))}
-        value={activeTab} onValueChange={value => { if (value && isAvailableReferenceTab(value, props.includeDashboardDsl)) switchTab(value); }} /></div>
+      <div class="p-3 lg:hidden">
+        <Select
+          label={t().pulseReference}
+          options={referenceTabs(props.includeDashboardDsl, {
+            overview: t().overview,
+            query: t().queryDsl,
+            dashboard: t().dashboardDsl,
+            inventory: t().inventory,
+          }).map((tab) => ({ id: tab.value, label: tab.label }))}
+          value={activeTab}
+          onValueChange={(value) => {
+            if (value && isAvailableReferenceTab(value, props.includeDashboardDsl)) switchTab(value);
+          }}
+        />
+      </div>
       <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="pulse-reference-sidebar">{renderReferenceNav()}</AppWorkspace.SidebarBody>

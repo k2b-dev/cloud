@@ -1,6 +1,6 @@
-import type { GlobalSearchOptions } from "./search-bridge";
 import type { z } from "zod";
 import type { CommandOptions } from "../contracts/commands";
+import type { GlobalSearchOptions } from "./search-bridge";
 
 export type CommandTarget = { command: string; input: unknown; options?: CommandOptions };
 export type ContextAwareCommand = {

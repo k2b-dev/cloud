@@ -1,4 +1,3 @@
-import { installScrollFades } from "./scroll-fade";
 import {
   APP_WORKSPACE_DETAIL_MAX,
   APP_WORKSPACE_DETAIL_MIN,
@@ -20,6 +19,7 @@ import {
   safeAppWorkspacePanelId,
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
+import { installScrollFades } from "./scroll-fade";
 
 export type AppWorkspaceControllerOptions = {
   root?: Document | HTMLElement;

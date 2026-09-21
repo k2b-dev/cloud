@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { CapabilityCommandManifest } from "../contracts/capabilities";
-import { commandPath, CommandLinkSchema, type CommandOptions } from "../contracts/commands";
+import { CommandLinkSchema, type CommandOptions, commandPath } from "../contracts/commands";
 import { publicCloudOrigin } from "../shared/app-url";
 
 export const resolveCommandLink = (

@@ -1,3 +1,4 @@
+import { env } from "@k2b/cloud/config";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { SQL, sql } from "bun";
@@ -56,7 +57,7 @@ const sequentialStrategies = new Set<NumberSeriesStrategy>(["sequence", "date_se
 
 let allocationPool: SQL | undefined;
 const getAllocationPool = (): SQL => {
-  const url = process.env.DATABASE_URL;
+  const url = env.DATABASE_URL;
   allocationPool ??= url ? new SQL({ url, max: 4 }) : new SQL({ max: 4 });
   return allocationPool;
 };

@@ -1,13 +1,13 @@
-import { Button, SplitButton, NoticeCard, Tabs, prompts, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
+import { Button, NoticeCard, prompts, SplitButton, Tabs, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { artifactMessages } from "./messages";
+import { ArtifactPanel } from "./ArtifactPanel";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
 import { ArtifactPath, ArtifactSource } from "./contracts";
-import type { ArtifactBundle } from "./service";
+import { artifactMessages } from "./messages";
 import { SourceEditor } from "./SourceEditor";
-import { ArtifactPanel } from "./ArtifactPanel";
+import type { ArtifactBundle } from "./service";
 
 export function ManualEditor(props: {
   bundle: ArtifactBundle;
@@ -16,7 +16,7 @@ export function ManualEditor(props: {
   publishing: boolean;
   selectedFile?: string;
   onSaved: (bundle: ArtifactBundle) => void;
-  onDirtyChange?:(dirty:boolean)=>void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t,
@@ -35,7 +35,7 @@ export function ManualEditor(props: {
   const [renaming, setRenaming] = createSignal(false);
   const [mobile, setMobile] = createSignal("code");
   const dirty = createMemo(() => JSON.stringify(source()) !== JSON.stringify(base().source));
-  createEffect(()=>props.onDirtyChange?.(dirty()));
+  createEffect(() => props.onDirtyChange?.(dirty()));
   onMount(() => {
     const leave = (event: BeforeUnloadEvent) => {
       if (dirty() || busy()) {
@@ -124,9 +124,15 @@ export function ManualEditor(props: {
   return (
     <div class="assistant-manual-editor">
       <div class="assistant-advanced-toolbar">
-        <SplitButton variant="secondary" size="sm" disabled={busy()}
-          primaryItems={paths().map(path => ({label:path,action:()=>choose(path)}))}
-          primaryMenuLabel={a().path} menuLabel={t().actions} menuIcon={<i class="ti ti-dots" aria-hidden="true" />} menuWidth="16rem"
+        <SplitButton
+          variant="secondary"
+          size="sm"
+          disabled={busy()}
+          primaryItems={paths().map((path) => ({ label: path, action: () => choose(path) }))}
+          primaryMenuLabel={a().path}
+          menuLabel={t().actions}
+          menuIcon={<i class="ti ti-dots" aria-hidden="true" />}
+          menuWidth="16rem"
           items={[
             { label: a().newFile, icon: "ti ti-plus", action: () => fileAction() },
             { label: a().rename, icon: "ti ti-pencil", action: () => fileAction(true) },
@@ -137,19 +143,30 @@ export function ManualEditor(props: {
               action: () => setSource({ ...source(), entry: selected() }),
             },
             { label: t().remove, icon: "ti ti-trash", action: remove },
-            { label: a().exportDraft, icon: "ti ti-download", action: () => files.downloadFileFromContent(JSON.stringify(source(), null, 2), "source-draft.json", "application/json") },
+            {
+              label: a().exportDraft,
+              icon: "ti ti-download",
+              action: () => files.downloadFileFromContent(JSON.stringify(source(), null, 2), "source-draft.json", "application/json"),
+            },
           ]}
-        >{selected()}</SplitButton>
+        >
+          {selected()}
+        </SplitButton>
         <Show when={dirty()}>
           <small role="status">{a().unsaved}</small>
         </Show>
         <Button size="sm" variant="secondary" loading={busy()} disabled={!dirty()} onClick={() => void save()}>
           {t().save}
         </Button>
-        <Button class="assistant-editor-publish" size="sm" loading={props.publishing}
+        <Button
+          class="assistant-editor-publish"
+          size="sm"
+          loading={props.publishing}
           disabled={busy() || dirty() || props.bundle.publishedRevision === props.bundle.revision}
-          onClick={props.onPublish}>
-          <i class="ti ti-upload" aria-hidden="true" />{t().publish}
+          onClick={props.onPublish}
+        >
+          <i class="ti ti-upload" aria-hidden="true" />
+          {t().publish}
         </Button>
       </div>
       <Show when={error()}>
@@ -211,8 +228,15 @@ export function ManualEditor(props: {
           </For>
         </div>
         <div class="assistant-editor-execution">
-          <ArtifactPanel artifactId={base().id} userId={props.userId} refreshKey={String(base().sourceRevision)} unsavedChanges={dirty()}
-            onPublished={async () => { props.onSaved(await artifactClient.get(base().id)); }} />
+          <ArtifactPanel
+            artifactId={base().id}
+            userId={props.userId}
+            refreshKey={String(base().sourceRevision)}
+            unsavedChanges={dirty()}
+            onPublished={async () => {
+              props.onSaved(await artifactClient.get(base().id));
+            }}
+          />
         </div>
       </div>
     </div>

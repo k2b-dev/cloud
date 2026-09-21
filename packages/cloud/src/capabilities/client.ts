@@ -180,4 +180,4 @@ export const resolveCommand = async (
   }
 };
 
-export { transferCapabilityStream, type CapabilityStreamVerb } from "./streams";
+export { type CapabilityStreamVerb, transferCapabilityStream } from "./streams";

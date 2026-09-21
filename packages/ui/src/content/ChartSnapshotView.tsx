@@ -1,10 +1,10 @@
-import type { ChartCursor } from "./chart-cursor";
-import { createEffect, createUniqueId, onCleanup, onMount, type JSX } from "solid-js";
+import { createEffect, createUniqueId, type JSX, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
-import { selectedChartSvg } from "./chart-svg";
 import { useUiMessages } from "../intl/messages";
+import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection, sameChartDatum } from "./chart-inspection";
 import type { ChartSnapshot } from "./chart-snapshot";
+import { selectedChartSvg } from "./chart-svg";
 
 /** Internal display for server-prepared geometry. Viewports are snapshot-owned. */
 export function ChartSnapshotView(props: {

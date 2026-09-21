@@ -1,6 +1,11 @@
-import type { WorkflowJsonValue } from "../contracts";
 import type { AiTaskRequest as WorkflowAiRequest } from "../../ai/task-contracts";
-export { AiTaskRequestSchema as workflowAiRequestSchema, type AiTaskRequest as WorkflowAiRequest, type AiTaskRequestInput as WorkflowAiRequestInput } from "../../ai/task-contracts";
+import type { WorkflowJsonValue } from "../contracts";
+
+export {
+  type AiTaskRequest as WorkflowAiRequest,
+  type AiTaskRequestInput as WorkflowAiRequestInput,
+  AiTaskRequestSchema as workflowAiRequestSchema,
+} from "../../ai/task-contracts";
 
 export type WorkflowAiTaskStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 

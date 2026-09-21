@@ -1,6 +1,6 @@
 import { apiClient } from "@/api/client";
-import type { Notebook } from "./types";
 import { notebookWorkspaceMessages } from "../../messages";
+import type { Notebook } from "./types";
 
 type NotebookListResponse = {
   data: Notebook[];

@@ -4,7 +4,14 @@ import { Show } from "solid-js";
 import { conversationStatusPresentation } from "./conversation-view";
 import { assistantMessages } from "./messages";
 
-export function ConversationStatusMeta(props: { conversation: AiConversation; active?: boolean; labels?: boolean; hideStatus?: boolean; hidePin?: boolean; fallbackLabel?: string }) {
+export function ConversationStatusMeta(props: {
+  conversation: AiConversation;
+  active?: boolean;
+  labels?: boolean;
+  hideStatus?: boolean;
+  hidePin?: boolean;
+  fallbackLabel?: string;
+}) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const status = () => (props.hideStatus ? null : conversationStatusPresentation(props.conversation, locale(), props.active));
@@ -23,17 +30,31 @@ export function ConversationStatusMeta(props: { conversation: AiConversation; ac
         {(item) => (
           <span class={`inline-flex min-w-0 items-center gap-1 ${item().class}`} title={item().label}>
             <i class={`${item().icon} text-xs`} aria-hidden="true" />
-            <Show when={props.labels}><span class="assistant-conversation-status-label truncate">{props.conversation.runStatus === "running" ? props.conversation.activity?.step ?? item().label : item().label}</span></Show>
+            <Show when={props.labels}>
+              <span class="assistant-conversation-status-label truncate">
+                {props.conversation.runStatus === "running" ? (props.conversation.activity?.step ?? item().label) : item().label}
+              </span>
+            </Show>
             <Show when={!props.labels}>
               <span class="sr-only">{item().label}</span>
             </Show>
           </span>
         )}
       </Show>
-      <Show when={props.labels && props.conversation.activity && props.conversation.runStatus !== "idle" && props.conversation.activity.total > 0}>
-        <span class="tabular-nums">{props.conversation.activity!.completed}/{props.conversation.activity!.total}</span>
-        <ProgressBar class="w-10 shrink-0" size="xs" label={props.conversation.activity!.step ?? t().running}
-          value={100 * props.conversation.activity!.completed / props.conversation.activity!.total} />
+      <Show
+        when={
+          props.labels && props.conversation.activity && props.conversation.runStatus !== "idle" && props.conversation.activity.total > 0
+        }
+      >
+        <span class="tabular-nums">
+          {props.conversation.activity!.completed}/{props.conversation.activity!.total}
+        </span>
+        <ProgressBar
+          class="w-10 shrink-0"
+          size="xs"
+          label={props.conversation.activity!.step ?? t().running}
+          value={(100 * props.conversation.activity!.completed) / props.conversation.activity!.total}
+        />
       </Show>
     </span>
   );

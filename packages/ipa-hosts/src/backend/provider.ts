@@ -1,6 +1,6 @@
-import { sql } from "bun";
 import { freeipa } from "@k2b/cloud/server/services";
 import { getFreeIpaConfig } from "@k2b/cloud/services";
+import { sql } from "bun";
 
 type DbRow = Record<string, unknown>;
 const disabledResult = (): IpaHostsMutationResult => ({ ok: false, error: "FreeIPA is disabled.", status: 500 });

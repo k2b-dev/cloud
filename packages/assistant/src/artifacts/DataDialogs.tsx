@@ -1,12 +1,12 @@
-import { Button, ButtonLink, NoticeCard, Placeholder, Tabs, prompts, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
+import { Button, ButtonLink, NoticeCard, Placeholder, prompts, Tabs, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, Show } from "solid-js";
 import { z } from "zod";
-import { artifactClient } from "./client";
-import { artifactMessages } from "./messages";
 import { advancedMessages } from "./advanced-messages";
-import { ArtifactStorage } from "./runtime/storage";
+import { artifactClient } from "./client";
 import { stopLocalRuns } from "./local-runs";
+import { artifactMessages } from "./messages";
+import { ArtifactStorage } from "./runtime/storage";
 
 export function openDataDialog(id: string, userId: string, scope: "local" | "shared", title: string) {
   return prompts.dialog<void>(() => <DataDialog id={id} userId={userId} scope={scope} />, { title, size: "medium" });
@@ -52,7 +52,7 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
       return value instanceof Blob ? value : new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
     }
     if (area() === "files") {
-      const file=await artifactClient.storageFile(props.id,key,{management:true});
+      const file = await artifactClient.storageFile(props.id, key, { management: true });
       if (!file) throw new Error(t().NOT_FOUND);
       return file;
     }
@@ -96,7 +96,7 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
       <Tabs
         value={area}
         onValueChange={(value) => {
-          if(busy())return;
+          if (busy()) return;
           setAfter("");
           setArea(value);
         }}

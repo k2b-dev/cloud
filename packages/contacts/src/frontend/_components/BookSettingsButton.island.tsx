@@ -1,8 +1,8 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { IconButton, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import { bookMessages } from "./book-messages";
 import { openBookSettingsDialog } from "./BookSettingsDialog";
+import { bookMessages } from "./book-messages";
 
 export default function BookSettingsButton(props: { bookId: string; bookName: string }) {
   const locale = useLocale();

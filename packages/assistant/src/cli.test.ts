@@ -1,5 +1,5 @@
+import { describe, expect, spyOn, test } from "bun:test";
 import { CODE_RUNTIME_TOOL_NAMES } from "@k2b/cloud/ai/browser";
-import { describe, expect, test, spyOn } from "bun:test";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import assistantCli from "./cli";
 import { printCapabilityTable } from "./cli/capability-table";
@@ -14,52 +14,90 @@ const sse = (...events: unknown[]) =>
   });
 
 test("CLI reconciles a completed turn when its completion event was lost", async () => {
-  const timeout=AbortSignal.timeout.bind(AbortSignal);
-  const timer=spyOn(AbortSignal,"timeout").mockImplementationOnce(()=>timeout(10));
-  let cancelled=false,reconnected=0;
-  const initialResponse=new Response(new ReadableStream<Uint8Array>({
-    start(controller){controller.enqueue(new TextEncoder().encode('data: {"type":"state","activeTurn":{"turnId":"turn-1","blocks":[]},"messages":[]}\n\n'));},
-    cancel(){cancelled=true;},
-  }));
-  const {ctx}=createContext([],async()=>{
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  const timer = spyOn(AbortSignal, "timeout").mockImplementationOnce(() => timeout(10));
+  let cancelled = false,
+    reconnected = 0;
+  const initialResponse = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode('data: {"type":"state","activeTurn":{"turnId":"turn-1","blocks":[]},"messages":[]}\n\n'),
+        );
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }),
+  );
+  const { ctx } = createContext([], async () => {
     reconnected++;
-    return sse({type:"state",activeTurn:null,messages:[{loopId:"turn-1",message:{role:"assistant",content:[{type:"text",text:"Done"}]}}]});
+    return sse({
+      type: "state",
+      activeTurn: null,
+      messages: [{ loopId: "turn-1", message: { role: "assistant", content: [{ type: "text", text: "Done" }] } }],
+    });
   });
   try {
-    expect(await streamAssistantTurn({ctx,conversationId:"chat-1",turnId:"turn-1",initialResponse}))
-      .toMatchObject({status:"completed",text:"Done"});
+    expect(await streamAssistantTurn({ ctx, conversationId: "chat-1", turnId: "turn-1", initialResponse })).toMatchObject({
+      status: "completed",
+      text: "Done",
+    });
     expect(cancelled).toBe(true);
     expect(reconnected).toBe(1);
-  } finally {timer.mockRestore();}
+  } finally {
+    timer.mockRestore();
+  }
 });
 
 test("CLI reconnects after a socket read and a failed reconnect without losing the turn", async () => {
   let connections = 0;
-  const initialResponse = new Response(new ReadableStream<Uint8Array>({
-    start(controller) { controller.error(new Error("The socket connection was closed unexpectedly.")); },
-  }));
-  const {ctx} = createContext([], async () => {
+  const initialResponse = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("The socket connection was closed unexpectedly."));
+      },
+    }),
+  );
+  const { ctx } = createContext([], async () => {
     connections++;
     if (connections === 1) throw new TypeError("Connection refused");
-    return sse({type:"state",activeTurn:null,messages:[{loopId:"turn-1",message:{role:"assistant",content:[{type:"text",text:"Recovered"}]}}]});
+    return sse({
+      type: "state",
+      activeTurn: null,
+      messages: [{ loopId: "turn-1", message: { role: "assistant", content: [{ type: "text", text: "Recovered" }] } }],
+    });
   });
-  expect(await streamAssistantTurn({ctx,conversationId:"chat-1",turnId:"turn-1",initialResponse}))
-    .toMatchObject({status:"completed",text:"Recovered"});
+  expect(await streamAssistantTurn({ ctx, conversationId: "chat-1", turnId: "turn-1", initialResponse })).toMatchObject({
+    status: "completed",
+    text: "Recovered",
+  });
   expect(connections).toBe(2);
 });
 
 test("CLI reports malformed stream payloads instead of reconnecting forever", async () => {
-  const {ctx} = createContext([], async () => { throw new Error("Unexpected reconnect"); });
-  await expect(streamAssistantTurn({ctx,conversationId:"chat-1",turnId:"turn-1",
-    initialResponse:new Response("data: invalid-json\n\n")})).rejects.toBeInstanceOf(SyntaxError);
+  const { ctx } = createContext([], async () => {
+    throw new Error("Unexpected reconnect");
+  });
+  await expect(
+    streamAssistantTurn({ ctx, conversationId: "chat-1", turnId: "turn-1", initialResponse: new Response("data: invalid-json\n\n") }),
+  ).rejects.toBeInstanceOf(SyntaxError);
 });
 
 test("CLI preserves the latest failed turn status when its completion event was lost", async () => {
-  const {ctx} = createContext([], async () => { throw new Error("Unexpected reconnect"); });
-  const initialResponse = sse({type:"state",conversation:{runStatus:"failed",runError:"Provider unavailable"},activeTurn:null,
-    messages:[{loopId:"turn-1",message:{role:"user",content:[{type:"text",text:"Calculate"}]}}]});
-  expect(await streamAssistantTurn({ctx,conversationId:"chat-1",turnId:"turn-1",initialResponse}))
-    .toMatchObject({status:"failed",error:"Provider unavailable"});
+  const { ctx } = createContext([], async () => {
+    throw new Error("Unexpected reconnect");
+  });
+  const initialResponse = sse({
+    type: "state",
+    conversation: { runStatus: "failed", runError: "Provider unavailable" },
+    activeTurn: null,
+    messages: [{ loopId: "turn-1", message: { role: "user", content: [{ type: "text", text: "Calculate" }] } }],
+  });
+  expect(await streamAssistantTurn({ ctx, conversationId: "chat-1", turnId: "turn-1", initialResponse })).toMatchObject({
+    status: "failed",
+    error: "Provider unavailable",
+  });
 });
 
 const createContext = (
@@ -225,19 +263,25 @@ describe("assistant CLI", () => {
   });
 
   test("Studio list and create use the mounted API path without a trailing slash", async () => {
-    const requests: {path:string;method:string}[]=[];
-    const fetcher:CloudCliContext["fetch"]=async(input,init)=>{
-      requests.push({path:String(input),method:init?.method??"GET"});
-      if(String(input).split("?")[0]!=="/api/assistant/artifacts")return json({message:"Not found"},404);
-      if(init?.method==="POST")expect(await new Response(init.body).json()).toMatchObject({source:{entry:"main.ts",files:[{path:"main.ts",content:"export default () => {};\n"}]}});
-      return json(init?.method==="POST" ? {id:"created",kind:"app"} : {items:[],page:1,hasNext:false});
+    const requests: { path: string; method: string }[] = [];
+    const fetcher: CloudCliContext["fetch"] = async (input, init) => {
+      requests.push({ path: String(input), method: init?.method ?? "GET" });
+      if (String(input).split("?")[0] !== "/api/assistant/artifacts") return json({ message: "Not found" }, 404);
+      if (init?.method === "POST")
+        expect(await new Response(init.body).json()).toMatchObject({
+          source: { entry: "main.ts", files: [{ path: "main.ts", content: "export default () => {};\n" }] },
+        });
+      return json(init?.method === "POST" ? { id: "created", kind: "app" } : { items: [], page: 1, hasNext: false });
     };
-    const list=createContext(["code","list"],fetcher,"json");
+    const list = createContext(["code", "list"], fetcher, "json");
     await assistantCli.run(list.ctx);
-    const create=createContext(["code","create","Reusable calculation"],fetcher,"json");
+    const create = createContext(["code", "create", "Reusable calculation"], fetcher, "json");
     await assistantCli.run(create.ctx);
-    expect(requests).toEqual([{path:"/api/assistant/artifacts",method:"GET"},{path:"/api/assistant/artifacts",method:"POST"}]);
-    expect(JSON.parse(create.stdout.join(""))).toMatchObject({kind:"app"});
+    expect(requests).toEqual([
+      { path: "/api/assistant/artifacts", method: "GET" },
+      { path: "/api/assistant/artifacts", method: "POST" },
+    ]);
+    expect(JSON.parse(create.stdout.join(""))).toMatchObject({ kind: "app" });
   });
 
   test("documents the one-shot and management surface", () => {
@@ -271,19 +315,23 @@ describe("assistant CLI", () => {
     }
   });
 
-  test("Studio reset requires confirmation and sends the inspected connection generation",async()=>{
-    const id="aBc234",generation="a".repeat(64),requests:string[]=[];
-    const fetcher:CloudCliContext["fetch"]=async(path,init)=>{
+  test("Studio reset requires confirmation and sends the inspected connection generation", async () => {
+    const id = "aBc234",
+      generation = "a".repeat(64),
+      requests: string[] = [];
+    const fetcher: CloudCliContext["fetch"] = async (path, init) => {
       requests.push(String(path));
-      if(String(path).endsWith("/status"))return json({generation,connected:true});
-      expect(await new Response(init?.body).json()).toEqual({confirmed:true,expectedGeneration:generation});return json({connected:false});
+      if (String(path).endsWith("/status")) return json({ generation, connected: true });
+      expect(await new Response(init?.body).json()).toEqual({ confirmed: true, expectedGeneration: generation });
+      return json({ connected: false });
     };
-    const denied=createContext(["code","database-reset",id],fetcher);
+    const denied = createContext(["code", "database-reset", id], fetcher);
     await expect(assistantCli.run(denied.ctx)).rejects.toThrow("--yes");
     expect(requests).toHaveLength(0);
-    const confirmed=createContext(["code","database-reset",id],fetcher);confirmed.ctx.flags={yes:true};
+    const confirmed = createContext(["code", "database-reset", id], fetcher);
+    confirmed.ctx.flags = { yes: true };
     await assistantCli.run(confirmed.ctx);
-    expect(requests).toEqual([`/api/assistant/artifacts/${id}/database/status`,`/api/assistant/artifacts/${id}/database/reset`]);
+    expect(requests).toEqual([`/api/assistant/artifacts/${id}/database/status`, `/api/assistant/artifacts/${id}/database/reset`]);
   });
 
   test("creates and manually runs chat-bound scheduled tasks", async () => {
@@ -1233,27 +1281,27 @@ describe("assistant CLI", () => {
   });
 });
 
-
 test("Project Skill CLI searches available Skills and confirms link changes", async () => {
-  const requests: Array<{path:string;body:unknown}> = [];
-  const fetcher: CloudCliContext["fetch"] = async (input,init) => {
-    const path=String(input);
-    if (path === "/api/ai/projects") return json({projects:[{shortId:"proj12",name:"Finance"}]});
-    requests.push({path,body:init?.body ? JSON.parse(String(init.body)) : null});
-    return json(path.includes("project-links") ? {items:[],page:2,hasNext:false} : {linked:!path.includes("invalid")});
+  const requests: Array<{ path: string; body: unknown }> = [];
+  const fetcher: CloudCliContext["fetch"] = async (input, init) => {
+    const path = String(input);
+    if (path === "/api/ai/projects") return json({ projects: [{ shortId: "proj12", name: "Finance" }] });
+    requests.push({ path, body: init?.body ? JSON.parse(String(init.body)) : null });
+    return json(path.includes("project-links") ? { items: [], page: 2, hasNext: false } : { linked: !path.includes("invalid") });
   };
-  const list=createContext(["projects","skills","list","Finance"],fetcher);
-  list.ctx.flags={available:true,search:"reconciliation",page:"2"};
+  const list = createContext(["projects", "skills", "list", "Finance"], fetcher);
+  list.ctx.flags = { available: true, search: "reconciliation", page: "2" };
   await assistantCli.run(list.ctx);
   expect(requests[0]!.path).toBe("/api/ai/skills/project-links/proj12?q=reconciliation&page=2&available=true");
-  await expect(assistantCli.run(createContext(["projects","skills","link","Finance","skill1"],fetcher).ctx)).rejects.toThrow("--yes");
+  await expect(assistantCli.run(createContext(["projects", "skills", "link", "Finance", "skill1"], fetcher).ctx)).rejects.toThrow("--yes");
   expect(requests).toHaveLength(1);
-  for (const action of ["link","unlink"]) {
-    const command=createContext(["projects","skills",action,"Finance","skill1"],fetcher);command.ctx.flags.yes=true;
+  for (const action of ["link", "unlink"]) {
+    const command = createContext(["projects", "skills", action, "Finance", "skill1"], fetcher);
+    command.ctx.flags.yes = true;
     await assistantCli.run(command.ctx);
   }
   expect(requests.slice(1)).toEqual([
-    {path:"/api/ai/skills/skill1/projects/proj12",body:{linked:true}},
-    {path:"/api/ai/skills/skill1/projects/proj12",body:{linked:false}},
+    { path: "/api/ai/skills/skill1/projects/proj12", body: { linked: true } },
+    { path: "/api/ai/skills/skill1/projects/proj12", body: { linked: false } },
   ]);
 });

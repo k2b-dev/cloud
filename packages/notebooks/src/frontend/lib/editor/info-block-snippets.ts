@@ -25,9 +25,9 @@ import {
 } from "@codemirror/autocomplete";
 import type { EditorView } from "@codemirror/view";
 import { i18n } from "@k2b/stdlib";
+import { withIcon } from "./completion-icon";
 import { buildDataBlockTemplate, dataBlockRefSelection } from "./data-block-template";
 import { isInsideFencedCode } from "./editor-scope";
-import { withIcon } from "./completion-icon";
 
 type BlockEntry = {
   /** The directive name as it appears after the `:::`. */

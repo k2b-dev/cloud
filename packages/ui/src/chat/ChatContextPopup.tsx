@@ -1,7 +1,10 @@
 import { createSignal, createUniqueId, type JSX, onCleanup, onMount, splitProps } from "solid-js";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 
-export type ChatContextPopupProps = Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, "content" | "ref" | "onClick" | "onPointerEnter" | "onPointerLeave"> & { content: JSX.Element };
+export type ChatContextPopupProps = Omit<
+  JSX.ButtonHTMLAttributes<HTMLButtonElement>,
+  "content" | "ref" | "onClick" | "onPointerEnter" | "onPointerLeave"
+> & { content: JSX.Element };
 
 /** Context details support hover preview and deliberate click-to-pin without changing tooltip behavior. */
 export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {

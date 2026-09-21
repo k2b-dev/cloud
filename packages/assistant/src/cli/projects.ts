@@ -1,6 +1,6 @@
 import type { AiProject, AiProjectAccess, AiProjectFile, AiProjectKnowledge, AiProjectReference } from "@k2b/cloud/ai";
 import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
-import { jsonRequest, printRows, printValue, readApi, readProjectsApi, queryString, requireConfirmation } from "./shared";
+import { jsonRequest, printRows, printValue, queryString, readApi, readProjectsApi, requireConfirmation } from "./shared";
 
 const path = (projectId: string, suffix = ""): string => `/${encodeURIComponent(projectId)}${suffix}`;
 
@@ -41,23 +41,39 @@ export const assistantProjectCommands = [
   }),
   command("projects skills list", {
     summary: "List linked Skills, or manageable Skills available to link",
-    args: { project: arg.required({ valueLabel:"project-id-or-name" }) },
-    flags: { search:flag.string(),page:flag.int({min:1,default:1}),available:flag.boolean() },
-    async run({ctx,args,flags}) {
-      const project=await resolveProject(ctx,args.project);
-      printValue(ctx,await readApi(ctx,`/skills/project-links/${encodeURIComponent(project.shortId)}${queryString({q:flags.search,page:flags.page,available:flags.available})}`));
+    args: { project: arg.required({ valueLabel: "project-id-or-name" }) },
+    flags: { search: flag.string(), page: flag.int({ min: 1, default: 1 }), available: flag.boolean() },
+    async run({ ctx, args, flags }) {
+      const project = await resolveProject(ctx, args.project);
+      printValue(
+        ctx,
+        await readApi(
+          ctx,
+          `/skills/project-links/${encodeURIComponent(project.shortId)}${queryString({ q: flags.search, page: flags.page, available: flags.available })}`,
+        ),
+      );
     },
   }),
-  ...(["link","unlink"] as const).map(action=>command(`projects skills ${action}`, {
-    summary: action === "link" ? "Give Project members read/use access to a Skill" : "Remove inherited Skill access; preserve direct grants",
-    args: { project:arg.required({valueLabel:"project-id-or-name"}),skillId:arg.required({valueLabel:"skill-id"}) },
-    flags: { yes:confirmFlag("Confirm this Project Skill access change") },
-    async run({ctx,args,flags}) {
-      requireConfirmation(flags.yes,`${action} this Project Skill`);
-      const project=await resolveProject(ctx,args.project);
-      printValue(ctx,await readApi(ctx,`/skills/${encodeURIComponent(args.skillId)}/projects/${encodeURIComponent(project.shortId)}`,jsonRequest("PUT",{linked:action === "link"})));
-    },
-  })),
+  ...(["link", "unlink"] as const).map((action) =>
+    command(`projects skills ${action}`, {
+      summary:
+        action === "link" ? "Give Project members read/use access to a Skill" : "Remove inherited Skill access; preserve direct grants",
+      args: { project: arg.required({ valueLabel: "project-id-or-name" }), skillId: arg.required({ valueLabel: "skill-id" }) },
+      flags: { yes: confirmFlag("Confirm this Project Skill access change") },
+      async run({ ctx, args, flags }) {
+        requireConfirmation(flags.yes, `${action} this Project Skill`);
+        const project = await resolveProject(ctx, args.project);
+        printValue(
+          ctx,
+          await readApi(
+            ctx,
+            `/skills/${encodeURIComponent(args.skillId)}/projects/${encodeURIComponent(project.shortId)}`,
+            jsonRequest("PUT", { linked: action === "link" }),
+          ),
+        );
+      },
+    }),
+  ),
   command("projects get", {
     summary: "Show one Project",
     args: { project: arg.required({ valueLabel: "project-id-or-name" }) },

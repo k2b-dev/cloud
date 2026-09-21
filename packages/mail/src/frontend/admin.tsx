@@ -1,8 +1,8 @@
-import { dates } from "@k2b/stdlib";
-import { ButtonLink, DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { dates } from "@k2b/stdlib";
+import { ButtonLink, DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import { ssr } from "../config";
 import type { PlatformMailboxOperationSummary } from "../contracts";
 import { type MailRequestContext, operations, storageObservability } from "../service";
@@ -94,7 +94,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
         </div>
 
-        {(
+        {
           <>
             <StatGrid columns={6}>
               <StatCell
@@ -266,7 +266,7 @@ export default ssr<AuthContext>(async (c) => {
               />
             ) : null}
           </>
-        )}
+        }
       </div>
     </AdminLayout>
   );

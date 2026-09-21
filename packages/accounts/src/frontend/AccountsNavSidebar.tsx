@@ -1,5 +1,5 @@
-import AccountsNavigation from "./AccountsNavigation.island";
 import { AppWorkspace } from "@k2b/ui";
+import AccountsNavigation from "./AccountsNavigation.island";
 import AccountsSearchButton from "./AccountsSearchButton.island";
 import { useAccountsMessages } from "./messages";
 

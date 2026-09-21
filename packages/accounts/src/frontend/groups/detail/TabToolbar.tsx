@@ -1,5 +1,5 @@
-import { ButtonLink } from "@k2b/ui";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { ButtonLink } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { useAccountsMessages } from "../../messages";
 

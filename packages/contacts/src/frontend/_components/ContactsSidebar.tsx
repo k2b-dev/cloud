@@ -1,9 +1,9 @@
-import ContactsNavigation from "./ContactsNavigation.island";
-import { bookMessages } from "./book-messages";
 import { i18n } from "@k2b/stdlib";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { ContactBook } from "../../service";
 import BookSettingsButton from "./BookSettingsButton.island";
+import { bookMessages } from "./book-messages";
+import ContactsNavigation from "./ContactsNavigation.island";
 import ContactsSpotlightButton from "./ContactsSpotlightButton.island";
 import CreateBookButton from "./CreateBookButton.island";
 

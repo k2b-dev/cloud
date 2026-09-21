@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { runAiStructured, type RunAiStructuredInput } from "./structured";
+import { type RunAiStructuredInput, runAiStructured } from "./structured";
 import type { AiTaskRequest } from "./task-contracts";
+
 type AiTaskValue = z.infer<ReturnType<typeof z.json>>;
 
 const asJson = (value: unknown): AiTaskValue => JSON.parse(JSON.stringify(value)) as AiTaskValue;
@@ -27,7 +28,10 @@ const structuredOutputSchema = (fields: Extract<AiTaskRequest, { kind: "extract_
 /** Schema-validated AI calculations shared by workflows and interactive code. */
 export const executeAiTask = async (
   request: AiTaskRequest,
-  options: Pick<RunAiStructuredInput<z.ZodType>, "appId" | "attribution" | "signal" | "requestedModelId" | "resolveModel" | "usageSubject"> & { taskPrefix: string },
+  options: Pick<
+    RunAiStructuredInput<z.ZodType>,
+    "appId" | "attribution" | "signal" | "requestedModelId" | "resolveModel" | "usageSubject"
+  > & { taskPrefix: string },
   runStructured: typeof runAiStructured = runAiStructured,
 ) => {
   const { taskPrefix, ...common } = options;

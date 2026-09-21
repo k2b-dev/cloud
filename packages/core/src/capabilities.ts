@@ -1,5 +1,3 @@
-import { taskGrantReview } from "./task-grant-presentation";
-import { dates, i18n, err, fail, ok } from "@k2b/stdlib";
 import {
   AI_SHORT_ID_PATTERN,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
@@ -20,32 +18,34 @@ import {
   aiChatTasks,
   aiConversations,
   aiSkills,
-  ChatTaskIdSchema,
   ChatTaskGrantsSchema,
+  ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
-  toAiChatTaskOccurrenceView,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
   isConversationResourceCursor,
   normalizeChatTaskSchedule,
+  toAiChatTaskOccurrenceView,
 } from "@k2b/cloud/ai";
 import {
-  CloudResourceRefSchema,
+  AuthenticatedPrincipalSchema,
   type CapabilityExecutionContext,
+  CloudResourceRefSchema,
   type CloudResourceView,
   capabilityIdempotencyConflict,
   capabilityPage,
   defineCapabilities,
-  UniversalSearchDataSchema,
   PrincipalSchema,
-  AuthenticatedPrincipalSchema,
+  UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
-import { type AuditActor, audit, accountsAppService } from "@k2b/cloud/services";
 import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
+import { type AuditActor, accountsAppService, audit } from "@k2b/cloud/services";
+import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { taskGrantReview } from "./task-grant-presentation";
 
 const CORE_APP_ID = "core";
 
@@ -180,26 +180,55 @@ const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
 });
 const taskScheduleLabel = (task: AiChatTask): string =>
   task.schedule.kind === "once" ? `${task.schedule.runAt} (${task.timezone})` : `${task.schedule.cron} (${task.timezone})`;
-const referenceMessages = i18n.define({ baseLocale: "en", messages: {
-  en: { active: "Active", paused: "Paused", completed: "Completed", needs_attention: "Needs attention", recurring: "Recurring", chat: "AI conversation" },
-  de: { active: "Aktiv", paused: "Pausiert", completed: "Abgeschlossen", needs_attention: "Eingriff erforderlich", recurring: "Wiederkehrend", chat: "KI-Chat" },
-} });
+const referenceMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      active: "Active",
+      paused: "Paused",
+      completed: "Completed",
+      needs_attention: "Needs attention",
+      recurring: "Recurring",
+      chat: "AI conversation",
+    },
+    de: {
+      active: "Aktiv",
+      paused: "Pausiert",
+      completed: "Abgeschlossen",
+      needs_attention: "Eingriff erforderlich",
+      recurring: "Wiederkehrend",
+      chat: "KI-Chat",
+    },
+  },
+});
 const taskReference = (task: AiChatTask, locale: string) => {
   const resolved = referenceMessages.resolve([locale]);
   const t = resolved.t;
-  const schedule = task.schedule.kind === "once"
-    ? dates.formatDateTime(task.schedule.runAt, { locale: resolved.locale, timeZone: task.timezone })
-    : `${t.recurring}: ${task.schedule.cron}`;
-  return { type: "core.ai.task", id: task.shortId, title: task.prompt.trim().slice(0, 500),
-    preview: `${t[task.state]} · ${schedule} · ${task.timezone}`, icon: "ti ti-calendar-clock" };
+  const schedule =
+    task.schedule.kind === "once"
+      ? dates.formatDateTime(task.schedule.runAt, { locale: resolved.locale, timeZone: task.timezone })
+      : `${t.recurring}: ${task.schedule.cron}`;
+  return {
+    type: "core.ai.task",
+    id: task.shortId,
+    title: task.prompt.trim().slice(0, 500),
+    preview: `${t[task.state]} · ${schedule} · ${task.timezone}`,
+    icon: "ti ti-calendar-clock",
+  };
 };
 const taskChatReference = (task: AiChatTask, locale: string) => ({
-  type: "core.ai.chat", id: task.chatId, title: task.chatTitle,
-  preview: referenceMessages.resolve([locale]).t.chat, icon: "ti ti-message-chatbot",
+  type: "core.ai.chat",
+  id: task.chatId,
+  title: task.chatTitle,
+  preview: referenceMessages.resolve([locale]).t.chat,
+  icon: "ti ti-message-chatbot",
 });
 const chatReference = (chat: AiConversation) => ({
-  type: "core.ai.chat", id: chat.shortId, title: chat.title,
-  preview: chat.description, icon: "ti ti-message-chatbot",
+  type: "core.ai.chat",
+  id: chat.shortId,
+  title: chat.title,
+  preview: chat.description,
+  icon: "ti ti-message-chatbot",
 });
 const taskChatTitle = (task: AiChatTask): string => `“${task.chatTitle}”`;
 const taskUpdateSummary = (input: z.infer<typeof ChatTaskUpdateInputSchema>, task: AiChatTask): string => {
@@ -442,19 +471,45 @@ const SkillEnabledSetInputSchema = z
   .object({ skillId: SkillIdSchema, enabled: z.boolean().describe("Whether this Skill should be active for the current user.") })
   .strict();
 const SkillDeleteInputSchema = z.object({ skillId: SkillIdSchema }).strict();
-const SkillAccessChangeInput = z.object({
-  skillId: SkillIdSchema,
-  expectedAccessRevision: z.string().regex(/^[a-f0-9]{64}$/).describe("Exact revision from ai.skill.access.read; re-read and review after a conflict."),
-  principal: AuthenticatedPrincipalSchema.optional().describe("Recipient for a NEW grant: user, group, service account, or all authenticated identities. Public access is not supported. Supply principal OR accessId."),
-  accessId: z.string().regex(AI_SHORT_ID_PATTERN).optional().describe("Existing grant ID returned by ai.skill.access.read. Supply accessId OR principal."),
-  permission: z.enum(["read", "write", "admin"]).nullable().describe("New permission; null removes an existing accessId. A new principal needs a permission."),
-}).strict().refine(input => Number(input.principal !== undefined) + Number(input.accessId !== undefined) === 1
-  && (input.principal === undefined || input.permission !== null), "Supply principal and permission OR accessId and permission (null removes)");
+const SkillAccessChangeInput = z
+  .object({
+    skillId: SkillIdSchema,
+    expectedAccessRevision: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .describe("Exact revision from ai.skill.access.read; re-read and review after a conflict."),
+    principal: AuthenticatedPrincipalSchema.optional().describe(
+      "Recipient for a NEW grant: user, group, service account, or all authenticated identities. Public access is not supported. Supply principal OR accessId.",
+    ),
+    accessId: z
+      .string()
+      .regex(AI_SHORT_ID_PATTERN)
+      .optional()
+      .describe("Existing grant ID returned by ai.skill.access.read. Supply accessId OR principal."),
+    permission: z
+      .enum(["read", "write", "admin"])
+      .nullable()
+      .describe("New permission; null removes an existing accessId. A new principal needs a permission."),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      Number(input.principal !== undefined) + Number(input.accessId !== undefined) === 1 &&
+      (input.principal === undefined || input.permission !== null),
+    "Supply principal and permission OR accessId and permission (null removes)",
+  );
 const SkillAccessData = z.object({
   skillId: SkillIdSchema,
   accessRevision: z.string(),
   levels: z.array(z.enum(["read", "write", "admin"])),
-  grants: z.array(z.object({ id: z.string(), principal: PrincipalSchema, permission: z.enum(["read", "write", "admin"]), displayName: z.string().optional() })),
+  grants: z.array(
+    z.object({
+      id: z.string(),
+      principal: PrincipalSchema,
+      permission: z.enum(["read", "write", "admin"]),
+      displayName: z.string().optional(),
+    }),
+  ),
 });
 const SkillReferenceDataSchema = z
   .object({
@@ -583,32 +638,67 @@ export const aiCapabilities = defineCapabilities({
   queries: {
     "entities.search": {
       title: "Find access recipients",
-      description: "Find visible users, groups and service accounts for permission grants. Returns exact Principal objects. Preserves the Accounts directory visibility of the current user. Public and authenticated grants are explicit principals, not search results.",
-      input: z.object({ query: z.string().max(120).default("").describe("Name or account identifier to find; empty browses visible recipients."),
-        types: z.array(z.enum(["user", "group", "service_account"])).min(1).max(3).optional().describe("Recipient kinds to include; omit for all visible kinds."),
-        cursor: z.string().regex(/^[1-9]\d{0,5}$/).optional().describe("Next cursor returned by the previous recipient search."),
-        limit: z.number().int().min(1).max(100).default(20).describe("Maximum recipients in this page; keep the same limit when following a cursor.") }).strict(),
+      description:
+        "Find visible users, groups and service accounts for permission grants. Returns exact Principal objects. Preserves the Accounts directory visibility of the current user. Public and authenticated grants are explicit principals, not search results.",
+      input: z
+        .object({
+          query: z.string().max(120).default("").describe("Name or account identifier to find; empty browses visible recipients."),
+          types: z
+            .array(z.enum(["user", "group", "service_account"]))
+            .min(1)
+            .max(3)
+            .optional()
+            .describe("Recipient kinds to include; omit for all visible kinds."),
+          cursor: z
+            .string()
+            .regex(/^[1-9]\d{0,5}$/)
+            .optional()
+            .describe("Next cursor returned by the previous recipient search."),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(100)
+            .default(20)
+            .describe("Maximum recipients in this page; keep the same limit when following a cursor."),
+        })
+        .strict(),
       data: z.array(z.object({ principal: PrincipalSchema, label: z.string() }).strict()),
       openWorld: false,
       async run(input, context) {
         if (context.actor.kind !== "user") return fail(err.forbidden("Recipient search requires a user."));
         const user = context.actor.user;
-        const result = await accountsAppService.entity.list({ actor: { userId: user.id, uid: user.uid, roles: user.roles, provider: user.provider },
-          search: input.query, kinds: input.types, pagination: { page: Number(input.cursor ?? "1"), perPage: input.limit } });
-        return ok({ data: result.items.map(item => item.kind === "user"
-          ? { principal: { type: "user" as const, userId: item.user.id }, label: item.user.displayName || item.user.uid }
-          : item.kind === "group" ? { principal: { type: "group" as const, groupId: item.group.id }, label: item.group.name }
-            : { principal: { type: "service_account" as const, serviceAccountId: item.serviceAccount.id }, label: item.serviceAccount.name }),
-          page: capabilityPage(result.hasNext ? String(result.page + 1) : undefined) });
+        const result = await accountsAppService.entity.list({
+          actor: { userId: user.id, uid: user.uid, roles: user.roles, provider: user.provider },
+          search: input.query,
+          kinds: input.types,
+          pagination: { page: Number(input.cursor ?? "1"), perPage: input.limit },
+        });
+        return ok({
+          data: result.items.map((item) =>
+            item.kind === "user"
+              ? { principal: { type: "user" as const, userId: item.user.id }, label: item.user.displayName || item.user.uid }
+              : item.kind === "group"
+                ? { principal: { type: "group" as const, groupId: item.group.id }, label: item.group.name }
+                : {
+                    principal: { type: "service_account" as const, serviceAccountId: item.serviceAccount.id },
+                    label: item.serviceAccount.name,
+                  },
+          ),
+          page: capabilityPage(result.hasNext ? String(result.page + 1) : undefined),
+        });
       },
     },
     "ai.skill.access.read": {
       title: "Read Skill access",
-      description: "Read current grants and their revision before changing Skill permissions. Manage permission is required. Skill and Studio App access are independent.",
-      input: z.object({ skillId: SkillIdSchema }).strict(), data: SkillAccessData, openWorld: false,
+      description:
+        "Read current grants and their revision before changing Skill permissions. Manage permission is required. Skill and Studio App access are independent.",
+      input: z.object({ skillId: SkillIdSchema }).strict(),
+      data: SkillAccessData,
+      openWorld: false,
       async run({ skillId }, context) {
         const skill = await readableSkill(skillId, context, "admin");
-        const grants = skill && await aiSkills.listAccess(skill.id, context.accessSubject);
+        const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
         if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
         return ok({ data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants } });
       },
@@ -730,7 +820,11 @@ export const aiCapabilities = defineCapabilities({
         const detail = await aiChatTasks.getOccurrenceDetail({ userId: context.user.id, ...input });
         if (!detail) return fail(err.notFound("Task run"));
         return ok({
-          data: { task: taskData(detail.task), occurrence: toAiChatTaskOccurrenceView(detail.occurrence, detail.task.shortId), messages: detail.messages.map((message) => z.json().parse(message)) },
+          data: {
+            task: taskData(detail.task),
+            occurrence: toAiChatTaskOccurrenceView(detail.occurrence, detail.task.shortId),
+            messages: detail.messages.map((message) => z.json().parse(message)),
+          },
           summary: detail.occurrence.resultText ?? detail.occurrence.error ?? `Task run ${detail.occurrence.state}.`,
         });
       },
@@ -761,10 +855,7 @@ export const aiCapabilities = defineCapabilities({
             })),
           },
           summary: `Read ${task.state} scheduled task in “${task.chatTitle}”.`,
-          refs: [
-            taskReference(task, context.locale),
-            taskChatReference(task, context.locale),
-          ],
+          refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
@@ -893,39 +984,66 @@ export const aiCapabilities = defineCapabilities({
   actions: {
     "ai.skill.access.change": {
       title: "Change Skill access",
-      description: "Grant, change or revoke one Skill permission after fresh user review. Read ai.skill.access.read first. Never grants access to an App referenced by the Skill.",
-      input: SkillAccessChangeInput, data: z.object({ changed: z.boolean() }).strict(),
-      destructive: true, openWorld: false, idempotency: "required",
+      description:
+        "Grant, change or revoke one Skill permission after fresh user review. Read ai.skill.access.read first. Never grants access to an App referenced by the Skill.",
+      input: SkillAccessChangeInput,
+      data: z.object({ changed: z.boolean() }).strict(),
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
       async review(input, context) {
         const skill = await readableSkill(input.skillId, context, "admin");
-        const grants = skill && await aiSkills.listAccess(skill.id, context.accessSubject);
+        const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
         if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
-        if (accessRevision(grants) !== input.expectedAccessRevision) return fail(err.conflict("Skill grants changed; read and review them again."));
-        const previous = input.accessId ? grants.find(grant => grant.id === input.accessId) : undefined;
+        if (accessRevision(grants) !== input.expectedAccessRevision)
+          return fail(err.conflict("Skill grants changed; read and review them again."));
+        const previous = input.accessId ? grants.find((grant) => grant.id === input.accessId) : undefined;
         if (input.accessId && !previous) return fail(err.notFound("Skill grant not found."));
         const principal = previous?.principal ?? input.principal;
         if (!principal) return fail(err.badInput("Recipient is required."));
         const [recipient] = await resolveDisplayNames([{ principal }]);
-        return ok({ message: `Change access to Skill “${skill.name}” (${input.skillId}).`, details: [
-          { label: "Recipient", value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
-          { label: "Before", value: previous?.permission ?? "No grant" },
-          { label: "After", value: input.permission ?? "Remove grant" },
-          { label: "Separate App access", value: "This changes only the Skill's access." },
-        ] });
+        return ok({
+          message: `Change access to Skill “${skill.name}” (${input.skillId}).`,
+          details: [
+            { label: "Recipient", value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
+            { label: "Before", value: previous?.permission ?? "No grant" },
+            { label: "After", value: input.permission ?? "Remove grant" },
+            { label: "Separate App access", value: "This changes only the Skill's access." },
+          ],
+        });
       },
       async run(input, context) {
         const skill = await readableSkill(input.skillId, context, "admin");
         if (!skill) return fail(err.forbidden("Skill access requires Manage permission."));
         try {
-          const changed = input.principal && input.permission
-            ? Boolean(await aiSkills.grantAccess(skill.id, context.accessSubject, { principal: input.principal, permission: input.permission }, input.expectedAccessRevision))
-            : input.accessId ? input.permission
-              ? await aiSkills.updateAccess(skill.id, input.accessId, context.accessSubject, input.permission, input.expectedAccessRevision)
-              : await aiSkills.revokeAccess(skill.id, input.accessId, context.accessSubject, input.expectedAccessRevision)
-              : false;
+          const changed =
+            input.principal && input.permission
+              ? Boolean(
+                  await aiSkills.grantAccess(
+                    skill.id,
+                    context.accessSubject,
+                    { principal: input.principal, permission: input.permission },
+                    input.expectedAccessRevision,
+                  ),
+                )
+              : input.accessId
+                ? input.permission
+                  ? await aiSkills.updateAccess(
+                      skill.id,
+                      input.accessId,
+                      context.accessSubject,
+                      input.permission,
+                      input.expectedAccessRevision,
+                    )
+                  : await aiSkills.revokeAccess(skill.id, input.accessId, context.accessSubject, input.expectedAccessRevision)
+                : false;
           if (!changed) return fail(err.forbidden("The grant or permission is no longer available."));
           return ok({ data: { changed: true }, refs: [{ type: "core.ai.skill", id: input.skillId }] });
-        } catch (error) { const result = skillRevisionError(error); if (result) return result; throw error; }
+        } catch (error) {
+          const result = skillRevisionError(error);
+          if (result) return result;
+          throw error;
+        }
       },
     },
     "ai.skill.create": {
@@ -1271,7 +1389,8 @@ export const aiCapabilities = defineCapabilities({
     },
     "ai.task.update": {
       title: "Update a scheduled AI task",
-      description: "Update the prompt, future schedule or capability grants of one owned task after reviewing the exact replacement. Read the task and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
+      description:
+        "Update the prompt, future schedule or capability grants of one owned task after reviewing the exact replacement. Read the task and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
       input: ChatTaskUpdateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1550,8 +1669,15 @@ export const aiCapabilities = defineCapabilities({
             status === "delivered"
               ? `Sent a message to “${created.message.targetTitle}”.`
               : `Queued a message for “${created.message.targetTitle}”.`,
-          refs: [{ type: "core.ai.chat", id: created.message.targetChatId, title: created.message.targetTitle,
-            preview: referenceMessages.resolve([context.locale]).t.chat, icon: "ti ti-message-chatbot" }],
+          refs: [
+            {
+              type: "core.ai.chat",
+              id: created.message.targetChatId,
+              title: created.message.targetTitle,
+              preview: referenceMessages.resolve([context.locale]).t.chat,
+              icon: "ti ti-message-chatbot",
+            },
+          ],
           links: [{ rel: "open", href: chatHref(created.message.targetChatId) }],
         });
       },

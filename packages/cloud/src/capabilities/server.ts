@@ -2,6 +2,7 @@ import { z } from "zod";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getApp, getCapability } from "../_internal/registry";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
+import { env } from "../config/env";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CapabilityActionReviewSchema,
@@ -54,7 +55,7 @@ export type CapabilityCaller = {
 };
 
 const coreOrigin = async (internal = false): Promise<string> => {
-  const configured = process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim();
+  const configured = env.CLOUD_CORE_INTERNAL_ORIGIN;
   if (internal && !configured) throw new Error("CLOUD_CORE_INTERNAL_ORIGIN is required for mandate-backed invocation");
   const origin = configured || publicCloudOrigin(await get<string>("app.url"));
   const url = new URL(origin);

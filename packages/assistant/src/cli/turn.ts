@@ -1,15 +1,15 @@
-import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import { basename } from "node:path";
 import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnBlock, AiTurnContentPart } from "@k2b/cloud/ai";
 import {
-  CODE_RUNTIME_TOOL_NAMES,
   AI_IMAGE_INPUT_MAX_BYTES,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
   AI_TURN_IMAGE_MAX_TOTAL_BYTES,
+  CODE_RUNTIME_TOOL_NAMES,
   guessAiMediaType,
   isAiImageMediaType,
 } from "@k2b/cloud/ai/browser";
 import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
+import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
 import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
 
@@ -110,7 +110,11 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
     conversationPath(conversationId, "/draft"),
     jsonRequest("PUT", { expectedRevision: detail.conversation.draft.revision, content }),
   );
-  return { draftRevision: draft.revision, modelProfileId: input.modelProfileId, clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? CODE_RUNTIME_TOOL_NAMES : [])])] };
+  return {
+    draftRevision: draft.revision,
+    modelProfileId: input.modelProfileId,
+    clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? CODE_RUNTIME_TOOL_NAMES : [])])],
+  };
 };
 
 export const submitAssistantTurn = async (input: {
@@ -120,7 +124,7 @@ export const submitAssistantTurn = async (input: {
   body: unknown;
   watch: boolean;
   approveTools?: readonly string[];
-  onCapabilityApproval?:(request:CodeApproval)=>Promise<CapabilityDecision>;
+  onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
   onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
@@ -133,7 +137,9 @@ export const submitAssistantTurn = async (input: {
   if (streamResponse && (!streamResponse.ok || !streamResponse.body)) await input.ctx.readJson(streamResponse);
   let submitted: TurnSubmission;
   try {
-    const body = input.path.endsWith("/turns") ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.watch) : input.body;
+    const body = input.path.endsWith("/turns")
+      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.watch)
+      : input.body;
     submitted = await readApi<TurnSubmission>(input.ctx, input.path, jsonRequest("POST", body));
   } catch (error) {
     await streamResponse?.body?.cancel().catch(() => undefined);
@@ -148,7 +154,7 @@ export const submitAssistantTurn = async (input: {
       turnId: submitted.turn.id,
       initialResponse: streamResponse,
       approveTools: input.approveTools,
-      onCapabilityApproval:input.onCapabilityApproval,
+      onCapabilityApproval: input.onCapabilityApproval,
       signal: input.signal,
       onToolBlock: input.onToolBlock,
     }),
@@ -162,7 +168,7 @@ export const submitAndMaybeWatch = async (input: {
   body: unknown;
   watch: boolean;
   approveTools?: readonly string[];
-  onCapabilityApproval?:(request:CodeApproval)=>Promise<CapabilityDecision>;
+  onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
 }): Promise<number> => {
   const { submitted, result } = await submitAssistantTurn(input);
   if (!result) {

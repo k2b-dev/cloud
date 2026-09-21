@@ -2,11 +2,11 @@ import { listLegalLinks } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { MinimalLayout } from "@k2b/cloud/ssr";
 import { toPublicForm } from "../../../../api/form-api-shared";
-import { materializeFormRenderDefaults } from "../../../../service/form-render-defaults";
 import { toPublicFields } from "../../../../api/public-dto";
 import { ssr } from "../../../../config";
 import { planFormComputedFields } from "../../../../form-computed-fields";
 import { gridsService } from "../../../../service";
+import { materializeFormRenderDefaults } from "../../../../service/form-render-defaults";
 import PublicFormSubmit from "../../../_components/forms/PublicFormSubmit.island";
 import { resolveGridsMessages } from "../../../messages";
 

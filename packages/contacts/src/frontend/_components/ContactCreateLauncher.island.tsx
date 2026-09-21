@@ -1,11 +1,11 @@
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { ContactComposeInputSchema } from "../../commands";
-import { detailMessages } from "./detail-messages";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
 import { createEffect, onCleanup, onMount } from "solid-js";
+import { ContactComposeInputSchema } from "../../commands";
 import { CONTACTS_CREATE_QUERY_KEYS, parseContactCreateSeed } from "../../integration";
 import { openContactCreateFlow, type WritableContactBook } from "./ContactCreateFlow";
+import { detailMessages } from "./detail-messages";
 
 const contactHref = (bookId: string, contactId: string): string =>
   `/app/contacts/${encodeURIComponent(bookId)}?contact=${encodeURIComponent(contactId)}&contactBook=${encodeURIComponent(bookId)}`;

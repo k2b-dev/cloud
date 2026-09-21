@@ -108,10 +108,10 @@ export const aiComposerAttachmentRecords = (attachments: readonly ChatAttachment
 
 export const aiComposerSendInput = (input: ChatSubmitInput): AiComposerSendInput => {
   const attachments = aiComposerAttachmentRecords(input.attachments);
-  if (input.mentions?.length || attachments.some(attachment => attachment.kind === "project-file")) {
+  if (input.mentions?.length || attachments.some((attachment) => attachment.kind === "project-file")) {
     const draftContent: AiDraftContentPart[] = [];
     let offset = 0;
-    for (const mention of [...(input.mentions ?? [])].sort((a,b) => a.start - b.start)) {
+    for (const mention of [...(input.mentions ?? [])].sort((a, b) => a.start - b.start)) {
       if (mention.start < offset || mention.end > input.text.length || mention.start >= mention.end) continue;
       const attachment = aiComposerAttachmentRecords([mention.attachment])[0];
       if (!attachment || attachment.kind === "file" || attachment.kind === "image") continue;
@@ -123,7 +123,7 @@ export const aiComposerSendInput = (input: ChatSubmitInput): AiComposerSendInput
     for (const attachment of attachments) {
       if (attachment.kind !== "file" && attachment.kind !== "image") draftContent.push(composerAttachmentPart(attachment));
     }
-    const files = attachments.flatMap(attachment => attachment.kind === "file" || attachment.kind === "image" ? [attachment.file] : []);
+    const files = attachments.flatMap((attachment) => (attachment.kind === "file" || attachment.kind === "image" ? [attachment.file] : []));
     return { draftContent, files: files.length ? files : undefined };
   }
   const files = attachments.filter(
@@ -187,24 +187,59 @@ export const readAiComposerFiles = async (
   };
 };
 
-const composerAttachmentPart = (attachment: Exclude<AiComposerAttachment, {kind: "image" | "file"}>, inline = false): AiDraftContentPart => {
-  if (attachment.kind === "resource") return { type: "resource", ref: attachment.ref, title: attachment.name, icon: attachment.icon, href: attachment.href, inline };
+const composerAttachmentPart = (
+  attachment: Exclude<AiComposerAttachment, { kind: "image" | "file" }>,
+  inline = false,
+): AiDraftContentPart => {
+  if (attachment.kind === "resource")
+    return { type: "resource", ref: attachment.ref, title: attachment.name, icon: attachment.icon, href: attachment.href, inline };
   if (attachment.kind === "project-file") return { type: "project-file", path: attachment.path, inline };
-  return { type: "file", path: attachment.path, version: attachment.version, mediaType: attachment.mediaType, size: attachment.size, inline };
+  return {
+    type: "file",
+    path: attachment.path,
+    version: attachment.version,
+    mediaType: attachment.mediaType,
+    size: attachment.size,
+    inline,
+  };
 };
 
 /** Hydrate the same ordered content used by the server draft and queued messages. */
-export function aiComposerDraft(content: readonly AiDraftContentPart[]): { text: string; mentions: ChatMention[]; attachments: AiComposerAttachment[] } {
+export function aiComposerDraft(content: readonly AiDraftContentPart[]): {
+  text: string;
+  mentions: ChatMention[];
+  attachments: AiComposerAttachment[];
+} {
   let text = "";
   const mentions: ChatMention[] = [];
   const attachments: AiComposerAttachment[] = [];
   for (const part of content) {
-    if (part.type === "text") { text += part.text; continue; }
-    const attachment: AiComposerAttachment = part.type === "resource"
-      ? { kind: "resource", id: `resource:${part.ref.type}:${part.ref.id}`, ref: part.ref, name: part.title ?? part.ref.id, icon: part.icon ?? "ti ti-link", href: part.href }
-      : part.type === "project-file"
-        ? { kind: "project-file", id: part.path, path: part.path, name: part.path, icon: "ti ti-file" }
-        : { kind: "stored-file", id: `file:${part.path}:${part.version}`, path: part.path, name: part.path.split("/").at(-1) || part.path, version: part.version, mediaType: part.mediaType, size: part.size, icon: "ti ti-file" };
+    if (part.type === "text") {
+      text += part.text;
+      continue;
+    }
+    const attachment: AiComposerAttachment =
+      part.type === "resource"
+        ? {
+            kind: "resource",
+            id: `resource:${part.ref.type}:${part.ref.id}`,
+            ref: part.ref,
+            name: part.title ?? part.ref.id,
+            icon: part.icon ?? "ti ti-link",
+            href: part.href,
+          }
+        : part.type === "project-file"
+          ? { kind: "project-file", id: part.path, path: part.path, name: part.path, icon: "ti ti-file" }
+          : {
+              kind: "stored-file",
+              id: `file:${part.path}:${part.version}`,
+              path: part.path,
+              name: part.path.split("/").at(-1) || part.path,
+              version: part.version,
+              mediaType: part.mediaType,
+              size: part.size,
+              icon: "ti ti-file",
+            };
     if (part.inline) {
       mentions.push({ start: text.length, end: text.length + attachment.name.length, attachment: aiChatAttachments([attachment])[0]! });
       text += attachment.name;

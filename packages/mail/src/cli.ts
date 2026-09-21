@@ -3,7 +3,6 @@ import { rename, rm } from "node:fs/promises";
 import { basename } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { text } from "@k2b/stdlib";
 import {
   arg,
   type CloudCliContext,
@@ -17,6 +16,7 @@ import {
   readCliInput,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
 import {

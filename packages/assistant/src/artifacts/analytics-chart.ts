@@ -1,5 +1,5 @@
-import { prepareChartSnapshot, type ChartSelection, type ChartRenderOptions, type ChartSnapshot } from "@k2b/ui";
-import { formatValue, type ExplorerData, type AnalyticsNode } from "./runtime/analytics-contracts";
+import { type ChartRenderOptions, type ChartSelection, type ChartSnapshot, prepareChartSnapshot } from "@k2b/ui";
+import { type AnalyticsNode, type ExplorerData, formatValue } from "./runtime/analytics-contracts";
 
 type Presentation = Extract<AnalyticsNode, { type: "chart" }>["data"];
 const datumKey = (selection: ChartSelection) => `${selection.datum.role}:${selection.datum.seriesIndex ?? ""}:${selection.datum.index}`;
@@ -73,15 +73,24 @@ export function explorerChart(data: ExplorerData, columns: Extract<AnalyticsNode
   };
   const rowKey = (index: number) => rows[index]!.key;
   const valueField = "value" in spec ? spec.value : "y" in spec ? spec.y : undefined;
-  const valueFormat = columns.find(column => column.key === valueField)?.format;
+  const valueFormat = columns.find((column) => column.key === valueField)?.format;
   // Reserve space for the actual formatted values, including currency symbols.
-  const leftPadding = Math.max(48, Math.min(200, 16 + Math.max(0, ...data.rows.map(row => formatValue(valueField ? row[valueField] : null, valueFormat, locale).length)) * 7));
+  const leftPadding = Math.max(
+    48,
+    Math.min(
+      200,
+      16 + Math.max(0, ...data.rows.map((row) => formatValue(valueField ? row[valueField] : null, valueFormat, locale).length)) * 7,
+    ),
+  );
   if (spec.kind === "bar" || spec.kind === "pie" || spec.kind === "donut") {
     const values = rows.map((_, i) => {
       const label = category(i, spec.category);
       // prepareChartSnapshot uses a 480px drawing surface; leave a label gap.
       const limit = Math.max(3, Math.floor(((480 - leftPadding - 24) / Math.max(rows.length, 1) - 12) / 7));
-      return {label:spec.kind === "bar" && label.length > limit ? label.slice(0, limit - 1) + "…" : label,value:numeric(i,spec.value)};
+      return {
+        label: spec.kind === "bar" && label.length > limit ? label.slice(0, limit - 1) + "…" : label,
+        value: numeric(i, spec.value),
+      };
     });
     if (spec.kind !== "bar" && values.some((value) => value.value <= 0))
       throw new Error("Pie and donut values must be positive; filter explicitly before rendering");
@@ -92,7 +101,7 @@ export function explorerChart(data: ExplorerData, columns: Extract<AnalyticsNode
           ? {
               kind: "bar",
               data: values,
-              padding: {left:leftPadding},
+              padding: { left: leftPadding },
               yAxis: {
                 format: (value) => formatValue(value, columns.find((column) => column.key === spec.value)?.format, locale),
               },
@@ -103,8 +112,10 @@ export function explorerChart(data: ExplorerData, columns: Extract<AnalyticsNode
     };
   }
   if (!("x" in spec)) throw new Error("Unsupported chart mapping");
-  const categories = spec.kind === "line" && typeof data.rows[0]?.[spec.x] === "string"
-    ? [...new Set(data.rows.map(row => String(row[spec.x])))] : undefined;
+  const categories =
+    spec.kind === "line" && typeof data.rows[0]?.[spec.x] === "string"
+      ? [...new Set(data.rows.map((row) => String(row[spec.x])))]
+      : undefined;
   const grouped = new Map<string, number[]>();
   rows.forEach((_, index) => {
     const group = spec.series ? category(index, spec.series) : "";
@@ -119,9 +130,18 @@ export function explorerChart(data: ExplorerData, columns: Extract<AnalyticsNode
     chart: prepareChartSnapshot(
       {
         kind: spec.kind,
-        padding: {left:leftPadding},
-        series: groups.map(([label, indices]) => ({ label, data: indices.map((i) => ({ x: categories ? categories.indexOf(String(data.rows[i]![spec.x])) : numeric(i, spec.x), y: numeric(i, spec.y) })) })),
-        xAxis: { format: (value) => categories ? categories[value] ?? "" : formatValue(value, columns.find((column) => column.key === spec.x)?.format, locale) },
+        padding: { left: leftPadding },
+        series: groups.map(([label, indices]) => ({
+          label,
+          data: indices.map((i) => ({
+            x: categories ? categories.indexOf(String(data.rows[i]![spec.x])) : numeric(i, spec.x),
+            y: numeric(i, spec.y),
+          })),
+        })),
+        xAxis: {
+          format: (value) =>
+            categories ? (categories[value] ?? "") : formatValue(value, columns.find((column) => column.key === spec.x)?.format, locale),
+        },
         yAxis: { format: (value) => formatValue(value, columns.find((column) => column.key === spec.y)?.format, locale) },
       },
       { key: (selection) => rowKey(indexFor(selection)), tooltip: (selection) => tooltip(indexFor(selection)) },

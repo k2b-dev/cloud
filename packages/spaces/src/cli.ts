@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import type { Paginated } from "@k2b/stdlib";
 import {
   arg,
   type CloudCliContext,
@@ -14,6 +13,7 @@ import {
   printStructured,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import type { Paginated } from "@k2b/stdlib";
 import type {
   CalendarItem,
   ItemListResult,

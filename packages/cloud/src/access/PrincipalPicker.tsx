@@ -91,9 +91,15 @@ export default function PrincipalPicker(props: {
   return (
     <Combobox
       disabled={props.disabled}
-      placeholder={props.allowAuthenticated !== false || props.allowPublic
-        ? (props.allowServiceAccounts ? t().addAll : t().addAudience)
-        : (props.allowServiceAccounts ? t().addService : t().addBasic)}
+      placeholder={
+        props.allowAuthenticated !== false || props.allowPublic
+          ? props.allowServiceAccounts
+            ? t().addAll
+            : t().addAudience
+          : props.allowServiceAccounts
+            ? t().addService
+            : t().addBasic
+      }
       fetchData={load}
       onSelect={(option) => {
         const principal = principals.get(option.id);

@@ -17,9 +17,9 @@ import {
 import { type Accessor, createEffect, createSignal, onCleanup, type Setter, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Notebook } from "../sidebar/types";
+import { notebookSettingsMessages } from "./messages";
 import type { BackupRunResult, BackupStatus } from "./types";
 import { backupDraftFromStatus, backupDraftIsDirty, readErrorMessage, snapshotLogEntryFromRun } from "./utils";
-import { notebookSettingsMessages } from "./messages";
 
 function SnapshotUploadAction(props: {
   enabled: boolean;
@@ -48,7 +48,11 @@ function SnapshotUploadAction(props: {
           </Show>
         </Button>
         <Show when={props.lastRun}>
-          {(result) => <span class="text-xs text-emerald-600 dark:text-emerald-300">{t().uploadedKb({ size: Math.round(result().bytes / 1024) })}</span>}
+          {(result) => (
+            <span class="text-xs text-emerald-600 dark:text-emerald-300">
+              {t().uploadedKb({ size: Math.round(result().bytes / 1024) })}
+            </span>
+          )}
         </Show>
       </div>
     </Show>
@@ -105,11 +109,19 @@ function SnapshotConfigFields(props: {
             <i class="ti ti-info-circle mt-0.5 shrink-0" />
             <div>
               <p class="font-medium text-primary">{t().s3Endpoint}</p>
-              <p class="mt-0.5 text-dimmed">{t().s3EndpointDescription} <code>notebooks/{props.notebookShortId}/</code></p>
+              <p class="mt-0.5 text-dimmed">
+                {t().s3EndpointDescription} <code>notebooks/{props.notebookShortId}/</code>
+              </p>
             </div>
           </NoticeCard>
           <div class="grid gap-2 md:grid-cols-2">
-            <TextInput label={t().region} value={props.region} onValueChange={props.setRegion} placeholder="eu-central-1" icon="ti ti-map" />
+            <TextInput
+              label={t().region}
+              value={props.region}
+              onValueChange={props.setRegion}
+              placeholder="eu-central-1"
+              icon="ti ti-map"
+            />
             <TextInput
               label={t().bucket}
               value={props.bucket}
@@ -138,7 +150,9 @@ function SnapshotConfigFields(props: {
           <NoticeCard tone="info" icon={false}>
             {t().target}: <span class="font-medium text-primary">{props.status?.target ?? t().notConfigured}</span>
             <Show when={props.missing !== "none"}>
-              <span class="ml-2 text-amber-600 dark:text-amber-300">{t().missing}: {props.missing}</span>
+              <span class="ml-2 text-amber-600 dark:text-amber-300">
+                {t().missing}: {props.missing}
+              </span>
             </Show>
           </NoticeCard>
         </div>

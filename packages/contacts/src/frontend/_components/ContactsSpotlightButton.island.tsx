@@ -2,7 +2,9 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup } from "solid-js";
 import { contactsSearchOptions, createContactsSearch, spotlightMessages } from "./contact-spotlight";
+
 export { spotlightMessages } from "./contact-spotlight";
+
 type Props = { variant?: SpotlightButtonVariant; registerCommand?: boolean };
 export default function ContactsSpotlightButton(props: Props) {
   const locale = useLocale();

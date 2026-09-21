@@ -1,10 +1,10 @@
+import { apiClient } from "@k2b/cloud/clients/core";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, TextInput, useLocale } from "@k2b/ui";
-import { apiClient } from "@k2b/cloud/clients/core";
 import { createSignal, onMount, Show } from "solid-js";
-import { authMessages } from "./messages";
 import { afterSignInHref } from "./login-redirect";
+import { authMessages } from "./messages";
 
 export default function GuestLoginForm(props: {
   redirectTo?: string;
@@ -118,9 +118,7 @@ export default function GuestLoginForm(props: {
           {t().sendLoginLink}
         </Button>
 
-        <p class="text-sm text-dimmed">
-          {props.allowSelfRegistration ? t().selfRegistrationHint : t().existingAccountHint}
-        </p>
+        <p class="text-sm text-dimmed">{props.allowSelfRegistration ? t().selfRegistrationHint : t().existingAccountHint}</p>
       </form>
     </Show>
   );

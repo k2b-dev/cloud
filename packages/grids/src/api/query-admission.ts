@@ -124,11 +124,13 @@ export const isQueryAdmissionError = (error: unknown): error is QueryAdmissionEr
 // without starving authentication, metadata reads, or writes.
 let queryAdmission: Promise<QueryAdmission> | undefined;
 const getQueryAdmission = (): Promise<QueryAdmission> =>
-  (queryAdmission ??= getQuerySettings().then((settings) => createQueryAdmission({
-    maxActive: settings.concurrency,
-    maxQueued: settings.queueLimit,
-    waitTimeoutMs: settings.queueTimeoutMs,
-  })));
+  (queryAdmission ??= getQuerySettings().then((settings) =>
+    createQueryAdmission({
+      maxActive: settings.concurrency,
+      maxQueued: settings.queueLimit,
+      waitTimeoutMs: settings.queueTimeoutMs,
+    }),
+  ));
 
 const admittedRequests = new WeakSet<Request>();
 
@@ -137,7 +139,7 @@ export const runWithQueryAdmissionSignal = async <T>(
   task: (signal: AbortSignal) => Promise<T>,
   admission?: QueryAdmission,
 ): Promise<T> => {
-  const result = await (admission ?? await getQueryAdmission()).run(() => task(signal), signal);
+  const result = await (admission ?? (await getQueryAdmission())).run(() => task(signal), signal);
   if (!result.ok) throw new QueryAdmissionError(result.reason);
   return result.value;
 };
@@ -154,7 +156,7 @@ export const runWithQueryAdmission = async <T>(
 
 export const queryAdmissionMiddleware = (admission?: QueryAdmission): MiddlewareHandler<AuthContext> => {
   return async (c, next) => {
-    const result = await (admission ?? await getQueryAdmission()).run(async () => {
+    const result = await (admission ?? (await getQueryAdmission())).run(async () => {
       admittedRequests.add(c.req.raw);
       try {
         await next();

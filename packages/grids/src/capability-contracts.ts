@@ -200,9 +200,12 @@ export const ViewCreateInputSchema = z
   })
   .strict();
 
-const ShowTableToUserSchema = z.boolean().default(false).describe(
-  "Show this result as a table to the user. Use true for requested results, false for research or intermediate queries. When true, do not repeat the table in Markdown.",
-);
+const ShowTableToUserSchema = z
+  .boolean()
+  .default(false)
+  .describe(
+    "Show this result as a table to the user. Use true for requested results, false for research or intermediate queries. When true, do not repeat the table in Markdown.",
+  );
 
 export const GqlPreviewInputSchema = z
   .object({

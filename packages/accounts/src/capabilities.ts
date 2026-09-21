@@ -1,4 +1,4 @@
-import { defineCapabilities, UniversalSearchInputSchema, UniversalSearchDataSchema } from "@k2b/cloud/contracts";
+import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { searchAccounts } from "./search";
 
 export const accountsCapabilities = defineCapabilities({

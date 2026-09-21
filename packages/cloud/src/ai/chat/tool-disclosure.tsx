@@ -15,7 +15,9 @@ export const createAiToolDisclosureState = (): AiToolDisclosureState => {
         try {
           const saved = window.sessionStorage.getItem(storageKey(blockId));
           if (saved === "open") openByBlockId.set(blockId, true);
-        } catch { /* SSR and disabled storage keep the in-memory state. */ }
+        } catch {
+          /* SSR and disabled storage keep the in-memory state. */
+        }
       }
       return openByBlockId.get(blockId);
     },
@@ -24,7 +26,9 @@ export const createAiToolDisclosureState = (): AiToolDisclosureState => {
       try {
         if (open) window.sessionStorage.setItem(storageKey(blockId), "open");
         else window.sessionStorage.removeItem(storageKey(blockId));
-      } catch { /* Storage limits must not prevent expanding a tool. */ }
+      } catch {
+        /* Storage limits must not prevent expanding a tool. */
+      }
     },
   };
 };

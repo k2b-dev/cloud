@@ -1,4 +1,4 @@
-import { bottomSheetOptions, dialogCore, type DialogRender } from "@k2b/ui";
+import { bottomSheetOptions, type DialogRender, dialogCore } from "@k2b/ui";
 
 const marker = "cloudMobileMenu";
 let running: Promise<void> | undefined;

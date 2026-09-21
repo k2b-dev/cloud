@@ -47,7 +47,10 @@ const launcherAuthorizationSchema = z.discriminatedUnion("kind", [
       actionId: z.string().min(1),
       recordId: z.string().uuid().optional(),
       background: z.literal(true).optional(),
-      requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+      requestFingerprint: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
       search: z.string().max(200).optional(),
       cursor: z.string().max(8_000).optional(),
       revision: z.number().int().positive(),

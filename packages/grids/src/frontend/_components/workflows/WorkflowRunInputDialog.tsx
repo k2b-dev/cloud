@@ -1,5 +1,5 @@
-import { Button, dialogCore, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import { Button, dialogCore, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 import type { PublicTable } from "../../../api/public-dto";
 import { workflowMessages } from "./messages";

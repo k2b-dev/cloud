@@ -1,8 +1,8 @@
-import { AI_AUDIO_EXTENSIONS } from "../audio-format";
 import type { Message, Usage } from "@k2b/nessi";
 import { fileIcons } from "@k2b/stdlib";
 import { formatBytes as sharedFormatBytes } from "../../shared/format";
 import { type AiAttachmentRef, parseAiAttachmentMarkers } from "../attachments";
+import { AI_AUDIO_EXTENSIONS } from "../audio-format";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
 import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
 import { assistantVisibleTextFromMessage } from "../timeline";
@@ -237,10 +237,23 @@ export const latestUsageSnapshot = (messages: AiStoredMessage[]): AiLatestUsageS
     if (request) {
       return {
         request,
-        loop: entry?.loopAggregate?.usage ?? (entry?.loopId ? messages.filter(message => message.loopId === entry.loopId && message.message.role === "assistant").reduce<Usage>((sum, message) => ({
-          input: sum.input + (message.usage?.input ?? 0), output: sum.output + (message.usage?.output ?? 0), total: sum.total + (message.usage?.total ?? 0),
-          ...((sum.cacheRead !== undefined || message.usage?.cacheRead !== undefined) ? { cacheRead: (sum.cacheRead ?? 0) + (message.usage?.cacheRead ?? 0) } : {}),
-        }), { input: 0, output: 0, total: 0 }) : request),
+        loop:
+          entry?.loopAggregate?.usage ??
+          (entry?.loopId
+            ? messages
+                .filter((message) => message.loopId === entry.loopId && message.message.role === "assistant")
+                .reduce<Usage>(
+                  (sum, message) => ({
+                    input: sum.input + (message.usage?.input ?? 0),
+                    output: sum.output + (message.usage?.output ?? 0),
+                    total: sum.total + (message.usage?.total ?? 0),
+                    ...(sum.cacheRead !== undefined || message.usage?.cacheRead !== undefined
+                      ? { cacheRead: (sum.cacheRead ?? 0) + (message.usage?.cacheRead ?? 0) }
+                      : {}),
+                  }),
+                  { input: 0, output: 0, total: 0 },
+                )
+            : request),
         modelProfileId: entry?.modelProfileId ?? null,
       };
     }

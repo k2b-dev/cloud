@@ -1,5 +1,5 @@
-import { err, fail, i18n, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { audit } from "@k2b/cloud/services";
+import { err, fail, i18n, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import {
@@ -30,6 +30,7 @@ const verificationMessages = i18n.define({
     },
   },
 });
+
 import { withShortIdDb } from "../lib/short-id";
 import { requireMailboxPermission } from "./access";
 import { normalizeEmailAddress } from "./address-normalization";

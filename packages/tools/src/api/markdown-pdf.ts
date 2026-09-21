@@ -106,7 +106,10 @@ const pdfResponse = (pdf: Uint8Array, filename: string): Response =>
     },
   });
 
-const renderError = (error: unknown, t: MarkdownPdfMessages): { code: string; message: string; status: 400 | 413 | 422 | 500 | 502 | 503 | 504 } => {
+const renderError = (
+  error: unknown,
+  t: MarkdownPdfMessages,
+): { code: string; message: string; status: 400 | 413 | 422 | 500 | 502 | 503 | 504 } => {
   if (error instanceof MarkdownPdfError) {
     switch (error.code) {
       case "bad_input":

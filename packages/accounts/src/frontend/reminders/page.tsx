@@ -1,10 +1,10 @@
-import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { dates } from "@k2b/stdlib";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge } from "@k2b/ui";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";

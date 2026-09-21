@@ -1,7 +1,8 @@
-import { render } from "solid-js/web";
-import { createSignal } from "solid-js";
 import { Button } from "@k2b/ui";
-import { openSecretsDialog, browserHttpHost } from "./SecretsDialog";
+import { createSignal } from "solid-js";
+import { render } from "solid-js/web";
+import { browserHttpHost, openSecretsDialog } from "./SecretsDialog";
+
 function Harness() {
   const [result, setResult] = createSignal("");
   return (

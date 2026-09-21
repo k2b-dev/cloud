@@ -37,10 +37,15 @@ export const recordAiMemoryWorkflowEvidence = async (input: {
       input.resources.flatMap((resource) => {
         const parsed = CloudResourceRefSchema.safeParse(resource.ref);
         if (!parsed.success) return [];
-        return [[`${parsed.data.type}\0${parsed.data.id}`, {
-          ref: parsed.data,
-          ...(resource.title ? { title: resource.title.trim().slice(0, MAX_RESOURCE_TITLE_CHARS) } : {}),
-        }] as const];
+        return [
+          [
+            `${parsed.data.type}\0${parsed.data.id}`,
+            {
+              ref: parsed.data,
+              ...(resource.title ? { title: resource.title.trim().slice(0, MAX_RESOURCE_TITLE_CHARS) } : {}),
+            },
+          ] as const,
+        ];
       }),
     ).values(),
   ].slice(0, MAX_RECEIPT_RESOURCES);

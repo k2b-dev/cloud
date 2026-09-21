@@ -1,5 +1,5 @@
-import { err, fail, ok, type PageParams, type Paginated, paginate, tryCatch } from "@k2b/stdlib";
 import { notifications } from "@k2b/cloud/services";
+import { err, fail, ok, type PageParams, type Paginated, paginate, tryCatch } from "@k2b/stdlib";
 
 type NotificationItem = Awaited<ReturnType<typeof notifications.list>>["notifications"][number];
 type NotificationStatus = NotificationItem["status"];

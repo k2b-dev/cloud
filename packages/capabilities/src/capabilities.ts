@@ -1,4 +1,4 @@
-import { defineCapabilities, UniversalSearchInputSchema, UniversalSearchDataSchema } from "@k2b/cloud/contracts";
+import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
 import { filterSearchCatalog, loadSearchCatalog } from "./search";
 export const catalogCapabilities = defineCapabilities({

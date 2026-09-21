@@ -1,3 +1,4 @@
+import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
 import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
@@ -11,7 +12,6 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
 import { createEffect, createMemo, createSignal, For, Index, Match, onMount, Switch, untrack } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { fieldChoiceGroupsFor, fieldOption } from "../fields/field-type-meta";

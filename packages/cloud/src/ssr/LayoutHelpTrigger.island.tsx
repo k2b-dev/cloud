@@ -1,6 +1,6 @@
-import { registerContextAwareCommand } from "../browser/commands";
-import { createEffect, onCleanup } from "solid-js";
 import { IconButton, Tooltip, useLocale } from "@k2b/ui";
+import { createEffect, onCleanup } from "solid-js";
+import { registerContextAwareCommand } from "../browser/commands";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import { openLayoutHelpDialog } from "./LayoutHelp";
 import { platformMessages } from "./platform-messages";

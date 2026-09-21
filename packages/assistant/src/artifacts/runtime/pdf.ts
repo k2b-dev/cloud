@@ -1,4 +1,4 @@
-import { PdfRequest, checkPdfBytes, type PdfRenderInput, type PdfFacturXInput, type PdfAttachInput } from "../pdf-contracts";
+import { checkPdfBytes, type PdfAttachInput, type PdfFacturXInput, type PdfRenderInput, PdfRequest } from "../pdf-contracts";
 import { pdf } from "./documents";
 
 export function createPdf(rpc: (method: string, args: unknown[], signal?: AbortSignal) => Promise<unknown>) {

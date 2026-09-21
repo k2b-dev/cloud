@@ -1,6 +1,6 @@
-import { MarkdownView, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
+import { MarkdownView, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
 import { ssr } from "../config";
 import { resolveFaqTranslation } from "../content";
 import { faqService } from "../service";

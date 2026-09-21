@@ -1,10 +1,10 @@
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AiProjectAccess } from "@k2b/cloud/ai";
+import { coreClient } from "@k2b/cloud/clients/core";
 import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
-import { PermissionEditor } from "@k2b/cloud/access/ui";
-import type { AiProjectAccess } from "@k2b/cloud/ai";
-import { coreClient } from "@k2b/cloud/clients/core";
 import { Show } from "solid-js";
 import { settingsMessages } from "./messages";
 

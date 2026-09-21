@@ -1,13 +1,23 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { IconInput, prompts, Select, SettingsField, SettingsGroup, SettingsModal, SettingsPanelFooter, TextInput, useLocale } from "@k2b/ui";
+import {
+  IconInput,
+  prompts,
+  Select,
+  SettingsField,
+  SettingsGroup,
+  SettingsModal,
+  SettingsPanelFooter,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "@/lib/note-title-template";
 import type { Notebook, NoteTreeNode } from "../sidebar/types";
+import { notebookSettingsMessages } from "./messages";
 import type { NoteSelectOption } from "./types";
 import { flattenNoteOptions, readErrorMessage } from "./utils";
-import { notebookSettingsMessages } from "./messages";
 
 export function GeneralSection(props: {
   notebook: Notebook;
@@ -124,14 +134,16 @@ export function GeneralSection(props: {
             error={() => (!name().trim() ? t().nameRequired : undefined)}
             changed={() => name() !== base().name}
           >
-            <TextInput aria-label={t().name} value={name} onValueChange={setName} icon="ti ti-notebook" required disabled={!props.canWrite} />
+            <TextInput
+              aria-label={t().name}
+              value={name}
+              onValueChange={setName}
+              icon="ti ti-notebook"
+              required
+              disabled={!props.canWrite}
+            />
           </SettingsField>
-          <SettingsField
-            label={t().icon}
-            description={t().iconDescription}
-            error={() => undefined}
-            changed={() => icon() !== base().icon}
-          >
+          <SettingsField label={t().icon} description={t().iconDescription} error={() => undefined} changed={() => icon() !== base().icon}>
             <IconInput
               aria-label={t().icon}
               value={icon}

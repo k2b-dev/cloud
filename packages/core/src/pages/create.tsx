@@ -1,5 +1,3 @@
-import appCredentialsPage from "./admin/app-credentials/page";
-import { ssr } from "../config";
 import { join } from "node:path";
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { authFlows, coreSettings, legalConsent } from "@k2b/cloud/services";
@@ -7,13 +5,15 @@ import { getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { Hono } from "hono";
 import cliInstaller from "../../../cloud-cli/scripts/install.sh" with { type: "text" };
 import browserNotificationServiceWorker from "../browser-notifications/service-worker.js" with { type: "text" };
+import { ssr } from "../config";
 import announcementsAdminPage from "./admin/announcements/page";
-import railAdminPage from "./admin/rail/page";
+import appCredentialsPage from "./admin/app-credentials/page";
 import adminPage from "./admin/page";
+import railAdminPage from "./admin/rail/page";
 import settingsPage from "./admin/settings/page";
 import pairDevicePage from "./app-approval/pair.page";
-import { afterSignInHref, isReauthenticationRequest, resolveAuthenticatedLoginRedirect } from "./auth/login-redirect";
 import consentPage from "./auth/consent.page";
+import { afterSignInHref, isReauthenticationRequest, resolveAuthenticatedLoginRedirect } from "./auth/login-redirect";
 import newPasswordPage from "./auth/new-password/page";
 import loginPage from "./auth/page";
 import passwordResetPage from "./auth/password-reset/page";
@@ -99,7 +99,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get(
       "/auth/login",
       async (c, next) => {
-        if (!c.req.query("token") && await legalConsent.pending(c)) return c.redirect(afterSignInHref(c.req.query("redirectTo")), 302);
+        if (!c.req.query("token") && (await legalConsent.pending(c))) return c.redirect(afterSignInHref(c.req.query("redirectTo")), 302);
         return next();
       },
       (c, next) =>

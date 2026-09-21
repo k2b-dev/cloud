@@ -1,9 +1,9 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { useLocale } from "@k2b/ui";
 import { createEffect, onCleanup, onMount } from "solid-js";
-import { createNoteCommands } from "../../note-commands";
 import { inheritPresentationMode } from "../../../lib/presentation-url";
-import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { createNoteCommands } from "../../note-commands";
 import { notebookWorkspaceMessages } from "../messages";
 import { notebookSearchOptions } from "./search/openNoteSearchPrompt";
 

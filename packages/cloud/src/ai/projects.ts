@@ -1,7 +1,6 @@
-import { AuthenticatedPrincipalSchema } from "../contracts/shared";
-import { aiFileContentVersion, AiFileWriteError, AiFileVersionConflict } from "./file-content-version";
 import { type SQL, type SQLQuery, sql } from "bun";
 import type { CloudResourceRef } from "../contracts/capabilities";
+import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import type { AccessSubject } from "../server";
 import {
   buildAccessPrincipalCondition,
@@ -12,6 +11,7 @@ import {
   type Principal,
 } from "../server/services/access";
 import { toPgUuidArray } from "../services/postgres";
+import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { mountAiProjectFilePath } from "./file-mount";
 import { withAiShortIdForDb } from "./short-id";
 import type { AiProjectPromptSnapshot } from "./types";
@@ -170,15 +170,17 @@ const principalForSubject = (subject: AccessSubject): Principal =>
     : { type: "service_account", serviceAccountId: subject.serviceAccountId };
 
 const accessMatch = (subject: AccessSubject | null): SQLQuery =>
-  subject === null ? sql`FALSE` : buildAccessPrincipalCondition({
-    subject,
-    columns: {
-      userId: sql`access.user_id`,
-      groupId: sql`access.group_id`,
-      serviceAccountId: sql`access.service_account_id`,
-      authenticatedOnly: sql`access.authenticated_only`,
-    },
-  });
+  subject === null
+    ? sql`FALSE`
+    : buildAccessPrincipalCondition({
+        subject,
+        columns: {
+          userId: sql`access.user_id`,
+          groupId: sql`access.group_id`,
+          serviceAccountId: sql`access.service_account_id`,
+          authenticatedOnly: sql`access.authenticated_only`,
+        },
+      });
 
 const permissionFor = async (row: ProjectRow, subject: AccessSubject | null, db: SQL = sql): Promise<AiProjectPermission | "none"> => {
   const match = accessMatch(subject);
@@ -805,14 +807,17 @@ export const aiProjects = {
     input: { path: string; mediaType: string; bytes: Uint8Array; expectedVersion?: string | null },
   ): Promise<AiProjectFile | null> {
     if (!(await requireProject(projectId, subject, "write"))) return null;
-    if (input.bytes.byteLength > AI_PROJECT_FILE_MAX_BYTES) throw new AiFileWriteError("STORAGE_FULL", "Project file exceeds the size limit; nothing was written.");
+    if (input.bytes.byteLength > AI_PROJECT_FILE_MAX_BYTES)
+      throw new AiFileWriteError("STORAGE_FULL", "Project file exceeds the size limit; nothing was written.");
     const path = normalizeProjectPath(input.path);
     return sql.begin(async (tx) => {
       const [row] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id=${projectId}::uuid FOR UPDATE`;
       const project = row ? await toProject(row, subject, tx) : null;
       if (!project || !hasPermission(project.permission, "write")) return null;
       if (input.expectedVersion !== undefined) {
-        const [existing] = await tx<(FileRow & { bytes: Uint8Array })[]>`SELECT id,short_id,project_id,path,media_type,size,updated_at,bytes FROM ai.project_files WHERE project_id=${projectId}::uuid AND path=${path}`;
+        const [existing] = await tx<
+          (FileRow & { bytes: Uint8Array })[]
+        >`SELECT id,short_id,project_id,path,media_type,size,updated_at,bytes FROM ai.project_files WHERE project_id=${projectId}::uuid AND path=${path}`;
         const version = existing ? aiFileContentVersion({ ...toFile(existing), bytes: existing.bytes }) : null;
         if (version !== input.expectedVersion) throw new AiFileVersionConflict();
       }

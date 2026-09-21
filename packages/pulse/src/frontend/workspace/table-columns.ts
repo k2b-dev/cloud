@@ -1,7 +1,7 @@
 import type { DataTableColumn } from "@k2b/ui";
 import type { PulseCurrentState, PulseMetricSeries, PulseMetricSummary, PulseRecordedEvent } from "../../contracts";
-import type { ActivityEventGroup, ActivityStateGroup } from "./types";
 import type { pulseMessages } from "../../messages";
+import type { ActivityEventGroup, ActivityStateGroup } from "./types";
 
 type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
 

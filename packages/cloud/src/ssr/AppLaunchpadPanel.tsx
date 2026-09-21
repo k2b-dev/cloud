@@ -1,10 +1,10 @@
+import { documentNavigate } from "@k2b/ssr/nav";
+import { IconButton, ScrollArea, TextInput, useLocale } from "@k2b/ui";
+import { createSignal, For, type JSX, Show } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import type { CloudTheme } from "../shared/theme";
 import { MobileProfileActions } from "./MobileProfileActions";
-import { Dynamic } from "solid-js/web";
 import { platformMessages } from "./platform-messages";
-import { IconButton, ScrollArea, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, For, Show, type JSX } from "solid-js";
-import { documentNavigate } from "@k2b/ssr/nav";
 import { openRailEditor } from "./RailEditor";
 import { readRailContext } from "./rail-context";
 import { railMessages } from "./rail-messages";

@@ -634,10 +634,13 @@ const buildGroupedSql = (
     WHERE ${where.where}
     GROUP BY ${groupByPositions}
   `;
-  if (params.summaryOnly) return {
-    ok: true, query: sql`SELECT * FROM (${groupedQuery}) grouped WHERE ${userHaving}`,
-    cursorable: false, cursorValuesFromRow: () => [],
-  };
+  if (params.summaryOnly)
+    return {
+      ok: true,
+      query: sql`SELECT * FROM (${groupedQuery}) grouped WHERE ${userHaving}`,
+      cursorable: false,
+      cursorValuesFromRow: () => [],
+    };
   const aggregateByKey = new Map(aggregations.aggExprs.map((aggregate) => [aggregate.key, aggregate]));
   const groupType = (group: ResolvedGroup): DslKeysetType => {
     const kind = storageOf(group.field).kind;

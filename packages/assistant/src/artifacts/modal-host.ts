@@ -1,7 +1,7 @@
-import { prompts, type FieldSchema } from "@k2b/ui";
-import { z } from "zod";
-import { ModalField, ModalRequest } from "./runtime/modal-schema";
+import { type FieldSchema, prompts } from "@k2b/ui";
+import type { z } from "zod";
 import { artifactMessages as messages } from "./messages";
+import { type ModalField, ModalRequest } from "./runtime/modal-schema";
 
 type Field = z.infer<typeof ModalField>;
 function convert(field: Field, t: ReturnType<typeof messages.resolve>["t"]): FieldSchema {

@@ -3,8 +3,8 @@ import { i18n } from "@k2b/stdlib";
 export const advancedMessages = i18n.define({
   baseLocale: "en",
   messages: {
-  en: {
-    saveBeforePublish:"Save your editor changes before publishing.",
+    en: {
+      saveBeforePublish: "Save your editor changes before publishing.",
       clearLocal: "Delete all my local files and KV",
       clearLocalConfirm: "Permanently delete all your local files and KV for this resource in this browser?",
       removeFile: "Remove this source file from the working draft? Existing publications stay unchanged.",
@@ -57,8 +57,8 @@ export const advancedMessages = i18n.define({
       exportDraft: "Download source draft",
       execution: "Execution",
     },
-  de: {
-    saveBeforePublish:"Speichere deine Editor-Änderungen vor dem Veröffentlichen.",
+    de: {
+      saveBeforePublish: "Speichere deine Editor-Änderungen vor dem Veröffentlichen.",
       clearLocal: "Alle meine lokalen Dateien und KV löschen",
       clearLocalConfirm: "Alle deine lokalen Dateien und KV dieser Ressource in diesem Browser dauerhaft löschen?",
       removeFile: "Diese Quelldatei aus dem Arbeitsentwurf entfernen? Bestehende Veröffentlichungen bleiben unverändert.",

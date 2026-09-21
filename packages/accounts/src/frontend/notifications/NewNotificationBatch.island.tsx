@@ -1,3 +1,5 @@
+import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
+import { formatNumber } from "@k2b/cloud/shared";
 import { navigateTo } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import {
@@ -12,8 +14,6 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
-import { formatNumber } from "@k2b/cloud/shared";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import AccountAvatar from "@/frontend/AccountAvatar";

@@ -1,13 +1,5 @@
-import { getAiChatQuotas } from "./chat-quotas";
-import { enqueueChatMessage, listQueuedMessages, updateQueuedMessage, editQueuedMessage, queuedMessageAccepted, AiMessageQueueConflict } from "./message-queue";
-import { prepareAiChatTurn, wakeAiMessageQueue } from "./runtime";
-import { bodyLimit } from "hono/body-limit";
-import { AI_AUDIO_MAX_BYTES } from "./audio-format";
-import { aiDictations, AiDictationConflict, AiDictationStartSchema, AiDictationListSchema } from "./dictations";
-import { enqueueAiDictation } from "./dictation-runtime";
-import { resolveAiAudioModel } from "./transcription";
-import { aiModelAccess } from "./model-access";
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { listCapabilities } from "../_internal/registry";
 import {
@@ -24,12 +16,16 @@ import {
   respond,
   v,
 } from "../server";
-import { coreSettings } from "../services/settings/api";
 import { logger } from "../services/logging";
+import { coreSettings } from "../services/settings/api";
 import type { AiToolApprovalContext } from "./approvals";
 import { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
+import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
+import { getAiChatQuotas } from "./chat-quotas";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { enqueueAiDictation } from "./dictation-runtime";
+import { AiDictationConflict, AiDictationListSchema, AiDictationStartSchema, aiDictations } from "./dictations";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, decodeAiFileContent, guessAiMediaType, normalizeAiFilePath } from "./files-store";
 import {
@@ -51,6 +47,15 @@ import { aiMaintenanceJobs } from "./maintenance";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { createCloudAiMemoryTool } from "./memory-tool";
+import {
+  AiMessageQueueConflict,
+  editQueuedMessage,
+  enqueueChatMessage,
+  listQueuedMessages,
+  queuedMessageAccepted,
+  updateQueuedMessage,
+} from "./message-queue";
+import { aiModelAccess } from "./model-access";
 import { personalAiModelPolicy } from "./personal-agent";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
@@ -61,9 +66,11 @@ import {
   AiTurnActionSchema,
   abortAiTurn,
   listPendingAiTurnActions,
+  prepareAiChatTurn,
   submitAiChatTurn,
   submitAiCompaction,
   submitAiTurnAction,
+  wakeAiMessageQueue,
 } from "./runtime";
 import { readAiSettingsState, selectAiModelProfile } from "./settings";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
@@ -74,6 +81,7 @@ import { aiConversations } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolPromptHints } from "./tools";
+import { resolveAiAudioModel } from "./transcription";
 import type { AiConversation, AiModelPolicy, AiTurn } from "./types";
 
 /** Everything a resolved, authorized request needs to run against the shared runtime. */
@@ -574,7 +582,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const messageId = (c.req.param("messageId") ?? "");
+        const messageId = c.req.param("messageId") ?? "";
         if (!messageId) return respond(c, fail(err.badInput("Invalid message id.")));
         const input = c.req.valid("json");
         const feedback = await aiConversations.setMessageFeedback({
@@ -593,7 +601,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const messageId = (c.req.param("messageId") ?? "");
+        const messageId = c.req.param("messageId") ?? "";
         if (!messageId) return respond(c, fail(err.badInput("Invalid message id.")));
         return (await aiConversations.clearMessageFeedback({
           conversationId: conversation.id,
@@ -766,30 +774,36 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         return conversation ? respond(c, ok(await listQueuedMessages(conversation.id))) : notFound(c);
       })
-      .patch("/conversations/:conversationId/queue/:messageId", v("json", z.object({text:z.string().trim().min(1).max(20000)}).strict()), async (c) => {
-        const ctx = await resolveContext(c);
-        if (ctx instanceof Response) return ctx;
-        const conversation = await loadConversation(c, ctx);
-        if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
-        return await editQueuedMessage(conversation.id,(c.req.param("messageId") ?? ""),c.req.valid("json").text) ? respond(c,ok({ok:true})) : notFound(c);
-      })
+      .patch(
+        "/conversations/:conversationId/queue/:messageId",
+        v("json", z.object({ text: z.string().trim().min(1).max(20000) }).strict()),
+        async (c) => {
+          const ctx = await resolveContext(c);
+          if (ctx instanceof Response) return ctx;
+          const conversation = await loadConversation(c, ctx);
+          if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
+          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text))
+            ? respond(c, ok({ ok: true }))
+            : notFound(c);
+        },
+      )
       .delete("/conversations/:conversationId/queue/:messageId", async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
-        if (!await updateQueuedMessage(conversation.id, (c.req.param("messageId") ?? ""), "cancel")) return notFound(c);
+        if (!(await updateQueuedMessage(conversation.id, c.req.param("messageId") ?? "", "cancel"))) return notFound(c);
         wakeAiMessageQueue(conversation.id);
-        return respond(c, ok({ok:true}));
+        return respond(c, ok({ ok: true }));
       })
       .post("/conversations/:conversationId/queue/:messageId/retry", async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
-        if (!await updateQueuedMessage(conversation.id, (c.req.param("messageId") ?? ""), "retry")) return notFound(c);
+        if (!(await updateQueuedMessage(conversation.id, c.req.param("messageId") ?? "", "retry"))) return notFound(c);
         wakeAiMessageQueue(conversation.id);
-        return respond(c, ok({ok:true}));
+        return respond(c, ok({ ok: true }));
       })
       .put("/conversations/:conversationId/draft", v("json", AiSaveConversationDraftInputSchema), async (c) => {
         const ctx = await resolveContext(c);
@@ -820,7 +834,7 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
         const body = c.req.valid("json");
-        if (body.queueId && await queuedMessageAccepted(conversation.id, body.queueId)) return respond(c,ok({queued:true}));
+        if (body.queueId && (await queuedMessageAccepted(conversation.id, body.queueId))) return respond(c, ok({ queued: true }));
         if (conversation.draft.revision !== body.draftRevision) {
           return respond(c, fail(err.conflict("The conversation draft changed in another session.")));
         }
@@ -882,7 +896,11 @@ export const aiRoutes = (() => {
             201,
           );
         } catch (error) {
-          if (error instanceof AiMessageQueueConflict || (error instanceof Error && error.message === "Queued messages must be sent first.")) return respond(c,fail(err.conflict(error.message)));
+          if (
+            error instanceof AiMessageQueueConflict ||
+            (error instanceof Error && error.message === "Queued messages must be sent first.")
+          )
+            return respond(c, fail(err.conflict(error.message)));
           return toAiErrorResponse(c, error);
         }
       })
@@ -912,7 +930,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const messageId = (c.req.param("messageId") ?? "");
+        const messageId = c.req.param("messageId") ?? "";
 
         const messages = await aiConversations.listMessages({ conversationId: conversation.id });
         const target = messages.find((m) => m.shortId === messageId);
@@ -985,7 +1003,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const messageId = (c.req.param("messageId") ?? "");
+        const messageId = c.req.param("messageId") ?? "";
 
         const messages = await aiConversations.listMessages({ conversationId: conversation.id });
         const target = messages.find((m) => m.shortId === messageId);
@@ -1152,9 +1170,16 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        return respond(c, ok(await aiDictations.discardOperation({
-          conversationId: conversation.id, userId: ctx.ownerUserId, operationId: c.req.valid("json").operationId,
-        })));
+        return respond(
+          c,
+          ok(
+            await aiDictations.discardOperation({
+              conversationId: conversation.id,
+              userId: ctx.ownerUserId,
+              operationId: c.req.valid("json").operationId,
+            }),
+          ),
+        );
       })
       .get("/conversations/:conversationId/dictations", v("query", AiDictationListSchema), async (c) => {
         const ctx = await resolveContext(c);
@@ -1240,9 +1265,9 @@ export const aiRoutes = (() => {
           return respond(c, fail(err.badInput(`File exceeds the ${Math.floor(AI_FILES_MAX_FILE_BYTES_DEFAULT / (1024 * 1024))} MB limit`)));
         }
         const name = (file.name || "upload").replaceAll("/", "_").replaceAll("\\", "_").replaceAll("\0", "").slice(0, 160) || "upload";
-        const directory=form?.get("directory") ?? "/";
-        if(typeof directory!=="string")return respond(c,fail(err.badInput("Invalid directory")));
-        const path = normalizeAiFilePath(`${directory.replace(/\/$/,"")}/${name}`);
+        const directory = form?.get("directory") ?? "/";
+        if (typeof directory !== "string") return respond(c, fail(err.badInput("Invalid directory")));
+        const path = normalizeAiFilePath(`${directory.replace(/\/$/, "")}/${name}`);
         if (!path) return respond(c, fail(err.badInput("Invalid file name")));
         if (aiProjectFilePathFromMount(path) !== null) return respond(c, fail(err.badInput("The /project namespace is reserved.")));
 
@@ -1256,7 +1281,8 @@ export const aiRoutes = (() => {
           return respond(c, ok({ file: stat }));
         } catch (error) {
           logger("ai:files").warn("Conversation upload failed", {
-            code: "file_upload_failed", conversationId: conversation.id,
+            code: "file_upload_failed",
+            conversationId: conversation.id,
             errorType: error instanceof Error ? error.name : "unknown",
           });
           return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Upload failed")));

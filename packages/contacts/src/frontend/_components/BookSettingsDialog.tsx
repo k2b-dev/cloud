@@ -1,14 +1,14 @@
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import { Button, IconButton, Placeholder, prompts, useLocale } from "@k2b/ui";
-import type { ResourceApiKey } from "@k2b/cloud/access/ui";
-import type { AccessEntry } from "@k2b/cloud/contracts";
 import { Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactBook, ContactTag } from "../../service";
 import { readErrorMessage } from "./api";
-import { bookMessages } from "./book-messages";
 import BookSettingsForm from "./BookSettingsForm";
+import { bookMessages } from "./book-messages";
 
 const settingsDialogFrameClass = "dialog-fixed-frame flex min-h-0 flex-col overflow-hidden";
 

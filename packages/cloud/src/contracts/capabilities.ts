@@ -1,5 +1,12 @@
-import { CapabilityStreamSchema, CapabilityStreamPolicySchema, type CapabilityStream, type CapabilityStreamDefinition } from "./capability-streams";
+import {
+  type CapabilityStream,
+  type CapabilityStreamDefinition,
+  CapabilityStreamPolicySchema,
+  CapabilityStreamSchema,
+} from "./capability-streams";
+
 export * from "./capability-streams";
+
 import { z } from "zod";
 import { CommandPathSchema } from "./commands";
 import type { AccessSubject, RequestActor, User } from "./shared";

@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { app } from "./config";
 import { newShortId } from "./lib/short-id";
 import { migrate } from "./migrate";
@@ -8,7 +9,7 @@ import type { MailRequestContext } from "./service/auth";
 import { createMailbox } from "./service/mailboxes";
 import { setConversationReminder } from "./service/reminders";
 
-const suite = process.env.MAIL_INTEGRATION_TESTS === "1" ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 const contextFor = (user: { id: string; uid: string }): MailRequestContext => ({
   actor: {

@@ -1,9 +1,9 @@
-import { executeAiTask } from "../../ai/task-execution";
-import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
 import { StructuredOutputError } from "@k2b/nessi";
 import type { Job, Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
 import { isAiSettingsError, runAiStructured } from "../../ai";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
+import { executeAiTask } from "../../ai/task-execution";
 
 import {
   claimWorkflowAiTask,
@@ -72,13 +72,17 @@ export const settleWorkflowAiAttemptFailure = async (
 };
 
 export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructured: StructuredRunner, signal: AbortSignal) =>
-  executeAiTask(task.request, {
-    appId: task.appId,
-    attribution: { workflowRunId: task.runId, stepKey: task.stepKey, userId: task.usageUserId },
-    requestedModelId: task.modelProfileId,
-    signal,
-    taskPrefix: "workflow",
-  }, runStructured);
+  executeAiTask(
+    task.request,
+    {
+      appId: task.appId,
+      attribution: { workflowRunId: task.runId, stepKey: task.stepKey, userId: task.usageUserId },
+      requestedModelId: task.modelProfileId,
+      signal,
+      taskPrefix: "workflow",
+    },
+    runStructured,
+  );
 
 const retryableError = (error: unknown): boolean => {
   if (error instanceof AiBackgroundAdmissionError) return error.retryable;

@@ -3,8 +3,8 @@ import { prompts, toast } from "@k2b/ui";
 import { type Accessor, onCleanup, type Setter } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import { jsonFetch } from "../http";
-import { type BaseSettingsSaveResult, openPulseBaseSettingsDialog } from "./base-settings-dialog";
 import { usePulseMessages } from "../use-messages";
+import { type BaseSettingsSaveResult, openPulseBaseSettingsDialog } from "./base-settings-dialog";
 
 type BaseControllerDeps = {
   bases: Accessor<PulseBase[]>;
@@ -125,10 +125,11 @@ export const createBaseController = (deps: BaseControllerDeps) => {
 
   const clearData = async (base: PulseBase) => {
     if (!requireWritable()) return;
-    const confirmed = await prompts.confirm(
-      t().clearDataConfirm({ name: base.name }),
-      { title: t().clearPulseData, variant: "danger", confirmText: t().clearData },
-    );
+    const confirmed = await prompts.confirm(t().clearDataConfirm({ name: base.name }), {
+      title: t().clearPulseData,
+      variant: "danger",
+      confirmText: t().clearData,
+    });
     if (disposed || !confirmed || !requireWritable()) return;
 
     deps.setLoading(true);
@@ -147,10 +148,11 @@ export const createBaseController = (deps: BaseControllerDeps) => {
 
   const deleteBase = async (base: PulseBase) => {
     if (!requireWritable()) return false;
-    const confirmed = await prompts.confirm(
-      t().deleteBaseConfirm({ name: base.name }),
-      { title: t().deletePulseBase, variant: "danger", confirmText: t().delete },
-    );
+    const confirmed = await prompts.confirm(t().deleteBaseConfirm({ name: base.name }), {
+      title: t().deletePulseBase,
+      variant: "danger",
+      confirmText: t().delete,
+    });
     if (disposed || !confirmed || !requireWritable()) return false;
 
     deps.setLoading(true);

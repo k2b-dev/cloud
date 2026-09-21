@@ -1,5 +1,5 @@
-import { ASSISTANT_DATA_ANALYSIS_SKILL } from "./data-analysis-skill";
 import { ASSISTANT_CODE_MODE_SKILL } from "./code-mode-skill";
+import { ASSISTANT_DATA_ANALYSIS_SKILL } from "./data-analysis-skill";
 import { CLOUD_GRIDS_INSTRUCTIONS, CLOUD_GRIDS_QUERY_REFERENCE } from "./grids-skill";
 import type { AiSkillTemplate } from "./skills";
 
@@ -450,7 +450,8 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
     version: 1,
     key: "assistant:scheduled-tasks",
     name: "scheduled-tasks",
-    description: "Create and manage one-time reminders, delayed jobs and recurring scheduled background tasks in Cloud Assistant. Use for requests such as remind me tomorrow, check in an hour, every morning, or changing, pausing, resuming and repairing a scheduled task, including missing permissions or failed runs.",
+    description:
+      "Create and manage one-time reminders, delayed jobs and recurring scheduled background tasks in Cloud Assistant. Use for requests such as remind me tomorrow, check in an hour, every morning, or changing, pausing, resuming and repairing a scheduled task, including missing permissions or failed runs.",
     instructions: SCHEDULED_TASKS_INSTRUCTIONS,
   },
   {

@@ -1,7 +1,7 @@
 import { consumeCommandLink, registerCommandHandler } from "@k2b/cloud/browser/commands";
 import { invokeCapabilityWithDataSchema, listCapabilityCatalog } from "@k2b/cloud/capabilities";
-import { resolveCapabilityResourceReader, type CloudResourceRef } from "@k2b/cloud/contracts";
-import { type DateContext } from "@k2b/stdlib";
+import { type CloudResourceRef, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
+import type { DateContext } from "@k2b/stdlib";
 import { prompts, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { z } from "zod";

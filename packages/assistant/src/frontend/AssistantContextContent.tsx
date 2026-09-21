@@ -1,3 +1,11 @@
+import type { AiProjectFile } from "@k2b/cloud/ai";
+import {
+  type CapabilityCatalogClientResult,
+  type CapabilityClientResult,
+  invokeCapability,
+  listCapabilityCatalog,
+} from "@k2b/cloud/capabilities";
+import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
 import { downloadFileFromContent } from "@k2b/stdlib/browser";
 import {
   DetailPanel,
@@ -7,16 +15,9 @@ import {
   type FileTreeEntry,
   type FileViewContent,
   MarkdownView,
-  prompts,ScrollArea,
+  prompts,
+  ScrollArea,
 } from "@k2b/ui";
-import type { AiProjectFile } from "@k2b/cloud/ai";
-import {
-  type CapabilityCatalogClientResult,
-  type CapabilityClientResult,
-  invokeCapability,
-  listCapabilityCatalog,
-} from "@k2b/cloud/capabilities";
-import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
 import { For, type JSX, Show } from "solid-js";
 import { assistantBrowserCopy, assistantBrowserText, useAssistantText } from "./ui-copy";
 
@@ -41,18 +42,20 @@ export const assistantContextCountTitle = (count: number, singular: string, plur
 export function AssistantContextSection(props: { title: string; identity?: boolean; action?: JSX.Element; children: JSX.Element }) {
   return (
     <section class="flex flex-col gap-2">
-      <Show when={props.title}><div class="flex min-h-7 items-center justify-between gap-2">
-        <h2
-          class={
-            props.identity
-              ? "min-w-0 flex-1 text-sm font-semibold text-[var(--ui-app-accent-text)]"
-              : "min-w-0 flex-1 text-xs font-medium text-secondary"
-          }
-        >
-          {props.title}
-        </h2>
-        {props.action}
-      </div></Show>
+      <Show when={props.title}>
+        <div class="flex min-h-7 items-center justify-between gap-2">
+          <h2
+            class={
+              props.identity
+                ? "min-w-0 flex-1 text-sm font-semibold text-[var(--ui-app-accent-text)]"
+                : "min-w-0 flex-1 text-xs font-medium text-secondary"
+            }
+          >
+            {props.title}
+          </h2>
+          {props.action}
+        </div>
+      </Show>
       {props.children}
     </section>
   );
@@ -70,7 +73,14 @@ export function AssistantContextRow(props: {
   trailing?: JSX.Element;
 }) {
   const text = useAssistantText();
-  const leading = () => (props.icon ? <i class={props.icon} style={{ width: "1rem", height: "1rem", "font-size": "1rem", "line-height": "1rem", "flex-shrink": 0 }} aria-hidden="true" /> : undefined);
+  const leading = () =>
+    props.icon ? (
+      <i
+        class={props.icon}
+        style={{ width: "1rem", height: "1rem", "font-size": "1rem", "line-height": "1rem", "flex-shrink": 0 }}
+        aria-hidden="true"
+      />
+    ) : undefined;
   const trailing = () => (
     <>
       <Show when={props.showScope && props.scope === "project"}>
@@ -231,7 +241,9 @@ export const openAssistantCloudReference = async (title: string, ref: CloudResou
     const resource = await resolveAssistantCloudResource(ref);
     return resource.href
       ? confirmOpenAssistantLink(title, resource.href)
-      : void prompts.error(assistantBrowserText("This Cloud resource has no open link."), { title: assistantBrowserText("Could not open reference") });
+      : void prompts.error(assistantBrowserText("This Cloud resource has no open link."), {
+          title: assistantBrowserText("Could not open reference"),
+        });
   } catch (error) {
     return void prompts.error(error instanceof Error ? error.message : assistantBrowserText("The Cloud resource could not be resolved."), {
       title: assistantBrowserText("Could not open reference"),
@@ -332,7 +344,13 @@ export function AssistantContextRows(props: { children: JSX.Element }) {
 
 export function AssistantContextViewAll(props: { onClick: () => void; count?: number }) {
   const text = useAssistantText();
-  return <AssistantContextRow icon="ti ti-eye" title={props.count === undefined ? text("View all") : `${text("View all")} · ${props.count}`} onClick={props.onClick} />;
+  return (
+    <AssistantContextRow
+      icon="ti ti-eye"
+      title={props.count === undefined ? text("View all") : `${text("View all")} · ${props.count}`}
+      onClick={props.onClick}
+    />
+  );
 }
 
 export function AssistantContextEmpty(props: { children: JSX.Element }) {

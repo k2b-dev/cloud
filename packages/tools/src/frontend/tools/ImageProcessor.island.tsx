@@ -19,12 +19,12 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DEFAULT_ADJ, PRESETS } from "./image-processor/constants";
-import { imageProcessorMessages, type PresetLabelKey, presetLabelKeys } from "./image-processor/messages";
 import { type CropHandle, createCropRect, moveCropRect, resizeCropRect, toPixelCropRect } from "./image-processor/crop-geometry";
 import { buildImagePipeline, makePreviewSource, rotatedImageDimensions } from "./image-processor/image-processing";
 import MarkupOverlay from "./image-processor/MarkupOverlay";
 import { composeCropBounds, FULL_CROP_BOUNDS, restoreMarkupFromCrop, transformMarkupForCrop } from "./image-processor/markup";
 import { commitMarkupHistory, redoMarkupHistory, undoMarkupHistory } from "./image-processor/markup-history";
+import { imageProcessorMessages, type PresetLabelKey, presetLabelKeys } from "./image-processor/messages";
 import type {
   Adjustments,
   CropAspect,
@@ -1233,7 +1233,12 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </IconButton>
                   </Tooltip.Anchor>
                 </Show>
-                <IconButton label={t().showImageCanvas} size="sm" class="h-8 w-8 shrink-0 lg:hidden" onClick={() => setInspectorOpen(false)}>
+                <IconButton
+                  label={t().showImageCanvas}
+                  size="sm"
+                  class="h-8 w-8 shrink-0 lg:hidden"
+                  onClick={() => setInspectorOpen(false)}
+                >
                   <i class="ti ti-x" aria-hidden="true" />
                 </IconButton>
               </>
@@ -1425,7 +1430,13 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                             </Dropdown.Trigger>
                           </Dropdown.Root>
                           <Show when={!cropActive() && activeImage()?.cropped}>
-                            <IconButton label={t().resetCrop} size="sm" onClick={resetCrop} loading={cropBusy()} loadingLabel={t().resettingCrop}>
+                            <IconButton
+                              label={t().resetCrop}
+                              size="sm"
+                              onClick={resetCrop}
+                              loading={cropBusy()}
+                              loadingLabel={t().resettingCrop}
+                            >
                               <i class="ti ti-arrow-back-up" />
                             </IconButton>
                           </Show>

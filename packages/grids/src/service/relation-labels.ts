@@ -1,11 +1,11 @@
 import { sql } from "bun";
 import type { FilterTree } from "../contracts";
-import { compileFilter, renderClause } from "./filter-compiler";
 import type { DslSqlFederatedRecordSource } from "../query-dsl/sql-compiler-types";
 import { assertFederatedPublication, buildDslSqlRecordSource, buildFederatedFieldSqlMap } from "../query-dsl/sql-record-source";
 import type { SqlClient } from "./audit";
 import { applyComputedProjections, buildFormulaSqlProjections } from "./computed-projections";
 import { listByTable as listFields } from "./fields";
+import { compileFilter, renderClause } from "./filter-compiler";
 import { storedLocalCalculationSqlMap } from "./local-calculation-storage";
 import { liveRecordParentJoinSql } from "./parent-checks";
 import { applyFinalizedComputedAccess, mapRecordCalculationData } from "./record-persistence";

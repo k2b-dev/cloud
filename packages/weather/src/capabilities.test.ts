@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { ok } from "@k2b/stdlib";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
@@ -7,8 +7,8 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { audit, weatherService } from "@k2b/cloud/services";
+import { ok } from "@k2b/stdlib";
 import { decodeWeatherCapabilityCursor, weatherCapabilities } from "./capabilities";
 import { CurrentWeatherSchema } from "./contracts";
 

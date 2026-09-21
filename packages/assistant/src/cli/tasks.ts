@@ -1,5 +1,5 @@
+import type { AiChatTaskView as AssistantChatTask, AiChatTaskOccurrenceView as AssistantChatTaskOccurrence } from "@k2b/cloud/ai";
 import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
-import type { AiChatTaskOccurrenceView as AssistantChatTaskOccurrence, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
 import { idempotentJsonRequest, jsonRequest, printRows, printValue, queryString, readApi, requireConfirmation } from "./shared";
 
 type TaskDetail = { task: AssistantChatTask; occurrences: AssistantChatTaskOccurrence[] };

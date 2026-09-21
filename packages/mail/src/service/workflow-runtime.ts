@@ -1,3 +1,4 @@
+import { env } from "@k2b/cloud/config";
 import { createRuntimeLifecycle } from "@k2b/cloud/services";
 import { AI_WORKFLOW_ACTIONS, createWorkflowBuiltinActionPorts, type WorkflowExecutionError } from "@k2b/cloud/workflows";
 import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@k2b/cloud/workflows/ai";
@@ -11,8 +12,8 @@ import {
   wakeExpiredWorkflowRuns,
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
-import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { authorizeMailWorkflowExecution } from "../workflows/actions";
+import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { mailWorkflows } from "../workflows/module";
 import { renderMailLiquidTemplate } from "./template-rendering";
 import { publishMailWorkflowCollaborationEventFromOutput } from "./workflow-collaboration-events";
@@ -21,7 +22,7 @@ import { createMailWorkflowProjectedState, restoreMailWorkflowProjectedState } f
 import { createMailWorkflowValueResolver } from "./workflow-runtime-values";
 import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } from "./workflow-schedule-runtime";
 
-const workerId = `mail:${Bun.env.HOSTNAME ?? "local"}:${process.pid}`;
+const workerId = `mail:${env.HOSTNAME ?? "local"}:${process.pid}`;
 
 const aiActionNames = new Set(Object.keys(AI_WORKFLOW_ACTIONS));
 const declaredActions = createWorkflowActionPort(mailWorkflows, {

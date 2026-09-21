@@ -121,7 +121,13 @@ export const resolvePublishedCustomAppRuntime = async (input: PublishedCustomApp
   }
   // Records membership stays in custom-app-records-query: it needs the
   // request's search/cursor and must replay the current published query.
-  const available = async (target: "page" | "block" | "action", query: string | undefined, blockId?: string, actionId?: string, client?: SqlClient) => {
+  const available = async (
+    target: "page" | "block" | "action",
+    query: string | undefined,
+    blockId?: string,
+    actionId?: string,
+    client?: SqlClient,
+  ) => {
     if (!query) return true;
     const capability = global.availabilityCapabilities.get(availabilityKey(target, page.id, blockId, actionId));
     if (!capability) return false;

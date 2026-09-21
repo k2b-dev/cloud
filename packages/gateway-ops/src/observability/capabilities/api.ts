@@ -5,8 +5,9 @@
  * did the assistant actually do" without scraping HTML. Read-only: the
  * dispatcher owns every write to this history.
  */
-import { type AuthContext, auth, rateLimit, respond, v } from "@k2b/cloud/server";
+
 import { listCapabilityExecutions, summarizeCapabilityExecutions } from "@k2b/cloud/capabilities/store";
+import { type AuthContext, auth, rateLimit, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -52,7 +53,9 @@ const app = new Hono<AuthContext>()
   .use(auth.requireRole("admin"))
 
   /** Counts and latency for one range — the call that answers "is anything failing". */
-  .get("/", v("query", FilterQuerySchema), async (c) => respond(c, ok(await summarizeCapabilityExecutions(storeFilter(c.req.valid("query"))))))
+  .get("/", v("query", FilterQuerySchema), async (c) =>
+    respond(c, ok(await summarizeCapabilityExecutions(storeFilter(c.req.valid("query"))))),
+  )
 
   .get("/executions", v("query", ListQuerySchema), async (c) => {
     const query = c.req.valid("query");

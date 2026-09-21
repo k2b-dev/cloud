@@ -53,10 +53,19 @@ function filesCommands(locale?: string) {
     }),
   });
   const browseFlags = {
-    sort: flag.enum(["name", "modified", "size"], { default: "name", description: t({ en: "Sort the complete result before pagination", de: "Gesamtes Ergebnis vor der Paginierung sortieren" }) }),
+    sort: flag.enum(["name", "modified", "size"], {
+      default: "name",
+      description: t({ en: "Sort the complete result before pagination", de: "Gesamtes Ergebnis vor der Paginierung sortieren" }),
+    }),
     order: flag.enum(["asc", "desc"], { default: "asc", description: t({ en: "Sort direction", de: "Sortierreihenfolge" }) }),
     type: flag.enum(["all", "files", "directories"], { default: "all", description: t({ en: "Entry type", de: "Eintragsart" }) }),
-    noGroupFolders: flag.boolean({ name: "no-group-folders", description: t({ en: "Mix folders and files; folders are grouped first by default", de: "Ordner und Dateien mischen; standardmäßig stehen Ordner zuerst" }) }),
+    noGroupFolders: flag.boolean({
+      name: "no-group-folders",
+      description: t({
+        en: "Mix folders and files; folders are grouped first by default",
+        de: "Ordner und Dateien mischen; standardmäßig stehen Ordner zuerst",
+      }),
+    }),
   };
   const warn = (ctx: CloudCliContext, issue: string | null) => {
     if (issue) ctx.error(`${t({ en: "Storage status", de: "Ablagenstatus" })}: ${issue}`);
@@ -101,8 +110,14 @@ function filesCommands(locale?: string) {
       "admin operations": t({ en: "Resume pending directory operations", de: "Ausstehende Verzeichnisaktionen fortsetzen" }),
       documents: t({ en: "Create documents for the browser editors", de: "Dokumente für die Browser-Editoren anlegen" }),
       trash: t({ en: "List and restore entries in the trash", de: "Einträge im Papierkorb anzeigen und wiederherstellen" }),
-      versions: t({ en: "Inspect, comment, download or restore file versions", de: "Dateiversionen prüfen, kommentieren, herunterladen oder wiederherstellen" }),
-      shares: t({ en: "Create, list and revoke public shares and inboxes", de: "Öffentliche Freigaben und Eingänge anlegen, auflisten und widerrufen" }),
+      versions: t({
+        en: "Inspect, comment, download or restore file versions",
+        de: "Dateiversionen prüfen, kommentieren, herunterladen oder wiederherstellen",
+      }),
+      shares: t({
+        en: "Create, list and revoke public shares and inboxes",
+        de: "Öffentliche Freigaben und Eingänge anlegen, auflisten und widerrufen",
+      }),
       favorites: t({ en: "Keep quick access to favorite entries", de: "Schnellzugriff auf Favoriten pflegen" }),
     },
     commands: [
@@ -133,7 +148,14 @@ function filesCommands(locale?: string) {
           const result = await ctx.readJson<DirectoryResult>(
             await api(ctx).bases[":baseId"].entries.$get({
               param: { baseId: args.base },
-              query: { path: flags.path, after: flags.after, sort: flags.sort, order: flags.order, type: flags.type, groupFolders: flags.noGroupFolders ? "false" : "true" },
+              query: {
+                path: flags.path,
+                after: flags.after,
+                sort: flags.sort,
+                order: flags.order,
+                type: flags.type,
+                groupFolders: flags.noGroupFolders ? "false" : "true",
+              },
             }),
           );
           printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
@@ -175,15 +197,36 @@ function filesCommands(locale?: string) {
         },
       }),
       command("archive", {
-        summary: t({ en: "Download several entries or folders as one ZIP directly from Filegate", de: "Mehrere Einträge oder Ordner als ein ZIP direkt von Filegate herunterladen" }),
-        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Entry paths relative to the base (1-100)", de: "Eintragspfade relativ zur Ablage (1-100)" }) }) },
-        flags: { out: flag.string({ required: true, description: t({ en: "New local ZIP file; existing paths are never overwritten", de: "Neue lokale ZIP-Datei; bestehende Pfade werden nie überschrieben" }) }) },
+        summary: t({
+          en: "Download several entries or folders as one ZIP directly from Filegate",
+          de: "Mehrere Einträge oder Ordner als ein ZIP direkt von Filegate herunterladen",
+        }),
+        args: {
+          ...baseArgs,
+          paths: arg.rest({
+            description: t({ en: "Entry paths relative to the base (1-100)", de: "Eintragspfade relativ zur Ablage (1-100)" }),
+          }),
+        },
+        flags: {
+          out: flag.string({
+            required: true,
+            description: t({
+              en: "New local ZIP file; existing paths are never overwritten",
+              de: "Neue lokale ZIP-Datei; bestehende Pfade werden nie überschrieben",
+            }),
+          }),
+        },
         examples: ["cld filesv2 archive <base-id> Documents Photos/team.jpg --out ./selection.zip"],
         async run({ ctx, args, flags }) {
           if (!flags.out) throw new Error(t({ en: "Pass --out with a new file path.", de: "Gib mit --out einen neuen Dateipfad an." }));
           if (!args.paths.length) throw new Error(t({ en: "Pass at least one path.", de: "Gib mindestens einen Pfad an." }));
           const result = await downloadFile(ctx, flags.out, async (signal) =>
-            ctx.readJson<ArchiveDownload>(await api(ctx).bases[":baseId"].archive.$post({ param: { baseId: args.base }, json: { paths: args.paths } }, { init: { signal } })),
+            ctx.readJson<ArchiveDownload>(
+              await api(ctx).bases[":baseId"].archive.$post(
+                { param: { baseId: args.base }, json: { paths: args.paths } },
+                { init: { signal } },
+              ),
+            ),
           );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Saved", de: "Gespeichert" })}: ${result.path} (${result.bytes} bytes)`);
         },
@@ -193,7 +236,13 @@ function filesCommands(locale?: string) {
         args: { ...baseArgs, query: arg.required({ description: t({ en: "Name fragment", de: "Namensbestandteil" }) }) },
         flags: {
           path: flag.string({ default: "", description: t({ en: "Folder to search below", de: "Ordner, unterhalb dessen gesucht wird" }) }),
-          scope: flag.enum(["tree", "folder"], { default: "tree", description: t({ en: "tree searches all levels below the folder, folder only its direct entries", de: "tree durchsucht alle Ebenen unter dem Ordner, folder nur seine direkten Einträge" }) }),
+          scope: flag.enum(["tree", "folder"], {
+            default: "tree",
+            description: t({
+              en: "tree searches all levels below the folder, folder only its direct entries",
+              de: "tree durchsucht alle Ebenen unter dem Ordner, folder nur seine direkten Einträge",
+            }),
+          }),
           after,
           ...browseFlags,
         },
@@ -201,7 +250,16 @@ function filesCommands(locale?: string) {
           const result = await ctx.readJson<SearchResult>(
             await api(ctx).bases[":baseId"].search.$get({
               param: { baseId: args.base },
-              query: { q: args.query, path: flags.path, scope: flags.scope ?? "tree", after: flags.after, sort: flags.sort, order: flags.order, type: flags.type, groupFolders: flags.noGroupFolders ? "false" : "true" },
+              query: {
+                q: args.query,
+                path: flags.path,
+                scope: flags.scope ?? "tree",
+                after: flags.after,
+                sort: flags.sort,
+                order: flags.order,
+                type: flags.type,
+                groupFolders: flags.noGroupFolders ? "false" : "true",
+              },
             }),
           );
           printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
@@ -215,7 +273,10 @@ function filesCommands(locale?: string) {
       }),
       command("mkdir", {
         summary: t({ en: "Create a folder", de: "Ordner anlegen" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "New folder path relative to the base", de: "Neuer Ordnerpfad relativ zur Ablage" }) }) },
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "New folder path relative to the base", de: "Neuer Ordnerpfad relativ zur Ablage" }) }),
+        },
         async run({ ctx, args }) {
           const result = await ctx.readJson<EntryResult>(
             await api(ctx).bases[":baseId"].directories.$post({ param: { baseId: args.base }, json: { path: args.path } }),
@@ -237,7 +298,9 @@ function filesCommands(locale?: string) {
           expectedRevision: flag.string({
             description: t({ en: "Only replace this original revision", de: "Nur diese ursprüngliche Revision ersetzen" }),
           }),
-          replace: flag.boolean({ description: t({ en: "Replace an existing file at the target path", de: "Bestehende Datei am Zielpfad ersetzen" }) }),
+          replace: flag.boolean({
+            description: t({ en: "Replace an existing file at the target path", de: "Bestehende Datei am Zielpfad ersetzen" }),
+          }),
         },
         examples: ["cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf"],
         async run({ ctx, args, flags }) {
@@ -247,76 +310,130 @@ function filesCommands(locale?: string) {
             open: async (size, signal, idempotencyKey) =>
               ctx.readJson<UploadSession>(
                 await api(ctx).bases[":baseId"].uploads.$post(
-                  { param, json: { path: flags.to!, size, expectedRevision: flags.expectedRevision, onConflict: flags.replace ? "overwrite" : "error", idempotencyKey } },
+                  {
+                    param,
+                    json: {
+                      path: flags.to!,
+                      size,
+                      expectedRevision: flags.expectedRevision,
+                      onConflict: flags.replace ? "overwrite" : "error",
+                      idempotencyKey,
+                    },
+                  },
                   { init: { signal } },
                 ),
               ),
-            renew: async (id, signal) => ctx.readJson<UploadLease>(await api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...param, id } }, { init: { signal } })),
-            commit: async (id, signal) => ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...param, id } }, { init: { signal } })),
+            renew: async (id, signal) =>
+              ctx.readJson<UploadLease>(
+                await api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...param, id } }, { init: { signal } }),
+              ),
+            commit: async (id, signal) =>
+              ctx.readJson<EntryResult>(
+                await api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...param, id } }, { init: { signal } }),
+              ),
             abort: async (id, signal) => {
               await api(ctx).bases[":baseId"].uploads[":id"].abort.$post({ param: { ...param, id } }, { init: { signal } });
             },
           });
-          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Uploaded", de: "Hochgeladen" })}: ${result.entry.path} (${result.entry.size} bytes)`);
+          if (!printStructured(ctx, result))
+            ctx.print(`${t({ en: "Uploaded", de: "Hochgeladen" })}: ${result.entry.path} (${result.entry.size} bytes)`);
         },
       }),
       command("recent", {
         summary: t({ en: "List recently opened entries", de: "Zuletzt geöffnete Einträge auflisten" }),
         async run({ ctx }) {
           const items = await ctx.readJson<MarkedEntry[]>(await api(ctx).recent.$get());
-          printRows(ctx, items, items.map((item) => ({ base: item.base.name, baseId: item.base.id, path: item.entry.path, markedAt: item.markedAt })), [
-            { key: "base", label: t({ en: "Base", de: "Ablage" }) },
-            { key: "path", label: t({ en: "Path", de: "Pfad" }) },
-            { key: "markedAt", label: t({ en: "Opened", de: "Geöffnet" }) },
-          ]);
+          printRows(
+            ctx,
+            items,
+            items.map((item) => ({ base: item.base.name, baseId: item.base.id, path: item.entry.path, markedAt: item.markedAt })),
+            [
+              { key: "base", label: t({ en: "Base", de: "Ablage" }) },
+              { key: "path", label: t({ en: "Path", de: "Pfad" }) },
+              { key: "markedAt", label: t({ en: "Opened", de: "Geöffnet" }) },
+            ],
+          );
         },
       }),
       command("favorites list", {
         summary: t({ en: "List favorite entries", de: "Favoriten auflisten" }),
         async run({ ctx }) {
           const items = await ctx.readJson<MarkedEntry[]>(await api(ctx).favorites.$get());
-          printRows(ctx, items, items.map((item) => ({ base: item.base.name, baseId: item.base.id, path: item.entry.path })), [
-            { key: "base", label: t({ en: "Base", de: "Ablage" }) },
-            { key: "path", label: t({ en: "Path", de: "Pfad" }) },
-          ]);
+          printRows(
+            ctx,
+            items,
+            items.map((item) => ({ base: item.base.name, baseId: item.base.id, path: item.entry.path })),
+            [
+              { key: "base", label: t({ en: "Base", de: "Ablage" }) },
+              { key: "path", label: t({ en: "Path", de: "Pfad" }) },
+            ],
+          );
         },
       }),
       command("favorites add", {
         summary: t({ en: "Mark an entry as favorite", de: "Eintrag als Favorit markieren" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "Entry path relative to the base", de: "Eintragspfad relativ zur Ablage" }) }) },
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "Entry path relative to the base", de: "Eintragspfad relativ zur Ablage" }) }),
+        },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<{ favorite: boolean }>(await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: true } }));
+          const result = await ctx.readJson<{ favorite: boolean }>(
+            await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: true } }),
+          );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Favorite", de: "Favorit" })}: ${args.path}`);
         },
       }),
       command("favorites remove", {
         summary: t({ en: "Remove an entry from the favorites", de: "Eintrag aus den Favoriten entfernen" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "Entry path relative to the base", de: "Eintragspfad relativ zur Ablage" }) }) },
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "Entry path relative to the base", de: "Eintragspfad relativ zur Ablage" }) }),
+        },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<{ favorite: boolean }>(await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: false } }));
-          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Removed from favorites", de: "Aus Favoriten entfernt" })}: ${args.path}`);
+          const result = await ctx.readJson<{ favorite: boolean }>(
+            await api(ctx).bases[":baseId"].favorite.$post({ param: { baseId: args.base }, json: { path: args.path, favorite: false } }),
+          );
+          if (!printStructured(ctx, result))
+            ctx.print(`${t({ en: "Removed from favorites", de: "Aus Favoriten entfernt" })}: ${args.path}`);
         },
       }),
       command("documents create", {
-        summary: t({ en: "Create an empty office document in the configured format", de: "Leeres Office-Dokument im konfigurierten Format anlegen" }),
+        summary: t({
+          en: "Create an empty office document in the configured format",
+          de: "Leeres Office-Dokument im konfigurierten Format anlegen",
+        }),
         args: {
           ...baseArgs,
-          path: arg.required({ description: t({ en: "Target path relative to the base, without extension", de: "Zielpfad relativ zur Ablage, ohne Endung" }) }),
+          path: arg.required({
+            description: t({ en: "Target path relative to the base, without extension", de: "Zielpfad relativ zur Ablage, ohne Endung" }),
+          }),
         },
         flags: {
-          kind: flag.enum(DOCUMENT_KINDS, { default: "text", description: t({ en: "text, spreadsheet or presentation", de: "text, spreadsheet oder presentation" }) }),
+          kind: flag.enum(DOCUMENT_KINDS, {
+            default: "text",
+            description: t({ en: "text, spreadsheet or presentation", de: "text, spreadsheet oder presentation" }),
+          }),
         },
         examples: ["cld filesv2 documents create <base-id> Documents/Minutes --kind text"],
         async run({ ctx, args, flags }) {
           const result = await ctx.readJson<EntryResult>(
-            await api(ctx).bases[":baseId"].documents.$post({ param: { baseId: args.base }, json: { path: args.path, kind: flags.kind ?? "text" } }),
+            await api(ctx).bases[":baseId"].documents.$post({
+              param: { baseId: args.base },
+              json: { path: args.path, kind: flags.kind ?? "text" },
+            }),
           );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${result.entry.path}`);
         },
       }),
       command("edit-url", {
-        summary: t({ en: "Print the browser address that opens a file in the editor", de: "Browser-Adresse ausgeben, die eine Datei im Editor öffnet" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }) },
+        summary: t({
+          en: "Print the browser address that opens a file in the editor",
+          de: "Browser-Adresse ausgeben, die eine Datei im Editor öffnet",
+        }),
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }),
+        },
         async run({ ctx, args }) {
           const url = new URL(editorUrl(args.base, args.path), ctx.options.server).href;
           if (!printStructured(ctx, { url })) ctx.print(url);
@@ -324,53 +441,93 @@ function filesCommands(locale?: string) {
       }),
       command("rename", {
         summary: t({ en: "Rename a file or folder", de: "Datei oder Ordner umbenennen" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "Path relative to the base", de: "Pfad relativ zur Ablage" }) }), name: arg.required({ description: t({ en: "New name", de: "Neuer Name" }) }) },
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "Path relative to the base", de: "Pfad relativ zur Ablage" }) }),
+          name: arg.required({ description: t({ en: "New name", de: "Neuer Name" }) }),
+        },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].rename.$post({ param: { baseId: args.base }, json: { path: args.path, name: args.name } }));
+          const result = await ctx.readJson<EntryResult>(
+            await api(ctx).bases[":baseId"].rename.$post({ param: { baseId: args.base }, json: { path: args.path, name: args.name } }),
+          );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Renamed", de: "Umbenannt" })}: ${result.entry.path}`);
         },
       }),
       command("move", {
         summary: t({ en: "Move entries into a folder of the same base", de: "Einträge in einen Ordner derselben Ablage verschieben" }),
         args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Paths relative to the base", de: "Pfade relativ zur Ablage" }) }) },
-        flags: { to: flag.string({ required: true, description: t({ en: "Target folder relative to the base", de: "Zielordner relativ zur Ablage" }) }) },
-        async run({ ctx, args, flags }) {
-          const result = await ctx.readJson<EntriesResult>(await api(ctx).bases[":baseId"].move.$post({ param: { baseId: args.base }, json: { paths: args.paths, folder: flags.to! } }));
-          printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [{ key: "path", label: t({ en: "Path", de: "Pfad" }) }, { key: "ok", label: "OK" }, { key: "error", label: t({ en: "Error", de: "Fehler" }) }]);
-          if (result.results.some(item => !item.ok)) return 1;
-        },
-      }),
-      command("copy", {
-        summary: t({ en: "Copy entries into a folder of this or another base", de: "Einträge in einen Ordner dieser oder einer anderen Ablage kopieren" }),
-        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Paths relative to the base", de: "Pfade relativ zur Ablage" }) }) },
         flags: {
-          to: flag.string({ required: true, description: t({ en: "Target folder relative to the target base", de: "Zielordner relativ zur Zielablage" }) }),
-          "target-base": flag.string({ description: t({ en: "Target base ID; defaults to the source base", de: "Ziel-Ablage-ID; Standard ist die Quellablage" }) }),
+          to: flag.string({
+            required: true,
+            description: t({ en: "Target folder relative to the base", de: "Zielordner relativ zur Ablage" }),
+          }),
         },
         async run({ ctx, args, flags }) {
           const result = await ctx.readJson<EntriesResult>(
-            await api(ctx).bases[":baseId"].copy.$post({ param: { baseId: args.base }, json: { paths: args.paths, targetBaseId: flags["target-base"] ?? args.base, folder: flags.to! } }),
+            await api(ctx).bases[":baseId"].move.$post({ param: { baseId: args.base }, json: { paths: args.paths, folder: flags.to! } }),
           );
-          printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [{ key: "path", label: t({ en: "Path", de: "Pfad" }) }, { key: "ok", label: "OK" }, { key: "error", label: t({ en: "Error", de: "Fehler" }) }]);
-          if (result.results.some(item => !item.ok)) return 1;
+          printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [
+            { key: "path", label: t({ en: "Path", de: "Pfad" }) },
+            { key: "ok", label: "OK" },
+            { key: "error", label: t({ en: "Error", de: "Fehler" }) },
+          ]);
+          if (result.results.some((item) => !item.ok)) return 1;
+        },
+      }),
+      command("copy", {
+        summary: t({
+          en: "Copy entries into a folder of this or another base",
+          de: "Einträge in einen Ordner dieser oder einer anderen Ablage kopieren",
+        }),
+        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Paths relative to the base", de: "Pfade relativ zur Ablage" }) }) },
+        flags: {
+          to: flag.string({
+            required: true,
+            description: t({ en: "Target folder relative to the target base", de: "Zielordner relativ zur Zielablage" }),
+          }),
+          "target-base": flag.string({
+            description: t({ en: "Target base ID; defaults to the source base", de: "Ziel-Ablage-ID; Standard ist die Quellablage" }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const result = await ctx.readJson<EntriesResult>(
+            await api(ctx).bases[":baseId"].copy.$post({
+              param: { baseId: args.base },
+              json: { paths: args.paths, targetBaseId: flags["target-base"] ?? args.base, folder: flags.to! },
+            }),
+          );
+          printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [
+            { key: "path", label: t({ en: "Path", de: "Pfad" }) },
+            { key: "ok", label: "OK" },
+            { key: "error", label: t({ en: "Error", de: "Fehler" }) },
+          ]);
+          if (result.results.some((item) => !item.ok)) return 1;
         },
       }),
       command("delete", {
         summary: t({ en: "Move entries to the trash", de: "Einträge in den Papierkorb verschieben" }),
         args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Paths relative to the base", de: "Pfade relativ zur Ablage" }) }) },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<{ entries: TrashEntry[]; results: ({path:string;ok:true;entry:TrashEntry}|{path:string;ok:false;error:string})[] }>(await api(ctx).bases[":baseId"].delete.$post({ param: { baseId: args.base }, json: { paths: args.paths } }));
+          const result = await ctx.readJson<{
+            entries: TrashEntry[];
+            results: ({ path: string; ok: true; entry: TrashEntry } | { path: string; ok: false; error: string })[];
+          }>(await api(ctx).bases[":baseId"].delete.$post({ param: { baseId: args.base }, json: { paths: args.paths } }));
           printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [
-            { key: "path", label: t({ en: "Path", de: "Pfad" }) }, { key: "ok", label: "OK" }, { key: "error", label: t({ en: "Error", de: "Fehler" }) },
+            { key: "path", label: t({ en: "Path", de: "Pfad" }) },
+            { key: "ok", label: "OK" },
+            { key: "error", label: t({ en: "Error", de: "Fehler" }) },
           ]);
-          if (result.results.some(item => !item.ok)) return 1;
+          if (result.results.some((item) => !item.ok)) return 1;
         },
       }),
       command("trash list", {
         summary: t({ en: "List trashed entries of a base", de: "Papierkorb einer Ablage auflisten" }),
-        args: baseArgs, flags: { after },
+        args: baseArgs,
+        flags: { after },
         async run({ ctx, args, flags }) {
-          const result = await ctx.readJson<{ entries: TrashEntry[]; next: string | null }>(await api(ctx).bases[":baseId"].trash.$get({ param: { baseId: args.base }, query: { after: flags.after } }));
+          const result = await ctx.readJson<{ entries: TrashEntry[]; next: string | null }>(
+            await api(ctx).bases[":baseId"].trash.$get({ param: { baseId: args.base }, query: { after: flags.after } }),
+          );
           next(ctx, result.next);
           printRows(ctx, ctx.options.output === "jsonl" ? result.entries : result, result.entries, [
             { key: "id", label: "ID" },
@@ -380,19 +537,39 @@ function filesCommands(locale?: string) {
         },
       }),
       command("trash restore", {
-        summary: t({ en: "Restore a trashed entry to its original path", de: "Eintrag aus dem Papierkorb an den ursprünglichen Ort zurücklegen" }),
+        summary: t({
+          en: "Restore a trashed entry to its original path",
+          de: "Eintrag aus dem Papierkorb an den ursprünglichen Ort zurücklegen",
+        }),
         args: { ...baseArgs, id: arg.required({ description: t({ en: "Trash entry ID", de: "Papierkorb-ID" }) }) },
-        flags: { to: flag.string({ description: t({ en: "Restore target relative to the base; required when original path is unknown", de: "Wiederherstellungsziel relativ zur Ablage; bei unbekanntem Ursprung erforderlich" }) }) },
+        flags: {
+          to: flag.string({
+            description: t({
+              en: "Restore target relative to the base; required when original path is unknown",
+              de: "Wiederherstellungsziel relativ zur Ablage; bei unbekanntem Ursprung erforderlich",
+            }),
+          }),
+        },
         async run({ ctx, args, flags }) {
-          const result = await ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].trash[":id"].restore.$post({ param: { baseId: args.base, id: args.id }, query: { path: flags.to } }));
+          const result = await ctx.readJson<EntryResult>(
+            await api(ctx).bases[":baseId"].trash[":id"].restore.$post({
+              param: { baseId: args.base, id: args.id },
+              query: { path: flags.to },
+            }),
+          );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${result.entry.path}`);
         },
       }),
       command("versions list", {
         summary: t({ en: "List versions of a file", de: "Versionen einer Datei auflisten" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }) },
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }),
+        },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<FileVersion[]>(await api(ctx).bases[":baseId"].versions.$get({ param: { baseId: args.base }, query: { path: args.path } }));
+          const result = await ctx.readJson<FileVersion[]>(
+            await api(ctx).bases[":baseId"].versions.$get({ param: { baseId: args.base }, query: { path: args.path } }),
+          );
           printRows(ctx, result, result, [
             { key: "id", label: "ID" },
             { key: "created", label: t({ en: "Created", de: "Erstellt" }) },
@@ -402,29 +579,61 @@ function filesCommands(locale?: string) {
         },
       }),
       command("versions download", {
-        summary: t({ en: "Download one historical version directly from Filegate", de: "Eine frühere Version direkt von Filegate herunterladen" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }), id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }) },
-        flags: { out: flag.string({ required: true, description: t({ en: "New local output file; existing paths are never overwritten", de: "Neue lokale Zieldatei; bestehende Pfade werden nie überschrieben" }) }) },
+        summary: t({
+          en: "Download one historical version directly from Filegate",
+          de: "Eine frühere Version direkt von Filegate herunterladen",
+        }),
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }),
+          id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }),
+        },
+        flags: {
+          out: flag.string({
+            required: true,
+            description: t({
+              en: "New local output file; existing paths are never overwritten",
+              de: "Neue lokale Zieldatei; bestehende Pfade werden nie überschrieben",
+            }),
+          }),
+        },
         examples: ["cld filesv2 versions download <base-id> Documents/report.pdf <version-id> --out ./report-v1.pdf"],
         async run({ ctx, args, flags }) {
           if (!flags.out) throw new Error(t({ en: "Pass --out with a new file path.", de: "Gib mit --out einen neuen Dateipfad an." }));
           const result = await downloadFile(ctx, flags.out, async (signal) =>
             ctx.readJson<DownloadLease>(
-              await api(ctx).bases[":baseId"].versions.download.$post({ param: { baseId: args.base }, json: { path: args.path, id: args.id } }, { init: { signal } }),
+              await api(ctx).bases[":baseId"].versions.download.$post(
+                { param: { baseId: args.base }, json: { path: args.path, id: args.id } },
+                { init: { signal } },
+              ),
             ),
           );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Saved", de: "Gespeichert" })}: ${result.path} (${result.bytes} bytes)`);
         },
       }),
       command("versions restore", {
-        summary: t({ en: "Restore a version in place or as a new file", de: "Version an Ort und Stelle oder als neue Datei wiederherstellen" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }), id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }) },
-        flags: { as: flag.string({ description: t({ en: "Restore as a new file with this name", de: "Als neue Datei mit diesem Namen wiederherstellen" }) }) },
+        summary: t({
+          en: "Restore a version in place or as a new file",
+          de: "Version an Ort und Stelle oder als neue Datei wiederherstellen",
+        }),
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }),
+          id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }),
+        },
+        flags: {
+          as: flag.string({
+            description: t({ en: "Restore as a new file with this name", de: "Als neue Datei mit diesem Namen wiederherstellen" }),
+          }),
+        },
         async run({ ctx, args, flags }) {
           const param = { baseId: args.base };
           const result = await ctx.readJson<EntryResult>(
             flags.as
-              ? await api(ctx).bases[":baseId"].versions["restore-as"].$post({ param, json: { path: args.path, id: args.id, name: flags.as } })
+              ? await api(ctx).bases[":baseId"].versions["restore-as"].$post({
+                  param,
+                  json: { path: args.path, id: args.id, name: flags.as },
+                })
               : await api(ctx).bases[":baseId"].versions.restore.$post({ param, json: { path: args.path, id: args.id } }),
           );
           if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${result.entry.path}`);
@@ -432,9 +641,19 @@ function filesCommands(locale?: string) {
       }),
       command("versions comment", {
         summary: t({ en: "Set the comment of a version", de: "Kommentar einer Version setzen" }),
-        args: { ...baseArgs, path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }), id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }), comment: arg.required({ description: t({ en: "Comment text", de: "Kommentartext" }) }) },
+        args: {
+          ...baseArgs,
+          path: arg.required({ description: t({ en: "File path relative to the base", de: "Dateipfad relativ zur Ablage" }) }),
+          id: arg.required({ description: t({ en: "Version ID", de: "Versions-ID" }) }),
+          comment: arg.required({ description: t({ en: "Comment text", de: "Kommentartext" }) }),
+        },
         async run({ ctx, args }) {
-          const result = await ctx.readJson<FileVersion>(await api(ctx).bases[":baseId"].versions.comment.$post({ param: { baseId: args.base }, json: { path: args.path, id: args.id, comment: args.comment } }));
+          const result = await ctx.readJson<FileVersion>(
+            await api(ctx).bases[":baseId"].versions.comment.$post({
+              param: { baseId: args.base },
+              json: { path: args.path, id: args.id, comment: args.comment },
+            }),
+          );
           if (!printStructured(ctx, result)) ctx.print(`${result.id}: ${result.comment ?? ""}`);
         },
       }),
@@ -455,27 +674,67 @@ function filesCommands(locale?: string) {
         },
       }),
       command("shares create", {
-        summary: t({ en: "Create a public download share or an upload inbox", de: "Öffentliche Download-Freigabe oder Upload-Eingang erstellen" }),
-        args: { ...baseArgs, paths: arg.rest({ description: t({ en: "Entries to share (download) or one folder (inbox)", de: "Einträge (Download) oder ein Ordner (Eingang)" }) }) },
+        summary: t({
+          en: "Create a public download share or an upload inbox",
+          de: "Öffentliche Download-Freigabe oder Upload-Eingang erstellen",
+        }),
+        args: {
+          ...baseArgs,
+          paths: arg.rest({
+            description: t({
+              en: "Entries to share (download) or one folder (inbox)",
+              de: "Einträge (Download) oder ein Ordner (Eingang)",
+            }),
+          }),
+        },
         flags: {
           kind: flag.enum(["download", "inbox"], { default: "download" }),
           title: flag.string({ required: true, description: t({ en: "Name shown to visitors", de: "Name, den Besucher sehen" }) }),
           "expires-in": flag.enum(["1d", "7d", "30d", "90d", "unlimited"], { default: "30d" }),
           note: flag.string({ description: t({ en: "Private management note", de: "Private Verwaltungsnotiz" }) }),
-          "password-file": flag.string({ description: t({ en: "Read an optional share password from a UTF-8 file", de: "Optionales Freigabe-Passwort aus einer UTF-8-Datei lesen" }) }),
+          "password-file": flag.string({
+            description: t({
+              en: "Read an optional share password from a UTF-8 file",
+              de: "Optionales Freigabe-Passwort aus einer UTF-8-Datei lesen",
+            }),
+          }),
           "public-note": flag.string({ description: t({ en: "Public note for visitors", de: "Öffentlicher Hinweis für Besucher" }) }),
-          "max-file-size": flag.int({ default: 104857600, description: t({ en: "Inbox limit per file in bytes", de: "Eingangslimit pro Datei in Bytes" }) }),
-          "max-total-size": flag.int({ default: 1073741824, description: t({ en: "Cumulative inbox limit in bytes", de: "Kumulatives Eingangslimit in Bytes" }) }),
-          "show-upload-names": flag.boolean({ description: t({ en: "Show names of successful inbox uploads to visitors", de: "Namen erfolgreicher Eingangs-Uploads für Besucher anzeigen" }) }),
+          "max-file-size": flag.int({
+            default: 104857600,
+            description: t({ en: "Inbox limit per file in bytes", de: "Eingangslimit pro Datei in Bytes" }),
+          }),
+          "max-total-size": flag.int({
+            default: 1073741824,
+            description: t({ en: "Cumulative inbox limit in bytes", de: "Kumulatives Eingangslimit in Bytes" }),
+          }),
+          "show-upload-names": flag.boolean({
+            description: t({
+              en: "Show names of successful inbox uploads to visitors",
+              de: "Namen erfolgreicher Eingangs-Uploads für Besucher anzeigen",
+            }),
+          }),
         },
         async run({ ctx, args, flags }) {
           const passwordFile = flags["password-file"] ? Bun.file(flags["password-file"]) : null;
-          if (passwordFile && passwordFile.size > 2048) throw new Error(t({en:"Password file is too large.",de:"Die Passwortdatei ist zu groß."}));
+          if (passwordFile && passwordFile.size > 2048)
+            throw new Error(t({ en: "Password file is too large.", de: "Die Passwortdatei ist zu groß." }));
           const password = passwordFile ? (await passwordFile.text()).replace(/\r?\n$/, "") : undefined;
           const result = await ctx.readJson<ShareView>(
             await api(ctx).bases[":baseId"].shares.$post({
               param: { baseId: args.base },
-              json: { kind: flags.kind ?? "download", paths: (flags.kind ?? "download") === "download" ? args.paths : [], folder: flags.kind === "inbox" ? (args.paths[0] ?? "") : "", title: flags.title!, note: flags.note, publicNote: flags["public-note"], expiresIn: flags["expires-in"], maxFileSize: flags["max-file-size"], maxTotalSize: flags["max-total-size"], showUploadNames: flags["show-upload-names"], password },
+              json: {
+                kind: flags.kind ?? "download",
+                paths: (flags.kind ?? "download") === "download" ? args.paths : [],
+                folder: flags.kind === "inbox" ? (args.paths[0] ?? "") : "",
+                title: flags.title!,
+                note: flags.note,
+                publicNote: flags["public-note"],
+                expiresIn: flags["expires-in"],
+                maxFileSize: flags["max-file-size"],
+                maxTotalSize: flags["max-total-size"],
+                showUploadNames: flags["show-upload-names"],
+                password,
+              },
             }),
           );
           if (!printStructured(ctx, result)) ctx.print(result.url ?? "");

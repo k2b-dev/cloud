@@ -1,4 +1,3 @@
-import { spaceCommandMessages } from "../../../../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import {
@@ -22,6 +21,7 @@ import {
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
+import { spaceCommandMessages } from "../../../../commands";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";

@@ -6,9 +6,9 @@ import { formComputedDiagnosticMessage } from "../form-computed-messages";
 import { formValidationFieldsCompatible } from "../form-validations";
 import { listByTable as listFields, validateDefaultValue } from "./fields";
 import { compileFilter } from "./filter-compiler";
-import { get as getTable } from "./tables";
 import { formMessagesFor } from "./form-messages";
 import type { FormConfig, FormFieldEntry } from "./forms";
+import { get as getTable } from "./tables";
 import type { Field } from "./types";
 
 type UserInputEntry = Extract<FormFieldEntry, { kind: "user_input" }>;

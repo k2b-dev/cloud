@@ -28,7 +28,10 @@ export default ssr<AuthContext>(async (c) => {
   const view = c.req.query("view");
   const trashView = view === "trash";
   const editView = view === "edit" && !!requestedFile;
-  const source = new URL(filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope, browse), "https://files.invalid");
+  const source = new URL(
+    filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope, browse),
+    "https://files.invalid",
+  );
   if (view === "trash" || view === "shares" || view === "recent" || view === "favorites" || editView) source.searchParams.set("view", view);
   if (c.req.query("refreshed") === "true") source.searchParams.set("refreshed", "true");
   const initial: WorkspaceSnapshot = {
@@ -40,9 +43,10 @@ export default ssr<AuthContext>(async (c) => {
   };
   try {
     initial.bases = await filesService.bases(actor);
-    const selected = requestedBase && view !== "shares"
-      ? initial.bases.items.find((base) => base.id === requestedBase)
-      : (initial.bases.items.find((base) => base.status === "existing") ?? initial.bases.items[0]);
+    const selected =
+      requestedBase && view !== "shares"
+        ? initial.bases.items.find((base) => base.id === requestedBase)
+        : (initial.bases.items.find((base) => base.status === "existing") ?? initial.bases.items[0]);
     if (requestedBase && !selected && view !== "shares") throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
     browse = browseOptions(new URL(c.req.url).searchParams, viewFor(preferences, selected?.id ?? ""));
@@ -51,7 +55,8 @@ export default ssr<AuthContext>(async (c) => {
     if (view === "shares") initial.shares = await filesService.listShares(actor);
     else if (view === "recent") initial.marks = await filesService.recent(actor);
     else if (view === "favorites") initial.marks = await filesService.favorites(actor);
-    else if (editView && selected?.status === "existing") initial.editor = await filesService.editor(actor, { baseId: selected.id, path: requestedFile! });
+    else if (editView && selected?.status === "existing")
+      initial.editor = await filesService.editor(actor, { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
       initial.directory = search
         ? await filesService.search(actor, { baseId: selected.id, ...query.data, ...browse, q: search, scope })
@@ -78,7 +83,15 @@ export default ssr<AuthContext>(async (c) => {
   const cloudUrl = publicCloudOrigin(await coreSettings.get<string>("app.url"));
   const title = initial.editor
     ? [
-        { title: t.files, href: filesUrl(initial.editor.base.id, initial.editor.entry.path.split("/").slice(0, -1).join("/"), null, initial.editor.entry.path) },
+        {
+          title: t.files,
+          href: filesUrl(
+            initial.editor.base.id,
+            initial.editor.entry.path.split("/").slice(0, -1).join("/"),
+            null,
+            initial.editor.entry.path,
+          ),
+        },
         { title: initial.editor.entry.name },
       ]
     : t.files;

@@ -1,13 +1,7 @@
-import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { audit, decryptSecret, encryptSecret, isUniqueViolation, logger } from "@k2b/cloud/services";
+import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { sql } from "bun";
-import type {
-  ConnectorVerification,
-  ProviderConnection,
-  ProviderConnectionInput,
-  ProviderLimitSnapshot,
-  ProviderSecret,
-} from "../contracts";
+import type { ConnectorVerification, ProviderConnection, ProviderConnectionInput, ProviderSecret } from "../contracts";
 import { parseProviderLimitSnapshot, providerSecretSchema } from "../contracts";
 import { requireMailboxPermission } from "./access";
 import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } from "./auth";

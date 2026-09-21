@@ -1,9 +1,9 @@
+import { formatDateTime as formatDate } from "@k2b/cloud/shared";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, IconButton, DataTable, type DataTableColumn, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { formatDateTime as formatDate } from "@k2b/cloud/shared";
-import type { MetricsToken } from "../service";
+import { Button, CopyButton, DataTable, type DataTableColumn, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { gatewayOpsMessages } from "../../../messages";
+import type { MetricsToken } from "../service";
 
 type Props = {
   tokens: MetricsToken[];

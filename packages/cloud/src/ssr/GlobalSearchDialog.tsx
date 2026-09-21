@@ -1,18 +1,18 @@
-import { type DialogRender, dialogCore, toast, useLocale } from "@k2b/ui";
 import { query } from "@k2b/stdlib/solid";
-import { resolveCommand } from "../capabilities/client";
-import { COMMANDS_CHANGED, collectContextAwareCommands } from "../browser/command-bridge";
-import { contextCommandsWithShortcuts } from "../browser/command-shortcuts";
-import { openCommand, runContextAwareCommand } from "../browser/commands";
-import { loadSearchCommands, type PaletteCommand } from "../browser/search-commands";
+import { type DialogRender, dialogCore, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import type { SearchItem } from "../api/search/schemas";
 import CloudResourceSearch from "../browser/CloudResourceSearch";
+import { COMMANDS_CHANGED, collectContextAwareCommands } from "../browser/command-bridge";
+import { contextCommandsWithShortcuts } from "../browser/command-shortcuts";
+import { openCommand, runContextAwareCommand } from "../browser/commands";
 import type { NavigationSearchItem } from "../browser/navigation-search";
 import { resourceSearchDialogOptions } from "../browser/resource-search-dialog";
 import { resourceSearchMessages } from "../browser/resource-search-messages";
 import { type GlobalSearchOptions, requestSearchNavigation } from "../browser/search-bridge";
+import { loadSearchCommands, type PaletteCommand } from "../browser/search-commands";
 import { attachSpotlightPosition } from "../browser/spotlight-position";
+import { resolveCommand } from "../capabilities/client";
 
 type GlobalSearchDialogProps = {
   request?: GlobalSearchOptions;

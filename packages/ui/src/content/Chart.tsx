@@ -1,12 +1,13 @@
-import { lineGapsSvg } from "./chart-line-gaps";
-import type { ChartCursor } from "./chart-cursor";
 import type { MapViewport } from "@k2b/stdlib";
 import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
-import { createChartInspection, type ChartSelection, type ChartTooltipFormatter, type ChartDatumRef } from "./chart-inspection";
+import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import type { ChartCursor } from "./chart-cursor";
+import { type ChartDatumRef, type ChartSelection, type ChartTooltipFormatter, createChartInspection } from "./chart-inspection";
+import { lineGapsSvg } from "./chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import {
   panStateTimelineViewport,
@@ -17,7 +18,6 @@ import {
   stateTimelineHeight,
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
-import { isServer } from "solid-js/web";
 import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
 
 /**

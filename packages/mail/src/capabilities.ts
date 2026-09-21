@@ -1,7 +1,5 @@
-import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
-import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionReview,
@@ -17,10 +15,12 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";
 import { mailCapabilityPresentation } from "./capability-presentation";
+import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
 import type { Mailbox, MailDraft, MailSearchExpression, MailSubscriptionSummary } from "./contracts";
 import {
   activityPublic,

@@ -2,10 +2,10 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
+import { pulseMessages } from "../messages";
 import { pulseService } from "../service";
 import { projectBases } from "../service/public-resources";
 import PulseOverview from "./PulseOverview.island";
-import { pulseMessages } from "../messages";
 
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);

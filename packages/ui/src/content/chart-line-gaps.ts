@@ -1,4 +1,4 @@
-import { linePathD, smoothPathD, stepPathD, type ChartDatum } from "@k2b/stdlib";
+import { type ChartDatum, linePathD, smoothPathD, stepPathD } from "@k2b/stdlib";
 import { isChartDatum } from "./chart-inspection";
 
 /** Adapt trusted stdlib line geometry without changing series, indices or inspection. */

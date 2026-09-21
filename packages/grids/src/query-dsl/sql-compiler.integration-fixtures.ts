@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { lockDurableHistoryMutationBoundary } from "../service/durable-history";
 import { listByTable } from "../service/field-read";
 import { compileLocalCalculationStorage } from "../service/local-calculation-storage";
@@ -12,7 +13,7 @@ import type { DslResultCursor } from "./result-cursor";
 
 export const integrationCursorSigningKey = "grids-query-dsl-integration-cursor";
 
-export const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+export const postgresTest = testFor("database");
 
 export const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);

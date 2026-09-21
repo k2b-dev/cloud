@@ -8,11 +8,10 @@
 
 export type { AllowedLevel, GrantableLevel } from "./PermissionEditor";
 export { default as PermissionEditor } from "./PermissionEditor";
+export { default as PrincipalPicker, principalKey } from "./PrincipalPicker";
 export type {
   ResourceApiKey,
   ResourceApiKeyPermissionOption,
   ResourceApiKeysProps,
 } from "./ResourceApiKeys";
 export { default as ResourceApiKeys } from "./ResourceApiKeys";
-
-export { default as PrincipalPicker, principalKey } from "./PrincipalPicker";

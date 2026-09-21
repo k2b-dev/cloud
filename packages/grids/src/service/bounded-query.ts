@@ -1,12 +1,13 @@
-import { getQuerySettings } from "./query-settings";
+import { env } from "@k2b/cloud/config";
 import { SQL, sql } from "bun";
 import type { SqlClient } from "./audit";
+import { getQuerySettings } from "./query-settings";
 
 let queryPool: SQL | undefined;
 
 const getQueryPool = async (): Promise<SQL> => {
   const { poolSize } = await getQuerySettings();
-  const url = process.env.DATABASE_URL;
+  const url = env.DATABASE_URL;
   queryPool ??= url ? new SQL({ url, max: poolSize }) : new SQL({ max: poolSize });
   return queryPool;
 };

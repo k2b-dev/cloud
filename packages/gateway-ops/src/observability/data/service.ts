@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { formatDurationMs, formatNumber, formatPercent } from "@k2b/cloud/shared";
+import { sql } from "bun";
 import { gatewayOpsMessages } from "../../messages";
 
 export type DiagnosticWarning = {
@@ -378,7 +378,10 @@ const collectPostgres = async (locale: string): Promise<PostgresDiagnostics> => 
       area: "postgres",
       tone: connectionShare >= 0.95 ? "red" : "amber",
       title: t.postgresConnectionPressure,
-      detail: t.connectionsInUse({ used: formatNumber(runtime.connections, { locale }), total: formatNumber(runtime.maxConnections, { locale }) }),
+      detail: t.connectionsInUse({
+        used: formatNumber(runtime.connections, { locale }),
+        total: formatNumber(runtime.maxConnections, { locale }),
+      }),
     });
   }
   if (runtime.waitingLocks > 0) {
@@ -386,7 +389,10 @@ const collectPostgres = async (locale: string): Promise<PostgresDiagnostics> => 
       area: "postgres",
       tone: runtime.oldestWaitingQuerySeconds >= 30 ? "red" : "amber",
       title: t.queriesWaitingLocks,
-      detail: t.waitingLockDetail({ count: formatNumber(runtime.waitingLocks, { locale }), duration: formatDurationMs(runtime.oldestWaitingQuerySeconds * 1000, { locale }) }),
+      detail: t.waitingLockDetail({
+        count: formatNumber(runtime.waitingLocks, { locale }),
+        duration: formatDurationMs(runtime.oldestWaitingQuerySeconds * 1000, { locale }),
+      }),
     });
   }
   if (runtime.idleInTransaction > 0 && runtime.oldestIdleTransactionSeconds >= 60) {
@@ -394,7 +400,10 @@ const collectPostgres = async (locale: string): Promise<PostgresDiagnostics> => 
       area: "postgres",
       tone: "amber",
       title: t.longLivedTransactions,
-      detail: t.idleTransactionDetail({ count: formatNumber(runtime.idleInTransaction, { locale }), duration: formatDurationMs(runtime.oldestIdleTransactionSeconds * 1000, { locale }) }),
+      detail: t.idleTransactionDetail({
+        count: formatNumber(runtime.idleInTransaction, { locale }),
+        duration: formatDurationMs(runtime.oldestIdleTransactionSeconds * 1000, { locale }),
+      }),
     });
   }
   const largeTables = tables.filter((table) => table.totalBytes >= LARGE_TABLE_BYTES).length;
@@ -594,7 +603,8 @@ const collectRedis = async (locale: string): Promise<RedisDiagnostics> => {
 export const getPostgresDiagnostics = async (locale = "en"): Promise<PostgresDiagnostics> =>
   collectPostgres(locale).catch((error) => emptyPostgres(errorMessage(error), locale));
 
-export const getRedisDiagnostics = async (locale = "en"): Promise<RedisDiagnostics> => collectRedis(locale).catch((error) => emptyRedis(errorMessage(error), locale));
+export const getRedisDiagnostics = async (locale = "en"): Promise<RedisDiagnostics> =>
+  collectRedis(locale).catch((error) => emptyRedis(errorMessage(error), locale));
 
 export const getDataDiagnostics = async (locale = "en"): Promise<DataDiagnostics> => {
   const [postgres, redis] = await Promise.all([getPostgresDiagnostics(locale), getRedisDiagnostics(locale)]);

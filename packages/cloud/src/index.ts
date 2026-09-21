@@ -10,13 +10,19 @@ export {
   unbindProcessSync,
 } from "./_internal/process-sync";
 export { APP_READINESS_PATH } from "./_internal/readiness";
-export type { AppRegistryDetail, AppRegistryIssue, AppRegistrySnapshot, CapabilityRegistryRecord, DashboardWidget } from "./_internal/registry";
+export type {
+  AppRegistryDetail,
+  AppRegistryIssue,
+  AppRegistrySnapshot,
+  CapabilityRegistryRecord,
+  DashboardWidget,
+} from "./_internal/registry";
 export {
   APP_REGISTRY_CONFIG,
   APP_REGISTRY_PREFIX,
   APP_REGISTRY_TTL_MS,
-  CAPABILITY_REGISTRY_CONFIG,
   appRegistry,
+  CAPABILITY_REGISTRY_CONFIG,
   capabilityRegistry,
   getApp,
   listApps,

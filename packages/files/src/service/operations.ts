@@ -1,14 +1,14 @@
-import { Filegate } from "@valentinkolb/filegate/client";
 import { get } from "@k2b/cloud/services";
+import { Filegate } from "@valentinkolb/filegate/client";
 import type {
+  ChunkedUploadResponse,
+  ChunkedUploadSession,
   FileBase,
   FileInfo,
   FileInfoResponse,
+  MoveTargetResult,
   MutationResult,
   SearchResult,
-  ChunkedUploadSession,
-  ChunkedUploadResponse,
-  MoveTargetResult,
   TransferResult,
 } from "@/contracts";
 import * as paths from "./paths";

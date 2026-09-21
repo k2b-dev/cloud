@@ -1,8 +1,8 @@
-import { ButtonLink, LocaleProvider } from "@k2b/ui";
 import { listLegalLinks } from "@k2b/cloud";
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { normalizeRedirectTo, readThemeFromCookieHeader } from "@k2b/cloud/shared";
+import { ButtonLink, LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../../config";
 import AuthFooter from "../AuthFooter";
 import { authMessages } from "../messages";

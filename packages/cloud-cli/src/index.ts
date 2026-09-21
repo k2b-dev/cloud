@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { exec, execFile, spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
@@ -35,6 +34,7 @@ import toolsCliModule from "@k2b/cloud-app-tools/cli";
 import venueCliModule from "@k2b/cloud-app-venue/cli";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
+import { configPath, envLocale, envServer, envToken } from "./config";
 import { defaultCloudCliSkillsDir, updateCli } from "./release";
 
 declare const __CLD_VERSION__: string;
@@ -96,8 +96,7 @@ type GlobalArgs = {
 const DEFAULT_PROFILE = "default";
 const OAUTH_CLIENT_ID = "cloud-cli";
 const DEFAULT_OAUTH_SCOPE = "openid profile email offline_access read write";
-const CONFIG_PATH =
-  process.env.CLD_CONFIG ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "cloud", "cld", "config.json");
+const CONFIG_PATH = configPath();
 const TOKEN_TIMEOUT_MS = 10_000;
 const OAUTH_REQUEST_TIMEOUT_MS = 15_000;
 const OAUTH_REFRESH_SKEW_MS = 60_000;
@@ -267,7 +266,7 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
   }
 
   const parsed = parseArgs(global);
-  const requestedLocale = takeStringFlag(parsed.flags, "locale") ?? process.env.CLD_LOCALE;
+  const requestedLocale = takeStringFlag(parsed.flags, "locale") ?? envLocale();
   let locale: string;
   try {
     locale = resolveCloudCliLocale(requestedLocale);
@@ -389,6 +388,10 @@ const writeFd0Secret = async (name: string, scope: string | undefined, value: st
       const message = Buffer.concat(stderr).toString("utf8").trim();
       reject(new CliError(`Failed to store token in fd0${message ? `: ${message}` : ""}`));
     });
+    // fd0 may exit before draining stdin (EPIPE). The "close" handler already
+    // reports the exit code with fd0's stderr, so the write error only needs
+    // to be swallowed instead of crashing the process.
+    child.stdin.on("error", () => {});
     child.stdin.end(value);
   });
 };
@@ -630,7 +633,8 @@ const resolveAuth = async (
   server: string,
 ): Promise<ResolvedAuth> => {
   if (global.token) return { token: global.token };
-  if (process.env.CLD_TOKEN) return { token: process.env.CLD_TOKEN };
+  const tokenFromEnv = envToken();
+  if (tokenFromEnv) return { token: tokenFromEnv };
   if (global.tokenFile) return { token: await readTokenFile(global.tokenFile) };
   if (global.fd0) return { token: await readFd0Token(global.fd0, global.fd0Scope) };
   if (global.tokenCommand) return { token: await readCommandToken(global.tokenCommand) };
@@ -674,7 +678,7 @@ const resolveOptions = async (global: GlobalArgs): Promise<ResolvedCliOptions> =
   const config = await loadConfig();
   const profileName = resolveProfileName(config, global.profile);
   const profile = config.profiles?.[profileName] ?? {};
-  const server = global.server ?? process.env.CLD_SERVER ?? profile.server;
+  const server = global.server ?? envServer() ?? profile.server;
   if (!server)
     throw new CliError(
       "No server configured. Pass --server or run `cld profile set --server <url>`.",
@@ -697,11 +701,11 @@ const resolveOfflineOptions = async (global: GlobalArgs): Promise<ResolvedCliOpt
   const config = await loadConfig();
   const profileName = resolveProfileName(config, global.profile);
   const profile = config.profiles?.[profileName] ?? {};
-  const server = global.server ?? process.env.CLD_SERVER ?? profile.server ?? "";
+  const server = global.server ?? envServer() ?? profile.server ?? "";
   return {
     profile: profileName,
     server: server ? normalizeServer(server) : "",
-    token: global.token ?? process.env.CLD_TOKEN ?? profile.token ?? "",
+    token: global.token ?? envToken() ?? profile.token ?? "",
     output: global.output,
     locale: global.locale,
   };
@@ -869,7 +873,7 @@ ${modules.map((module) => `  ${module.name.padEnd(12)} ${module.summary}`).join(
 Examples:
   cld login --server http://localhost:3000
   cld --server http://localhost:3000 --token cld_... notebooks list
-  cld profile set --server http://localhost:3000 --fd0 cloud-local-token --fd0-scope stuve
+  cld profile set --server http://localhost:3000 --fd0 cloud-local-token --fd0-scope my-scope
   cld notebooks tree <notebook>
 `,
     `cld
@@ -901,7 +905,7 @@ ${modules.map((module) => `  ${module.name.padEnd(12)} ${germanModuleSummaries.g
 Beispiele:
   cld login --server http://localhost:3000
   cld --server http://localhost:3000 --token cld_... notebooks list
-  cld profile set --server http://localhost:3000 --fd0 cloud-local-token --fd0-scope stuve
+  cld profile set --server http://localhost:3000 --fd0 cloud-local-token --fd0-scope my-scope
   cld notebooks tree <notebook>
 `,
   );
@@ -1369,7 +1373,7 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
     throw new CliError('cld login always uses the first-party "cloud-cli" OAuth client; --client-id is not supported.');
   }
   const existing = config.profiles?.[name] ?? {};
-  const server = takeStringFlag(parsed.flags, "server") ?? global.server ?? process.env.CLD_SERVER ?? existing.server;
+  const server = takeStringFlag(parsed.flags, "server") ?? global.server ?? envServer() ?? existing.server;
   if (!server) throw new CliError("Missing server. Run `cld login --server <url>`.");
 
   const scope = takeStringFlag(parsed.flags, "scope") ?? DEFAULT_OAUTH_SCOPE;
@@ -1650,7 +1654,7 @@ if (import.meta.main && Bun.argv[2] === "--internal-code-host" && process.send) 
         try {
           locale = parseGlobalArgs(Bun.argv.slice(2)).locale;
         } catch {
-          locale = process.env.CLD_LOCALE ?? "en";
+          locale = envLocale() ?? "en";
         }
         console.error(error instanceof CliError ? error.localizedMessage(locale) : error instanceof Error ? error.message : String(error));
       }

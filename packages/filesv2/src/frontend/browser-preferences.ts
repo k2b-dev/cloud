@@ -51,4 +51,7 @@ export function browseOptions(params: URLSearchParams, preference = defaultView)
     groupFolders: params.get("groupFolders") ?? preference.groupFolders,
   });
 }
-export const browseQuery = (options: BrowseOptions) => ({ ...options, groupFolders: options.groupFolders ? "true" as const : "false" as const });
+export const browseQuery = (options: BrowseOptions) => ({
+  ...options,
+  groupFolders: options.groupFolders ? ("true" as const) : ("false" as const),
+});

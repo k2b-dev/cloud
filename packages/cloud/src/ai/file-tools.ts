@@ -108,7 +108,12 @@ export const CloudAiListFilesOutputSchema = z.object({
       mediaType: z.string(),
       origin: z.enum(["user", "assistant", "project", "skill"]),
       updatedAt: z.string(),
-      dictationRecordedAt: z.string().optional().describe("Present for prompt dictation recordings, not manually uploaded audio. Original audio remains available for re-evaluation."),
+      dictationRecordedAt: z
+        .string()
+        .optional()
+        .describe(
+          "Present for prompt dictation recordings, not manually uploaded audio. Original audio remains available for re-evaluation.",
+        ),
     }),
   ),
   truncated: z.boolean(),
@@ -342,7 +347,8 @@ export const CloudAiPresentOutputSchema = z.object({ path: z.string(), size: z.n
 export const createCloudAiPresentTool = () =>
   defineAiTool({
     name: "present",
-    description: "Present a conversation file to the user as an openable and downloadable chat attachment. The returned path is a conversation-local file identifier, not a website URL. Refer to the delivered attachment by title; do not turn its path into a Markdown link.",
+    description:
+      "Present a conversation file to the user as an openable and downloadable chat attachment. The returned path is a conversation-local file identifier, not a website URL. Refer to the delivered attachment by title; do not turn its path into a Markdown link.",
     inputSchema: CloudAiPresentInputSchema,
     outputSchema: CloudAiPresentOutputSchema,
     approval: "never",

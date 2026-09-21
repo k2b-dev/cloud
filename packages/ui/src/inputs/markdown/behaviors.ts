@@ -1,5 +1,5 @@
-import { insertLink, toggleBold, toggleBulletList, toggleCode, toggleHeading, toggleItalic, toggleNumberedList } from "./actions";
 import { replaceTextareaRange } from "../editor-dom";
+import { insertLink, toggleBold, toggleBulletList, toggleCode, toggleHeading, toggleItalic, toggleNumberedList } from "./actions";
 
 const isMac = (): boolean => typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
 

@@ -4,8 +4,8 @@ import { For, type JSX, Show } from "solid-js";
 import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
 import { aiToolIcon, displayToolName, formatToolDetailText, isRecord } from "./message-utils";
-import { AiToolActivity } from "./tool-disclosure";
 import { aiChatMessages } from "./messages";
+import { AiToolActivity } from "./tool-disclosure";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -325,9 +325,7 @@ function ReadFileView(props: { block: ToolBlock }) {
     const start = number(result().offset);
     const end = number(result().nextOffset);
     const t = aiChatMessages(locale());
-    return end > start
-      ? t.byteRange({ start: start.toLocaleString(locale()), end: end.toLocaleString(locale()) })
-      : t.read;
+    return end > start ? t.byteRange({ start: start.toLocaleString(locale()), end: end.toLocaleString(locale()) }) : t.read;
   };
   return (
     <CompletedActivity

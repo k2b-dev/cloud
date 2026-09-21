@@ -55,8 +55,10 @@ export const notebooksPageMessages = i18n.define({
       activityRestoredNote: ({ target, notebook }: { target: string; notebook: string }) => `Restored ${target} in ${notebook}`,
       activityEditedNote: ({ target, notebook }: { target: string; notebook: string }) => `Edited ${target} in ${notebook}`,
       activityCommentedNote: ({ target, notebook }: { target: string; notebook: string }) => `Commented on ${target} in ${notebook}`,
-      activityUpdatedComment: ({ target, notebook }: { target: string; notebook: string }) => `Updated a comment on ${target} in ${notebook}`,
-      activityDeletedComment: ({ target, notebook }: { target: string; notebook: string }) => `Deleted a comment from ${target} in ${notebook}`,
+      activityUpdatedComment: ({ target, notebook }: { target: string; notebook: string }) =>
+        `Updated a comment on ${target} in ${notebook}`,
+      activityDeletedComment: ({ target, notebook }: { target: string; notebook: string }) =>
+        `Deleted a comment from ${target} in ${notebook}`,
       activityCreatedNotebook: ({ notebook }: { notebook: string }) => `Created ${notebook}`,
       activityUpdatedNotebook: ({ notebook }: { notebook: string }) => `Updated ${notebook}`,
       activityUnknown: ({ action, notebook }: { action: string; notebook: string }) => `${action} in ${notebook}`,

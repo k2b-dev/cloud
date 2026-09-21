@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { LoopAggregate, OutboundEvent } from "@k2b/nessi";
+import { sql } from "bun";
 
 export type TimingInterval = { start: number; end: number };
 const union = (intervals: TimingInterval[]): TimingInterval[] => {

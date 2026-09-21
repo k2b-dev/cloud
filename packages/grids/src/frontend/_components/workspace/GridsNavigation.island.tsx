@@ -3,11 +3,11 @@ import { createNavigation, type NavigationItem, prompts, useLocale } from "@k2b/
 import { NavigationResourceTypeSchema, navigationReferenceKey } from "../../../navigation-contracts";
 import { navigationMessages } from "../../../navigation-messages";
 import { createBaseSettings } from "../sidebar/base-settings";
-import { createNewResource } from "../sidebar/new-resource";
 import { sidebarMessages } from "../sidebar/messages";
+import { createNewResource } from "../sidebar/new-resource";
 import { openSidebarForm } from "../sidebar/open-sidebar-form";
 import { workspaceMessages } from "./messages";
-import { activeNavigationKey, navigationResources, type NavigationResource } from "./navigation-catalog";
+import { activeNavigationKey, type NavigationResource, navigationResources } from "./navigation-catalog";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
 export default function GridsNavigation(props: { state: PublicOkWorkspaceState }) {

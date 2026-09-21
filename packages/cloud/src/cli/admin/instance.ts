@@ -7,10 +7,10 @@ import type { PostgresDiagnostics, RedisDiagnostics } from "./data";
 import type { GatewayHealth } from "./gateway";
 import type { BackgroundJobRow } from "./jobs";
 import { getLogs, type LogSummary, trimLogMessages } from "./logs";
-import type { NatsSnapshot } from "./nats";
-import type { SyncOverview } from "./sync";
 import type { MetricsCollector } from "./metrics";
+import type { NatsSnapshot } from "./nats";
 import { apiGet, formatBytes, parseLookbackHours, printJsonOrTable, queryString, safeCollect, skippedCollect, truncate } from "./shared";
+import type { SyncOverview } from "./sync";
 import type { TelemetryEvent, TelemetryRouteRow } from "./telemetry";
 import { diagnoseRange } from "./telemetry";
 

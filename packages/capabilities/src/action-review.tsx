@@ -1,9 +1,9 @@
 import type { CapabilityClientError, CapabilityReviewClientResult } from "@k2b/cloud/capabilities";
 import type { CapabilityActionManifest, CapabilityActionReview, CapabilitySemanticLink } from "@k2b/cloud/contracts";
-import { For, type JSX, Show } from "solid-js";
 import { useLocale } from "@k2b/ui";
-import { capabilityRuntimeMessages } from "./messages";
+import { For, type JSX, Show } from "solid-js";
 import { capabilityUiMessages } from "./frontend/messages";
+import { capabilityRuntimeMessages } from "./messages";
 
 export type ActionRunDecision = { kind: "approved" } | { kind: "cancelled" } | { kind: "failed"; error: CapabilityClientError };
 
@@ -63,16 +63,16 @@ export const confirmActionRun = async (
 const linkLabel = (link: CapabilitySemanticLink, locale: string): string => {
   const t = capabilityUiMessages.resolve([locale]).t;
   return (
-  link.title ??
-  (link.rel === "edit"
-    ? t.edit
-    : link.rel === "status"
-      ? t.status
-      : link.rel === "preview"
-        ? t.preview
-        : link.rel === "download"
-          ? t.download
-          : t.open)
+    link.title ??
+    (link.rel === "edit"
+      ? t.edit
+      : link.rel === "status"
+        ? t.status
+        : link.rel === "preview"
+          ? t.preview
+          : link.rel === "download"
+            ? t.download
+            : t.open)
   );
 };
 

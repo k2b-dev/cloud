@@ -8,6 +8,8 @@
  * input show/hide based on the mode toggle to keep the form scannable.
  */
 
+import { coreClient } from "@k2b/cloud/clients/core";
+import type { SettingValueSource } from "@k2b/cloud/contracts";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -23,8 +25,6 @@ import {
   Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { coreClient } from "@k2b/cloud/clients/core";
-import type { SettingValueSource } from "@k2b/cloud/contracts";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import type { SettingFieldDef } from "./CoreSettingsForm.island";
 import { settingsMessages } from "./messages";

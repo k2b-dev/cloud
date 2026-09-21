@@ -1,6 +1,6 @@
-import { ssr } from "../config";
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { ssr } from "../config";
 import basePage from "./[baseId]/page";
 import queryReferencePage from "./[baseId]/query-reference/page";
 import page from "./page";

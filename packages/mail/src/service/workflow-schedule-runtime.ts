@@ -1,4 +1,3 @@
-import type { Scheduler, Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { createRuntimeLifecycle, logger, trace } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
@@ -10,6 +9,7 @@ import {
   workflowScheduleSlotKey,
 } from "@k2b/cloud/workflows/runtime";
 import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
+import type { Scheduler, Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 

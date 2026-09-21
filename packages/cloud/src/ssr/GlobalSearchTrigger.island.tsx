@@ -1,7 +1,7 @@
-import { registerContextAwareCommand, runContextAwareCommand } from "../browser/commands";
-import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup, onMount } from "solid-js";
+import { attachCommandShortcuts } from "../browser/command-shortcuts";
+import { registerContextAwareCommand, runContextAwareCommand } from "../browser/commands";
 import type { NavigationSearchItem } from "../browser/navigation-search";
 import { openGlobalSearch } from "../browser/search";
 import { registerGlobalSearchHost } from "../browser/search-bridge";

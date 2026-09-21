@@ -1,9 +1,9 @@
+import { CODE_SOURCE_TOOLS, createAiConversationArtifact, listAiConversationFiles, readAiConversationFile } from "@k2b/cloud/ai";
 import { createCloudAiCodeTools } from "@k2b/cloud/ai/tools";
 import { defineTool, nessi, type Provider, type StoreEntry } from "@k2b/nessi";
 import { z } from "zod";
-import { CODE_SOURCE_TOOLS, createAiConversationArtifact, listAiConversationFiles, readAiConversationFile } from "@k2b/cloud/ai";
-import { artifactCodeHandlers, type CodeToolContext } from "./code-tools";
 import { agentHost } from "./agent-host";
+import { artifactCodeHandlers, type CodeToolContext } from "./code-tools";
 import { artifacts } from "./service";
 
 /** Opt-in real-model acceptance test, executed only by the disposable integration runner. */
@@ -145,7 +145,8 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
     }).server((args, ctx) => runtime("code_interact", args, ctx.callId)),
     defineTool({
       name: "code_export",
-      description: "Export a captured file to the chat; returns path and version; use code_file_stat for an explicit code_write fromFile reference",
+      description:
+        "Export a captured file to the chat; returns path and version; use code_file_stat for an explicit code_write fromFile reference",
       inputSchema: getCodeToolInputSchema("code_export"),
     }).server((args, ctx) => runtime("code_export", args, ctx.callId)),
   ];

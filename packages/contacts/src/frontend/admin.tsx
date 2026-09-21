@@ -1,8 +1,8 @@
-import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../config";
 import { contactsService } from "../service";
 import { projectBooks } from "../service/public-resources";
@@ -73,12 +73,7 @@ export default ssr<AuthContext>(async (c) => {
               <h2 class="text-xs font-semibold text-primary">{t.booksHeading}</h2>
               <p class="text-[10px] text-dimmed">{t.booksCount({ count: publicBooks.length, total: books.total })}</p>
             </div>
-            <SearchBar
-              action="/admin/contacts"
-              value={search}
-              placeholder={t.adminSearchPlaceholder}
-              ariaLabel={t.adminSearchLabel}
-            />
+            <SearchBar action="/admin/contacts" value={search} placeholder={t.adminSearchPlaceholder} ariaLabel={t.adminSearchLabel} />
           </div>
           <DataTable
             rows={publicBooks}

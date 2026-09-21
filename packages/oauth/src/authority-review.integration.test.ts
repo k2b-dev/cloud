@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { createIdentityOAuthIssuanceRoutes } from "../../core/src/api/identity-oauth-issuance";
 import { migrate as migrateAuth } from "../../core/src/migrate/core/auth";
 import { migrate as migrateSettings } from "../../core/src/migrate/core/settings";
@@ -11,7 +12,7 @@ import type { OAuthUserGrantReference } from "./service/token-authority";
 import * as tokens from "./service/tokens";
 
 // This suite intentionally exercises schema upgrades and must use a disposable DB.
-const suite = process.env.CLOUD_OAUTH_REVIEW_INTEGRATION === "1" ? describe : describe.skip;
+const suite = suiteFor("database");
 const deferred = () => {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -69,9 +70,6 @@ const issue = (routes: Awaited<ReturnType<typeof coreRoutes>>, grant: OAuthUserG
 
 suite("OAuth external review regressions", () => {
   beforeAll(async () => {
-    if (!new URL(process.env.DATABASE_URL!).pathname.startsWith("/oauth_review_fix_")) {
-      throw new Error("OAuth review integration requires an isolated oauth_review_fix_ database");
-    }
     await migrateAuth();
     await migrateSettings();
     await migrate();

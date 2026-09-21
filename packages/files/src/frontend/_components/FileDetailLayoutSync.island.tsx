@@ -1,5 +1,5 @@
 import { onCleanup, onMount } from "solid-js";
-import { DETAIL_FILE_SELECT_EVENT, getDetailFileFromUrl, type DetailFileSelectPayload } from "./context";
+import { DETAIL_FILE_SELECT_EVENT, type DetailFileSelectPayload, getDetailFileFromUrl } from "./context";
 
 type Props = {
   detailContainerId: string;

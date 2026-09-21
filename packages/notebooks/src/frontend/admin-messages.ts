@@ -24,7 +24,8 @@ export const notebooksAdminMessages = i18n.define({
       noMatching: ({ search }: { search: string }) => `No notebooks matching “${search}”.`,
       noNotebooks: "No notebooks found.",
       noDescription: "No description",
-      accessCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} access entry`, other: `${count} access entries` }),
+      accessCount: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `${count} access entry`, other: `${count} access entries` }),
       actionsFor: ({ name }: { name: string }) => `Actions for ${name}`,
       notebookActions: "Notebook actions",
       loadPermissionsFailed: "Failed to load notebook permissions.",
@@ -52,7 +53,8 @@ export const notebooksAdminMessages = i18n.define({
       loadingSettings: "Loading settings...",
       settingsLoadFailed: "Could not load notebook settings",
       noSettings: "No Notebooks app settings registered.",
-      savedCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} setting was saved.`, other: `${count} settings were saved.` }),
+      savedCount: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `${count} setting was saved.`, other: `${count} settings were saved.` }),
       reindexJob: "Reindex job",
       cancel: "Cancel",
       saving: "Saving",
@@ -94,14 +96,16 @@ export const notebooksAdminMessages = i18n.define({
       updateAccessFailed: "Der Zugriff konnte nicht aktualisiert werden.",
       revokeAccessFailed: "Der Zugriff konnte nicht entzogen werden.",
       retryReload: "Erneut laden",
-      deleteNotebookQuestion: ({ name }) => `„${name}“ und alle enthaltenen Notizen löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
+      deleteNotebookQuestion: ({ name }) =>
+        `„${name}“ und alle enthaltenen Notizen löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
       deleteNotebook: "Notizbuch löschen",
       delete: "Löschen",
       deleteFailed: "Das Notizbuch konnte nicht gelöscht werden.",
       deleted: "Notizbuch gelöscht",
       loadSettingsFailed: ({ status }) => `Einstellungen konnten nicht geladen werden (${status})`,
       updateSettingFailed: ({ key }) => `${key} konnte nicht aktualisiert werden`,
-      settingsReloadWarning: "Die aktuellen Einstellungen konnten nicht neu geladen werden. Der fehlgeschlagene Eintrag bleibt deshalb zur Prüfung vorgemerkt.",
+      settingsReloadWarning:
+        "Die aktuellen Einstellungen konnten nicht neu geladen werden. Der fehlgeschlagene Eintrag bleibt deshalb zur Prüfung vorgemerkt.",
       settingsSaved: "Notizbucheinstellungen gespeichert",
       notebookSettings: "Notizbucheinstellungen",
       settingsSubtitle: "Standardwerte und Wartungsaktionen für die Notebooks-App.",
@@ -109,23 +113,26 @@ export const notebooksAdminMessages = i18n.define({
       loadingSettings: "Einstellungen werden geladen…",
       settingsLoadFailed: "Notizbucheinstellungen konnten nicht geladen werden",
       noSettings: "Für die Notebooks-App sind keine Einstellungen registriert.",
-      savedCount: ({ count }) => i18n.plural(count, "de", { one: `${count} Einstellung wurde gespeichert.`, other: `${count} Einstellungen wurden gespeichert.` }),
+      savedCount: ({ count }) =>
+        i18n.plural(count, "de", { one: `${count} Einstellung wurde gespeichert.`, other: `${count} Einstellungen wurden gespeichert.` }),
       reindexJob: "Index neu aufbauen",
       cancel: "Abbrechen",
       saving: "Wird gespeichert",
       save: "Speichern",
-      settingLabel: ({ key, label }) => ({
-        "notebooks.reindex_cron": "Zeitplan für den Neuaufbau des Index",
-        "notebooks.snapshot_cron": "Zeitplan für Snapshots",
-        "notebooks.max_attachment_size_mb": "Maximale Anhangsgröße",
-        "notebooks.max_image_side_px": "Maximale Bildkante",
-      })[key] ?? label,
-      settingDescription: ({ key, description }) => ({
-        "notebooks.reindex_cron": "Cron-Ausdruck mit fünf Feldern für den regelmäßigen Neuaufbau des Verweisindex in app.timezone.",
-        "notebooks.snapshot_cron": "Cron-Ausdruck mit fünf Feldern für automatische Notizbuch-Snapshots in app.timezone.",
-        "notebooks.max_attachment_size_mb": "Maximale Größe eines hochgeladenen Anhangs in MB.",
-        "notebooks.max_image_side_px": "Maximale Kantenlänge für automatisch verkleinerte Bilder in Pixeln.",
-      })[key] ?? description,
+      settingLabel: ({ key, label }) =>
+        ({
+          "notebooks.reindex_cron": "Zeitplan für den Neuaufbau des Index",
+          "notebooks.snapshot_cron": "Zeitplan für Snapshots",
+          "notebooks.max_attachment_size_mb": "Maximale Anhangsgröße",
+          "notebooks.max_image_side_px": "Maximale Bildkante",
+        })[key] ?? label,
+      settingDescription: ({ key, description }) =>
+        ({
+          "notebooks.reindex_cron": "Cron-Ausdruck mit fünf Feldern für den regelmäßigen Neuaufbau des Verweisindex in app.timezone.",
+          "notebooks.snapshot_cron": "Cron-Ausdruck mit fünf Feldern für automatische Notizbuch-Snapshots in app.timezone.",
+          "notebooks.max_attachment_size_mb": "Maximale Größe eines hochgeladenen Anhangs in MB.",
+          "notebooks.max_image_side_px": "Maximale Kantenlänge für automatisch verkleinerte Bilder in Pixeln.",
+        })[key] ?? description,
     },
   },
 });

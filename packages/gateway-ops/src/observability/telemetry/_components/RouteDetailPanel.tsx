@@ -1,8 +1,8 @@
+import { formatDateTime, formatDurationMs } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, DetailPanel, IconButtonLink, Placeholder, useLocale } from "@k2b/ui";
-import { formatDateTime, formatDurationMs } from "@k2b/cloud/shared";
-import type { TelemetryEventRow } from "../service";
 import { gatewayOpsMessages } from "../../../messages";
+import type { TelemetryEventRow } from "../service";
 
 const statusTone = (status: number) => {
   if (status >= 500) return "text-red-500";

@@ -1,3 +1,4 @@
+import type { AiConversation, AiEnrichmentRun, AiEnrichmentStatus } from "@k2b/cloud/ai";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -15,7 +16,6 @@ import {
   TextInput,
   toast,
 } from "@k2b/ui";
-import type { AiConversation, AiEnrichmentRun, AiEnrichmentStatus } from "@k2b/cloud/ai";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
@@ -243,7 +243,12 @@ function EditConversationForm(props: EditConversationFormProps) {
     <div class="dialog-fixed-frame flex min-h-0 flex-col overflow-hidden">
       <SettingsModal title={text("Chat Settings")} onClose={() => void requestClose()} closeLabel={text("Close chat settings")}>
         <SettingsModal.Group title={text("Chat")}>
-          <SettingsModal.Tab id="general" title={text("Chat Settings")} icon="ti ti-id" description={text("Name, description, and list placement.")}>
+          <SettingsModal.Tab
+            id="general"
+            title={text("Chat Settings")}
+            icon="ti ti-id"
+            description={text("Name, description, and list placement.")}
+          >
             <SettingsGroup title={text("Identity")} description={text("Choose how this chat appears in navigation and search results.")}>
               <SettingsField
                 label={text("Name")}
@@ -308,7 +313,10 @@ function EditConversationForm(props: EditConversationFormProps) {
             icon="ti ti-archive"
             description={text("Remove this chat from active lists. You can restore it later from All Chats.")}
           >
-            <SettingsGroup title={text("Archive chat")} description={props.archiveDisabledReason ?? text("Move this chat out of your active lists.")}>
+            <SettingsGroup
+              title={text("Archive chat")}
+              description={props.archiveDisabledReason ?? text("Move this chat out of your active lists.")}
+            >
               <SettingsGroup.Action>
                 <Button
                   variant="secondary"

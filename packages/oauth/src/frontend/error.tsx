@@ -1,6 +1,6 @@
-import { ButtonLink } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { ButtonLink } from "@k2b/ui";
 import { ssr } from "../config";
 import { oauthMessages } from "./messages";
 

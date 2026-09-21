@@ -1,16 +1,9 @@
-import { createRunToolStore } from "./capabilities";
-import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
-import { AiCapabilityExecutionError } from "./capability-execution";
-import { aiChatTasks } from "./chat-tasks";
-import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
-import { AiRunTimeout } from "./run-timeout";
-import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type { CompactEvent, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
-import { createHelpReader } from "../services/help";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
+import { createHelpReader } from "../services/help";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { normalizeLocale } from "../shared/locale";
@@ -22,8 +15,10 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { isAssistantChatTurn } from "./assistant-models";
-import { createAiToolResolver } from "./capabilities";
-import { executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
+import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
+import { createAiToolResolver, createRunToolStore } from "./capabilities";
+import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
+import { aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
 import { createCloudAiCodeTools, createCloudAiLocalBashTool, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
@@ -46,7 +41,9 @@ import {
   streamBlockId,
   toolBlockId,
 } from "./protocol";
+import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
+import { AiRunTimeout } from "./run-timeout";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
@@ -57,6 +54,7 @@ import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
+import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
   AiChatTurnRunConfig,
   AiFrontendToolMode,

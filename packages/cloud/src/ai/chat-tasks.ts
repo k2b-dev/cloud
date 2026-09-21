@@ -1,23 +1,23 @@
-import { aiConversations } from "./store";
 import type { Message } from "@k2b/nessi";
 import { type SQL, sql } from "bun";
+import { getCapability } from "../_internal/registry";
 import { logger } from "../services/logging";
 import {
-  createMandate,
-  CapabilityGrantsSchema,
   type CapabilityGrant,
-  updateMandatePolicy,
-  validateMandateIssueAuthority,
+  CapabilityGrantsSchema,
+  createMandate,
   type Mandate,
   type MandatePolicyV1,
   MandatePolicyV1Schema,
   pauseMandate,
   resumeMandate,
   revokeMandate,
+  updateMandatePolicy,
+  validateMandateIssueAuthority,
 } from "../services/mandates";
-import { getCapability } from "../_internal/registry";
 import { parsePgJsonValue } from "../services/postgres";
 import { withAiShortIdForDb } from "./short-id";
+import { aiConversations } from "./store";
 import type { AiChatTurnRunConfig, AiStoredMessage, AiTurnStatus } from "./types";
 
 export type AiChatTaskState = "active" | "paused" | "completed" | "needs_attention";

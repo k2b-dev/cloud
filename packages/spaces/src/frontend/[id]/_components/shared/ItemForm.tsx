@@ -1,7 +1,5 @@
-import { spaceCommandMessages } from "../../../../commands";
 import {
   Button,
-  useLocale,
   CheckboxCard,
   DatePicker,
   DateRangePicker,
@@ -13,6 +11,7 @@ import {
   Select,
   Switch,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { SpaceItemAssignee } from "@/contracts";
@@ -27,6 +26,7 @@ import {
   summarizeRecurrenceState,
   weekdayOptions,
 } from "@/presentation/recurrence";
+import { spaceCommandMessages } from "../../../../commands";
 import { useSpaceMessages } from "../../messages";
 import {
   allDayEnd,

@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { migrate } from "./migrate";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 /**
  * Mail's schema is a single baseline (`src/schema.sql`). These checks cover the

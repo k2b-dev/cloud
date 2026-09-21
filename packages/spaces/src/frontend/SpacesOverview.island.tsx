@@ -1,4 +1,3 @@
-import { createSpaceCommands } from "./space-commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { listenPopState, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
@@ -29,6 +28,7 @@ import type { Space } from "@/contracts";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { setLastSpaceId, setPinnedSpaceIds, type ViewType, writeSpaceSettings } from "./[id]/_components/settings/SpaceSettingsStore";
 import { readResponseError } from "./lib/response";
+import { createSpaceCommands } from "./space-commands";
 
 type WorkItem = OverviewWork["items"][number];
 type ActivityItem = {

@@ -1,4 +1,3 @@
-import { createNoteCommands } from "./note-commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
@@ -24,6 +23,7 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { setLastNotebookId, setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
 import { notebooksPageMessages } from "./messages";
+import { createNoteCommands } from "./note-commands";
 
 type TemplateSummary = { id: string; name: string; description: string; icon: string };
 type PublicNotebook = { id: string; name: string; description: string | null; icon: string | null };

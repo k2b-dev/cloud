@@ -1,7 +1,7 @@
-import { capabilityTable } from "./capability-result";
 import { ButtonLink, DataTable, type DataTableColumn, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
 import { CapabilitySemanticLinkSchema, capabilityDataAtPath } from "../../contracts/capabilities";
+import { capabilityTable } from "./capability-result";
 import { aiChatMessages } from "./messages";
 
 export const capabilityCellText = (value: unknown): string => {
