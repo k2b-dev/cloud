@@ -4,6 +4,7 @@ export const gridsCapabilityMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      resourceValueHint: "Object with a discovered Cloud resource type and id, and optional title. No URL or permission grant.",
       openQuery: "Open in query editor",
       queryCapped: "The query result is capped; this is not a complete export.",
       queryCopy: "No editor link fits this query. Copy the GQL into the editor instead.",
@@ -104,6 +105,7 @@ export const gridsCapabilityMessages = i18n.define({
       currentVersion: "Current version",
     },
     de: {
+      resourceValueHint: "Objekt mit ermitteltem Cloud-Ressourcentyp und id sowie optional title. Keine URL und keine Rechtevergabe.",
       openQuery: "Im Abfrage-Editor öffnen",
       queryCapped: "Das Ergebnis ist begrenzt; dies ist kein vollständiger Export.",
       queryCopy: "Für diese Abfrage passt kein Editor-Link. Kopiere stattdessen das GQL in den Editor.",

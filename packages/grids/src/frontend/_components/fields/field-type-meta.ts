@@ -13,6 +13,7 @@ const SYSTEM_FIELD_TYPES = new Set(["id", "created_at", "created_by", "updated_a
 
 export const fieldTypeGroups = (type: string): readonly string[] => {
   if (type === "file") return ["files"];
+  if (type === "resource") return ["relations", "files"];
   if (type === "relation") return ["relations"];
   if (type === "lookup" || type === "rollup") return ["relations", "computed"];
   if (type === "formula" || type === "html_template") return ["computed"];
@@ -45,6 +46,7 @@ export const FIELD_TYPE_ICONS: Record<string, string> = {
   date: "ti ti-calendar",
   select: "ti ti-tags",
   principal: "ti ti-users-group",
+  resource: "ti ti-cloud",
   id: "ti ti-id",
   percent: "ti ti-percentage",
   duration: "ti ti-clock-hour-4",

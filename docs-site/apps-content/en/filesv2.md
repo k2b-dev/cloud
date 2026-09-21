@@ -525,3 +525,5 @@ still an administrative operation, not an Assistant capability.
 Use `cld capabilities catalog --json` for current schemas and the generic
 `stream-read`, `stream-write`, `stream-status` and `stream-abort` commands for
 binary transfers. The existing Filesv2 CLI remains available for direct tasks.
+
+The canonical `entry.read` capability returns a stable `open` link and a resource reference with the current name. Consumers can open a Filesv2 entry through this shared contract without constructing file paths. Reading and opening still require the current user's access.

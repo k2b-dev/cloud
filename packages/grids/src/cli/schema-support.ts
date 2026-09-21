@@ -67,6 +67,12 @@ const FIELD_TYPE_DETAILS: Record<string, FieldReferenceDetails> = {
     recordValue: '["open"]',
     notes: "Record values are arrays of option ids. Single select still uses an array with at most one id.",
   },
+  resource: {
+    config: EMPTY_CONFIG,
+    recordValue: '{ "type": "filesv2.entry", "id": "<discovered-resource-id>", "title": "Document" }',
+    notes:
+      "One Cloud resource reference. Discover type/id through the owning app; title is optional retained text. No URL, token, permission grant or external join. Opening uses the canonical reader and current access.",
+  },
   principal: {
     config: '{ "cardinality": "multiple" }',
     recordValue: '[{ "type": "user", "id": "<user-uuid>" }, { "type": "group", "id": "<group-uuid>" }]',
@@ -260,6 +266,8 @@ const fieldExampleValue = (field: ExampleField): unknown => {
       return fieldConfig(field).includeTime ? "2026-07-07T12:00:00.000Z" : "2026-07-07";
     case "select":
       return selectExampleValue(field);
+    case "resource":
+      return { type: "filesv2.entry", id: "<discovered-resource-id>", title: "Document" };
     case "principal":
       return [{ type: "user", id: "<user-uuid>" }];
     case "percent":

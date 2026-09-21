@@ -100,3 +100,7 @@ Jede Spalte hat:
 Auswahlspalten und Regex-Regeln sind nur für Eingaben geeignet. Berechnete Spalten verwenden die unterstützten skalaren Formeltypen. Der Editor zeigt sie nur lesend, der Server berechnet sie selbst; mitgesendeten Berechnungswerten wird nicht vertraut.
 
 Für Listenauswertungen gibt es `LIST_SUM(Items, 'Amount')`, `LIST_AVG`, `LIST_MIN`, `LIST_MAX` und `LIST_COUNT`. Eine leere Liste ergibt für Summe und Anzahl die Zahl 0; eine fehlende Liste ist keine leere Liste. Syntax unter [Formeln](/app/grids/help/grids-formulas), Layout und Formularstandards unter [Formulare](/app/grids/help/grids-forms).
+
+## Cloud-Ressource {icon="link"}
+
+Nutze `resource` mit Konfiguration `{}`, um eine Ressource über die Cloud-Suche auszuwählen. Gespeichert wird `{type, id, title?}`. Der optionale Titel bleibt als Beschriftung erhalten; beim Öffnen prüft die Quell-App den aktuellen Zugriff. Es werden keine URL, Tokens oder Rechte gespeichert. Datei dient für Uploads in Grids, Relation für Verbindungen zwischen Grids-Datensätzen.

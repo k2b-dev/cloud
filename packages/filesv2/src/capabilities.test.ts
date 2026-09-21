@@ -47,6 +47,7 @@ mock.module("./service", () => ({
       uploadKeys.push(input.idempotencyKey);
       return { id: input.idempotencyKey };
     },
+    entry: async (_actor: unknown, ref: { path: string }) => ({ base, entry: entry(ref.path) }),
     list: page,
     search: page,
   },
@@ -156,4 +157,13 @@ test("upload idempotency is stable per user and isolated between users", async (
   await action.run(input, { ...caller, actor: { kind: "user", user: { ...user, id: "another-user" } } });
   expect(uploadKeys[0]).toBe(uploadKeys[1]);
   expect(uploadKeys[2]).not.toBe(uploadKeys[0]);
+});
+
+test("canonical entry reader exposes an authorized stable open link", async () => {
+  ids.set("entry-id", { baseId: "base", path: "report.pdf" });
+  const result = await filesCapabilities.queries["entry.read"].run({ id: "entry-id" }, context);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error("Expected entry");
+  expect(result.data.refs).toEqual([{ type: "filesv2.entry", id: "entry-id", title: "report" }]);
+  expect(result.data.links).toEqual([{ rel: "open", href: "/app/filesv2/ref/entry-id" }]);
 });

@@ -1,5 +1,6 @@
 import { objectListHandler, objectListScalarHandlers } from "../../../field-types/object-list";
 import { principalHandler } from "../../../field-types/principal";
+import { resourceHandler } from "../../../field-types/resource";
 import { jsonHandler } from "../../../field-types/tier3";
 import type { FieldValidationContext, ValueFieldType } from "../../../field-types/types";
 import { fieldValidationMessages } from "../../../field-types/validation-messages";
@@ -10,6 +11,7 @@ const handlers: Record<string, ValueFieldType> = {
   ...objectListScalarHandlers,
   object_list: objectListHandler,
   principal: principalHandler,
+  resource: resourceHandler,
   json: jsonHandler,
 };
 

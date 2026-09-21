@@ -8,6 +8,7 @@ import { type FieldDisplayIntent, type RelationDisplayItem, relationIds, resolve
 import { tableMessages } from "./messages";
 import { ObjectListValue } from "./ObjectListValue";
 import { RecordLink } from "./RecordLink";
+import ResourceValue from "./ResourceValue";
 import { SelectValueBadges } from "./select-badges";
 
 type FieldValueMode = "table" | "card" | "detail";
@@ -161,6 +162,7 @@ export function FieldValue(props: FieldValueProps) {
   const renderRawValue = () => {
     const error = props.record?.fieldErrors?.[props.field.id];
     if (error) return <span class="text-danger break-words">{error}</span>;
+    if (props.field.type === "resource") return <ResourceValue value={props.value} />;
     const intent = display();
     if (intent.kind === "empty") return emptyValue();
     if (props.field.type === "object_list")
@@ -193,6 +195,7 @@ export function FieldValue(props: FieldValueProps) {
 
   const renderLookup = () => {
     const value = renderRawValue();
+    if (props.field.type === "resource") return <ResourceValue value={props.value} />;
     const intent = display();
     if (!props.linkLookup || props.field.type !== "lookup" || intent.kind === "barcode" || intent.kind === "empty") return value;
     const target = lookupTarget(props);

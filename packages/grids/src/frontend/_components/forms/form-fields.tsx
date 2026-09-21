@@ -26,6 +26,7 @@ import { gridsFormMessages } from "./messages";
 import { displayNumberInput, normalizeNumberInput } from "./number-input";
 import { ObjectListInput } from "./ObjectListInput";
 import PrincipalInput from "./PrincipalInput";
+import ResourceInput from "./ResourceInput";
 
 export { buildFormSubmitPayload, type InlineCreateState } from "./form-submit-payload";
 
@@ -499,6 +500,19 @@ export function FieldInput(props: {
         </div>
       );
     }
+
+    case "resource":
+      return (
+        <ResourceInput
+          name={props.field.id}
+          label={label}
+          description={helpText}
+          required={required}
+          error={error}
+          value={props.value}
+          onChange={props.onChange}
+        />
+      );
 
     case "principal": {
       const cfg = props.field.config as { cardinality?: "single" | "multiple" };

@@ -218,6 +218,17 @@ const STORAGE: Record<string, StorageDescriptor> = {
     searchable: false,
   },
   // ── JSON ─────────────────────────────────────────────────────────
+  resource: {
+    kind: "json",
+    project: () => null,
+    formatKind: "json",
+    sortable: false,
+    filterable: false,
+    groupable: false,
+    aggregatable: false,
+    cursorable: false,
+    searchable: false,
+  },
   json: {
     kind: "json",
     project: () => null,
