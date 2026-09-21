@@ -35,7 +35,7 @@ work gets a worktree under `../cloud-wt/<slug>`:
 ```bash
 git fetch origin
 git worktree add ../cloud-wt/<slug> -b fix/<slug> origin/main
-cd ../cloud-wt/<slug> && bun install --frozen-lockfile
+cd ../cloud-wt/<slug> && bun install --frozen-lockfile && bun run --cwd packages/ui build
 ```
 
 The PR title becomes the commit and must be a Conventional Commit:
