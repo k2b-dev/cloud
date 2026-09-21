@@ -1,7 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { databaseSuite } from "../../../../../../scripts/fixtures/test-infra";
 import { consumePasswordResetToken, createPasswordResetToken } from "./auth";
 
-describe("local auth password reset tokens", () => {
+const suite = databaseSuite();
+
+suite("local auth password reset tokens", () => {
   test("consumes password reset tokens only once", async () => {
     const payload = {
       userId: crypto.randomUUID(),

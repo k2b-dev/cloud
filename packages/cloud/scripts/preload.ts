@@ -134,7 +134,10 @@ await mkdir(appPublicDir, { recursive: true });
 
 // Static assets from <appDir>/public, same as step 3 of the production build.
 const appPublicSource = resolve(appDir, "public");
-if (existsSync(appPublicSource)) await cp(appPublicSource, appPublicDir, { recursive: true });
+// A standalone application's public directory can be the serving root itself; never copy a tree into itself.
+if (existsSync(appPublicSource) && appPublicSource !== publicDir && !appPublicDir.startsWith(`${appPublicSource}/`)) {
+  await cp(appPublicSource, appPublicDir, { recursive: true });
+}
 
 if (appId !== "core" && app) {
   await writeAppFavicon({

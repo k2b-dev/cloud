@@ -121,6 +121,8 @@ jobs:
         with:
           name: ui-dist
           path: packages/ui/dist
+      - name: Install the Playwright browser used by Assistant code-host tests
+        run: bunx playwright install --with-deps chromium
       - run: bun run test --shard ${{ matrix.shard }}/3
 
   integration:
@@ -221,6 +223,14 @@ jobs:
           name: ui-dist
           path: packages/ui/dist
       - run: bun run --cwd packages/grids test:all --shard ${{ matrix.shard }}/3
+        env:
+          GRIDS_VERIFY_REPORTS_DIR: ${{ runner.temp }}/grids-certification
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: grids-certification-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/grids-certification
+          if-no-files-found: ignore
       - if: always()
         run: docker rm --force grids-postgres grids-nats
 
@@ -377,7 +387,11 @@ jobs:
             --env CLOUD_IDENTITY_JWKS_ORIGIN=http://app-core:3000
             --env CLOUD_OAUTH_JWKS_ORIGIN=http://app-oauth:3000
             --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
-          docker run --detach --name app-core "${common[@]}" --publish 127.0.0.1:3001:3000 cloud-core:ci
+          docker run --detach --name app-core "${common[@]}" \
+            --env CLOUD_IDENTITY_KEY_ENCRYPTION_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
+            --env CLOUD_OAUTH_BROKER_SECRET=abababababababababababababababababababababababababababababababab \
+            --env ADMIN_LOGIN_TOKEN=ci-admin \
+            --publish 127.0.0.1:3001:3000 cloud-core:ci
           docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 cloud-gateway:ci
           for container in app-core gateway; do
             [[ "$(docker exec "$container" id -u)" != "0" ]] || { echo "$container runs as root" >&2; exit 1; }
