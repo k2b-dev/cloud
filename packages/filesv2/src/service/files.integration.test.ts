@@ -1481,8 +1481,11 @@ suite("Files service and durable bindings", () => {
     const baseId = (await service.bases(actor)).items[0]!.id;
     expect(await service.recent(actor)).toEqual([]);
     await service.download(actor, { baseId, path: "Docs/plan.odt" });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect((await service.recent(actor)).map((item) => item.entry.path)).toEqual(["Docs/plan.odt"]);
+    // The download remembers the opened entry without awaiting it; poll instead of sleeping a fixed time.
+    const recentPaths = async () => (await service.recent(actor)).map((item) => item.entry.path);
+    for (const deadline = Date.now() + 5_000; (await recentPaths()).length === 0 && Date.now() < deadline; )
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await recentPaths()).toEqual(["Docs/plan.odt"]);
     expect((await service.setFavorite(actor, { baseId, path: "Docs", favorite: true })).favorite).toBe(true);
     expect((await service.entry(actor, { baseId, path: "Docs" })).favorite).toBe(true);
     expect((await service.favorites(actor)).map((item) => `${item.base.name}:${item.entry.path}:${item.entry.directory}`)).toEqual([
