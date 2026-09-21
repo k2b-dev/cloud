@@ -83,13 +83,13 @@ passes the `gate` check and is squash-merged. Agents never push to `main`,
 never create or move tags, and never trigger a release.
 
 Ask before creating a branch or worktree: the checkout is shared with parallel
-sessions, and the maintainer decides between the current branch, a new branch,
-or a worktree. Once that is decided, follow this recipe without further
-questions:
+sessions. The default answer is a worktree; the maintainer may choose the
+current branch instead. Once that is decided, follow this recipe without
+further questions:
 
 - Branch names are `type/short-slug` (`fix/recovery-401`, `feat/grids-export`).
-- A single agent works on a branch in this checkout. Parallel agents each get
-  a worktree under `../cloud-wt/<slug>`, outside the repository:
+- Each piece of work gets its own worktree under `../cloud-wt/<slug>`, outside
+  the repository:
 
   ```bash
   git fetch origin
@@ -101,7 +101,9 @@ questions:
   In a worktree, verify with `bun run check`, `bun run test`,
   `bun run test --integration` against the local infrastructure, and
   `docker build`. Browser-level checks wait for this checkout or for CI.
-- Finish with one approval for the whole block: `gh pr create --fill`, then
+- Commit as you go, following the rules below; commits need no approval.
+  Pushing, opening the pull request, and enabling auto-merge are one block
+  that needs one approval: `gh pr create --fill`, then
   `gh pr merge --auto --squash`. After the merge, `git worktree remove` the
   worktree; merged branches are deleted automatically.
 

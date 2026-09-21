@@ -29,8 +29,8 @@ before building them; open a bug with the
 ## Branch and open a pull request
 
 `main` is protected. Work on a branch named `type/short-slug`, open a pull
-request, and it is squash-merged after the `gate` check passes. Parallel work
-uses a worktree under `../cloud-wt/<slug>`:
+request, and it is squash-merged after the `gate` check passes. Each piece of
+work gets a worktree under `../cloud-wt/<slug>`:
 
 ```bash
 git fetch origin
