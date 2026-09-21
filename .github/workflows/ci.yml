@@ -185,6 +185,8 @@ jobs:
         with:
           name: ui-dist
           path: packages/ui/dist
+      - name: Install the Playwright browser used by the Assistant code host
+        run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
       # Grids certification runs in its own sharded job below.
       - run: bun run test --integration --exclude grids
       - if: always()

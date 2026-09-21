@@ -10,7 +10,7 @@ import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
-import { databaseSuite, requireInfraUrl, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, requireInfraUrl, testFor } from "../../../../scripts/fixtures/test-infra";
 import { importRows } from "../../examples/accounting/import-rows";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { app } from "../config";
@@ -37,20 +37,25 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   const stranger = testIdentity("00000000-0000-4000-8000-000000000004");
   const source = { entry: "main.js", files: [{ path: "main.js", content: "export default () => 1" }] };
   let id = "";
-  let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   afterAll(async () => {
     await sql.close();
-    await fresh?.drop();
   });
   beforeAll(async () => {
-    fresh = await useFreshDatabase("assistant_artifacts");
+    // scripts/test-artifacts.ts provides an empty database in a disposable
+    // container. database.ts binds its own pool to DATABASE_URL at import
+    // time, so this suite cannot move to a fresh database in beforeAll; it
+    // builds the stand-in schema in the runner's database instead.
+    const [existing] = await sql<
+      { name: string }[]
+    >`SELECT nspname AS name FROM pg_namespace WHERE nspname IN ('ai','auth','settings','assistant') LIMIT 1`;
+    if (existing) throw new Error(`schema "${existing.name}" already exists; run this file through bun run test:integration`);
     await sql`CREATE SCHEMA settings`;
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text,updated_at timestamptz DEFAULT now())`;
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE ai.conversations(id uuid PRIMARY KEY,created_by_user_id uuid,archived_at timestamptz)`;
     await sql`CREATE TABLE ai.projects(id uuid PRIMARY KEY,short_id text UNIQUE,name text,description text DEFAULT '',icon text DEFAULT '',instructions text DEFAULT '',default_model_profile_id text,revision integer DEFAULT 1,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now())`;
     await sql`CREATE TABLE ai.project_access(project_id uuid,access_id uuid)`;
-    await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text)`;
+    await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text,conversation_id uuid,run_config jsonb)`;
     await sql`CREATE TABLE ai.files(conversation_id uuid,path text,bytes bytea,size bigint,media_type text,origin text,producer_call_key text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(conversation_id,path))`;
     await sql`CREATE TABLE ai.dictations(conversation_id uuid,source_bytes bytea)`;
 
@@ -1219,8 +1224,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
+  testFor("rsql")("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
     const resource = await artifacts.create({ title: "Excel import", kind: "app", source }, owner);
     const settings = spyOn(app.settings, "get").mockImplementation(
       async (key) =>
@@ -1273,8 +1277,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("database clear preserves schema and every attempted write invalidates reviewed state", async () => {
+  testFor("rsql")("database clear preserves schema and every attempted write invalidates reviewed state", async () => {
     const settings = spyOn(app.settings, "get").mockImplementation(
       async (key) =>
         ({
@@ -1332,8 +1335,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("partial clear reports progress and releases serialization after cancellation", async () => {
+  testFor("rsql")("partial clear reports progress and releases serialization after cancellation", async () => {
     const controller = new AbortController();
     let deletes = 0;
     const proxy = Bun.serve({
@@ -1449,8 +1451,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect((await artifacts.get(resource.id, owner)).publishedRevision).toBe(1);
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("Studio database backup and reset preserve source and rotate namespace generations", async () => {
+  testFor("rsql")("Studio database backup and reset preserve source and rotate namespace generations", async () => {
     const resource = await artifacts.create({ title: "Reset lifecycle", source }, owner);
     const settings = spyOn(app.settings, "get").mockImplementation(
       async (key) =>
@@ -1946,12 +1947,12 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       conversation.mockRestore();
     }
   });
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
+  test("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
     const conversationId = crypto.randomUUID(),
       turnId = crypto.randomUUID();
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
-    await sql`INSERT INTO ai.turns(id,status) VALUES(${turnId}::uuid,'running')`;
+    // The host reads the turn's run_config through its conversation to detect task-scoped grants.
+    await sql`INSERT INTO ai.turns(id,status,conversation_id) VALUES(${turnId}::uuid,'running',${conversationId}::uuid)`;
     const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) =>
       request.ownerUserId !== owner.user.id
         ? null
@@ -1978,21 +1979,24 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
             updatedAt: new Date().toISOString(),
           },
     );
-    const turn = spyOn(aiConversations, "getActiveTurn").mockResolvedValue({
-      turn: {
-        id: turnId,
-        shortId: "abc345",
-        conversationId,
-        status: "running",
-        attempt: 1,
-        modelProfileId: null,
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-        error: null,
-      },
-      liveBlocks: [],
-      liveSeq: 1,
-    });
+    const activeTurn = {
+      id: turnId,
+      shortId: "abc345",
+      conversationId,
+      status: "running" as const,
+      attempt: 1,
+      modelProfileId: null,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+      error: null,
+    };
+    const turn = spyOn(aiConversations, "getActiveTurn").mockResolvedValue({ turn: activeTurn, liveBlocks: [], liveSeq: 1 });
+    // authorizeCodeExecution reads the turn and its run config; a plain chat turn carries neither mandate nor background.
+    // getTurn follows the active-turn stub so cancelling the turn below is seen by both readers.
+    spyOn(aiConversations, "getTurn").mockImplementation(
+      async () => (await aiConversations.getActiveTurn({ conversationId }))?.turn ?? null,
+    );
+    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" } });
     const abort = new AbortController();
     const context = { ...owner, conversationId, locale: "en", signal: abort.signal };
     const call = {
@@ -2255,7 +2259,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const active = await aiConversations.getActiveTurn({ conversationId });
       if (!active) throw new Error("Missing test turn");
       turn.mockResolvedValue({ ...active, turn: { ...active.turn, cancelRequestedAt: new Date().toISOString() } });
-      await expect(agentHost.call(cancelled, context)).rejects.toThrow("no longer active");
+      await expect(agentHost.call(cancelled, context)).rejects.toThrow("no longer authorized");
       await agentHost.sweep();
       expect(
         (await sql`SELECT status FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid AND call_id='cancelled-run'`)[0]?.status,
