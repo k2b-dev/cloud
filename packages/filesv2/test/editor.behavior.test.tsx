@@ -53,7 +53,7 @@ const launch: EditorLaunch = {
   canWrite: true,
 };
 
-describe("Files v2 office editing", () => {
+describe("Filesv2 office editing", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
     return;

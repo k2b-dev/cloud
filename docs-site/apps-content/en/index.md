@@ -25,7 +25,8 @@ a running application for detailed usage instructions.
 | --- | --- |
 | [Assistant](/en/apps/assistant) | Writing, rewriting, summarizing, and questions with configured AI models |
 | [Contacts](/en/apps/contacts) | Shared contact books, structured records, tags, notes, and hierarchy |
-| [Files](/en/apps/files) | Browsing, uploading, moving, and managing files across accessible bases |
+| [Files](/en/apps/filesv2) | Browsing Cloud and FreeIPA storage, editing office documents, and downloading files directly |
+| [Files (legacy)](/en/apps/files) | Browsing, uploading, moving, and managing files across accessible bases; being replaced by Files |
 | [Grids](/en/apps/grids) | Structured tables, views, forms, reports, and document workflows |
 | [Mail](/en/apps/mail) | Searching, organizing, and collaborating on email |
 | [Notebooks](/en/apps/notebooks) | Collaborative notebooks, structured notes, and realtime editing |

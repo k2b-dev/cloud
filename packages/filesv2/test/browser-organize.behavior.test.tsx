@@ -46,7 +46,7 @@ const directory: DirectoryResult = {
   next: null,
 };
 
-describe("Files v2 ordering and drag-and-drop", () => {
+describe("Filesv2 ordering and drag-and-drop", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
     return;

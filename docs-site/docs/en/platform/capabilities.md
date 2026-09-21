@@ -1408,7 +1408,7 @@ HTTP and CLI clients may use the provider's larger advertised limit.
 Core binds code-mode stream references to their conversation and foreground
 turn. They cannot be replayed through the ordinary HTTP endpoint or a different
 turn, even by the same user. The host stops canceled turns and aborts their
-network transfers. Filesv2 checks cancellation again before committing an
+network transfers. Files (`filesv2`) checks cancellation again before committing an
 upload. Cancellation is not rollback: a write already committed remains
 committed, and a cancellation racing that commit can still complete.
 

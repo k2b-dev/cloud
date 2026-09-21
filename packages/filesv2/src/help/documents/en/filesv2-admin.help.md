@@ -6,7 +6,7 @@ description: Connect Filegate, inspect directories, and manage their archive and
 order: 200
 ---
 
-Open **File administration** to manage Files v2. Its views separate storage information, current directories, archived directories, public shares, and settings. Filters, folders, and pages remain in the address, including when you use Back or Forward.
+Open **File administration** to manage Files. Its views separate storage information, current directories, archived directories, public shares, and settings. Filters, folders, and pages remain in the address, including when you use Back or Forward.
 
 ## Connect storage in Settings {icon="plug"}
 
@@ -22,7 +22,7 @@ Cloud storage requires enabled local Linux identities. Only eligible user accoun
 
 The overview shows capacity, available space, active uploads, counts, and sizes for the selected root. Unknown values stay unknown. Counts and sizes require a complete observed scan; incomplete totals or totals of unknown freshness are not presented as current counts. Observation metadata describes the source and scan interval, not an atomic quota. Statistics cover the whole root, including paths outside an area's prefix.
 
-Index, version history, managed mode, and Unix execution come from Filegate. FreeIPA requires execution enabled and an explicitly configured daemon that can switch Unix identities. Without it, Filesv2 denies access instead of using the service account. Managed mode is only for roots where all writes use Filegate; keep it off when external processes write directly. It enables atomic publication checks between Filegate operations, not protection against external NFS writes. The editor remains available on unmanaged roots with best-effort conflict checks only. **Refresh** requests an updated root summary. **Rebuild index** requires confirmation because it affects the whole root.
+Index, version history, managed mode, and Unix execution come from Filegate. FreeIPA requires execution enabled and an explicitly configured daemon that can switch Unix identities. Without it, Files denies access instead of using the service account. Managed mode is only for roots where all writes use Filegate; keep it off when external processes write directly. It enables atomic publication checks between Filegate operations, not protection against external NFS writes. The editor remains available on unmanaged roots with best-effort conflict checks only. **Refresh** requests an updated root summary. **Rebuild index** requires confirmation because it affects the whole root.
 
 ## Inspect Directories {icon="folders"}
 

@@ -1,7 +1,7 @@
-# Filesv2 CLI
+# Files CLI
 
-Filesv2 combines accessible Cloud and FreeIPA homes and group directories.
-Use `cld filesv2`; the older Files application is separate. Check
+Files (`cld filesv2`) combines accessible Cloud and FreeIPA homes and group directories.
+Files (legacy) is a separate application with its own commands. Check
 `cld apps list --json` and `cld filesv2 help` before using the commands.
 
 ## Browse and download
@@ -267,7 +267,7 @@ boundaries again for every action.
 Archiving moves the directory under the chosen archive path, which is relative
 to the area's configured prefix. Omit `--archive-path` to use that area's
 configured archive. Retirement leaves the data and Unix permissions in place,
-blocks user access through Filesv2, and prevents automatic recreation.
+blocks user access through Files, and prevents automatic recreation.
 Administrators can still browse it.
 
 Lifecycle responses include `{id, state, path}`. `state: "pending"` means the

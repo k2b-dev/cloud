@@ -1,16 +1,16 @@
 ---
-title: Files
-navTitle: Files
+title: Files (legacy)
+navTitle: Files (legacy)
 section: Work
-order: 150
+order: 151
 description: Personal and group storage with browsing, search, previews, uploads, and file operations.
 tags: [files, storage, search, capabilities]
-updated: 2026-09-07
+updated: 2026-09-22
 ---
 
-# Files
+# Files (legacy)
 
-Files gives IPA users one place to work with their personal storage and the
+Files (legacy) is being replaced by [Files](/en/apps/filesv2). It gives IPA users one place to work with their personal storage and the
 storage shared through their group memberships. Browse folders, search across
 accessible bases, preview supported files, and manage items without leaving
 Cloud.

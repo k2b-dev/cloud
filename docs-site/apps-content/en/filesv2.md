@@ -1,16 +1,16 @@
 ---
-title: Filesv2
-navTitle: Filesv2
+title: Files
+navTitle: Files
 section: Work
-order: 151
+order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-09-20
+updated: 2026-09-22
 ---
 
-# Filesv2
+# Files
 
-Filesv2 is a separate application for personal and group storage. It presents
+Files (`filesv2`) is a separate application for personal and group storage. It presents
 Cloud and FreeIPA directories in one file browser. Administrators manage
 directory creation, assignments, and archives separately from everyday browsing.
 File transfers use short-lived Filegate 6 leases.
@@ -78,7 +78,7 @@ others appear without a reload. PDF and office files use file-type icons in list
 direct Filegate thumbnails; PDF contents remain viewable in the details panel.
 
 Search always covers the subtree below the current folder; hits show their
-path relative to it. Filesv2 also answers the universal
+path relative to it. Files also answers the universal
 search under the `file` tag through the `filesv2.entry` resource type, and
 each entry's Cloud reference can be copied from the details panel. A bounded or
 failed search is reported explicitly rather than presented as a complete empty
@@ -228,12 +228,12 @@ from inheriting a previous account's directory.
 ## Create and reconcile directories
 
 Use **Create** beside a missing home or POSIX group directory. Cloud directories
-belong to the Filegate service account; Filesv2 does not assign local Linux IDs
+belong to the Filegate service account; Files does not assign local Linux IDs
 to those files. Optional automatic creation provisions missing Cloud storage
 when an eligible user accesses it. It does not take over an existing unassigned
 directory or recreate storage that an administrator has retired or archived.
 
-FreeIPA creation is always explicit. Filesv2 supplies the identity's real UID
+FreeIPA creation is always explicit. Files supplies the identity's real UID
 and primary GID for homes, or the group's GID for shared directories. Shared
 directories use setgid and a default ACL so future subdirectories remain
 traversable and ordinary files do not acquire execute permission. An existing
@@ -292,10 +292,10 @@ is not an atomic transaction.
 The filesystem determines which files and directories exist. Filegate's index
 is derived metadata, not a prerequisite for recognizing externally created
 directories. An administrator can create a FreeIPA directory directly on the
-storage server and then inspect it in Filesv2. A missing Cloud assignment must
+storage server and then inspect it in Files. A missing Cloud assignment must
 not hide a valid directory.
 
-Cloud identities determine who may use storage. Filesv2 checks current access
+Cloud identities determine who may use storage. Files checks current access
 before each operation or lease. Filegate then enforces the bound FreeIPA Unix
 identity during traversal, content reads, mutations, historical reads, and ZIP
 streaming; it does not fall back to privileged reads. A denied ZIP entry fails
@@ -316,9 +316,9 @@ deletion. Use the next page to continue a partial scan.
 
 ## Edit office documents
 
-Filesv2 opens text documents, spreadsheets and presentations (`odt`, `ods`,
+Files opens text documents, spreadsheets and presentations (`odt`, `ods`,
 `odp`, `docx`, `xlsx`, `pptx`) in Collabora Online for collaborative editing.
-Administrators enable it in the Files v2 settings by entering the Collabora
+Administrators enable it in the Files settings by entering the Collabora
 address browsers load the editor from. Two optional advanced fields cover
 deployments in which this application reaches Collabora under a different
 address, or Collabora reaches Cloud under a different address than the public
@@ -331,7 +331,7 @@ documents start from an empty template in the configured default format:
 OpenDocument unless the administrator selects Microsoft Office formats. Users
 who may only read a FreeIPA file get the editor in view mode.
 
-Collabora talks to Filesv2 through WOPI under `/api/filesv2/wopi`. The editor
+Collabora talks to Files through WOPI under `/api/filesv2/wopi`. The editor
 token it receives names one user and one file and carries no rights: every
 WOPI call resolves the user and the current permissions again, so revoked
 access ends a session at its next call and no instance keeps editor state.
@@ -354,18 +354,18 @@ UI preference. An open Collabora editor keeps its initial theme; close and reope
 it after a theme change. It is never reloaded automatically while editing.
 
 Several Collabora instances need sticky routing on the `WOPISrc` parameter,
-which is a Collabora deployment concern; Filesv2 scales horizontally
+which is a Collabora deployment concern; Files scales horizontally
 unchanged.
 
 ## Download files
 
-For each download, the browser requests a short-lived lease from Filesv2.
+For each download, the browser requests a short-lived lease from Files.
 After authorization, Filegate sends the file directly to the browser. The full
 Filegate token never appears in the lease. Disabling an area or removing access
 prevents new leases; already issued leases retain their short remaining lifetime.
 
 Filegate owns each root's index, versioning, managed, and execution configuration.
-Filesv2 reads those capabilities independently for each root. Root file counts,
+Files reads those capabilities independently for each root. Root file counts,
 directory counts, and sizes are shown only for a complete observed scan;
 incomplete totals or totals of unknown freshness remain unknown. Observation metadata identifies the source
 and scan interval. These are not live quota measurements, and root totals must
@@ -415,7 +415,7 @@ replaces it. The read response contains only `tokenConfigured`. Inspect the
 inventory entry before assigning its existing directory with `admin adopt`.
 Use `cld filesv2 <command> --help` for the command's arguments.
 
-`admin directories retire` stops Filesv2 access and automatic recreation while
+`admin directories retire` stops Files access and automatic recreation while
 leaving existing files and Unix permissions untouched. Use archival when access
 through the filesystem must also be restricted. Administrator file commands
 accept either a directory name and kind or an archive ID. They use the same
@@ -456,7 +456,7 @@ or preview cache is needed. The browser uses polling for updates because Filegat
 has no change feed.
 Filegate's versioning cooldown determines which automatic saves become versions.
 
-The existing Files application remains independent and uses its older Filegate
+Files (legacy) remains independent and uses its older Filegate
 API. There is no automatic migration of its settings or storage. Operators map
 existing storage to the ordinary root and relative-path configuration.
 
@@ -513,7 +513,7 @@ recovering an uncertain upload. For unmanaged files, the observation token is
 Assistant code mode can discover accessible storage, list folders, search names,
 read file content and save analysis results back to a permitted folder. Binary
 streams support CSV, Excel and other formats without embedding the file in a
-JSON tool response. Filesv2 capability streams accept files up to 50 MiB, matching the code-mode
+JSON tool response. Files capability streams accept files up to 50 MiB, matching the code-mode
 file budget. The regular direct upload and download paths keep their own limits.
 
 Folder creation, renaming, moving, copying, moving to trash and restoring are
@@ -524,23 +524,23 @@ still an administrative operation, not an Assistant capability.
 
 Use `cld capabilities catalog --json` for current schemas and the generic
 `stream-read`, `stream-write`, `stream-status` and `stream-abort` commands for
-binary transfers. The existing Filesv2 CLI remains available for direct tasks.
+binary transfers. The existing `cld filesv2` CLI remains available for direct tasks.
 
-The canonical `entry.read` capability returns a stable `open` link and a resource reference with the current name. Consumers can open a Filesv2 entry through this shared contract without constructing file paths. Reading and opening still require the current user's access.
+The canonical `entry.read` capability returns a stable `open` link and a resource reference with the current name. Consumers can open a Files entry through this shared contract without constructing file paths. Reading and opening still require the current user's access.
 
 ## Compose private file lists and downloads
 
-Studio Apps can combine Filesv2 entries and stored Grids documents without
+Studio Apps can combine Files entries and stored Grids documents without
 copying their bytes or creating public shares. Discover the installed
 capabilities, list accessible bases with `filesv2.bases.list`, and browse with
 `filesv2.entry.list` or search a known base with `filesv2.entry.search-in-base`.
 Keep the path and filters unchanged while passing `data.next` as `after` until
 null, including empty filtered pages.
 
-Every Filesv2 item carries `{type:"filesv2.entry",id}` beside its metadata.
+Every Files item carries `{type:"filesv2.entry",id}` beside its metadata.
 Keep this ref with the row, alongside `grids.document` refs from Grids. Use
 both fields as the identity and each type's own reader/download operation.
-Filesv2 refs remain stable for a base/path, including long paths, but do not
+Files refs remain stable for a base/path, including long paths, but do not
 pin bytes or grant permissions. A rename or move changes the ref; replacing
 the file at the same path does not. Refresh stale rows before acting on them.
 

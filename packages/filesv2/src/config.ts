@@ -2,10 +2,14 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "filesv2",
-  name: "Files v2",
+  name: "Files",
   icon: "ti ti-folders",
   description: "Cloud and FreeIPA files with direct downloads.",
-  presentation: { baseLocale: "en", translations: { de: { description: "Cloud- und FreeIPA-Dateien mit direkten Downloads." } } },
+  presentation: {
+    baseLocale: "en",
+    translations: { de: { name: "Dateien", description: "Cloud- und FreeIPA-Dateien mit direkten Downloads." } },
+  },
+  appearance: { accent: "#1d4ed8", background: { from: "#2563eb", to: "#38bdf8", angle: 135 } },
   basePath: "/app/filesv2",
   baseUrl: "http://app-filesv2:3000",
   adminHref: "/admin/filesv2",
@@ -17,12 +21,12 @@ export const app = defineApp({
       kind: "secret",
       label: "Files configuration",
       default: "",
-      description: "Managed through Files v2 administration. Contains the Filegate credential and both area configurations.",
+      description: "Managed through File administration. Contains the Filegate credential and both area configurations.",
       presentation: {
         translations: {
           de: {
             label: "Dateikonfiguration",
-            description: "Wird in der Files-v2-Administration verwaltet. Enthält Filegate-Zugang und beide Dateibereiche.",
+            description: "Wird in der Dateiverwaltung verwaltet. Enthält Filegate-Zugang und beide Dateibereiche.",
           },
         },
       },

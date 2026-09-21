@@ -68,7 +68,7 @@ const flush = async () => {
   for (let i = 0; i < 24; i++) await Promise.resolve();
 };
 
-describe("Files v2 admin workspace", () => {
+describe("Filesv2 admin workspace", () => {
   if (isServer) {
     test.skip("requires DOM runner", () => {});
     return;
