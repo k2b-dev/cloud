@@ -162,6 +162,64 @@ describe("@k2b/ui intl browser behavior", () => {
     dom.cleanup();
   });
 
+  test("NumberInput derives the accepted decimals from a fractional step", async () => {
+    const dom = createDomTestHarness();
+    document.documentElement.setAttribute("lang", "de");
+    const { NumberInput } = await import("../src/inputs/NumberInput");
+    const type = (input: HTMLInputElement, text: string) => {
+      input.focus();
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.blur();
+    };
+
+    for (const typed of ["0,15", "0.15"]) {
+      const [value, setValue] = createSignal<number | null>(null);
+      const dispose = render(() => createComponent(NumberInput, { label: "Preis", step: 0.01, value, onValueChange: setValue }), dom.root);
+      const input = dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!;
+      expect(input.getAttribute("inputmode")).toBe("decimal");
+      type(input, typed);
+      expect(value()).toBe(0.15);
+      expect(input.value).toBe("0,15");
+      dispose();
+    }
+
+    // Six fraction digits: the step decides, no explicit `decimalPlaces` needed.
+    const [price, setPrice] = createSignal<number | null>(null);
+    const disposePrice = render(
+      () => createComponent(NumberInput, { label: "Preis", step: 0.000001, value: price, onValueChange: setPrice }),
+      dom.root,
+    );
+    type(dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!, "0,123456789");
+    expect(price()).toBe(0.123456);
+    disposePrice();
+
+    // An explicit `decimalPlaces` stays authoritative over the step: the second fraction digit is dropped while typing.
+    const [explicit, setExplicit] = createSignal<number | null>(null);
+    const disposeExplicit = render(
+      () => createComponent(NumberInput, { label: "Preis", step: 0.01, decimalPlaces: 1, value: explicit, onValueChange: setExplicit }),
+      dom.root,
+    );
+    type(dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!, "0,15");
+    expect(explicit()).toBe(0.1);
+    disposeExplicit();
+
+    // An integer step still rejects the separator.
+    const [count, setCount] = createSignal<number | null>(null);
+    const disposeCount = render(
+      () => createComponent(NumberInput, { label: "Anzahl", step: 1, value: count, onValueChange: setCount }),
+      dom.root,
+    );
+    const integer = dom.root.querySelector<HTMLInputElement>('[role="spinbutton"]')!;
+    expect(integer.getAttribute("inputmode")).toBe("numeric");
+    type(integer, "0,15");
+    expect(integer.value).toBe("15");
+    expect(count()).toBe(15);
+    disposeCount();
+
+    dom.cleanup();
+  });
+
   test("renders time elements with canonical datetime in the browser", async () => {
     const dom = createDomTestHarness();
     document.documentElement.setAttribute("lang", "de");
