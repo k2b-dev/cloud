@@ -2114,14 +2114,14 @@ const assertWorkflowKernelReady = async (sql: SQL): Promise<void> => {
 
 export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
   const connection = await sql.reserve();
-  let locked = false;
   let transactionStarted = false;
   try {
-    await connection`SELECT pg_advisory_lock(hashtextextended('grids:migrate', 0))`;
-    locked = true;
-    await assertWorkflowKernelReady(connection);
     await connection`BEGIN`.simple();
     transactionStarted = true;
+    // The guard is transaction-scoped so that it also holds behind a
+    // transaction pooler; the whole migration runs in this one transaction.
+    await connection`SELECT pg_advisory_xact_lock(hashtextextended('grids:migrate', 0))`;
+    await assertWorkflowKernelReady(connection);
     // Writers acquire parent locks before touching records. Match that order
     // before an upgrade needs an exclusive records lock or backfill writes rows.
     const [existing] = await connection<Array<{ present: boolean }>>`SELECT to_regclass('grids.tables') IS NOT NULL AS present`;
@@ -2138,7 +2138,6 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     if (transactionStarted) await connection`ROLLBACK`.simple().catch(() => undefined);
     throw error;
   } finally {
-    if (locked) await connection`SELECT pg_advisory_unlock(hashtextextended('grids:migrate', 0))`.catch(() => undefined);
     connection.release();
   }
 };

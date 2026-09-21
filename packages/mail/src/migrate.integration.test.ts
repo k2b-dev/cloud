@@ -28,6 +28,14 @@ suite("mail baseline schema", () => {
     expect(rerun[0]?.applied_at).toEqual(first!.applied_at);
   });
 
+  test("serializes concurrent runs behind a transaction-scoped guard", async () => {
+    await Promise.all([migrate(), migrate(), migrate()]);
+    const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations`;
+    expect(rows).toHaveLength(1);
+    const [locks] = await sql<{ held: number }[]>`SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory'`;
+    expect(locks?.held).toBe(0);
+  });
+
   test("refuses a database left behind by the removed migration chain", async () => {
     await migrate();
     await sql`INSERT INTO mail.schema_migrations (version, name) VALUES (126, 'drop_legacy_automation_authority')`;

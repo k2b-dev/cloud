@@ -1,4 +1,5 @@
-import { beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { getProcessSync, type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import type { RequestActor } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
@@ -15,8 +16,9 @@ import { entryRefId } from "../resource-ref";
 import { createFilesService } from ".";
 import { createTemplateService } from "./templates";
 
-const suite = suiteFor("database");
+const suite = suiteFor("database", "nats");
 suite("Files service and durable bindings", () => {
+  let processSync: ProcessSync | undefined;
   const nodes = new Map<string, Node>();
   const defaults = new Map<string, unknown>();
   let lostMoveResponse = false;
@@ -688,6 +690,7 @@ suite("Files service and durable bindings", () => {
   const id = (actor: RequestActor) => (actor.kind === "user" ? actor.user.id : "");
   beforeAll(async () => {
     await assertPrivateDatabase();
+    processSync = await startProcessSync({ application: "filesv2" });
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`DO $$ BEGIN CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, group_id uuid, service_account_id uuid, authenticated_only boolean NOT NULL DEFAULT false, permission auth.permission_level NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`.simple();
@@ -704,6 +707,9 @@ suite("Files service and durable bindings", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS settings.entries(key text PRIMARY KEY,value text)`.simple();
+  });
+  afterAll(async () => {
+    await processSync?.stop();
   });
   beforeEach(async () => {
     ipaIndexed = false;
@@ -1036,6 +1042,31 @@ suite("Files service and durable bindings", () => {
       release.resolve();
       await first;
     }
+    expect(await withUploadLock(id, async () => "released")).toBe("released");
+  });
+  test("a crashed lock holder frees the root and the upload after its lease expires", async () => {
+    const { withRootLock, withUploadLock } = await import("../data/operations");
+    const id = crypto.randomUUID();
+    const root = `crashed-${id}`;
+    // Another process that acquired the same leases with a short TTL and never released them.
+    const crashed = getProcessSync().mutex({ id: "filesv2:operations", ttlMs: 1_000, retry: { maxAttempts: 1 } });
+    expect(await crashed.acquire({ resource: `upload:${id}` })).not.toBeNull();
+    expect(await crashed.acquire({ resource: `root:${root}` })).not.toBeNull();
+    await expect(withUploadLock(id, async () => "ran")).rejects.toThrow("operation_busy");
+    await expect(withRootLock(root, async () => "ran")).rejects.toThrow("operation_busy");
+    const recovered = async (attempt: () => Promise<string>) => {
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        try {
+          return await attempt();
+        } catch {
+          await Bun.sleep(250);
+        }
+      }
+      return "still busy";
+    };
+    expect(await recovered(() => withUploadLock(id, async () => "ran"))).toBe("ran");
+    expect(await recovered(() => withRootLock(root, async () => "ran"))).toBe("ran");
   });
   test("a commit whose response was lost is recovered from the Filegate session record", async () => {
     const actor = await user("alice", "ipa");

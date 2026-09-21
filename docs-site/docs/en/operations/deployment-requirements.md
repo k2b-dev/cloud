@@ -30,7 +30,7 @@ this service set.
 | Requirement | Used for | Operator responsibility |
 | --- | --- | --- |
 | Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
-| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. The pull request gate tests on 17 and the nightly run on 15. |
+| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks and runtime work through NATS leases. The pull request gate tests on 17 and the nightly run on 15. |
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
@@ -51,6 +51,12 @@ Notebooks, Grids and Spaces use Postgres; deploying those apps does not itself
 require Filegate or S3. Notebook S3 snapshots are an optional export, not a
 replacement for a Cloud database backup. See
 [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state).
+
+Releases up to 0.8.0 held session advisory locks, which a transaction pooler
+leaves behind on its pooled backends and which then reject writes as
+`operation_busy`. When upgrading such an installation, release them once by
+running `SELECT pg_advisory_unlock_all()` on each affected backend, or restart
+the pooler so that its server connections are recreated.
 
 There is no universal CPU, memory, disk or database-connection sizing guarantee.
 Size for your app set, data volume, replicas and workload, and verify headroom
