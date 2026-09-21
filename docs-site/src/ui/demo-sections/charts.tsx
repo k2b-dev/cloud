@@ -242,69 +242,124 @@ type TooltipField = { label: string; unit?: string; names?: Record<string, strin
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
-  line: { title: "Request rate", fields: {
-    x: { label: "Time elapsed", unit: " h" }, y: { label: "Throughput", unit: " requests/s" },
-  } },
-  scatter: { title: "Response latency", fields: {
-    x: { label: "Payload size", unit: " KB" }, y: { label: "Response time", unit: " ms" },
-  } },
+  line: {
+    title: "Request rate",
+    fields: {
+      x: { label: "Time elapsed", unit: " h" },
+      y: { label: "Throughput", unit: " requests/s" },
+    },
+  },
+  scatter: {
+    title: "Response latency",
+    fields: {
+      x: { label: "Payload size", unit: " KB" },
+      y: { label: "Response time", unit: " ms" },
+    },
+  },
   bar: { title: "Daily queue volume", fields: { value: { label: "Jobs today", unit: " jobs" } } },
   pie: { title: "Traffic by channel", fields: { percent: { label: "Share of traffic", unit: "%" } } },
-  donut: { title: "Job progress", fields: {
-    value: { label: "Jobs", unit: " jobs" }, percent: { label: "Share of all jobs", unit: "%" },
-  } },
-  sparkline: { title: "Request history", fields: {
-    x: { label: "Minutes elapsed", unit: " min" }, y: { label: "Request rate", unit: " requests/s" },
-  } },
-  histogram: { title: "Response-time distribution", fields: {
-    from: { label: "Latency from", unit: " ms" }, to: { label: "Latency to", unit: " ms" },
-    upperInclusive: { label: "Upper bound included", names: { true: "Yes", false: "No" } },
-    count: { label: "Responses in this range", unit: " responses" },
-  } },
-  boxplot: { title: "Regional response times", fields: {
-    count: { label: "Requests measured" }, q1: { label: "25th percentile", unit: " ms" },
-    q2: { label: "Median response time", unit: " ms" }, q3: { label: "75th percentile", unit: " ms" },
-    whiskerLow: { label: "Lower whisker", unit: " ms" }, whiskerHigh: { label: "Upper whisker", unit: " ms" },
-    value: { label: "Outlier response time", unit: " ms" },
-  } },
-  gauge: { title: "Processor utilization", fields: {
-    value: { label: "CPU in use", unit: "%" }, max: { label: "Total capacity", unit: "%" },
-  } },
-  barGauge: { title: "Resource utilization", fields: {
-    value: { label: "Capacity in use", unit: "%" }, max: { label: "Total capacity", unit: "%" },
-  } },
-  stat: { title: "Request volume", fields: {
-    value: { label: "Current period", unit: " requests" }, delta: { label: "Change from previous period" },
-    x: { label: "Periods elapsed" }, y: { label: "Requests in this period", unit: " requests" },
-  } },
-  heatmap: { title: "Daily regional traffic", fields: {
-    x: { label: "Day", names: { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday" } },
-    y: { label: "Region", names: { EU: "Europe", US: "United States", Asia: "Asia" } },
-    value: { label: "Requests received", unit: " requests" },
-  } },
-  map: { title: "Request location", fields: {
-    latitude: { label: "Latitude", unit: "°" }, longitude: { label: "Longitude", unit: "°" },
-  } },
-  stateTimeline: { title: "Worker activity", fields: {
-    state: { label: "Worker status", names: { ok: "Healthy", running: "Running", error: "Error" } },
-    from: { label: "Started at", unit: " h" }, to: { label: "Ended at", unit: " h" },
-    duration: { label: "Time in this state", unit: " h" }, detail: { label: "Activity" },
-  } },
+  donut: {
+    title: "Job progress",
+    fields: {
+      value: { label: "Jobs", unit: " jobs" },
+      percent: { label: "Share of all jobs", unit: "%" },
+    },
+  },
+  sparkline: {
+    title: "Request history",
+    fields: {
+      x: { label: "Minutes elapsed", unit: " min" },
+      y: { label: "Request rate", unit: " requests/s" },
+    },
+  },
+  histogram: {
+    title: "Response-time distribution",
+    fields: {
+      from: { label: "Latency from", unit: " ms" },
+      to: { label: "Latency to", unit: " ms" },
+      upperInclusive: { label: "Upper bound included", names: { true: "Yes", false: "No" } },
+      count: { label: "Responses in this range", unit: " responses" },
+    },
+  },
+  boxplot: {
+    title: "Regional response times",
+    fields: {
+      count: { label: "Requests measured" },
+      q1: { label: "25th percentile", unit: " ms" },
+      q2: { label: "Median response time", unit: " ms" },
+      q3: { label: "75th percentile", unit: " ms" },
+      whiskerLow: { label: "Lower whisker", unit: " ms" },
+      whiskerHigh: { label: "Upper whisker", unit: " ms" },
+      value: { label: "Outlier response time", unit: " ms" },
+    },
+  },
+  gauge: {
+    title: "Processor utilization",
+    fields: {
+      value: { label: "CPU in use", unit: "%" },
+      max: { label: "Total capacity", unit: "%" },
+    },
+  },
+  barGauge: {
+    title: "Resource utilization",
+    fields: {
+      value: { label: "Capacity in use", unit: "%" },
+      max: { label: "Total capacity", unit: "%" },
+    },
+  },
+  stat: {
+    title: "Request volume",
+    fields: {
+      value: { label: "Current period", unit: " requests" },
+      delta: { label: "Change from previous period" },
+      x: { label: "Periods elapsed" },
+      y: { label: "Requests in this period", unit: " requests" },
+    },
+  },
+  heatmap: {
+    title: "Daily regional traffic",
+    fields: {
+      x: { label: "Day", names: { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday" } },
+      y: { label: "Region", names: { EU: "Europe", US: "United States", Asia: "Asia" } },
+      value: { label: "Requests received", unit: " requests" },
+    },
+  },
+  map: {
+    title: "Request location",
+    fields: {
+      latitude: { label: "Latitude", unit: "°" },
+      longitude: { label: "Longitude", unit: "°" },
+    },
+  },
+  stateTimeline: {
+    title: "Worker activity",
+    fields: {
+      state: { label: "Worker status", names: { ok: "Healthy", running: "Running", error: "Error" } },
+      from: { label: "Started at", unit: " h" },
+      to: { label: "Ended at", unit: " h" },
+      duration: { label: "Time in this state", unit: " h" },
+      detail: { label: "Activity" },
+    },
+  },
 };
 
-const createTooltip = (example: TooltipExample): ChartTooltipFormatter => ({ datum }) => ({
-  title: datum.label ? `${example.title} · ${datum.label}` : example.title,
-  rows: datum.values.flatMap(({ key, value }) => {
-    const field = example.fields[key];
-    if (!field) return [];
-    const text = field.names?.[String(value)]
-      ?? (typeof value === "number" ? value.toLocaleString("en", { maximumFractionDigits: 2 }) : value);
-    return [{ label: field.label, value: `${text}${field.unit ?? ""}` }];
-  }),
-});
+const createTooltip =
+  (example: TooltipExample): ChartTooltipFormatter =>
+  ({ datum }) => ({
+    title: datum.label ? `${example.title} · ${datum.label}` : example.title,
+    rows: datum.values.flatMap(({ key, value }) => {
+      const field = example.fields[key];
+      if (!field) return [];
+      const text =
+        field.names?.[String(value)] ?? (typeof value === "number" ? value.toLocaleString("en", { maximumFractionDigits: 2 }) : value);
+      return [{ label: field.label, value: `${text}${field.unit ?? ""}` }];
+    }),
+  });
 
 // Keep each copied example self-contained, including its domain labels and units.
-const tooltipCode = (example: TooltipExample) => `const tooltipFields: Record<string, { label: string; unit?: string; names?: Record<string, string> }> = ${JSON.stringify(example.fields, null, 2)};
+const tooltipCode = (
+  example: TooltipExample,
+) => `const tooltipFields: Record<string, { label: string; unit?: string; names?: Record<string, string> }> = ${JSON.stringify(example.fields, null, 2)};
 
 const tooltip: ChartTooltipFormatter = ({ datum }) => ({
   title: datum.label ? ${JSON.stringify(example.title + " · ")} + datum.label : ${JSON.stringify(example.title)},
@@ -352,7 +407,9 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
             <Chart {...example.chart} tooltip={tooltip} onSelect={setSelection} />
             <output aria-live="polite" style={{ display: "block", "min-height": "2rem" }}>
               {selection()
-                ? `Selected: ${tooltip(selection()!).title} — ${tooltip(selection()!).rows.map((row) => `${row.label}: ${row.value}`).join(" · ")}`
+                ? `Selected: ${tooltip(selection()!).title} — ${tooltip(selection()!)
+                    .rows.map((row) => `${row.label}: ${row.value}`)
+                    .join(" · ")}`
                 : "Select a data point to see its details here."}
             </output>
           </div>

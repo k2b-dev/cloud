@@ -15,19 +15,25 @@ Cloud bundles a set of apps that cover the common operational needs of an organi
 - **Built around your own apps.** Adding an app is one config file plus a Dockerfile. The platform picks it up at runtime.
 - **Per-app deployment.** Every feature is a separate Bun container, started, updated and scaled on its own.
 - **Horizontal scaling.** Apps are stateless and discovered through a NATS-backed registry — `docker compose up --scale notebooks=3` and the gateway routes across all instances.
-- **Bun + Hono + SolidJS + Postgres + NATS + Redis.** End-to-end TypeScript.
+- **Bun + Hono + SolidJS + Postgres + NATS + Valkey.** End-to-end TypeScript.
 - **Admin surface for everything.** Per-app admin pages, settings managed in the UI, requests route-traced through the gateway.
 
 ## What ships
 
+Every release publishes one image per application. The list is derived from
+the workspace with `bun scripts/workspace.ts apps`.
+
 | Group | Apps |
 |---|---|
-| **Platform** | [`core`](packages/core) — auth, profile, settings, legal pages, transactional email &nbsp;•&nbsp; [`gateway`](packages/gateway) — routing and app registry |
-| **Identity & access** | [`accounts`](packages/accounts) — users + groups, FreeIPA and local &nbsp;•&nbsp; [`oauth`](packages/oauth) — OAuth2 issuer &nbsp;•&nbsp; [`proxy-auth`](packages/proxy-auth) — Traefik forward-auth &nbsp;•&nbsp; [`ipa-hosts`](packages/ipa-hosts) — FreeIPA host management |
-| **Operations** | [`gateway-ops`](packages/gateway-ops) — app registry, routes, logs, telemetry, webhooks, notifications |
-| **Productivity** | [`assistant`](packages/assistant) — general-purpose AI chat &nbsp;•&nbsp; [`mail`](packages/mail) — collaborative email &nbsp;•&nbsp; [`notebooks`](packages/notebooks) — collaborative notes (Yjs) &nbsp;•&nbsp; [`spaces`](packages/spaces) — kanban / list / calendar with iCal &nbsp;•&nbsp; [`files`](packages/files) — shared storage &nbsp;•&nbsp; [`contacts`](packages/contacts) — directory views |
+| **Platform** | [`gateway`](packages/gateway) — routing and app registry &nbsp;•&nbsp; [`core`](packages/core) — auth, profile, settings, legal pages, transactional email &nbsp;•&nbsp; [`dashboard`](packages/dashboard) — personal start page with app widgets &nbsp;•&nbsp; [`capabilities`](packages/capabilities) — discover and run the queries and actions apps publish |
+| **Identity & access** | [`accounts`](packages/accounts) — users and groups, FreeIPA and local &nbsp;•&nbsp; [`oauth`](packages/oauth) — OAuth2 issuer &nbsp;•&nbsp; [`proxy-auth`](packages/proxy-auth) — Traefik forward-auth &nbsp;•&nbsp; [`ipa-hosts`](packages/ipa-hosts) — FreeIPA host management |
+| **Operations** | [`gateway-ops`](packages/gateway-ops) — app registry, routes, logs, webhooks, notifications &nbsp;•&nbsp; [`pulse`](packages/pulse) — metrics, events, states, and dashboards |
+| **Productivity** | [`assistant`](packages/assistant) — AI chat with code mode &nbsp;•&nbsp; [`mail`](packages/mail) — collaborative email &nbsp;•&nbsp; [`notebooks`](packages/notebooks) — collaborative notes &nbsp;•&nbsp; [`spaces`](packages/spaces) — kanban, list, and calendar with iCal &nbsp;•&nbsp; [`grids`](packages/grids) — structured data with bases, views, forms, documents, and workflows &nbsp;•&nbsp; [`filesv2`](packages/filesv2) — Cloud and FreeIPA storage through Filegate &nbsp;•&nbsp; [`files`](packages/files) — shared storage (Filegate v2) &nbsp;•&nbsp; [`contacts`](packages/contacts) — directory views |
 | **Content & misc** | [`faq`](packages/faq) &nbsp;•&nbsp; [`venue`](packages/venue) &nbsp;•&nbsp; [`weather`](packages/weather) &nbsp;•&nbsp; [`quotes`](packages/quotes) &nbsp;•&nbsp; [`tools`](packages/tools) |
-| **Development** | [`api-docs`](packages/api-docs) — Scalar UI aggregating every running app's OpenAPI spec &nbsp;•&nbsp; [Fibel UI catalog](http://localhost:4318/en/ui) — component showcase |
+| **Development** | [`api-docs`](packages/api-docs) — Scalar UI aggregating every running app's OpenAPI spec |
+
+The release set also contains the website image (`cloud-website`), the Cloud
+Login PWA image (`cloud-pwa-auth`), and the `cld` CLI.
 
 ## Build your own app
 
@@ -72,74 +78,65 @@ to connect it to the gateway and shared services.
        schedules, live  rate limits     schemas
 ```
 
-Each app boots, registers itself with the gateway through NATS, and starts handling requests at its declared URL prefix. The gateway holds no per-app code — adding an app touches only that app's own files and the compose file.
+Each app boots, registers itself with the gateway through NATS, and starts handling requests at its declared URL prefix. The gateway holds no per-app code — adding an app touches only that app's own files and the compose files.
 
-Apps share Postgres (each owns its own schema), NATS JetStream (registry, jobs, schedules and live events), and Redis/Valkey (rate limits, caches and short-lived authentication flows). Browser sessions use JWTs. Per-app traffic, latency and route-trace data live in the gateway and are visible in the admin UI.
+Apps share Postgres (each owns its own schema), NATS JetStream (registry, jobs, schedules and live events), and Valkey (rate limits, caches and short-lived authentication flows). Browser sessions use JWTs. Per-app traffic, latency and route-trace data live in the gateway and are visible in the admin UI.
 
 ## Quick start
 
 ```bash
 bun install --frozen-lockfile
-bun run dev        # infrastructure + core 6-container set
+bun run dev        # infrastructure + core services
 open http://localhost:3000
 ```
 
-Development requires Bun 1.x, Docker, and Docker Compose v2. The base Docker development stack gets its local database, Redis, app-secret, and admin-token values from `compose.dev.yml`; no `.env` file is required for that base stack. `.env.example` is a per-process reference for running directly on the host or building a custom local setup. Production uses `.env.prod.example` as its companion template.
+Development requires Bun 1.x, Docker, and Docker Compose v2. The development
+stack gets its local database, Valkey, app-secret, and admin-token values from
+`compose.dev.yml`; no `.env` file is required. `.env.example` is a per-process
+reference for running directly on the host; production uses `.env.prod.example`.
 
-Development Compose supplies a local-only `CLOUD_OAUTH_BROKER_SECRET` exclusively to Core and OAuth; no OAuth credential provisioning is needed. Production requires your own independently generated broker secret. Mail incoming automations still need a provisioned `CLOUD_MAIL_APP_CREDENTIAL`, passed only to Mail. See [Runtime configuration](docs-site/docs/en/operations/runtime-configuration.md) for secret ownership and private service origins.
-
-Dev admin login: open `/auth/login?method=admin` and paste `dev-admin` into the token field (the `ADMIN_LOGIN_TOKEN` baked into `app-core`).
+Dev admin login: open `/auth/login?method=admin` and paste `dev-admin` into the
+token field.
 
 | Command | What it does |
 |---|---|
-| `bun run dev` | Start infrastructure and the core 6 services |
-| `bun run dev:full` | Start infrastructure, core, and all 17 extras |
-| `bun run dev:infra` | Start Postgres, Valkey, three-node NATS JetStream, Geo, Filegate, and Gotenberg |
-| `bun run dev:infra:down` | Stop the development infrastructure |
-| `bun run dev:start <app...>` | Add one or more extra apps to the running stack |
-| `bun run dev:stop <app...>` | Stop one or more apps |
+| `bun run dev` | Start infrastructure and the core services |
+| `bun run dev:full` | Start infrastructure, core, and every optional app |
+| `bun run dev:down` | Remove the app stack, keep infrastructure running |
+| `bun run dev:start <app...>` | Add apps to the running stack |
+| `bun run dev:stop <app...>` | Stop apps |
 | `bun run dev:restart <app...>` | Reload mounted source without rebuilding images |
-| `bun run dev:restart --running` | Reload all currently running app services |
-| `bun run dev:rebuild <app...>` | Rebuild image + restart (parallel for multiple) |
+| `bun run dev:rebuild <app...>` | Rebuild images and restart |
 | `bun run dev:logs <app>` | Follow one app's logs |
-| `bun run dev:status` | Plain-text inventory of all apps (state, uptime, image age) |
+| `bun run dev:status` | Inventory of all apps |
 | `bun run dev:help` | Catalog of every dev command |
-| `bun run dev:cld -- <args>` | Run the current checkout's CLI against the local development server |
-| `bun run dev:down` | Tear down the app stack while keeping infrastructure running |
-| `bun run typecheck` | skills + boundaries + cycles + biome + tsc |
+| `bun run dev:cld -- <args>` | Run the checkout's CLI against the local server |
+| `bun run check` | Repository rules, formatting, every package typecheck |
+| `bun run test` | All tests; `--integration` with `CLOUD_TEST_*` runs the integration suites |
+| `bun run format` | Format the workspace |
+| `bun run release:preflight` | Check a running fleet against a release |
+
+See [Monorepo development](docs-site/docs/en/operations/monorepo-development.md)
+and [Testing](docs-site/docs/en/contributing/testing.md).
+
+## Deploy
+
+Releases publish `ghcr.io/k2b-dev/cloud-<image>:vX.Y.Z` for every app plus a
+`release.json` with digests. See
+[Deployment requirements](docs-site/docs/en/operations/deployment-requirements.md),
+[Build and deploy](docs-site/docs/en/operations/build-and-deploy.md), and the
+[Release process](docs-site/docs/en/contributing/release-process.md).
 
 ## Agent-assisted development
 
-The `Authorization integration` workflow runs the existing permission suites
-against fresh PostgreSQL, Valkey, and NATS services after the real Core and app
-migrations. It sets `CLOUD_DATABASE_TEST=1` and `NOTEBOOKS_DB_TEST=1`; missing
-database prerequisites fail the job. Without these flags, local runs can skip
-database tests. See `.github/workflows/authorization.yml` for the exact setup
-and test list.
-
-For shared runtime recovery changes, run `bun run test:runtime-recovery` from
-the repository root with Docker available. This manual acceptance creates
-disposable Bun and NATS containers and checks heartbeat continuity, recovery,
-one supervised restart, and graceful shutdown over three registry TTLs
-(about ten minutes). It removes its test containers and network afterward.
-The acceptance scripts are excluded from the published `@k2b/cloud` package.
-
-After a fresh clone, install the workspace, start the containerized
-documentation, and install its current developer skill. Docker with Compose v2
-is required on macOS and Linux.
+Start the documentation site from the checkout and install its developer skill:
 
 ```bash
-bun install --frozen-lockfile
-bun run dev:fibel
+docker compose -f docs-site/compose.yml up --build -d --wait
 bunx skills add http://localhost:4187
 ```
 
-`bun run dev:fibel` returns after the Fibel health endpoint is ready. Use
-`bun run dev:fibel:logs` to follow its output and `bun run dev:fibel:down` to
-stop only the documentation service.
-
-Connect the same local documentation as an MCP server. Use the command for
-your agent:
+Connect the same local documentation as an MCP server named `cloud-dev-mcp`:
 
 ```bash
 # Codex
@@ -149,29 +146,28 @@ codex mcp add cloud-dev-mcp --url http://localhost:4187/_fibel/mcp
 claude mcp add --transport http cloud-dev-mcp http://localhost:4187/_fibel/mcp
 ```
 
-For another code agent, configure a streamable HTTP MCP server named
-`cloud-dev-mcp` with the same URL and load `AGENTS.md` as repository guidance.
-The **Agents** dialog in the Fibel footer shows additional client-specific
-setup.
+If port `4187` is occupied, set `FIBEL_PORT=4199` for the Compose command and
+replace the port in the URLs. See
+[Document Cloud core changes](docs-site/docs/en/contributing/document-cloud-core-changes.md)
+for the full setup.
 
-If port `4187` is occupied, start with `FIBEL_PORT=4199 bun run dev:fibel` and
-replace `4187` in the skill and MCP URLs. Restart the agent session after adding
-the connection. The agent should see the Apps, Docs, and UI collections through
-`list_collections`, `search_docs`, and `read_doc`.
+Repository-wide agent instructions live in [`AGENTS.md`](AGENTS.md); Claude
+Code loads them through [`CLAUDE.md`](CLAUDE.md).
 
-Repository-wide agent instructions live in [`AGENTS.md`](AGENTS.md). Claude
-Code loads the same instructions through [`CLAUDE.md`](CLAUDE.md). The
-canonical contribution rules are in
-[`Document Cloud core changes`](docs-site/docs/en/contributing/document-cloud-core-changes.md).
-
-Install the CLI operator skill directly from the repository:
+Install the skills from the repository:
 
 ```bash
 bunx skills add github.com/k2b-dev/cloud
 ```
 
-- [`cloud-dev`](docs-site/agent-skills/cloud-dev/SKILL.md) — public application contract for standalone and built-in Cloud apps; repository maintainers also follow [`AGENTS.md`](AGENTS.md)
+- [`cloud-dev`](docs-site/agent-skills/cloud-dev/SKILL.md) — public application contract for standalone and built-in Cloud apps
 - [`cloud-cli`](skills/cloud-cli/SKILL.md) — using a Cloud instance from the terminal with `cld`
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch model, pull request
+titles, and local checks; [SECURITY.md](SECURITY.md) for reporting
+vulnerabilities; and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 
@@ -184,10 +180,3 @@ same license.
 
 Separate commercial licenses for proprietary, reseller, managed-service,
 white-label, or embedded product use are available by contacting the maintainer.
-
-### Assistant databases in development
-
-The local infrastructure includes rsql for Assistant Studio databases. Configure
-`assistant.rsql_url` (`http://rsql:8080`) and `assistant.rsql_api_token` in Studio
-administration. The local server token is stored in `.local/rsql/credentials.env`.
-Keep that file private. Studio apps without a database do not require rsql.

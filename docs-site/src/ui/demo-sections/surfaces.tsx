@@ -72,23 +72,24 @@ const violetTheme = { /* --k2b-accent-50 through --k2b-accent-950 */ };
     >
       <div class="k2b-ui ui-theme-demo" style={violet() ? violetTheme : undefined}>
         <div class="ui-theme-demo__swatches">
-          <div data-token="action"><span>Action solid</span><code>--k2b-action-solid</code></div>
-          <div data-token="surface"><span>Surface</span><code>--k2b-surface</code></div>
-          <div data-token="text"><span>Text</span><code>--k2b-text</code></div>
+          <div data-token="action">
+            <span>Action solid</span>
+            <code>--k2b-action-solid</code>
+          </div>
+          <div data-token="surface">
+            <span>Surface</span>
+            <code>--k2b-surface</code>
+          </div>
+          <div data-token="text">
+            <span>Text</span>
+            <code>--k2b-text</code>
+          </div>
         </div>
         <div class="ui-theme-demo__actions" role="group" aria-label="Accent theme">
-          <Button
-            variant={violet() ? "secondary" : "primary"}
-            aria-pressed={!violet()}
-            onClick={() => setViolet(false)}
-          >
+          <Button variant={violet() ? "secondary" : "primary"} aria-pressed={!violet()} onClick={() => setViolet(false)}>
             Default blue
           </Button>
-          <Button
-            variant={violet() ? "primary" : "secondary"}
-            aria-pressed={violet()}
-            onClick={() => setViolet(true)}
-          >
+          <Button variant={violet() ? "primary" : "secondary"} aria-pressed={violet()} onClick={() => setViolet(true)}>
             Violet
           </Button>
           <Button variant="ghost">
@@ -303,12 +304,7 @@ const StatsDemo = () => (
     <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
       <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
       <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="ui-stat-attention" />
-      <StatCell
-        label="Errors"
-        value={12}
-        sub="last hour"
-        accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }}
-      />
+      <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
     </StatGrid>
   </DemoCard>
 );
@@ -568,14 +564,46 @@ const changeDate = (next: Date) => {
 };
 
 const demos: DemoSection = {
-  utilities: () => <DemoGrid columns="one"><ThemeDemo /></DemoGrid>,
-  paper: () => <DemoGrid columns="one"><PaperDemo /></DemoGrid>,
-  "empty-states": () => <DemoGrid columns="one"><EmptyDemo /></DemoGrid>,
-  cards: () => <DemoGrid columns="one"><CardsDemo /></DemoGrid>,
-  details: () => <DemoGrid columns="one"><DetailsDemo /></DemoGrid>,
-  progress: () => <DemoGrid columns="one"><ProgressDemo /></DemoGrid>,
-  stats: () => <DemoGrid columns="one"><StatsDemo /></DemoGrid>,
-  observability: () => <DemoGrid columns="one"><OperationalDemo /></DemoGrid>,
+  utilities: () => (
+    <DemoGrid columns="one">
+      <ThemeDemo />
+    </DemoGrid>
+  ),
+  paper: () => (
+    <DemoGrid columns="one">
+      <PaperDemo />
+    </DemoGrid>
+  ),
+  "empty-states": () => (
+    <DemoGrid columns="one">
+      <EmptyDemo />
+    </DemoGrid>
+  ),
+  cards: () => (
+    <DemoGrid columns="one">
+      <CardsDemo />
+    </DemoGrid>
+  ),
+  details: () => (
+    <DemoGrid columns="one">
+      <DetailsDemo />
+    </DemoGrid>
+  ),
+  progress: () => (
+    <DemoGrid columns="one">
+      <ProgressDemo />
+    </DemoGrid>
+  ),
+  stats: () => (
+    <DemoGrid columns="one">
+      <StatsDemo />
+    </DemoGrid>
+  ),
+  observability: () => (
+    <DemoGrid columns="one">
+      <OperationalDemo />
+    </DemoGrid>
+  ),
 };
 
 export default demos;

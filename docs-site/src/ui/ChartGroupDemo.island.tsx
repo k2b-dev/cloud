@@ -1,16 +1,16 @@
-import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import {
   Button,
   ChartExplorer,
   ChartExplorerControls,
+  type ChartExplorerSnapshot,
   createChartExplorer,
   DescriptionList,
   Paper,
   StatusBadge,
-  type ChartExplorerSnapshot,
 } from "@k2b/ui";
-import { comparisonValues, signed, type LinkedChartRow } from "./chart-group-demo-model";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { LinkedCharts } from "./chart-group-data";
+import { comparisonValues, type LinkedChartRow, signed } from "./chart-group-demo-model";
 import { chartRequestFromSearch, chartSearchParams } from "./chart-group-url";
 import { DemoCard } from "./DemoCard";
 

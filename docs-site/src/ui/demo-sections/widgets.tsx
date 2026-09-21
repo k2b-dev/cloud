@@ -1,11 +1,4 @@
-import {
-  Widget,
-  WidgetHero,
-  WidgetList,
-  WidgetPills,
-  WidgetStat,
-  WidgetStatus,
-} from "@k2b/ui";
+import { Widget, WidgetHero, WidgetList, WidgetPills, WidgetStat, WidgetStatus } from "@k2b/ui";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 

@@ -25,7 +25,7 @@ a service worker. Use the same origin in your development Cloud's settings.
 
 - [Use and host Cloud Login](../../docs-site/docs/en/operations/cloud-login.md)
 - [Development and browser tests](DEVELOPMENT.md)
-- [Build, release and deploy](RELEASING.md)
+- [Release process](../../docs-site/docs/en/contributing/release-process.md) and [Run Cloud Login](../../docs-site/docs/en/operations/cloud-login.md)
 
 The app is a standalone static website. It uses the public Cloud app-approval
 SDK and `@k2b/ui`; no central account server or database is required.

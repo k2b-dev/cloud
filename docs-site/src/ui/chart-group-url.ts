@@ -1,5 +1,5 @@
 import type { ChartExplorerRequest } from "@k2b/ui";
-import { explorerSteps, explorerSeries } from "./chart-explorer-data";
+import { explorerSeries, explorerSteps } from "./chart-explorer-data";
 export function chartRequestFromSearch(search = ""): ChartExplorerRequest {
   const params = new URLSearchParams(search);
   const step = params.get("explorerStep");

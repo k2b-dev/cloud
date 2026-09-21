@@ -11,19 +11,41 @@
 #   - field delete with deterministic saved-view diagnostics
 #   - permission edge cases (Wave 2.1/2.2/2.3)
 #
-# Each step prints PASS / FAIL with a one-line context. Set DEBUG=1
+# Each step prints PASS / FAIL with a one-line context. Pass --debug
 # to also dump response bodies.
 #
 # Usage:
-#   bun run scripts/smoke.sh
-#   DEBUG=1 bun run scripts/smoke.sh
-#   BASE_URL=http://localhost:3001 bun run scripts/smoke.sh
+#   bash packages/grids/scripts/smoke.sh [--base-url <url>] [--admin-token-file <path>] [--debug]
 
 set -u  # unset-var = bug
 
-BASE_URL="${BASE_URL:-http://localhost:3000}"
-ADMIN_TOKEN="${ADMIN_TOKEN:-dev-admin}"
-DEBUG="${DEBUG:-0}"
+BASE_URL="http://localhost:3000"
+ADMIN_TOKEN="dev-admin"
+DEBUG=0
+
+usage() {
+  cat <<'USAGE'
+Usage: bash packages/grids/scripts/smoke.sh [options]
+
+Grids API smoke tests against a running local dev stack.
+
+Options:
+  --base-url <url>            Cloud server (default http://localhost:3000)
+  --admin-token-file <path>   File containing the dev admin token (default token "dev-admin")
+  --debug                     Also dump response bodies
+  --help                      Show this help
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --base-url) BASE_URL="$2"; shift 2 ;;
+    --admin-token-file) ADMIN_TOKEN="$(tr -d '\n' < "$2")"; shift 2 ;;
+    --debug) DEBUG=1; shift ;;
+    --help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
+  esac
+done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colour the output a little so failures pop in long logs. NO_COLOR

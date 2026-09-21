@@ -1,13 +1,13 @@
-import { bindProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { connect, createServer, type Socket } from "node:net";
 import { cpus, loadavg } from "node:os";
 import { Hono } from "hono";
+import { bindProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { benchmarkConfiguration } from "./configuration";
 import { summary } from "./statistics";
 
-// Run through scripts/bench-identity.ts. The default SQL handle connects to a
+// Run through packages/core/scripts/bench-identity.ts. The default SQL handle connects to a
 // real, metered, disposable PostgreSQL database. Authentication is not mocked.
 const source = new URL(process.env.DATABASE_URL!);
 assert.match(source.pathname, /^\/cloud_identity_bench_[a-z0-9]+$/);

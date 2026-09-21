@@ -1,5 +1,3 @@
-import layoutNavigation from "./layout/navigation.md" with { type: "text" };
-import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import actionButtons from "./actions/buttons.md" with { type: "text" };
 import actionCopyRemove from "./actions/copy-remove.md" with { type: "text" };
 import actionDisclosure from "./actions/disclosure.md" with { type: "text" };
@@ -47,9 +45,11 @@ import inputSlider from "./input/slider.md" with { type: "text" };
 import inputTagEditor from "./input/tag-editor.md" with { type: "text" };
 import inputTags from "./input/tags.md" with { type: "text" };
 import inputText from "./input/text.md" with { type: "text" };
+import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import layoutDetailPanel from "./layout/detail-panel.md" with { type: "text" };
 import layoutDiscussion from "./layout/discussion.md" with { type: "text" };
 import layoutFloatingWindow from "./layout/floating-window.md" with { type: "text" };
+import layoutNavigation from "./layout/navigation.md" with { type: "text" };
 import layoutOverview from "./layout/overview.md" with { type: "text" };
 import contentPagination from "./layout/pagination.md" with { type: "text" };
 import layoutPanelDialog from "./layout/panel-dialog.md" with { type: "text" };

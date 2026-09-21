@@ -1,9 +1,6 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.AsyncIterable"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
     "baseUrl": ".",
     "paths": {
       "@/*": ["../notebooks/src/*"],
@@ -18,21 +15,7 @@
       "@k2b/cloud-app-pulse/cli": ["../pulse/src/cli.ts"],
       "@k2b/cloud-app-spaces/cli": ["../spaces/src/cli.ts"],
       "@k2b/cloud-app-tools/cli": ["../tools/src/cli.ts"]
-    },
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    }
   },
   "include": [
     "./src/**/*.ts",

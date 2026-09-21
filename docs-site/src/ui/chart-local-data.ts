@@ -1,4 +1,4 @@
-import { prepareChartSnapshot, type ChartExplorerRequest, type ChartExplorerSnapshot, type ChartExplorerData } from "@k2b/ui";
+import { type ChartExplorerData, type ChartExplorerRequest, type ChartExplorerSnapshot, prepareChartSnapshot } from "@k2b/ui";
 import { comparisonValues, signed } from "./chart-group-demo-model";
 export type QueueRow = { key: string; label: string; current: number; reference: number | null };
 export type QueueCharts = { queues: ChartExplorerData<QueueRow> };

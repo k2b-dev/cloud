@@ -65,7 +65,7 @@ curl --fail --silent http://localhost:4187/health | rg '"/en/docs"'
 If it does not, start the documentation site from the current checkout:
 
 ```bash
-bun run dev:fibel
+docker compose -f docs-site/compose.yml up --build -d --wait
 ```
 
 This builds and starts one isolated Docker Compose service, then waits for its
@@ -75,15 +75,15 @@ Markdown so Fibel rebuilds its in-memory search and MCP index. Cached image
 layers are reused. Follow or stop it with:
 
 ```bash
-bun run dev:fibel:logs
-bun run dev:fibel:down
+docker compose -f docs-site/compose.yml logs -f
+docker compose -f docs-site/compose.yml down --volumes
 ```
 
 It listens on port `4187` by default. If that port belongs to another local
 process, choose a free host port:
 
 ```bash
-FIBEL_PORT=4199 bun run dev:fibel
+FIBEL_PORT=4199 docker compose -f docs-site/compose.yml up --build -d --wait
 ```
 
 Add the active MCP endpoint with the stable local name `cloud-dev-mcp`.
@@ -160,16 +160,13 @@ cross-cutting application invariant changes. Add or update its cases in
 ## Run the relevant checks
 
 ```bash
-bun run --cwd docs-site check:docs
-bun run --cwd docs-site check:api-surface
-bun run --cwd docs-site check:example-coverage
-bun run --cwd docs-site check:ui-catalog
-bun run --cwd docs-site check:harness
-bun run --cwd docs-site typecheck
+bun run --cwd docs-site verify:docs
 ```
 
-Run the checks affected by the change while editing. Run the complete set
-before handing off a change that alters a public contract.
+This runs the frontmatter, link, API-surface, example-coverage, UI-catalog,
+harness, and typecheck checks and builds the website. `bun run check` at the
+repository root includes the same documentation checks, and the pull request
+`gate` runs them again.
 
 ## Review the finished change
 

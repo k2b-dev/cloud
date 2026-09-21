@@ -1,5 +1,5 @@
 import type { ChatMention } from "@k2b/ui";
-import { Chat, CodeDisplay, type ChatTimelineItem } from "@k2b/ui";
+import { Chat, type ChatTimelineItem, CodeDisplay } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
@@ -130,15 +130,38 @@ const ChatDemo = () => {
           value={draft()}
           onValueChange={setDraft}
           placeholder="Try: Please use /release-notes"
-          mentions={mentions()} onMentionsChange={setMentions}
-          accessory={<Chat.Tasks items={[{ id: "draft", content: "Draft the release notes", status: "in_progress" }]} open={tasksOpen()} onOpenChange={setTasksOpen} label="Tasks" progressLabel="0/1" statusLabels={{pending:"Pending",in_progress:"In progress",completed:"Completed",cancelled:"Cancelled"}} />}
+          mentions={mentions()}
+          onMentionsChange={setMentions}
+          accessory={
+            <Chat.Tasks
+              items={[{ id: "draft", content: "Draft the release notes", status: "in_progress" }]}
+              open={tasksOpen()}
+              onOpenChange={setTasksOpen}
+              label="Tasks"
+              progressLabel="0/1"
+              statusLabels={{ pending: "Pending", in_progress: "In progress", completed: "Completed", cancelled: "Cancelled" }}
+            />
+          }
           models={[
             { id: "fast", label: "Fast", image: "/assets/logo.svg" },
             { id: "deep", label: "Deep", description: "More reasoning" },
           ]}
           selectedModelId={model()}
           onModelChange={setModel}
-          modelDetails={<Chat.ContextPopup aria-label="Model details" class="text-xs text-muted" content={<div style="width:16rem"><strong>Model details</strong><p>The host can explain availability or allowance here.</p></div>}>Details</Chat.ContextPopup>}
+          modelDetails={
+            <Chat.ContextPopup
+              aria-label="Model details"
+              class="text-xs text-muted"
+              content={
+                <div style="width:16rem">
+                  <strong>Model details</strong>
+                  <p>The host can explain availability or allowance here.</p>
+                </div>
+              }
+            >
+              Details
+            </Chat.ContextPopup>
+          }
           fileSelection={{ onSelect: () => undefined }}
           menuActions={[
             {
@@ -149,7 +172,13 @@ const ChatDemo = () => {
             },
           ]}
           commands={[
-            { name: "release-notes", label: "Release notes", description: "Skill · Write concise release notes", icon: "ti ti-sparkles", mention: { id: "release-notes", name: "Release notes", kind: "resource", icon: "ti ti-sparkles" } },
+            {
+              name: "release-notes",
+              label: "Release notes",
+              description: "Skill · Write concise release notes",
+              icon: "ti ti-sparkles",
+              mention: { id: "release-notes", name: "Release notes", kind: "resource", icon: "ti ti-sparkles" },
+            },
             {
               name: "summarize",
               description: "Summarize the current conversation",

@@ -36,8 +36,8 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
-import { FileGridDemo } from "./file-grid";
 import { ChartDemo } from "./charts";
+import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";

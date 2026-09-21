@@ -1,5 +1,5 @@
-import WorkspaceNavigation from "@k2b/cloud/ssr/WorkspaceNavigation.island";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
+import WorkspaceNavigation from "@k2b/cloud/ssr/WorkspaceNavigation.island";
 import { createNavigation } from "@k2b/ui";
 
 export const InventoryLinks = () => (

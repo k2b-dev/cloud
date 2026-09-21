@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-09-15
+updated: 2026-09-21
 ---
 
 # Build and deploy
@@ -99,16 +99,25 @@ Build it on macOS or Linux with the same Linux runtime:
 docker build -t inventory:local .
 ```
 
-Cloud's monorepo Dockerfile additionally accepts an application ID and release
-label:
+Cloud's monorepo Dockerfile additionally accepts an application ID, the Cloud
+version, and a release label:
 
 ```bash
 docker build \
   --build-arg APP_ID=inventory \
+  --build-arg CLOUD_VERSION=0.8.0 \
   --build-arg CLOUD_RELEASE=sha-0123456789ab \
   -t cloud-app-inventory:local \
   .
 ```
+
+| Build argument  | Default       | Set by release builds to      | Visible at runtime as                                   |
+| --------------- | ------------- | ----------------------------- | ------------------------------------------------------- |
+| `CLOUD_VERSION` | `0.0.0-local` | the release version (`X.Y.Z`) | `version` in `/_cloud/ready` and the app registration   |
+| `CLOUD_RELEASE` | `local`       | the immutable `sha-<commit>`  | `release` in `/_cloud/ready` and the app registration   |
+
+Both values are baked into the bundle and exported as `CLOUD_VERSION` and
+`CLOUD_RELEASE` environment variables of the runtime image.
 
 The final image contains only the bundle and Bun runtime. It listens on port
 3000.
@@ -152,26 +161,41 @@ Dockerfile `ENV` instructions or pass them as build arguments.
 Do not expose the application directly. The gateway discovers its registered
 prefixes and proxies public traffic.
 
-The Cloud platform's production Compose requires one immutable
-`CLOUD_IMAGE_TAG` for its runtime image set. A separately released application
-uses its own immutable image tag while remaining on the same private network.
-Cloud maintainers use only a `sha-...` platform tag whose Docker workflow
-finished the `release-set` job; that job proves the complete platform image set
-exists.
+## Choose an image tag
 
-When a Docker release includes Grids, the workflow requires Grids certification
-from the same commit before publishing any selected image. Certification runs the
-full Grids and shared workflow tests with PostgreSQL, NATS JetStream, Valkey and
-real PDF rendering, plus an unfiltered Grids typecheck. Failed, cancelled or
-missing certification blocks the release. Its workflow artifact retains JUnit
-reports, logs and runtime versions. This gate does not replace the operator's
-backup restoration and process recovery checks.
+Every Cloud release publishes one complete image set under
+`ghcr.io/k2b-dev/cloud-<image>:vX.Y.Z`. The GitHub release for `cloud-vX.Y.Z`
+carries `release.json`, which lists each image with its digest. Deploy by the
+`vX.Y.Z` tag or, for a fully reproducible rollout, by the digests from that
+file.
 
-When operating the Cloud platform itself, render and inspect its deployment
-before changing platform containers:
+| Tag | Meaning | Use |
+| --- | --- | --- |
+| `vX.Y.Z` | One released Cloud version; the same tag on every image in the set | Production |
+| `sha-<12 commit>` | A main-branch build after the pull request gate; not a release | Staging and pre-release verification |
+
+`main` and `latest` tags do not exist. The former `cloud-<image>-v*` per-app
+tags are gone; all images of one installation carry the same Cloud version.
+
+The Cloud platform's production Compose requires one `CLOUD_IMAGE_TAG` for its
+runtime image set. A separately released application uses its own immutable
+image tag while remaining on the same private network.
+
+The pull request gate runs Grids certification before any change reaches
+`main`: the full Grids and shared workflow tests with PostgreSQL, NATS
+JetStream, Valkey and real PDF rendering, plus an unfiltered Grids typecheck.
+This gate does not replace the operator's backup restoration and process
+recovery checks.
+
+See [Release process](/en/docs/contributing/release-process) for how versions
+and tags are produced.
+
+## Roll out a release
+
+Render and inspect the deployment before changing platform containers:
 
 ```bash
-export CLOUD_IMAGE_TAG=sha-0123456789ab
+export CLOUD_IMAGE_TAG=v0.8.0
 docker compose -f compose.prod.yml config
 docker compose -f compose.prod.yml pull
 ```
@@ -187,7 +211,7 @@ network before using it. Keep rendered Compose output private because it
 contains resolved secrets. Follow the fresh-install order in Deployment
 requirements for Core initialization, administrator sign-in, and app setup.
 
-`bun run prod:preflight` checks an already running fleet against the selected
+`bun run release:preflight` checks an already running fleet against the selected
 release; it cannot pass before a fresh installation starts or while an older
 release is still running. It needs `CLOUD_IMAGE_TAG`, `SYNC_NAMESPACE`,
 `CLOUD_CORE_URL` (reachable Core origin) and `CLOUD_ADMIN_TOKEN` (an authorized
@@ -207,7 +231,7 @@ After deployment:
 5. verify migrations and background workers;
 6. verify Core identity key readiness and the internal JWKS response;
 7. confirm the app reports its expected release and Sync version in Admin → Apps;
-8. for a platform release, run `bun run prod:preflight`;
+8. for a platform release, run `bun run release:preflight`;
 9. stop one application instance and confirm registry cleanup.
 
 See [Identity key operations](/en/docs/operations/identity-key-operations) for

@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
+import { parseArgs } from "node:util";
 import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
+import { requireDatabaseUrl } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../core/src/migrate/core/auth";
 import { migrate as migrateGrids } from "../src/migrate";
 import { gridsService } from "../src/service";
@@ -9,7 +11,23 @@ import { validateRelationTargets } from "../src/service/relations";
 type ServiceResult<T> = { ok: true; data: T } | { ok: false; error: { message?: string } };
 type SmokePrincipal = { type: "user"; userId: string } | { type: "group"; groupId: string };
 
-const KEEP = process.env.KEEP === "1";
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: { keep: { type: "boolean", default: false }, help: { type: "boolean", default: false } },
+});
+if (options.help) {
+  console.log(`Usage: CLOUD_TEST_DATABASE_URL=postgres://.../<name>_test bun packages/grids/scripts/sql-boundary-smoke.ts [--keep]
+
+Exercises Grids SQL boundaries (relations, permissions) on the test database.
+
+Options:
+  --keep   Keep the smoke fixture after the run
+  --help   Show this help
+`);
+  process.exit(0);
+}
+requireDatabaseUrl();
+const KEEP = options.keep;
 const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const createdBaseIds: string[] = [];
 const createdUserIds: string[] = [];
@@ -96,7 +114,7 @@ const insertRecord = async (tableId: string, data: Record<string, unknown>, crea
 
 const cleanup = async (): Promise<void> => {
   if (KEEP) {
-    console.log(`KEEP=1, keeping smoke fixture run=${runId}`);
+    console.log(`--keep set, keeping smoke fixture run=${runId}`);
     return;
   }
   if (createdBaseIds.length > 0) {

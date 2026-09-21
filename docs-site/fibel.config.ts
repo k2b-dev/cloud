@@ -74,14 +74,6 @@ export default defineFibel({
     agentSkillsPlugin({ directory: "agent-skills" }),
     ...assistantPlugins,
     imprintPlugin({ url: "https://impressum.k2b.dev" }),
-    cloudSitePlugin(
-      [
-        "homepage.css",
-        "docs-overview.css",
-        "generated/cloud-ui.css",
-        "ui-catalog.css",
-      ],
-      { preloadDisplayFont: true },
-    ),
+    cloudSitePlugin(["homepage.css", "docs-overview.css", "generated/cloud-ui.css", "ui-catalog.css"], { preloadDisplayFont: true }),
   ],
 });

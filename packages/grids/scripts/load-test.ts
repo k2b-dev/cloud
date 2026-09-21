@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { chmod, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { accounts, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { migrate } from "../src/migrate";
@@ -29,12 +30,73 @@ import {
   reserveLoadRecordShortIds,
 } from "./load-test-support";
 
-const BASE_URL = (process.env.GRIDS_LOAD_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-const DOCKER_BASE_URL = (process.env.GRIDS_LOAD_DOCKER_BASE_URL ?? "http://host.docker.internal:3000").replace(/\/$/, "");
-const ADMIN_TOKEN = process.env.GRIDS_LOAD_ADMIN_TOKEN ?? "dev-admin";
-const STATE_DIR = resolve(process.env.GRIDS_LOAD_STATE_DIR ?? "/tmp/grids-load");
-const MANIFEST_PATH = resolve(process.env.GRIDS_LOAD_MANIFEST ?? join(STATE_DIR, "manifest.json"));
-const K6_IMAGE = process.env.GRIDS_LOAD_K6_IMAGE ?? "grafana/k6:0.54.0";
+const USAGE = `Usage: bun packages/grids/scripts/load-test.ts <command> [options]
+
+Commands:
+  seed             Create an isolated Inventory fixture
+  reset            Remove the previous fixture and create a fresh one
+  run <profile>    Run smoke, load, soak, or stress
+  cleanup          Remove the fixture, credentials, and session
+
+Options:
+  --base-url <url>              Cloud server (default http://localhost:3000)
+  --docker-base-url <url>       Cloud server as seen from the k6 container (default http://host.docker.internal:3000)
+  --admin-token-file <path>     File containing the dev admin token (default token "dev-admin")
+  --state-dir <dir>             Fixture state directory (default /tmp/grids-load)
+  --manifest <path>             Manifest path (default <state-dir>/manifest.json)
+  --k6-image <image>            k6 Docker image (default grafana/k6:0.54.0)
+  --rows <n>                    Records to seed (default 10000)
+  --seed-batch <n>              Records per seed batch (default 10000)
+  --rate-limit-per-second <n>   Session rate limit for the load user (default 1000)
+  --include-pdf                 Include PDF issuance in the run profile
+  --report-dir <dir>            Report directory (default <state-dir>/results/<timestamp>-<profile>)
+  --docker-network <name>       Docker network for the k6 container
+  --duration <k6 duration>      Override the profile duration
+  --scenarios <a,b>             Restrict the k6 scenarios
+  --read-rate <n>               k6 read requests per second
+  --read-max-vus <n>            k6 maximum read VUs
+  --read-operation <name>       k6 read operation (default mixed)
+  --settle-seconds <n>          Seconds to wait for the stack to settle after a run (default 60)
+  --help                        Show this help
+`;
+
+const parsed = parseArgs({
+  args: Bun.argv.slice(2),
+  allowPositionals: true,
+  options: {
+    "base-url": { type: "string" },
+    "docker-base-url": { type: "string" },
+    "admin-token-file": { type: "string" },
+    "state-dir": { type: "string" },
+    manifest: { type: "string" },
+    "k6-image": { type: "string" },
+    rows: { type: "string" },
+    "seed-batch": { type: "string" },
+    "rate-limit-per-second": { type: "string" },
+    "include-pdf": { type: "boolean", default: false },
+    "report-dir": { type: "string" },
+    "docker-network": { type: "string" },
+    duration: { type: "string" },
+    scenarios: { type: "string" },
+    "read-rate": { type: "string" },
+    "read-max-vus": { type: "string" },
+    "read-operation": { type: "string" },
+    "settle-seconds": { type: "string" },
+    help: { type: "boolean", default: false },
+  },
+});
+const options = parsed.values;
+if (options.help) {
+  console.log(USAGE);
+  process.exit(0);
+}
+
+const BASE_URL = (options["base-url"] ?? "http://localhost:3000").replace(/\/$/, "");
+const DOCKER_BASE_URL = (options["docker-base-url"] ?? "http://host.docker.internal:3000").replace(/\/$/, "");
+const ADMIN_TOKEN = options["admin-token-file"] ? (await readFile(options["admin-token-file"], "utf8")).trim() : "dev-admin";
+const STATE_DIR = resolve(options["state-dir"] ?? "/tmp/grids-load");
+const MANIFEST_PATH = resolve(options.manifest ?? join(STATE_DIR, "manifest.json"));
+const K6_IMAGE = options["k6-image"] ?? "grafana/k6:0.54.0";
 const DEFAULT_ROWS = 10_000;
 const RATE_LIMIT_SETTING = "security.rate_limit_per_second";
 
@@ -122,7 +184,7 @@ const prepareFixtureIndexes = async (manifest: LoadManifest): Promise<void> => {
 };
 
 const seedRecords = async (manifest: LoadManifest, categoryIds: string[], locationIds: string[]): Promise<void> => {
-  const batchSize = parsePositiveInteger(process.env.GRIDS_LOAD_SEED_BATCH, 10_000, "GRIDS_LOAD_SEED_BATCH");
+  const batchSize = parsePositiveInteger(options["seed-batch"], 10_000, "--seed-batch");
   const f = manifest.internal.fields;
   for (let offset = 0; offset < manifest.rows; offset += batchSize) {
     const count = Math.min(batchSize, manifest.rows - offset);
@@ -191,7 +253,7 @@ const seed = async (): Promise<LoadManifest> => {
   const existing = await readFile(MANIFEST_PATH, "utf8").catch(() => null);
   if (existing) throw new Error(`A load fixture already exists at ${MANIFEST_PATH}. Run load:cleanup or load:prepare.`);
 
-  const rows = parsePositiveInteger(process.env.GRIDS_LOAD_ROWS, DEFAULT_ROWS, "GRIDS_LOAD_ROWS");
+  const rows = parsePositiveInteger(options.rows, DEFAULT_ROWS, "--rows");
   await migrate();
   const login = await adminLogin();
   const admin = await accounts.users.get({ id: login.userId });
@@ -541,7 +603,7 @@ const readStoredSettingValue = async (): Promise<string | null> => {
 };
 
 const withLoadRateLimit = async <T>(task: (sessionToken: string) => Promise<T>): Promise<T> => {
-  const requested = parsePositiveInteger(process.env.GRIDS_LOAD_RATE_LIMIT_PER_SECOND, 1_000, "GRIDS_LOAD_RATE_LIMIT_PER_SECOND");
+  const requested = parsePositiveInteger(options["rate-limit-per-second"], 1_000, "--rate-limit-per-second");
   const [stored] = await sql<Array<{ exists: boolean }>>`
     SELECT EXISTS (
       SELECT 1 FROM settings.entries WHERE key = ${RATE_LIMIT_SETTING}
@@ -579,12 +641,12 @@ const withLoadRateLimit = async <T>(task: (sessionToken: string) => Promise<T>):
 
 const run = async (profile: LoadProfile): Promise<void> => {
   const manifest = await readManifest();
-  if (process.env.GRIDS_LOAD_INCLUDE_PDF === "1" && !manifest.documentTemplateId) {
-    throw new Error("GRIDS_LOAD_INCLUDE_PDF=1 requires an enabled document template in the fixture");
+  if (options["include-pdf"] && !manifest.documentTemplateId) {
+    throw new Error("--include-pdf requires an enabled document template in the fixture");
   }
   await prepareFixtureIndexes(manifest);
   await withLoadRateLimit(async (sessionToken) => {
-    const reportDir = resolve(process.env.GRIDS_LOAD_REPORT_DIR ?? join(STATE_DIR, "results", `${Date.now()}-${profile}`));
+    const reportDir = resolve(options["report-dir"] ?? join(STATE_DIR, "results", `${Date.now()}-${profile}`));
     await mkdir(reportDir, { recursive: true, mode: 0o700 });
     const runtimeManifestPath = join(reportDir, ".runtime-manifest.json");
     await writeManifestFile(runtimeManifestPath, { ...manifest, sessionToken });
@@ -594,7 +656,7 @@ const run = async (profile: LoadProfile): Promise<void> => {
 
     const scriptPath = resolve(import.meta.dir, "load-test.k6.js");
     const args = ["docker", "run", "--rm"];
-    const dockerNetwork = process.env.GRIDS_LOAD_DOCKER_NETWORK?.trim();
+    const dockerNetwork = options["docker-network"]?.trim();
     if (dockerNetwork) args.push("--network", dockerNetwork);
     else args.push("--add-host=host.docker.internal:host-gateway");
     args.push(
@@ -611,19 +673,19 @@ const run = async (profile: LoadProfile): Promise<void> => {
       "-e",
       "GRIDS_LOAD_MANIFEST=/state/manifest.json",
       "-e",
-      `GRIDS_LOAD_INCLUDE_PDF=${process.env.GRIDS_LOAD_INCLUDE_PDF ?? "0"}`,
+      `GRIDS_LOAD_INCLUDE_PDF=${options["include-pdf"] ? "1" : "0"}`,
     );
-    if (process.env.GRIDS_LOAD_DURATION) args.push("-e", `GRIDS_LOAD_DURATION=${process.env.GRIDS_LOAD_DURATION}`);
-    if (process.env.GRIDS_LOAD_SCENARIOS) args.push("-e", `GRIDS_LOAD_SCENARIOS=${process.env.GRIDS_LOAD_SCENARIOS}`);
-    if (process.env.GRIDS_LOAD_READ_RATE) args.push("-e", `GRIDS_LOAD_READ_RATE=${process.env.GRIDS_LOAD_READ_RATE}`);
-    if (process.env.GRIDS_LOAD_READ_MAX_VUS) args.push("-e", `GRIDS_LOAD_READ_MAX_VUS=${process.env.GRIDS_LOAD_READ_MAX_VUS}`);
-    if (process.env.GRIDS_LOAD_READ_OPERATION) args.push("-e", `GRIDS_LOAD_READ_OPERATION=${process.env.GRIDS_LOAD_READ_OPERATION}`);
+    if (options.duration) args.push("-e", `GRIDS_LOAD_DURATION=${options.duration}`);
+    if (options.scenarios) args.push("-e", `GRIDS_LOAD_SCENARIOS=${options.scenarios}`);
+    if (options["read-rate"]) args.push("-e", `GRIDS_LOAD_READ_RATE=${options["read-rate"]}`);
+    if (options["read-max-vus"]) args.push("-e", `GRIDS_LOAD_READ_MAX_VUS=${options["read-max-vus"]}`);
+    if (options["read-operation"]) args.push("-e", `GRIDS_LOAD_READ_OPERATION=${options["read-operation"]}`);
     args.push(K6_IMAGE, "run", "/scripts/load-test.k6.js");
     console.log(`Running ${profile} profile against ${manifest.rows.toLocaleString("en-US")} fixture records`);
     const k6 = Bun.spawn(args, { stdout: "inherit", stderr: "inherit" });
     const k6ExitCode = await k6.exited.finally(() => rm(runtimeManifestPath, { force: true }));
 
-    const settleSeconds = parsePositiveInteger(process.env.GRIDS_LOAD_SETTLE_SECONDS, 60, "GRIDS_LOAD_SETTLE_SECONDS");
+    const settleSeconds = parsePositiveInteger(options["settle-seconds"], 60, "--settle-seconds");
     const after = await waitForFixtureDrain(manifest, settleSeconds);
     const summary = await readFile(join(reportDir, "k6-summary.json"), "utf8")
       .then((value) => JSON.parse(value))
@@ -646,19 +708,12 @@ const run = async (profile: LoadProfile): Promise<void> => {
 };
 
 const usage = (): never => {
-  console.log(`Usage: bun run scripts/load-test.ts <command>
-
-Commands:
-  seed             Create an isolated Inventory fixture
-  reset            Remove the previous fixture and create a fresh one
-  run <profile>    Run smoke, load, soak, or stress
-  cleanup          Remove the fixture, credentials, and session
-`);
+  console.log(USAGE);
   process.exit(1);
 };
 
 const main = async (): Promise<void> => {
-  const [command, argument] = process.argv.slice(2);
+  const [command, argument] = parsed.positionals;
   if (command === "seed") return void (await seed());
   if (command === "reset") {
     await cleanup(true);

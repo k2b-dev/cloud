@@ -13,9 +13,7 @@
             "maxLength": 100000
           }
         },
-        "required": [
-          "csv"
-        ],
+        "required": ["csv"],
         "additionalProperties": false
       },
       "outputSchema": {
@@ -26,9 +24,7 @@
             "minimum": 0
           }
         },
-        "required": [
-          "rows"
-        ],
+        "required": ["rows"],
         "additionalProperties": false
       }
     }

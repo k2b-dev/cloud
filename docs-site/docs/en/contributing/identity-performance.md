@@ -20,7 +20,7 @@ queries must also run.
 From the repository root, with dependencies installed and Docker running:
 
 ```bash
-bun scripts/bench-identity.ts
+bun packages/core/scripts/bench-identity.ts
 ```
 
 The runner requires the existing local images `cloud-app-core:latest`,
@@ -99,9 +99,9 @@ which can overlap. They locate work; they are not extra sequential search latenc
 Use these modes to investigate a failure without changing production code:
 
 ```bash
-IDENTITY_BENCH_MODE=profile bun scripts/bench-identity.ts
-IDENTITY_BENCH_MODE=direct-postgres bun scripts/bench-identity.ts
-IDENTITY_BENCH_TOPOLOGY=shared bun scripts/bench-identity.ts
+IDENTITY_BENCH_MODE=profile bun packages/core/scripts/bench-identity.ts
+IDENTITY_BENCH_MODE=direct-postgres bun packages/core/scripts/bench-identity.ts
+IDENTITY_BENCH_TOPOLOGY=shared bun packages/core/scripts/bench-identity.ts
 ```
 
 `profile` writes a Bun CPU profile of the Core process beside the report; it

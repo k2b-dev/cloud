@@ -1,16 +1,10 @@
-import { ChartExplorerShowcases } from "./ChartExplorerShowcases";
-import { For, type Component } from "solid-js";
-import {
-  uiCatalogEntries,
-  uiCatalogSections,
-  portableUiComponentCount,
-  type UiCatalogScope,
-  type UiCatalogSectionId,
-} from "./catalog";
+import { type Component, For } from "solid-js";
 import ActionsCatalogDemo from "./ActionsCatalogDemo.island";
 import AiCatalogDemo from "./AiCatalogDemo.island";
+import { ChartExplorerShowcases } from "./ChartExplorerShowcases";
 import CloudCatalogDemo from "./CloudCatalogDemo.island";
 import ContentCatalogDemo from "./ContentCatalogDemo.island";
+import { portableUiComponentCount, type UiCatalogScope, type UiCatalogSectionId, uiCatalogEntries, uiCatalogSections } from "./catalog";
 import FeedbackCatalogDemo from "./FeedbackCatalogDemo.island";
 import InputCatalogDemo from "./InputCatalogDemo.island";
 import LayoutCatalogDemo from "./LayoutCatalogDemo.island";
@@ -91,15 +85,13 @@ export function UiCatalogOverview(props: DocumentationProps & { locale: string }
       scope: "portable",
       label: "@k2b/ui",
       title: "Portable components",
-      description:
-        "Production-ready Solid components with scoped styles, accessible behavior, and configurable design tokens.",
+      description: "Production-ready Solid components with scoped styles, accessible behavior, and configurable design tokens.",
     },
     {
       scope: "cloud",
       label: "@k2b/cloud",
       title: "Cloud components",
-      description:
-        "Product integrations that require authenticated Cloud APIs, identity, permissions, or application contracts.",
+      description: "Product integrations that require authenticated Cloud APIs, identity, permissions, or application contracts.",
     },
   ];
 
@@ -112,10 +104,9 @@ export function UiCatalogOverview(props: DocumentationProps & { locale: string }
         </div>
         <div class="ui-overview-intro">
           <p>
-            @k2b/ui is a standalone component library with accessible interactions,
-            scoped styles, configurable design tokens, and separate browser and
-            server builds. Use it inside Cloud or in another Solid application.
-            Cloud-specific integrations are documented separately.
+            @k2b/ui is a standalone component library with accessible interactions, scoped styles, configurable design tokens, and separate
+            browser and server builds. Use it inside Cloud or in another Solid application. Cloud-specific integrations are documented
+            separately.
           </p>
           <dl>
             <div>

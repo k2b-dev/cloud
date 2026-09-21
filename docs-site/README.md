@@ -10,18 +10,18 @@ One Bun service exposes the complete public website:
 From the repository root, start the same Linux container on macOS or Linux:
 
 ```bash
-bun run dev:fibel
+bun run --cwd docs-site dev:docker
 ```
 
 Development defaults to [http://localhost:4187/en](http://localhost:4187/en).
 The command returns after `/health` is ready. The container rebuilds the local
 Cloud UI stylesheet when it starts, and Bun reloads it when mounted TypeScript
-or component source changes. Run `bun run dev:fibel` again to re-index Markdown;
+or component source changes. Run `bun run --cwd docs-site dev:docker` again to re-index Markdown;
 the cached image is reused and the command waits for the replacement container.
 
 ```bash
-bun run dev:fibel:logs
-bun run dev:fibel:down
+bun run --cwd docs-site dev:docker:logs
+bun run --cwd docs-site dev:docker:down
 ```
 
 Set `FIBEL_PORT=4199` on the start command when port `4187` is occupied.
@@ -63,5 +63,5 @@ the documentation, API reference, compiled examples, UI catalog, and website
 build. Example sources live in `examples/cloud-docs` and use this package's
 declared dependencies.
 
-[Release instructions](./RELEASING.md) cover npm setup, image publication,
+[Release process](./docs/en/contributing/release-process.md) covers npm setup, image publication,
 and the checks required before exposing `cloud.k2b.dev`.

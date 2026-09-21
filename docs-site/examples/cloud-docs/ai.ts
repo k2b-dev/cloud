@@ -1,8 +1,8 @@
-import { ok } from "@k2b/stdlib";
 import { runAiStructured } from "@k2b/cloud/ai";
 import { launchAssistant } from "@k2b/cloud/ai/browser";
 import { defineCapabilities } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
+import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 
 type InventoryItem = { id: string; name: string; stock: number };

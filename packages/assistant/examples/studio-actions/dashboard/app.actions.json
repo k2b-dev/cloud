@@ -14,9 +14,7 @@
             "maxLength": 500
           }
         },
-        "required": [
-          "message"
-        ],
+        "required": ["message"],
         "additionalProperties": false
       },
       "outputSchema": {
@@ -26,9 +24,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "saved"
-        ],
+        "required": ["saved"],
         "additionalProperties": false
       }
     }

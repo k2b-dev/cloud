@@ -20,17 +20,21 @@ You can also host it at your own stable HTTPS origin.
 
 ## Run the container
 
-Cloud Login has its own image release, independent of Cloud application images.
-Use `ghcr.io/<repository-owner>/cloud-pwa-auth:pwa-auth-v<version>` after the
-release workflow succeeds, and pin its digest in your deployment. The image
+Cloud Login ships with every Cloud release as `ghcr.io/k2b-dev/cloud-pwa-auth:vX.Y.Z`.
+Pin the digest from the release's `release.json` in your deployment; see
+[Release process](/en/docs/contributing/release-process). The image
 supports AMD64 and ARM64, listens on port 3000, and exposes `/health`.
 It runs without a database, volume, Cloud credentials or runtime dependencies.
 
 Put it behind HTTPS at the root of one dedicated, stable origin. Preserve its
 cache and content-type headers. The container supports a read-only filesystem
 and runs as an unprivileged user. Publishing the image does not deploy it.
-The repository's `pwas/pwa-auth/RELEASING.md` describes release verification,
-version tags and rollout precautions.
+Route a release coherently: upload new hashed assets before switching HTML and
+the service worker, retain old hashed assets during rollout, and keep the prior
+image digest for rollback. Changing the image does not reset device vaults; check
+storage-format compatibility before reverting after users opened a newer version.
+The image reports its `CLOUD_VERSION` in **Settings**; a custom build
+without one shows `unreleased`.
 
 ## Build and configure
 

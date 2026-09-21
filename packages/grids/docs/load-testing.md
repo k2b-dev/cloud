@@ -2,13 +2,13 @@
 
 The Grids load harness exercises the running application through its public HTTP and WebSocket APIs. It creates a disposable Inventory base, grants a resource-bound service account access only to that base, seeds deterministic records, runs k6 in Docker, and compares Grids and Postgres health before and after the run.
 
-This complements the test suite and `soak:100k`. The direct soak script checks SQL and service correctness at scale; this harness measures the deployed request path, authentication, permissions, workflows, live events, and optional PDF generation.
+This complements the test suite and `bun packages/grids/scripts/soak-100k.ts`. The direct soak script checks SQL and service correctness at scale; this harness measures the deployed request path, authentication, permissions, workflows, live events, and optional PDF generation.
 
 ## Prerequisites
 
 - Run the local Cloud stack with `bun run dev`. Rebuild Grids with `bun run dev:rebuild grids` from the repository root when the image does not match the working tree.
 - Keep Docker running. The harness starts only a temporary k6 container and does not restart the stack.
-- Set `GRIDS_LOAD_ADMIN_TOKEN` if the local admin token is not `dev-admin`.
+- Pass `--admin-token-file <path>` if the local admin token is not `dev-admin`.
 - Configure Gotenberg only when running the optional PDF workload.
 
 ## Run a test
@@ -16,27 +16,27 @@ This complements the test suite and `soak:100k`. The direct soak script checks S
 From `packages/grids`:
 
 ```bash
-GRIDS_LOAD_ROWS=10000 bun run load:prepare
-bun run load:smoke
-bun run load:cleanup
+bun packages/grids/scripts/load-test.ts seed --rows 10000
+bun packages/grids/scripts/load-test.ts run smoke
+bun packages/grids/scripts/load-test.ts cleanup
 ```
 
-`load:prepare` replaces only a previous base carrying the harness safety marker. It refuses to delete an unmarked base. The generated manifest contains short-lived credentials and is stored with mode `0600` under `/tmp/grids-load/manifest.json` by default.
+`seed`/`reset` replace only a previous base carrying the harness safety marker. It refuses to delete an unmarked base. The generated manifest contains short-lived credentials and is stored with mode `0600` under `/tmp/grids-load/manifest.json` by default.
 
 Use the profiles for different questions:
 
 | Command | Default duration | Purpose |
 | --- | ---: | --- |
-| `bun run load:smoke` | 20 seconds | Verify the harness and deployed request paths. |
-| `bun run load:test` | 10 minutes | Exercise sustained mixed application load. |
-| `bun run load:soak` | 2 hours | Detect queue growth, stale leases, connection drift, and gradual degradation. |
-| `bun run load:stress` | 9 minutes | Raise read traffic in stages and observe the local saturation point. |
+| `bun packages/grids/scripts/load-test.ts run smoke` | 20 seconds | Verify the harness and deployed request paths. |
+| `load-test.ts run load` | 10 minutes | Exercise sustained mixed application load. |
+| `load-test.ts run soak` | 2 hours | Detect queue growth, stale leases, connection drift, and gradual degradation. |
+| `load-test.ts run stress` | 9 minutes | Raise read traffic in stages and observe the local saturation point. |
 
 The standard data scales are 10,000 records for quick iteration, 250,000 for realistic local runs, and 1,000,000 for index and pagination pressure:
 
 ```bash
-GRIDS_LOAD_ROWS=250000 bun run load:prepare
-bun run load:test
+bun packages/grids/scripts/load-test.ts reset --rows 250000
+bun packages/grids/scripts/load-test.ts run load
 ```
 
 The generated Inventory data includes text, select, number, date, formula, and relation fields. Read traffic covers table pagination, search, filtered GQL, and grouped aggregates. Other scenarios perform optimistic writes, invoke a workflow, and hold live record subscriptions.
@@ -44,22 +44,21 @@ The generated Inventory data includes text, select, number, date, formula, and r
 ## Optional workloads and overrides
 
 ```bash
-GRIDS_LOAD_INCLUDE_PDF=1 bun run load:test
-GRIDS_LOAD_DURATION=15m bun run load:soak
-GRIDS_LOAD_SCENARIOS=read GRIDS_LOAD_DURATION=30s bun run load:test
-GRIDS_LOAD_READ_RATE=35 GRIDS_LOAD_DURATION=1m bun run load:test
-GRIDS_LOAD_SETTLE_SECONDS=90 bun run load:test
+bun packages/grids/scripts/load-test.ts run load --include-pdf
+bun packages/grids/scripts/load-test.ts run soak --duration 15m
+bun packages/grids/scripts/load-test.ts run load --scenarios read --duration 30s
+bun packages/grids/scripts/load-test.ts run load --read-rate 35 --duration 1m
+bun packages/grids/scripts/load-test.ts run load --settle-seconds 90
 ```
 
-- `GRIDS_LOAD_INCLUDE_PDF=1` adds a low-rate Gotenberg document workload.
-- `GRIDS_LOAD_DURATION` overrides the duration of every scenario in the selected profile.
-- `GRIDS_LOAD_SCENARIOS` runs only the named comma-separated scenarios (`read`, `write`, `workflow`, or `live`) for targeted diagnosis.
-- `GRIDS_LOAD_READ_RATE` overrides the `load` and `soak` read arrival rate in iterations per second. One read iteration can issue a second paginated request, so HTTP request throughput is higher.
-- `GRIDS_LOAD_SETTLE_SECONDS` sets the maximum time to wait for workflow and record-event queues to drain after traffic stops. It defaults to 60 seconds and returns earlier once the fixture is idle.
-- `GRIDS_LOAD_BASE_URL` changes the host URL used by fixture setup and health checks.
-- `GRIDS_LOAD_DOCKER_BASE_URL` changes the URL visible inside the k6 container.
-- `GRIDS_LOAD_K6_IMAGE` overrides the pinned `grafana/k6:0.54.0` image.
-- `GRIDS_LOAD_STATE_DIR` and `GRIDS_LOAD_REPORT_DIR` relocate generated state and reports.
+- `--include-pdf` adds a low-rate Gotenberg document workload.
+- `--duration` overrides the duration of every scenario in the selected profile.
+- `--scenarios` runs only the named comma-separated scenarios (`read`, `write`, `workflow`, or `live`) for targeted diagnosis.
+- `--read-rate` overrides the `load` and `soak` read arrival rate in iterations per second. One read iteration can issue a second paginated request, so HTTP request throughput is higher.
+- `--settle-seconds` sets the maximum time to wait for workflow and record-event queues to drain after traffic stops. It defaults to 60 seconds and returns earlier once the fixture is idle.
+- `--base-url` changes the host URL used by fixture setup and health checks; `--docker-base-url` changes the URL visible inside the k6 container.
+- `--k6-image` overrides the pinned `grafana/k6:0.54.0` image.
+- `--state-dir` and `--report-dir` relocate generated state and reports. Run the script with `--help` for the complete list.
 
 ## Read the result
 
@@ -85,7 +84,7 @@ The default local API policy limits one source IP to 60 requests per second. One
 ## Cleanup
 
 ```bash
-bun run load:cleanup
+bun packages/grids/scripts/load-test.ts cleanup
 ```
 
 Cleanup revokes the generated credential and session, removes the resource-bound service account and access rows, and hard-deletes only the marked fixture base. Reports remain available for comparison.

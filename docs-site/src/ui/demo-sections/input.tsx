@@ -303,7 +303,13 @@ const TextDemo = () => {
         />
         <TextInput label="Notes" value={notes} onValueChange={setNotes} multiline lines={3} icon="ti ti-notes" />
         <TextInput label="AI prompt" value={prompt} onValueChange={setPrompt} variant="ai" />
-        <TextInput label="Expiry (placeholder)" value={expiresAt} onValueChange={setExpiresAt} placeholder="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
+        <TextInput
+          label="Expiry (placeholder)"
+          value={expiresAt}
+          onValueChange={setExpiresAt}
+          placeholder="2027-01-01T00:00:00Z"
+          icon="ti ti-calendar"
+        />
         <TextInput label="Expiry (entered value)" value="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
         <TextInput
           label="Amount text"

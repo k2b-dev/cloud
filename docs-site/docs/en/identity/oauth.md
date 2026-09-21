@@ -249,8 +249,3 @@ it stays blocked to prevent duplicate issuance.
 
 Continue with [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).
-
-Repository maintainers can run the isolated
-[OAuth upgrade verification](/en/docs/contributing/oauth-upgrade-verification)
-to compare the pre-JWT and Core-issued public protocol without using live
-clients or changing the development stack.

@@ -1,12 +1,12 @@
 import {
-  prepareChartSnapshot,
+  type ChartExplorerData,
   type ChartExplorerRequest,
   type ChartExplorerSnapshot,
-  type ChartExplorerData,
   type ChartSelection,
+  prepareChartSnapshot,
 } from "@k2b/ui";
-import { explorerSteps, explorerSeries } from "./chart-explorer-data";
-import { comparisonValues, signed, type LinkedChartRow } from "./chart-group-demo-model";
+import { explorerSeries, explorerSteps } from "./chart-explorer-data";
+import { comparisonValues, type LinkedChartRow, signed } from "./chart-group-demo-model";
 
 export type LinkedCharts = { latency: ChartExplorerData<LinkedChartRow>; requests: ChartExplorerData<LinkedChartRow> };
 export const initialGroupRequest: ChartExplorerRequest = { step: "08", visibleKeys: ["cached", "uncached"] };

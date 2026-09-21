@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-09-17
+updated: 2026-09-21
 ---
 
 # Deployment requirements
@@ -29,8 +29,8 @@ this service set.
 
 | Requirement | Used for | Operator responsibility |
 | --- | --- | --- |
-| Bun application images | One independently running service per app | Build or pull the matching immutable release images; see [Build and deploy](/en/docs/operations/build-and-deploy). |
-| Postgres | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. |
+| Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
+| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. The pull request gate tests on 17 and the nightly run on 15. |
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
@@ -343,7 +343,7 @@ mutation paths, between `/dead-letters/` and the resource name.
 ## Optional Help search ranking
 
 Help publication and native full-text search require the Core-managed Postgres
-schema. The supplied PostgreSQL 15 development service supports this baseline.
+schema. Every supported PostgreSQL version (15 to 17) provides this baseline.
 Apps renew their Help collection through the existing app heartbeat; Core owns
 bounded cleanup of expired collections. See [In-product Help](/en/docs/platform/help).
 

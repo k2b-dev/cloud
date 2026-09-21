@@ -1,7 +1,7 @@
+import { Button, ChartExplorer, ChartExplorerControls, type ChartExplorerSnapshot, createChartExplorer } from "@k2b/ui";
 import { Show } from "solid-js";
-import { Button, ChartExplorer, ChartExplorerControls, createChartExplorer, type ChartExplorerSnapshot } from "@k2b/ui";
-import { staticQueueSteps, queueSeries, type QueueCharts } from "./chart-local-data";
 import { comparisonValues, signed } from "./chart-group-demo-model";
+import { type QueueCharts, queueSeries, staticQueueSteps } from "./chart-local-data";
 import { DemoCard } from "./DemoCard";
 export default function ChartStaticDemo(props: {
   initial: ChartExplorerSnapshot<QueueCharts>;

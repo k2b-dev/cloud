@@ -19,10 +19,7 @@
             "maxLength": 500
           }
         },
-        "required": [
-          "transactionKey",
-          "invoicePath"
-        ],
+        "required": ["transactionKey", "invoicePath"],
         "additionalProperties": false
       },
       "outputSchema": {
@@ -35,10 +32,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "linked",
-          "unchanged"
-        ],
+        "required": ["linked", "unchanged"],
         "additionalProperties": false
       }
     }

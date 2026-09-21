@@ -3,14 +3,31 @@
  * Run once per fixture, without concurrent ingestion/retention; a failed run requires a new disposable fixture.
  */
 import { createHash } from "node:crypto";
+import { parseArgs } from "node:util";
 import { sql } from "bun";
 import { z } from "zod";
 import { requireBaseActive } from "../src/service/access-control";
 import { markMetricHoursDirty, runHourlyRollup } from "../src/service/metric-rollups";
 
 const HOURS = 720;
-const fixturePath = process.env.PULSE_LOAD_FIXTURE;
-if (!fixturePath) throw Error("PULSE_LOAD_FIXTURE is required");
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: { fixture: { type: "string" }, output: { type: "string" }, help: { type: "boolean", default: false } },
+});
+if (options.help) {
+  console.log(`Usage: bun packages/pulse/scripts/volume-fixture.ts --fixture <path> [--output <path>]
+
+Prepares 30 days of accumulated SQL volume in the disposable pulse_load_test database (DATABASE_URL).
+
+Options:
+  --fixture <path>   Owner-only JSON fixture with url, base and sources
+  --output <path>    Write the volume metadata JSON consumed by volume-http-probe.ts
+  --help             Show this help
+`);
+  process.exit(0);
+}
+const fixturePath = options.fixture;
+if (!fixturePath) throw Error("--fixture is required");
 const fixture = z
   .object({
     url: z.string().url(),
@@ -204,6 +221,6 @@ const metadata = {
   },
 };
 await sql`UPDATE public.pulse_volume_fixture SET completed_at=now() WHERE base_id=${baseId}::uuid`;
-if (process.env.PULSE_VOLUME_OUTPUT) await Bun.write(process.env.PULSE_VOLUME_OUTPUT, JSON.stringify(metadata, null, 2));
+if (options.output) await Bun.write(options.output, JSON.stringify(metadata, null, 2));
 console.log(JSON.stringify(metadata));
 await sql.close();

@@ -210,7 +210,7 @@ const main = async (): Promise<void> => {
   await mkdir(outDir, { recursive: true });
 
   const config = await getGotenbergConfig();
-  const gotenbergUrl = stringArg(args, "gotenberg-url") ?? process.env.GOTENBERG_URL;
+  const gotenbergUrl = stringArg(args, "gotenberg-url");
   if (gotenbergUrl) config.url = gotenbergUrl;
 
   const targets = await loadTargets({ tableId: table.id, starter: stringArg(args, "starter"), template: stringArg(args, "template") });

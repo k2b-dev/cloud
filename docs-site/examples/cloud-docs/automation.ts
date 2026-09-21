@@ -1,4 +1,3 @@
-import { expBackoff, isRetryableTransportError, retry } from "@k2b/sync/retry";
 import { lazySync } from "@k2b/cloud";
 import { ratelimit } from "@k2b/cloud/server";
 import { defineWorkflowModule, type WorkflowBoundPlan, workflowAction } from "@k2b/cloud/workflows";
@@ -24,6 +23,7 @@ import {
   type WorkflowActivationInput,
 } from "@k2b/cloud/workflows/store";
 import { directOnlyProcessFixture, runWorkflowProcessFixture } from "@k2b/cloud/workflows/testing";
+import { expBackoff, isRetryableTransportError, retry } from "@k2b/sync/retry";
 import type { SQL } from "bun";
 
 export const inventoryJobs = lazySync((sync) =>

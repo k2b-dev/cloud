@@ -1,7 +1,7 @@
+import { Button, ChartExplorer, ChartExplorerControls, type ChartExplorerSnapshot, createChartExplorer } from "@k2b/ui";
 import { Show } from "solid-js";
-import { Button, ChartExplorer, ChartExplorerControls, createChartExplorer, type ChartExplorerSnapshot } from "@k2b/ui";
-import { deliverySnapshot, deliverySteps, deliverySeries, type DeliveryCharts } from "./chart-map-data";
 import { comparisonValues, signed } from "./chart-group-demo-model";
+import { type DeliveryCharts, deliverySeries, deliverySnapshot, deliverySteps } from "./chart-map-data";
 import { DemoCard } from "./DemoCard";
 export default function ChartLocalDemo(props: { initial: ChartExplorerSnapshot<DeliveryCharts> }) {
   const explorer = createChartExplorer({ snapshot: () => props.initial, load: deliverySnapshot });

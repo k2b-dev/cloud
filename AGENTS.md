@@ -70,10 +70,47 @@ Use the current checkout's documentation through `cloud-dev-mcp`: call
 `list_collections`, then `search_docs` and `read_doc` for the smallest relevant
 pages. The default local endpoint is `http://localhost:4187/_fibel/mcp`.
 
-If the endpoint is unhealthy, start it with `bun run dev:fibel`. If the MCP
+If the endpoint is unhealthy, start it with
+`docker compose -f docs-site/compose.yml up --build -d --wait`. If the MCP
 connection is missing or stale, say that clearly and use reduced documentation
 mode with `docs-site/docs/en`, public exports, types, and focused tests. Do not
 silently rely on an older checkout or rendered HTML.
+
+## Work in Git
+
+`main` is protected. Every change goes through a pull request that passes the
+`gate` check and is squash-merged. Agents never push to `main`, never create
+or move tags, and never trigger a release.
+
+Ask before creating a branch or worktree. The checkout is shared with parallel
+sessions; the maintainer decides between the current branch, a new branch, or
+a worktree. Do not create either on your own initiative, even for a small
+change.
+
+The PR title becomes the squash commit and must be a Conventional Commit of
+the form `type(scope): outcome`. `feat` produces a minor release, `fix` a
+patch, and `feat!` or a `BREAKING CHANGE:` footer a major release. Use `!`
+only with explicit maintainer approval.
+
+Never edit `version` fields, `CHANGELOG.md`, or `.release-please-manifest.json`;
+release-please owns them. Commit, push, opening a PR, and enabling auto-merge
+are separate approval boundaries.
+
+## Keep the model small
+
+A new behavior rides an existing mechanism before it may add a new one:
+
+- a new environment variable is one entry in the config registry
+  (`packages/cloud/src/config/env.ts` or the application's `src/env.ts`),
+  never a hand edit of `.env.example`, documentation, or Compose;
+- a new integration test needs zero configuration; it gates itself on
+  `CLOUD_TEST_*` through `scripts/fixtures/test-infra.ts`;
+- a new application touches exactly three files: the workspace list,
+  `compose.dev.yml`, and `compose.prod.yml`;
+- a new repository rule is one module under `scripts/checks/`, never a new
+  `package.json` script or workflow;
+- a new script is a file with `--help`, not a `package.json` entry, unless CI
+  or documentation invokes it.
 
 ## Hit every affected boundary
 
@@ -115,6 +152,12 @@ Before calling a change complete, decide which of these apply:
   maintainer whether to extend `@k2b/ui` or create app-owned UI. Custom UI must
   follow the same tokens, semantics, interaction, accessibility, responsive,
   and theme principles.
+- **Application set:** the application list is derived from the workspace
+  through `scripts/workspace.ts`; the `app-set` check fails on drift between
+  the workspace, Compose files, and CI.
+- **Release surface:** a runtime-contract change needs a `feat` or `feat!`
+  title and an operations documentation note, because it lands in the next
+  `cloud-vX.Y.Z` automatically.
 - **Knowledge:** observable public behavior, examples, tests, Fibel pages, and
   the published skill tell one story.
 
@@ -135,6 +178,10 @@ Before calling a change complete, decide which of these apply:
 - `docs-site/agent-skills/cloud-dev` — portable Cloud development workflow and
   stable cross-cutting invariants;
 - `skills/cloud-cli` — operating an installed Cloud through `cld`.
+- `.github/workflows` — `ci.yml` (PR gate), `nightly.yml`, `main.yml`
+  (sha images and release-please), `release.yml`, `build-images.yml`;
+- `scripts/checks` — repository rules;
+- `scripts/workspace.ts` — the application list.
 
 ## Develop without collateral damage
 
@@ -150,10 +197,22 @@ After a fresh clone or lockfile change, run `bun install --frozen-lockfile`.
   dependency, package-manifest, and Dockerfile changes rebuild only the
   consumers needed for the task.
 - `dev:down` removes the app stack but keeps its infrastructure available.
-  Stop that separately with `dev:infra:down` only when it is no longer needed.
-- Use `dev:fibel`, `dev:fibel:logs`, and `dev:fibel:down` for the isolated
-  documentation service.
+- The documentation service runs from `docs-site/compose.yml`; see
+  [Monorepo development](docs-site/docs/en/operations/monorepo-development.md).
 - Run `bun run dev:help` for the complete current command catalog.
+
+The root commands are `dev`, `dev:full`, `dev:down`, `dev:start`, `dev:stop`,
+`dev:restart`, `dev:rebuild`, `dev:logs`, `dev:status`, `dev:help`, `dev:cld`,
+`check`, `format`, `test`, and `release:preflight`.
+
+Integration suites run only when `CLOUD_TEST_DATABASE_URL`,
+`CLOUD_TEST_NATS_SERVERS`, and `CLOUD_TEST_VALKEY_URL` (and, where needed,
+`CLOUD_TEST_FILEGATE_URL`, `CLOUD_TEST_GOTENBERG_URL`, `CLOUD_TEST_RSQL_URL`)
+are set explicitly. They refuse a database whose name does not end in `_test`
+and fail loudly when a target is unreachable. Never point them at the
+development database. `bun run test` without these variables runs unit,
+render, and behavior tests and reports the skipped integration files;
+`bun run test --integration` runs only the integration files.
 
 Reuse a healthy existing stack when possible. Start only what the task needs,
 and stop only processes or containers you started and can identify exactly.
@@ -166,7 +225,7 @@ task only operates a deployed Cloud installation.
 
 Dependency changes belong to the package that imports them. Shared versions
 use the root catalog; published packages must resolve to concrete versions.
-Update `bun.lock` with the manifest and run `bun run check:dependencies`.
+Update `bun.lock` with the manifest; `bun run check` verifies the result.
 
 Do not add speculative hooks, aliases, compatibility paths, casts,
 placeholders, or adjacent cleanup. Preserve identity, permission, lifecycle,
@@ -193,7 +252,12 @@ fixing them when practical, run focused tests at the highest public seam, then
 widen to the owning package's typecheck, build, documentation checks, or root
 checks only when the boundary requires it.
 
+The `gate` check runs `bun run check`, `bun run test`, the integration suites
+with `CLOUD_TEST_*`, Grids certification, and an image boot smoke for
+`packages/cloud` or `Dockerfile` changes. Run the same locally before opening a
+pull request.
+
 Review only the owned diff and run `git diff --check`. A finished handoff says
-what behavior changed, which boundaries were checked, what passed, and what
-could not be verified. Code, tests, current documentation, and agent knowledge
-should agree before the work is done.
+what behavior changed, which boundaries were checked, what ran, what passed,
+and what could not be verified. Code, tests, current documentation, and agent
+knowledge should agree before the work is done.
