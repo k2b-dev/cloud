@@ -202,8 +202,7 @@ suite("isolated account category policy", () => {
     expect(await resolveInvocationAuthority(claims, sql, [])).toBeNull();
   });
 
-  // Never ran in CI before the release train: the recovery route answers 500 instead of 401 for an invalid token. Tracked in #4.
-  test.todo("emergency recovery requires a valid token and explicit restoration", async () => {
+  test("emergency recovery requires a valid token and explicit restoration", async () => {
     const [before] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM audit.events WHERE action = 'auth.admin-recovery'`;
     await settings.set("user.category.login.enabled", false);
     await settings.set("user.category.login.visible", false);
@@ -214,13 +213,22 @@ suite("isolated account category policy", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ token, restoreLocalLogin }),
       });
-    expect((await login("invalid", true)).status).toBe(401);
-    expect((await login(process.env.ADMIN_LOGIN_TOKEN!)).status).toBe(403);
-    expect(await isAccountCategoryAllowed(localFull)).toBe(false);
-    expect((await login(process.env.ADMIN_LOGIN_TOKEN!, true)).status).toBe(200);
-    expect(await isAccountCategoryAllowed(localFull)).toBe(true);
-    expect((await readAccountCategoryPolicy()).login.visible).toBe(false);
-    expect(await sql`SELECT id FROM audit.events WHERE action = 'auth.admin-recovery'`).toHaveLength(before!.count + 1);
+    const previousToken = process.env.ADMIN_LOGIN_TOKEN;
+    delete process.env.ADMIN_LOGIN_TOKEN;
+    try {
+      expect((await login("invalid", true)).status).toBe(503);
+      process.env.ADMIN_LOGIN_TOKEN = `recovery-${crypto.randomUUID()}`;
+      expect((await login("invalid", true)).status).toBe(401);
+      expect((await login(process.env.ADMIN_LOGIN_TOKEN)).status).toBe(403);
+      expect(await isAccountCategoryAllowed(localFull)).toBe(false);
+      expect((await login(process.env.ADMIN_LOGIN_TOKEN, true)).status).toBe(200);
+      expect(await isAccountCategoryAllowed(localFull)).toBe(true);
+      expect((await readAccountCategoryPolicy()).login.visible).toBe(false);
+      expect(await sql`SELECT id FROM audit.events WHERE action = 'auth.admin-recovery'`).toHaveLength(before!.count + 1);
+    } finally {
+      if (previousToken === undefined) delete process.env.ADMIN_LOGIN_TOKEN;
+      else process.env.ADMIN_LOGIN_TOKEN = previousToken;
+    }
   });
 
   test("delegated API keys stop with their user, while independent resource credentials remain valid", async () => {
