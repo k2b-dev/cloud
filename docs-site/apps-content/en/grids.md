@@ -819,11 +819,33 @@ receipt confirms acceptance; read its run status before reporting completion.
 Capability writes also attach the originating Cloud request ID to Grids audit
 rows, allowing operators to correlate domain changes with capability executions.
 
-The bundled `cloud-grids` Assistant Skill is version 4. Startup updates an
+The bundled `cloud-grids` Assistant Skill is version 5. Startup updates an
 unchanged managed copy, including its query reference. User-edited copies remain
 untouched and require deliberate reconciliation with the current template.
 
+### Download document folders
+
+In the document folder view, use **Download folder as ZIP** beside a folder.
+The archive includes the primary stored file of every readable document in that
+folder and its subfolders, including later result pages. Stable document IDs
+prefix filenames to avoid collisions. Additional artifacts remain available in
+individual document details. Downloads run sequentially and can be cancelled.
+
+An archive is limited to 1,000 documents and 100 MiB of uncompressed file data,
+using the existing document-download count and artifact byte budgets. Choose
+smaller subfolders when a limit is exceeded. A failed or incomplete transfer
+produces no archive. The folder is enumerated live, not a frozen backup snapshot.
+
 ### Read document files
+
+`document.list` and `document.read` return `downloadUrl`, the root-relative,
+same-origin download path for the stored primary artifact. `document.read`
+also returns a semantic `download` link. Use the returned path verbatim in
+ordinary authenticated Cloud UI. It does not grant access or create a public
+share; the endpoint checks current permissions again. Studio's isolated runtime
+should obtain a file through its capability stream API instead of fetching app
+routes directly. A shared Studio list can normalize each provider's file name,
+resource ref and download action while keeping provider-specific transfer logic.
 
 Use `document.content.read` to retrieve one stored artifact as an authenticated
 binary stream. Supply the public document `id` and optionally an `artifactKey`

@@ -133,6 +133,7 @@ export default function DocumentsWorkspace(props: {
         }}
       />
       <DocumentBrowser
+        loadFolderPage={(path, cursor, signal) => loadPage(documentBrowserKey(props.baseId, "folders", "", path), cursor, signal, locale())}
         loading={pages.loading() || pages.refreshing()}
         error={pages.error() ?? undefined}
         mode={activeMode()}

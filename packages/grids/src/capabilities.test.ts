@@ -11,7 +11,6 @@ import {
 } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../scripts/fixtures/test-infra";
-import { DocumentCapabilityDataSchema } from "./api/document-public-contracts";
 import { gridsCapabilities } from "./capabilities";
 import {
   BaseListDataSchema,
@@ -25,7 +24,7 @@ import { gridsService } from "./service";
 import { enable as enableDurableHistory } from "./service/durable-history";
 import { enable as enableFinalization, finalize as finalizeRecord } from "./service/record-finalization";
 
-const zDocument = (value: unknown) => DocumentCapabilityDataSchema.parse(value);
+const zDocument = (value: unknown) => gridsCapabilities.queries["document.read"].data.parse(value);
 
 const postgresTest = testFor("database");
 if (testInfra.database) setDefaultTimeout(60_000);
@@ -195,6 +194,8 @@ describe("Grids capabilities", () => {
       const document = zDocument(first.data.data);
       const read = await invoke("query", "document.read", { id: document.id }, context);
       expect(read).toEqual(first);
+      expect(document.downloadUrl).toBe(`/api/grids/documents/${document.id}/download`);
+      expect(read.ok && read.data.links).toContainEqual({ rel: "download", href: document.downloadUrl });
       const content = await invoke("query", "document.content.read", { id: document.id }, context);
       if (!content.ok || !content.data.stream) throw new Error("Expected artifact stream");
       const stream = content.data.stream;

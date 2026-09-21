@@ -249,6 +249,9 @@ export default function DocumentTemplateWorkspace(props: Props) {
         )}
       </Show>
       <DocumentBrowser
+        loadFolderPage={(path, cursor, signal) =>
+          fetchBrowserPage({ ...documentBrowserKey(props.template.id, "folders", "", path), cursor, signal, locale: locale() })
+        }
         loading={browserMut.loading()}
         error={browserMut.error() ?? undefined}
         mode={activeViewMode() === "folders" ? "folders" : "list"}

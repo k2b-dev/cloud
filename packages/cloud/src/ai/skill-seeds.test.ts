@@ -183,7 +183,7 @@ describe("Cloud AI Skill seeds", () => {
 
   test("Grids skill uses canonical Help and names only declared capabilities", async () => {
     const grids = getBuiltinAiSkillTemplate("cloud-grids")!;
-    expect(grids.version).toBe(4);
+    expect(grids.version).toBe(5);
     expect(grids.instructions).toContain("Help is the product handbook");
     expect(grids.instructions).toContain("search_help");
     expect(grids.instructions).toContain("read_help");
