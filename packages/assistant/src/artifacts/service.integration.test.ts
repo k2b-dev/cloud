@@ -55,7 +55,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE ai.conversations(id uuid PRIMARY KEY,created_by_user_id uuid,archived_at timestamptz)`;
     await sql`CREATE TABLE ai.projects(id uuid PRIMARY KEY,short_id text UNIQUE,name text,description text DEFAULT '',icon text DEFAULT '',instructions text DEFAULT '',default_model_profile_id text,revision integer DEFAULT 1,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now())`;
     await sql`CREATE TABLE ai.project_access(project_id uuid,access_id uuid)`;
-    await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text)`;
+    await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text,conversation_id uuid,run_config jsonb)`;
     await sql`CREATE TABLE ai.files(conversation_id uuid,path text,bytes bytea,size bigint,media_type text,origin text,producer_call_key text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(conversation_id,path))`;
     await sql`CREATE TABLE ai.dictations(conversation_id uuid,source_bytes bytea)`;
 
@@ -1951,7 +1951,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const conversationId = crypto.randomUUID(),
       turnId = crypto.randomUUID();
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
-    await sql`INSERT INTO ai.turns(id,status) VALUES(${turnId}::uuid,'running')`;
+    // The host reads the turn's run_config through its conversation to detect task-scoped grants.
+    await sql`INSERT INTO ai.turns(id,status,conversation_id) VALUES(${turnId}::uuid,'running',${conversationId}::uuid)`;
     const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) =>
       request.ownerUserId !== owner.user.id
         ? null
@@ -1978,21 +1979,24 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
             updatedAt: new Date().toISOString(),
           },
     );
-    const turn = spyOn(aiConversations, "getActiveTurn").mockResolvedValue({
-      turn: {
-        id: turnId,
-        shortId: "abc345",
-        conversationId,
-        status: "running",
-        attempt: 1,
-        modelProfileId: null,
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-        error: null,
-      },
-      liveBlocks: [],
-      liveSeq: 1,
-    });
+    const activeTurn = {
+      id: turnId,
+      shortId: "abc345",
+      conversationId,
+      status: "running" as const,
+      attempt: 1,
+      modelProfileId: null,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+      error: null,
+    };
+    const turn = spyOn(aiConversations, "getActiveTurn").mockResolvedValue({ turn: activeTurn, liveBlocks: [], liveSeq: 1 });
+    // authorizeCodeExecution reads the turn and its run config; a plain chat turn carries neither mandate nor background.
+    // getTurn follows the active-turn stub so cancelling the turn below is seen by both readers.
+    spyOn(aiConversations, "getTurn").mockImplementation(
+      async () => (await aiConversations.getActiveTurn({ conversationId }))?.turn ?? null,
+    );
+    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" } });
     const abort = new AbortController();
     const context = { ...owner, conversationId, locale: "en", signal: abort.signal };
     const call = {
@@ -2255,7 +2259,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const active = await aiConversations.getActiveTurn({ conversationId });
       if (!active) throw new Error("Missing test turn");
       turn.mockResolvedValue({ ...active, turn: { ...active.turn, cancelRequestedAt: new Date().toISOString() } });
-      await expect(agentHost.call(cancelled, context)).rejects.toThrow("no longer active");
+      await expect(agentHost.call(cancelled, context)).rejects.toThrow("no longer authorized");
       await agentHost.sweep();
       expect(
         (await sql`SELECT status FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid AND call_id='cancelled-run'`)[0]?.status,
