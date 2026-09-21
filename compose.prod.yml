@@ -102,6 +102,11 @@ services:
 
   app-assistant:
     <<: *app-defaults
+    user: bun
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./deployment/chromium-seccomp.json
     image: ghcr.io/k2b-dev/cloud-app-assistant:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
   app-capabilities:

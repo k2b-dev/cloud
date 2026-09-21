@@ -15,7 +15,6 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { isAssistantChatTurn } from "./assistant-models";
-import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import { aiChatTasks } from "./chat-tasks";
@@ -789,8 +788,7 @@ export class AiTurnExecutor {
     const allowed = allowedTools === null ? null : new Set(allowedTools);
     const activeTools = toolsSupported
       ? runtimeTools.filter(
-          (tool) =>
-            (!allowed || allowed.has(tool.def.name)) && !(config.mandate && CODE_RUNTIME_TOOL_NAMES.some((name) => name === tool.def.name)),
+          (tool) => (!allowed || allowed.has(tool.def.name)) && !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
         )
       : [];
     const memoryToolEnabled = activeTools.some((tool) => tool.def.name === "memory");

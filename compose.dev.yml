@@ -116,6 +116,11 @@ services:
 
   app-assistant:
     <<: *app
+    user: bun
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./deployment/chromium-seccomp.json
     build:
       context: .
       dockerfile: Dockerfile.dev

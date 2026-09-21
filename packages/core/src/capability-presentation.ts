@@ -243,12 +243,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.task.create": {
           title: "Eine geplante AI-Aufgabe erstellen",
           description:
-            "Erstellen Sie eine autonome Aufgabe in einer eigenen AI-Konversation. Ermitteln Sie vorher die benötigten Capabilities und lassen Sie deren Berechtigungsumfang prüfen. Immer bestätigungspflichtige Capabilities und interaktive Browser-/Code-Mode-Werkzeuge sind im Hintergrund nicht verfügbar. Lösen Sie relative Zeitangaben vor dem Aufruf in localAt auf.",
+            "Erstellen Sie eine autonome Aufgabe in einer eigenen AI-Konversation. Ermitteln Sie vorher die benötigten Capabilities und lassen Sie deren Berechtigungsumfang prüfen. Code Mode läuft mit bestätigten Capability-, HTTP- und Datenbankfreigaben im Hintergrund. Immer bestätigungspflichtige Capabilities und interaktive Dialoge sind dort nicht verfügbar. Lösen Sie relative Zeitangaben vor dem Aufruf in localAt auf.",
           input: {
-            grants: "Geprüfte Capability-Berechtigungen für die gesamte Aufgabe.",
+            grants: "Geprüfte Freigaben für Capabilities, HTTP und RSQL für diese Aufgabe.",
             "grants[].appId": "ID der App, die die Capability bereitstellt.",
             "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
-            "grants[].kind": "Operationstyp: query für Lesen oder action für Änderungen.",
+            "grants[].kind": "Freigabetyp: query/action für Capabilities, http für HTTP-Anfragen oder database für RSQL.",
             "grants[].fixedInput":
               "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
             chatId: "Lesbare sechsstellige AI-Konversation ID.",
@@ -293,7 +293,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             grants: "Vollständige Ersatzliste der Berechtigungen; erfordert Benutzerprüfung. Weglassen erhält bestehende Berechtigungen.",
             "grants[].appId": "ID der App, die die Capability bereitstellt.",
             "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
-            "grants[].kind": "Operationstyp: query für Lesen oder action für Änderungen.",
+            "grants[].kind": "Freigabetyp: query/action für Capabilities, http für HTTP-Anfragen oder database für RSQL.",
             "grants[].fixedInput":
               "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
             taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",

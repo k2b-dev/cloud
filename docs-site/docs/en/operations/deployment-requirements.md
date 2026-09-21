@@ -90,6 +90,27 @@ receive `operation_busy`. Size memory for the existing 50 MiB per-file and
 250 MiB per-run code budgets plus Chromium; streaming transport does not remove
 the memory occupied by files loaded for analysis.
 
+### Assistant Chromium sandbox
+
+Assistant runs Chromium in the same container as an unprivileged `bun` user,
+with Chromium's sandbox enabled. It needs neither privileged mode, root,
+`SYS_ADMIN`, a Docker socket nor nested containers. Both Compose configurations
+use `deployment/chromium-seccomp.json`, drop all Linux capabilities and enable
+`no-new-privileges`. Keep that profile beside Compose when deploying.
+
+The profile follows [Playwright's Docker sandbox profile](https://github.com/microsoft/playwright/blob/v1.62.0/utils/docker/seccomp_profile.json),
+allowing user namespace creation and `chroot` inside that namespace. The latter
+must remain available even when the container's capability bounding set is empty.
+The host kernel must allow unprivileged user namespaces. A sandbox startup failure
+is an execution error; there is no fallback to unsandboxed Chromium. Existing
+custom Assistant deployments must adopt these settings before using Code Mode.
+
+Each foreground chat host and scheduled turn has a separate browser process
+and ephemeral host credential.
+This is browser sandbox isolation within one application container, not a
+separate VM per user. Keep one Assistant replica for now; lost hosts are not
+replayed. Studio previews continue running in the user's browser.
+
 ## Select applications and feature dependencies
 
 **Baseline** below means Postgres, Valkey, NATS JetStream, `APP_SECRET`, completed Core schema

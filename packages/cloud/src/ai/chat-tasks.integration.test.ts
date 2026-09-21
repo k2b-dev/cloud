@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { mandates } from "../services/mandates";
 import { AiChatTaskIdempotencyConflictError, aiChatTasks } from "./chat-tasks";
+import { authorizeCodeExecution } from "./code-execution";
 import { migrateCloudAi } from "./migrate";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
@@ -569,6 +570,10 @@ suite("AI chat tasks", () => {
         userId: user!.id,
         chatId: conversation.shortId,
         prompt: "Summarize",
+        grants: [
+          { kind: "http", fixedInput: { origin: "https://example.com", method: "GET" } },
+          { kind: "database", fixedInput: { resourceId: "AbC234", operation: "rows.insert", table: "invoices" } },
+        ],
         schedule: { kind: "cron", cron: "0 9 * * *" },
         timezone: "UTC",
       }))!;
@@ -594,6 +599,30 @@ suite("AI chat tasks", () => {
       if (!delivered.delivered) throw new Error("Background run must start alongside interactive turn");
       const config = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: delivered.turnId });
       expect(config?.kind === "chat" && config.background?.context).toHaveLength(1);
+      await sql`UPDATE ai.turns SET status='running' WHERE id=${delivered.turnId}::uuid`;
+      if (config?.kind !== "chat" || !config.mandate) throw new Error("Missing scheduled authority");
+      expect((await authorizeCodeExecution(conversation.id, delivered.turnId, user!.id)).config).toEqual(config);
+      await aiChatTasks.authorizeRuntime({
+        mandate: config.mandate,
+        kind: "http",
+        input: { origin: "https://example.com", method: "GET" },
+      });
+      await expect(
+        aiChatTasks.authorizeRuntime({ mandate: config.mandate, kind: "http", input: { origin: "https://other.example", method: "GET" } }),
+      ).rejects.toThrow("access denied");
+      await aiChatTasks.authorizeRuntime({
+        mandate: config.mandate,
+        kind: "database",
+        input: { resourceId: "AbC234", operation: "rows.insert", table: "invoices" },
+      });
+      await expect(
+        aiChatTasks.authorizeRuntime({
+          mandate: config.mandate,
+          kind: "database",
+          input: { resourceId: "AbC234", operation: "rows.delete", table: "invoices" },
+        }),
+      ).rejects.toThrow("access denied");
+
       expect(
         await aiChatTasks.createOccurrence({
           taskId: task.id,
@@ -616,6 +645,7 @@ suite("AI chat tasks", () => {
         VALUES (${createAiShortId()},${conversation.id}::uuid,2,'message','assistant',${JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Your summary is ready." }] })}::text::jsonb,${delivered.turnId})`;
       await sql`UPDATE ai.conversations SET done = true, last_viewed_at = now() - interval '1 day', last_used_at = now() - interval '1 day' WHERE id = ${conversation.id}::uuid`;
       await sql`UPDATE ai.turns SET status='completed',completed_at=now() WHERE id=${delivered.turnId}::uuid`;
+      await expect(authorizeCodeExecution(conversation.id, delivered.turnId, user!.id)).rejects.toThrow("no longer authorized");
       expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "completed" })).toEqual({
         occurrenceId: occurrence.id,
         failed: false,

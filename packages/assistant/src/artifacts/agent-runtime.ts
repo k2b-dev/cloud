@@ -76,6 +76,7 @@ export function createArtifactAgentRuntime(
   approve?: ApproveCapability,
   execution: "chat-tool" | "standalone" = "chat-tool",
   httpHost?: HttpHost,
+  unattended = false,
 ) {
   const runs = new Map<string, Entry>();
   const clientId = crypto.randomUUID();
@@ -216,6 +217,7 @@ export function createArtifactAgentRuntime(
       try {
         session = createArtifactSession(container, compiled, {
           mode: "test",
+          unattended,
           ai: (request, signal) => artifactClient.ai(request, { resourceId: dataId, conversationId }, signal),
           pdf: (request, signal) => artifactClient.pdf(request, { resourceId: dataId, conversationId }, signal),
           http: (request, signal) => {

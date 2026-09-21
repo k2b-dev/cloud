@@ -9,15 +9,18 @@ type Call = Parameters<AiFrontendToolHandler>[0];
 export async function createBrowserCodeHost(
   endpoint: { origin: string; token: string },
   approve?: (request: CodeApproval) => Promise<CapabilityDecision>,
+  unattended = false,
 ) {
   const browser: Browser = await chromium
     .launch({
       headless: true,
+      chromiumSandbox: true,
       ...(appEnv.CLOUD_CLI_CHROMIUM ? { executablePath: appEnv.CLOUD_CLI_CHROMIUM } : {}),
     })
-    .catch(() => {
+    .catch((cause) => {
       throw new Error(
-        "Code mode needs Chromium. Install it with playwright install chromium, or set CLOUD_CLI_CHROMIUM to an installed Chromium executable.",
+        "Code mode could not start sandboxed Chromium. Install Chromium or set CLOUD_CLI_CHROMIUM. On Linux, enable unprivileged user namespaces and the documented container seccomp profile.",
+        { cause },
       );
     });
   const lifetime = new AbortController();
@@ -54,6 +57,9 @@ export async function createBrowserCodeHost(
       redirect: "error",
     });
     if (!response.ok) throw new Error(`Code host unavailable: HTTP ${response.status}`);
+    await page.evaluate((value) => {
+      window.assistantCodeUnattended = value;
+    }, unattended);
     await page.addScriptTag({ content: await response.text() });
     if (startupErrors.length) throw new Error(`Code host failed to initialize: ${startupErrors.join("; ")}`);
     return {

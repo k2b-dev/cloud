@@ -29,3 +29,18 @@ test("task access review distinguishes unrestricted inputs, exact restrictions a
     lookup.mockRestore();
   }
 });
+
+test("HTTP and database grants share the compact human-readable access review", async () => {
+  const review = await taskGrantReview(
+    [
+      { kind: "http", fixedInput: { origin: "https://api.example.com", method: "GET" } },
+      { kind: "database", fixedInput: { resourceId: "aBc234", table: "invoices" } },
+    ],
+    "de",
+  );
+  expect(review.value).toContain("**HTTP\\-Anfragen senden** · HTTP");
+  expect(review.value).toContain("Methode: GET");
+  expect(review.value).toContain("Studio\\-App: aBc234");
+  expect(review.value).toContain("Tabelle: invoices");
+  expect(review.value).not.toContain("fixedInput");
+});
