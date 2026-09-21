@@ -87,6 +87,7 @@ export type WorkspaceRecordsRoute = {
   initialState: RecordsState;
   initialData: {
     items?: GridRecord[];
+    relationLabels?: Record<string, string>;
     buckets?: WorkspaceGroupBucket[];
     aggregates?: Record<string, unknown>;
     nextCursor: string | null;
