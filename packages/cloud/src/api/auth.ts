@@ -188,7 +188,8 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
       describeRoute({
         tags: ["Auth"],
         summary: "Request magic link login",
-        description: "Request a magic link token via email for local account sign-in.",
+        description:
+          "Request a magic link token for local account sign-in. The `email` field accepts the email address or the username of the account; the link is always sent to the account's email address.",
         responses: {
           200: jsonResponse(MessageResponseSchema, "Request accepted"),
           400: jsonResponse(ErrorResponseSchema, "Email sign-in not available"),
@@ -203,7 +204,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
           return c.json({ message: requestResult.message }, requestResult.status);
         }
 
-        log.info("Magic link requested", { email });
+        log.info("Magic link requested", { identifier: email });
         return c.json({
           message: "If this email can sign in with a login code, a code has been sent.",
         });

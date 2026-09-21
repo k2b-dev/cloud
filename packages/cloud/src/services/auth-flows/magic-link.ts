@@ -50,11 +50,23 @@ const sendIpaEmailLoginHint = async (
   if (result.status === "error") log.error("FreeIPA login hint delivery failed", { notificationId: result.id });
 };
 
+// A username resolves to the stored email of exactly one account; anything
+// else (unknown, ambiguous casing, no email) behaves like an unknown email.
+const resolveEmailForUsername = async (username: string): Promise<string | null> => {
+  const rows = await sql<{ mail: string | null }[]>`
+    SELECT mail FROM auth.users WHERE lower(uid) = lower(${username}) LIMIT 2
+  `;
+  const mail = rows.length === 1 ? rows[0]?.mail : null;
+  return mail ? normalizeEmail(mail) : null;
+};
+
 export const request = async (
   params: { email: string; redirectTo?: string; locale?: string; category?: "guest" | "login" },
   notificationSender: AuthNotificationSender,
 ): Promise<{ ok: true } | { ok: false; status: 400; message: string }> => {
-  const email = normalizeEmail(params.email);
+  const identifier = params.email.trim();
+  const email = identifier.includes("@") ? normalizeEmail(identifier) : await resolveEmailForUsername(identifier);
+  if (!email) return { ok: true };
   const hasIpaUser = await hasIpaAccountForEmail(email);
   const userRows = hasIpaUser
     ? []

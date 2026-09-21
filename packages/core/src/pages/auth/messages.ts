@@ -52,8 +52,11 @@ export const authMessages = i18n.define({
       verifying: "Verifying",
       verify: "Verify",
       emailAddress: "Email address",
-      selfRegistrationEmailDescription: "Use your Cloud email address. A guest account is created automatically when you first sign in.",
-      existingEmailDescription: "Use the email address for your existing Cloud account.",
+      emailOrUsername: "Email or username",
+      emailOrUsernamePlaceholder: "eva or eva@example.org",
+      selfRegistrationEmailDescription:
+        "Use your email address or username. A guest account is created automatically when you first sign in with a new email address.",
+      existingEmailDescription: "Use the email address or username of your existing Cloud account.",
       sendingLoginLink: "Sending sign-in link",
       sendLoginLink: "Send sign-in link",
       selfRegistrationHint: "New to Cloud? Enter your email address. A guest account is created automatically when you first sign in.",
@@ -149,9 +152,11 @@ export const authMessages = i18n.define({
       verifying: "Code wird geprüft",
       verify: "Prüfen",
       emailAddress: "E-Mail-Adresse",
+      emailOrUsername: "E-Mail oder Kürzel",
+      emailOrUsernamePlaceholder: "eva oder eva@example.org",
       selfRegistrationEmailDescription:
-        "Verwende deine Cloud-E-Mail-Adresse. Bei der ersten Anmeldung wird automatisch ein Gastkonto erstellt.",
-      existingEmailDescription: "Verwende die E-Mail-Adresse deines bestehenden Cloud-Kontos.",
+        "Verwende deine E-Mail-Adresse oder dein Kürzel. Bei der ersten Anmeldung mit einer neuen E-Mail-Adresse wird automatisch ein Gastkonto erstellt.",
+      existingEmailDescription: "Verwende die E-Mail-Adresse oder das Kürzel deines bestehenden Cloud-Kontos.",
       sendingLoginLink: "Anmeldelink wird gesendet",
       sendLoginLink: "Anmeldelink senden",
       selfRegistrationHint:

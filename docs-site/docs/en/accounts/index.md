@@ -5,14 +5,16 @@ section: Accounts & sign-in
 order: 1080
 description: Choose account types, configure sign-in and manage account lifecycle.
 tags: [accounts, administration, authentication]
-updated: 2026-09-09
+updated: 2026-09-21
 ---
 
 # Accounts and sign-in
 
 An account determines who someone is and what they can access. A sign-in method
 determines how they prove it is their account: an email link, FreeIPA credentials,
-a passkey or approval in a paired app.
+a passkey or approval in a paired app. An email link can be requested with the
+account's email address or its username; it is always sent to the stored email
+address.
 
 Configure installation-wide policy in **Administration → Accounts & sign-in**.
 Create and manage individual users, groups and requests in **Accounts**.
