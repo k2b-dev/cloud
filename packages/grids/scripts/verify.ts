@@ -71,11 +71,11 @@ if (argv.includes("--bootstrap")) {
     "src/service/record-event-runtime.integration.test.ts",
     "src/service/evidence-cleanup.integration.test.ts",
     "src/frontend/_components/records/RecordReferencedBy.behavior.test.ts",
-    "src/frontend/_components/records/RecordReadView.behavior.test.tsx",
     "src/service/record-event-outbox.integration.test.ts",
   ];
   const dom = [
     special[5]!,
+    "src/frontend/_components/records/RecordReadView.behavior.test.tsx",
     "src/frontend/_components/custom-apps/CustomAppBlockPreview.behavior.test.tsx",
     "src/frontend/_components/workspace/BaseOverview.behavior.test.tsx",
     "src/frontend/_components/workspace/WorkspaceMetadataRefresh.behavior.test.tsx",
