@@ -121,6 +121,10 @@ jobs:
           path: release
           merge-multiple: true
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Cosign 3 writes only Sigstore bundles; checksums.txt.sig/.pem and
+          # `cld update` expect the detached signature and certificate (#53).
+          cosign-release: v2.6.5
       - name: Package, checksum and sign CLI assets
         working-directory: release
         run: |
@@ -282,6 +286,10 @@ jobs:
           docker logs app-core; docker logs gateway; docker logs app-faq
           exit 1
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Cosign 3 writes only Sigstore bundles; checksums.txt.sig/.pem and
+          # `cld update` expect the detached signature and certificate (#53).
+          cosign-release: v2.6.5
       - name: Install and update cld from the published release with full verification
         env:
           VERSION: ${{ inputs.version }}

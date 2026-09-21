@@ -12,6 +12,12 @@ on:
     branches: [main]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      version:
+        description: Finish an existing release again (X.Y.Z whose tags already exist); leave empty for a normal run
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -42,14 +48,16 @@ jobs:
       sha12: ${{ steps.context.outputs.sha12 }}
       version: ${{ steps.context.outputs.version }}
       tags: ${{ steps.context.outputs.tags }}
-      cloud_released: ${{ steps.release.outputs.release_created == 'true' }}
-      npm_cloud_released: ${{ steps.release.outputs['packages/cloud--release_created'] == 'true' }}
-      npm_ui_released: ${{ steps.release.outputs['packages/ui--release_created'] == 'true' }}
+      cloud_released: ${{ steps.context.outputs.cloud_released }}
+      npm_cloud_released: ${{ steps.context.outputs.npm_cloud_released }}
+      npm_ui_released: ${{ steps.context.outputs.npm_ui_released }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # A redo checks out the released commit; the workflow files still come from main.
+          ref: ${{ inputs.version != '' && format('refs/tags/cloud-v{0}', inputs.version) || github.event.workflow_run.head_sha || github.sha }}
       - id: release
+        if: inputs.version == ''
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           # RELEASE_PLEASE_TOKEN (GitHub App or fine-grained PAT) lets the
@@ -62,9 +70,20 @@ jobs:
         env:
           RELEASED: ${{ steps.release.outputs.release_created == 'true' }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          NPM_CLOUD_RELEASED: ${{ steps.release.outputs['packages/cloud--release_created'] == 'true' }}
+          NPM_UI_RELEASED: ${{ steps.release.outputs['packages/ui--release_created'] == 'true' }}
+          REDO_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           sha=$(git rev-parse HEAD)
+          cloud_released="$RELEASED"; npm_cloud_released="$NPM_CLOUD_RELEASED"; npm_ui_released="$NPM_UI_RELEASED"
+          if [[ -n "$REDO_VERSION" ]]; then
+            # Finish an existing release again (HEAD is cloud-v$REDO_VERSION): every component whose tag points here is released.
+            cloud_released=true
+            npm_cloud_released=$(git ls-remote --tags origin "npm-cloud-v$(jq -r .version packages/cloud/package.json)" | grep -q "$sha" && echo true || echo false)
+            npm_ui_released=$(git ls-remote --tags origin "npm-ui-v$(jq -r .version packages/ui/package.json)" | grep -q "$sha" && echo true || echo false)
+            RELEASED=true; RELEASE_VERSION="$REDO_VERSION"
+          fi
           if [[ "$RELEASED" == "true" ]]; then
             version="$RELEASE_VERSION"
             tags="[\"v$RELEASE_VERSION\"]"
@@ -77,6 +96,9 @@ jobs:
             echo "sha12=${sha:0:12}"
             echo "version=$version"
             echo "tags=$tags"
+            echo "cloud_released=$cloud_released"
+            echo "npm_cloud_released=$npm_cloud_released"
+            echo "npm_ui_released=$npm_ui_released"
           } | tee -a "$GITHUB_OUTPUT"
 
   images:
