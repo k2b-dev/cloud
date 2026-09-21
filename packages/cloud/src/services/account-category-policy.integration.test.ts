@@ -29,12 +29,16 @@ const policyKeys = ["guest", "login", "freeipa"]
   .concat("user.category.login.label");
 const localFull = { provider: "local", profile: "user" } as const;
 const deliveries: string[] = [];
+const ipaHints: string[] = [];
 const sender: AuthNotificationSender = {
   sendMagicLink: async ({ token }) => {
     deliveries.push(token);
     return { id: "test", status: "suppressed" };
   },
-  sendIpaLoginHint: async () => ({ id: "test", status: "suppressed" }),
+  sendIpaLoginHint: async ({ email }) => {
+    ipaHints.push(email);
+    return { id: "test", status: "suppressed" };
+  },
   sendPasswordReset: async () => ({ id: "test", status: "suppressed" }),
 };
 
@@ -43,8 +47,8 @@ suite("isolated account category policy", () => {
   const user = async (provider = "local", profile = "user") => {
     const uid = `category-${crypto.randomUUID()}`;
     const [row] = await sql<
-      { id: string; mail: string }[]
-    >`INSERT INTO auth.users(uid, provider, profile, mail) VALUES (${uid}, ${provider}, ${profile}, ${`${uid}@example.test`}) RETURNING id, mail`;
+      { id: string; uid: string; mail: string }[]
+    >`INSERT INTO auth.users(uid, provider, profile, mail) VALUES (${uid}, ${provider}, ${profile}, ${`${uid}@example.test`}) RETURNING id, uid, mail`;
     return row!;
   };
   beforeAll(async () => {
@@ -59,6 +63,7 @@ suite("isolated account category policy", () => {
     for (const key of policyKeys) await settings.remove(key);
     await settings.set("user.allow_self_registration", false);
     deliveries.length = 0;
+    ipaHints.length = 0;
   });
   afterAll(async () => {
     await server?.stop(true);
@@ -161,6 +166,30 @@ suite("isolated account category policy", () => {
     const pending = await providers.local.auth.createMagicLinkToken({ email: existing.mail, category: "login" });
     await settings.set("user.category.login.enabled", false);
     expect(await magicLink.verify({ token: pending })).toMatchObject({ ok: false, status: 403 });
+  });
+
+  test("usernames request links for local accounts, hint FreeIPA accounts, and never register", async () => {
+    await settings.set("user.allow_self_registration", true);
+    const full = await user();
+    expect(await magicLink.request({ email: ` ${full.uid.toUpperCase()} `, category: "login" }, sender)).toEqual({ ok: true });
+    expect(deliveries).toHaveLength(1);
+    expect(await magicLink.verify({ token: deliveries[0]! })).toMatchObject({ ok: true, userId: full.id, email: full.mail });
+    const guest = await user("local", "guest");
+    await magicLink.request({ email: guest.uid, category: "guest" }, sender);
+    expect(deliveries).toHaveLength(2);
+    expect(await magicLink.verify({ token: deliveries[1]! })).toMatchObject({ ok: true, userId: guest.id });
+    await magicLink.request({ email: guest.uid, category: "login" }, sender);
+    expect(deliveries).toHaveLength(2);
+    const directory = await user("ipa");
+    await magicLink.request({ email: directory.uid }, sender);
+    await Bun.sleep(50);
+    expect(ipaHints).toEqual([directory.mail]);
+    expect(deliveries).toHaveLength(2);
+    const unknown = `category-missing-${crypto.randomUUID()}`;
+    expect(await magicLink.request({ email: unknown, category: "guest" }, sender)).toEqual({ ok: true });
+    expect(deliveries).toHaveLength(2);
+    expect(ipaHints).toHaveLength(1);
+    expect(await sql`SELECT id FROM auth.users WHERE lower(uid) = lower(${unknown})`).toHaveLength(0);
   });
 
   test("guest registration cannot create full accounts or disabled guests", async () => {

@@ -9,7 +9,13 @@ export const LoginSchema = z.object({
 });
 
 export const EmailLoginSchema = z.object({
-  email: z.email(),
+  email: z
+    .string()
+    .trim()
+    .min(1)
+    .max(254)
+    .refine((value) => !value.includes("@") || z.email().safeParse(value).success, "Invalid email address")
+    .describe("Email address or username of the account"),
   category: z.enum(["guest", "login"]).optional(),
   acceptedAgb: z.literal(true).optional(),
   redirectTo: z.string().max(2048).optional(),

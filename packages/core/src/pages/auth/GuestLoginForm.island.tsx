@@ -97,14 +97,14 @@ export default function GuestLoginForm(props: {
         class="flex flex-col gap-4"
       >
         <TextInput
-          label={t().emailAddress}
+          label={t().emailOrUsername}
           description={props.allowSelfRegistration ? t().selfRegistrationEmailDescription : t().existingEmailDescription}
-          placeholder="you@example.org"
-          type="email"
+          placeholder={t().emailOrUsernamePlaceholder}
+          type="text"
           icon="ti ti-mail"
           value={email}
           onValueChange={setEmail}
-          autocomplete="email"
+          autocomplete="username"
         />
 
         {error() && (

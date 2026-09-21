@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1081
 description: Configure Guest, local Login and FreeIPA access independently from login-page visibility.
 tags: [accounts, authentication, administration, freeipa]
-updated: 2026-09-09
+updated: 2026-09-21
 ---
 
 # Configure account types and sign-in
@@ -28,7 +28,8 @@ The name appears in sign-in, the account overview and account administration.
 An empty label uses **Login**. Renaming the entry does not change account access
 or permissions.
 
-Local accounts remain passwordless. App sign-in requires
+Local accounts remain passwordless. The email link can be requested with the
+email address or the username of an existing account. App sign-in requires
 [separate setup and device pairing](/en/docs/accounts/app-sign-in).
 Passkeys and apps must be paired with the account before they can be used.
 
