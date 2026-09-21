@@ -34,8 +34,7 @@ describe("Assistant frontend contracts", () => {
     }
   });
 
-  // Already failing on main before the release train (unrelated to it). Tracked in #10.
-  test.todo("keeps Projects and chat context inside the Assistant workspace", async () => {
+  test("keeps Projects and chat context inside the Assistant workspace", async () => {
     const [workspace, sidebar, projectsDialog, project, context, tasks, projectSettings] = await Promise.all([
       read("./AssistantWorkspace.island.tsx"),
       read("./AssistantSidebar.tsx"),
@@ -78,8 +77,10 @@ describe("Assistant frontend contracts", () => {
     expect(context).toContain("openAssistantKnowledgeSearch");
     expect(context).not.toContain("AssistantChatDetailPanel");
     expect(context).not.toContain("IconButton");
-    expect(tasks).toContain("DateTimePicker");
-    expect(tasks).toContain("<Select");
+    expect(tasks).toContain('text("Adjust in chat")');
+    expect(tasks).toContain('text("Plan new tasks and make changes in the chat.")');
+    expect(tasks).not.toContain("<form");
+    expect(tasks).not.toContain("DateTimePicker");
     expect(tasks).not.toContain("<select");
     expect(tasks).not.toContain('type="datetime-local"');
     expect(projectSettings).toContain("<SettingsModal");
