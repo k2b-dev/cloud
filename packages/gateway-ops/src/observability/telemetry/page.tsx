@@ -6,7 +6,7 @@ import {
   formatPercent as fmtPercent,
   formatRatio as fmtRatio,
 } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
+import { AdminLayout, requestPath } from "@k2b/cloud/ssr";
 import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
@@ -130,7 +130,7 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{t.telemetryDescription}</p>
         </div>
 
-        <ModeNav url={c.req.url} locale={locale} />
+        <ModeNav path={requestPath(c)} locale={locale} />
         <TelemetryFilterBar filter={filter} apps={appOptions} />
 
         <StatGrid columns={5}>

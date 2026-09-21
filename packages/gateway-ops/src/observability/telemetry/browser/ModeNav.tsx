@@ -1,8 +1,8 @@
 import { telemetryModeUrl } from "./filter";
 import { browserMessages } from "./messages";
-export default function ModeNav(props: { url: string; locale: string; browser?: boolean }) {
+export default function ModeNav(props: { path: string; locale: string; browser?: boolean }) {
   const { t } = browserMessages.resolve([props.locale]);
-  const url = new URL(props.url);
+  const url = new URL(props.path, "https://cloud.invalid");
   return (
     <nav class="flex gap-3 border-b border-[var(--k2b-border)] text-xs" aria-label={t.navigation}>
       <a

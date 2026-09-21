@@ -1,7 +1,7 @@
 import { listAppsDetailed } from "@k2b/cloud";
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings, logging, type WebVitalName, type WebVitalsOverview } from "@k2b/cloud/services";
-import { AdminLayout } from "@k2b/cloud/ssr";
+import { AdminLayout, requestPath } from "@k2b/cloud/ssr";
 import { ButtonLink, DataTable, NoticeCard, StatCell, StatGrid } from "@k2b/ui";
 import type { Context, Env } from "hono";
 import Controls from "./Controls.island";
@@ -38,7 +38,7 @@ export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
           <h1 class="text-base font-semibold text-primary">{t.title}</h1>
           <p class="mt-1 text-xs text-dimmed">{t.description}</p>
         </div>
-        <ModeNav url={c.req.url} locale={locale} browser />
+        <ModeNav path={requestPath(c)} locale={locale} browser />
         <Controls filter={filter} apps={apps} enabled={enabled} />
         <NoticeCard tone="info" title={t.metricsTitle}>
           <dl class="grid grid-cols-1 xl:grid-cols-3 gap-3">
