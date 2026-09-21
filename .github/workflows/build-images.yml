@@ -87,6 +87,12 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           provenance: mode=max
           sbom: true
+          labels: |
+            org.opencontainers.image.title=${{ matrix.image.image }}
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
           build-args: |
             APP_ID=${{ matrix.image.appId || '' }}
             CLOUD_VERSION=${{ inputs.version }}
