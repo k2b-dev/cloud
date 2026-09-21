@@ -251,6 +251,49 @@ describe("Files v2 progressive navigation", () => {
     expect(dom.root.querySelector(".k2b-app-workspace__main")!.textContent).toContain("This folder is empty");
     expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "bases", "entries", "bases", "entries"]);
   });
+  test("failures of enabled areas show a notice next to working storage; no issues and no storage stay quiet", async () => {
+    const dom = createDomTestHarness();
+    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const base = {
+      id: "ipa",
+      area: "freeipa" as const,
+      kind: "users" as const,
+      name: "Alice",
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const directory = { base, path: "", items: [], next: null };
+    const notices = () => [...dom.root.querySelectorAll(".k2b-inline-guidance")].map((node) => node.textContent);
+    const mount = async (snapshot: Partial<WorkspaceSnapshot>) => {
+      dom.window.history.replaceState(null, "", snapshot.source ?? initial.source);
+      const dispose = render(
+        () => createComponent(Workspace, { cloudUrl: "https://cloud.invalid", initial: { ...initial, ...snapshot } }),
+        dom.root,
+      );
+      cleanup = () => {
+        dispose();
+        dom.cleanup();
+      };
+      await flush();
+      return dispose;
+    };
+    const source = "/app/filesv2?base=ipa";
+    const failing = { items: [base], issues: [{ area: "cloud" as const, code: "local_linux_disabled" }], editor: null };
+    let dispose = await mount({ source, bases: failing, selectedId: base.id, directory });
+    expect(notices()).toEqual(["Cloud: Cloud files require local Linux identities to be enabled."]);
+    expect(dom.root.textContent).toContain("This folder is empty");
+    dispose();
+    dispose = await mount({ source, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory });
+    expect(notices()).toEqual([]);
+    expect(dom.root.textContent).toContain("This folder is empty");
+    dispose();
+    await mount({ source: "/app/filesv2" });
+    expect(notices()).toEqual([]);
+    expect(dom.root.textContent).toContain("No storage available");
+    expect(dom.root.textContent).not.toContain("disabled");
+  });
   test("marks load only while open, abort on close, refresh on reopen and use one compact ordered catalog", async () => {
     const dom = createDomTestHarness();
     const { MarksMenu, openMarksDialog } = await import("../src/frontend/MarksMenu");

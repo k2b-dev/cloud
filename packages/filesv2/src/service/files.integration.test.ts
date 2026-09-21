@@ -1738,6 +1738,22 @@ suite("Files service and durable bindings", () => {
     expect(rows).toHaveLength(1);
     expect([a.identity_id, b.identity_id]).toContain(rows[0].identity_id);
   });
+  test("a disabled Cloud area is hidden from users while enabled FreeIPA storage works and real failures still surface", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    config.cloud.enabled = false;
+    const disabled = await service.bases(actor);
+    expect(disabled.issues).toEqual([]);
+    expect(disabled.items.map((item) => [item.area, item.status])).toEqual([["freeipa", "existing"]]);
+    config.cloud.enabled = true;
+    await set(
+      "linux.identity_config",
+      JSON.stringify({ enabled: false, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
+    );
+    const failing = await service.bases(actor);
+    expect(failing.issues).toEqual([{ area: "cloud", code: "local_linux_disabled" }]);
+    expect(failing.items.map((item) => item.area)).toEqual(["freeipa"]);
+  });
   test("guest and global Cloud prerequisite denial occurs before leases", async () => {
     const guest = await user("guest", "local", false, "guest");
     await expect(service.bases(guest)).rejects.toMatchObject({ code: "forbidden" });

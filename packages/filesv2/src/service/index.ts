@@ -776,6 +776,8 @@ export function createFilesService(
         editor: state.config.collabora.url ? { documentFormat: state.config.collabora.documentFormat } : null,
       };
       for (const area of ["cloud", "freeipa"] as const) {
+        // An area the operator switched off is not a failure; only enabled areas report issues to users.
+        if (!state.config[area].enabled) continue;
         const issue = issueFor(state.config, area, state.self.availability);
         if (issue) {
           output.issues.push({ area, code: issue });
