@@ -54,6 +54,7 @@ import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
 import { readConfiguration, writeConfiguration } from "./configuration";
+import { documentTemplate } from "./document-template";
 import { FilesError } from "./errors";
 import { createDirectoryLifecycle } from "./lifecycle";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
@@ -1213,8 +1214,7 @@ export function createFilesService(
       } catch (error) {
         if (!(error instanceof FilegateError && error.status === 404)) throw error;
       }
-      const template = Bun.file(new URL(`../templates/empty.${extension}`, import.meta.url));
-      const node = await writeBytes({ ...current, target }, template, "error");
+      const node = await writeBytes({ ...current, target }, await documentTemplate(extension), "error");
       return { base: current.inspection.summary, entry: fileEntry(relative, node) };
     },
     async editorFileInfo(token: string, id: string) {
