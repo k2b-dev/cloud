@@ -1,6 +1,10 @@
+import { lazySync } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
 import type { Node } from "@k2b/filegate";
-import { SQL, sql } from "bun";
+import { sql } from "bun";
 import type { Area, BaseKind } from "../contracts";
+
+const log = logger("filesv2:operations");
 export type Operation = {
   id: string;
   area: Area;
@@ -21,32 +25,53 @@ export type Operation = {
   created_at: Date;
   updated_at: Date;
 };
-export const withRootLock = <T>(root: string, run: () => Promise<T>) => withFilesLock(`filesv2:${root}`, run);
-// Four slow transfers may retain advisory locks without occupying the domain query pool.
-// Reject overload before reserving a connection; do not queue unbounded request bodies.
-const uploadLocks = new SQL({ max: 4, connectionTimeout: 5 });
+export const withRootLock = <T>(root: string, run: () => Promise<T>) => withFilesLock(`root:${root}`, run);
+// Slow transfers must not occupy the domain query pool: reject overload before
+// the body is consumed instead of queueing unbounded request bodies.
 let activeUploads = 0;
 export async function withUploadLock<T>(id: string, run: () => Promise<T>): Promise<T> {
   if (activeUploads >= 4) throw new Error("operation_busy");
   activeUploads++;
   try {
-    return await withFilesLock(`filesv2:upload:${id}`, run, uploadLocks);
+    return await withFilesLock(`upload:${id}`, run);
   } finally {
     activeUploads--;
   }
 }
-async function withFilesLock<T>(key: string, run: () => Promise<T>, pool = sql): Promise<T> {
-  const connection = await pool.reserve();
+/**
+ * Root and upload operations are leases on the shared broker, not Postgres
+ * session locks: `DATABASE_URL` may run through a transaction pooler, which
+ * does not pin a backend between statements. A live holder extends its lease
+ * every third of the TTL, so the operation itself (Filegate calls of up to ten
+ * minutes, streamed uploads of any size) is not bounded by the TTL; only a
+ * crashed holder keeps the root or file busy, and for at most the TTL.
+ */
+export const FILES_LOCK_TTL_MS = 30_000;
+const filesLocks = lazySync((sync) => sync.mutex({ id: "filesv2:operations", ttlMs: FILES_LOCK_TTL_MS, retry: { maxAttempts: 1 } }));
+async function withFilesLock<T>(resource: string, run: () => Promise<T>): Promise<T> {
+  const mutex = filesLocks();
+  const lock = await mutex.acquire({ resource });
+  if (!lock) throw new Error("operation_busy");
+  // A lost lease cannot abort `run` safely; Filegate preconditions and the
+  // pending-operation rows are the second line of defense, so the loss is
+  // reported and the extension stops.
+  let held = true;
+  let finished = false;
+  const extend = async () => {
+    const extended = await mutex.extend(lock).catch(() => false);
+    if (extended || finished || !held) return;
+    held = false;
+    clearInterval(timer);
+    log.warn("Operation lease was lost before the operation finished", { resource });
+  };
+  const timer = setInterval(() => void extend(), Math.floor(FILES_LOCK_TTL_MS / 3));
+  timer.unref?.();
   try {
-    const [lock] = await connection<{ locked: boolean }[]>`SELECT pg_try_advisory_lock(hashtextextended(${key},0)) AS locked`;
-    if (!lock?.locked) return Promise.reject(new Error("operation_busy"));
-    try {
-      return await run();
-    } finally {
-      await connection`SELECT pg_advisory_unlock(hashtextextended(${key},0))`;
-    }
+    return await run();
   } finally {
-    connection.release();
+    finished = true;
+    clearInterval(timer);
+    if (held) await mutex.release(lock).catch(() => undefined);
   }
 }
 export const operations = {

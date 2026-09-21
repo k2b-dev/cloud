@@ -20,6 +20,7 @@ import {
   EvidenceTarWriter,
   safeArchiveSegment,
 } from "./evidence-archive";
+import { withMaintenanceLease } from "./maintenance-lease";
 import { serviceMessagesFor } from "./messages";
 import { insertWithShortIdForDb } from "./short-id";
 import { loadWorkflowQueryData } from "./workflow-query-store";
@@ -1125,36 +1126,14 @@ const processExportLocked = async (exportId: string, heartbeat: () => Promise<vo
   });
 };
 
-/** Runs `run` while holding the export's session lock; `false` when another session holds it. */
-const withExportLock = async (exportId: string, run: () => Promise<void>): Promise<boolean> => {
-  const connection = await sql.reserve();
-  const lockName = `grids:evidence-export:${exportId}`;
-  let locked = false;
-  let reusable = true;
-  try {
-    const [lock] = await connection<Array<{ acquired: boolean }>>`
-      SELECT pg_try_advisory_lock(hashtextextended(${lockName}, 0)) AS acquired
-    `;
-    if (!lock?.acquired) return false;
-    locked = true;
-    await run();
-    return true;
-  } finally {
-    if (locked) {
-      try {
-        const [unlock] = await connection<Array<{ released: boolean }>>`
-          SELECT pg_advisory_unlock(hashtextextended(${lockName}, 0)) AS released
-        `;
-        if (!unlock?.released) throw new Error("Evidence export lock was not held");
-      } catch (error) {
-        reusable = false;
-        await connection.close({ timeout: 0 }).catch(() => undefined);
-        throw error;
-      }
-    }
-    if (reusable) connection.release();
-  }
-};
+// The lease outlives one transport heartbeat window: a worker that missed its
+// job heartbeat still blocks a redelivered attempt until its lease expires.
+const EXPORT_LEASE_MS = 2 * JOB_LEASE_MS;
+const exportLocks = lazySync((sync) => sync.mutex({ id: "grids:evidence-export", ttlMs: EXPORT_LEASE_MS, retry: { maxAttempts: 1 } }));
+
+/** Runs `run` while holding the export's lease; `false` when another process holds it. */
+const withExportLock = async (exportId: string, run: () => Promise<void>): Promise<boolean> =>
+  (await withMaintenanceLease(exportLocks(), exportId, EXPORT_LEASE_MS, run)) !== null;
 
 export const processExport = async (exportId: string, heartbeat: () => Promise<void> = async () => undefined): Promise<void> => {
   await withExportLock(exportId, () => processExportLocked(exportId, heartbeat));
@@ -1197,7 +1176,7 @@ export const runEvidenceExportJob = async (
 /**
  * A process killed on its last attempt dead-letters without `onError`, leaving
  * the row `running` forever. Rows older than the whole transport budget whose
- * session lock nobody holds are terminal; oldest first, one bounded batch.
+ * lease nobody holds are terminal; oldest first, one bounded batch.
  */
 export const reconcileStuckEvidenceExports = async (context?: CleanupContext): Promise<number> => {
   const rows = await sql<Array<{ id: string }>>`

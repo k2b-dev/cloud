@@ -1,6 +1,8 @@
+import { lazySync } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { type SQL, sql } from "bun";
 import { isMultiSelectField } from "./field-storage";
+import { withMaintenanceLease } from "./maintenance-lease";
 
 const log = logger("grids:field-indexes");
 
@@ -386,7 +388,7 @@ export const dropOrphanedFieldIndexes = async (db?: SQL): Promise<number> => {
   return progress.changed;
 };
 
-const FIELD_INDEX_MAINTENANCE_LOCK = "grids:field-index-maintenance:v2";
+export const FIELD_INDEX_MAINTENANCE_LOCK = "grids:field-index-maintenance:v2";
 
 type FieldIndexMaintenanceBatchResult = {
   claimed: boolean;
@@ -394,36 +396,26 @@ type FieldIndexMaintenanceBatchResult = {
   hasMore: boolean;
 };
 
+// Statements run with a five minute `statement_timeout`; the lease is extended
+// on a timer, so one long index build does not expire it. A crashed holder
+// frees maintenance for the other replicas within a minute.
+const FIELD_INDEX_MAINTENANCE_LEASE_MS = 60_000;
+const maintenanceLocks = lazySync((sync) =>
+  sync.mutex({ id: "grids:field-index-maintenance", ttlMs: FIELD_INDEX_MAINTENANCE_LEASE_MS, retry: { maxAttempts: 1 } }),
+);
+
 export const runFieldIndexMaintenanceBatch = async (
   options: { maxFields?: number; maxOrphans?: number } = {},
-): Promise<FieldIndexMaintenanceBatchResult> =>
-  withIndexMaintenanceConnection(sql, async (connection) => {
-    const [lock] = await connection<Array<{ acquired: boolean }>>`
-      SELECT pg_try_advisory_lock(hashtextextended(${FIELD_INDEX_MAINTENANCE_LOCK}, 0)) AS acquired
-    `;
-    if (!lock?.acquired) return { claimed: false, changed: 0, hasMore: true };
-    try {
+): Promise<FieldIndexMaintenanceBatchResult> => {
+  const result = await withMaintenanceLease(maintenanceLocks(), FIELD_INDEX_MAINTENANCE_LOCK, FIELD_INDEX_MAINTENANCE_LEASE_MS, () =>
+    withIndexMaintenanceConnection(sql, async (connection) => {
       const orphaned = await dropOrphanedFieldIndexesOnConnection(connection, Math.max(1, options.maxOrphans ?? 16));
       const missing = await ensureMissingFieldSortIndexesOnConnection(connection, Math.max(1, options.maxFields ?? 4));
-      return {
-        claimed: true,
-        changed: orphaned.changed + missing.changed,
-        hasMore: orphaned.hasMore || missing.hasMore,
-      };
-    } finally {
-      try {
-        const [unlock] = await connection<Array<{ released: boolean }>>`
-          SELECT pg_advisory_unlock(hashtextextended(${FIELD_INDEX_MAINTENANCE_LOCK}, 0)) AS released
-        `;
-        if (!unlock?.released) throw new Error("field index maintenance lock was not held");
-      } catch (error) {
-        // A leaked session lock would make one pooled connection permanently
-        // own maintenance. Closing is the only safe recovery.
-        await connection.close({ timeout: 0 }).catch(() => undefined);
-        throw error;
-      }
-    }
-  });
+      return { changed: orphaned.changed + missing.changed, hasMore: orphaned.hasMore || missing.hasMore };
+    }),
+  );
+  return result ? { claimed: true, ...result } : { claimed: false, changed: 0, hasMore: true };
+};
 
 // Unique field constraints use partial expression indexes over live records.
 // Select and relation fields are excluded because array uniqueness has no

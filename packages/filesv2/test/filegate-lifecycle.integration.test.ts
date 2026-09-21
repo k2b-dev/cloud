@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import type { RequestActor } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
@@ -14,8 +15,9 @@ import { createFilesService } from "../src/service";
 import { assertPrivateDatabase, localFilegateToken } from "./private-database";
 
 // These tests create and remove their own prefix in both roots.
-const suite = suiteFor("database", "filegate");
+const suite = suiteFor("database", "filegate", "nats");
 suite("real Filegate directory lifecycle", () => {
+  let processSync: ProcessSync | undefined;
   const prefix = `filesv2-test-${crypto.randomUUID()}`;
   const uid = 31001;
   const gid = 32001;
@@ -74,6 +76,7 @@ suite("real Filegate directory lifecycle", () => {
     };
   };
   beforeAll(async () => {
+    processSync = await startProcessSync({ application: "filesv2" });
     await assertPrivateDatabase();
     const token = await localFilegateToken();
     client = new Filegate({ baseUrl: testInfra.filegate!, token });
@@ -148,6 +151,7 @@ suite("real Filegate directory lifecycle", () => {
     });
   }, 30_000);
   afterAll(async () => {
+    await processSync?.stop();
     if (client)
       for (const area of ["cloud", "freeipa"] as const) {
         try {

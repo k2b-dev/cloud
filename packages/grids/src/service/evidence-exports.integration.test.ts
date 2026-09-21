@@ -1,8 +1,10 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { createHash } from "node:crypto";
+import { getProcessSync } from "@k2b/cloud";
+import type { Lock } from "@k2b/sync";
 import { sql } from "bun";
-import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { startGridsTestSync } from "../sync-test-utils";
 import { documentIssuanceService } from "./document-issuance";
@@ -53,8 +55,16 @@ const readTar = (bytes: Uint8Array): Map<string, Uint8Array> => {
   return entries;
 };
 
+// Export processing coordinates through a broker lease, so every test needs Sync.
+const postgresTest = testFor("database", "nats");
+let stopSync: (() => Promise<void>) | undefined;
 beforeAll(async () => {
-  if (testInfra.database) await migrate();
+  if (!testInfra.database || !testInfra.nats) return;
+  await migrate();
+  stopSync = await startGridsTestSync();
+});
+afterAll(async () => {
+  await stopSync?.();
 });
 
 describe("evidence export integration", () => {
@@ -596,7 +606,6 @@ describe("evidence export integration", () => {
   });
 
   postgresTest("cancels queued work, retries terminal work once, and removes expired package bytes", async () => {
-    const stopSync = await startGridsTestSync();
     const baseId = testUuid();
     const baseShortId = testShortId("B");
     const canceledId = testUuid();
@@ -636,12 +645,8 @@ describe("evidence export integration", () => {
       `;
       expect(expiredRow).toEqual({ status: "expired", chunk_count: 0 });
     } finally {
-      try {
-        await sql`DELETE FROM grids.evidence_exports WHERE base_id = ${baseId}::uuid`;
-        await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
-      } finally {
-        await stopSync();
-      }
+      await sql`DELETE FROM grids.evidence_exports WHERE base_id = ${baseId}::uuid`;
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
   });
 
@@ -691,7 +696,9 @@ describe("evidence export integration", () => {
     const shortIds = { bound: testShortId("E"), abandoned: testShortId("E"), live: testShortId("E"), fresh: testShortId("E") };
     const ids = { bound: testUuid(), abandoned: testUuid(), live: testUuid(), fresh: testUuid() };
     await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Reconcile fixture')`;
-    const holder = await sql.reserve();
+    // Another Grids worker that is still processing the live export.
+    const holder = getProcessSync().mutex({ id: "grids:evidence-export", ttlMs: 60_000, retry: { maxAttempts: 1 } });
+    let live: Lock | null = null;
     try {
       await sql`
         INSERT INTO grids.evidence_exports (id, short_id, base_id, sections, status, started_at) VALUES
@@ -720,8 +727,9 @@ describe("evidence export integration", () => {
         ),
       ).rejects.toThrow("database unavailable");
 
-      // A live worker still holds the session lock of its export.
-      await holder`SELECT pg_advisory_lock(hashtextextended(${`grids:evidence-export:${ids.live}`}, 0))`;
+      // A live worker still holds the lease of its export.
+      live = await holder.acquire({ resource: ids.live });
+      expect(live).not.toBeNull();
       expect(await reconcileStuckEvidenceExports()).toBe(1);
 
       const rows = await sql<Array<{ id: string; status: string; last_error: string | null; chunks: number }>>`
@@ -742,7 +750,7 @@ describe("evidence export integration", () => {
       expect(byId.get(ids.live)).toMatchObject({ status: "running", last_error: null });
       expect(byId.get(ids.fresh)).toMatchObject({ status: "running", last_error: null });
     } finally {
-      await holder.close({ timeout: 0 }).catch(() => undefined);
+      if (live) await holder.release(live);
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
   });
