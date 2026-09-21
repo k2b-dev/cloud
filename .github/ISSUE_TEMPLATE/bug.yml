@@ -1,20 +1,28 @@
 name: Bug report
 description: Something in Cloud behaves incorrectly.
-labels: [bug]
+labels: [bug, needs-triage]
 body:
-  - type: input
-    id: version
+  - type: checkboxes
+    id: checks
     attributes:
-      label: Cloud version
-      description: The `version` reported by `/_cloud/ready` of the affected application, or the `sha-` tag for a main-branch build.
-      placeholder: v0.7.0
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find this problem.
+          required: true
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      description: The application id (for example `mail`, `grids`, `core`, `gateway`), `cli`, `login` (the PWA), `platform`, `ci`, or `docs`.
+      placeholder: mail
     validations:
       required: true
   - type: input
-    id: app
+    id: version
     attributes:
-      label: Application
-      placeholder: mail, grids, core, gateway
+      label: Version
+      description: The `version` reported by `/_cloud/ready` of the affected application, or the `sha-` tag of a main-branch build.
+      placeholder: 0.8.0
     validations:
       required: true
   - type: textarea
@@ -38,5 +46,16 @@ body:
     attributes:
       label: Actual behavior
       description: Include the response, log line, or screenshot. Remove secrets and personal data.
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Blocks work completely
+        - Major degradation or frequent failure
+        - Minor bug or occasional failure
+        - Cosmetic
     validations:
       required: true
