@@ -509,3 +509,7 @@ Lege Filterung, Sortierung, Joins und Gruppierung in GQL ab. Beschränke Liquid 
 :::
 
 Agents lesen mit `document.content.read` gespeicherte PDF-, XML- oder CSV-Dateien. Der Artefakt-Schlüssel kommt aus `document.read`; ohne Schlüssel wird die primäre Datei gewählt. Code Mode liest den Stream als File, mit höchstens 50 MiB pro Datei. Ein Download extrahiert keinen PDF-Text und erstellt oder versendet kein Dokument. Die aktuelle Leseberechtigung wird beim Download erneut geprüft.
+
+## Einen Ordner herunterladen
+
+Wähle in der Ordneransicht **Ordner als ZIP herunterladen** neben einer Vorlage, einem Jahr oder Monat. Das Archiv enthält die gespeicherte Hauptdatei jedes Dokuments einschließlich der Unterordner. Während des Sammelns kannst du abbrechen. Die Grenze beträgt 1.000 Dokumente und 100 MiB; lade größere Sammlungen in kleineren Unterordnern herunter. Bei einem Fehler wird kein unvollständiges Archiv gespeichert. Zusätzliche Artefakte bleiben einzeln herunterladbar. Die Ordnerinhalte werden aktuell gelesen; das ist kein eingefrorenes Backup.
