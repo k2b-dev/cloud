@@ -615,6 +615,31 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
 
 const AppWorkspaceSidebarDesktop = (props: { children: JSX.Element }): JSX.Element =>
   ({ kind: SIDEBAR_DESKTOP, children: props.children }) as unknown as JSX.Element;
+// Document navigations rebuild the sidebar from the server, so this inline
+// script restores its offset while the document is still parsing: before the
+// first paint, before a view transition can snapshot it, and before any island
+// hydrates. Islands load asynchronously and server-only sidebars never mount,
+// so `onMount` would be too late or never run. The memory is one
+// `sessionStorage` entry per path segment and sidebar position and ends with
+// the tab. A stored offset is applied first; the current item is then kept in
+// view, which is a no-op when the offset already shows it. The frame callback
+// repeats the restore once the whole document is parsed, because content that
+// follows the sidebar can still change its height before the first paint.
+const SIDEBAR_SCROLL_MEMORY_SCRIPT = [
+  "(function(){",
+  "var body=document.currentScript&&document.currentScript.previousElementSibling;if(!body)return;",
+  "var storage;try{storage=window.sessionStorage}catch(_){return}",
+  'var key="k2b-sidebar-scroll:"+location.pathname.split("/")[1]+":"+document.querySelectorAll(".k2b-app-workspace__sidebar-body").length;',
+  "var restore=function(){",
+  "var stored=storage.getItem(key);if(stored!==null)body.scrollTop=Number(stored);",
+  'var current=body.querySelector(\'[aria-current="page"]\');if(current)current.scrollIntoView({block:"nearest"});',
+  "};",
+  "restore();requestAnimationFrame(restore);",
+  "var frame=0;",
+  'body.addEventListener("scroll",function(){if(frame)return;frame=requestAnimationFrame(function(){frame=0;try{storage.setItem(key,String(body.scrollTop))}catch(_){}})},{passive:true});',
+  "})();",
+].join("");
+
 const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps) => {
   let body!: HTMLDivElement;
   createScrollFade(
@@ -622,15 +647,18 @@ const AppWorkspaceSidebarBody = (props: AppWorkspaceSidebarBodyProps) => {
     () => props.scrollFade !== false,
   );
   return (
-    <div
-      ref={body}
-      class={`k2b-app-workspace__sidebar-body ${props.class ?? ""}`}
-      data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined}
-      {...scrollAttrs(props.scrollPreserveKey)}
-      {...modeAttrs(props.sidebarMode)}
-    >
-      {props.children}
-    </div>
+    <>
+      <div
+        ref={body}
+        class={`k2b-app-workspace__sidebar-body ${props.class ?? ""}`}
+        data-scroll-fade-mode={props.scrollFade !== false ? "both" : undefined}
+        {...scrollAttrs(props.scrollPreserveKey)}
+        {...modeAttrs(props.sidebarMode)}
+      >
+        {props.children}
+      </div>
+      <script innerHTML={SIDEBAR_SCROLL_MEMORY_SCRIPT} />
+    </>
   );
 };
 const AppWorkspaceSidebarFooter = (props: AppWorkspaceSidebarContentProps) => (
