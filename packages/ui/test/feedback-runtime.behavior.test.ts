@@ -112,7 +112,9 @@ describe("@k2b/ui feedback runtime", () => {
     expect(dom.document.documentElement.style.overflow).toBe("hidden");
 
     dom.root.remove();
-    await dom.window.happyDOM.waitUntilComplete();
+    // The disconnect observer delivers through a microtask, so the open promise
+    // is the disposal signal itself. Waiting on happy-dom's whole task queue
+    // instead ties the test to unrelated window tasks and hung in CI (#37).
     const resolved = await result;
 
     expect(resolved).toBeUndefined();
