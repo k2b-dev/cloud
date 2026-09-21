@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import cloudPackage from "../packages/cloud/package.json";
-import { assessFleetState, type FleetResourceReport, findReleaseMismatches } from "./prod-upgrade-preflight";
+import {
+  assessFleetState,
+  type FleetResourceReport,
+  findReleaseMismatches,
+  isImmutableImage,
+  parseComposeFiles,
+} from "./prod-upgrade-preflight";
 
 const scriptSource = await Bun.file(new URL("./prod-upgrade-preflight.ts", import.meta.url)).text();
 const syncVersion = cloudPackage.dependencies["@k2b/sync"];
@@ -71,5 +77,17 @@ describe("production v6 fleet preflight", () => {
       "core=sha-aabbccd",
       "old=unknown",
     ]);
+  });
+  test("reads compose.prod.yml unless --compose files are given", () => {
+    expect(parseComposeFiles([])).toEqual(["compose.prod.yml"]);
+    expect(parseComposeFiles(["--compose", "a.yml", "--compose=b.yml"])).toEqual(["a.yml", "b.yml"]);
+    expect(() => parseComposeFiles(["--compose"])).toThrow("--compose requires a file path.");
+    expect(() => parseComposeFiles(["--up"])).toThrow("Unknown argument --up.");
+  });
+  test("accepts the expected tag or a digest as immutable image references", () => {
+    expect(isImmutableImage("ghcr.io/k2b-dev/cloud-core:sha-aabbccd", "sha-aabbccd")).toBe(true);
+    expect(isImmutableImage(`ghcr.io/k2b-dev/cloud-core@sha256:${"a".repeat(64)}`, "sha-aabbccd")).toBe(true);
+    expect(isImmutableImage("ghcr.io/k2b-dev/cloud-core:sha-other", "sha-aabbccd")).toBe(false);
+    expect(isImmutableImage("ghcr.io/k2b-dev/cloud-core:latest", "sha-aabbccd")).toBe(false);
   });
 });

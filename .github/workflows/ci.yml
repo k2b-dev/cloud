@@ -1,0 +1,411 @@
+name: CI
+
+# One workflow gates every change. `gate` is the only required status check:
+# it fails when any needed job failed or was cancelled, and treats path-skipped
+# jobs as success.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BUN_VERSION: 1.4.2
+  TEST_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      cloud: ${{ steps.filter.outputs.cloud }}
+      grids: ${{ steps.filter.outputs.grids }}
+      ui: ${{ steps.filter.outputs.ui }}
+      docs: ${{ steps.filter.outputs.docs }}
+      images: ${{ steps.filter.outputs.images }}
+      packed: ${{ steps.filter.outputs.packed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          all() { for key in cloud grids ui docs images packed; do echo "$key=true" >> "$GITHUB_OUTPUT"; done; }
+          if [[ "$EVENT" == "workflow_dispatch" || -z "$BASE" || "$BASE" == "0000000000000000000000000000000000000000" ]]; then
+            all; exit 0
+          fi
+          git fetch --quiet --depth=1 origin "$BASE" || { all; exit 0; }
+          changed=$(git diff --name-only "$BASE" HEAD)
+          printf '%s\n' "$changed"
+          match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
+          shared='^(packages/cloud/|packages/core/|packages/gateway/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/workflows/)'
+          {
+            echo "cloud=$(match "$shared")"
+            echo "grids=$(match '^(packages/grids/|skills/cloud-cli/references/grids\.md)')"
+            echo "ui=$(match '^(packages/ui/|fixtures/ui-ssr/)')"
+            echo "docs=$(match '^(docs-site/|skills/)')"
+            echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
+            echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  setup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun ci
+      - run: bun run --cwd packages/ui build
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  check:
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require a Conventional Commit pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TITLE" =~ ^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9._/-]+\))?!?:\ .+ ]]; then
+            echo "Pull request title must follow Conventional Commits (type(scope)!: summary): $TITLE" >&2
+            exit 1
+          fi
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      - run: bun run check
+
+  unit:
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      - run: bun run test --shard ${{ matrix.shard }}/3
+
+  integration:
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cloud
+          POSTGRES_PASSWORD: cloud
+          POSTGRES_DB: cloud_ci_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cloud -d cloud_ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      gotenberg:
+        image: gotenberg/gotenberg:8.36.0
+        ports: ["3001:3000"]
+    env:
+      CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_ci_test
+      CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
+      CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
+      CLOUD_TEST_GOTENBERG_URL: http://127.0.0.1:3001
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Start NATS JetStream and install poppler
+        run: |
+          set -euo pipefail
+          docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
+      - run: bun ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      # Grids certification runs in its own sharded job below.
+      - run: bun run test --integration --exclude grids
+      - if: always()
+        run: docker rm --force ci-nats
+
+  grids:
+    needs: [changes, setup]
+    if: needs.changes.outputs.grids == 'true' || needs.changes.outputs.cloud == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    services:
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      gotenberg:
+        image: gotenberg/gotenberg:8.36.0
+        ports: ["3001:3000"]
+    env:
+      CLOUD_TEST_DATABASE_URL: postgres://grids_test:grids_test@127.0.0.1:5432/grids_test
+      CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
+      CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
+      CLOUD_TEST_GOTENBERG_URL: http://127.0.0.1:3001
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Start certification infrastructure
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          # Match the connection budget in compose.yml and compose.sync-test.yml.
+          docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
+            --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
+            postgres:17-alpine -c max_connections=300
+          docker run --detach --name grids-nats --publish 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+          timeout 60s bash -c 'until docker exec grids-postgres pg_isready -U grids_test -d grids_test; do sleep 1; done'
+          curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
+      - run: bun ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      - run: bun run --cwd packages/grids test:all --shard ${{ matrix.shard }}/3
+      - if: always()
+        run: docker rm --force grids-postgres grids-nats
+
+  ui:
+    needs: [changes, setup]
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun ci
+      - run: bun run --cwd packages/ui build
+      - run: bun run --cwd packages/ui typecheck
+      - run: bun run --cwd packages/ui test
+      - run: bun run --cwd packages/ui fixture:typecheck
+      - run: bun run --cwd packages/ui fixture:build
+
+  docs:
+    needs: [changes, setup]
+    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.cloud == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      - run: bun run --cwd docs-site verify:docs
+      - name: Smoke-test the built site
+        env:
+          NODE_ENV: production
+          PORT: "4187"
+          CLOUD_DOCS_SITE_URL: http://localhost:3000
+          CLOUD_UI_CATALOG_URL: http://127.0.0.1:4187
+        run: |
+          set -euo pipefail
+          bun run --cwd docs-site start > "$RUNNER_TEMP/docs-site.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for _attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4187/health > /dev/null; then
+              bun run --cwd docs-site check:ui-catalog:http
+              exit 0
+            fi
+            kill -0 "$server_pid" 2>/dev/null || break
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/docs-site.log"
+          exit 1
+
+  packed:
+    needs: [changes, setup]
+    if: needs.changes.outputs.packed == 'true' || needs.changes.outputs.cloud == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cloud
+          POSTGRES_PASSWORD: cloud
+          POSTGRES_DB: cloud_packed_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cloud -d cloud_packed_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_packed_test
+      CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
+      CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: docker run --detach --name packed-nats --publish 127.0.0.1:4222:4222 nats:2.14.3-alpine -js
+      - run: bun ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      - run: bun scripts/check-cloud-packed-consumer.ts
+      - if: always()
+        run: docker rm --force packed-nats
+
+  images:
+    needs: changes
+    if: needs.changes.outputs.images == 'true' || needs.changes.outputs.cloud == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: cloud-core:ci
+          build-args: |
+            APP_ID=core
+            CLOUD_VERSION=0.0.0-ci
+            CLOUD_RELEASE=sha-${{ github.sha }}
+          cache-from: type=gha,scope=ci-core
+          cache-to: type=gha,mode=max,scope=ci-core
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: cloud-gateway:ci
+          build-args: |
+            APP_ID=gateway
+            CLOUD_VERSION=0.0.0-ci
+            CLOUD_RELEASE=sha-${{ github.sha }}
+          cache-from: type=gha,scope=ci-gateway
+          cache-to: type=gha,mode=max,scope=ci-gateway
+      - name: Boot core and gateway against fresh infrastructure
+        env:
+          APP_SECRET: ${{ env.TEST_SECRET }}
+        run: |
+          set -euo pipefail
+          docker network create cloud-smoke
+          docker run --detach --name postgres --network cloud-smoke \
+            --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine
+          docker run --detach --name nats --network cloud-smoke nats:2.14.3-alpine -js
+          docker run --detach --name valkey --network cloud-smoke valkey/valkey:8-alpine
+          timeout 60s bash -c 'until docker exec postgres pg_isready -U ipa -d ipa; do sleep 1; done'
+          # compose.dev.yml x-env with the service names of this throwaway network.
+          common=(--network cloud-smoke
+            --env NODE_ENV=production
+            --env DATABASE_URL=postgresql://ipa:ipa@postgres:5432/ipa
+            --env REDIS_URL=redis://valkey:6379
+            --env NATS_SERVERS=nats://nats:4222
+            --env SYNC_REPLICAS=1
+            --env SYNC_NAMESPACE=ci
+            --env APP_SECRET="$APP_SECRET"
+            --env CLOUD_IDENTITY_JWKS_ORIGIN=http://app-core:3000
+            --env CLOUD_OAUTH_JWKS_ORIGIN=http://app-oauth:3000
+            --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
+          docker run --detach --name app-core "${common[@]}" --publish 127.0.0.1:3001:3000 cloud-core:ci
+          docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 cloud-gateway:ci
+          for container in app-core gateway; do
+            [[ "$(docker exec "$container" id -u)" != "0" ]] || { echo "$container runs as root" >&2; exit 1; }
+          done
+          for _attempt in {1..90}; do
+            ready=$(curl --silent --fail http://127.0.0.1:3001/_cloud/ready || true)
+            routes=$(curl --silent --fail http://127.0.0.1:3000/health | jq -r '.routeTable.routeCount // 0' || echo 0)
+            if [[ -n "$ready" && "$routes" -ge 1 ]]; then
+              echo "core ready: $ready"
+              echo "gateway routes: $routes"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs app-core; docker logs gateway
+          exit 1
+      - if: always()
+        run: docker rm --force app-core gateway postgres nats valkey || true
+
+  gate:
+    needs: [changes, setup, check, unit, integration, grids, ui, docs, packed, images]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          failed=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key] | join(", ")')
+          [[ -z "$failed" ]] || { echo "Failed jobs: $failed" >&2; exit 1; }

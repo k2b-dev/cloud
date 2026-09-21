@@ -41,28 +41,30 @@ describe("Cloud CLI releases", () => {
   test("resolves the highest stable CLI release across pages", async () => {
     const firstPage = [
       { tag_name: "cloud-core-v1.0.0" },
-      { tag_name: "cli-v1.9.4" },
-      { tag_name: "cli-v2.0.0-rc.1", prerelease: true },
+      { tag_name: "cloud-v1.9.4" },
+      { tag_name: "cloud-v2.0.0-rc.1", prerelease: true },
       ...Array.from({ length: 97 }, (_, index) => ({ id: index })),
     ];
     const release = await resolveCliRelease(undefined, {
       fetchImpl: async (input) => {
         const page = new URL(String(input)).searchParams.get("page");
-        return Response.json(page === "1" ? firstPage : [{ tag_name: "cli-v2.0.0" }]);
+        return Response.json(page === "1" ? firstPage : [{ tag_name: "cloud-v2.0.0" }]);
       },
     });
 
-    expect(release).toEqual({ tag: "cli-v2.0.0", version: "2.0.0" });
+    expect(release).toEqual({ tag: "cloud-v2.0.0", version: "2.0.0" });
   });
 
-  test("rejects prerelease versions and pins Cosign to the CLI workflow", async () => {
+  test("rejects prerelease versions and pins Cosign to the release workflow on main", async () => {
     await expect(resolveCliRelease("1.2.3-rc.1", { fetchImpl: async () => Response.json({}) })).rejects.toThrow("stable version");
-    expect(COSIGN_CERTIFICATE_IDENTITY_REGEXP).toContain("workflows/cli");
-    expect(COSIGN_CERTIFICATE_IDENTITY_REGEXP).toContain("refs/tags/cli-v");
+    expect(COSIGN_CERTIFICATE_IDENTITY_REGEXP).toContain("workflows/release");
+    expect(COSIGN_CERTIFICATE_IDENTITY_REGEXP).toContain("workflows/release\\.yml@refs/heads/main");
     const identity = new RegExp(COSIGN_CERTIFICATE_IDENTITY_REGEXP);
-    expect(identity.test("https://github.com/k2b-dev/cloud/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(true);
-    expect(identity.test("https://github.com/other-owner/cloud/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(false);
-    expect(identity.test("https://github.com/k2b-dev/other/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(false);
+    expect(identity.test("https://github.com/k2b-dev/cloud/.github/workflows/release.yml@refs/heads/main")).toBe(true);
+    expect(identity.test("https://github.com/k2b-dev/cloud/.github/workflows/release.yml@refs/heads/feature")).toBe(false);
+    expect(identity.test("https://github.com/k2b-dev/cloud/.github/workflows/ci.yml@refs/heads/main")).toBe(false);
+    expect(identity.test("https://github.com/other-owner/cloud/.github/workflows/release.yml@refs/heads/main")).toBe(false);
+    expect(identity.test("https://github.com/k2b-dev/other/.github/workflows/release.yml@refs/heads/main")).toBe(false);
   });
 
   test("updates an installed binary only after checksum verification", async () => {
@@ -80,11 +82,11 @@ describe("Cloud CLI releases", () => {
       port: 0,
       fetch(request) {
         const url = new URL(request.url);
-        if (url.pathname === "/releases") return Response.json([{ tag_name: "cli-v1.2.3" }]);
-        if (url.pathname === "/release/download/cli-v1.2.3/checksums.txt")
+        if (url.pathname === "/releases") return Response.json([{ tag_name: "cloud-v1.2.3" }]);
+        if (url.pathname === "/release/download/cloud-v1.2.3/checksums.txt")
           return new Response(`${sha256(replacement)}  ${assetName}\n${sha256(skillArchive)}  cloud-cli-skill.tar.gz\n`);
-        if (url.pathname === `/release/download/cli-v1.2.3/${assetName}`) return new Response(replacement);
-        if (url.pathname === "/release/download/cli-v1.2.3/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
+        if (url.pathname === `/release/download/cloud-v1.2.3/${assetName}`) return new Response(replacement);
+        if (url.pathname === "/release/download/cloud-v1.2.3/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
         return new Response("not found", { status: 404 });
       },
     });
@@ -125,9 +127,9 @@ describe("Cloud CLI releases", () => {
       port: 0,
       fetch(request) {
         const url = new URL(request.url);
-        if (url.pathname === "/releases") return Response.json([{ tag_name: "cli-v1.2.3" }]);
-        if (url.pathname === "/release/download/cli-v1.2.3/checksums.txt") return new Response(`${"0".repeat(64)}  ${assetName}\n`);
-        if (url.pathname === `/release/download/cli-v1.2.3/${assetName}`) return new Response("new binary");
+        if (url.pathname === "/releases") return Response.json([{ tag_name: "cloud-v1.2.3" }]);
+        if (url.pathname === "/release/download/cloud-v1.2.3/checksums.txt") return new Response(`${"0".repeat(64)}  ${assetName}\n`);
+        if (url.pathname === `/release/download/cloud-v1.2.3/${assetName}`) return new Response("new binary");
         return new Response("not found", { status: 404 });
       },
     });
@@ -151,7 +153,7 @@ describe("Cloud CLI releases", () => {
     }
   });
 
-  test("installs the highest stable CLI release through the shell installer", async () => {
+  test("installs the highest stable, non-draft, non-prerelease release through the shell installer", async () => {
     const directory = await createTemporaryDirectory();
     const prefix = join(directory, "bin");
     const skillsDir = join(directory, "skills");
@@ -167,13 +169,24 @@ describe("Cloud CLI releases", () => {
         if (url.pathname === "/releases") {
           if (url.searchParams.get("page") !== "1") return Response.json([]);
           return new Response(
-            JSON.stringify([{ tag_name: "cloud-core-v9.9.9" }, { tag_name: "cli-v1.9.4" }, { tag_name: "cli-v2.0.0" }], null, 2),
+            JSON.stringify(
+              [
+                { tag_name: "npm-cloud-v9.9.9" },
+                { tag_name: "cloud-core-v9.9.9" },
+                { tag_name: "cloud-v3.0.0", draft: true, prerelease: false },
+                { tag_name: "cloud-v2.1.0", draft: false, prerelease: true },
+                { tag_name: "cloud-v1.9.4", draft: false, prerelease: false },
+                { tag_name: "cloud-v2.0.0", draft: false, prerelease: false },
+              ],
+              null,
+              2,
+            ),
           );
         }
-        if (url.pathname === "/release/download/cli-v2.0.0/checksums.txt")
+        if (url.pathname === "/release/download/cloud-v2.0.0/checksums.txt")
           return new Response(`${sha256(binary)}  ${assetName}\n${sha256(skillArchive)}  cloud-cli-skill.tar.gz\n`);
-        if (url.pathname === `/release/download/cli-v2.0.0/${assetName}`) return new Response(binary);
-        if (url.pathname === "/release/download/cli-v2.0.0/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
+        if (url.pathname === `/release/download/cloud-v2.0.0/${assetName}`) return new Response(binary);
+        if (url.pathname === "/release/download/cloud-v2.0.0/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
         return new Response("not found", { status: 404 });
       },
     });
@@ -206,7 +219,7 @@ describe("Cloud CLI releases", () => {
     }
   });
 
-  test("refreshes the skill through the shell installer when cld is already current", async () => {
+  test("accepts space-separated installer flags and refreshes the skill when cld is already current", async () => {
     const directory = await createTemporaryDirectory();
     const prefix = join(directory, "bin");
     const skillsDir = join(directory, "skills");
@@ -222,26 +235,29 @@ describe("Cloud CLI releases", () => {
         const url = new URL(request.url);
         if (url.pathname === "/releases") {
           if (url.searchParams.get("page") !== "1") return Response.json([]);
-          return new Response(JSON.stringify([{ tag_name: "cli-v2.0.0" }], null, 2));
+          return new Response(JSON.stringify([{ tag_name: "cloud-v2.0.0" }], null, 2));
         }
-        if (url.pathname === "/release/download/cli-v2.0.0/checksums.txt")
+        if (url.pathname === "/release/download/cloud-v2.0.0/checksums.txt")
           return new Response(`${"0".repeat(64)}  ${assetName}\n${sha256(skillArchive)}  cloud-cli-skill.tar.gz\n`);
-        if (url.pathname === "/release/download/cli-v2.0.0/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
+        if (url.pathname === "/release/download/cloud-v2.0.0/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
         return new Response("not found", { status: 404 });
       },
     });
 
     try {
       const installer = join(import.meta.dir, "..", "scripts", "install.sh");
-      const child = Bun.spawn(["sh", installer, `--prefix=${prefix}`, `--skills-dir=${skillsDir}`, "--yes", "--no-verify"], {
-        env: {
-          ...process.env,
-          CLD_RELEASE_API_BASE: `http://127.0.0.1:${server.port}`,
-          CLD_RELEASE_BASE: `http://127.0.0.1:${server.port}/release`,
+      const child = Bun.spawn(
+        ["sh", installer, "--prefix", prefix, "--skills-dir", skillsDir, "--version", "2.0.0", "--yes", "--no-verify"],
+        {
+          env: {
+            ...process.env,
+            CLD_RELEASE_API_BASE: `http://127.0.0.1:${server.port}`,
+            CLD_RELEASE_BASE: `http://127.0.0.1:${server.port}/release`,
+          },
+          stdout: "pipe",
+          stderr: "pipe",
         },
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      );
       const [exitCode, stdout, stderr] = await Promise.all([
         child.exited,
         new Response(child.stdout).text(),

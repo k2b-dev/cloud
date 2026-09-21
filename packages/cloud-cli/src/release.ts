@@ -5,6 +5,8 @@ import { arch, homedir, platform, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { envReleaseApiBase, envReleaseBase } from "./config";
+
 const execFileAsync = promisify(execFile);
 
 export const CLI_RELEASE_REPOSITORY = "k2b-dev/cloud";
@@ -17,9 +19,8 @@ const FETCH_TIMEOUT_MS = 30_000;
 const FETCH_ATTEMPTS = 3;
 const CLOUD_CLI_SKILL_ASSET = "cloud-cli-skill.tar.gz";
 const CLOUD_CLI_SKILL_NAME = "cloud-cli";
-const cliReleaseTag = /^cli-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-export const COSIGN_CERTIFICATE_IDENTITY_REGEXP =
-  "^https://github\\.com/k2b-dev/cloud/\\.github/workflows/cli\\.yml@refs/tags/cli-v[0-9]+\\.[0-9]+\\.[0-9]+$";
+const cliReleaseTag = /^cloud-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+export const COSIGN_CERTIFICATE_IDENTITY_REGEXP = "^https://github\\.com/k2b-dev/cloud/\\.github/workflows/release\\.yml@refs/heads/main$";
 
 export type CliRelease = {
   tag: string;
@@ -76,12 +77,12 @@ export type CliUpdateResult = {
 const normalizeBase = (value: string): string => value.replace(/\/+$/, "");
 
 const releaseSource = (source: ReleaseSource) => ({
-  apiBase: normalizeBase(source.apiBase ?? process.env.CLD_RELEASE_API_BASE ?? CLI_RELEASE_API_BASE),
-  releaseBase: normalizeBase(source.releaseBase ?? process.env.CLD_RELEASE_BASE ?? CLI_RELEASE_BASE),
+  apiBase: normalizeBase(source.apiBase ?? envReleaseApiBase() ?? CLI_RELEASE_API_BASE),
+  releaseBase: normalizeBase(source.releaseBase ?? envReleaseBase() ?? CLI_RELEASE_BASE),
   fetchImpl: source.fetchImpl ?? fetch,
 });
 
-const toCliTag = (version: string): string => (version.startsWith("cli-v") ? version : `cli-v${version.replace(/^v/, "")}`);
+const toCliTag = (version: string): string => (version.startsWith("cloud-v") ? version : `cloud-v${version.replace(/^v/, "")}`);
 
 const parseStableVersion = (value: string): StableVersion | null => {
   const match = value.match(/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
@@ -119,7 +120,7 @@ export const resolveCliTarget = (os = platform(), cpu = arch()): CliTarget => {
 const parseRelease = (value: GithubRelease): CliRelease | null => {
   if (value.draft === true || value.prerelease === true || typeof value.tag_name !== "string" || !cliReleaseTag.test(value.tag_name))
     return null;
-  return { tag: value.tag_name, version: value.tag_name.slice("cli-v".length) };
+  return { tag: value.tag_name, version: value.tag_name.slice("cloud-v".length) };
 };
 
 const releaseVersion = (release: CliRelease): StableVersion => {
@@ -131,7 +132,7 @@ const releaseVersion = (release: CliRelease): StableVersion => {
 export const resolveCliRelease = async (version: string | undefined, source: ReleaseSource = {}): Promise<CliRelease> => {
   const { apiBase, fetchImpl } = releaseSource(source);
   const requestedTag = version ? toCliTag(version) : undefined;
-  const requestedVersion = version ? parseStableVersion(version.replace(/^cli-v/, "").replace(/^v/, "")) : null;
+  const requestedVersion = version ? parseStableVersion(version.replace(/^cloud-v/, "").replace(/^v/, "")) : null;
   if (version && !requestedVersion) throw new Error("Cloud CLI updates require a stable version such as 1.2.3.");
 
   const url = requestedTag ? `${apiBase}/releases/tags/${encodeURIComponent(requestedTag)}` : undefined;
@@ -328,10 +329,10 @@ export const updateCli = async (options: UpdateOptions = {}): Promise<CliUpdateR
   const currentStableVersion = parseStableVersion(currentVersion);
   const target = options.target ?? resolveCliTarget();
   const installSkill = options.installSkill !== false;
-  const requestedVersion = options.version ? parseStableVersion(options.version.replace(/^cli-v/, "").replace(/^v/, "")) : null;
+  const requestedVersion = options.version ? parseStableVersion(options.version.replace(/^cloud-v/, "").replace(/^v/, "")) : null;
   if (!installSkill && requestedVersion && currentStableVersion && compareStableVersions(requestedVersion, currentStableVersion) === 0) {
     return {
-      release: { tag: `cli-v${currentVersion}`, version: currentVersion },
+      release: { tag: `cloud-v${currentVersion}`, version: currentVersion },
       target,
       cosign: "skipped",
       skill: "skipped",

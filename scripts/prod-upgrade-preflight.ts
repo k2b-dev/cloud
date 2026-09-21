@@ -2,7 +2,7 @@ import cloudPackage from "../packages/cloud/package.json";
 import { assessRuntimeCompatibility } from "../packages/cloud/src/_internal/runtime-compatibility";
 import type { AppRegistryEntry } from "../packages/cloud/src/contracts/registry";
 
-const COMPOSE_FILE = "compose.prod.yml";
+const DEFAULT_COMPOSE_FILE = "compose.prod.yml";
 const EXPECTED_SYNC_VERSION = cloudPackage.dependencies["@k2b/sync"];
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const record = (value: unknown): Record<string, unknown> => {
@@ -59,6 +59,32 @@ export const parseFleetResources = (value: unknown) => {
   };
 };
 export type FleetResourceReport = { appId: string; result: ReturnType<typeof parseFleetResources> | null; error?: string };
+
+/** `--compose <file>` may repeat; without it the check reads `compose.prod.yml`. */
+export const parseComposeFiles = (argv: readonly string[]): string[] => {
+  const files: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "--compose") {
+      const file = argv[index + 1];
+      if (!file || file.startsWith("--")) throw new Error("--compose requires a file path.");
+      files.push(file);
+      index += 1;
+    } else if (argument?.startsWith("--compose=")) files.push(argument.slice("--compose=".length));
+    else throw new Error(`Unknown argument ${argument}.`);
+  }
+  return files.length ? files : [DEFAULT_COMPOSE_FILE];
+};
+
+/** Image references are immutable when they carry the expected tag or a content digest. */
+export const imageReference = (image: string): string => {
+  const digest = image.indexOf("@sha256:");
+  return digest >= 0 ? image.slice(digest + 1) : image.slice(image.lastIndexOf(":") + 1);
+};
+export const isImmutableImage = (image: string, expectedTag: string): boolean => {
+  const reference = imageReference(image);
+  return reference === expectedTag || reference.startsWith("sha256:");
+};
 
 export const findReleaseMismatches = (apps: readonly AppRegistryEntry[], expectedRelease: string): string[] =>
   apps.filter((app) => app.runtime?.release !== expectedRelease).map((app) => `${app.id}=${app.runtime?.release ?? "unknown"}`);
@@ -152,7 +178,15 @@ export const readCoreJson = async (origin: URL, path: string, token: string): Pr
 };
 
 /** Read-only v6 fleet check. Legacy Redis/Yjs evidence is a separate pre-cutover command. */
-export const main = async (): Promise<number> => {
+export const main = async (argv: readonly string[] = Bun.argv.slice(2)): Promise<number> => {
+  let composeFiles: string[];
+  try {
+    composeFiles = parseComposeFiles(argv);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
+  const compose = ["docker", "compose", ...composeFiles.flatMap((file) => ["-f", file])];
   const expectedTag = process.env.CLOUD_IMAGE_TAG?.trim();
   if (!expectedTag || !/^sha-[0-9a-f]{7,40}$/.test(expectedTag)) {
     console.error("CLOUD_IMAGE_TAG must be an immutable sha-<git-sha> tag.");
@@ -180,24 +214,25 @@ export const main = async (): Promise<number> => {
   let expectedAppIds: string[] = [];
   console.log(`Expected Cloud release: ${expectedTag}; Sync namespace: ${namespace}`);
   try {
-    const images = (await run(["docker", "compose", "-f", COMPOSE_FILE, "config", "--images"])).split(/\r?\n/).filter(Boolean);
-    const mismatched = images.filter((image) => !image.endsWith(`:${expectedTag}`));
+    const images = (await run([...compose, "config", "--images"])).split(/\r?\n/).filter(Boolean);
+    const mismatched = images.filter((image) => !isImmutableImage(image, expectedTag));
     if (!images.length) failures.push("Production Compose rendered no runtime images.");
     if (mismatched.length) failures.push(`Compose contains images outside ${expectedTag}: ${mismatched.join(", ")}`);
-    expectedAppIds = (await run(["docker", "compose", "-f", COMPOSE_FILE, "config", "--services"]))
+    expectedAppIds = (await run([...compose, "config", "--services"]))
       .split(/\r?\n/)
       .filter((name) => name.startsWith("app-"))
       .map((name) => name.slice(4));
-    const containerIds = (await run(["docker", "compose", "-f", COMPOSE_FILE, "ps", "-q"])).split(/\r?\n/).filter(Boolean);
+    const containerIds = (await run([...compose, "ps", "-q"])).split(/\r?\n/).filter(Boolean);
     if (containerIds.length) {
       const runningImages = (await run(["docker", "inspect", "--format", "{{.Config.Image}}", ...containerIds]))
         .split(/\r?\n/)
         .filter(Boolean);
-      const tags = new Set(runningImages.map((image) => image.slice(image.lastIndexOf(":") + 1)));
-      if (tags.size !== 1 || !tags.has(expectedTag)) failures.push(`Running containers do not use ${expectedTag}.`);
-      if (tags.size > 1) failures.push(`Running Cloud containers use mixed image tags: ${[...tags].sort().join(", ")}`);
-      if ([...tags].some((tag) => tag === "latest" || tag === "main")) failures.push("Running Cloud containers use a mutable image tag.");
-      console.log(`Running containers: ${containerIds.length}; image tags: ${[...tags].sort().join(", ")}`);
+      const tags = new Set(runningImages.map(imageReference));
+      const mutable = runningImages.filter((image) => !isImmutableImage(image, expectedTag));
+      if (mutable.length) failures.push(`Running containers do not use ${expectedTag} or a digest: ${mutable.join(", ")}`);
+      const plainTags = [...tags].filter((tag) => !tag.startsWith("sha256:"));
+      if (plainTags.length > 1) failures.push(`Running Cloud containers use mixed image tags: ${plainTags.sort().join(", ")}`);
+      console.log(`Running containers: ${containerIds.length}; image references: ${[...tags].sort().join(", ")}`);
     } else failures.push("Production Compose has no running containers; live readiness is unverified.");
   } catch (error) {
     failures.push(error instanceof Error ? error.message : String(error));
