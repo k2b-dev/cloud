@@ -8,6 +8,12 @@ const suite = natsSuite();
  * Cron schedules have a one-minute floor, so the contract is exercised with
  * manual runs: accepted runs are broker-durable, execute once a process-side
  * worker exists, and a paused schedule holds them until it is resumed.
+ *
+ * The schedule itself must not fire while the test runs: the broker delivers
+ * a real tick at every minute boundary, and a tick that lands in the pause
+ * window executes right behind the resumed manual run, overwrites the
+ * schedule's last run before `awaitRun` polls it, and bumps `runNumber`. The
+ * cron therefore points at a daily slot half an hour away from the start.
  */
 suite("scheduler contract", () => {
   let fixture: Awaited<ReturnType<typeof openSync>>;
@@ -28,9 +34,10 @@ suite("scheduler contract", () => {
 
   test("runs accepted without a worker execute once the worker starts, and pause defers them until resume", async () => {
     const scheduler = fixture.sync.scheduler({ id: "contract", delivery: { maxAttempts: 1, ackWaitMs } });
+    const slot = new Date(Date.now() + 30 * 60_000);
     await scheduler.create({
       id: "tick",
-      cron: "* * * * *",
+      cron: `${slot.getUTCMinutes()} ${slot.getUTCHours()} * * *`,
       misfire: "latest",
       process: async (context) => {
         runs.push(context.runId);
