@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
@@ -226,16 +226,37 @@ suite("serviceAccountCredentials", () => {
         SET secret_hash = ${await Bun.password.hash(revokedSecret)}
         WHERE id = ${revokedDuringVerification.data.credential.id}::uuid
       `;
-      const verificationBeforeRevoke = serviceAccountCredentials.authenticateApiToken(revokedDuringVerification.data.token);
-      await Bun.sleep(20);
-      await sql`
-        UPDATE auth.service_account_credentials
-        SET status = 'revoked', revoked_at = now()
-        WHERE id = ${revokedDuringVerification.data.credential.id}::uuid
-      `;
-      const verificationAfterRevoke = serviceAccountCredentials.authenticateApiToken(revokedDuringVerification.data.token);
-      expect(await verificationAfterRevoke).toBeNull();
-      expect(await verificationBeforeRevoke).toBeNull();
+      // Hold the legacy hash verification open so the revoke deterministically
+      // lands while verification is in flight, whatever the KDF costs.
+      const verify = Bun.password.verify;
+      let verificationStarted = () => {};
+      let releaseVerification = () => {};
+      const started = new Promise<void>((resolve) => {
+        verificationStarted = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseVerification = resolve;
+      });
+      const verifySpy = spyOn(Bun.password, "verify").mockImplementation(async (...args: Parameters<typeof verify>) => {
+        verificationStarted();
+        await release;
+        return verify(...args);
+      });
+      try {
+        const verificationBeforeRevoke = serviceAccountCredentials.authenticateApiToken(revokedDuringVerification.data.token);
+        await started;
+        await sql`
+          UPDATE auth.service_account_credentials
+          SET status = 'revoked', revoked_at = now()
+          WHERE id = ${revokedDuringVerification.data.credential.id}::uuid
+        `;
+        releaseVerification();
+        expect(await verificationBeforeRevoke).toBeNull();
+        expect(verifySpy).toHaveBeenCalledTimes(1);
+      } finally {
+        verifySpy.mockRestore();
+      }
+      expect(await serviceAccountCredentials.authenticateApiToken(revokedDuringVerification.data.token)).toBeNull();
 
       await sql`
         UPDATE auth.service_account_credentials
