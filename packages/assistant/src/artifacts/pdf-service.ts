@@ -1,23 +1,11 @@
-import { aiConversations, aiProjects } from "@k2b/cloud/ai";
 import { GotenbergRenderError, attachPdfFilesWithConfig, getGotenbergConfig, renderHtmlToPdfWithConfig, renderFacturXHtmlToPdfWithConfig, type GotenbergConfig, type RenderHtmlToPdfOptions } from "@k2b/cloud/services";
-import { z } from "zod";
-import { HttpScope } from "./http-contracts";
 import { PdfRequest, checkPdfBytes } from "./pdf-contracts";
-import { artifacts, ArtifactError, user, type ArtifactIdentity } from "./service";
+import { authorizeRuntimeScope } from "./runtime-scope";
+import type { ArtifactIdentity } from "./service";
 import { STORAGE_FILE_MAX_BYTES } from "./storage-contracts";
 
-export async function authorizePdf(input: unknown, identity: ArtifactIdentity) {
-  const scope = HttpScope.parse(input);
-  const actor = user(identity);
-  if (scope.conversationId) {
-    const chat = z.uuid().safeParse(scope.conversationId).success
-      ? await aiConversations.getConversation({ conversationId: scope.conversationId, ownerUserId: actor.id })
-      : await aiConversations.getConversationByShortId({ shortId: scope.conversationId, ownerUserId: actor.id });
-    if (!chat || chat.archivedAt || (chat.allowedTools !== null && chat.allowedTools !== undefined)
-      || (chat.projectId && !(await aiProjects.get(chat.projectId, identity.accessSubject, "read")))) throw new ArtifactError("ACCESS_DENIED");
-    scope.conversationId = chat.id;
-  }
-  if (scope.resourceId) await artifacts.get(scope.resourceId, { ...identity, conversationId: scope.conversationId });
+export async function authorizePdf(input: unknown, identity: ArtifactIdentity): Promise<void> {
+  await authorizeRuntimeScope(input, identity);
 }
 
 // Defense in depth alongside Gotenberg's request-directory file isolation.

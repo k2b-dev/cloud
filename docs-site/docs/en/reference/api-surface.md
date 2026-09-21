@@ -180,6 +180,12 @@ documents all process variables; that larger list is not the shape of `env`.
 
 ## Specialized entry points
 
+`@k2b/cloud/ai` exposes `AiTaskRequestSchema`, `AiTaskRequest`,
+`AiTaskRequestInput`, and `executeAiTask` for bounded text generation,
+classification, and extraction. The schema and types are also available from
+`@k2b/cloud/ai/browser`. See [Structured and background AI](/en/docs/ai/structured-and-background-ai)
+for execution, model access, and usage accounting.
+
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
 | `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |

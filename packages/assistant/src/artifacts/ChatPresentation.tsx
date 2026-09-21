@@ -72,6 +72,7 @@ export function ChatPresentation(props: { result: unknown; conversationId: strin
         modal: (request, signal) => openArtifactModal(request, signal, locale()),
         capability: (name, input, signal) => runCapability(name, input, { conversationId: props.conversationId }, approveInModal, signal),
         http: (request, signal) => runHttp(request, { conversationId: props.conversationId }, props.httpHost, signal),
+        ai: (request, signal) => artifactClient.ai(request, { conversationId: props.conversationId }, signal),
         pdf: (request, signal) => artifactClient.pdf(request, { conversationId: props.conversationId }, signal),
         save: async (file, signal) => { if (!signal.aborted) files.downloadFileFromContent(file, file.name, file.type); },
       });

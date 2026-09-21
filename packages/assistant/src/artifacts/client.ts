@@ -17,6 +17,13 @@ async function checked(response: Pick<Response, "json" | "ok" | "status">): Prom
   }
 }
 export const artifactClient = {
+  ai: async (request: unknown, scope: HttpScope, signal: AbortSignal): Promise<unknown> => {
+    const response = await fetch("/api/assistant/artifacts/runtime/ai", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request, scope }), signal,
+    });
+    await checked(response);
+    return z.object({ output: z.json() }).parse(await response.json()).output;
+  },
   projectApps: async (projectId: string, page = 1, q = "", available = false, signal?: AbortSignal) => {
     const response = await client["project-links"][":projectId"].$get({param:{projectId},query:{page:String(page),q,available:available ? "true" : "false"}},{init:{signal}});
     await checked(response); return response.json();

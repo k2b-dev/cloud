@@ -917,3 +917,15 @@ Document exports include filter values and source context, omit action controls,
 and render the complete current table. These downloads need no chat-file entry.
 Saved Apps and runs with App data context continue to use Studio. Chat results
 have a 250 MiB per-conversation storage budget, including retained inputs.
+
+
+### AI inside Code Mode
+
+Scripts, interactive chat presentations and authenticated Studio apps can use
+`ai.generateText`, `ai.classify`, `ai.classifyMany` and `ai.extractData`.
+These server-backed calculations return ordinary values and do not load chat
+history, files, memories or tools automatically. Supply the intended input.
+The executing user's model access and personal chat allowance apply, including
+when running a shared app or testing code. Public and local-only runners cannot
+use these methods. Stopping a run cancels pending inference. The Code Mode skill's
+AI reference documents options, limits and examples.

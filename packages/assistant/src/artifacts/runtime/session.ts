@@ -32,6 +32,7 @@ export type SessionOptions = {
   readInput?: (name:string,signal:AbortSignal)=>Promise<File>;
   pickerInputs?: File[] | ((signal:AbortSignal)=>Promise<File[]>);
   capability?: (name:string,input:unknown,signal:AbortSignal) => Promise<unknown>;
+  ai?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   pdf?: (request: unknown, signal: AbortSignal) => Promise<Blob>;
   http?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   database?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
@@ -199,6 +200,12 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
         clearTimeout(watchdog); capabilityRequests++; emit({approvalPending:true});
         try { return await options.http(args[0],signal); }
         finally { capabilityRequests--; emit({approvalPending:capabilityRequests>0}); if (!capabilityRequests && state.status === "starting" && !signal.aborted) arm(); }
+      }
+      if (method === "ai") {
+        if (!options.ai) throw new Error("AI requires an authenticated server-backed run");
+        clearTimeout(watchdog); capabilityRequests++; emit({inputPending:true});
+        try { return await options.ai(args[0],signal); }
+        finally { capabilityRequests--; emit({inputPending:false}); if (state.status === "starting" && !signal.aborted) arm(); }
       }
       if (method === "pdf") {
         if (!options.pdf) throw new Error("PDF service unavailable");

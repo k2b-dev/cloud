@@ -1,3 +1,4 @@
+export { AiTaskRequestSchema, type AiTaskRequest, type AiTaskRequestInput } from "./task-contracts";
 export { parseAiTodoPlan, type AiTodoPlan } from "./todo-contracts";
 export { CodeResourceId, CodeActionInput, CODE_RUNTIME_TOOL_NAMES, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";

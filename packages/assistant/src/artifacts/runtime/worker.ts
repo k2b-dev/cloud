@@ -1,3 +1,4 @@
+import { createAi } from "./ai";
 import { createPdf } from "./pdf";
 import { createAnalyticsUi } from "./analytics-ui";
 import { createHttp, secret } from "./http";
@@ -116,6 +117,7 @@ const analytics = createAnalyticsUi(values => {
   return (Array.isArray(result) ? result : [result]).map(picked).filter((file): file is File => file !== null);
 });
 const api = {
+  ai: createAi(rpc),
   money,
   datev,
   sepa,

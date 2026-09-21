@@ -1,6 +1,9 @@
+export { AiQuotaError } from "./quotas";
+export { AiTaskRequestSchema, type AiTaskRequest, type AiTaskRequestInput } from "./task-contracts";
+export { executeAiTask } from "./task-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 export { CodeResourceId, CODE_RUNTIME_TOOL_NAMES, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
-export { assistantAiSettingsState, listAssistantAiModels } from "./assistant-models";
+export { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   type AiToolApprovalContext,

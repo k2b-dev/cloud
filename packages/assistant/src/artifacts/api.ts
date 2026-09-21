@@ -1,3 +1,5 @@
+import { runCodeAi } from "./ai-service";
+import { AiQuotaError, isAiSettingsError, AiTaskRequestSchema } from "@k2b/cloud/ai";
 import { chatPresentations } from "./chat-presentations";
 import { ChatPresentationInput } from "./chat-presentation-contracts";
 import { studioFiles } from "./file-transfer";
@@ -53,6 +55,8 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   .use("*", (c,next) => (c.req.path.endsWith("/storage/file") || c.req.path.endsWith("/runtime/pdf") || /\/runtime\/capabilities\/[^/]+\/stream\/(read|write|status|abort)$/.test(c.req.path)) ? next() : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c,next))
   .use("*", async (c,next) => { c.header("Cache-Control","private, no-store"); await next(); })
   .onError((error,c) => {
+    if (error instanceof AiQuotaError) return respond(c, { ok: false, code: error.code, status: 429, error: error.message });
+    if (isAiSettingsError(error)) return respond(c, { ok: false, code: error.aiError.code, status: 403, error: error.aiError.message });
     if (error instanceof ArtifactCompileError || error instanceof AiFileWriteError)
       return respond(c, { ok: false, code: error.code, status: error.code === "CONFLICT" ? 409 : 400, error: error.message });
     if (error instanceof GotenbergRenderError) {
@@ -80,6 +84,10 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
   .get("/presentations/:presentationId/input", async c => {
     const file = await chatPresentations.input(z.uuid().parse(c.req.param("presentationId")), z.string().min(1).parse(c.req.query("conversationId")), z.string().min(1).parse(c.req.query("path")), identity(c));
     return new Response(new Uint8Array(file.data), { headers: { "Content-Type": file.mediaType, "Content-Disposition": "attachment", "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" } });
+  })
+  .post("/runtime/ai", v("json", z.object({ scope: HttpScope, request: AiTaskRequestSchema }).strict()), async c => {
+    const input = c.req.valid("json");
+    return c.json({ output: await runCodeAi(input.request, input.scope, identity(c), c.req.raw.signal) });
   })
   .post("/runtime/pdf", async (c,next) => {
     await studioPdf.authorize({ resourceId: c.req.query("resourceId"), conversationId: c.req.query("conversationId") }, identity(c));
