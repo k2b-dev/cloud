@@ -34,7 +34,9 @@ describe("Mail draft public boundary", () => {
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
-    spyOn(publicResources, "publicIds").mockImplementation(async (_table, ids) => new Map(ids.map((id) => [id, String(id)])));
+    spyOn(publicResources, "publicIds").mockImplementation(
+      async (_table, ids) => new Map(ids.flatMap((id) => (typeof id === "string" ? [[id, id] as const] : []))),
+    );
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(conversationId);
     const listConversationDrafts = spyOn(drafts, "listConversationDrafts").mockResolvedValue(ok([]));

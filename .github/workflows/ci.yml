@@ -111,6 +111,17 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
+    # API-level unit tests go through the rate limiter, whose Bun redis client
+    # waits for a server; a throwaway Valkey keeps them honest and fast.
+    services:
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -124,6 +135,9 @@ jobs:
       - name: Install the Playwright browser used by Assistant code-host tests
         run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
       - run: bun run test --shard ${{ matrix.shard }}/3
+        env:
+          # Unit tests of encrypted settings and grants derive keys from the application secret.
+          APP_SECRET: ${{ env.TEST_SECRET }}
 
   integration:
     needs: setup

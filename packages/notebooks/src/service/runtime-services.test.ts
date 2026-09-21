@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { PermissionLevel, User } from "@k2b/cloud/contracts";
 import type { ServiceAccount } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
-import { natsSuite } from "../../../../scripts/fixtures/test-infra";
+import { natsSuite, testFor } from "../../../../scripts/fixtures/test-infra";
 
 const cloudServices = await import("@k2b/cloud/services");
 const cloud = await import("@k2b/cloud");
@@ -292,7 +292,7 @@ natsSuite()("notebook reindex runtime", () => {
   });
 });
 
-test("reindex runtime executes jobs and drains both workers before restart", async () => {
+testFor("nats")("reindex runtime executes jobs and drains both workers before restart", async () => {
   await reindexRuntime.start();
   await jobHandler!({ input: { trigger: "scheduler" }, signal: new AbortController().signal, heartbeat: async () => {} });
   expect(reindexRuns).toBe(1);
