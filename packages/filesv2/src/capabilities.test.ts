@@ -22,6 +22,7 @@ const base = {
 let baseCount = 1;
 let next: string | null = null;
 let failure = false;
+let serviceFailure: Error | null = null;
 let items: FileEntry[] = [];
 let calls = 0;
 const uploadKeys: string[] = [];
@@ -36,6 +37,7 @@ mock.module("./data/references", () => ({
 }));
 const page = async (): Promise<DirectoryResult> => {
   calls++;
+  if (serviceFailure) throw serviceFailure;
   if (failure) throw new Error("storage unavailable");
   return { base, path: "", items, next };
 };
@@ -55,6 +57,7 @@ mock.module("./service", () => ({
   filesService: {
     bases: async () => ({ items: Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })) }),
     upload: async (_actor: unknown, input: { idempotencyKey: string }) => {
+      if (serviceFailure) throw serviceFailure;
       uploadKeys.push(input.idempotencyKey);
       return { id: input.idempotencyKey };
     },
@@ -62,6 +65,10 @@ mock.module("./service", () => ({
       downloads.push({ actor, input });
       if (downloadFailure) throw downloadFailure;
       return lease;
+    },
+    entry: async () => {
+      if (serviceFailure) throw serviceFailure;
+      return { base, entry: entry("report.pdf") };
     },
     list: page,
     search: page,
@@ -100,6 +107,7 @@ afterEach(() => {
   baseCount = 1;
   next = null;
   failure = false;
+  serviceFailure = null;
   items = [];
   calls = 0;
   ids.clear();
@@ -284,5 +292,27 @@ for (const [status, upstreamCode, code, expectedStatus] of [
       message: code,
       status: expectedStatus,
     });
+  });
+}
+
+for (const [status, upstreamCode, code, expectedStatus] of [
+  [403, "permission_denied", "forbidden", 403],
+  [404, "missing", "not_found", 404],
+  [409, "execution_mismatch", "identity_changed", 409],
+  [502, "upstream_failure", "unavailable", 503],
+] as const) {
+  test(`shared file capability boundary sanitizes ${upstreamCode} for reads and actions`, async () => {
+    ids.set("ref", { baseId: base.id, path: "report.pdf" });
+    serviceFailure = new FilegateError(status, upstreamCode, "private upstream message");
+    const expected = { code, message: code, status: expectedStatus };
+    const list = filesCapabilities.queries["entry.list"];
+    const search = filesCapabilities.queries["entry.search-in-base"];
+    await expect(list.run(list.input.parse({ baseId: base.id }), context)).rejects.toEqual(expected);
+    await expect(search.run(search.input.parse({ baseId: base.id, q: "report" }), context)).rejects.toEqual(expected);
+    await expect(filesCapabilities.queries["content.read"].run({ id: "ref" }, context)).rejects.toEqual(expected);
+    const create = filesCapabilities.actions["content.create"];
+    await expect(
+      create.run(create.input.parse({ baseId: base.id, path: "report.pdf", size: 4 }), { ...context, idempotencyKey: "create" }),
+    ).rejects.toEqual(expected);
   });
 }

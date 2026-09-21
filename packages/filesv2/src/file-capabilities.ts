@@ -45,6 +45,11 @@ async function domain<T>(run: () => Promise<T>): Promise<T> {
     return await run();
   } catch (e) {
     if (e instanceof FilesError) throw { code: e.code, message: e.code, status: e.status };
+    if (e instanceof FilegateError) {
+      const code = filegateErrorCode(e);
+      const status = code === "forbidden" ? 403 : code === "not_found" ? 404 : code === "unavailable" ? 503 : 409;
+      throw { code, message: code, status };
+    }
     throw e;
   }
 }
@@ -216,14 +221,7 @@ export const fileQueries = {
         const actor = readActor(c);
         const ref = await resolveEntryRefId(input.id);
         if (!ref) return fail(err.notFound("File"));
-        try {
-          return ok({ data: await filesService.download(actor, ref) });
-        } catch (error) {
-          if (!(error instanceof FilegateError)) throw error;
-          const code = filegateErrorCode(error);
-          const status = code === "forbidden" ? 403 : code === "not_found" ? 404 : code === "unavailable" ? 503 : 409;
-          throw new FilesError(code, status);
-        }
+        return ok({ data: await filesService.download(actor, ref) });
       }),
   },
 };
