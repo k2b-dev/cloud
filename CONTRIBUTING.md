@@ -16,10 +16,27 @@ Bun 1.x, Docker, and Docker Compose v2 are required. See
 [Monorepo development](docs-site/docs/en/operations/monorepo-development.md)
 for the per-application commands.
 
+## What this project accepts
+
+Small, focused bug fixes, reliability and performance improvements, and
+tightly scoped maintenance that clearly improves Cloud without changing its
+direction are welcome. Large drive-by features, rewrites, and pull requests
+that mix unrelated changes are likely to be closed. Propose ideas in
+[Discussions](https://github.com/k2b-dev/cloud/discussions/categories/ideas)
+before building them; open a bug with the
+[bug report form](https://github.com/k2b-dev/cloud/issues/new?template=bug.yml).
+
 ## Branch and open a pull request
 
-`main` is protected. Work on a feature branch and open a pull request; it is
-squash-merged after the `gate` check passes.
+`main` is protected. Work on a branch named `type/short-slug`, open a pull
+request, and it is squash-merged after the `gate` check passes. Parallel work
+uses a worktree under `../cloud-wt/<slug>`:
+
+```bash
+git fetch origin
+git worktree add ../cloud-wt/<slug> -b fix/<slug> origin/main
+cd ../cloud-wt/<slug> && bun install --frozen-lockfile
+```
 
 The PR title becomes the commit and must be a Conventional Commit:
 `type(scope): outcome`, for example `fix(mail): keep list subscriptions after
@@ -36,7 +53,11 @@ bun run test
 
 Integration tests run only with `CLOUD_TEST_*` variables set and refuse a
 database whose name does not end in `_test`. See
-[Testing](docs-site/docs/en/contributing/testing.md).
+[Testing](docs-site/docs/en/contributing/testing.md). `dev:*` commands belong
+to the main checkout, not to worktrees.
+
+Reference the issue the pull request closes (`Closes #n`), or say in one line
+why none is needed.
 
 ## Add an application
 

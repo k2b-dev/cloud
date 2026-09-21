@@ -78,14 +78,32 @@ silently rely on an older checkout or rendered HTML.
 
 ## Work in Git
 
-`main` is protected. Every change goes through a pull request that passes the
-`gate` check and is squash-merged. Agents never push to `main`, never create
-or move tags, and never trigger a release.
+`main` is protected. Every change reaches it through a pull request that
+passes the `gate` check and is squash-merged. Agents never push to `main`,
+never create or move tags, and never trigger a release.
 
-Ask before creating a branch or worktree. The checkout is shared with parallel
-sessions; the maintainer decides between the current branch, a new branch, or
-a worktree. Do not create either on your own initiative, even for a small
-change.
+Ask before creating a branch or worktree: the checkout is shared with parallel
+sessions, and the maintainer decides between the current branch, a new branch,
+or a worktree. Once that is decided, follow this recipe without further
+questions:
+
+- Branch names are `type/short-slug` (`fix/recovery-401`, `feat/grids-export`).
+- A single agent works on a branch in this checkout. Parallel agents each get
+  a worktree under `../cloud-wt/<slug>`, outside the repository:
+
+  ```bash
+  git fetch origin
+  git worktree add ../cloud-wt/<slug> -b type/<slug> origin/main
+  cd ../cloud-wt/<slug> && bun install --frozen-lockfile
+  ```
+
+- `dev:*` and `dev:cld` belong to this checkout; Compose mounts its sources.
+  In a worktree, verify with `bun run check`, `bun run test`,
+  `bun run test --integration` against the local infrastructure, and
+  `docker build`. Browser-level checks wait for this checkout or for CI.
+- Finish with one approval for the whole block: `gh pr create --fill`, then
+  `gh pr merge --auto --squash`. After the merge, `git worktree remove` the
+  worktree; merged branches are deleted automatically.
 
 The PR title becomes the squash commit and must be a Conventional Commit of
 the form `type(scope): outcome`. `feat` produces a minor release, `fix` a
@@ -93,8 +111,23 @@ patch, and `feat!` or a `BREAKING CHANGE:` footer a major release. Use `!`
 only with explicit maintainer approval.
 
 Never edit `version` fields, `CHANGELOG.md`, or `.release-please-manifest.json`;
-release-please owns them. Commit, push, opening a PR, and enabling auto-merge
-are separate approval boundaries.
+release-please owns them.
+
+## Track work
+
+GitHub Issues are the public list of work: bugs, tracked debts, and concrete
+tasks that someone can pick up. A pull request closes its issue with
+`Closes #n`. Dex holds the plan inside one piece of work: slices, status, and
+handoff between sessions; a Dex task names its issue number and is discarded
+after the merge.
+
+- An issue describes one problem in at most four short sections: what is
+  wrong, how to reproduce it (a command), the suspected cause with
+  `file:line`, and a proposal. Analysis, plans, and progress belong in Dex.
+- Use the "Agent report" issue form for issues an agent files; the "Bug
+  report" form is for people.
+- Ideas and feature requests go to Discussions, not Issues.
+- A one-commit fix needs neither an issue nor a Dex task, only a pull request.
 
 ## Keep the model small
 

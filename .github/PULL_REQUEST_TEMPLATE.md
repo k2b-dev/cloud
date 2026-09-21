@@ -2,6 +2,8 @@
 
 <!-- What changes for a Cloud user, operator, or application author? -->
 
+Closes #
+
 ## Checklist
 
 - [ ] The title is a Conventional Commit: `type(scope): outcome` (`feat` = minor, `fix` = patch, `!` only with maintainer approval)
