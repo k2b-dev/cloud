@@ -20,8 +20,14 @@ suite("scheduler contract", () => {
     await fixture?.close();
   });
 
+  // The worker pulls with a 1.5 s expiry and a delivery that misses its ack is
+  // redelivered only after ackWaitMs. A completion wait therefore has to
+  // outlast one full redelivery cycle, not one pull (#37).
+  const ackWaitMs = 5_000;
+  const completionTimeoutMs = ackWaitMs + 5_000;
+
   test("runs accepted without a worker execute once the worker starts, and pause defers them until resume", async () => {
-    const scheduler = fixture.sync.scheduler({ id: "contract", delivery: { maxAttempts: 1, ackWaitMs: 5_000 } });
+    const scheduler = fixture.sync.scheduler({ id: "contract", delivery: { maxAttempts: 1, ackWaitMs } });
     await scheduler.create({
       id: "tick",
       cron: "* * * * *",
@@ -35,7 +41,7 @@ suite("scheduler contract", () => {
 
     const worker = await scheduler.process();
     try {
-      expect(await scheduler.awaitRun({ id: "tick", runId: offline.runId, timeoutMs: 5_000 })).toEqual({ completed: true });
+      expect(await scheduler.awaitRun({ id: "tick", runId: offline.runId, timeoutMs: completionTimeoutMs })).toEqual({ completed: true });
       expect(runs).toEqual([offline.runId]);
 
       await scheduler.pause({ id: "tick" });
@@ -44,12 +50,12 @@ suite("scheduler contract", () => {
       expect(runs).toEqual([offline.runId]);
 
       await scheduler.resume({ id: "tick" });
-      expect(await scheduler.awaitRun({ id: "tick", runId: paused.runId, timeoutMs: 5_000 })).toEqual({ completed: true });
+      expect(await scheduler.awaitRun({ id: "tick", runId: paused.runId, timeoutMs: completionTimeoutMs })).toEqual({ completed: true });
       expect(runs).toEqual([offline.runId, paused.runId]);
       expect((await scheduler.get({ id: "tick" }))?.runNumber).toBe(2);
     } finally {
       worker.stop();
       await worker.drain();
     }
-  }, 20_000);
+  }, 30_000);
 });
