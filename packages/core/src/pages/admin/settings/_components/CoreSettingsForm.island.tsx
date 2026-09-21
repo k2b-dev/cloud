@@ -2136,6 +2136,7 @@ async function openAiProfileDialog(input: {
                         <NumberInput
                           label={t().inputPrice}
                           step={0.000001}
+                          decimalPlaces={6}
                           value={inputPrice}
                           onValueChange={setInputPrice}
                           min={0}
@@ -2146,6 +2147,7 @@ async function openAiProfileDialog(input: {
                         <NumberInput
                           label={t().outputPrice}
                           step={0.000001}
+                          decimalPlaces={6}
                           value={outputPrice}
                           onValueChange={setOutputPrice}
                           min={0}

@@ -12,7 +12,9 @@ export type NumberInputProps = Omit<
   ValueFieldProps<number | null> & {
     max?: number;
     min?: number;
+    /** Stepper increment and commit grid; defaults to `1`. A fractional step also sets the default `decimalPlaces`. */
     step?: number;
+    /** Accepted fraction digits. Defaults to the fraction digits of `step` (`0.01` → `2`, `1` → `0`); an explicit value wins. */
     decimalPlaces?: number;
     allowNegative?: boolean;
     clearable?: boolean;
@@ -29,6 +31,13 @@ export type NumberInputProps = Omit<
     prefix?: JSX.Element;
     suffix?: JSX.Element;
   };
+
+function fractionDigits(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  const [mantissa = "", exponent = "0"] = String(value).split("e");
+  const fraction = mantissa.split(".")[1]?.length ?? 0;
+  return Math.max(0, fraction - Number(exponent));
+}
 
 export function NumberInput(props: NumberInputProps): JSX.Element {
   const [local, rest] = splitProps(props, [
@@ -72,10 +81,12 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   // follows the effective locale; grouping is never rendered while editing.
   const display = (value: number | null | undefined) => (value == null ? "" : String(value).replace(".", separator()));
   const [raw, setRaw] = createSignal(display(value()));
-  const places = () => Math.max(0, local.decimalPlaces ?? 0);
   const min = () => local.min ?? -Infinity;
   const max = () => local.max ?? Infinity;
   const step = () => local.step ?? 1;
+  // `step` and the accepted decimals never disagree: a fractional step implies
+  // its own precision unless the caller states `decimalPlaces` explicitly.
+  const places = () => Math.max(0, local.decimalPlaces ?? fractionDigits(step()));
 
   const filter = (input: string) => {
     let output = "";
