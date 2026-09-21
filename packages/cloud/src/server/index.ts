@@ -3,6 +3,7 @@ export type { ApiErrorBody, ApiErrorResponse, ApiErrorStatus } from "./api";
 export { api, respond, respondMessage } from "./api";
 export type { CreateApiClientConfig } from "./api-client";
 export { api as apiClient } from "./api-client";
+export { appAssetPath } from "./app-assets";
 export type { AppContext } from "./app-context";
 export { defineHelp, defineHelpCollection, type HelpCollection, type HelpDefinition, type HelpDefinitionDocument } from "./help";
 export { DEFAULT_LOCALE, getLocale, LOCALE_COOKIE, LOCALE_HEADER, locale, preferredLocale, resolveLocale } from "./locale";

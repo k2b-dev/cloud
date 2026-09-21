@@ -17,6 +17,7 @@
  *   _ssr/<island>.js     hydration bundles (auto-emitted by the SSR plugin)
  *   public/<id>/app.css  Tailwind, if the app has src/styles/app.css
  *   public/<id>/...      anything from <appDir>/public/
+ *   assets/...           anything from <appDir>/src/assets/ (appAssetPath)
  *
  * If the app needs additional artefacts (core's global.css, logo, katex),
  * it ships a `scripts/build-extras.ts` that this script runs at the end.
@@ -129,6 +130,7 @@ try {
       __CLOUD_RELEASE__: JSON.stringify(release),
       __CLOUD_SYNC_VERSION__: JSON.stringify(syncVersion),
       __CLOUD_PDF_RENDER_WORKER__: JSON.stringify("./pdf-render/worker.js"),
+      __CLOUD_APP_ASSETS__: JSON.stringify("./assets/"),
     },
     plugins: [(app?.plugin ?? plugin)()],
   });
@@ -165,6 +167,12 @@ if (existsSync(appCss)) {
 const appPublic = resolve(appDir, "public");
 if (existsSync(appPublic)) {
   await cp(appPublic, resolve(distPublic, appId), { recursive: true });
+}
+
+// Server-side assets the bundle reads through appAssetPath().
+const appAssets = resolve(appDir, "src/assets");
+if (existsSync(appAssets)) {
+  await cp(appAssets, resolve(dist, "assets"), { recursive: true });
 }
 
 if (appId !== "core" && app) {
