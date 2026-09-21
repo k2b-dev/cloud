@@ -177,6 +177,7 @@ jobs:
       - name: Start NATS JetStream and install poppler
         run: |
           set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine
           docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils
@@ -225,6 +226,7 @@ jobs:
       - name: Start certification infrastructure
         run: |
           set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:15-alpine
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils
           # Match the connection budget in compose.yml and compose.sync-test.yml.
@@ -398,6 +400,7 @@ jobs:
           APP_SECRET: ${{ env.TEST_SECRET }}
         run: |
           set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:17-alpine valkey/valkey:8-alpine
           docker network create cloud-smoke
           docker run --detach --name postgres --network cloud-smoke \
             --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine
