@@ -1,4 +1,5 @@
 import { expect } from "bun:test";
+import { createHash } from "node:crypto";
 import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync, type Worker } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
@@ -21,8 +22,14 @@ testFor("nats")(
       const firstEntered = Promise.withResolvers<void>();
       const complete = Promise.withResolvers<void>();
       const secondStarted = Promise.withResolvers<void>();
+      // The two notes must hash to different partitions (@k2b/sync places an
+      // ordering key at sha256 % partitions). Sharing a partition would park
+      // the second note behind the deliberately blocked first one (#42).
+      const partitionOf = (noteId: string) =>
+        createHash("sha256").update(noteId, "utf8").digest().readUInt32BE(0) % SNAPSHOT_JOB_CONFIG.ordering.partitions;
       const firstNote = crypto.randomUUID();
-      const secondNote = crypto.randomUUID();
+      let secondNote = crypto.randomUUID();
+      while (partitionOf(secondNote) === partitionOf(firstNote)) secondNote = crypto.randomUUID();
       const seen: string[] = [];
       const finished: string[] = [];
       const handler = async ({ input }: { input: { noteId: string } }) => {
