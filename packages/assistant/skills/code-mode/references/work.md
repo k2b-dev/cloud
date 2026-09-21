@@ -59,3 +59,34 @@ inspection step. Keep the execution host open until the job finishes.
 Update compact status while processing. Populate result tables in pages or at
 batch boundaries; do not rebuild thousands of table rows for every progress
 increment. UI updates are coalesced to 100 ms, and each table remains bounded.
+
+## Scheduled Assistant tasks
+
+Scheduled tasks can use Code Mode without an open user tab. Each turn owns a
+separate server execution host; it does not borrow the foreground chat's run.
+Load the scheduled-tasks Skill when creating or changing the task.
+
+Use existing chat input paths, compute, call `ai`, use task-approved capabilities,
+and export results to the chat. The host applies the task's confirmed grants and
+fixed inputs automatically to capability calls. Do not call an authorization API
+or supply a mandate ID in code. Personal remembered approvals do not apply.
+
+There is no user to answer a modal, enter secrets or open a local file picker.
+HTTP and RSQL are available through the normal APIs with task grants. In the
+same grants list use `{kind:"http",fixedInput:{origin:"https://api.example.com",method:"GET"}}`
+or `{kind:"database",fixedInput:{resourceId:"aBc234"}}`. HTTP can also fix an exact
+`url`; database grants can fix `operation` and `table`. A resource-only database
+grant covers connecting and subsequent reads/writes; an operation-specific grant
+needs a separate `connect` grant. Empty fixedInput explicitly allows all supported
+targets and operations within the user's current access. The task cannot expand
+its own grants. Existing HTTP secrets remain server-side; new secret entry needs
+the normal chat. Shared app storage retains its usual resource checks.
+Capability binary streams remain unavailable. If an operation is outside the task grant,
+explain what is missing in the result; ask the user to adjust the task in its
+normal chat. Do not bypass a denied capability through another transport.
+
+AI helpers use background accounting. Revocation, task grant changes and turn
+cancellation stop further host requests. Already completed effects are not
+rolled back, and host loss never replays an uncertain write automatically.
+
+Database maintenance tools `code_database_clear` and `code_database_reset` use the same task grants (`operation: "clear"` or `"reset"`). They still require Manage access and the current generation/data revision; preapprove these destructive operations only when the user explicitly requests them.

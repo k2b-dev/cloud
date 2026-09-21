@@ -62,6 +62,8 @@ export const filesCapabilities = defineCapabilities({
         try {
           const result = await filesService.entry(actor, ref);
           return ok({
+            refs: [{ type: ENTRY_TYPE, id: input.id, title: result.entry.name }],
+            links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(input.id)}` }],
             data: {
               id: input.id,
               base: { id: result.base.id, name: result.base.name, area: result.base.area },

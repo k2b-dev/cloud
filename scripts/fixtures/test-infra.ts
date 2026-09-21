@@ -4,11 +4,20 @@
  * Integration suites gate themselves on the presence of `CLOUD_TEST_*`
  * variables. When a variable is present, the suite runs and fails loudly if
  * the target is unreachable. When it is absent, the suite is skipped and the
- * legacy runtime variable is removed from the process so a test can never
- * reach the infrastructure configured in `.env`.
+ * runtime variables are removed; `DATABASE_URL` and `REDIS_URL` instead point
+ * at a closed loopback port (`test-infra-env.ts`), because Bun's default `sql`
+ * and `redis` handles would otherwise dial `localhost` and reach the stack
+ * configured in `.env`.
  *
  * Import this module first in every integration test file. It is also loaded
  * as a `bun test` preload from `bunfig.toml` and by `scripts/run-tests.ts`.
+ *
+ * Bun's default `redis` handle resolves `REDIS_URL` when the process starts,
+ * before any preload runs. `bun run test` therefore exports the aliases into
+ * the child environment first; under a direct `bun test`, the default handle
+ * is only redirected when `REDIS_URL` was exported before Bun started. The
+ * default `sql` handle binds on its first query and the NATS registry reads
+ * lazily, so those follow the preload in both cases.
  *
  *   CLOUD_TEST_DATABASE_URL   postgres://user:pass@host:5432/<name>_test
  *   CLOUD_TEST_NATS_SERVERS   nats://host:4222[,nats://host:4223]
@@ -18,19 +27,9 @@
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
 import { beforeAll, describe, test } from "bun:test";
+import { applyTestRuntimeEnv, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
 
-export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql";
-
-type Mapping = { test: string; runtime: string[] };
-
-const mappings: Record<InfraKind, Mapping> = {
-  database: { test: "CLOUD_TEST_DATABASE_URL", runtime: ["DATABASE_URL", "POSTGRES_URL", "PGURL"] },
-  nats: { test: "CLOUD_TEST_NATS_SERVERS", runtime: ["NATS_SERVERS", "SYNC_TEST_SERVERS", "NATS_ADMIN_SERVERS"] },
-  valkey: { test: "CLOUD_TEST_VALKEY_URL", runtime: ["REDIS_URL", "VALKEY_URL"] },
-  filegate: { test: "CLOUD_TEST_FILEGATE_URL", runtime: ["FILEGATE_URL", "FILESV2_TEST_FILEGATE_URL"] },
-  gotenberg: { test: "CLOUD_TEST_GOTENBERG_URL", runtime: ["GOTENBERG_URL", "GRIDS_PDF_URL"] },
-  rsql: { test: "CLOUD_TEST_RSQL_URL", runtime: ["RSQL_URL", "RSQL_TEST_URL"] },
-};
+export type { InfraKind } from "./test-infra-env";
 
 const testOnlyDefaults: Record<string, string> = {
   APP_SECRET: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -63,16 +62,13 @@ const assertValkeyUrlWithoutIndex = (url: string): void => {
 
 const applyMappings = (): Record<InfraKind, string | undefined> => {
   const resolved = {} as Record<InfraKind, string | undefined>;
-  for (const [kind, mapping] of Object.entries(mappings) as Array<[InfraKind, Mapping]>) {
-    const value = read(mapping.test);
+  for (const kind of Object.keys(mappings) as InfraKind[]) {
+    const value = readTestTarget(process.env, kind);
     if (kind === "database" && value) assertTestDatabaseName(value);
     if (kind === "valkey" && value) assertValkeyUrlWithoutIndex(value);
     resolved[kind] = value;
-    for (const runtime of mapping.runtime) {
-      if (value) process.env[runtime] = value;
-      else delete process.env[runtime];
-    }
   }
+  applyTestRuntimeEnv(process.env);
   if (Object.values(resolved).some(Boolean)) {
     for (const [key, value] of Object.entries(testOnlyDefaults)) {
       if (!read(key)) process.env[key] = value;

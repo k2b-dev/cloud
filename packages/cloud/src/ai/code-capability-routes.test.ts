@@ -7,6 +7,7 @@ import { env } from "../config/env";
 import type { RequestActor } from "../server";
 import { signInvocationToken, verifyInvocationToken } from "../services/identity/invocation-token";
 import type { PreparedIdentitySigner } from "../services/identity/key-ring";
+import type { Mandate } from "../services/mandates";
 import { createCodeCapabilityRoutes } from "./code-capability-routes";
 import { codeCapabilityOperation, codeCapabilityPath, createCodeCapabilityTransport } from "./code-capability-transport";
 import type { AiConversation, AiTurn, AiTurnRunConfig } from "./types";
@@ -73,6 +74,26 @@ function fixture() {
     status = "running",
     current = true;
   let config: AiTurnRunConfig | null = { input: "Analyze" };
+  let mandate: Mandate | null = {
+    id: "44444444-4444-4444-8444-444444444444",
+    subject: { type: "user", id: userId },
+    ownerAppId: "core",
+    workloadType: "ai.chat-task",
+    workloadId: "55555555-5555-4555-8555-555555555555",
+    policy: { version: 1, apps: ["demo"], operations: ["capability.query:read"], actions: "deny" },
+    state: "active",
+    revision: 1,
+    expiresAt: null,
+    confirmedAt: new Date().toISOString(),
+    confirmationDeadline: null,
+    createdByUserId: userId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    revokedAt: null,
+    revokedByUserId: null,
+    revokedByAppId: null,
+    revokeReason: null,
+  };
   let allowedTools: string[] | null = null;
   let cancelRequestedAt: string | null = null;
   const dispatch = mock(async (_input: Parameters<typeof import("../api/capabilities").dispatchCapability>[0]) =>
@@ -109,9 +130,11 @@ function fixture() {
           archivedAt: archived ? new Date().toISOString() : null,
           allowedTools,
         }) as AiConversation,
+      getTurn: async () => ({ id: turnId, status, cancelRequestedAt }) as AiTurn,
       getActiveTurn: async () => ({ turn: { id: activeTurn, status, cancelRequestedAt } as AiTurn, liveBlocks: [], liveSeq: 0 }),
       getTurnRunConfig: async () => config,
     },
+    getMandate: async () => mandate,
     dispatch,
     stream,
   });
@@ -120,6 +143,7 @@ function fixture() {
     dispatch,
     stream,
     set: (value: {
+      mandate?: Partial<Mandate> | null;
       cancelRequestedAt?: string;
       archived?: boolean;
       owner?: string;
@@ -129,6 +153,7 @@ function fixture() {
       config?: AiTurnRunConfig | null;
       allowedTools?: string[];
     }) => {
+      if ("mandate" in value) mandate = value.mandate === null ? null : mandate && { ...mandate, ...value.mandate };
       cancelRequestedAt = value.cancelRequestedAt ?? cancelRequestedAt;
       archived = value.archived ?? archived;
       owner = value.owner ?? owner;
@@ -277,4 +302,52 @@ test("managed capability transport validates its private Core origin before exec
     if (previous === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     else process.env.CLOUD_CORE_INTERNAL_ORIGIN = previous;
   }
+});
+
+const backgroundConfig: AiTurnRunConfig = {
+  input: "Run",
+  background: { taskId: "task", occurrenceId: "occurrence", context: [] },
+  mandate: { id: "44444444-4444-4444-8444-444444444444", revision: 1 },
+};
+
+test("background callbacks use their persisted task mandate while another foreground turn runs", async () => {
+  const f = fixture();
+  f.set({ config: backgroundConfig, activeTurn: crypto.randomUUID() });
+  const jwt = await token();
+  for (const path of ["queries/demo/read", "actions/demo/write/review", "actions/demo/write"]) {
+    expect((await f.app.fetch(request(jwt, path, JSON.stringify({ input: { notebookId: "target" } })))).status).toBe(200);
+  }
+  for (const [call] of f.dispatch.mock.calls)
+    expect(call).toMatchObject({
+      mandate: { mandateId: backgroundConfig.mandate!.id, mandateRevision: 1, ownerAppId: "core" },
+      input: { notebookId: "target" },
+    });
+  expect((await f.app.fetch(request(jwt, "streams/read"))).status).toBe(403);
+  expect(f.stream).not.toHaveBeenCalled();
+  expect((await f.app.fetch(request(jwt, "queries/demo/read", JSON.stringify({ input: {}, mandate: { id: "other" } })))).status).toBe(400);
+});
+
+test("background callbacks stop after cancellation, mandate revocation, scope changes or expiry", async () => {
+  const jwt = await token();
+  const changes: Array<Partial<Mandate> | null> = [
+    null,
+    { state: "revoked" },
+    { state: "paused" },
+    { revision: 2 },
+    { subject: { type: "user", id: crypto.randomUUID() } },
+    { ownerAppId: "mail" },
+    { workloadType: "other" },
+    { confirmedAt: null },
+    { expiresAt: new Date(Date.now() - 1000).toISOString() },
+  ];
+  for (const mandate of changes) {
+    const f = fixture();
+    f.set({ config: backgroundConfig, mandate });
+    expect((await f.app.fetch(request(jwt))).status).toBe(403);
+    expect(f.dispatch).not.toHaveBeenCalled();
+  }
+  const f = fixture();
+  f.set({ config: backgroundConfig, cancelRequestedAt: new Date().toISOString() });
+  expect((await f.app.fetch(request(jwt))).status).toBe(403);
+  expect(f.dispatch).not.toHaveBeenCalled();
 });

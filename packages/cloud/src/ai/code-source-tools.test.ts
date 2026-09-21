@@ -5,7 +5,9 @@ import * as claims from "../capabilities/claims";
 import type { User } from "../contracts/shared";
 import * as identity from "../services/identity/key-ring";
 import * as execution from "./capability-execution";
+import * as codeExecution from "./code-execution";
 import { createCodeSourceTool } from "./code-source-tools";
+import { aiConversations } from "./store";
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -117,3 +119,48 @@ for (const name of ["code_access_change", "code_write"] as const)
         expect(complete).not.toHaveBeenCalled();
       }
     });
+
+for (const name of ["code_sql", "code_database_read", "code_database_export", "code_database_clear", "code_database_reset"] as const) {
+  test(`${name} cannot bypass revoked background authority`, async () => {
+    const actor = { kind: "user" as const, user };
+    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
+    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
+      kind: "chat",
+      input: "Run",
+      toolSource: { kind: "none" },
+      background: { taskId: "task", occurrenceId: "occurrence", context: [] },
+      mandate: { id: crypto.randomUUID(), revision: 1 },
+    });
+    spyOn(registry, "getApp").mockResolvedValue({
+      id: "assistant",
+      name: "Assistant",
+      icon: "",
+      description: "",
+      baseUrl: "http://assistant.test",
+      routes: [],
+    });
+    spyOn(codeExecution, "authorizeCodeExecution").mockRejectedValue(new Error("Task authority revoked"));
+    const fetchRequest = spyOn(globalThis, "fetch");
+    const tool = createCodeSourceTool(name);
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    await expect(
+      tool.run(
+        { id: "AbC234" },
+        {
+          actor,
+          conversationId: "chat-test",
+          turnId: "turn-test",
+          callId: "call-test",
+          signal: new AbortController().signal,
+          requestClientTool: async () => {
+            throw new Error("Unexpected client tool");
+          },
+          requestApproval: async () => {
+            throw new Error("Unexpected interactive approval");
+          },
+        },
+      ),
+    ).rejects.toThrow("Task authority revoked");
+    expect(fetchRequest).not.toHaveBeenCalled();
+  });
+}

@@ -592,3 +592,7 @@ and 250 MiB across transfers; Grids advertises its existing 100 MiB artifact
 budget for HTTP/CLI consumers. References expire after one hour and are not
 supported for mandate-backed background work. A generated CSV/XML artifact is
 supported; this is not an arbitrary GQL-to-CSV export capability.
+
+## Capability download links and folder archives
+
+`document.list` and `document.read` return `downloadUrl` for the stored primary artifact. This is an authenticated same-origin Cloud path, not a public share. For bytes in Studio/code mode use `document.content.read` and the returned stream. Browser folder downloads collect primary files recursively into ZIP (up to 1,000 documents / 100 MiB); additional artifacts remain individual downloads. This live enumeration is not a backup snapshot.

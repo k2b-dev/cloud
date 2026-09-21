@@ -355,7 +355,10 @@ owns an isolated Chromium host for model-driven run/inspect/interact/stop/export
 operations. Closing or freezing the user's tab does not suspend these operations.
 Calls, results and ordered approvals are persisted; a lost host is not replayed.
 Only `code_open` and `code_secret` require the user interface. The host pool admits
-eight conversations and retains idle runs for two minutes after a chat finishes.
+eight hosts. Foreground chat runs and scheduled turns have separate hosts.
+Foreground hosts without an active turn expire after two idle minutes.
+Scheduled hosts live for their turn; finished scheduled turns and cancelled
+runs are closed by the host sweep.
 The Assistant image includes Chromium; other application images do not need it.
 The direct CLI code command retains its own isolated local execution host.
 

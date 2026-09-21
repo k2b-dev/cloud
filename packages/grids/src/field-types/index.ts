@@ -6,6 +6,7 @@ import { numberHandler } from "./number";
 import { objectListHandler } from "./object-list";
 import { principalHandler } from "./principal";
 import { lookupHandler, relationHandler, rollupHandler } from "./relations";
+import { resourceHandler } from "./resource";
 import { selectHandler } from "./select";
 import { createdAtHandler, createdByHandler, idHandler, updatedAtHandler, updatedByHandler } from "./system";
 import { longtextHandler, textHandler } from "./text";
@@ -35,6 +36,7 @@ export const VALUE_FIELD_TYPES: Record<string, ValueFieldType> = Object.fromEntr
     durationHandler,
     jsonHandler,
     principalHandler,
+    resourceHandler,
   ].map((fieldType) => [fieldType.type, fieldType]),
 );
 

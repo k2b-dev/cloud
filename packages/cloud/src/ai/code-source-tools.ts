@@ -12,6 +12,8 @@ import { signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
 import { resolveAiCapabilityActor } from "./capability-execution";
+import { aiChatTasks } from "./chat-tasks";
+import { authorizeCodeExecution } from "./code-execution";
 import { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 import { aiConversations } from "./store";
 import { defineAiTool } from "./tools";
@@ -53,10 +55,38 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
       persistedActor: context.actor,
       store: aiConversations,
     });
+    const databaseOperations: Partial<Record<CodeSourceToolName, string>> = {
+      code_sql: "query",
+      code_database_read: "status",
+      code_database_export: "export",
+      code_database_clear: "clear",
+      code_database_reset: "reset",
+    };
+    const databaseOperation = databaseOperations[name];
+    let authorizeDatabase: (() => Promise<void>) | undefined;
+    if (context.turnId && databaseOperation) {
+      const config = await aiConversations.getTurnRunConfig({ conversationId: context.conversationId, turnId: context.turnId });
+      if (config?.kind !== "compact" && config?.background) {
+        const { id } = z.object({ id: z.string() }).parse(input);
+        const conversationId = context.conversationId,
+          turnId = context.turnId;
+        authorizeDatabase = async () => {
+          const { config } = await authorizeCodeExecution(conversationId, turnId, actor.user.id);
+          if (!config.mandate) throw new Error("Background database access requires task grants");
+          await aiChatTasks.authorizeRuntime({
+            mandate: config.mandate,
+            kind: "database",
+            input: { resourceId: id, operation: databaseOperation },
+          });
+        };
+      }
+    }
+    await authorizeDatabase?.();
     const app = await getApp("assistant");
     if (!app) throw new Error("Assistant is unavailable.");
     const signal = context.signal;
     const send = async (review = false) => {
+      await authorizeDatabase?.();
       const signed = await withActiveIdentitySigner(
         "invocation",
         (signer) =>
@@ -97,7 +127,8 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
     };
     if ("review" in definition && (typeof definition.review === "function" ? definition.review(input) : definition.review)) {
       const preview = z.object({ data: z.object({ message: z.string().min(1) }) }).parse((await send(true)).data).data;
-      if (!(await context.requestApproval(preview.message))) throw new Error("The user declined this change. No mutation was sent.");
+      if (!authorizeDatabase && !(await context.requestApproval(preview.message)))
+        throw new Error("The user declined this change. No mutation was sent.");
     }
     // Reuse the platform replay guard; these tools are not registered capabilities.
     const claim = WRITE_TOOLS.has(name)

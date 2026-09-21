@@ -25,6 +25,7 @@ export type RunSnapshot = {
   files: { name: string; size: number; type: string }[];
 };
 export type SessionOptions = {
+  unattended?: boolean;
   mode: "user" | "test";
   changed: (snapshot: RunSnapshot) => void;
   inputs?: File[];
@@ -106,6 +107,8 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
     },
     request: async (method, args, signal) => {
       if (method === "ui.modal") {
+        if (options.unattended)
+          throw new Error("Background code cannot open interactive dialogs. Return a result or explain missing inputs instead.");
         const request = ModalRequest.parse(args[0]);
         const previous = state.status;
         clearTimeout(watchdog);

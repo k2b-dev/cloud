@@ -1,6 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+  aiChatTasks,
   aiConversations,
+  authorizeCodeExecution,
   createAiConversationArtifact,
   createCodeCapabilityTransport,
   listAiConversationFiles,
@@ -13,8 +15,13 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { createCliCodeHost } from "../cli/code-host";
+import { runCodeAi } from "./ai-service";
 import { createArtifactServiceRoutes } from "./api";
+import { backgroundCodeRouteAllowed } from "./background-code-policy";
+import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
 import type { CodeToolContext } from "./code-tools";
+import { DatabaseRequest } from "./database-contracts";
+import { httpService } from "./http-service";
 import type { CodeApproval } from "./runtime/capabilities";
 
 export const AgentHostRequest = z
@@ -32,6 +39,10 @@ type Session = {
   phase: "starting" | "running";
   id: string;
   conversationId: string;
+  turnId: string;
+  key: string;
+  background: boolean;
+  context: CodeToolContext;
   host: Promise<Host>;
   lastUsed: number;
   busy: Set<string>;
@@ -47,7 +58,7 @@ const IDLE_MS = 120_000;
 const keyOf = (turnId: string, callId: string) => `${turnId}:${callId}`;
 
 async function closeSession(session: Session) {
-  if (sessions.get(session.conversationId) === session) sessions.delete(session.conversationId);
+  if (sessions.get(session.key) === session) sessions.delete(session.key);
   for (const resolve of session.decisions.values()) resolve(false);
   session.decisions.clear();
   await session.host.then(
@@ -60,29 +71,13 @@ async function closeSession(session: Session) {
 
 async function authorize(context: CodeToolContext, turnId: string) {
   if (context.actor.kind !== "user" || !context.conversationId) throw new Error("Code host requires a user conversation");
-  const conversation = await aiConversations.getConversation({
-    conversationId: context.conversationId,
-    ownerUserId: context.actor.user.id,
-  });
-  const active = await aiConversations.getActiveTurn({ conversationId: context.conversationId });
-  if (
-    !conversation ||
-    conversation.archivedAt ||
-    !active ||
-    active.turn.id !== turnId ||
-    active.turn.cancelRequestedAt ||
-    !["running", "waiting_for_action"].includes(active.turn.status)
-  )
-    throw new Error("The code host's conversation turn is no longer active");
-  return context.actor.user;
+  const { config } = await authorizeCodeExecution(context.conversationId, turnId, context.actor.user.id);
+  return { user: context.actor.user, key: config.background ? turnId : context.conversationId };
 }
 
 async function hostFetch(context: CodeToolContext, session: Session, path: string, init?: RequestInit): Promise<Response> {
   if (context.actor.kind !== "user" || !context.conversationId) throw new Error("User required");
-  const active = await aiConversations.getActiveTurn({ conversationId: context.conversationId });
-  if (!active || active.turn.cancelRequestedAt || (session.busy.size && session.lastCall?.turnId !== active.turn.id))
-    throw new Error("Conversation is no longer active");
-  await authorize(context, active.turn.id);
+  const { config } = await authorizeCodeExecution(context.conversationId, session.turnId, context.actor.user.id);
   const url = new URL(path, "http://localhost");
   const prefix = `/api/ai/conversations/${context.conversationId}/files`;
   if (url.pathname === prefix && (init?.method ?? "GET") === "GET")
@@ -120,11 +115,87 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
     return Response.json({ file: stored });
   }
   if (!url.pathname.startsWith("/api/assistant/artifacts/")) throw new Error("Code host request is outside its API boundary");
+  if (config.background && !backgroundCodeRouteAllowed(url.pathname.slice("/api/assistant/artifacts".length), init?.method ?? "GET"))
+    return Response.json(
+      {
+        code: "BACKGROUND_ACCESS_DENIED",
+        message:
+          "Background code must use task-approved capabilities for external data and effects. This operation requires an interactive run.",
+      },
+      { status: 403 },
+    );
+  const request = new Request(url, init);
+  const database = /^\/api\/assistant\/artifacts\/([^/]+)\/database(?:\/maintenance)?(\/connect)?$/.exec(url.pathname);
+  if (config.background && config.mandate && database && request.method === "POST") {
+    const input = database[2] ? { operation: "connect" } : DatabaseRequest.parse(await request.clone().json());
+    try {
+      await aiChatTasks.authorizeRuntime({
+        mandate: config.mandate,
+        kind: "database",
+        input: { resourceId: database[1], ...input, table: "table" in input ? input.table : "name" in input ? input.name : undefined },
+      });
+    } catch (error) {
+      return Response.json(
+        { code: "BACKGROUND_ACCESS_DENIED", message: error instanceof Error ? error.message : "Database access denied" },
+        { status: 403 },
+      );
+    }
+  }
   const router = new Hono<AuthContext>()
+    .onError((error) => Response.json({ code: "CODE_HOST_REQUEST_FAILED", message: error.message }, { status: 403 }))
     .use("*", async (c, next) => {
       c.set("actor", context.actor);
       c.set("accessSubject", context.accessSubject);
       await next();
+    })
+    .post("/api/assistant/artifacts/runtime/capabilities", async (c, next) => {
+      if (!config.background) return next();
+      const input = RuntimeCapabilityRequest.parse(await c.req.json());
+      if (input.conversationId !== context.conversationId) throw new Error("Code capability conversation mismatch");
+      return c.json(
+        await runtimeCapabilities.prepare(
+          input,
+          context,
+          {
+            transport: session.capabilityTransport,
+            origin: "assistant",
+            locale: context.locale,
+            signal: c.req.raw.signal,
+          },
+          true,
+        ),
+      );
+    })
+    .post("/api/assistant/artifacts/runtime/http/:callId", async (c, next) => {
+      if (!config.background || !config.mandate) return next();
+      const decision = z
+        .object({ approved: z.boolean() })
+        .strict()
+        .parse(await c.req.json());
+      return c.json(
+        await httpService.execute(c.req.param("callId"), decision.approved, context, c.req.raw.signal, undefined, async (stored) => {
+          if (stored.scope.conversationId !== context.conversationId) throw new Error("HTTP conversation mismatch");
+          await aiChatTasks.authorizeRuntime({
+            mandate: config.mandate!,
+            kind: "http",
+            input: {
+              url: stored.request.url,
+              origin: new URL(stored.request.url).origin,
+              method: stored.request.method,
+            },
+          });
+        }),
+      );
+    })
+    .post("/api/assistant/artifacts/runtime/ai", async (c, next) => {
+      if (!config.background) return next();
+      const input = z
+        .object({
+          request: z.unknown(),
+          scope: z.object({ conversationId: z.literal(context.conversationId!), resourceId: z.string().optional() }),
+        })
+        .parse(await c.req.json());
+      return c.json({ output: await runCodeAi(input.request, input.scope, context, c.req.raw.signal, session.turnId) });
     })
     .route(
       "/api/assistant/artifacts",
@@ -135,18 +206,29 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
         signal: init?.signal ?? undefined,
       })),
     );
-  return router.fetch(new Request(url, init));
+  return router.fetch(request);
 }
 
-async function createSession(context: CodeToolContext): Promise<Session> {
+async function createSession(context: CodeToolContext, turnId: string): Promise<Session> {
+  if (context.actor.kind !== "user") throw new Error("User required");
   if (!context.conversationId) throw new Error("Conversation required");
-  const existing = sessions.get(context.conversationId);
-  if (existing) return existing;
+  const { config } = await authorizeCodeExecution(context.conversationId, turnId, context.actor.user.id);
+  const key = config.background ? turnId : context.conversationId;
+  const existing = sessions.get(key);
+  if (existing) {
+    existing.turnId = turnId;
+    existing.context = context;
+    return existing;
+  }
   if (sessions.size >= MAX_HOSTS) throw new Error("Code hosts are busy. Retry after a current run finishes.");
   const session: Session = {
     phase: "starting",
     id: crypto.randomUUID(),
     conversationId: context.conversationId,
+    turnId,
+    key,
+    background: Boolean(config.background),
+    context,
     lastUsed: Date.now(),
     busy: new Set(),
     decisions: new Map(),
@@ -158,6 +240,21 @@ async function createSession(context: CodeToolContext): Promise<Session> {
       createCliCodeHost(
         { fetch: (path, init) => hostFetch(context, session, String(path), init) },
         async (approval) => {
+          const { config } = await authorizeCodeExecution(
+            context.conversationId!,
+            session.turnId,
+            context.actor.kind === "user" ? context.actor.user.id : "",
+          );
+          if (config.background && config.mandate) {
+            if (!("type" in approval) || approval.type !== "http")
+              throw new Error("Background code cannot request interactive approval. Update the task in the normal chat.");
+            await aiChatTasks.authorizeRuntime({
+              mandate: config.mandate,
+              kind: "http",
+              input: { url: approval.url, origin: new URL(approval.url).origin, method: approval.method },
+            });
+            return { approved: true };
+          }
           if (!session.lastCall) throw new Error("Approval has no originating code call");
           const { turnId, callId } = session.lastCall;
           const id = z.uuid().parse(approval.id);
@@ -167,11 +264,14 @@ async function createSession(context: CodeToolContext): Promise<Session> {
           session.decisions.delete(id);
           return { approved };
         },
-        env.NODE_ENV === "production" ? { entry: new URL("./assistant-code-host-process.js", import.meta.url).pathname } : undefined,
+        {
+          unattended: Boolean(config.background),
+          ...(env.NODE_ENV === "production" ? { entry: new URL("./assistant-code-host-process.js", import.meta.url).pathname } : {}),
+        },
       ),
     ),
   };
-  sessions.set(context.conversationId, session);
+  sessions.set(key, session);
   void session.host.then(
     () => {
       session.phase = "running";
@@ -188,7 +288,7 @@ function approvalMessage(approval: CodeApproval) {
 
 export const agentHost = {
   async call(call: Call, context: CodeToolContext) {
-    const user = await authorize(context, call.turnId);
+    const { user, key: sessionKey } = await authorize(context, call.turnId);
     const input = parseCodeToolInput(call.name, call.args);
     const key = keyOf(call.turnId, call.callId);
     let [row] = await sql<
@@ -196,7 +296,7 @@ export const agentHost = {
     >`SELECT host_id,input,status,result FROM assistant.artifact_agent_calls
       WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND user_id=${user.id}::uuid`;
     if (row && !isDeepStrictEqual(row.input, input)) throw new Error("Code call input changed; no replay performed");
-    let session = sessions.get(context.conversationId!);
+    let session = sessions.get(sessionKey);
     if (row?.status === "running" && (!session || session.id !== row.host_id || !session.busy.has(key))) {
       const changed =
         await sql`UPDATE assistant.artifact_agent_calls SET status='lost',updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND status='running' RETURNING call_id`;
@@ -212,7 +312,7 @@ export const agentHost = {
       }
     }
     if (!row) {
-      session = await createSession(context);
+      session = await createSession(context, call.turnId);
       if (context.capabilityToken)
         session.capabilityContext = { conversationId: context.conversationId!, turnId: call.turnId, token: context.capabilityToken };
       if (session.busy.size) return { status: "busy", phase: "busy", approvals: [] };
@@ -286,19 +386,22 @@ export const agentHost = {
   },
   async sweep() {
     for (const session of sessions.values()) {
-      const active = await aiConversations.getActiveTurn({ conversationId: session.conversationId });
-      if (
-        active?.turn.cancelRequestedAt ||
-        (session.busy.size && session.lastCall?.turnId !== active?.turn.id) ||
-        (!active && Date.now() - session.lastUsed > IDLE_MS)
-      )
-        await closeSession(session);
-      else {
-        try {
-          await (await session.host).health();
-        } catch {
-          await closeSession(session);
+      try {
+        if (session.background) await authorize(session.context, session.turnId);
+        else {
+          const active = await aiConversations.getActiveTurn({ conversationId: session.conversationId });
+          if (
+            active?.turn.cancelRequestedAt ||
+            (session.busy.size && session.lastCall?.turnId !== active?.turn.id) ||
+            (!active && Date.now() - session.lastUsed > IDLE_MS)
+          ) {
+            await closeSession(session);
+            continue;
+          }
         }
+        await (await session.host).health();
+      } catch {
+        await closeSession(session);
       }
     }
   },

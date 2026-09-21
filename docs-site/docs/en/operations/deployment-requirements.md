@@ -90,6 +90,28 @@ receive `operation_busy`. Size memory for the existing 50 MiB per-file and
 250 MiB per-run code budgets plus Chromium; streaming transport does not remove
 the memory occupied by files loaded for analysis.
 
+### Assistant Chromium isolation
+
+Assistant runs headless Chromium in its own container as the unprivileged
+`bun` user with `--no-sandbox`. Both Compose configurations set `user: bun`,
+drop all Linux capabilities and enable `no-new-privileges`; the container keeps
+the runtime-default seccomp profile. Chromium's inner sandbox stays off, so no
+custom seccomp profile, unprivileged user namespaces or node preparation is
+needed, and the service needs neither privileged mode, root, `SYS_ADMIN`, a
+Docker socket nor nested containers. Existing custom Assistant deployments must
+adopt these settings before using Code Mode. The equivalent Kubernetes
+`securityContext` is `runAsNonRoot: true` with a non-root `runAsUser`,
+`capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false` and
+`seccompProfile.type: RuntimeDefault`.
+
+Each foreground chat host and scheduled turn has a separate browser process
+and ephemeral host credential. This is process isolation within one
+capability-free application container, not a separate VM per user; the
+residual risk of an unsandboxed renderer inside that container is accepted and
+tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
+Chromium into a dedicated sidecar. Keep one Assistant replica for now; lost
+hosts are not replayed. Studio previews continue running in the user's browser.
+
 ## Select applications and feature dependencies
 
 **Baseline** below means Postgres, Valkey, NATS JetStream, `APP_SECRET`, completed Core schema

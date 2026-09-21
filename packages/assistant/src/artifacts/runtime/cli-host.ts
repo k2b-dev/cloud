@@ -5,6 +5,7 @@ import type { CapabilityDecision, CodeApproval } from "./capabilities";
 
 declare global {
   interface Window {
+    assistantCodeUnattended?: boolean;
     assistantCodeApprove: (request: CodeApproval) => Promise<CapabilityDecision>;
     assistantCodeExecute: (call: Parameters<AiFrontendToolHandler>[0]) => ReturnType<AiFrontendToolHandler>;
     assistantCodeCall: (call: Parameters<AiFrontendToolHandler>[0]) => ReturnType<AiFrontendToolHandler>;
@@ -17,8 +18,20 @@ createRoot(() => {
   const httpHost = {
     approve: async (request: import("../http-host").HttpApproval) => (await window.assistantCodeApprove(request)).approved,
   };
-  const handlers = createArtifactAgentRuntime(null, (request) => window.assistantCodeApprove(request), "chat-tool", httpHost);
-  const standalone = createArtifactAgentRuntime(null, (request) => window.assistantCodeApprove(request), "standalone", httpHost);
+  const handlers = createArtifactAgentRuntime(
+    null,
+    (request) => window.assistantCodeApprove(request),
+    "chat-tool",
+    httpHost,
+    window.assistantCodeUnattended,
+  );
+  const standalone = createArtifactAgentRuntime(
+    null,
+    (request) => window.assistantCodeApprove(request),
+    "standalone",
+    httpHost,
+    window.assistantCodeUnattended,
+  );
   window.assistantCodeExecute = (call) => {
     const handler = standalone[call.name];
     if (!handler) throw new Error("Unknown code runtime operation");

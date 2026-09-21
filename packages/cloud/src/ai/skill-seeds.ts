@@ -296,9 +296,17 @@ refer to an existing schedule, list tasks before creating a duplicate.
    notebook constraint exists on an action that accepts only a note ID.
 4. Explain the scope through the normal create/update review. Grants authorize
    this task's capability use, not new access to resources. Always-approval
-   capabilities cannot be granted. Interactive browser and Code Mode are not
-   available in background runs; explain an unsupported requirement rather than
-   promising it will work unattended.
+   capabilities cannot be granted. Code Mode can run unattended on the server:
+   load its Skill for calculations, chat-file processing, AI tasks and exports.
+   Code capability calls inherit this task's grants, including fixed inputs.
+   HTTP and RSQL use the same grants list: kind http with fixedInput fields
+   origin, url and/or method; kind database with resourceId, operation and/or
+   table. Empty fixedInput grants all supported targets/operations within current
+   access. Prefer a resourceId-only database grant when a task needs connect and
+   multiple operations; a fixed operation also requires a separate connect grant.
+   HTTP secrets must already be configured in the chat or app. Interactive dialogs,
+   secret entry and capability binary streams are unavailable in scheduled code.
+   Explain those requirements instead of promising unattended interaction.
 5. Create the task. Confirm its actual saved timing, timezone and destination only
    after success. Queued or manually started does not mean completed.
 
@@ -430,7 +438,7 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
   ASSISTANT_CODE_MODE_SKILL,
   ASSISTANT_DATA_ANALYSIS_SKILL,
   {
-    version: 4,
+    version: 5,
     key: "grids:cloud-grids",
     name: "cloud-grids",
     description:
@@ -447,7 +455,7 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
     instructions: CLOUD_ASSISTANT_INSTRUCTIONS,
   },
   {
-    version: 1,
+    version: 2,
     key: "assistant:scheduled-tasks",
     name: "scheduled-tasks",
     description:

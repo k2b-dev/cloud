@@ -3,7 +3,7 @@ import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capa
 
 type Call = Parameters<AiFrontendToolHandler>[0];
 export type HostRequest =
-  | { operation: "start"; origin: string; token: string }
+  | { operation: "start"; origin: string; token: string; unattended?: boolean }
   | { operation: "health" }
   | { operation: "close" }
   | { operation: "execute" | "call"; call: Call }

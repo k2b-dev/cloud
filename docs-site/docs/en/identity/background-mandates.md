@@ -247,6 +247,24 @@ ordinary effect-time permission checks.
 An app workload credential cannot use the ordinary interactive capability
 route to bypass the mandate.
 
+## Scheduled Assistant runtime grants
+
+Scheduled tasks keep capability, HTTP, and RSQL access in the same mandate
+`grants` list. Capability entries use `appId`, `capabilityId`, `kind`, and
+`fixedInput`. Code Mode entries use `kind: "http"` or `kind: "database"` and
+`fixedInput`: HTTP can fix an HTTPS origin, exact URL, and method; database
+access can fix a Studio app ID, operation, and table. Omitted fields are free
+for the task to choose. An empty object explicitly grants unrestricted inputs
+for that kind, within the runtime's existing limits and current resource access.
+
+The ordinary task approval describes these grants before they are saved.
+Runtime calls check the stored mandate revision and exact fixed values; HTTP
+checks again immediately before sending. Personal remembered approvals do not
+replace task grants. Expanding a grant needs a new interactive confirmation.
+Table-scoped grants do not authorize arbitrary SQL, export, or connection setup;
+those operations need a separate matching grant. See
+[Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming) for examples.
+
 ## Handle lifecycle and retries
 
 Persist the mandate ID and revision with the workload. A policy update,

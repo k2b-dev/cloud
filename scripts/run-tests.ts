@@ -8,10 +8,14 @@
  *   bun scripts/run-tests.ts --shard 2/4        deterministic slice of the suite list
  *
  * Every `bun test` this runner spawns loads `scripts/fixtures/test-infra.ts`
- * first. Package-owned `test` scripts receive it through `BUN_OPTIONS`.
+ * first. Package-owned `test` scripts receive it through `BUN_OPTIONS`. The
+ * runtime aliases for `CLOUD_TEST_*` are exported into every child before Bun
+ * starts because Bun's default `redis` handle reads `REDIS_URL` at startup,
+ * ahead of any preload.
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { applyTestRuntimeEnv } from "./fixtures/test-infra-env";
 
 type PackageJson = {
   name?: string;
@@ -138,13 +142,15 @@ const run = async (): Promise<void> => {
 
   const suites = await discoverTestSuites(workspaceRoot, options);
   const preload = `--preload=${join(workspaceRoot, "scripts", "fixtures", "test-infra.ts")}`;
+  const env: Record<string, string | undefined> = { ...Bun.env };
+  applyTestRuntimeEnv(env);
   const failed: string[] = [];
 
   if (options.integration && process.env.CLOUD_TEST_DATABASE_URL) {
     console.log("\n=== integration database bootstrap ===");
     const bootstrap = Bun.spawn(["bun", join(workspaceRoot, "scripts", "fixtures", "integration-bootstrap.ts")], {
       cwd: workspaceRoot,
-      env: Bun.env,
+      env,
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",
@@ -159,7 +165,7 @@ const run = async (): Promise<void> => {
     console.log(`\n=== ${suite.name} ===`);
     const child = Bun.spawn(suite.command, {
       cwd: suite.cwd,
-      env: suite.command[1] === "run" ? { ...Bun.env, BUN_OPTIONS: [Bun.env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : Bun.env,
+      env: suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",

@@ -5,6 +5,7 @@ const messages = i18n.define({
   messages: {
     en: {
       required: "required",
+      resource: "must be a Cloud resource reference (type, id and optional title)",
       config: "invalid field config",
       text: "must be a string",
       boolean: "must be a boolean",
@@ -53,6 +54,7 @@ const messages = i18n.define({
       calculationTooLarge: "Der berechnete Wert ist zu groß. Verkleinere die Werte oder vereinfache die Formel.",
       calculationFailed: "Der Wert konnte nicht berechnet werden. Prüfe die Formel und ihre Eingabewerte.",
       required: "Bitte einen Wert eingeben.",
+      resource: "Bitte eine Cloud-Ressourcenreferenz mit type, id und optional title angeben.",
       config: "Die Feldeinstellungen sind ungültig.",
       text: "Bitte Text eingeben.",
       boolean: "Bitte Ja oder Nein auswählen.",

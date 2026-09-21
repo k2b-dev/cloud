@@ -843,3 +843,43 @@ test("native host transport reads and writes a 50 MiB binary file without IPC bo
     await host.close();
   }
 }, 60000);
+
+test("unattended code runs without a tab, keeps hosts isolated and rejects user dialogs", async () => {
+  const bundle = await cliHostBundle();
+  const fetchHost = async (input: string | URL | Request, init?: RequestInit) => {
+    const path = String(input);
+    if (path.endsWith("host.js")) return new Response(bundle);
+    if (path.endsWith("/compile")) return Response.json(await compileArtifact(JSON.parse(await new Response(init?.body).text())));
+    if (path.includes("/files")) return Response.json({ files: [] });
+    throw new Error(`Unexpected unattended request ${path}`);
+  };
+  const first = await createCliCodeHost({ fetch: fetchHost }, undefined, { unattended: true });
+  let second: Awaited<ReturnType<typeof createCliCodeHost>> | undefined;
+  const ids = { conversationId: crypto.randomUUID(), turnId: crypto.randomUUID() };
+  try {
+    second = await createCliCodeHost({ fetch: fetchHost }, undefined, { unattended: true });
+    const call = {
+      ...ids,
+      name: "code_run",
+      callId: "isolated",
+      args: { code: "export default () => { globalThis.marker = 123; return 42; }" },
+    };
+    expect(await first.execute(call)).toMatchObject({ status: "ready", output: "42" });
+    expect(
+      await second.execute({ ...call, turnId: crypto.randomUUID(), args: { code: "export default () => typeof globalThis.marker;" } }),
+    ).toMatchObject({ status: "ready", output: '"undefined"' });
+    expect(
+      await first.execute({
+        ...call,
+        callId: "dialog",
+        args: { code: 'export default async () => await ui.modal.confirm({title:"Confirm",message:"Continue?"});' },
+      }),
+    ).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("Background"),
+    });
+  } finally {
+    await first.close();
+    await second?.close();
+  }
+}, 60000);

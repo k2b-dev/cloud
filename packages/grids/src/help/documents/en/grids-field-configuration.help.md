@@ -100,3 +100,7 @@ Each column has:
 Select columns and regex rules are input-only. Calculated columns use the supported scalar formula types. The editor displays calculations read-only and the server recomputes them; submitted computed values are not trusted.
 
 For list reductions use `LIST_SUM(Items, 'Amount')`, `LIST_AVG`, `LIST_MIN`, `LIST_MAX`, and `LIST_COUNT`. Empty lists sum/count to zero; a missing list is not an empty list. See [Formulas](/app/grids/help/grids-formulas) for expressions and [Forms](/app/grids/help/grids-forms) for layout and form-specific defaults.
+
+## Cloud resource {icon="link"}
+
+Use `resource` with config `{}` to select one resource with the Cloud picker. It stores `{type, id, title?}`. The optional title is retained text; opening uses the current canonical reader and permissions. No URL, token or access grant is stored. Use File for Grids-owned uploads and Relation for links between Grids records.

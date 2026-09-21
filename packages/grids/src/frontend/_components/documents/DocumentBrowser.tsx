@@ -1,10 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, IconButton, Placeholder, ScrollArea, Tag, useLocale } from "@k2b/ui";
-import { For, Show } from "solid-js";
+import { Button, IconButton, Placeholder, prompts, ScrollArea, Tag, useLocale } from "@k2b/ui";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { documentActionState } from "./document-browser-model";
+import { downloadDocumentFolder, FolderDownloadError } from "./document-folder-download";
+import { requestDocumentDownload } from "./document-transfer-client";
 import { formatDocumentRelativeTime } from "./document-workspace-utils";
 import { documentMessages } from "./messages";
-import type { PublicDocument, PublicDocumentFolder } from "./public-document-types";
+import type { PublicDocument, PublicDocumentBrowseResponse, PublicDocumentFolder } from "./public-document-types";
 
 export type DocumentBreadcrumb = { label: string; path: string[] };
 
@@ -30,6 +32,7 @@ type Props = {
   onLink: (document: PublicDocument) => void;
   onDownload: (document: PublicDocument) => void;
   onLoadMore: () => void;
+  loadFolderPage?: (path: string[], cursor: string | null, signal: AbortSignal) => Promise<PublicDocumentBrowseResponse>;
 };
 
 function DocumentTags(props: { tags: string[] }) {
@@ -52,6 +55,39 @@ export default function DocumentBrowser(props: Props) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
   const dateConfig = () => ({ ...props.dateConfig, locale: locale() });
+  const [activeFolder, setActiveFolder] = createSignal<string | null>(null);
+  const [downloaded, setDownloaded] = createSignal(0);
+  let downloadController: AbortController | undefined;
+  onCleanup(() => downloadController?.abort());
+  const downloadFolder = async (folder: PublicDocumentFolder) => {
+    if (downloadController || !props.loadFolderPage) return;
+    const controller = new AbortController();
+    downloadController = controller;
+    setActiveFolder(JSON.stringify(folder.path));
+    setDownloaded(0);
+    try {
+      await downloadDocumentFolder({
+        path: folder.path,
+        signal: controller.signal,
+        loadPage: props.loadFolderPage,
+        download: (document, signal) => requestDocumentDownload(document.id, signal),
+        onProgress: setDownloaded,
+      });
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        const message =
+          error instanceof FolderDownloadError && error.reason === "limit"
+            ? t().folderDownloadTooLarge
+            : error instanceof FolderDownloadError && error.reason === "empty"
+              ? t().emptyFolder
+              : t().folderDownloadFailed;
+        void prompts.error(message);
+      }
+    } finally {
+      downloadController = undefined;
+      setActiveFolder(null);
+    }
+  };
   const renderDocumentActions = (document: PublicDocument) => {
     const state = () => documentActionState(props.canWrite, props.busyDocumentId, document.id);
     return (
@@ -100,7 +136,17 @@ export default function DocumentBrowser(props: Props) {
   };
 
   return (
-    <section class="min-h-0 flex-1 overflow-hidden">
+    <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <Show when={activeFolder()}>
+        <div class="flex shrink-0 items-center gap-2 px-3 py-2">
+          <span class="text-xs text-dimmed" role="status">
+            {t().folderDownloadProgress({ count: downloaded() })}
+          </span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => downloadController?.abort()}>
+            {t().cancel}
+          </Button>
+        </div>
+      </Show>
       <Show
         when={!props.loading}
         fallback={<Placeholder state="loading" class="h-full" title={t().loadingDocuments} description={t().readingGeneratedDocuments} />}
@@ -116,7 +162,7 @@ export default function DocumentBrowser(props: Props) {
             />
           }
         >
-          <div class="flex h-full min-h-0 flex-col overflow-hidden">
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
             <Show when={props.mode === "folders" && !props.searching}>
               <div class="flex shrink-0 items-center gap-1 px-3 py-2 text-xs text-secondary">
                 <For each={props.breadcrumbs}>
@@ -147,24 +193,47 @@ export default function DocumentBrowser(props: Props) {
                 <Show when={props.mode === "folders" && !props.searching && props.folders.length > 0}>
                   <For each={props.folders}>
                     {(folder) => (
-                      <button
-                        type="button"
-                        class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--ui-paper-highlighted)]"
-                        onClick={() => props.onFolder(folder)}
-                      >
-                        <div class="flex min-w-0 items-center gap-2">
-                          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-                            <i class="ti ti-folder" />
-                          </span>
-                          <span class="min-w-0">
-                            <span class="block truncate font-medium text-primary">{props.folderTitle(folder)}</span>
-                            <span class="block text-xs text-dimmed">
-                              {t().documentCount({ count: folder.count, formatted: new Intl.NumberFormat(locale()).format(folder.count) })}
+                      <div class="flex items-center">
+                        <button
+                          type="button"
+                          class="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--ui-paper-highlighted)]"
+                          onClick={() => props.onFolder(folder)}
+                        >
+                          <div class="flex min-w-0 items-center gap-2">
+                            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
+                              <i class="ti ti-folder" />
                             </span>
-                          </span>
-                        </div>
-                        <i class="ti ti-chevron-right text-dimmed" />
-                      </button>
+                            <span class="min-w-0">
+                              <span class="block truncate font-medium text-primary">{props.folderTitle(folder)}</span>
+                              <span class="block text-xs text-dimmed">
+                                {t().documentCount({
+                                  count: folder.count,
+                                  formatted: new Intl.NumberFormat(locale()).format(folder.count),
+                                })}
+                              </span>
+                            </span>
+                          </div>
+                          <i class="ti ti-chevron-right text-dimmed" />
+                        </button>
+                        <Show when={props.loadFolderPage}>
+                          <Show
+                            when={activeFolder() === JSON.stringify(folder.path)}
+                            fallback={
+                              <IconButton
+                                variant="ghost"
+                                size="sm"
+                                label={t().downloadFolderZip}
+                                disabled={activeFolder() !== null}
+                                onClick={() => void downloadFolder(folder)}
+                              >
+                                <i class="ti ti-download" />
+                              </IconButton>
+                            }
+                          >
+                            <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
+                          </Show>
+                        </Show>
+                      </div>
                     )}
                   </For>
                 </Show>

@@ -75,6 +75,7 @@ if (argv.includes("--bootstrap")) {
   ];
   const dom = [
     special[5]!,
+    "src/frontend/_components/table/ResourceValue.behavior.test.tsx",
     "src/frontend/_components/records/RecordReadView.behavior.test.tsx",
     "src/frontend/_components/custom-apps/CustomAppBlockPreview.behavior.test.tsx",
     "src/frontend/_components/workspace/BaseOverview.behavior.test.tsx",
