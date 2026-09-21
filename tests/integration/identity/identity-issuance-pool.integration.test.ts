@@ -1,20 +1,25 @@
-import { afterAll, beforeAll, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import * as bun from "bun";
 import { createLocalJWKSet } from "jose";
 import { z } from "zod";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../../packages/cloud/src/_internal/process-identity";
-import { createDisposableDatabase, testInfra } from "../../../scripts/fixtures/test-infra";
+import { testInfra, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 
-// Run this file alone: replacing Bun's default SQL handle ensures preparation,
-// guarded transactions, mandates and audits all compete for the SAME real pool.
+// Run this file alone: `useFreshDatabase` binds Bun's default SQL handle to a
+// private database that `runCoreSetup` prepares exactly like production. The
+// issuance path under test (guarded transactions, mandates, audits) then runs
+// on `pool`, one real connection to that same database. Key preparation and
+// JWKS reads keep using the default handle, as they do in production.
 if (!testInfra.database) {
   test.skip("single-connection identity issuance integration (CLOUD_TEST_DATABASE_URL)", () => {});
 } else {
-  const fresh = await createDisposableDatabase("identity_pool");
-  afterAll(() => fresh.drop());
+  const fresh = await useFreshDatabase("identity_pool");
   const databaseUrl = new URL(fresh.url);
   const pool = new bun.SQL(databaseUrl, { max: 1, connectionTimeout: 5, idleTimeout: 0 });
-  mock.module("bun", () => ({ ...bun, sql: pool }));
+  afterAll(async () => {
+    await bun.sql.close({ timeout: 5 });
+    await fresh.drop();
+  });
   const identity = await import("../../../packages/cloud/src/services/identity");
   const runtimeConfig = await import("../../../packages/cloud/src/services/identity/runtime-config");
   const settings = await import("../../../packages/cloud/src/services/settings");
@@ -85,17 +90,13 @@ if (!testInfra.database) {
       { pool },
     );
 
-  // Never ran in CI before the release train: the suite migrates auth/audit/settings in an order that leaves settings.entries missing. Tracked in #6.
-  describe.todo("identity issuance with one real Postgres connection", () => {
+  describe("identity issuance with one real Postgres connection", () => {
     beforeAll(async () => {
       bindProcessApplicationId("core");
       process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "31".repeat(32);
       delete process.env.CLOUD_IDENTITY_PREVIOUS_KEY;
       delete process.env.CLOUD_IDENTITY_NEXT_KEY;
-      await (await import("../../../packages/core/src/migrate/core/auth")).migrate();
-      await (await import("../../../packages/core/src/migrate/core/audit")).migrate();
-      await (await import("../../../packages/core/src/migrate/core/settings")).migrate();
-      await (await import("../../../packages/core/src/migrate/core/logging")).migrate();
+      await (await import("../../../packages/core/src/runtime-helpers")).runCoreSetup();
       await pool`INSERT INTO settings.entries (key, value) VALUES ('app.url', ${JSON.stringify(issuer)}), ('freeipa.groups.admin', '[]')`;
       const [user] = await pool<
         { id: string }[]
@@ -109,7 +110,7 @@ if (!testInfra.database) {
       mandateId = mandate!.id;
       identity.clearIdentityKeyCachesForTest();
       runtimeConfig.invalidateIdentityRuntimeConfig();
-    }, 60_000);
+    }, 120_000);
 
     afterAll(async () => {
       clearProcessApplicationId();
