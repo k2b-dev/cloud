@@ -1,5 +1,15 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Disclosure, InlineGuidance, NoticeCard, Select, SettingsPage, SettingsPanelFooter, SettingsSection, Switch, TextInput } from "@k2b/ui";
+import {
+  Disclosure,
+  InlineGuidance,
+  NoticeCard,
+  Select,
+  SettingsPage,
+  SettingsPanelFooter,
+  SettingsSection,
+  Switch,
+  TextInput,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";

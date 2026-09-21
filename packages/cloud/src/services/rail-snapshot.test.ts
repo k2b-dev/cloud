@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
-import { buildProjectedUser } from "./session/user";
 import { createRailSnapshotReader, setRailCacheVersion } from "./rail-snapshot";
+import { buildProjectedUser } from "./session/user";
 
 const user = (id: string = crypto.randomUUID(), version = "one") =>
   buildProjectedUser({ id, provider: "local", profile: "user", rail_cache_version: version });

@@ -1,8 +1,8 @@
-import ToolsNavigation from "./ToolsNavigation.island";
 import { i18n } from "@k2b/stdlib";
 import { AppWorkspace, useLocale } from "@k2b/ui";
 import { createMemo, type JSX } from "solid-js";
 import ToolSearchButton from "./ToolSearchButton.island";
+import ToolsNavigation from "./ToolsNavigation.island";
 import { categoryOrder, type LocalizedTool, resolveRegistry } from "./tools/registry";
 
 export const toolsWorkspaceMessages = i18n.define({

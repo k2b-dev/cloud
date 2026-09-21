@@ -108,11 +108,7 @@ export const createCloudAiMemoryTool = (evidence = "") =>
     }
 
     const memory = await aiMemories.getByShortId(userId, input.id);
-    if (
-      memory &&
-      !memoryMutationSupportedByEvidence(evidence, input.id) &&
-      !memoryMutationSupportedByEvidence(evidence, memory.content)
-    ) {
+    if (memory && !memoryMutationSupportedByEvidence(evidence, input.id) && !memoryMutationSupportedByEvidence(evidence, memory.content)) {
       return { ok: false, message: "A memory can only be forgotten when the user identifies it in this turn." };
     }
     if (!memory || !(await aiMemories.deleteByShortId(userId, input.id))) return { ok: false, message: "Memory not found." };

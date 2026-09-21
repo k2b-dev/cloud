@@ -143,9 +143,7 @@ export default function EncodingTool() {
 
         <TextInput
           label={direction() === "encode" ? t().inputTextLabel : t().formatInputLabel({ format: FORMAT_NAMES[format()] })}
-          description={
-            direction() === "encode" ? t().encodeDescription : t().decodeDescription({ format: FORMAT_NAMES[format()] })
-          }
+          description={direction() === "encode" ? t().encodeDescription : t().decodeDescription({ format: FORMAT_NAMES[format()] })}
           placeholder={direction() === "encode" ? t().encodePlaceholder : t().decodePlaceholder}
           multiline
           value={input}

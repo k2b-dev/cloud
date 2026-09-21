@@ -1,12 +1,12 @@
-import { CommandPathSchema } from "@k2b/cloud/contracts";
 import { consumeCommandLink, openCommand, registerCommandHandler } from "@k2b/cloud/browser/commands";
 import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
-import { z } from "zod";
-import { MailComposeCommandInputSchema, mailCommandMessages } from "../../commands";
+import { CommandPathSchema } from "@k2b/cloud/contracts";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, NoticeCard, Placeholder, prompts, ScrollArea, Select, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { z } from "zod";
 import { apiClient } from "../../api/client";
+import { MailComposeCommandInputSchema, mailCommandMessages } from "../../commands";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
 import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";

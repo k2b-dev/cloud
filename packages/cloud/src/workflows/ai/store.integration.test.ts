@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { StructuredOutputError } from "@k2b/nessi";
 import { sql } from "bun";
+import type { z } from "zod";
 import { migrate as migrateWorkflows } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
+import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
 import type { WorkflowBoundPlan } from "../contracts";
 import { hashWorkflowJson } from "../language/canonical";
 import { defineWorkflowModule } from "../module";
 import { createWorkflow, publishWorkflowVersion } from "../store/definitions";
 import { emitWorkflowEvent } from "../store/events";
 import { requestWorkflowRunCancel } from "../store/runs";
-import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
-import type { z } from "zod";
 import { processWorkflowAiTask, settleWorkflowAiAttemptFailure } from "./runtime";
 import {
   claimWorkflowAiTask,

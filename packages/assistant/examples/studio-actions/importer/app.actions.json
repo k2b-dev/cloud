@@ -26,17 +26,12 @@
                   "maxLength": 500
                 }
               },
-              "required": [
-                "key",
-                "value"
-              ],
+              "required": ["key", "value"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "additionalProperties": false
       },
       "outputSchema": {
@@ -49,10 +44,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "inserted",
-          "skipped"
-        ],
+        "required": ["inserted", "skipped"],
         "additionalProperties": false
       }
     }

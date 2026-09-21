@@ -1,3 +1,15 @@
+import type { AuthContext } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import {
+  accounts,
+  accountsAppService as accountsService,
+  type NotificationBatch,
+  type NotificationBatchRecipient,
+  type NotificationBatchRecipientStatus,
+  notificationBatches,
+} from "@k2b/cloud/services";
+import { formatNumber } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import {
   DataTable,
@@ -12,18 +24,6 @@ import {
   StatusBadge,
   type StatusTone,
 } from "@k2b/ui";
-import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import {
-  accounts,
-  accountsAppService as accountsService,
-  type NotificationBatch,
-  type NotificationBatchRecipient,
-  type NotificationBatchRecipientStatus,
-  notificationBatches,
-} from "@k2b/cloud/services";
-import { formatNumber } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
 import { z } from "zod";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";

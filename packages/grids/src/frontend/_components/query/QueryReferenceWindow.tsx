@@ -1,6 +1,6 @@
+import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import {
   AppWorkspace,
-  Select,
   ButtonLink,
   CopyButton,
   DataTable,
@@ -12,10 +12,10 @@ import {
   DocPage,
   DocRows,
   DocSection,
+  Select,
   Tag,
   useLocale,
 } from "@k2b/ui";
-import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import { createMemo, For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicTable as Table, PublicView as View } from "../../../api/public-dto";
 import { GRID_FORMULA_FUNCTIONS } from "../../../formula/function-catalog";
@@ -318,12 +318,22 @@ function ReferenceSidebar(props: { activeTab: GqlReferenceTab; baseId: string; b
 
   return (
     <>
-    <div class="p-3 lg:hidden"><Select label={t.gridsReference} options={referenceTabs(t).map(tab => ({ id: tab.value, label: tab.label }))} value={() => props.activeTab} onValueChange={value => { const tab = referenceTabs(t).find(tab => tab.value === value); if (tab) window.location.assign(referenceTabHref(props.baseId, tab.value)); }} /></div>
-    <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarDesktop>
-        <AppWorkspace.SidebarBody scrollPreserveKey="grids-query-reference-sidebar">{items}</AppWorkspace.SidebarBody>
-      </AppWorkspace.SidebarDesktop>
-    </AppWorkspace.Sidebar>
+      <div class="p-3 lg:hidden">
+        <Select
+          label={t.gridsReference}
+          options={referenceTabs(t).map((tab) => ({ id: tab.value, label: tab.label }))}
+          value={() => props.activeTab}
+          onValueChange={(value) => {
+            const tab = referenceTabs(t).find((tab) => tab.value === value);
+            if (tab) window.location.assign(referenceTabHref(props.baseId, tab.value));
+          }}
+        />
+      </div>
+      <AppWorkspace.Sidebar>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarBody scrollPreserveKey="grids-query-reference-sidebar">{items}</AppWorkspace.SidebarBody>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
     </>
   );
 }

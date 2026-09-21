@@ -3,8 +3,8 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, prompts, SettingsGroup, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { Notebook } from "../sidebar/types";
-import { readErrorMessage } from "./utils";
 import { notebookSettingsMessages } from "./messages";
+import { readErrorMessage } from "./utils";
 
 export function DangerZone(props: { notebook: Notebook }) {
   const locale = useLocale();

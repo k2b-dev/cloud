@@ -1,4 +1,6 @@
 # Disposable integration infrastructure, independent of the development stack.
+# Used by the nightly NATS cluster job in .github/workflows/nightly.yml; it is not
+# part of any Cloud deployment.
 name: cloud-sync-test
 
 x-nats: &nats

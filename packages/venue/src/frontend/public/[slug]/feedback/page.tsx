@@ -1,5 +1,5 @@
-import { coreSettings } from "@k2b/cloud/services";
 import { getLocale } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
 import { ssr } from "../../../../config";
 import { venueMessages } from "../../../../messages";
 import { venueService } from "../../../../service";

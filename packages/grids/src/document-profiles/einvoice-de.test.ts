@@ -4,6 +4,7 @@ import { unwrap } from "@k2b/stdlib";
 import { einvoice } from "@k2b/stdlib/finance";
 import { validateInvoiceXml } from "@k2b/stdlib/finance/validate";
 import { PDFDocument } from "pdf-lib";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import {
   buildGermanEInvoiceXml,
   createGermanBillingProfile,
@@ -38,11 +39,11 @@ const context = { number: "RE-2026-000001", issuedAt: new Date("2026-08-22T10:00
 
 // Explicit opt-in: exercises the external renderer, not a successful mock.
 // No DB writes, no bank calls, no production URL inferred from settings.
-const livePdfTest = process.env.GRIDS_GOTENBERG_TEST_URL ? test : test.skip;
+const livePdfTest = testFor("gotenberg");
 livePdfTest(
   "real Gotenberg produces readable PDF/XML for invoices, corrections and self-billing",
   async () => {
-    const url = new URL(process.env.GRIDS_GOTENBERG_TEST_URL!);
+    const url = new URL(testInfra.gotenberg ?? "");
     if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Local renderer test only");
     const config = { url: url.toString(), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 20 * 1024 * 1024 };
     for (const billing of [

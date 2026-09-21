@@ -1,7 +1,7 @@
-import type { RouteTable } from "./trie";
 import type { ProxyStats } from "./proxy";
-import { buildRouteTable } from "./trie";
 import { createProxyStats } from "./proxy";
+import type { RouteTable } from "./trie";
+import { buildRouteTable } from "./trie";
 
 // ─── Shared mutable state (read by admin page, written by proxy) ─────────────
 

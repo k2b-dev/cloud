@@ -66,12 +66,25 @@ const api = new Hono<AuthContext>()
   .use("*", auth.requireRole("user"))
   .onError((error, c) => {
     const known = error instanceof FilesError || error instanceof AccountIdentityError;
-    const code = known ? error.code
-      : error instanceof FilegateError
-        ? filegateErrorCode(error)
-        : "unavailable";
-    const status = known ? error.status : code === "forbidden" ? 403 : code === "not_found" ? 404
-      : ["path_conflict", "idempotency_conflict", "write_conflict", "cursor_invalid", "execution_disabled", "identity_changed", "feature_disabled", "operation_conflict"].includes(code) ? 409 : 503;
+    const code = known ? error.code : error instanceof FilegateError ? filegateErrorCode(error) : "unavailable";
+    const status = known
+      ? error.status
+      : code === "forbidden"
+        ? 403
+        : code === "not_found"
+          ? 404
+          : [
+                "path_conflict",
+                "idempotency_conflict",
+                "write_conflict",
+                "cursor_invalid",
+                "execution_disabled",
+                "identity_changed",
+                "feature_disabled",
+                "operation_conflict",
+              ].includes(code)
+            ? 409
+            : 503;
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
   .route("/templates", templateApi)
@@ -121,7 +134,8 @@ const api = new Hono<AuthContext>()
     "/bases/:baseId/favorite",
     middleware.openapi({ summary: "Mark or unmark an entry as favorite", ...requiresAuth }),
     v("json", FavoriteInputSchema),
-    async (c) => respond(c, ok(await filesService.setFavorite(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+    async (c) =>
+      respond(c, ok(await filesService.setFavorite(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .get(
     "/bases/:baseId/entry",
@@ -133,7 +147,8 @@ const api = new Hono<AuthContext>()
     "/bases/:baseId/search",
     middleware.openapi({ summary: "Search names below an authorized folder", ...requiresAuth }),
     v("query", SearchQuerySchema),
-    async (c) => respond(c, ok(await filesService.search(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+    async (c) =>
+      respond(c, ok(await filesService.search(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
   )
   .post(
     "/bases/:baseId/directories",
@@ -145,7 +160,8 @@ const api = new Hono<AuthContext>()
     "/bases/:baseId/documents",
     middleware.openapi({ summary: "Create an empty office document from a template", ...requiresAuth }),
     v("json", CreateDocumentInputSchema),
-    async (c) => respond(c, ok(await filesService.createDocument(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+    async (c) =>
+      respond(c, ok(await filesService.createDocument(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
     "/bases/:baseId/editor",
@@ -204,8 +220,11 @@ const api = new Hono<AuthContext>()
     v("json", PathsInputSchema),
     async (c) => respond(c, ok(await filesService.remove(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
-  .get("/bases/:baseId/trash", middleware.openapi({ summary: "List trashed entries", ...requiresAuth }), v("query", z.object({ after: z.string().max(16384).optional() })), async (c) =>
-    respond(c, ok(await filesService.trash(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+  .get(
+    "/bases/:baseId/trash",
+    middleware.openapi({ summary: "List trashed entries", ...requiresAuth }),
+    v("query", z.object({ after: z.string().max(16384).optional() })),
+    async (c) => respond(c, ok(await filesService.trash(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
   )
   .post(
     "/bases/:baseId/trash/:id/restore",
@@ -224,40 +243,49 @@ const api = new Hono<AuthContext>()
     "/bases/:baseId/versions",
     middleware.openapi({ summary: "List versions of a file", ...requiresAuth }),
     v("query", EntryQuerySchema),
-    async (c) => respond(c, ok(await filesService.versions(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+    async (c) =>
+      respond(c, ok(await filesService.versions(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
   )
   .post(
     "/bases/:baseId/versions/comment",
     middleware.openapi({ summary: "Comment a version", ...requiresAuth }),
     v("json", VersionCommentSchema),
-    async (c) => respond(c, ok(await filesService.commentVersion(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+    async (c) =>
+      respond(c, ok(await filesService.commentVersion(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
     "/bases/:baseId/versions/restore",
     middleware.openapi({ summary: "Restore a version in place", ...requiresAuth }),
     v("json", VersionRefSchema),
-    async (c) => respond(c, ok(await filesService.restoreVersion(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+    async (c) =>
+      respond(c, ok(await filesService.restoreVersion(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
     "/bases/:baseId/versions/restore-as",
     middleware.openapi({ summary: "Restore a version as a new file", ...requiresAuth }),
     v("json", VersionRestoreAsSchema),
-    async (c) => respond(c, ok(await filesService.restoreVersionAs(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+    async (c) =>
+      respond(c, ok(await filesService.restoreVersionAs(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
     "/bases/:baseId/versions/download",
     middleware.openapi({ summary: "Issue a direct download lease for a version", ...requiresAuth }),
     v("json", VersionRefSchema),
-    async (c) => respond(c, ok(await filesService.versionDownload(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+    async (c) =>
+      respond(c, ok(await filesService.versionDownload(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
-  .get("/shares", middleware.openapi({ summary: "List public shares owned by the user", ...requiresAuth }), v("query", SharePageQuerySchema), async (c) =>
-    respond(c, ok(await filesService.listShares(c.get("actor"), c.req.valid("query")))),
+  .get(
+    "/shares",
+    middleware.openapi({ summary: "List public shares owned by the user", ...requiresAuth }),
+    v("query", SharePageQuerySchema),
+    async (c) => respond(c, ok(await filesService.listShares(c.get("actor"), c.req.valid("query")))),
   )
   .post(
     "/bases/:baseId/shares",
     middleware.openapi({ summary: "Create a public download share or upload inbox", ...requiresAuth }),
     v("json", CreateShareInputSchema),
-    async (c) => respond(c, ok(await filesService.createShare(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+    async (c) =>
+      respond(c, ok(await filesService.createShare(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .post(
     "/shares/:id/revoke",
@@ -273,14 +301,23 @@ const api = new Hono<AuthContext>()
       respond(c, ok(await filesService.thumbnail(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )
   .use("/admin/*", auth.requireRole("admin"))
-  .get("/admin/shares", middleware.openapi({ summary: "List all public shares as administrator", ...requiresAdmin }), v("query", SharePageQuerySchema), async (c) =>
-    respond(c, ok(await filesService.listShares(c.get("actor"), { ...c.req.valid("query"), admin: true }))),
+  .get(
+    "/admin/shares",
+    middleware.openapi({ summary: "List all public shares as administrator", ...requiresAdmin }),
+    v("query", SharePageQuerySchema),
+    async (c) => respond(c, ok(await filesService.listShares(c.get("actor"), { ...c.req.valid("query"), admin: true }))),
   )
-  .post("/admin/shares/:id/revoke", middleware.openapi({ summary: "Revoke any public share as administrator", ...requiresAdmin }), v("param", ShareIdSchema), async (c) =>
-    respond(c, ok(await filesService.revokeShare(c.get("actor"), { ...c.req.valid("param"), admin: true }))),
+  .post(
+    "/admin/shares/:id/revoke",
+    middleware.openapi({ summary: "Revoke any public share as administrator", ...requiresAdmin }),
+    v("param", ShareIdSchema),
+    async (c) => respond(c, ok(await filesService.revokeShare(c.get("actor"), { ...c.req.valid("param"), admin: true }))),
   )
-  .get("/admin/uploads", middleware.openapi({ summary: "Inspect unresolved inbox upload reservations", ...requiresAdmin }), v("query", z.object({ after: z.string().max(256).optional() })), async (c) =>
-    respond(c, ok(await filesService.adminUploadReservations(c.get("actor"), c.req.valid("query")))),
+  .get(
+    "/admin/uploads",
+    middleware.openapi({ summary: "Inspect unresolved inbox upload reservations", ...requiresAdmin }),
+    v("query", z.object({ after: z.string().max(256).optional() })),
+    async (c) => respond(c, ok(await filesService.adminUploadReservations(c.get("actor"), c.req.valid("query")))),
   )
   .get(
     "/admin/versions",

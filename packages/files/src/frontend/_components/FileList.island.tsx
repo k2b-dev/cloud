@@ -6,6 +6,7 @@ import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-j
 import { Portal } from "solid-js/web";
 import { apiClient } from "@/api/client";
 import type { FileBaseInfo, FileInfo } from "@/contracts";
+import { filesMessages } from "../messages";
 import {
   buildItemPath,
   buildSelectionKey,
@@ -29,7 +30,6 @@ import {
 } from "./context";
 import { createFileActionMutations, openFileItem } from "./FileActions";
 import { DEFAULT_FILE_SETTINGS, type FileListColumn, type FileSettings, getGridSizePixels } from "./FileSettings.island";
-import { filesMessages } from "../messages";
 
 type FileListProps = {
   items: FileInfo[];

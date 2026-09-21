@@ -1,4 +1,4 @@
-import { batch, createEffect, createSignal, onCleanup, untrack, type Accessor } from "solid-js";
+import { type Accessor, batch, createEffect, createSignal, onCleanup, untrack } from "solid-js";
 import type { ChartSnapshot } from "./chart-snapshot";
 
 /** Omitted visibleKeys means no series filter; [] explicitly hides every series. */

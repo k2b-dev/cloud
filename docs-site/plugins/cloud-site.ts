@@ -2,10 +2,7 @@ import type { FibelPlugin } from "@k2b/fibel";
 import { renderFontPreloads } from "../src/font-assets";
 import { renderSolidImportMap } from "../src/solid-import-map";
 
-export function cloudSitePlugin(
-  stylesheets: string[] = ["homepage.css"],
-  options: { preloadDisplayFont?: boolean } = {},
-): FibelPlugin {
+export function cloudSitePlugin(stylesheets: string[] = ["homepage.css"], options: { preloadDisplayFont?: boolean } = {}): FibelPlugin {
   return {
     name: "cloud-site",
     setup(context) {

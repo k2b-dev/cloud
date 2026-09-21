@@ -1,13 +1,12 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { OverviewWorkSchema } from "../overview-contracts";
 import { dashboardSnapshot } from "./items";
 import { loadOverviewWork } from "./overview";
 
-const [tables] = await sql<{ items: string | null }[]>`SELECT to_regclass('spaces.items')::text AS items`.catch(() => []);
-
-test.skipIf(!tables?.items)("selected overview views preserve counts, filters and access revocation", async () => {
+testFor("database")("selected overview views preserve counts, filters and access revocation", async () => {
   const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
     VALUES (${crypto.randomUUID()}, 'local', 'user', 'Overview test fixture') RETURNING id`;
   const spaceIds: string[] = [];

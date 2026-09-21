@@ -7,7 +7,6 @@
  * explicit decision about an ambiguous external effect.
  */
 
-import { ButtonLink, IconButtonLink, NoticeCard, Pagination, Placeholder, RangePicker, StatCell, StatGrid, useLocale } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
@@ -22,16 +21,17 @@ import {
   type WorkflowAppHealth,
   workflowHealth,
 } from "@k2b/cloud/workflows/store";
+import { ButtonLink, IconButtonLink, NoticeCard, Pagination, Placeholder, RangePicker, StatCell, StatGrid, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
+import { gatewayOpsMessages } from "../../messages";
 import { WorkflowEffectsView, WorkflowEventsView, WorkflowFamiliesView, WorkflowRunsView } from "./_components/WorkflowQueues";
 import WorkflowRunDetailView from "./_components/WorkflowRunDetail";
 import WorkflowsFilterBar from "./_components/WorkflowsFilterBar.island";
 import { FINDINGS_PER_PAGE, RUN_STATES, RUNS_PER_PAGE, type WorkflowView, windowStart, workflowsFilter } from "./filters";
 import { LAG_WARN_MS } from "./presentation";
 import { buildWorkflowTimelineRows } from "./timeline";
-import { gatewayOpsMessages } from "../../messages";
 
 type WorkflowTotals = {
   runs: number;
@@ -64,79 +64,89 @@ const totalsFor = (health: WorkflowAppHealth[]): WorkflowTotals =>
 const WorkflowStats = (props: { totals: WorkflowTotals; window: string }) => {
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
-  return <StatGrid columns={6}>
-    <StatCell label={t.runs} value={formatNumber(props.totals.runs, { locale: locale() })} sub={t.lastWindow({ window: props.window })} />
-    <StatCell
-      label={t.inFlight}
-      value={formatNumber(props.totals.active, { locale: locale() })}
-      sub={
-        props.totals.queued === 0
-          ? t.runningOrWaiting
-          : t.queuedOldest({ count: formatNumber(props.totals.queued, { locale: locale() }), duration: formatDurationMs(props.totals.oldestQueuedMs, { locale: locale() }) })
-      }
-      valueClass={props.totals.oldestQueuedMs > LAG_WARN_MS ? "text-amber-600 dark:text-amber-400" : undefined}
-    />
-    <StatCell
-      label={t.failed}
-      value={formatNumber(props.totals.failed, { locale: locale() })}
-      valueClass={props.totals.failed > 0 ? "text-red-600 dark:text-red-400" : undefined}
-    />
-    <StatCell
-      label={t.needsAttentionLabel}
-      value={formatNumber(props.totals.attention, { locale: locale() })}
-      sub={t.humanDecisionRequired}
-      valueClass={props.totals.attention > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
-    />
-    <StatCell
-      label={t.worstStartLag}
-      value={props.totals.worstLagMs > 0 ? formatDurationMs(props.totals.worstLagMs, { locale: locale() }) : "—"}
-      sub={t.causeToFirstAttempt}
-      valueClass={props.totals.worstLagMs > LAG_WARN_MS ? "text-amber-600 dark:text-amber-400" : undefined}
-    />
-    <StatCell
-      label={t.openFindings}
-      value={formatNumber(props.totals.stranded + props.totals.undispatched, { locale: locale() })}
-      sub={t.findingsSummary({ effects: formatNumber(props.totals.stranded, { locale: locale() }), events: formatNumber(props.totals.undispatched, { locale: locale() }) })}
-      valueClass={props.totals.stranded + props.totals.undispatched > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
-    />
-  </StatGrid>;
+  return (
+    <StatGrid columns={6}>
+      <StatCell label={t.runs} value={formatNumber(props.totals.runs, { locale: locale() })} sub={t.lastWindow({ window: props.window })} />
+      <StatCell
+        label={t.inFlight}
+        value={formatNumber(props.totals.active, { locale: locale() })}
+        sub={
+          props.totals.queued === 0
+            ? t.runningOrWaiting
+            : t.queuedOldest({
+                count: formatNumber(props.totals.queued, { locale: locale() }),
+                duration: formatDurationMs(props.totals.oldestQueuedMs, { locale: locale() }),
+              })
+        }
+        valueClass={props.totals.oldestQueuedMs > LAG_WARN_MS ? "text-amber-600 dark:text-amber-400" : undefined}
+      />
+      <StatCell
+        label={t.failed}
+        value={formatNumber(props.totals.failed, { locale: locale() })}
+        valueClass={props.totals.failed > 0 ? "text-red-600 dark:text-red-400" : undefined}
+      />
+      <StatCell
+        label={t.needsAttentionLabel}
+        value={formatNumber(props.totals.attention, { locale: locale() })}
+        sub={t.humanDecisionRequired}
+        valueClass={props.totals.attention > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
+      />
+      <StatCell
+        label={t.worstStartLag}
+        value={props.totals.worstLagMs > 0 ? formatDurationMs(props.totals.worstLagMs, { locale: locale() }) : "—"}
+        sub={t.causeToFirstAttempt}
+        valueClass={props.totals.worstLagMs > LAG_WARN_MS ? "text-amber-600 dark:text-amber-400" : undefined}
+      />
+      <StatCell
+        label={t.openFindings}
+        value={formatNumber(props.totals.stranded + props.totals.undispatched, { locale: locale() })}
+        sub={t.findingsSummary({
+          effects: formatNumber(props.totals.stranded, { locale: locale() }),
+          events: formatNumber(props.totals.undispatched, { locale: locale() }),
+        })}
+        valueClass={props.totals.stranded + props.totals.undispatched > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
+      />
+    </StatGrid>
+  );
 };
 
 const FindingNotices = (props: { totals: WorkflowTotals; effectsHref: string; eventsHref: string }) => {
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
-  return <>
-    {props.totals.stranded > 0 ? (
-      <NoticeCard
-        tone="warning"
-        title={t.effectsRequireEvidence({ count: formatNumber(props.totals.stranded, { locale: locale() }) })}
-        detail={
-          <span>
-            {t.effectReplayWarning}{" "}
-            <a class="font-medium hover:underline" href={props.effectsHref}>
-              {t.reviewEffectsQueue}
-            </a>
-            .
-          </span>
-        }
-      />
-    ) : null}
-    {props.totals.undispatched > 0 ? (
-      <NoticeCard
-        tone="warning"
-        title={t.eventsWithoutRun({ count: formatNumber(props.totals.undispatched, { locale: locale() }) })}
-        detail={
-          <span>
-            {t.unmatchedEventsWarning}{" "}
-            <a class="font-medium hover:underline" href={props.eventsHref}>
-              {t.reviewEventsQueue}
-            </a>
-            .
-          </span>
-        }
-      />
-    ) : null}
-  </>;
+  return (
+    <>
+      {props.totals.stranded > 0 ? (
+        <NoticeCard
+          tone="warning"
+          title={t.effectsRequireEvidence({ count: formatNumber(props.totals.stranded, { locale: locale() }) })}
+          detail={
+            <span>
+              {t.effectReplayWarning}{" "}
+              <a class="font-medium hover:underline" href={props.effectsHref}>
+                {t.reviewEffectsQueue}
+              </a>
+              .
+            </span>
+          }
+        />
+      ) : null}
+      {props.totals.undispatched > 0 ? (
+        <NoticeCard
+          tone="warning"
+          title={t.eventsWithoutRun({ count: formatNumber(props.totals.undispatched, { locale: locale() }) })}
+          detail={
+            <span>
+              {t.unmatchedEventsWarning}{" "}
+              <a class="font-medium hover:underline" href={props.eventsHref}>
+                {t.reviewEventsQueue}
+              </a>
+              .
+            </span>
+          }
+        />
+      ) : null}
+    </>
+  );
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -312,9 +322,7 @@ export default ssr<AuthContext>(async (c) => {
             <div class="min-w-0">
               <h1 class="truncate text-base font-semibold text-primary">{title}</h1>
               <p class="mt-1 text-xs text-dimmed">
-                {selectedWorkflow
-                  ? t.workflowRunsDescription({ window: state.window })
-                  : t.workflowsDescription}
+                {selectedWorkflow ? t.workflowRunsDescription({ window: state.window }) : t.workflowsDescription}
               </p>
             </div>
           </div>
@@ -343,7 +351,10 @@ export default ssr<AuthContext>(async (c) => {
             <p class="text-[10px] text-dimmed">{t.workflowTimelineDescription}</p>
             {timelineResult.total > timelineResult.runs.length ? (
               <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
-                {t.timelineSample({ count: formatNumber(timelineResult.runs.length, { locale }), total: formatNumber(timelineResult.total, { locale }) })}
+                {t.timelineSample({
+                  count: formatNumber(timelineResult.runs.length, { locale }),
+                  total: formatNumber(timelineResult.total, { locale }),
+                })}
               </p>
             ) : null}
             {timelineRows.length === 0 ? (

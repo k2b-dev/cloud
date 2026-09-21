@@ -14,9 +14,12 @@ mock.module(new URL("../packages/cloud/src/capabilities/server.ts", import.meta.
     return { ok: true, data: { data: { id: "Event1" } } };
   },
 }));
-const { createCalendarEvent, createSpaceEventOnce, getSpacesMailIntegrationAvailability } =
-  await import("../packages/mail/src/service/app-integrations");
-beforeEach(() => { calls.length = 0; });
+const { createCalendarEvent, createSpaceEventOnce, getSpacesMailIntegrationAvailability } = await import(
+  "../packages/mail/src/service/app-integrations"
+);
+beforeEach(() => {
+  calls.length = 0;
+});
 
 test("Mail discovery accepts the current Spaces context contract", async () => {
   expect((await getSpacesMailIntegrationAvailability()).context).toBe(true);
@@ -29,8 +32,14 @@ test("automations retain their durable key while using the current event action"
 
 test("manual composer supplies request keys and generates a fallback key", async () => {
   const request = { requestId: crypto.randomUUID() };
-  await createCalendarEvent({ spaceId: "Space1", columnId: "Column", title: "Meeting", startsAt: "2026-09-14T10:00:00Z", endsAt: "2026-09-14T11:00:00Z" }, request);
-  await createCalendarEvent({ spaceId: "Space1", columnId: "Column", title: "Meeting", startsAt: "2026-09-14T10:00:00Z", endsAt: "2026-09-14T11:00:00Z" }, {});
+  await createCalendarEvent(
+    { spaceId: "Space1", columnId: "Column", title: "Meeting", startsAt: "2026-09-14T10:00:00Z", endsAt: "2026-09-14T11:00:00Z" },
+    request,
+  );
+  await createCalendarEvent(
+    { spaceId: "Space1", columnId: "Column", title: "Meeting", startsAt: "2026-09-14T10:00:00Z", endsAt: "2026-09-14T11:00:00Z" },
+    {},
+  );
   expect(calls.map((call) => call.capabilityId)).toEqual(["event.create", "event.create"]);
   expect(calls[0]?.idempotencyKey).toBe(request.requestId);
   expect(calls[1]?.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);

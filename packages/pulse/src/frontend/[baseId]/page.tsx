@@ -1,9 +1,9 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
+import { pulseMessages } from "../../messages";
 import PulseWorkspace from "../PulseWorkspace.island";
 import { loadPulseWorkspacePageData } from "./page-data";
-import { pulseMessages } from "../../messages";
 
 export default ssr<AuthContext>(async (c) => {
   const data = await loadPulseWorkspacePageData(c);

@@ -1,10 +1,11 @@
-import { inferenceProvider } from "./quota-provider";
 import type { Input, LoopAggregate, StructuredMeta, Usage } from "@k2b/nessi";
 import { nessi, StructuredOutputError } from "@k2b/nessi";
 import type { z } from "zod";
+import type { AccessSubject } from "../server";
 import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
 import { trace } from "../services/logging";
+import { inferenceProvider } from "./quota-provider";
 import { resolveAiModel } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
 import type { AiResolvedModel } from "./types";
@@ -58,6 +59,8 @@ export type RunAiStructuredInput<TOutput extends z.ZodType> = {
   /** Parent trace span when the caller already runs inside one (e.g. a sync job). */
   traceParent?: TraceContext;
   appId?: string;
+  /** Charge an interactive calculation against this authenticated subject's chat allowance. */
+  usageSubject?: AccessSubject;
   /** Metadata-only attribution, supplied by the authorized caller. */
   attribution?: AiUsageAttribution;
   /** Model resolution seam — tests inject a fake so they never touch shared settings. */
@@ -101,7 +104,8 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
         const result = await nessi.structured({
           agentId: "cloud-bg",
           provider: inferenceProvider(resolved.provider, resolved.profile, {
-            kind: "background",
+            kind: input.usageSubject ? "chat" : "background",
+            subject: input.usageSubject,
             task: input.task,
             appId: input.appId,
             traceId: span.traceId,

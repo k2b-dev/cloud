@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import type { LoopAggregate, Message } from "@k2b/nessi";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import { toPgTextArray } from "../services/postgres";
 import { session as authSession } from "../services/session";
-import { createTestSession } from "../services/session/test-fixture";
+import { createTestSession } from "../services/session/session.test-fixture";
 import {
   forgetAiToolApproval,
   hasRememberedAiToolApproval,
@@ -12,42 +14,15 @@ import {
   revokeAiToolApprovalPreference,
 } from "./approvals";
 import { aiCapabilityToolName } from "./capabilities";
-import { readAiConversationFile, aiFileStore } from "./files-store";
+import { aiFileStore, readAiConversationFile } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 import { loadAiStreamState } from "./stream";
 
-const canUseAiDatabase = async () => {
-  try {
-    const [authRow] = await sql<{ users: string | null }[]>`
-      SELECT to_regclass('auth.users')::text AS users
-    `;
-    if (!authRow?.users) return false;
-
-    await migrateCloudAi();
-
-    const [aiRow] = await sql<
-      {
-        conversations: string | null;
-        messages: string | null;
-        turns: string | null;
-      }[]
-    >`
-      SELECT
-        to_regclass('ai.conversations')::text AS conversations,
-        to_regclass('ai.messages')::text AS messages,
-        to_regclass('ai.turns')::text AS turns
-    `;
-    return Boolean(aiRow?.conversations && aiRow.messages && aiRow.turns);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseAiDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async () => {
   const suffix = crypto.randomUUID();
@@ -76,57 +51,124 @@ const assistantMessage = (text: string): Message => ({
 const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "none" as const } };
 
 suite("AI conversation store integration", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("an interactive turn defers new background results without losing or compacting them", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
-      const { turn } = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Hello") });
-      await aiConversations.claimTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", leaseMs: 30_000, from: "queue", maxAttempts: 50, runBudgetMs: 60_000 });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("Hello"),
+      });
+      await aiConversations.claimTurn({
+        conversationId: chat.id,
+        turnId: turn.id,
+        leaseOwner: "foreground",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 50,
+        runBudgetMs: 60_000,
+      });
       const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground" });
       await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, meta)
         VALUES (${createAiShortId()}, ${chat.id}, 2, 'message', 'assistant', ${JSON.stringify(assistantMessage("Background result"))}::text::jsonb,
           '{"scheduledTask":{"taskId":"task","occurrenceId":"run"}}'::jsonb)`;
       await sql`UPDATE ai.conversations SET background_received_at = now() WHERE id = ${chat.id}`;
-      expect((await session.load()).map(entry => entry.message)).toEqual([userMessage("Hello")]);
+      expect((await session.load()).map((entry) => entry.message)).toEqual([userMessage("Hello")]);
       // Nessi's next local sequence is already occupied by the delivered result.
       await session.append(assistantMessage("Foreground answer"), { seq: 2 });
-      expect((await session.load()).map(entry => entry.seq)).toEqual([1, 3]);
-      expect((await aiConversations.listMessages({ conversationId: chat.id })).map(message => message.seq)).toEqual([1, 2, 3]);
-      await aiConversations.compactMessages({ conversationId: chat.id, turnId: turn.id, checkpointSeq: 3, summary: assistantMessage("Summary") });
+      expect((await session.load()).map((entry) => entry.seq)).toEqual([1, 3]);
+      expect((await aiConversations.listMessages({ conversationId: chat.id })).map((message) => message.seq)).toEqual([1, 2, 3]);
+      await aiConversations.compactMessages({
+        conversationId: chat.id,
+        turnId: turn.id,
+        checkpointSeq: 3,
+        summary: assistantMessage("Summary"),
+      });
       const context = await aiConversations.listContextMessages({ conversationId: chat.id });
-      expect(context.map(message => message.seq)).toEqual([2, 3]);
-      expect((await session.load()).map(entry => entry.seq)).toEqual([3]);
-      expect((await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).map(item => item.id)).toContain(chat.id);
+      expect(context.map((message) => message.seq)).toEqual([2, 3]);
+      expect((await session.load()).map((entry) => entry.seq)).toEqual([3]);
+      expect((await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).map((item) => item.id)).toContain(
+        chat.id,
+      );
       await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", status: "completed" });
-      const next = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Next") });
-      expect((await aiConversations.createSessionStore({ conversationId: chat.id, turnId: next.turn.id }).load()).some(entry => JSON.stringify(entry.message).includes("Background result"))).toBe(true);
-    } finally { await cleanupFixture({ userId, conversationIds: [chat.id] }); }
+      const next = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("Next"),
+      });
+      expect(
+        (await aiConversations.createSessionStore({ conversationId: chat.id, turnId: next.turn.id }).load()).some((entry) =>
+          JSON.stringify(entry.message).includes("Background result"),
+        ),
+      ).toBe(true);
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
   });
 
   test("background turns and summaries stay isolated from the active conversation turn", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
-    const background = { taskId: "task", occurrenceId: "run", context: [{ seq: 1, kind: "message" as const, message: userMessage("Existing context") }] };
+    const background = {
+      taskId: "task",
+      occurrenceId: "run",
+      context: [{ seq: 1, kind: "message" as const, message: userMessage("Existing context") }],
+    };
     try {
       const [bg] = await sql<{ id: string }[]>`INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
         VALUES (${createAiShortId()}, ${chat.id}, 'test-model', 'queued', ${JSON.stringify({ ...runConfig, background })}::text::jsonb) RETURNING id`;
-      await aiConversations.claimTurn({ conversationId: chat.id, turnId: bg!.id, leaseOwner: "background", leaseMs: 30_000, from: "queue", maxAttempts: 50, runBudgetMs: 60_000 });
+      await aiConversations.claimTurn({
+        conversationId: chat.id,
+        turnId: bg!.id,
+        leaseOwner: "background",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 50,
+        runBudgetMs: 60_000,
+      });
       expect(await aiConversations.getActiveTurn({ conversationId: chat.id })).toBeNull();
       expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
-      const foreground = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Interact now") });
+      const foreground = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("Interact now"),
+      });
       expect((await aiConversations.getActiveTurn({ conversationId: chat.id }))?.turn.id).toBe(foreground.turn.id);
       const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: bg!.id, leaseOwner: "background", background });
       await session.append(assistantMessage("Isolated summary"), { kind: "summary", seq: 200 });
       await session.append(assistantMessage("Isolated answer"), { seq: 201 });
-      expect((await session.load()).map(entry => entry.seq)).toEqual([1, 2, 3]);
-      const aggregate: LoopAggregate = { turns: [], usage: { input: 1, output: 2, total: 3 }, issueCount: 0, issues: [], toolCallCount: 0, toolErrorCount: 0, toolIssueCount: 0, toolMalformedCount: 0, toolCancelledCount: 0, toolIssues: [], assistantMessageCount: 1 };
+      expect((await session.load()).map((entry) => entry.seq)).toEqual([1, 2, 3]);
+      const aggregate: LoopAggregate = {
+        turns: [],
+        usage: { input: 1, output: 2, total: 3 },
+        issueCount: 0,
+        issues: [],
+        toolCallCount: 0,
+        toolErrorCount: 0,
+        toolIssueCount: 0,
+        toolMalformedCount: 0,
+        toolCancelledCount: 0,
+        toolIssues: [],
+        assistantMessageCount: 1,
+      };
       await aiConversations.setLatestAssistantLoopAggregate({ conversationId: chat.id, loopId: bg!.id, aggregate, doneReason: "stop" });
       const transcript = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: bg!.id });
       expect(transcript.at(-1)?.loopAggregate?.usage).toEqual(aggregate.usage);
-      expect(transcript.map(message => message.loopId)).toEqual([bg!.id, bg!.id]);
-      expect(transcript.map(message => message.kind)).toEqual(["summary", "message"]);
-      expect((await aiConversations.listMessages({ conversationId: chat.id })).map(message => message.message)).toEqual([userMessage("Interact now")]);
-    } finally { await cleanupFixture({ userId, conversationIds: [chat.id] }); }
+      expect(transcript.map((message) => message.loopId)).toEqual([bg!.id, bg!.id]);
+      expect(transcript.map((message) => message.kind)).toEqual(["summary", "message"]);
+      expect((await aiConversations.listMessages({ conversationId: chat.id })).map((message) => message.message)).toEqual([
+        userMessage("Interact now"),
+      ]);
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
   });
 
   test("fork preserves the versions referenced by inline draft files", async () => {
@@ -140,37 +182,65 @@ suite("AI conversation store integration", () => {
       expect(file.version).toBe(2);
       const fork = await aiConversations.forkConversation({ sourceConversationId: source.id, ownerUserId: userId, throughSeq: 0 });
       conversationIds.push(fork.id);
-      const saved = await aiConversations.saveDraft({ conversationId: fork.id, ownerUserId: userId,
+      const saved = await aiConversations.saveDraft({
+        conversationId: fork.id,
+        ownerUserId: userId,
         expectedRevision: fork.draft.revision,
         content: [{ type: "file", path: file.path, mediaType: file.mediaType, size: file.size, version: file.version, inline: true }],
       });
       expect(saved.ok).toBe(true);
-      expect(await readAiConversationFile({ conversationId: fork.id, ownerUserId: userId, path: file.path, version: file.version })).not.toBeNull();
-    } finally { await cleanupFixture({ userId, conversationIds }); }
+      expect(
+        await readAiConversationFile({ conversationId: fork.id, ownerUserId: userId, path: file.path, version: file.version }),
+      ).not.toBeNull();
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
   });
   test("sidebar projects compact task progress without exposing tool arguments", async () => {
     const userId = await insertUser();
     const otherUserId = await insertUser();
-    const chat = await aiConversations.createConversation({ownerUserId:userId});
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
-      const session = aiConversations.createSessionStore({conversationId:chat.id,modelProfileId:"test-model"});
-      await session.append({role:"tool_result",callId:"plan",name:"todo_write",result:{todos:[
-        {id:"1",content:"Read sources",status:"completed"},
-        {id:"2",content:"Check totals",status:"in_progress"},
-        {id:"3",content:"Cancelled step",status:"cancelled"},
-      ]}});
-      const {turn} = await aiConversations.submitChatTurn({conversationId:chat.id,modelProfileId:"test-model",runConfig,userMessage:userMessage("Continue")});
-      const blocks = [{kind:"tool",name:"read_file",status:"running",args:{secret:"private payload"},presentation:{title:"Reading sources"}}];
+      const session = aiConversations.createSessionStore({ conversationId: chat.id, modelProfileId: "test-model" });
+      await session.append({
+        role: "tool_result",
+        callId: "plan",
+        name: "todo_write",
+        result: {
+          todos: [
+            { id: "1", content: "Read sources", status: "completed" },
+            { id: "2", content: "Check totals", status: "in_progress" },
+            { id: "3", content: "Cancelled step", status: "cancelled" },
+          ],
+        },
+      });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("Continue"),
+      });
+      const blocks = [
+        {
+          kind: "tool",
+          name: "read_file",
+          status: "running",
+          args: { secret: "private payload" },
+          presentation: { title: "Reading sources" },
+        },
+      ];
       await sql`UPDATE ai.turns SET live_blocks=(${JSON.stringify(blocks)}::text)::jsonb WHERE id=${turn.id}::uuid`;
-      const [summary] = await aiConversations.listSidebarConversations({ownerUserId:userId});
-      expect(summary?.activity).toEqual({completed:1,total:2,step:"Check totals",tool:"Reading sources"});
+      const [summary] = await aiConversations.listSidebarConversations({ ownerUserId: userId });
+      expect(summary?.activity).toEqual({ completed: 1, total: 2, step: "Check totals", tool: "Reading sources" });
       expect(JSON.stringify(summary?.activity)).not.toContain("private payload");
-      expect(await aiConversations.listSidebarConversations({ownerUserId:otherUserId})).toEqual([]);
-      const [comparison] = await sql<{same:boolean}[]>`SELECT ai.sidebar_tool_label((${JSON.stringify(blocks)}::text)::jsonb) = ai.sidebar_tool_label((${JSON.stringify([...blocks,{kind:"text",text:"token"}])}::text)::jsonb) AS same`;
+      expect(await aiConversations.listSidebarConversations({ ownerUserId: otherUserId })).toEqual([]);
+      const [comparison] = await sql<
+        { same: boolean }[]
+      >`SELECT ai.sidebar_tool_label((${JSON.stringify(blocks)}::text)::jsonb) = ai.sidebar_tool_label((${JSON.stringify([...blocks, { kind: "text", text: "token" }])}::text)::jsonb) AS same`;
       expect(comparison?.same).toBe(true);
     } finally {
-      await cleanupFixture({userId,conversationIds:[chat.id]});
-      await cleanupFixture({userId:otherUserId,conversationIds:[]});
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+      await cleanupFixture({ userId: otherUserId, conversationIds: [] });
     }
   });
 
@@ -180,10 +250,14 @@ suite("AI conversation store integration", () => {
     try {
       const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Age fixture" });
       conversationIds.push(chat.id);
-      const age = async () => { await sql`UPDATE ai.conversations SET last_used_at = now() - interval '8 days' WHERE id = ${chat.id}`; };
+      const age = async () => {
+        await sql`UPDATE ai.conversations SET last_used_at = now() - interval '8 days' WHERE id = ${chat.id}`;
+      };
       await age();
       expect(await aiConversations.getConversation({ conversationId: chat.id })).toMatchObject({ done: null, isDone: true });
-      expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, search: "Age", page: 1, perPage: 10 })).toMatchObject({ total: 1 });
+      expect(
+        await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, search: "Age", page: 1, perPage: 10 }),
+      ).toMatchObject({ total: 1 });
       await aiConversations.updateConversationMetadata({ conversationId: chat.id, ownerUserId: userId, title: "New metadata" });
       expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(true);
       await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false });
@@ -194,9 +268,15 @@ suite("AI conversation store integration", () => {
       const beforeViewing = await aiConversations.getConversation({ conversationId: chat.id });
       await aiConversations.markConversationViewed({ conversationId: chat.id, ownerUserId: userId });
       expect(await aiConversations.getConversation({ conversationId: chat.id })).toMatchObject({
-        isDone: true, lastUsedAt: beforeViewing!.lastUsedAt,
+        isDone: true,
+        lastUsedAt: beforeViewing!.lastUsedAt,
       });
-      const { turn } = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Working") });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("Working"),
+      });
       const afterMessage = await aiConversations.getConversation({ conversationId: chat.id });
       expect(afterMessage?.isDone).toBe(false);
       expect(new Date(afterMessage!.lastUsedAt).getTime()).toBeGreaterThan(new Date(beforeViewing!.lastUsedAt).getTime());
@@ -210,11 +290,18 @@ suite("AI conversation store integration", () => {
       expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(true);
       await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false });
       const more = await Promise.all(Array.from({ length: 20 }, () => aiConversations.createConversation({ ownerUserId: userId })));
-      conversationIds.push(...more.map(item => item.id));
+      conversationIds.push(...more.map((item) => item.id));
       expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(21);
-      await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Keep active") });
+      await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("Keep active"),
+      });
       expect((await aiConversations.getConversation({ conversationId: chat.id }))?.done).toBe(false);
-    } finally { await cleanupFixture({ userId, conversationIds }); }
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
   });
 
   test("Done is owner-scoped, preserves resources and pins, and reopens on a new turn", async () => {
@@ -225,24 +312,55 @@ suite("AI conversation store integration", () => {
       const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Finished fixture" });
       conversationIds.push(chat.id);
       await aiConversations.setConversationPinned({ conversationId: chat.id, ownerUserId: userId, pinned: true });
-      const file = await aiFileStore.createUserUpload({ conversationId: chat.id, path: "source.txt", bytes: new TextEncoder().encode("preserved"), mediaType: "text/plain" });
-      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: stranger, done: true })).toEqual({ ok: false, reason: "not_found" });
+      const file = await aiFileStore.createUserUpload({
+        conversationId: chat.id,
+        path: "source.txt",
+        bytes: new TextEncoder().encode("preserved"),
+        mediaType: "text/plain",
+      });
+      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: stranger, done: true })).toEqual({
+        ok: false,
+        reason: "not_found",
+      });
       const completed = await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true });
-      expect(completed).toMatchObject({ ok: true, conversation: { done: true, isDone: false, archivedAt: null, pinnedAt: expect.any(String) } });
+      expect(completed).toMatchObject({
+        ok: true,
+        conversation: { done: true, isDone: false, archivedAt: null, pinnedAt: expect.any(String) },
+      });
       expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(1);
-      expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 10 })).toMatchObject({ total: 0 });
+      expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 10 })).toMatchObject({
+        total: 0,
+      });
       await aiConversations.setConversationPinned({ conversationId: chat.id, ownerUserId: userId, pinned: false });
       expect(await aiConversations.listSidebarConversations({ ownerUserId: userId })).toHaveLength(0);
       expect(await aiConversations.listConversations({ ownerUserId: userId, done: false })).toHaveLength(0);
       expect(await aiConversations.listConversations({ ownerUserId: userId, search: "Finished", done: true })).toHaveLength(1);
-      expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 1 })).toMatchObject({ total: 1, hasNext: false });
-      expect(await readAiConversationFile({ conversationId: chat.id, ownerUserId: userId, path: file.path, version: file.version })).not.toBeNull();
-      expect(await readAiConversationFile({ conversationId: chat.id, ownerUserId: stranger, path: file.path, version: file.version })).toBeNull();
-      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false })).toMatchObject({ ok: true, conversation: { done: false, isDone: false } });
+      expect(await aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 1 })).toMatchObject({
+        total: 1,
+        hasNext: false,
+      });
+      expect(
+        await readAiConversationFile({ conversationId: chat.id, ownerUserId: userId, path: file.path, version: file.version }),
+      ).not.toBeNull();
+      expect(
+        await readAiConversationFile({ conversationId: chat.id, ownerUserId: stranger, path: file.path, version: file.version }),
+      ).toBeNull();
+      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: false })).toMatchObject({
+        ok: true,
+        conversation: { done: false, isDone: false },
+      });
       await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true });
-      const { turn } = await aiConversations.submitChatTurn({ conversationId: chat.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("Continue") });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("Continue"),
+      });
       expect((await aiConversations.getConversation({ conversationId: chat.id }))?.isDone).toBe(false);
-      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true })).toEqual({ ok: false, reason: "active_turn" });
+      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: userId, done: true })).toEqual({
+        ok: false,
+        reason: "active_turn",
+      });
       expect((await aiConversations.getLatestTurn({ conversationId: chat.id }))?.id).toBe(turn.id);
     } finally {
       await cleanupFixture({ userId, conversationIds });
@@ -705,16 +823,39 @@ suite("AI conversation store integration", () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     try {
-      const { turn } = await aiConversations.submitChatTurn({ conversationId: conversation.id, modelProfileId: "test-model", runConfig, userMessage: userMessage("JSON arguments") });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("JSON arguments"),
+      });
       const scope = { conversationId: conversation.id, turnId: turn.id };
       for (const [index, args] of ["null", "42", '{"x":1}', "hello", null, { x: 1 }, ["null", 42], 42, true].entries()) {
         const callId = `scalar-${index}`;
-        await aiConversations.savePendingTurnAction({ ...scope, callId, kind: index % 2 ? "approval" : "client_tool", status: "pending", name: "test", args, approvalScope: "test", allowAlways: false, resolvedEvent: null });
-        expect((await aiConversations.listPendingTurnActions(scope)).find(row => row.callId === callId)?.args).toEqual(args);
+        await aiConversations.savePendingTurnAction({
+          ...scope,
+          callId,
+          kind: index % 2 ? "approval" : "client_tool",
+          status: "pending",
+          name: "test",
+          args,
+          approvalScope: "test",
+          allowAlways: false,
+          resolvedEvent: null,
+        });
+        expect((await aiConversations.listPendingTurnActions(scope)).find((row) => row.callId === callId)?.args).toEqual(args);
         expect((await aiConversations.getPendingTurnAction({ ...scope, callId }))?.args).toEqual(args);
-        expect((await aiConversations.listPendingActionRecords(scope)).find(row => row.callId === callId)?.args).toEqual(args);
-        expect((await aiConversations.resolvePendingTurnAction({ ...scope, callId, event: { type: "approval_response", callId, approved: true } }))?.args).toEqual(args);
-        expect((await aiConversations.listResolvedPendingActions(scope)).find(row => row.callId === callId)?.args).toEqual(args);
+        expect((await aiConversations.listPendingActionRecords(scope)).find((row) => row.callId === callId)?.args).toEqual(args);
+        expect(
+          (
+            await aiConversations.resolvePendingTurnAction({
+              ...scope,
+              callId,
+              event: { type: "approval_response", callId, approved: true },
+            })
+          )?.args,
+        ).toEqual(args);
+        expect((await aiConversations.listResolvedPendingActions(scope)).find((row) => row.callId === callId)?.args).toEqual(args);
       }
     } finally {
       await cleanupFixture({ userId, conversationIds: [conversation.id] });
@@ -1463,7 +1604,7 @@ suite("AI conversation store integration", () => {
       expect(await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).toHaveLength(1);
       const browserPage = await aiConversations.listConversationsPage({ ownerUserId: userId, status: "running", page: 1, perPage: 10 });
       expect(browserPage.total).toBe(2);
-      expect(browserPage.items.find(item => item.id === browser.id)?.runStatus).toBe("waiting_for_browser");
+      expect(browserPage.items.find((item) => item.id === browser.id)?.runStatus).toBe("waiting_for_browser");
       await sql`UPDATE ai.turns SET live_blocks = live_blocks || (${JSON.stringify([{ kind: "tool", status: "awaiting_approval", callId: "human-call" }])}::text)::jsonb WHERE conversation_id = ${browser.id}::uuid`;
       expect((await aiConversations.getConversation({ conversationId: browser.id }))?.runStatus).toBe("needs_attention");
       expect(await aiConversations.listConversations({ ownerUserId: userId, status: "needs_attention" })).toHaveLength(2);
@@ -1485,7 +1626,10 @@ suite("AI conversation store integration", () => {
       expect(await aiConversations.restoreConversation({ conversationId: pinned.id, ownerUserId: userId })).toMatchObject({
         id: pinned.id,
         pinnedAt: null,
-        done: null, isDone: false, lastUsedAt: expect.any(String), archivedAt: null,
+        done: null,
+        isDone: false,
+        lastUsedAt: expect.any(String),
+        archivedAt: null,
       });
       expect(await aiConversations.getConversation({ conversationId: normal.id })).toMatchObject({ runStatus: "idle" });
     } finally {

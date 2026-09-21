@@ -1,5 +1,5 @@
-import { Match, Switch } from "solid-js";
 import { useLocale } from "@k2b/ui";
+import { Match, Switch } from "solid-js";
 import { notebookSettingsMessages } from "./messages";
 
 export const settingsChoiceClass = (active: boolean) =>

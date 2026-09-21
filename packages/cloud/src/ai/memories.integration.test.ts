@@ -1,20 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiMemories, formatAiMemories, isAiMemoryBm25CapabilityError } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
-
-const canUseAiDatabase = async () => {
-  try {
-    const [authRow] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!authRow?.users) return false;
-    await migrateCloudAi();
-    const [aiRow] = await sql<{ memories: string | null }[]>`SELECT to_regclass('ai.memories')::text AS memories`;
-    return Boolean(aiRow?.memories);
-  } catch {
-    return false;
-  }
-};
 
 const insertUser = async () => {
   const suffix = crypto.randomUUID();
@@ -35,7 +24,10 @@ const insertConversation = async (userId: string, title: string): Promise<string
   return row!.id;
 };
 
-describe.skipIf(!(await canUseAiDatabase()))("aiMemories (integration)", () => {
+databaseSuite()("aiMemories (integration)", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("owns, searches, updates, pins, and soft-deletes atomic memories", async () => {
     const firstUser = await insertUser();
     const secondUser = await insertUser();

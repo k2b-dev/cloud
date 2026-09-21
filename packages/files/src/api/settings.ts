@@ -5,11 +5,12 @@
  *   PUT    /api/files/admin/settings           — bulk update, atomic
  *   DELETE /api/files/admin/settings/:key{.+}  — reset to default
  */
-import { Hono } from "hono";
+
+import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { sql } from "bun";
+import { Hono } from "hono";
 import { z } from "zod";
 import { app } from "../config";
-import { auth, v, type AuthContext } from "@k2b/cloud/server";
 
 // Source of truth for which keys app-files owns
 const FILES_KEYS = new Set([

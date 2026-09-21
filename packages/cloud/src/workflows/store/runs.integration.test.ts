@@ -7,8 +7,9 @@
  * These run before either app moves onto the kernel, because a bug here is one
  * that ships a duplicate email rather than one that turns a test red.
  */
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import type { WorkflowBoundPlan } from "../contracts";
@@ -114,7 +115,7 @@ const effectRow = async (runId: string) => {
   return row;
 };
 
-(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow run store", () => {
+suiteFor("database")("workflow run store", () => {
   test("stores scalar JSON workflow results without changing their type", async () => {
     expect(await ready()).toBe(true);
 

@@ -1,10 +1,11 @@
 /**
  * Shared helpers for the `dev:*` per-app CLI suite.
  *
- * Public surface used by the verb scripts (start, stop, rebuild, logs,
- * status, help):
+ * Public surface used by the verb scripts (up, down, start, stop, rebuild,
+ * logs, status, help):
  *
  *   COMPOSE_FILE          path to the dev compose file
+ *   ensureInfra()         prepare credentials and start the infrastructure stack
  *   compose(...args)      wrap `docker compose -f … --profile extra <args>`
  *   composeUpAndWait(...) start services and require their healthchecks
  *   listAppServices()     all app-* services declared in the compose file
@@ -30,8 +31,19 @@
  *    captured by an agent), no ANSI escapes leak into the output.
  */
 import { $ } from "bun";
+import { prepareDevFilegate } from "./dev-filegate";
+import { prepareDevRsql } from "./dev-rsql";
 
 export const COMPOSE_FILE = "compose.dev.yml";
+export const INFRA_COMPOSE_FILE = "compose.yml";
+
+/** Prepare local credentials and start the infrastructure stack (Postgres, Valkey, NATS, Geo, Filegate, Collabora, Gotenberg, rsql). */
+export const ensureInfra = async (): Promise<void> => {
+  await prepareDevRsql();
+  await prepareDevFilegate();
+  await $`bun packages/gateway-ops/scripts/dev-nats.ts`;
+  await $`docker compose -f ${INFRA_COMPOSE_FILE} up -d --wait --wait-timeout 60`;
+};
 
 /** Always include `--profile extra` so all app services are visible even
  *  before they're explicitly started. The base profile alone would

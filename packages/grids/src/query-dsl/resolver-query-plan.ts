@@ -314,7 +314,10 @@ export const resolveDslQueryToQueryPlan = (ast: DslQueryAst, ctx: DslResolverCon
   const source = resolveSource(ast.source, ctx);
   if (isDiagnostic(source)) return { ok: false, diagnostics: [source] };
   if (source.source.kind === "view" && source.source.summaryFormulaAggregations?.length)
-    return { ok: false, diagnostics: [diagnostic("this grouped formula view is available through left join view, not from view", ast.source?.span)] };
+    return {
+      ok: false,
+      diagnostics: [diagnostic("this grouped formula view is available through left join view, not from view", ast.source?.span)],
+    };
   if (isDerivedViewSource(source)) return resolveDerivedViewSourcePlan(ast, source, ctx);
 
   const sourceCompatibility = validateViewSource(source);

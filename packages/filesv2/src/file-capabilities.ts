@@ -244,7 +244,10 @@ export const fileActions = {
     run: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
       domain(async () => {
         if (input.onConflict === "overwrite" && !input.expectedRevision) return fail(err.badInput("Replacing requires expectedRevision"));
-        const session = await filesService.upload(readActor(c), { ...input, idempotencyKey: uuidKey(JSON.stringify(["filesv2.content.create", readActor(c).user.id, c.idempotencyKey!])) });
+        const session = await filesService.upload(readActor(c), {
+          ...input,
+          idempotencyKey: uuidKey(JSON.stringify(["filesv2.content.create", readActor(c).user.id, c.idempotencyKey!])),
+        });
         return ok({
           data: { baseId: input.baseId, uploadId: session.id },
           stream: {

@@ -1,5 +1,5 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { isUniqueViolation } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 
 export const namedResourceConflict = <T>(error: unknown, constraintName: string, message: string): Result<T> | null =>
   isUniqueViolation(error, constraintName) ? fail(err.conflict(message)) : null;

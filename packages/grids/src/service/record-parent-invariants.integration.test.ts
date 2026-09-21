@@ -1,9 +1,10 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { createInTransaction, restore } from "./record-write";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const createFixture = async () => {
@@ -23,7 +24,7 @@ const createFixture = async () => {
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("record parent invariants", () => {

@@ -1,9 +1,9 @@
-import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
 import { CODE_RUNTIME_TOOL_NAMES, parseAiSse } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import { cliCodeHost, closeCliCodeHost } from "./code-host";
+import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
+import { cliCodeHost, closeCliCodeHost } from "./code-host";
 import { AI_API, jsonRequest } from "./shared";
 
 export type AssistantTurnStreamResult = {
@@ -36,7 +36,7 @@ export const streamAssistantTurn = async (input: {
   turnId?: string;
   initialResponse?: Response;
   approveTools?: readonly string[];
-  onCapabilityApproval?:(request:CodeApproval)=>Promise<CapabilityDecision>;
+  onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
   onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
 }): Promise<AssistantTurnStreamResult> => {
@@ -122,15 +122,30 @@ export const streamAssistantTurn = async (input: {
         pending: { type: "approval", callId: block.callId, name: block.name },
       };
     }
-    if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some(name => name === block.name)) {
+    if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some((name) => name === block.name)) {
       if (executedCalls.has(block.callId)) return null;
       executedCalls.add(block.callId);
       let result: unknown;
       try {
-        result = await (await cliCodeHost(ctx,input.onCapabilityApproval ?? (async request=>{if(approvedTools.has(request.name))return {approved:true};throw new Error(`Capability ${request.name} requires approval; use interactive mode or --approve.`);} ))).call({ name: block.name, args: block.args, callId: block.callId, turnId: targetTurnId!, conversationId });
-      } catch (error) { result = { error: error instanceof Error ? error.message : String(error), kind: "host", retryable: false }; }
-      await ctx.readJson(await ctx.fetch(`${AI_API}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(targetTurnId!)}/actions/${encodeURIComponent(block.callId)}`,
-        jsonRequest("POST", {type:"tool_result",result})));
+        result = await (
+          await cliCodeHost(
+            ctx,
+            input.onCapabilityApproval ??
+              (async (request) => {
+                if (approvedTools.has(request.name)) return { approved: true };
+                throw new Error(`Capability ${request.name} requires approval; use interactive mode or --approve.`);
+              }),
+          )
+        ).call({ name: block.name, args: block.args, callId: block.callId, turnId: targetTurnId!, conversationId });
+      } catch (error) {
+        result = { error: error instanceof Error ? error.message : String(error), kind: "host", retryable: false };
+      }
+      await ctx.readJson(
+        await ctx.fetch(
+          `${AI_API}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(targetTurnId!)}/actions/${encodeURIComponent(block.callId)}`,
+          jsonRequest("POST", { type: "tool_result", result }),
+        ),
+      );
       return null;
     }
     if (block.status === "awaiting_client") {
@@ -169,7 +184,7 @@ export const streamAssistantTurn = async (input: {
       } else {
         const messages = event.messages.filter((message) => message.loopId === targetTurnId);
         if (messages.length > 0) {
-          const latestTurnId = event.messages.findLast(message => message.loopId)?.loopId;
+          const latestTurnId = event.messages.findLast((message) => message.loopId)?.loopId;
           const failed = !event.activeTurn && latestTurnId === targetTurnId && event.conversation?.runStatus === "failed";
           return {
             conversationId,
@@ -210,7 +225,7 @@ export const streamAssistantTurn = async (input: {
     }
 
     if (event.type === "message_saved") {
-      emitJsonLine({type:"usage",messageId:event.message.id,usage:event.message.usage});
+      emitJsonLine({ type: "usage", messageId: event.message.id, usage: event.message.usage });
       return null;
     }
     const messages = event.messages ?? [];
@@ -233,10 +248,12 @@ export const streamAssistantTurn = async (input: {
       const connection = AbortSignal.any([abort.signal, AbortSignal.timeout(60_000)]);
       let response: Response;
       try {
-        response = initialResponse ?? await ctx.fetch(`${AI_API}/conversations/${encodeURIComponent(conversationId)}/stream`, {
-          headers: { Accept: "text/event-stream" },
-          signal: connection,
-        });
+        response =
+          initialResponse ??
+          (await ctx.fetch(`${AI_API}/conversations/${encodeURIComponent(conversationId)}/stream`, {
+            headers: { Accept: "text/event-stream" },
+            signal: connection,
+          }));
       } catch {
         if (abort.signal.aborted) break;
         await Bun.sleep(reconnectDelayMs);
@@ -252,7 +269,9 @@ export const streamAssistantTurn = async (input: {
           // Retry transport reads only. Never replay a failed approval or tool
           // result submission as if it were a dropped event connection.
           let next: IteratorResult<AiStreamSseEvent>;
-          try { next = await events.next(); } catch (error) {
+          try {
+            next = await events.next();
+          } catch (error) {
             if (error instanceof SyntaxError) throw error;
             break;
           }
@@ -260,7 +279,10 @@ export const streamAssistantTurn = async (input: {
           const event = next.value;
           const result = await handleEvent(event);
           if (result) {
-            if (result.status !== "needs_attention") { abort.abort(); await closeCliCodeHost(ctx); }
+            if (result.status !== "needs_attention") {
+              abort.abort();
+              await closeCliCodeHost(ctx);
+            }
             return finish(result);
           }
         }

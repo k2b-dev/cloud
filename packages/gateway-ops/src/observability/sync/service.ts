@@ -9,12 +9,13 @@
  * unreachable app degrades to a warning row; it never hides the others.
  */
 
-import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { SyncHealth, SyncResourceSummary } from "@k2b/sync";
+import { env } from "@k2b/cloud/config";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
 import type { SyncDeadLetterEntry, SyncDeadLetterKind, SyncDeadLetterStoreView, SyncScheduleView } from "@k2b/cloud/services";
 import { get } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
+import type { SyncHealth, SyncResourceSummary } from "@k2b/sync";
 import { z } from "zod";
 
 export const SYNC_OPS_PATH = "/_internal/sync";
@@ -223,8 +224,7 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
         new URL(
           `/api/admin/sync/${encodeURIComponent(app.id)}${path}`,
           await (
-            dependencies.coreOrigin ??
-            (async () => process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim() || publicCloudOrigin(await get<string>("app.url")))
+            dependencies.coreOrigin ?? (async () => env.CLOUD_CORE_INTERNAL_ORIGIN || publicCloudOrigin(await get<string>("app.url")))
           )(),
         ),
         {

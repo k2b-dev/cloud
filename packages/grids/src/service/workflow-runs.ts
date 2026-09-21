@@ -24,7 +24,6 @@ import {
 } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { GRIDS_EVENT } from "../workflows/events";
 import type {
   GridsWorkflowChannel,
   GridsWorkflowLauncherKind,
@@ -35,6 +34,7 @@ import type {
   GridsWorkflowStepRun,
 } from "../workflows/contracts";
 import { toWorkflowRevision } from "../workflows/contracts";
+import { GRIDS_EVENT } from "../workflows/events";
 import { documentConfirmationFromDependency } from "../workflows/query-contracts";
 import type { SqlClient } from "./audit";
 import { logAudit } from "./audit";

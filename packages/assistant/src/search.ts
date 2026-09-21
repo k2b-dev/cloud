@@ -1,7 +1,7 @@
-import type { artifacts } from "./artifacts/service";
 import type { AiConversationService, AiStoredMessage, aiProjects } from "@k2b/cloud/ai";
 import type { CapabilityExecutionContext, CloudResourceView, UniversalSearchInput } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
+import type { artifacts } from "./artifacts/service";
 import { assistantCommandMessages } from "./commands";
 
 type SearchStore = Pick<AiConversationService, "listConversations" | "getConversationByShortId" | "searchConversationMessages">;
@@ -45,7 +45,12 @@ export const searchAssistant = async (
     }));
     return ok({ data });
   }
-  const chats = await store.listConversations({ ownerUserId, search: input.query, limit: input.limit, ...(projectId ? { projectId } : {}) });
+  const chats = await store.listConversations({
+    ownerUserId,
+    search: input.query,
+    limit: input.limit,
+    ...(projectId ? { projectId } : {}),
+  });
   const data: CloudResourceView[] = chats.map((chat) => ({
     ref: { type: "assistant.chat", id: chat.shortId },
     title: chat.title.slice(0, 500),

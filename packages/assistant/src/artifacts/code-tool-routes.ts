@@ -1,10 +1,10 @@
-import { agentHost, AgentHostRequest } from "./agent-host";
+import { aiConversations, CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
+import { type AuthContext, getLocale, requireInvocation } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
-import { z } from "zod";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { type AuthContext, requireInvocation, getLocale } from "@k2b/cloud/server";
-import { CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS, aiConversations } from "@k2b/cloud/ai";
+import { z } from "zod";
+import { AgentHostRequest, agentHost } from "./agent-host";
 import { artifactCodeHandlers, type CodeToolContext } from "./code-tools";
 import { LIMITS } from "./contracts";
 
@@ -76,6 +76,10 @@ register("code_create", CODE_SOURCE_TOOLS.code_create.input, artifactCodeHandler
 register("code_write", CODE_SOURCE_TOOLS.code_write.input, artifactCodeHandlers.code_write);
 register("code_remove", CODE_SOURCE_TOOLS.code_remove.input, artifactCodeHandlers.code_remove);
 
-for (const name of ["code_run","code_action","code_inspect","code_interact","code_stop","code_export","code_present"] as const) {
-  register(name,AgentHostRequest.refine(input=>input.name===name),async(input,context)=>ok(await agentHost.call(input,context)));
+for (const name of ["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_export", "code_present"] as const) {
+  register(
+    name,
+    AgentHostRequest.refine((input) => input.name === name),
+    async (input, context) => ok(await agentHost.call(input, context)),
+  );
 }

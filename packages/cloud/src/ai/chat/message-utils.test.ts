@@ -68,12 +68,17 @@ const aggregate = (lastRequest: Usage, loopUsage: Usage): LoopAggregate => ({
 
 describe("AI usage selectors", () => {
   test("updates request usage after each response while retaining loop consumption across compaction", () => {
-    const first = storedAssistant({usage:{input:1000,output:100,total:1100}});
-    const second = {...storedAssistant({usage:{input:1400,output:50,total:1450}}),id:"message-2",seq:2};
-    expect(latestUsageSnapshot([first,second])).toMatchObject({request:second.usage,loop:{input:2400,output:150,total:2550}});
-    const third = {...storedAssistant({usage:{input:300,output:20,total:320}}),id:"message-3",seq:3};
-    expect(latestUsageSnapshot([{...first,compactedAt:new Date().toISOString()},second,third])).toMatchObject({request:third.usage,loop:{input:2700,output:170,total:2870}});
-    expect(latestUsageSnapshot([first,second,{...third,usage:null,message:{role:"assistant",content:[],stopReason:"stop"}}])).toBeNull();
+    const first = storedAssistant({ usage: { input: 1000, output: 100, total: 1100 } });
+    const second = { ...storedAssistant({ usage: { input: 1400, output: 50, total: 1450 } }), id: "message-2", seq: 2 };
+    expect(latestUsageSnapshot([first, second])).toMatchObject({ request: second.usage, loop: { input: 2400, output: 150, total: 2550 } });
+    const third = { ...storedAssistant({ usage: { input: 300, output: 20, total: 320 } }), id: "message-3", seq: 3 };
+    expect(latestUsageSnapshot([{ ...first, compactedAt: new Date().toISOString() }, second, third])).toMatchObject({
+      request: third.usage,
+      loop: { input: 2700, output: 170, total: 2870 },
+    });
+    expect(
+      latestUsageSnapshot([first, second, { ...third, usage: null, message: { role: "assistant", content: [], stopReason: "stop" } }]),
+    ).toBeNull();
   });
   test("separates the final provider request from cumulative loop usage", () => {
     const finalRequest = { input: 15_876, output: 32, total: 15_908 };

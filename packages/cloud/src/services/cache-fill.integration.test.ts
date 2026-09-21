@@ -1,10 +1,9 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { redis } from "bun";
+import { valkeySuite } from "../../../../scripts/fixtures/test-infra";
 import { claimCacheFill, completeCacheFill } from "./cache-fill";
 
-// Explicitly opt into an isolated local Valkey; never use a developer's default.
-const enabled = process.env.CLOUD_CACHE_TEST === "1" && process.env.REDIS_URL?.startsWith("redis://127.0.0.1:");
-const suite = enabled ? describe : describe.skip;
+const suite = valkeySuite();
 const key = `cache-fill-test:${crypto.randomUUID()}`;
 suite("cache fill invalidation", () => {
   afterAll(async () => {

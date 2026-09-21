@@ -1,6 +1,7 @@
 import { AppWorkspace, Button, useLocale } from "@k2b/ui";
 import { weatherMessages } from "../messages";
 import { createLocationPicker } from "./location-picker";
+
 const AddLocationButton = (props: { variant?: "button" | "sidebar" | "overview" }) => {
   const locale = useLocale();
   const t = () => weatherMessages.resolve([locale()]).t;

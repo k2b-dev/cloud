@@ -1,4 +1,3 @@
-import { err, fail, ok } from "@k2b/stdlib";
 import {
   type CapabilityExecutionContext,
   type CloudResourceView,
@@ -8,6 +7,7 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { err, fail, ok } from "@k2b/stdlib";
 import type { z } from "zod";
 import { type VenueAccessScope, venueAccessScopeFor } from "./access-control";
 import {
@@ -34,8 +34,8 @@ import {
 } from "./capability-contracts";
 import { venueCapabilityPresentation } from "./capability-presentation";
 import type { ShiftAssignment, Venue } from "./contracts";
-import { type UpcomingSlotSummary, venueService } from "./service";
 import { venueMessages } from "./messages";
+import { type UpcomingSlotSummary, venueService } from "./service";
 
 const messagesFor = (context: CapabilityExecutionContext) => venueMessages.resolve(context.locale ? [context.locale] : []).t;
 
@@ -636,7 +636,8 @@ export const venueCapabilities = defineCapabilities({
     },
     "assignment.cancel": {
       title: "Cancel my shift assignment",
-      description: "Delete only the current user-backed actor's own assignment. Supply an idempotency key so an uncertain attempt can be repeated safely.",
+      description:
+        "Delete only the current user-backed actor's own assignment. Supply an idempotency key so an uncertain attempt can be repeated safely.",
       input: AssignmentCancelInputSchema,
       data: AssignmentCancelDataSchema,
       // Cancelling releases the slot to everyone else, so signing up again may be impossible.

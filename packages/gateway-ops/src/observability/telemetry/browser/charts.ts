@@ -1,6 +1,6 @@
+import type { WebVitalName, WebVitalsOverview } from "@k2b/cloud/services";
+import { type ChartExplorerData, prepareChartSnapshot } from "@k2b/ui";
 import { TELEMETRY_RANGES, type TelemetryRange } from "../contracts";
-import { prepareChartSnapshot, type ChartExplorerData } from "@k2b/ui";
-import type { WebVitalsOverview, WebVitalName } from "@k2b/cloud/services";
 import { browserMessages } from "./messages";
 export type VitalRow = { key: string; bucket: number; p75: number; count: number };
 export type VitalChart = { name: WebVitalName; data: ChartExplorerData<VitalRow> };

@@ -120,13 +120,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -143,21 +137,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "id",
-            "name",
-            "description",
-            "createdAt",
-            "updatedAt"
-          ],
+          "required": ["id", "name", "description", "createdAt", "updatedAt"],
           "additionalProperties": false
         }
       },
@@ -178,9 +163,7 @@
             "description": "Stable public Base ID."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -226,13 +209,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -249,21 +226,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "id",
-          "name",
-          "description",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "name", "description", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "747a5422e868f6903a82bb3293205d1e31b4fad226e1ba7513b3107cde0a7e68",
@@ -310,10 +278,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -323,11 +288,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -354,10 +315,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -401,10 +359,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -417,13 +372,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -440,20 +389,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -465,9 +407,7 @@
             "tag": "grid",
             "title": "Grids",
             "description": "Show Grids Bases only.",
-            "aliases": [
-              "grids"
-            ]
+            "aliases": ["grids"]
           }
         ]
       }
@@ -498,9 +438,7 @@
             "maximum": 20
           }
         },
-        "required": [
-          "templateId"
-        ],
+        "required": ["templateId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -575,9 +513,7 @@
                       "const": "html"
                     }
                   },
-                  "required": [
-                    "kind"
-                  ],
+                  "required": ["kind"],
                   "additionalProperties": false
                 },
                 {
@@ -597,11 +533,7 @@
                       "maximum": 9007199254740991
                     }
                   },
-                  "required": [
-                    "kind",
-                    "id",
-                    "version"
-                  ],
+                  "required": ["kind", "id", "version"],
                   "additionalProperties": false
                 }
               ]
@@ -610,11 +542,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "enum": [
-                    "valid",
-                    "warning",
-                    "unchecked"
-                  ]
+                  "enum": ["valid", "warning", "unchecked"]
                 },
                 {
                   "type": "null"
@@ -652,13 +580,7 @@
                     "pattern": "^[a-f0-9]{64}$"
                   }
                 },
-                "required": [
-                  "key",
-                  "filename",
-                  "mimeType",
-                  "sizeBytes",
-                  "sha256"
-                ],
+                "required": ["key", "filename", "mimeType", "sizeBytes", "sha256"],
                 "additionalProperties": false
               }
             },
@@ -694,10 +616,7 @@
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                     }
                   },
-                  "required": [
-                    "rowCount",
-                    "capturedAt"
-                  ],
+                  "required": ["rowCount", "capturedAt"],
                   "additionalProperties": false
                 },
                 {
@@ -742,9 +661,7 @@
             "description": "Public ID from the corresponding discovery result or resource reference."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -817,9 +734,7 @@
                     "const": "html"
                   }
                 },
-                "required": [
-                  "kind"
-                ],
+                "required": ["kind"],
                 "additionalProperties": false
               },
               {
@@ -839,11 +754,7 @@
                     "maximum": 9007199254740991
                   }
                 },
-                "required": [
-                  "kind",
-                  "id",
-                  "version"
-                ],
+                "required": ["kind", "id", "version"],
                 "additionalProperties": false
               }
             ]
@@ -852,11 +763,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "valid",
-                  "warning",
-                  "unchecked"
-                ]
+                "enum": ["valid", "warning", "unchecked"]
               },
               {
                 "type": "null"
@@ -894,13 +801,7 @@
                   "pattern": "^[a-f0-9]{64}$"
                 }
               },
-              "required": [
-                "key",
-                "filename",
-                "mimeType",
-                "sizeBytes",
-                "sha256"
-              ],
+              "required": ["key", "filename", "mimeType", "sizeBytes", "sha256"],
               "additionalProperties": false
             }
           },
@@ -936,10 +837,7 @@
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                   }
                 },
-                "required": [
-                  "rowCount",
-                  "capturedAt"
-                ],
+                "required": ["rowCount", "capturedAt"],
                 "additionalProperties": false
               },
               {
@@ -997,9 +895,7 @@
             "maximum": 20
           }
         },
-        "required": [
-          "tableId"
-        ],
+        "required": ["tableId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1026,26 +922,15 @@
                   "type": "boolean"
                 }
               },
-              "required": [
-                "id",
-                "tableId",
-                "name",
-                "enabled"
-              ],
+              "required": ["id", "tableId", "name", "enabled"],
               "additionalProperties": false
             }
           },
           "nextOffset": {
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           }
         },
-        "required": [
-          "items",
-          "nextOffset"
-        ],
+        "required": ["items", "nextOffset"],
         "additionalProperties": false
       },
       "schemaHash": "3f719e3676c0da5740820a398554cc910f052613302640ee263511e11cf1e0dd",
@@ -1068,13 +953,7 @@
             "default": "tables",
             "description": "Catalog section: tables, views, fields, select options, or typed object-list columns.",
             "type": "string",
-            "enum": [
-              "tables",
-              "views",
-              "fields",
-              "options",
-              "list-columns"
-            ]
+            "enum": ["tables", "views", "fields", "options", "list-columns"]
           },
           "tableId": {
             "description": "Public Table ID; required for fields, options and list-columns, optional for views.",
@@ -1105,9 +984,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "baseId"
-        ],
+        "required": ["baseId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1127,21 +1004,12 @@
                 "maxLength": 200
               }
             },
-            "required": [
-              "id",
-              "name"
-            ],
+            "required": ["id", "name"],
             "additionalProperties": false
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "tables",
-              "views",
-              "fields",
-              "options",
-              "list-columns"
-            ]
+            "enum": ["tables", "views", "fields", "options", "list-columns"]
           },
           "items": {
             "maxItems": 100,
@@ -1161,10 +1029,7 @@
                     },
                     "tableKind": {
                       "type": "string",
-                      "enum": [
-                        "stored",
-                        "federated"
-                      ]
+                      "enum": ["stored", "federated"]
                     },
                     "name": {
                       "type": "string",
@@ -1183,13 +1048,7 @@
                       ]
                     }
                   },
-                  "required": [
-                    "kind",
-                    "id",
-                    "tableKind",
-                    "name",
-                    "description"
-                  ],
+                  "required": ["kind", "id", "tableKind", "name", "description"],
                   "additionalProperties": false
                 },
                 {
@@ -1224,13 +1083,7 @@
                       ]
                     }
                   },
-                  "required": [
-                    "kind",
-                    "id",
-                    "tableId",
-                    "name",
-                    "description"
-                  ],
+                  "required": ["kind", "id", "tableId", "name", "description"],
                   "additionalProperties": false
                 },
                 {
@@ -1302,10 +1155,7 @@
                       "anyOf": [
                         {
                           "type": "string",
-                          "enum": [
-                            "single",
-                            "multiple"
-                          ]
+                          "enum": ["single", "multiple"]
                         },
                         {
                           "type": "null"
@@ -1313,17 +1163,7 @@
                       ]
                     }
                   },
-                  "required": [
-                    "kind",
-                    "id",
-                    "tableId",
-                    "name",
-                    "description",
-                    "type",
-                    "valueHint",
-                    "targetTableId",
-                    "relationCardinality"
-                  ],
+                  "required": ["kind", "id", "tableId", "name", "description", "type", "valueHint", "targetTableId", "relationCardinality"],
                   "additionalProperties": false
                 },
                 {
@@ -1359,13 +1199,7 @@
                       ]
                     }
                   },
-                  "required": [
-                    "kind",
-                    "id",
-                    "fieldId",
-                    "label",
-                    "description"
-                  ],
+                  "required": ["kind", "id", "fieldId", "label", "description"],
                   "additionalProperties": false
                 },
                 {
@@ -1397,16 +1231,7 @@
                         },
                         "type": {
                           "type": "string",
-                          "enum": [
-                            "text",
-                            "longtext",
-                            "number",
-                            "boolean",
-                            "date",
-                            "select",
-                            "percent",
-                            "duration"
-                          ]
+                          "enum": ["text", "longtext", "number", "boolean", "date", "select", "percent", "duration"]
                         },
                         "config": {
                           "default": {},
@@ -1437,21 +1262,13 @@
                                     },
                                     "format": {
                                       "type": "string",
-                                      "enum": [
-                                        "iso",
-                                        "short",
-                                        "long",
-                                        "relative"
-                                      ]
+                                      "enum": ["iso", "short", "long", "relative"]
                                     },
                                     "includeTime": {
                                       "type": "boolean"
                                     }
                                   },
-                                  "required": [
-                                    "kind",
-                                    "format"
-                                  ],
+                                  "required": ["kind", "format"],
                                   "additionalProperties": false
                                 },
                                 {
@@ -1470,9 +1287,7 @@
                                       "type": "boolean"
                                     }
                                   },
-                                  "required": [
-                                    "kind"
-                                  ],
+                                  "required": ["kind"],
                                   "additionalProperties": false
                                 },
                                 {
@@ -1488,9 +1303,7 @@
                                       "maximum": 10
                                     }
                                   },
-                                  "required": [
-                                    "kind"
-                                  ],
+                                  "required": ["kind"],
                                   "additionalProperties": false
                                 },
                                 {
@@ -1502,16 +1315,10 @@
                                     },
                                     "label": {
                                       "type": "string",
-                                      "enum": [
-                                        "value",
-                                        "percent",
-                                        "none"
-                                      ]
+                                      "enum": ["value", "percent", "none"]
                                     }
                                   },
-                                  "required": [
-                                    "kind"
-                                  ],
+                                  "required": ["kind"],
                                   "additionalProperties": false
                                 },
                                 {
@@ -1531,10 +1338,7 @@
                                       "type": "boolean"
                                     }
                                   },
-                                  "required": [
-                                    "kind",
-                                    "bcid"
-                                  ],
+                                  "required": ["kind", "bcid"],
                                   "additionalProperties": false
                                 }
                               ]
@@ -1547,28 +1351,15 @@
                         },
                         "width": {
                           "type": "string",
-                          "enum": [
-                            "fullWidth",
-                            "compact"
-                          ]
+                          "enum": ["fullWidth", "compact"]
                         },
                         "defaultValue": {}
                       },
-                      "required": [
-                        "id",
-                        "name",
-                        "type",
-                        "config",
-                        "required"
-                      ],
+                      "required": ["id", "name", "type", "config", "required"],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "kind",
-                    "fieldId",
-                    "column"
-                  ],
+                  "required": ["kind", "fieldId", "column"],
                   "additionalProperties": false
                 }
               ]
@@ -1594,10 +1385,7 @@
                     "properties": {
                       "scope": {
                         "type": "string",
-                        "enum": [
-                          "all",
-                          "selected"
-                        ]
+                        "enum": ["all", "selected"]
                       },
                       "fieldIds": {
                         "maxItems": 200,
@@ -1644,13 +1432,7 @@
                                   "const": "text"
                                 }
                               },
-                              "required": [
-                                "id",
-                                "label",
-                                "description",
-                                "required",
-                                "type"
-                              ],
+                              "required": ["id", "label", "description", "required", "type"],
                               "additionalProperties": false
                             },
                             {
@@ -1685,13 +1467,7 @@
                                   "const": "longtext"
                                 }
                               },
-                              "required": [
-                                "id",
-                                "label",
-                                "description",
-                                "required",
-                                "type"
-                              ],
+                              "required": ["id", "label", "description", "required", "type"],
                               "additionalProperties": false
                             },
                             {
@@ -1742,33 +1518,19 @@
                                         "maxLength": 200
                                       }
                                     },
-                                    "required": [
-                                      "id",
-                                      "label"
-                                    ],
+                                    "required": ["id", "label"],
                                     "additionalProperties": false
                                   }
                                 }
                               },
-                              "required": [
-                                "id",
-                                "label",
-                                "description",
-                                "required",
-                                "type",
-                                "options"
-                              ],
+                              "required": ["id", "label", "description", "required", "type", "options"],
                               "additionalProperties": false
                             }
                           ]
                         }
                       }
                     },
-                    "required": [
-                      "scope",
-                      "fieldIds",
-                      "questions"
-                    ],
+                    "required": ["scope", "fieldIds", "questions"],
                     "additionalProperties": false
                   },
                   {
@@ -1777,12 +1539,7 @@
                 ]
               }
             },
-            "required": [
-              "tableId",
-              "canCreateRecords",
-              "canUpdateRecords",
-              "updateAudit"
-            ],
+            "required": ["tableId", "canCreateRecords", "canUpdateRecords", "updateAudit"],
             "additionalProperties": false
           },
           "list": {
@@ -1803,19 +1560,11 @@
                 "maximum": 9007199254740991
               }
             },
-            "required": [
-              "fieldId",
-              "minItems",
-              "maxItems"
-            ],
+            "required": ["fieldId", "minItems", "maxItems"],
             "additionalProperties": false
           }
         },
-        "required": [
-          "base",
-          "kind",
-          "items"
-        ],
+        "required": ["base", "kind", "items"],
         "additionalProperties": false
       },
       "schemaHash": "0d79278254537553d6701113bebf158c0ea5f5e04536db32566a17ef2d774530",
@@ -1862,10 +1611,7 @@
                     "description": "Public current Table ID."
                   }
                 },
-                "required": [
-                  "kind",
-                  "tableId"
-                ],
+                "required": ["kind", "tableId"],
                 "additionalProperties": false
               },
               {
@@ -1882,10 +1628,7 @@
                     "description": "Public current View ID."
                   }
                 },
-                "required": [
-                  "kind",
-                  "viewId"
-                ],
+                "required": ["kind", "viewId"],
                 "additionalProperties": false
               }
             ]
@@ -1929,9 +1672,7 @@
                           "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$"
                         }
                       },
-                      "required": [
-                        "decimal"
-                      ],
+                      "required": ["decimal"],
                       "additionalProperties": false
                     }
                   ]
@@ -1963,9 +1704,7 @@
                             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$"
                           }
                         },
-                        "required": [
-                          "decimal"
-                        ],
+                        "required": ["decimal"],
                         "additionalProperties": false
                       }
                     ]
@@ -1993,10 +1732,7 @@
             "maximum": 1000
           }
         },
-        "required": [
-          "baseId",
-          "query"
-        ],
+        "required": ["baseId", "query"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2011,10 +1747,7 @@
               },
               "mode": {
                 "type": "string",
-                "enum": [
-                  "rows",
-                  "groups"
-                ]
+                "enum": ["rows", "groups"]
               },
               "columns": {
                 "maxItems": 100,
@@ -2052,11 +1785,7 @@
                       "maxLength": 100
                     }
                   },
-                  "required": [
-                    "key",
-                    "label",
-                    "type"
-                  ],
+                  "required": ["key", "label", "type"],
                   "additionalProperties": false
                 }
               },
@@ -2090,13 +1819,7 @@
                         "properties": {
                           "rel": {
                             "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
+                            "enum": ["open", "edit", "status", "preview", "download"],
                             "description": "Semantic relationship; clients decide how to present it."
                           },
                           "href": {
@@ -2113,17 +1836,12 @@
                             "maxLength": 120
                           }
                         },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
+                        "required": ["rel", "href"],
                         "additionalProperties": false
                       }
                     }
                   },
-                  "required": [
-                    "values"
-                  ],
+                  "required": ["values"],
                   "additionalProperties": false
                 }
               },
@@ -2139,13 +1857,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "ok",
-              "mode",
-              "columns",
-              "rows",
-              "limit"
-            ],
+            "required": ["ok", "mode", "columns", "rows", "limit"],
             "additionalProperties": false
           },
           {
@@ -2164,14 +1876,7 @@
                   "properties": {
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "gql.syntax",
-                        "gql.context",
-                        "gql.resolution",
-                        "gql.execution",
-                        "gql.cursor",
-                        "gql.access"
-                      ]
+                      "enum": ["gql.syntax", "gql.context", "gql.resolution", "gql.execution", "gql.cursor", "gql.access"]
                     },
                     "line": {
                       "type": "integer",
@@ -2194,17 +1899,12 @@
                       "maxLength": 2000
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
             },
-            "required": [
-              "ok",
-              "diagnostics"
-            ],
+            "required": ["ok", "diagnostics"],
             "additionalProperties": false
           }
         ]
@@ -2253,10 +1953,7 @@
                     "description": "Public current Table ID."
                   }
                 },
-                "required": [
-                  "kind",
-                  "tableId"
-                ],
+                "required": ["kind", "tableId"],
                 "additionalProperties": false
               },
               {
@@ -2273,10 +1970,7 @@
                     "description": "Public current View ID."
                   }
                 },
-                "required": [
-                  "kind",
-                  "viewId"
-                ],
+                "required": ["kind", "viewId"],
                 "additionalProperties": false
               }
             ]
@@ -2320,9 +2014,7 @@
                           "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$"
                         }
                       },
-                      "required": [
-                        "decimal"
-                      ],
+                      "required": ["decimal"],
                       "additionalProperties": false
                     }
                   ]
@@ -2354,9 +2046,7 @@
                             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$"
                           }
                         },
-                        "required": [
-                          "decimal"
-                        ],
+                        "required": ["decimal"],
                         "additionalProperties": false
                       }
                     ]
@@ -2378,10 +2068,7 @@
             "maximum": 25
           }
         },
-        "required": [
-          "baseId",
-          "query"
-        ],
+        "required": ["baseId", "query"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2396,10 +2083,7 @@
               },
               "mode": {
                 "type": "string",
-                "enum": [
-                  "rows",
-                  "groups"
-                ]
+                "enum": ["rows", "groups"]
               },
               "columns": {
                 "maxItems": 100,
@@ -2437,11 +2121,7 @@
                       "maxLength": 100
                     }
                   },
-                  "required": [
-                    "key",
-                    "label",
-                    "type"
-                  ],
+                  "required": ["key", "label", "type"],
                   "additionalProperties": false
                 }
               },
@@ -2475,13 +2155,7 @@
                         "properties": {
                           "rel": {
                             "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
+                            "enum": ["open", "edit", "status", "preview", "download"],
                             "description": "Semantic relationship; clients decide how to present it."
                           },
                           "href": {
@@ -2498,17 +2172,12 @@
                             "maxLength": 120
                           }
                         },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
+                        "required": ["rel", "href"],
                         "additionalProperties": false
                       }
                     }
                   },
-                  "required": [
-                    "values"
-                  ],
+                  "required": ["values"],
                   "additionalProperties": false
                 }
               },
@@ -2524,13 +2193,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "ok",
-              "mode",
-              "columns",
-              "rows",
-              "limit"
-            ],
+            "required": ["ok", "mode", "columns", "rows", "limit"],
             "additionalProperties": false
           },
           {
@@ -2549,14 +2212,7 @@
                   "properties": {
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "gql.syntax",
-                        "gql.context",
-                        "gql.resolution",
-                        "gql.execution",
-                        "gql.cursor",
-                        "gql.access"
-                      ]
+                      "enum": ["gql.syntax", "gql.context", "gql.resolution", "gql.execution", "gql.cursor", "gql.access"]
                     },
                     "line": {
                       "type": "integer",
@@ -2579,17 +2235,12 @@
                       "maxLength": 2000
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
             },
-            "required": [
-              "ok",
-              "diagnostics"
-            ],
+            "required": ["ok", "diagnostics"],
             "additionalProperties": false
           }
         ]
@@ -2634,10 +2285,7 @@
             "maxLength": 16384
           }
         },
-        "required": [
-          "baseId",
-          "viewId"
-        ],
+        "required": ["baseId", "viewId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2652,10 +2300,7 @@
               },
               "mode": {
                 "type": "string",
-                "enum": [
-                  "rows",
-                  "groups"
-                ]
+                "enum": ["rows", "groups"]
               },
               "columns": {
                 "maxItems": 100,
@@ -2693,11 +2338,7 @@
                       "maxLength": 100
                     }
                   },
-                  "required": [
-                    "key",
-                    "label",
-                    "type"
-                  ],
+                  "required": ["key", "label", "type"],
                   "additionalProperties": false
                 }
               },
@@ -2731,13 +2372,7 @@
                         "properties": {
                           "rel": {
                             "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
+                            "enum": ["open", "edit", "status", "preview", "download"],
                             "description": "Semantic relationship; clients decide how to present it."
                           },
                           "href": {
@@ -2754,17 +2389,12 @@
                             "maxLength": 120
                           }
                         },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
+                        "required": ["rel", "href"],
                         "additionalProperties": false
                       }
                     }
                   },
-                  "required": [
-                    "values"
-                  ],
+                  "required": ["values"],
                   "additionalProperties": false
                 }
               },
@@ -2780,13 +2410,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "ok",
-              "mode",
-              "columns",
-              "rows",
-              "limit"
-            ],
+            "required": ["ok", "mode", "columns", "rows", "limit"],
             "additionalProperties": false
           },
           {
@@ -2805,14 +2429,7 @@
                   "properties": {
                     "code": {
                       "type": "string",
-                      "enum": [
-                        "gql.syntax",
-                        "gql.context",
-                        "gql.resolution",
-                        "gql.execution",
-                        "gql.cursor",
-                        "gql.access"
-                      ]
+                      "enum": ["gql.syntax", "gql.context", "gql.resolution", "gql.execution", "gql.cursor", "gql.access"]
                     },
                     "line": {
                       "type": "integer",
@@ -2835,17 +2452,12 @@
                       "maxLength": 2000
                     }
                   },
-                  "required": [
-                    "message"
-                  ],
+                  "required": ["message"],
                   "additionalProperties": false
                 }
               }
             },
-            "required": [
-              "ok",
-              "diagnostics"
-            ],
+            "required": ["ok", "diagnostics"],
             "additionalProperties": false
           }
         ]
@@ -2867,9 +2479,7 @@
             "description": "Stable public live Record ID."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2960,16 +2570,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "tableId",
-          "version",
-          "deletedAt",
-          "createdBy",
-          "updatedBy",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "tableId", "version", "deletedAt", "createdBy", "updatedBy", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "e69440c1a6d41f102bcaf93dacb3b0c7348411548979e392848b56be0a8bfc18",
@@ -2989,9 +2590,7 @@
             "description": "Stable public Table ID."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3012,10 +2611,7 @@
           },
           "tableKind": {
             "type": "string",
-            "enum": [
-              "stored",
-              "federated"
-            ]
+            "enum": ["stored", "federated"]
           },
           "name": {
             "type": "string",
@@ -3046,11 +2642,7 @@
           },
           "permission": {
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "canCreateRecords": {
             "type": "boolean"
@@ -3067,13 +2659,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -3090,10 +2676,7 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
@@ -3129,9 +2712,7 @@
             "description": "Stable public View ID."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3186,13 +2767,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -3209,22 +2784,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "kind",
-          "id",
-          "tableId",
-          "name",
-          "description",
-          "icon"
-        ],
+        "required": ["kind", "id", "tableId", "name", "description", "icon"],
         "additionalProperties": false
       },
       "schemaHash": "3f3990fb6cf0abffff71079e9a71de95669819050266e3f74f8c8f3bf25dfb3f",
@@ -3258,9 +2823,7 @@
             "maximum": 20
           }
         },
-        "required": [
-          "baseId"
-        ],
+        "required": ["baseId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3290,33 +2853,18 @@
                 },
                 "intent": {
                   "type": "string",
-                  "enum": [
-                    "correction",
-                    "cancellation"
-                  ]
+                  "enum": ["correction", "cancellation"]
                 }
               },
-              "required": [
-                "id",
-                "name",
-                "tableId",
-                "expectedRevision",
-                "intent"
-              ],
+              "required": ["id", "name", "tableId", "expectedRevision", "intent"],
               "additionalProperties": false
             }
           },
           "nextOffset": {
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           }
         },
-        "required": [
-          "items",
-          "nextOffset"
-        ],
+        "required": ["items", "nextOffset"],
         "additionalProperties": false
       },
       "schemaHash": "03ee076eed43b41e866672c77300af32cc1d923f779719f95289050d87c267ea",
@@ -3336,9 +2884,7 @@
             "description": "Public ID from the corresponding discovery result or resource reference."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3356,11 +2902,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "status",
-          "mode"
-        ],
+        "required": ["id", "status", "mode"],
         "additionalProperties": false
       },
       "schemaHash": "fa0db70bcc5b08048d711242a9c31c0dfcc492b52fa6f947bd335a11efdfd02e",
@@ -3387,10 +2929,7 @@
             "description": "Record public ID from the template table, obtained with GQL."
           }
         },
-        "required": [
-          "templateId",
-          "recordId"
-        ],
+        "required": ["templateId", "recordId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3463,9 +3002,7 @@
                     "const": "html"
                   }
                 },
-                "required": [
-                  "kind"
-                ],
+                "required": ["kind"],
                 "additionalProperties": false
               },
               {
@@ -3485,11 +3022,7 @@
                     "maximum": 9007199254740991
                   }
                 },
-                "required": [
-                  "kind",
-                  "id",
-                  "version"
-                ],
+                "required": ["kind", "id", "version"],
                 "additionalProperties": false
               }
             ]
@@ -3498,11 +3031,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "valid",
-                  "warning",
-                  "unchecked"
-                ]
+                "enum": ["valid", "warning", "unchecked"]
               },
               {
                 "type": "null"
@@ -3540,13 +3069,7 @@
                   "pattern": "^[a-f0-9]{64}$"
                 }
               },
-              "required": [
-                "key",
-                "filename",
-                "mimeType",
-                "sizeBytes",
-                "sha256"
-              ],
+              "required": ["key", "filename", "mimeType", "sizeBytes", "sha256"],
               "additionalProperties": false
             }
           },
@@ -3582,10 +3105,7 @@
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                   }
                 },
-                "required": [
-                  "rowCount",
-                  "capturedAt"
-                ],
+                "required": ["rowCount", "capturedAt"],
                 "additionalProperties": false
               },
               {
@@ -3641,10 +3161,7 @@
             "description": "Public Field IDs mapped to explicitly supplied values."
           }
         },
-        "required": [
-          "tableId",
-          "values"
-        ],
+        "required": ["tableId", "values"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3735,16 +3252,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "tableId",
-          "version",
-          "deletedAt",
-          "createdBy",
-          "updatedBy",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "tableId", "version", "deletedAt", "createdBy", "updatedBy", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "3808213f82807d21f9a74edfcbed03f49f2a39a8a9f18ef43d2bf6f3b7389ed2",
@@ -3808,12 +3316,7 @@
             "additionalProperties": false
           }
         },
-        "required": [
-          "tableId",
-          "recordId",
-          "values",
-          "ifVersion"
-        ],
+        "required": ["tableId", "recordId", "values", "ifVersion"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3904,16 +3407,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "tableId",
-          "version",
-          "deletedAt",
-          "createdBy",
-          "updatedBy",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "tableId", "version", "deletedAt", "createdBy", "updatedBy", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "7e62c9415db67c19efe32537f8d6c234397842dbb918b2e252723e1bcd5e02b3",
@@ -3964,12 +3458,7 @@
                 "description": "Stable id within the external system."
               }
             },
-            "required": [
-              "provider",
-              "providerAccount",
-              "resourceKind",
-              "externalId"
-            ],
+            "required": ["provider", "providerAccount", "resourceKind", "externalId"],
             "additionalProperties": false,
             "description": "Case-sensitive durable identity of the source record outside Grids."
           },
@@ -4010,11 +3499,7 @@
             "additionalProperties": false
           }
         },
-        "required": [
-          "tableId",
-          "externalRef",
-          "values"
-        ],
+        "required": ["tableId", "externalRef", "values"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4044,14 +3529,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "recordId",
-          "tableId",
-          "version",
-          "created",
-          "changed",
-          "replayed"
-        ],
+        "required": ["recordId", "tableId", "version", "created", "changed", "replayed"],
         "additionalProperties": false
       },
       "schemaHash": "05ae5319997d24a8030110a3068b79f65e8c78f11ee11d94e622b67e54f67d66",
@@ -4097,10 +3575,7 @@
                     "description": "Public current Table ID."
                   }
                 },
-                "required": [
-                  "kind",
-                  "tableId"
-                ],
+                "required": ["kind", "tableId"],
                 "additionalProperties": false
               },
               {
@@ -4117,10 +3592,7 @@
                     "description": "Public current View ID."
                   }
                 },
-                "required": [
-                  "kind",
-                  "viewId"
-                ],
+                "required": ["kind", "viewId"],
                 "additionalProperties": false
               }
             ]
@@ -4137,11 +3609,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "baseId",
-          "query",
-          "name"
-        ],
+        "required": ["baseId", "query", "name"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4196,13 +3664,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -4219,22 +3681,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "kind",
-          "id",
-          "tableId",
-          "name",
-          "description",
-          "icon"
-        ],
+        "required": ["kind", "id", "tableId", "name", "description", "icon"],
         "additionalProperties": false
       },
       "schemaHash": "8d0bb19c0c0c2231f9a300a7db39ceec5df825c0e646aeb6dfb4c6615ccb2295",
@@ -4268,11 +3720,7 @@
             "description": "Revision returned by workflow.record-actions; changes require new approval."
           }
         },
-        "required": [
-          "launcherId",
-          "recordId",
-          "expectedRevision"
-        ],
+        "required": ["launcherId", "recordId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4293,48 +3741,21 @@
           },
           "mode": {
             "type": "string",
-            "enum": [
-              "execute",
-              "dryRun"
-            ]
+            "enum": ["execute", "dryRun"]
           },
           "channel": {
             "type": "string",
-            "enum": [
-              "api",
-              "customApp",
-              "scanner",
-              "bulk",
-              "record",
-              "schedule",
-              "recordEvent"
-            ]
+            "enum": ["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"]
           },
           "created": {
             "type": "boolean"
           },
           "status": {
             "type": "string",
-            "enum": [
-              "queued",
-              "running",
-              "waiting",
-              "succeeded",
-              "failed",
-              "canceled",
-              "needs_attention"
-            ]
+            "enum": ["queued", "running", "waiting", "succeeded", "failed", "canceled", "needs_attention"]
           }
         },
-        "required": [
-          "runId",
-          "workflowId",
-          "revision",
-          "mode",
-          "channel",
-          "created",
-          "status"
-        ],
+        "required": ["runId", "workflowId", "revision", "mode", "channel", "created", "status"],
         "additionalProperties": false
       },
       "schemaHash": "b9e804208b50d2e5d75d6077447566623a52edfe5a31e0b6f484f31aea3d4b37",

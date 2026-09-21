@@ -40,7 +40,6 @@ import {
   validateWorkflowInputSchema,
 } from "./contracts";
 
-
 describe("conversation tag contracts", () => {
   test("normalizes valid colors and rejects ambiguous tag colors", () => {
     expect(createLocalTagSchema.parse({ name: "Priority", color: " #AABBCC " })).toEqual({

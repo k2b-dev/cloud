@@ -193,7 +193,10 @@ export const initialAddressRows = (contact: Contact | null, rowLabels: ContactRo
     : [emptyAddressRow(rowLabels)];
 };
 
-export const initialBankAccountRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableBankAccount[] => {
+export const initialBankAccountRows = (
+  contact: Contact | null,
+  rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS,
+): EditableBankAccount[] => {
   if (!contact) return [];
   return contact.bankAccounts.map((account) => ({
     label: account.label?.trim() || rowLabels.bank,

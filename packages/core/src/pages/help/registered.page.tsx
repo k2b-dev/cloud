@@ -1,6 +1,6 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { preloadLayoutHelp } from "@k2b/cloud/ssr/help";
 import { getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
+import { preloadLayoutHelp } from "@k2b/cloud/ssr/help";
 import { ssr } from "../../config";
 import CoreLayoutHelp from "../CoreLayoutHelp.island";
 import { corePageMessages } from "../messages";

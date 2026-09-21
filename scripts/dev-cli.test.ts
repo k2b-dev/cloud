@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { findStartupFailure } from "./dev-cli";
 
-const packageJson = await Bun.file(new URL("../package.json", import.meta.url)).json();
+const downScript = await Bun.file(new URL("./dev-down.ts", import.meta.url)).text();
 
 describe("development startup diagnostics", () => {
   test("returns the latest actionable failure without a Compose prefix", () => {
@@ -15,9 +15,9 @@ describe("development startup diagnostics", () => {
   });
 
   test("keeps separately composed infrastructure when removing the app stack", () => {
-    const command = packageJson.scripts["dev:down"];
-    expect(command).toContain("compose.dev.yml");
-    expect(command).not.toContain("--remove-orphans");
-    expect(command).not.toContain("--volumes");
+    expect(downScript).toContain("COMPOSE_FILE} --profile extra down");
+    expect(downScript).not.toContain("--remove-orphans");
+    expect(downScript).not.toContain("--volumes");
+    expect(downScript).toContain('inputs.includes("--infra")');
   });
 });

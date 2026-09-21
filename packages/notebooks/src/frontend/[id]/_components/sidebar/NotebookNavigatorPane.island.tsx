@@ -1,9 +1,9 @@
 import { Button, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
+import { notebookWorkspaceMessages } from "../../messages";
 import NotebookNavigator from "./NotebookNavigator";
 import type { NotebookContext } from "./types";
 import { useNotebookWorkspaceState } from "./useNotebookWorkspaceState";
-import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   ctx: NotebookContext;

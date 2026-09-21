@@ -1,4 +1,4 @@
-import { listCapabilityCatalog, type CapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
+import { type CapabilityCatalogApp, listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
 import type { CloudResourceView, UniversalSearchInput } from "@k2b/cloud/contracts";
 import { cache } from "@k2b/stdlib";
 import { capabilityHref } from "./routes";

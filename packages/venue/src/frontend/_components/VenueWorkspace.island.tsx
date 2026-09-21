@@ -1,8 +1,8 @@
+import { SearchBar, WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
-  createNavigation,
   AppWorkspace,
   Button,
   ButtonLink,
@@ -10,6 +10,7 @@ import {
   type CalendarEvent,
   type CalendarView,
   Chart,
+  createNavigation,
   DataTable,
   type DataTableColumn,
   Dropdown,
@@ -24,7 +25,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { SearchBar, WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { FeedbackEntry, PublicSection, PublicSectionInput, ShiftAssignment, UpcomingSlot } from "../../contracts";

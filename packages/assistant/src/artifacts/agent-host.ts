@@ -7,6 +7,7 @@ import {
   parseCodeToolInput,
   readAiConversationFile,
 } from "@k2b/cloud/ai";
+import { env } from "@k2b/cloud/config";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -127,7 +128,12 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
     })
     .route(
       "/api/assistant/artifacts",
-      createArtifactServiceRoutes(() => ({ transport: session.capabilityTransport, origin: "assistant", locale: context.locale, signal: init?.signal ?? undefined })),
+      createArtifactServiceRoutes(() => ({
+        transport: session.capabilityTransport,
+        origin: "assistant",
+        locale: context.locale,
+        signal: init?.signal ?? undefined,
+      })),
     );
   return router.fetch(new Request(url, init));
 }
@@ -161,9 +167,7 @@ async function createSession(context: CodeToolContext): Promise<Session> {
           session.decisions.delete(id);
           return { approved };
         },
-        process.env.NODE_ENV === "production"
-          ? { entry: new URL("./assistant-code-host-process.js", import.meta.url).pathname }
-          : undefined,
+        env.NODE_ENV === "production" ? { entry: new URL("./assistant-code-host-process.js", import.meta.url).pathname } : undefined,
       ),
     ),
   };
@@ -283,8 +287,12 @@ export const agentHost = {
   async sweep() {
     for (const session of sessions.values()) {
       const active = await aiConversations.getActiveTurn({ conversationId: session.conversationId });
-      if (active?.turn.cancelRequestedAt || (session.busy.size && session.lastCall?.turnId !== active?.turn.id) ||
-        (!active && Date.now() - session.lastUsed > IDLE_MS)) await closeSession(session);
+      if (
+        active?.turn.cancelRequestedAt ||
+        (session.busy.size && session.lastCall?.turnId !== active?.turn.id) ||
+        (!active && Date.now() - session.lastUsed > IDLE_MS)
+      )
+        await closeSession(session);
       else {
         try {
           await (await session.host).health();

@@ -1,42 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import meApp from "../api/me";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { accounts } from "./accounts";
 import { serviceAccountCredentials } from "./service-account-credentials";
 import { serviceAccounts } from "./service-accounts";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<
-      {
-        users: string | null;
-        service_accounts: string | null;
-        credentials: string | null;
-        audit_events: string | null;
-        ipa_effective_groups: string | null;
-      }[]
-    >`
-      SELECT
-        to_regclass('auth.users')::text AS users,
-        to_regclass('auth.service_accounts')::text AS service_accounts,
-        to_regclass('auth.service_account_credentials')::text AS credentials,
-        to_regclass('audit.events')::text AS audit_events,
-        to_regclass('auth.ipa_user_effective_groups')::text AS ipa_effective_groups
-    `;
-    return Boolean(row?.users && row.service_accounts && row.credentials && row.audit_events && row.ipa_effective_groups);
-  } catch {
-    return false;
-  }
-};
-
-/** Reported as skipped rather than silently passing when the backing service is absent. */
-const databaseAvailable = await canUseDatabase();
-if (process.env.CLOUD_DATABASE_TEST === "1" && !databaseAvailable) {
-  throw new Error("Required authorization test database is unavailable or not migrated");
-}
-const suite = databaseAvailable ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async () => {
   const suffix = crypto.randomUUID();

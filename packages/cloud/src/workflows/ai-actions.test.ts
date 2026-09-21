@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AiResolvedModel } from "../ai/types";
 import type { WorkflowAiTask } from "./ai/types";
-import { AI_WORKFLOW_ACTIONS, workflowAiActionCost, runWorkflowAiAction } from "./ai-actions";
+import { AI_WORKFLOW_ACTIONS, runWorkflowAiAction, workflowAiActionCost } from "./ai-actions";
 
 const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   id: "00000000-0000-0000-0000-000000000001",

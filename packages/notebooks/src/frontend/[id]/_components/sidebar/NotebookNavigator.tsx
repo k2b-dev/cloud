@@ -1,7 +1,7 @@
 import { type DateContext, dates, searchParams } from "@k2b/stdlib";
 import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { navigatorDestinationHref, type NavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
+import { type NavigatorQuery, navigatorDestinationHref, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";

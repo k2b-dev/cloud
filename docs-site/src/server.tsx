@@ -1,12 +1,12 @@
 import { createFibelApp } from "@k2b/fibel";
-import { Hono } from "hono";
 import { routes as ssrRoutes } from "@k2b/ssr/hono";
+import { Hono } from "hono";
 import { extname, join, normalize, resolve } from "path";
 import fibelConfig from "../fibel.config";
-import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
 import HomePage from "./home/HomePage";
-import { html, config as ssrConfig } from "./ssr";
 import { siteTheme } from "./site-config";
+import { html, config as ssrConfig } from "./ssr";
+import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
 
 const fibelApp = await createFibelApp(fibelConfig);
 const app = new Hono();

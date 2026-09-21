@@ -2014,7 +2014,9 @@ sort missing desc`),
     if (!compiled.ok) return;
     expect(compiled.query.columns.map((column) => column.label)).toEqual(["Amount", "margin"]);
     const text = normalizedSql(compiled.query.sql);
-    expect(text).toMatch(/ORDER BY \(SELECT grids\.require_valid_calculation\(calculation\.error, calculation\.value\) FROM \(\s*SELECT r_formula_0\.value/);
+    expect(text).toMatch(
+      /ORDER BY \(SELECT grids\.require_valid_calculation\(calculation\.error, calculation\.value\) FROM \(\s*SELECT r_formula_0\.value/,
+    );
     expect(text).toContain("CROSS JOIN LATERAL");
     expect(text).toContain("DESC NULLS LAST, grids.canonical_numeric");
     expect(text).toContain("ASC NULLS LAST, r.id DESC NULLS LAST");

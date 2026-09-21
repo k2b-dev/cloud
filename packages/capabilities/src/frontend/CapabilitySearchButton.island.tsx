@@ -1,7 +1,7 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { openCapabilitySearch, capabilitySearchOptions } from "./capability-search";
 import { SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup } from "solid-js";
+import { capabilitySearchOptions, openCapabilitySearch } from "./capability-search";
 import { capabilityUiMessages } from "./messages";
 
 type Props = {

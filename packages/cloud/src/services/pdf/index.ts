@@ -1,6 +1,6 @@
 export type {
-  GotenbergConfig,
   AttachPdfFilesInput,
+  GotenbergConfig,
   GotenbergRenderErrorCode,
   MergePdfsInput,
   RenderFacturXHtmlToPdfInput,
@@ -9,10 +9,10 @@ export type {
   RenderHtmlToPdfResult,
 } from "./gotenberg";
 export {
-  GotenbergRenderError,
-  getGotenbergConfig,
   attachPdfFiles,
   attachPdfFilesWithConfig,
+  GotenbergRenderError,
+  getGotenbergConfig,
   mergePdfs,
   mergePdfsWithConfig,
   renderFacturXHtmlToPdf,
@@ -21,14 +21,6 @@ export {
   renderHtmlToPdfWithConfig,
   testGotenberg,
 } from "./gotenberg";
-export type {
-  RenderTemplatePdfPreviewInput,
-  RenderTemplatePdfPreviewOptions,
-  TemplatePdfPreviewError,
-  TemplatePdfPreviewPhase,
-  TemplatePdfPreviewResult,
-} from "./template-preview";
-export { renderTemplatePdfPreview } from "./template-preview";
 export type {
   MarkdownPdfErrorCode,
   MarkdownPdfTemplateId,
@@ -44,3 +36,11 @@ export {
   renderMarkdownToPdf,
   renderMarkdownToPdfWithConfig,
 } from "./markdown";
+export type {
+  RenderTemplatePdfPreviewInput,
+  RenderTemplatePdfPreviewOptions,
+  TemplatePdfPreviewError,
+  TemplatePdfPreviewPhase,
+  TemplatePdfPreviewResult,
+} from "./template-preview";
+export { renderTemplatePdfPreview } from "./template-preview";

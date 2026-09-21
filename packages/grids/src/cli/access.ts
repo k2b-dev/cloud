@@ -1,12 +1,4 @@
-import {
-  arg,
-  type CloudCliContext,
-  command,
-  confirmFlag,
-  flag,
-  listAccessPrincipalEntities,
-  paginationFlags,
-} from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, command, confirmFlag, flag, listAccessPrincipalEntities, paginationFlags } from "@k2b/cloud/cli";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import {
   ACCESS_RESOURCE_TYPES,

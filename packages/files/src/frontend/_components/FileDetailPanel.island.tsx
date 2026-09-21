@@ -3,9 +3,9 @@ import { dates, fileIcons, text } from "@k2b/stdlib";
 import { Button, DescriptionList, DetailPanel, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { FileBaseInfo, FileInfo } from "@/contracts";
+import { filesMessages } from "../messages";
 import { DETAIL_FILE_SELECT_EVENT, type DetailFileSelectPayload, fileApiUrl, setDetailFileInUrl } from "./context";
 import { type buildFileMenuElements, canOpenFileInline, createFileActionMutations, type FileActionContext } from "./FileActions";
-import { filesMessages } from "../messages";
 
 type FileDetailPanelProps = {
   initialFile: FileInfo | null;

@@ -2,8 +2,18 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 import { APP_REGISTRY_TTL_MS } from "../src/_internal/registry";
 
+const { values: options } = parseArgs({ args: Bun.argv.slice(2), options: { help: { type: "boolean", default: false } } });
+if (options.help) {
+  console.log(`Usage: bun packages/cloud/scripts/runtime-recovery-acceptance.ts
+
+Runs the shared-runtime recovery acceptance on disposable NATS and Bun Docker containers.
+Requires Docker; takes no options.
+`);
+  process.exit(0);
+}
 const name = `cloud-runtime-acceptance-${crypto.randomUUID().slice(0, 8)}`;
 const directory = await mkdtemp(join(tmpdir(), `${name}-`));
 const broker = `${name}-broker`;
@@ -80,13 +90,13 @@ try {
     "worker",
     "-p",
     "127.0.0.1::3000",
-    "-e",
-    `RECOVERY_NAMESPACE=${name}`,
     "-v",
     `${directory}:/fixture:ro`,
     "oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895",
     "bun",
     "/fixture/worker.js",
+    "--namespace",
+    name,
   );
   const port = await docker("port", worker, "3000/tcp");
   url = `http://${port}`;

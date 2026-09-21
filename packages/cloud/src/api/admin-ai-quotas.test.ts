@@ -1,10 +1,11 @@
-import * as settings from "../ai/settings";
+import { expect, spyOn, test } from "bun:test";
 import { aiQuotas } from "../ai/quotas";
-import { buildProjectedUser } from "../services/session/user";
+import * as settings from "../ai/settings";
 import type { AiModelProfile } from "../ai/types";
-import { expect, test, spyOn } from "bun:test";
-import { createAdminAiQuotaRoutes } from "./admin-ai-quotas";
+import { buildProjectedUser } from "../services/session/user";
 import { AiQuotaConfigSchema } from "../shared/ai-quotas";
+import { createAdminAiQuotaRoutes } from "./admin-ai-quotas";
+
 test("all quota reads and mutations require administrator authentication", async () => {
   const app = createAdminAiQuotaRoutes();
   for (const [path, method] of [

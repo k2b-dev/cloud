@@ -1,35 +1,27 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { logger, logging } from "./index";
 
-const canUseLoggingDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<Array<{ entries: string | null }>>`
-      SELECT to_regclass('logging.entries')::text AS entries
-    `;
-    return Boolean(row?.entries);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseLoggingDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("logging observability", () => {
   test("persists logger metadata as an object readable by the admin projection", async () => {
     const source = `observability-${crypto.randomUUID()}`;
     try {
-      logger(source).warn("Fixture warning", {code:"fixture_warning",conversationId:"fixture"});
+      logger(source).warn("Fixture warning", { code: "fixture_warning", conversationId: "fixture" });
       let kind: string | undefined;
       for (let attempt = 0; attempt < 20 && !kind; attempt++) {
-        const [row] = await sql<{kind:string}[]>`SELECT jsonb_typeof(metadata) AS kind FROM logging.entries WHERE source=${source}`;
+        const [row] = await sql<{ kind: string }[]>`SELECT jsonb_typeof(metadata) AS kind FROM logging.entries WHERE source=${source}`;
         kind = row?.kind;
         if (!kind) await Bun.sleep(10);
       }
       expect(kind).toBe("object");
-      const result = await logging.list({page:1,perPage:10,offset:0},{source,search:"fixture_warning"});
-      expect(result.entries[0]?.metadata).toEqual({code:"fixture_warning",conversationId:"fixture"});
-    } finally { await sql`DELETE FROM logging.entries WHERE source=${source}`; }
+      const result = await logging.list({ page: 1, perPage: 10, offset: 0 }, { source, search: "fixture_warning" });
+      expect(result.entries[0]?.metadata).toEqual({ code: "fixture_warning", conversationId: "fixture" });
+    } finally {
+      await sql`DELETE FROM logging.entries WHERE source=${source}`;
+    }
   });
 
   test("finds literal error codes in metadata without treating underscores as wildcards", async () => {
@@ -38,13 +30,15 @@ suite("logging observability", () => {
       await sql`INSERT INTO logging.entries(level,source,message,metadata) VALUES
         ('error',${source},'dispatch failed','{"code":"queue_dispatch_failed"}'::jsonb),
         ('error',${source},'dispatch failed','{"code":"queueXdispatchXfailed"}'::jsonb)`;
-      const filter = {source,search:"queue_dispatch_failed"};
-      const result = await logging.list({page:1,perPage:10,offset:0},filter);
+      const filter = { source, search: "queue_dispatch_failed" };
+      const result = await logging.list({ page: 1, perPage: 10, offset: 0 }, filter);
       expect(result.total).toBe(1);
       expect(result.entries[0]?.metadata?.code).toBe("queue_dispatch_failed");
-      const points = await logging.timeseries({...filter,sinceHours:24});
-      expect(points.reduce((sum,point)=>sum+point.total,0)).toBe(1);
-    } finally { await sql`DELETE FROM logging.entries WHERE source=${source}`; }
+      const points = await logging.timeseries({ ...filter, sinceHours: 24 });
+      expect(points.reduce((sum, point) => sum + point.total, 0)).toBe(1);
+    } finally {
+      await sql`DELETE FROM logging.entries WHERE source=${source}`;
+    }
   });
 
   test("returns bounded, gap-filled level buckets with the list filters applied", async () => {

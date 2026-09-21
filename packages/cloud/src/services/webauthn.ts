@@ -1,3 +1,4 @@
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import {
   type AuthenticationResponseJSON,
   type AuthenticatorTransportFuture,
@@ -10,7 +11,6 @@ import {
   verifyRegistrationResponse,
   type WebAuthnCredential,
 } from "@simplewebauthn/server";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { redis, sql } from "bun";
 import type { User, WebAuthnPasskey } from "../contracts/shared";
 import { accounts } from "./accounts";

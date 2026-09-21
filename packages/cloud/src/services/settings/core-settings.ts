@@ -1,3 +1,5 @@
+import { env } from "../../config/env";
+
 /**
  * Platform-owned settings, declared in the `defineApp({ settings: ... })` shape.
  *
@@ -13,11 +15,6 @@
  *   - omit `group` (derived from the key prefix in the admin UI)
  *   - keep `description`, `label`, `placeholder`, `default`, `kind` complete
  */
-
-const envString = (key: string): string | undefined => {
-  const value = process.env[key]?.trim();
-  return value && value.length > 0 ? value : undefined;
-};
 
 const IPA_MATCH_MODE_OPTIONS = [
   { value: "ignore", label: "Ignore local match" },
@@ -124,8 +121,8 @@ export const CORE_SETTINGS = {
     description:
       "Public-facing application URL used for links in emails, OAuth redirects, and WebSocket connections (with or without scheme)",
     placeholder: "e.g. https://cloud.example.org",
-    envFallback: () => envString("APP_URL"),
-    envBootstrap: () => envString("APP_URL"),
+    envFallback: () => env.APP_URL,
+    envBootstrap: () => env.APP_URL,
   },
   "app.home_path": {
     kind: "string",
@@ -294,7 +291,8 @@ export const CORE_SETTINGS = {
     integer: true,
     default: 30,
     min: 0,
-    description: "Maximum running time per AI turn. Zero or an empty field disables this limit. Existing turns keep their original budget; request and tool timeouts still apply.",
+    description:
+      "Maximum running time per AI turn. Zero or an empty field disables this limit. Existing turns keep their original budget; request and tool timeouts still apply.",
   },
   "ai.max_tool_result_chars": {
     kind: "number",

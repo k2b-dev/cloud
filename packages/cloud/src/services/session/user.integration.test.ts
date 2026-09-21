@@ -1,20 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { loadJwtSessionIdentity, loadJwtSessionUser } from "./user";
 
-const canUseDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<Array<{ families: string | null; keys: string | null }>>`
-      SELECT to_regclass('auth.session_families')::text AS families,
-             to_regclass('auth.signing_keys')::text AS keys
-    `;
-    return Boolean(row?.families && row.keys);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 const userId = crypto.randomUUID();
 const sid = crypto.randomUUID();
 const kid = crypto.randomUUID();

@@ -2,6 +2,7 @@ import { beforeAll, expect } from "bun:test";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createWorkflowRun } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
@@ -17,7 +18,7 @@ import { prepareWorkflowInputs } from "../service/workflow-values";
 import { createBillingTemplate } from "./billing";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   const [database] = await sql`SELECT current_database() AS name`;
   if (!database.name.startsWith("grids_verify_")) throw new Error("Payment entry tests require an isolated grids_verify_ database");
   await migrate();

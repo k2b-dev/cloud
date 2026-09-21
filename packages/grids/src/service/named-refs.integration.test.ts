@@ -1,12 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import * as fields from "./fields";
 import * as tables from "./tables";
 import * as views from "./views";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);

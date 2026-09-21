@@ -1,3 +1,4 @@
+import { formatDateTime as fmtDateTime } from "@k2b/cloud/shared";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -10,13 +11,13 @@ import {
   PanelDialog,
   Placeholder,
   panelDialogOptions,
-  prompts,ScrollArea,
+  prompts,
+  ScrollArea,
   Select,
   TextInput,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { formatDateTime as fmtDateTime } from "@k2b/cloud/shared";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
@@ -95,13 +96,14 @@ const scopeOptions = (t: GatewayOpsMessages) => [
   { id: "exclude", label: t.excludeSelected, description: t.excludeSelectedDescription, icon: "ti ti-filter-x" },
 ];
 
-const sendOptions = (t: GatewayOpsMessages) => [
-  { id: "ok", label: t.ok, description: t.triggerOkDescription, icon: "ti ti-check" },
-  { id: "warn", label: t.warning, description: t.triggerWarningDescription, icon: "ti ti-alert-triangle" },
-  { id: "error", label: t.error, description: t.triggerErrorDescription, icon: "ti ti-alert-circle" },
-  { id: "recovery", label: t.recovery, description: t.recoveryDescription, icon: "ti ti-heartbeat" },
-  { id: "every_check", label: t.everyCheck, description: t.everyCheckDescription, icon: "ti ti-clock" },
-] as const;
+const sendOptions = (t: GatewayOpsMessages) =>
+  [
+    { id: "ok", label: t.ok, description: t.triggerOkDescription, icon: "ti ti-check" },
+    { id: "warn", label: t.warning, description: t.triggerWarningDescription, icon: "ti ti-alert-triangle" },
+    { id: "error", label: t.error, description: t.triggerErrorDescription, icon: "ti ti-alert-circle" },
+    { id: "recovery", label: t.recovery, description: t.recoveryDescription, icon: "ti ti-heartbeat" },
+    { id: "every_check", label: t.everyCheck, description: t.everyCheckDescription, icon: "ti ti-clock" },
+  ] as const;
 
 export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[]; close: () => void; onSaved: () => Promise<void> }) => {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
@@ -450,7 +452,8 @@ export default function HealthWebhooksPanel() {
     setConfirming(true);
     let confirmed = false;
     try {
-      confirmed = (await prompts.confirm(t.deleteWebhookConfirm({ name: target.name }), { title: t.deleteWebhookTitle, variant: "danger" })) === true;
+      confirmed =
+        (await prompts.confirm(t.deleteWebhookConfirm({ name: target.name }), { title: t.deleteWebhookTitle, variant: "danger" })) === true;
     } finally {
       if (!disposed) setConfirming(false);
     }
@@ -595,7 +598,8 @@ export default function HealthWebhooksPanel() {
               if (col.id === "method") return <span class="text-xs font-medium text-secondary">{webhook.method}</span>;
               if (col.id === "minimum") return <span class="text-xs capitalize text-dimmed">{webhook.minStatus}</span>;
               if (col.id === "repeat") return <span class="text-xs tabular-nums text-dimmed">{fmtMinutes(webhook.repeatIntervalMs)}</span>;
-              if (col.id === "lastSent") return <span class="text-xs tabular-nums text-dimmed">{fmtDateTime(webhook.lastSentAt, { locale: locale() })}</span>;
+              if (col.id === "lastSent")
+                return <span class="text-xs tabular-nums text-dimmed">{fmtDateTime(webhook.lastSentAt, { locale: locale() })}</span>;
               if (col.id === "actions") {
                 return (
                   <div class="flex justify-end gap-1">

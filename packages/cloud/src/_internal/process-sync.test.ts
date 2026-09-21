@@ -1,14 +1,19 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import * as syncModule from "@k2b/sync";
+import { natsSuite } from "../../../../scripts/fixtures/test-infra";
 import { env } from "../config/env";
 import * as nats from "./nats-connection";
 import { getProcessSync, lazySync, startProcessSync } from "./process-sync";
 
-// Explicit opt-in keeps unit test runs independent of a local NATS cluster.
-const suite = process.env.NATS_SERVERS ? describe : describe.skip;
-const namespaceDescriptor = Object.getOwnPropertyDescriptor(env, "SYNC_NAMESPACE")!;
-afterEach(() => Object.defineProperty(env, "SYNC_NAMESPACE", namespaceDescriptor));
-const isolate = () => Object.defineProperty(env, "SYNC_NAMESPACE", { value: `test-process-${crypto.randomUUID()}`, configurable: true });
+const suite = natsSuite();
+const originalNamespace = process.env.SYNC_NAMESPACE;
+afterEach(() => {
+  if (originalNamespace === undefined) delete process.env.SYNC_NAMESPACE;
+  else process.env.SYNC_NAMESPACE = originalNamespace;
+});
+const isolate = () => {
+  process.env.SYNC_NAMESPACE = `test-process-${crypto.randomUUID()}`;
+};
 
 suite("process Sync lifecycle", () => {
   test("binds one instance, declares lazily, pins replication and drains once", async () => {
@@ -69,60 +74,54 @@ suite("process Sync lifecycle", () => {
   });
 });
 
-// Run only by explicit coordination: this stops one named local Compose node.
-// Example: SYNC_REPLICAS=3 CLOUD_SYNC_FAILOVER_CONTAINER=sync-test-nats-2 NATS_SERVERS=nats://127.0.0.1:4222 bun test <this-file>
-const failoverTest = process.env.CLOUD_SYNC_FAILOVER_CONTAINER ? test : test.skip;
-failoverTest(
-  "retains accepted topic events during one explicitly selected node outage",
-  async () => {
-    isolate();
-    const container = process.env.CLOUD_SYNC_FAILOVER_CONTAINER!;
-    const docker = async (action: "stop" | "start") => {
-      const child = Bun.spawn(["docker", action, container], { stdout: "pipe", stderr: "pipe" });
-      const status = await child.exited;
-      if (status !== 0) throw new Error(`docker ${action} ${container}: ${await new Response(child.stderr).text()}`);
-    };
-    const create = syncModule.createSync;
-    let connection: Parameters<typeof create>[0]["connection"] | undefined;
-    const createSpy = spyOn(syncModule, "createSync").mockImplementation((config) => {
-      connection = config.connection;
-      return create(config);
+// Stopping a NATS node needs a multi-node cluster and Docker control, which the shared test infrastructure does not provide.
+test.skip("retains accepted topic events during one explicitly selected node outage", async () => {
+  isolate();
+  const container = "sync-test-nats-2";
+  const docker = async (action: "stop" | "start") => {
+    const child = Bun.spawn(["docker", action, container], { stdout: "pipe", stderr: "pipe" });
+    const status = await child.exited;
+    if (status !== 0) throw new Error(`docker ${action} ${container}: ${await new Response(child.stderr).text()}`);
+  };
+  const create = syncModule.createSync;
+  let connection: Parameters<typeof create>[0]["connection"] | undefined;
+  const createSpy = spyOn(syncModule, "createSync").mockImplementation((config) => {
+    connection = config.connection;
+    return create(config);
+  });
+  const runtime = await startProcessSync({ application: "test-failover" });
+  let outageStarted = false;
+  try {
+    const topic = runtime.sync.topic<{ sequence: number }>({
+      id: "continuity",
+      retention: { maxAgeMs: 60_000, maxBytes: 1_048_576 },
+      dedupeWindowMs: 60_000,
+      maxPayloadBytes: 1024,
     });
-    const runtime = await startProcessSync({ application: "test-failover" });
-    let outageStarted = false;
+    await runtime.sync.ready();
+    await topic.publish({ data: { sequence: 1 } });
+    outageStarted = true;
+    await docker("stop");
+    const second = await topic.publish({ data: { sequence: 2 } });
+    const seen: number[] = [];
+    for await (const event of topic.replay({ after: topic.cursorAt(0), until: second.cursor })) seen.push(event.data.sequence);
+    expect(seen).toEqual([1, 2]);
+    await docker("start");
+    outageStarted = false;
+    expect(runtime.sync.health().connection).toBe("connected");
+  } finally {
     try {
-      const topic = runtime.sync.topic<{ sequence: number }>({
-        id: "continuity",
-        retention: { maxAgeMs: 60_000, maxBytes: 1_048_576 },
-        dedupeWindowMs: 60_000,
-        maxPayloadBytes: 1024,
-      });
-      await runtime.sync.ready();
-      await topic.publish({ data: { sequence: 1 } });
-      outageStarted = true;
-      await docker("stop");
-      const second = await topic.publish({ data: { sequence: 2 } });
-      const seen: number[] = [];
-      for await (const event of topic.replay({ after: topic.cursorAt(0), until: second.cursor })) seen.push(event.data.sequence);
-      expect(seen).toEqual([1, 2]);
-      await docker("start");
-      outageStarted = false;
-      expect(runtime.sync.health().connection).toBe("connected");
-    } finally {
-      try {
-        if (outageStarted) await docker("start");
-        // Delete only stream names declared in this test's isolated namespace.
-        for (const resource of await runtime.sync.resources()) {
-          for (const name of resource.natsNames) {
-            const response = await connection!.request(`$JS.API.STREAM.DELETE.${name}`, new Uint8Array(), { timeout: 10_000 });
-            expect(JSON.parse(new TextDecoder().decode(response.data))).toMatchObject({ success: true });
-          }
+      if (outageStarted) await docker("start");
+      // Delete only stream names declared in this test's isolated namespace.
+      for (const resource of await runtime.sync.resources()) {
+        for (const name of resource.natsNames) {
+          const response = await connection!.request(`$JS.API.STREAM.DELETE.${name}`, new Uint8Array(), { timeout: 10_000 });
+          expect(JSON.parse(new TextDecoder().decode(response.data))).toMatchObject({ success: true });
         }
-      } finally {
-        await runtime.stop();
-        createSpy.mockRestore();
       }
+    } finally {
+      await runtime.stop();
+      createSpy.mockRestore();
     }
-  },
-  60_000,
-);
+  }
+}, 60_000);

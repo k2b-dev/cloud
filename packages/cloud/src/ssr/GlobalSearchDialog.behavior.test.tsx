@@ -396,8 +396,8 @@ test("empty palette favors the selected object and drops its actions when the ob
   if (isServer) return;
   const dom = createDomTestHarness();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = Object.assign(async (input: RequestInfo | URL) =>
-    String(input).includes("/capabilities/v1/catalog") ? commandCatalogResponse() : catalogResponse(),
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => (String(input).includes("/capabilities/v1/catalog") ? commandCatalogResponse() : catalogResponse()),
     { preconnect: originalFetch.preconnect },
   );
   const { registerContextAwareCommand } = await import("../browser/command-bridge");
@@ -405,7 +405,12 @@ test("empty palette favors the selected object and drops its actions when the ob
     registerContextAwareCommand({ id: title, title, description: "Page action", action: () => {} }),
   );
   const selection = registerContextAwareCommand({
-    id: "selected", title: "Edit selected note", description: "Current note", scope: "selection", shortcut: "e", action: () => {},
+    id: "selected",
+    title: "Edit selected note",
+    description: "Current note",
+    scope: "selection",
+    shortcut: "e",
+    action: () => {},
   });
   const { default: GlobalSearchDialog } = await import("./GlobalSearchDialog");
   const dispose = render(() => <GlobalSearchDialog close={() => {}} />, dom.root);
@@ -419,7 +424,9 @@ test("empty palette favors the selected object and drops its actions when the ob
     await waitFor(() => rows()[0]?.textContent?.includes("Search notebook") ?? false, "page actions after selection closes");
     expect(rows().some((row) => row.textContent?.includes("Edit selected note"))).toBe(false);
   } finally {
-    dispose(); selection(); page.forEach((stop) => stop());
+    dispose();
+    selection();
+    page.forEach((stop) => stop());
     globalThis.fetch = originalFetch;
     dom.cleanup();
   }

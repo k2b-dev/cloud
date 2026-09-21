@@ -1,6 +1,6 @@
+import { Readable } from "node:stream";
 import { markdown, sanitizeEmailHtml } from "@k2b/cloud/shared";
 import MailComposer from "nodemailer/lib/mail-composer";
-import { Readable } from "node:stream";
 import { z } from "zod";
 import { mailAddressSchema, mailPrioritySchema } from "../contracts";
 import { MAX_DRAFT_ATTACHMENTS, mimeMessageIdSchema, mimeReferencesSchema } from "./draft-provider-mime";

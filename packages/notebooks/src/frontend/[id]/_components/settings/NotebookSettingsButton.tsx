@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, useLocale } from "@k2b/ui";
-import type { Notebook, NoteTreeNode } from "../sidebar/types";
 import { notebookWorkspaceMessages } from "../../messages";
+import type { Notebook, NoteTreeNode } from "../sidebar/types";
 import { openNotebookSettingsDialog } from "./NotebookSettingsPanel";
 
 type Props = {

@@ -1,6 +1,8 @@
-import { AppLaunchpadPanel, type AppLaunchpadApp, type AppLaunchpadLegalLink, type AppLaunchpadContext } from "./AppLaunchpadPanel";
+import { type AppLaunchpadApp, type AppLaunchpadContext, type AppLaunchpadLegalLink, AppLaunchpadPanel } from "./AppLaunchpadPanel";
 import { openCloudMobileMenu } from "./MobileNavigation";
+
 export type { AppLaunchpadApp, AppLaunchpadLegalLink } from "./AppLaunchpadPanel";
+
 import { dialogCore, IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect } from "solid-js";
 import { platformMessages } from "./platform-messages";
@@ -117,7 +119,15 @@ export function AppLaunchpad(props: AppLaunchpadContext & { variant?: "provider"
     return <AppLaunchpadProvider apps={props.apps} legalLinks={props.legalLinks} profile={props.profile} />;
   }
 
-  return <AppLaunchpadButton apps={props.apps} legalLinks={props.legalLinks} profile={props.profile} variant={props.variant} label={props.label} />;
+  return (
+    <AppLaunchpadButton
+      apps={props.apps}
+      legalLinks={props.legalLinks}
+      profile={props.profile}
+      variant={props.variant}
+      label={props.label}
+    />
+  );
 }
 
 export default AppLaunchpad;

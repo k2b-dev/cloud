@@ -1,7 +1,7 @@
-import { AppWorkspace, ButtonLink, Placeholder, TextInput } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { AppWorkspace, ButtonLink, Placeholder, TextInput } from "@k2b/ui";
 import type { FileBaseInfo, FileInfo, SearchResult } from "@/contracts";
 import { filesService } from "@/service";
 import { ssr } from "../../config";
@@ -10,8 +10,8 @@ import FileDetailLayoutSync from "../_components/FileDetailLayoutSync.island";
 import FileDetailPanel from "../_components/FileDetailPanel.island";
 import FileList from "../_components/FileList.island";
 import FilesUnavailable from "../_components/FilesUnavailable";
-import { filePageBaseUrl } from "../url";
 import { filesMessages } from "../messages";
+import { filePageBaseUrl } from "../url";
 
 /** Shortcut presets for common searches */
 const SEARCH_SHORTCUTS = [

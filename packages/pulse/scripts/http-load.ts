@@ -2,6 +2,7 @@
  * Fixture credentials are read from an owner-only temporary file, never printed.
  * DATABASE_URL must target pulse_load_test. See the production acceptance report.
  */
+import { parseArgs } from "node:util";
 import { sql } from "bun";
 import { z } from "zod";
 import { MetricQueryResultSchema } from "../src/api/schemas";
@@ -21,8 +22,24 @@ const fixtureSchema = z.object({
     )
     .length(60),
 });
-const path = process.env.PULSE_LOAD_FIXTURE;
-if (!path) throw Error("PULSE_LOAD_FIXTURE is required");
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: { fixture: { type: "string" }, rounds: { type: "string", default: "3" }, help: { type: "boolean", default: false } },
+});
+if (options.help) {
+  console.log(`Usage: bun packages/pulse/scripts/http-load.ts --fixture <path> [--rounds <n>]
+
+HTTP acceptance probe against a running, isolated Pulse app whose DATABASE_URL targets pulse_load_test.
+
+Options:
+  --fixture <path>   Owner-only JSON fixture with url, cookie, base and sources (never printed)
+  --rounds <n>       Ingest rounds, 3 to 60 (default 3)
+  --help             Show this help
+`);
+  process.exit(0);
+}
+const path = options.fixture;
+if (!path) throw Error("--fixture is required");
 const fixture = fixtureSchema.parse(await Bun.file(path).json());
 const databaseTarget = new URL(process.env.DATABASE_URL ?? "");
 if (!["localhost", "127.0.0.1", "[::1]"].includes(databaseTarget.hostname) || databaseTarget.pathname !== "/pulse_load_test") {
@@ -42,12 +59,7 @@ const acceptanceFrom = new Date().toISOString();
 const origin = new URL(fixture.url);
 if (!["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname)) throw Error("HTTP load proof requires a loopback test instance");
 const runId = crypto.randomUUID();
-const rounds = z.coerce
-  .number()
-  .int()
-  .min(3)
-  .max(60)
-  .parse(process.env.PULSE_LOAD_ROUNDS ?? 3);
+const rounds = z.coerce.number().int().min(3).max(60).parse(options.rounds);
 const samplesPerServer = 20;
 const eventsPerWebsite = 10;
 const timings: Record<string, number[]> = {};

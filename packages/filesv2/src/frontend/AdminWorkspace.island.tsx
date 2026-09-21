@@ -162,11 +162,13 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
     return view === "templates" ? assets().templates : view === "archive" ? a().archives : a()[view];
   };
   const description = () =>
-    location().view === "shares" ? a().sharesDescription : location().view === "archive"
-      ? a().archiveDescription
-      : location().view === "directories"
-        ? a().directoriesDescription
-        : a().overviewDescription;
+    location().view === "shares"
+      ? a().sharesDescription
+      : location().view === "archive"
+        ? a().archiveDescription
+        : location().view === "directories"
+          ? a().directoriesDescription
+          : a().overviewDescription;
   const next = () =>
     snapshot().browse
       ? snapshot().browse!.next
@@ -248,17 +250,20 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
           <Show
             when={location().view !== "settings" && location().view !== "templates"}
             fallback={
-              <Show when={location().view === "templates"} fallback={
-                <Settings
-                  configuration={result().configuration}
-                  availability={result().availability}
-                  onSaved={refresh}
-                  onDirtyChange={(value, busy) => {
-                    setDirty(value);
-                    setSaving(busy);
-                  }}
-                />
-              }>
+              <Show
+                when={location().view === "templates"}
+                fallback={
+                  <Settings
+                    configuration={result().configuration}
+                    availability={result().availability}
+                    onSaved={refresh}
+                    onDirtyChange={(value, busy) => {
+                      setDirty(value);
+                      setSaving(busy);
+                    }}
+                  />
+                }
+              >
                 <SettingsPage title={assets().templates} icon="ti ti-file-description">
                   <TemplateList admin />
                 </SettingsPage>
@@ -338,7 +343,12 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                 }
               >
                 <Switch>
-                  <Match when={location().view === "shares"}><AdminShares shares={snapshot().shares ?? { items: [], next: null }} uploads={snapshot().uploads ?? { items: [], next: null }} /></Match>
+                  <Match when={location().view === "shares"}>
+                    <AdminShares
+                      shares={snapshot().shares ?? { items: [], next: null }}
+                      uploads={snapshot().uploads ?? { items: [], next: null }}
+                    />
+                  </Match>
                   <Match when={snapshot().browse}>
                     {(browse) => (
                       <>
@@ -378,8 +388,14 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                             <div class="flex flex-wrap items-center gap-3">
                               <StatusBadge tone="neutral" label={`${t().index}: ${root().indexEnabled ? t().on : t().off}`} />
                               <StatusBadge tone="neutral" label={`${t().history}: ${root().versioningEnabled ? t().on : t().off}`} />
-                              <StatusBadge tone="neutral" label={`${a().managedWrites}: ${root().managed === undefined ? t().unknown : root().managed ? t().on : t().off}`} />
-                              <StatusBadge tone="neutral" label={`${a().unixExecution}: ${root().executionEnabled === undefined ? t().unknown : root().executionEnabled ? t().on : t().off}`} />
+                              <StatusBadge
+                                tone="neutral"
+                                label={`${a().managedWrites}: ${root().managed === undefined ? t().unknown : root().managed ? t().on : t().off}`}
+                              />
+                              <StatusBadge
+                                tone="neutral"
+                                label={`${a().unixExecution}: ${root().executionEnabled === undefined ? t().unknown : root().executionEnabled ? t().on : t().off}`}
+                              />
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -392,10 +408,13 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                             </div>
                             <div class="mt-3 space-y-2">
                               <InlineGuidance tone="info" icon="ti ti-info-circle">
-                                {!root().observation ? a().statisticsUnavailable
-                                  : !root().observation!.complete ? a().statisticsPartial
-                                  : root().observation!.freshness !== "observed" ? a().statisticsUnverified
-                                  : a().statisticsObserved}
+                                {!root().observation
+                                  ? a().statisticsUnavailable
+                                  : !root().observation!.complete
+                                    ? a().statisticsPartial
+                                    : root().observation!.freshness !== "observed"
+                                      ? a().statisticsUnverified
+                                      : a().statisticsObserved}
                               </InlineGuidance>
                               <Show when={root().observation?.complete && root().observation?.freshness === "observed"}>
                                 <p class="text-xs text-dimmed">

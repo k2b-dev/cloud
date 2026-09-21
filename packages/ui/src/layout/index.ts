@@ -65,6 +65,7 @@ export {
   serializeAppWorkspaceLayoutState,
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
+export { type BottomSheetProps, bottomSheetOptions, default as BottomSheet } from "./BottomSheet";
 export type { DataPanelProps } from "./DataPanel";
 export { DataPanel } from "./DataPanel";
 export type {
@@ -93,6 +94,14 @@ export {
   fitFloatingWindowRect,
   openFloatingWindow,
 } from "./FloatingWindow";
+export { default as Navigation, type NavigationProps } from "./Navigation";
+export {
+  createNavigation,
+  findNavigationItem,
+  type NavigationController,
+  type NavigationItem,
+  type NavigationOptions,
+} from "./navigation-model";
 export type {
   PanelDialogBodyProps,
   PanelDialogFooterProps,
@@ -182,6 +191,3 @@ export type {
   SettingsModalTabTone,
 } from "./SettingsModal";
 export { default as SettingsModal } from "./SettingsModal";
-export { default as BottomSheet, bottomSheetOptions, type BottomSheetProps } from "./BottomSheet";
-export { default as Navigation, type NavigationProps } from "./Navigation";
-export { createNavigation, findNavigationItem, type NavigationController, type NavigationItem, type NavigationOptions } from "./navigation-model";

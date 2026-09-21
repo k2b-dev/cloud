@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildLogFilterUrl, defaultLogFilter, parseLogFilterFromUrl, type LogFilterState } from "./types";
+import { buildLogFilterUrl, defaultLogFilter, type LogFilterState, parseLogFilterFromUrl } from "./types";
 
 const baseUrl = "/admin/observability/logs";
 const parse = (path: string) => parseLogFilterFromUrl(new URL(path, "https://cloud.test"));

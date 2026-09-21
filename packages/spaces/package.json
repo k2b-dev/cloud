@@ -11,9 +11,8 @@
     "./integration": "./src/integration.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')",
-    "test": "bun test",
-    "test:dom": "bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts ./test"
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "bun test && bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts ./test"
   },
   "dependencies": {
     "@k2b/ssr": "catalog:",

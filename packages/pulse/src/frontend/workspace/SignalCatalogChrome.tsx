@@ -1,5 +1,5 @@
 import { Button, FilterChip, TextInput } from "@k2b/ui";
-import { For, Show, type Accessor } from "solid-js";
+import { type Accessor, For, Show } from "solid-js";
 import { usePulseMessages } from "../use-messages";
 import { METRIC_TYPE_FILTER_OPTIONS } from "./helpers";
 
@@ -70,7 +70,11 @@ export function SignalCatalogToolbar(props: {
           value={props.search}
           onValueChange={props.onSearch}
           placeholder={
-            props.kind === "events" ? t().searchEventsPlaceholder : props.kind === "states" ? t().searchStatesPlaceholder : t().searchMetricsPlaceholder
+            props.kind === "events"
+              ? t().searchEventsPlaceholder
+              : props.kind === "states"
+                ? t().searchStatesPlaceholder
+                : t().searchMetricsPlaceholder
           }
           clearable
         />

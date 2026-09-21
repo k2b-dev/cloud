@@ -58,5 +58,7 @@ test("published form summaries bind their transitive schema but not unrelated fi
   expect(hash(fields.map((field) => (field.id === "Net001" ? { ...field, deletedAt: "2026-01-01" } : field)))).not.toBe(hash());
   expect(hash(fields.map((field) => (field.id === "Secret" ? { ...field, config: { maxLength: 99 } } : field)))).toBe(hash());
   expect(hash(fields, { ...config, computedFields: [] })).not.toBe(hash());
-  expect(hash(fields, { ...config, computedFields: [{ fieldId: "Gross1", label: "New title", helpText: "Helpful explanation" }] })).toBe(hash());
+  expect(hash(fields, { ...config, computedFields: [{ fieldId: "Gross1", label: "New title", helpText: "Helpful explanation" }] })).toBe(
+    hash(),
+  );
 });

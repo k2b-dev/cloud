@@ -1,6 +1,6 @@
-import { searchAssistant, searchAssistantProjects, searchAssistantApps } from "./search";
-import { defineCapabilities, UniversalSearchInputSchema, UniversalSearchDataSchema } from "@k2b/cloud/contracts";
+import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { ChatComposeInputSchema } from "./commands";
+import { searchAssistant, searchAssistantApps, searchAssistantProjects } from "./search";
 export const assistantCapabilities = defineCapabilities({
   protocolVersion: 2,
   types: {
@@ -17,7 +17,9 @@ export const assistantCapabilities = defineCapabilities({
       data: UniversalSearchDataSchema,
       openWorld: false,
       universalSearch: {
-        tags: [{ tag: "studio-app", title: "Studio apps", description: "Find accessible Studio apps.", aliases: ["studio-apps", "studio"] }],
+        tags: [
+          { tag: "studio-app", title: "Studio apps", description: "Find accessible Studio apps.", aliases: ["studio-apps", "studio"] },
+        ],
       },
       run: async (input, context) => {
         const { artifacts } = await import("./artifacts/service");
@@ -31,7 +33,14 @@ export const assistantCapabilities = defineCapabilities({
       data: UniversalSearchDataSchema,
       openWorld: false,
       universalSearch: {
-        tags: [{ tag: "assistant-project", title: "Assistant projects", description: "Find accessible Assistant projects.", aliases: ["assistant-projects"] }],
+        tags: [
+          {
+            tag: "assistant-project",
+            title: "Assistant projects",
+            description: "Find accessible Assistant projects.",
+            aliases: ["assistant-projects"],
+          },
+        ],
       },
       run: async (input, context) => {
         const { aiProjects } = await import("@k2b/cloud/ai");

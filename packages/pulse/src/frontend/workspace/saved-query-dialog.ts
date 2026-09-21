@@ -1,7 +1,7 @@
 import { prompts } from "@k2b/ui";
 import type { PulseExplorerQuery } from "../../contracts";
-import { defaultSavedQueryName, normalizeSavedQueryDialogResult, type SavedQueryDialogResult } from "./saved-query-dialog-model";
 import { usePulseMessages } from "../use-messages";
+import { defaultSavedQueryName, normalizeSavedQueryDialogResult, type SavedQueryDialogResult } from "./saved-query-dialog-model";
 
 export const openSaveQueryDialog = async (compiled: PulseExplorerQuery | null): Promise<SavedQueryDialogResult | null> => {
   const t = usePulseMessages();

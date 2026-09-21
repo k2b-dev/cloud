@@ -1,6 +1,6 @@
+import { createMemo, ErrorBoundary, For, type JSX, onMount } from "solid-js";
 import { AnalyticsView, createAnalyticsCursors } from "./AnalyticsView";
-import { For, createMemo, type JSX, ErrorBoundary, onMount } from "solid-js";
-import type { UiNode, RuntimeEvent } from "./runtime/protocol";
+import type { RuntimeEvent, UiNode } from "./runtime/protocol";
 
 export function RuntimeView(props: { nodes: UiNode[]; busy: boolean; event: (event: RuntimeEvent) => void }) {
   const cursor = createAnalyticsCursors();

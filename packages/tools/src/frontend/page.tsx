@@ -1,7 +1,7 @@
-import { i18n } from "@k2b/stdlib";
-import { AppOverview } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { i18n } from "@k2b/stdlib";
+import { AppOverview } from "@k2b/ui";
 import { ssr } from "../config";
 import ToolCatalog from "./ToolCatalog.island";
 import { ToolsWorkspace } from "./ToolsWorkspace";

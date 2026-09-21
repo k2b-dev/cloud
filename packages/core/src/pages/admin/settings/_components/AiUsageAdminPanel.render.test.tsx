@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { usageFixture } from "./ai-usage-fixture";
+
 const root = mkdtempSync(join(tmpdir(), "core-ai-usage-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());

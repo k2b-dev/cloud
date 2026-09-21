@@ -99,9 +99,7 @@
             "description": "Exact mail.attachment ID returned by message attachment metadata or a typed resource ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -144,16 +142,7 @@
             "properties": {
               "status": {
                 "type": "string",
-                "enum": [
-                  "pending",
-                  "complete",
-                  "unsupported",
-                  "encrypted",
-                  "ocr_required",
-                  "resource_limit",
-                  "malformed",
-                  "failed"
-                ]
+                "enum": ["pending", "complete", "unsupported", "encrypted", "ocr_required", "resource_limit", "malformed", "failed"]
               },
               "extractorVersion": {
                 "type": "string",
@@ -239,14 +228,7 @@
             "additionalProperties": false
           }
         },
-        "required": [
-          "id",
-          "filename",
-          "contentType",
-          "sizeBytes",
-          "downloadHref",
-          "extraction"
-        ],
+        "required": ["id", "filename", "contentType", "sizeBytes", "downloadHref", "extraction"],
         "additionalProperties": false
       },
       "schemaHash": "89cf8f71e764429332e51f3a71488c7f5c08c2011fb7bbf81cc14c713f3adc8b",
@@ -280,9 +262,7 @@
             "maximum": 65536
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -325,16 +305,7 @@
             "properties": {
               "status": {
                 "type": "string",
-                "enum": [
-                  "pending",
-                  "complete",
-                  "unsupported",
-                  "encrypted",
-                  "ocr_required",
-                  "resource_limit",
-                  "malformed",
-                  "failed"
-                ]
+                "enum": ["pending", "complete", "unsupported", "encrypted", "ocr_required", "resource_limit", "malformed", "failed"]
               },
               "extractorVersion": {
                 "type": "string",
@@ -508,9 +479,7 @@
             "description": "Exact mail.comment ID returned by List conversation comments or a typed resource ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -528,21 +497,14 @@
             "description": "Stable 6-character resource ID"
           },
           "body": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "author": {
             "type": "object",
             "properties": {
               "kind": {
                 "type": "string",
-                "enum": [
-                  "user",
-                  "service_account",
-                  "workflow"
-                ]
+                "enum": ["user", "service_account", "workflow"]
               },
               "id": {
                 "type": "string",
@@ -553,18 +515,10 @@
                 "type": "string"
               },
               "avatarHash": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               }
             },
-            "required": [
-              "kind",
-              "id",
-              "displayName",
-              "avatarHash"
-            ],
+            "required": ["kind", "id", "displayName", "avatarHash"],
             "additionalProperties": false
           },
           "referencedMessageId": {
@@ -676,9 +630,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -709,12 +661,7 @@
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": [
-                    "user",
-                    "service_account",
-                    "workflow",
-                    "system"
-                  ]
+                  "enum": ["user", "service_account", "workflow", "system"]
                 },
                 "id": {
                   "anyOf": [
@@ -732,18 +679,10 @@
                   "type": "string"
                 },
                 "avatarHash": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 }
               },
-              "required": [
-                "kind",
-                "id",
-                "displayName",
-                "avatarHash"
-              ],
+              "required": ["kind", "id", "displayName", "avatarHash"],
               "additionalProperties": false
             },
             "action": {
@@ -752,26 +691,15 @@
             },
             "outcome": {
               "type": "string",
-              "enum": [
-                "requested",
-                "confirmed",
-                "failed",
-                "reconciled"
-              ]
+              "enum": ["requested", "confirmed", "failed", "reconciled"]
             },
             "targetType": {
               "description": "Activity target kind.",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "targetId": {
               "description": "Public target ID. Conversation references use their domain value; reference configuration uses the mailbox ID.",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "metadata": {
               "type": "object",
@@ -786,17 +714,7 @@
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
             }
           },
-          "required": [
-            "id",
-            "conversationId",
-            "actor",
-            "action",
-            "outcome",
-            "targetType",
-            "targetId",
-            "metadata",
-            "createdAt"
-          ],
+          "required": ["id", "conversationId", "actor", "action", "outcome", "targetType", "targetId", "metadata", "createdAt"],
           "additionalProperties": false
         }
       },
@@ -825,10 +743,7 @@
             "default": "oldest",
             "description": "Comment ordering.",
             "type": "string",
-            "enum": [
-              "oldest",
-              "newest"
-            ]
+            "enum": ["oldest", "newest"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -844,10 +759,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId"
-        ],
+        "required": ["mailboxId", "conversationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -870,10 +782,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -895,13 +804,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -918,10 +821,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
@@ -931,21 +831,14 @@
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": [
-                    "user",
-                    "service_account",
-                    "workflow"
-                  ]
+                  "enum": ["user", "service_account", "workflow"]
                 },
                 "displayName": {
                   "type": "string",
                   "maxLength": 240
                 }
               },
-              "required": [
-                "kind",
-                "displayName"
-              ],
+              "required": ["kind", "displayName"],
               "additionalProperties": false
             },
             "referencedMessageId": {
@@ -1023,12 +916,7 @@
             "default": "mine",
             "description": "Cross-mailbox work queue to list.",
             "type": "string",
-            "enum": [
-              "mine",
-              "unassigned",
-              "waiting",
-              "all"
-            ]
+            "enum": ["mine", "unassigned", "waiting", "all"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -1066,10 +954,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -1091,13 +976,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1114,10 +993,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
@@ -1162,11 +1038,7 @@
             },
             "workStatus": {
               "type": "string",
-              "enum": [
-                "needs_action",
-                "waiting",
-                "done"
-              ]
+              "enum": ["needs_action", "waiting", "done"]
             },
             "unread": {
               "type": "boolean"
@@ -1228,11 +1100,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "needs_action",
-                  "waiting",
-                  "done"
-                ]
+                "enum": ["needs_action", "waiting", "done"]
               },
               {
                 "type": "null"
@@ -1241,25 +1109,14 @@
           },
           "unread": {
             "description": "Optional unread-state filter; true returns only conversations with unread mail.",
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "view": {
             "description": "Optional saved work queue view.",
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "needs_action",
-                  "mine",
-                  "unassigned",
-                  "waiting",
-                  "done",
-                  "snoozed",
-                  "recently_active"
-                ]
+                "enum": ["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active"]
               },
               {
                 "type": "null"
@@ -1280,9 +1137,7 @@
             "maximum": 50
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1305,10 +1160,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -1330,13 +1182,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1353,10 +1199,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
@@ -1382,11 +1225,7 @@
             },
             "workStatus": {
               "type": "string",
-              "enum": [
-                "needs_action",
-                "waiting",
-                "done"
-              ]
+              "enum": ["needs_action", "waiting", "done"]
             },
             "snoozedUntil": {
               "type": "string",
@@ -1454,9 +1293,7 @@
             "description": "Exact mail.conversation ID returned by a conversation list, search, or focus result or a typed resource ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1511,18 +1348,10 @@
                         "type": "string"
                       },
                       "avatarHash": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
+                        "type": ["string", "null"]
                       }
                     },
-                    "required": [
-                      "id",
-                      "uid",
-                      "displayName",
-                      "avatarHash"
-                    ],
+                    "required": ["id", "uid", "displayName", "avatarHash"],
                     "additionalProperties": false
                   },
                   {
@@ -1532,11 +1361,7 @@
               },
               "workStatus": {
                 "type": "string",
-                "enum": [
-                  "needs_action",
-                  "waiting",
-                  "done"
-                ]
+                "enum": ["needs_action", "waiting", "done"]
               },
               "snoozedUntil": {
                 "anyOf": [
@@ -1556,12 +1381,7 @@
                 "maximum": 9007199254740991
               }
             },
-            "required": [
-              "assignee",
-              "workStatus",
-              "snoozedUntil",
-              "revision"
-            ],
+            "required": ["assignee", "workStatus", "snoozedUntil", "revision"],
             "additionalProperties": false
           },
           "tags": {
@@ -1587,12 +1407,7 @@
                   "maximum": 9007199254740991
                 }
               },
-              "required": [
-                "id",
-                "name",
-                "color",
-                "revision"
-              ],
+              "required": ["id", "name", "color", "revision"],
               "additionalProperties": false
             }
           },
@@ -1615,10 +1430,7 @@
                       "description": "Stable 6-character resource ID"
                     }
                   },
-                  "required": [
-                    "type",
-                    "id"
-                  ],
+                  "required": ["type", "id"],
                   "additionalProperties": false
                 },
                 "title": {
@@ -1640,13 +1452,7 @@
                     "properties": {
                       "rel": {
                         "type": "string",
-                        "enum": [
-                          "open",
-                          "edit",
-                          "status",
-                          "preview",
-                          "download"
-                        ],
+                        "enum": ["open", "edit", "status", "preview", "download"],
                         "description": "Semantic relationship; clients decide how to present it."
                       },
                       "href": {
@@ -1663,10 +1469,7 @@
                         "maxLength": 120
                       }
                     },
-                    "required": [
-                      "rel",
-                      "href"
-                    ],
+                    "required": ["rel", "href"],
                     "additionalProperties": false
                   },
                   "description": "Semantic links for the resource."
@@ -1711,10 +1514,7 @@
                         "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                       }
                     },
-                    "required": [
-                      "name",
-                      "address"
-                    ],
+                    "required": ["name", "address"],
                     "additionalProperties": false
                   }
                 },
@@ -1741,10 +1541,7 @@
                         "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                       }
                     },
-                    "required": [
-                      "name",
-                      "address"
-                    ],
+                    "required": ["name", "address"],
                     "additionalProperties": false
                   }
                 },
@@ -1792,16 +1589,7 @@
             "description": "True when earlier messages exist outside this latest-message window."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "summary",
-          "summaryRevision",
-          "collaboration",
-          "tags",
-          "messages",
-          "messagesTruncated"
-        ],
+        "required": ["mailboxId", "conversationId", "summary", "summaryRevision", "collaboration", "tags", "messages", "messagesTruncated"],
         "additionalProperties": false
       },
       "schemaHash": "6dc023812ca0da61457347e1ecd81980c57abd72cf44b41682d4933ca5c1420e",
@@ -1833,10 +1621,7 @@
             "maximum": 10
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId"
-        ],
+        "required": ["mailboxId", "conversationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1859,10 +1644,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -1891,10 +1673,7 @@
                 "properties": {
                   "kind": {
                     "type": "string",
-                    "enum": [
-                      "participant",
-                      "subject"
-                    ]
+                    "enum": ["participant", "subject"]
                   },
                   "value": {
                     "type": "string",
@@ -1902,10 +1681,7 @@
                     "maxLength": 500
                   }
                 },
-                "required": [
-                  "kind",
-                  "value"
-                ],
+                "required": ["kind", "value"],
                 "additionalProperties": false
               }
             },
@@ -1918,13 +1694,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1941,22 +1711,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "participants",
-            "latestMessageAt",
-            "reasons",
-            "links"
-          ],
+          "required": ["ref", "title", "participants", "latestMessageAt", "reasons", "links"],
           "additionalProperties": false
         }
       },
@@ -1982,10 +1742,7 @@
             "description": "Exact mail.conversation ID returned by a conversation list, search, focus result, or typed conversation ref."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId"
-        ],
+        "required": ["mailboxId", "conversationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2016,11 +1773,7 @@
               },
               "state": {
                 "type": "string",
-                "enum": [
-                  "pending",
-                  "sent",
-                  "canceled"
-                ]
+                "enum": ["pending", "sent", "canceled"]
               },
               "revision": {
                 "type": "integer",
@@ -2038,16 +1791,7 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               }
             },
-            "required": [
-              "id",
-              "conversationId",
-              "userId",
-              "dueAt",
-              "state",
-              "revision",
-              "createdAt",
-              "updatedAt"
-            ],
+            "required": ["id", "conversationId", "userId", "dueAt", "state", "revision", "createdAt", "updatedAt"],
             "additionalProperties": false
           },
           {
@@ -2113,19 +1857,10 @@
                     "default": "words",
                     "description": "Text matching mode.",
                     "type": "string",
-                    "enum": [
-                      "words",
-                      "phrase",
-                      "contains",
-                      "exact"
-                    ]
+                    "enum": ["words", "phrase", "contains", "exact"]
                   }
                 },
-                "required": [
-                  "type",
-                  "field",
-                  "query"
-                ],
+                "required": ["type", "field", "query"],
                 "additionalProperties": false
               },
               {
@@ -2138,20 +1873,12 @@
                   },
                   "field": {
                     "type": "string",
-                    "enum": [
-                      "internal_date",
-                      "sent_at"
-                    ],
+                    "enum": ["internal_date", "sent_at"],
                     "description": "Message date field to compare."
                   },
                   "operator": {
                     "type": "string",
-                    "enum": [
-                      "before",
-                      "on_or_before",
-                      "after",
-                      "on_or_after"
-                    ],
+                    "enum": ["before", "on_or_before", "after", "on_or_after"],
                     "description": "Date comparison operator."
                   },
                   "value": {
@@ -2161,12 +1888,7 @@
                     "description": "Timestamp to compare with."
                   }
                 },
-                "required": [
-                  "type",
-                  "field",
-                  "operator",
-                  "value"
-                ],
+                "required": ["type", "field", "operator", "value"],
                 "additionalProperties": false
               },
               {
@@ -2179,21 +1901,12 @@
                   },
                   "field": {
                     "type": "string",
-                    "enum": [
-                      "message",
-                      "attachment"
-                    ],
+                    "enum": ["message", "attachment"],
                     "description": "Message or attachment size."
                   },
                   "operator": {
                     "type": "string",
-                    "enum": [
-                      "less_than",
-                      "at_most",
-                      "equal",
-                      "at_least",
-                      "greater_than"
-                    ],
+                    "enum": ["less_than", "at_most", "equal", "at_least", "greater_than"],
                     "description": "Size comparison operator."
                   },
                   "bytes": {
@@ -2203,12 +1916,7 @@
                     "description": "Byte count to compare with."
                   }
                 },
-                "required": [
-                  "type",
-                  "field",
-                  "operator",
-                  "bytes"
-                ],
+                "required": ["type", "field", "operator", "bytes"],
                 "additionalProperties": false
               },
               {
@@ -2221,18 +1929,11 @@
                   },
                   "value": {
                     "type": "string",
-                    "enum": [
-                      "needs_action",
-                      "waiting",
-                      "done"
-                    ],
+                    "enum": ["needs_action", "waiting", "done"],
                     "description": "Conversation work status."
                   }
                 },
-                "required": [
-                  "type",
-                  "value"
-                ],
+                "required": ["type", "value"],
                 "additionalProperties": false
               },
               {
@@ -2257,10 +1958,7 @@
                     "description": "Assigned user UUID, or null for unassigned conversations."
                   }
                 },
-                "required": [
-                  "type",
-                  "userId"
-                ],
+                "required": ["type", "userId"],
                 "additionalProperties": false
               },
               {
@@ -2276,10 +1974,7 @@
                     "description": "Required snoozed state."
                   }
                 },
-                "required": [
-                  "type",
-                  "value"
-                ],
+                "required": ["type", "value"],
                 "additionalProperties": false
               },
               {
@@ -2291,9 +1986,7 @@
                     "description": "Match-all search expression."
                   }
                 },
-                "required": [
-                  "type"
-                ],
+                "required": ["type"],
                 "additionalProperties": false
               },
               {
@@ -2310,10 +2003,7 @@
                     "description": "Stable folder ID."
                   }
                 },
-                "required": [
-                  "type",
-                  "folderId"
-                ],
+                "required": ["type", "folderId"],
                 "additionalProperties": false
               },
               {
@@ -2325,9 +2015,7 @@
                     "description": "Match conversations assigned to the current user."
                   }
                 },
-                "required": [
-                  "type"
-                ],
+                "required": ["type"],
                 "additionalProperties": false
               },
               {
@@ -2384,19 +2072,10 @@
                               "default": "words",
                               "description": "Text matching mode.",
                               "type": "string",
-                              "enum": [
-                                "words",
-                                "phrase",
-                                "contains",
-                                "exact"
-                              ]
+                              "enum": ["words", "phrase", "contains", "exact"]
                             }
                           },
-                          "required": [
-                            "type",
-                            "field",
-                            "query"
-                          ],
+                          "required": ["type", "field", "query"],
                           "additionalProperties": false
                         },
                         {
@@ -2409,20 +2088,12 @@
                             },
                             "field": {
                               "type": "string",
-                              "enum": [
-                                "internal_date",
-                                "sent_at"
-                              ],
+                              "enum": ["internal_date", "sent_at"],
                               "description": "Message date field to compare."
                             },
                             "operator": {
                               "type": "string",
-                              "enum": [
-                                "before",
-                                "on_or_before",
-                                "after",
-                                "on_or_after"
-                              ],
+                              "enum": ["before", "on_or_before", "after", "on_or_after"],
                               "description": "Date comparison operator."
                             },
                             "value": {
@@ -2432,12 +2103,7 @@
                               "description": "Timestamp to compare with."
                             }
                           },
-                          "required": [
-                            "type",
-                            "field",
-                            "operator",
-                            "value"
-                          ],
+                          "required": ["type", "field", "operator", "value"],
                           "additionalProperties": false
                         },
                         {
@@ -2450,21 +2116,12 @@
                             },
                             "field": {
                               "type": "string",
-                              "enum": [
-                                "message",
-                                "attachment"
-                              ],
+                              "enum": ["message", "attachment"],
                               "description": "Message or attachment size."
                             },
                             "operator": {
                               "type": "string",
-                              "enum": [
-                                "less_than",
-                                "at_most",
-                                "equal",
-                                "at_least",
-                                "greater_than"
-                              ],
+                              "enum": ["less_than", "at_most", "equal", "at_least", "greater_than"],
                               "description": "Size comparison operator."
                             },
                             "bytes": {
@@ -2474,12 +2131,7 @@
                               "description": "Byte count to compare with."
                             }
                           },
-                          "required": [
-                            "type",
-                            "field",
-                            "operator",
-                            "bytes"
-                          ],
+                          "required": ["type", "field", "operator", "bytes"],
                           "additionalProperties": false
                         },
                         {
@@ -2492,18 +2144,11 @@
                             },
                             "value": {
                               "type": "string",
-                              "enum": [
-                                "needs_action",
-                                "waiting",
-                                "done"
-                              ],
+                              "enum": ["needs_action", "waiting", "done"],
                               "description": "Conversation work status."
                             }
                           },
-                          "required": [
-                            "type",
-                            "value"
-                          ],
+                          "required": ["type", "value"],
                           "additionalProperties": false
                         },
                         {
@@ -2528,10 +2173,7 @@
                               "description": "Assigned user UUID, or null for unassigned conversations."
                             }
                           },
-                          "required": [
-                            "type",
-                            "userId"
-                          ],
+                          "required": ["type", "userId"],
                           "additionalProperties": false
                         },
                         {
@@ -2547,10 +2189,7 @@
                               "description": "Required snoozed state."
                             }
                           },
-                          "required": [
-                            "type",
-                            "value"
-                          ],
+                          "required": ["type", "value"],
                           "additionalProperties": false
                         },
                         {
@@ -2562,9 +2201,7 @@
                               "description": "Match-all search expression."
                             }
                           },
-                          "required": [
-                            "type"
-                          ],
+                          "required": ["type"],
                           "additionalProperties": false
                         },
                         {
@@ -2581,10 +2218,7 @@
                               "description": "Stable folder ID."
                             }
                           },
-                          "required": [
-                            "type",
-                            "folderId"
-                          ],
+                          "required": ["type", "folderId"],
                           "additionalProperties": false
                         },
                         {
@@ -2596,9 +2230,7 @@
                               "description": "Match conversations assigned to the current user."
                             }
                           },
-                          "required": [
-                            "type"
-                          ],
+                          "required": ["type"],
                           "additionalProperties": false
                         }
                       ]
@@ -2606,10 +2238,7 @@
                     "description": "Leaf expressions that must all match."
                   }
                 },
-                "required": [
-                  "type",
-                  "expressions"
-                ],
+                "required": ["type", "expressions"],
                 "additionalProperties": false
               },
               {
@@ -2666,19 +2295,10 @@
                               "default": "words",
                               "description": "Text matching mode.",
                               "type": "string",
-                              "enum": [
-                                "words",
-                                "phrase",
-                                "contains",
-                                "exact"
-                              ]
+                              "enum": ["words", "phrase", "contains", "exact"]
                             }
                           },
-                          "required": [
-                            "type",
-                            "field",
-                            "query"
-                          ],
+                          "required": ["type", "field", "query"],
                           "additionalProperties": false
                         },
                         {
@@ -2691,20 +2311,12 @@
                             },
                             "field": {
                               "type": "string",
-                              "enum": [
-                                "internal_date",
-                                "sent_at"
-                              ],
+                              "enum": ["internal_date", "sent_at"],
                               "description": "Message date field to compare."
                             },
                             "operator": {
                               "type": "string",
-                              "enum": [
-                                "before",
-                                "on_or_before",
-                                "after",
-                                "on_or_after"
-                              ],
+                              "enum": ["before", "on_or_before", "after", "on_or_after"],
                               "description": "Date comparison operator."
                             },
                             "value": {
@@ -2714,12 +2326,7 @@
                               "description": "Timestamp to compare with."
                             }
                           },
-                          "required": [
-                            "type",
-                            "field",
-                            "operator",
-                            "value"
-                          ],
+                          "required": ["type", "field", "operator", "value"],
                           "additionalProperties": false
                         },
                         {
@@ -2732,21 +2339,12 @@
                             },
                             "field": {
                               "type": "string",
-                              "enum": [
-                                "message",
-                                "attachment"
-                              ],
+                              "enum": ["message", "attachment"],
                               "description": "Message or attachment size."
                             },
                             "operator": {
                               "type": "string",
-                              "enum": [
-                                "less_than",
-                                "at_most",
-                                "equal",
-                                "at_least",
-                                "greater_than"
-                              ],
+                              "enum": ["less_than", "at_most", "equal", "at_least", "greater_than"],
                               "description": "Size comparison operator."
                             },
                             "bytes": {
@@ -2756,12 +2354,7 @@
                               "description": "Byte count to compare with."
                             }
                           },
-                          "required": [
-                            "type",
-                            "field",
-                            "operator",
-                            "bytes"
-                          ],
+                          "required": ["type", "field", "operator", "bytes"],
                           "additionalProperties": false
                         },
                         {
@@ -2774,18 +2367,11 @@
                             },
                             "value": {
                               "type": "string",
-                              "enum": [
-                                "needs_action",
-                                "waiting",
-                                "done"
-                              ],
+                              "enum": ["needs_action", "waiting", "done"],
                               "description": "Conversation work status."
                             }
                           },
-                          "required": [
-                            "type",
-                            "value"
-                          ],
+                          "required": ["type", "value"],
                           "additionalProperties": false
                         },
                         {
@@ -2810,10 +2396,7 @@
                               "description": "Assigned user UUID, or null for unassigned conversations."
                             }
                           },
-                          "required": [
-                            "type",
-                            "userId"
-                          ],
+                          "required": ["type", "userId"],
                           "additionalProperties": false
                         },
                         {
@@ -2829,10 +2412,7 @@
                               "description": "Required snoozed state."
                             }
                           },
-                          "required": [
-                            "type",
-                            "value"
-                          ],
+                          "required": ["type", "value"],
                           "additionalProperties": false
                         },
                         {
@@ -2844,9 +2424,7 @@
                               "description": "Match-all search expression."
                             }
                           },
-                          "required": [
-                            "type"
-                          ],
+                          "required": ["type"],
                           "additionalProperties": false
                         },
                         {
@@ -2863,10 +2441,7 @@
                               "description": "Stable folder ID."
                             }
                           },
-                          "required": [
-                            "type",
-                            "folderId"
-                          ],
+                          "required": ["type", "folderId"],
                           "additionalProperties": false
                         },
                         {
@@ -2878,9 +2453,7 @@
                               "description": "Match conversations assigned to the current user."
                             }
                           },
-                          "required": [
-                            "type"
-                          ],
+                          "required": ["type"],
                           "additionalProperties": false
                         }
                       ]
@@ -2888,10 +2461,7 @@
                     "description": "Alternative leaf expressions."
                   }
                 },
-                "required": [
-                  "type",
-                  "expressions"
-                ],
+                "required": ["type", "expressions"],
                 "additionalProperties": false
               },
               {
@@ -2944,19 +2514,10 @@
                             "default": "words",
                             "description": "Text matching mode.",
                             "type": "string",
-                            "enum": [
-                              "words",
-                              "phrase",
-                              "contains",
-                              "exact"
-                            ]
+                            "enum": ["words", "phrase", "contains", "exact"]
                           }
                         },
-                        "required": [
-                          "type",
-                          "field",
-                          "query"
-                        ],
+                        "required": ["type", "field", "query"],
                         "additionalProperties": false
                       },
                       {
@@ -2969,20 +2530,12 @@
                           },
                           "field": {
                             "type": "string",
-                            "enum": [
-                              "internal_date",
-                              "sent_at"
-                            ],
+                            "enum": ["internal_date", "sent_at"],
                             "description": "Message date field to compare."
                           },
                           "operator": {
                             "type": "string",
-                            "enum": [
-                              "before",
-                              "on_or_before",
-                              "after",
-                              "on_or_after"
-                            ],
+                            "enum": ["before", "on_or_before", "after", "on_or_after"],
                             "description": "Date comparison operator."
                           },
                           "value": {
@@ -2992,12 +2545,7 @@
                             "description": "Timestamp to compare with."
                           }
                         },
-                        "required": [
-                          "type",
-                          "field",
-                          "operator",
-                          "value"
-                        ],
+                        "required": ["type", "field", "operator", "value"],
                         "additionalProperties": false
                       },
                       {
@@ -3010,21 +2558,12 @@
                           },
                           "field": {
                             "type": "string",
-                            "enum": [
-                              "message",
-                              "attachment"
-                            ],
+                            "enum": ["message", "attachment"],
                             "description": "Message or attachment size."
                           },
                           "operator": {
                             "type": "string",
-                            "enum": [
-                              "less_than",
-                              "at_most",
-                              "equal",
-                              "at_least",
-                              "greater_than"
-                            ],
+                            "enum": ["less_than", "at_most", "equal", "at_least", "greater_than"],
                             "description": "Size comparison operator."
                           },
                           "bytes": {
@@ -3034,12 +2573,7 @@
                             "description": "Byte count to compare with."
                           }
                         },
-                        "required": [
-                          "type",
-                          "field",
-                          "operator",
-                          "bytes"
-                        ],
+                        "required": ["type", "field", "operator", "bytes"],
                         "additionalProperties": false
                       },
                       {
@@ -3052,18 +2586,11 @@
                           },
                           "value": {
                             "type": "string",
-                            "enum": [
-                              "needs_action",
-                              "waiting",
-                              "done"
-                            ],
+                            "enum": ["needs_action", "waiting", "done"],
                             "description": "Conversation work status."
                           }
                         },
-                        "required": [
-                          "type",
-                          "value"
-                        ],
+                        "required": ["type", "value"],
                         "additionalProperties": false
                       },
                       {
@@ -3088,10 +2615,7 @@
                             "description": "Assigned user UUID, or null for unassigned conversations."
                           }
                         },
-                        "required": [
-                          "type",
-                          "userId"
-                        ],
+                        "required": ["type", "userId"],
                         "additionalProperties": false
                       },
                       {
@@ -3107,10 +2631,7 @@
                             "description": "Required snoozed state."
                           }
                         },
-                        "required": [
-                          "type",
-                          "value"
-                        ],
+                        "required": ["type", "value"],
                         "additionalProperties": false
                       },
                       {
@@ -3122,9 +2643,7 @@
                             "description": "Match-all search expression."
                           }
                         },
-                        "required": [
-                          "type"
-                        ],
+                        "required": ["type"],
                         "additionalProperties": false
                       },
                       {
@@ -3141,10 +2660,7 @@
                             "description": "Stable folder ID."
                           }
                         },
-                        "required": [
-                          "type",
-                          "folderId"
-                        ],
+                        "required": ["type", "folderId"],
                         "additionalProperties": false
                       },
                       {
@@ -3156,19 +2672,14 @@
                             "description": "Match conversations assigned to the current user."
                           }
                         },
-                        "required": [
-                          "type"
-                        ],
+                        "required": ["type"],
                         "additionalProperties": false
                       }
                     ],
                     "description": "Leaf expression that must not match."
                   }
                 },
-                "required": [
-                  "type",
-                  "expression"
-                ],
+                "required": ["type", "expression"],
                 "additionalProperties": false
               }
             ],
@@ -3178,10 +2689,7 @@
             "default": "relevance",
             "description": "Result ordering.",
             "type": "string",
-            "enum": [
-              "relevance",
-              "newest"
-            ]
+            "enum": ["relevance", "newest"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -3197,10 +2705,7 @@
             "maximum": 50
           }
         },
-        "required": [
-          "mailboxId",
-          "expression"
-        ],
+        "required": ["mailboxId", "expression"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3223,10 +2728,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -3248,13 +2750,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -3271,10 +2767,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
@@ -3300,11 +2793,7 @@
             },
             "workStatus": {
               "type": "string",
-              "enum": [
-                "needs_action",
-                "waiting",
-                "done"
-              ]
+              "enum": ["needs_action", "waiting", "done"]
             },
             "snoozedUntil": {
               "type": "string",
@@ -3355,10 +2844,7 @@
                           "description": "Stable 6-character resource ID"
                         }
                       },
-                      "required": [
-                        "type",
-                        "id"
-                      ],
+                      "required": ["type", "id"],
                       "additionalProperties": false
                     },
                     "messageRef": {
@@ -3374,10 +2860,7 @@
                           "description": "Stable 6-character resource ID"
                         }
                       },
-                      "required": [
-                        "type",
-                        "id"
-                      ],
+                      "required": ["type", "id"],
                       "additionalProperties": false
                     },
                     "title": {
@@ -3398,13 +2881,7 @@
                         "properties": {
                           "rel": {
                             "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
+                            "enum": ["open", "edit", "status", "preview", "download"],
                             "description": "Semantic relationship; clients decide how to present it."
                           },
                           "href": {
@@ -3421,21 +2898,12 @@
                             "maxLength": 120
                           }
                         },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
+                        "required": ["rel", "href"],
                         "additionalProperties": false
                       }
                     }
                   },
-                  "required": [
-                    "ref",
-                    "messageRef",
-                    "title",
-                    "preview",
-                    "links"
-                  ],
+                  "required": ["ref", "messageRef", "title", "preview", "links"],
                   "additionalProperties": false
                 },
                 {
@@ -3492,9 +2960,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3517,10 +2983,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -3542,13 +3005,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -3565,10 +3022,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
@@ -3609,10 +3063,7 @@
             },
             "state": {
               "type": "string",
-              "enum": [
-                "scheduled",
-                "undo_window"
-              ]
+              "enum": ["scheduled", "undo_window"]
             },
             "attempt": {
               "type": "integer",
@@ -3620,17 +3071,7 @@
               "maximum": 9007199254740991
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links",
-            "draftId",
-            "conversationId",
-            "scheduledAt",
-            "nextAttemptAt",
-            "state",
-            "attempt"
-          ],
+          "required": ["ref", "title", "links", "draftId", "conversationId", "scheduledAt", "nextAttemptAt", "state", "attempt"],
           "additionalProperties": false
         }
       },
@@ -3651,9 +3092,7 @@
             "description": "Exact mail.delivery ID returned by List scheduled deliveries or a typed resource ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3710,10 +3149,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "scheduled",
-              "undo_window"
-            ]
+            "enum": ["scheduled", "undo_window"]
           },
           "attempt": {
             "type": "integer",
@@ -3782,9 +3218,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3807,10 +3241,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -3832,13 +3263,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -3855,10 +3280,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
@@ -3877,12 +3299,7 @@
             },
             "intent": {
               "type": "string",
-              "enum": [
-                "new",
-                "reply",
-                "reply_all",
-                "forward"
-              ]
+              "enum": ["new", "reply", "reply_all", "forward"]
             },
             "senderIdentityId": {
               "type": "string",
@@ -3908,13 +3325,7 @@
             },
             "state": {
               "type": "string",
-              "enum": [
-                "draft",
-                "scheduled",
-                "sending",
-                "sent",
-                "discarded"
-              ]
+              "enum": ["draft", "scheduled", "sending", "sent", "discarded"]
             },
             "updatedAt": {
               "type": "string",
@@ -3956,9 +3367,7 @@
             "description": "Exact mail.draft ID returned by List drafts or a typed resource ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3989,12 +3398,7 @@
           },
           "intent": {
             "type": "string",
-            "enum": [
-              "new",
-              "reply",
-              "reply_all",
-              "forward"
-            ]
+            "enum": ["new", "reply", "reply_all", "forward"]
           },
           "sourceMessageId": {
             "anyOf": [
@@ -4039,9 +3443,7 @@
                   "description": "Recipient email address."
                 }
               },
-              "required": [
-                "address"
-              ],
+              "required": ["address"],
               "additionalProperties": false
             }
           },
@@ -4071,9 +3473,7 @@
                   "description": "Recipient email address."
                 }
               },
-              "required": [
-                "address"
-              ],
+              "required": ["address"],
               "additionalProperties": false
             }
           },
@@ -4103,9 +3503,7 @@
                   "description": "Recipient email address."
                 }
               },
-              "required": [
-                "address"
-              ],
+              "required": ["address"],
               "additionalProperties": false
             }
           },
@@ -4126,18 +3524,11 @@
           },
           "format": {
             "type": "string",
-            "enum": [
-              "plain",
-              "markdown"
-            ]
+            "enum": ["plain", "markdown"]
           },
           "priority": {
             "type": "string",
-            "enum": [
-              "low",
-              "normal",
-              "high"
-            ]
+            "enum": ["low", "normal", "high"]
           },
           "requestDeliveryReceipt": {
             "type": "boolean"
@@ -4194,15 +3585,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 }
               },
-              "required": [
-                "id",
-                "filename",
-                "contentType",
-                "byteLength",
-                "contentHash",
-                "position",
-                "createdAt"
-              ],
+              "required": ["id", "filename", "contentType", "byteLength", "contentHash", "position", "createdAt"],
               "additionalProperties": false
             }
           },
@@ -4216,13 +3599,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "draft",
-              "scheduled",
-              "sending",
-              "sent",
-              "discarded"
-            ]
+            "enum": ["draft", "scheduled", "sending", "sent", "discarded"]
           },
           "createdAt": {
             "type": "string",
@@ -4292,11 +3669,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": [
-          "mailboxId",
-          "draftId",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "draftId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4341,21 +3714,12 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "id",
-                "title",
-                "description"
-              ],
+              "required": ["id", "title", "description"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "draftId",
-          "revision",
-          "fingerprint",
-          "warnings"
-        ],
+        "required": ["draftId", "revision", "fingerprint", "warnings"],
         "additionalProperties": false
       },
       "schemaHash": "78c80c201ad352bda322dfe16270266901333500897260f84804f99235e4653e",
@@ -4388,9 +3752,7 @@
             "maximum": 50
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4413,10 +3775,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "parentId": {
@@ -4462,13 +3821,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -4485,23 +3838,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "ref",
-            "parentId",
-            "title",
-            "role",
-            "selectable",
-            "total",
-            "unread"
-          ],
+          "required": ["ref", "parentId", "title", "role", "selectable", "total", "unread"],
           "additionalProperties": false
         }
       },
@@ -4525,11 +3867,7 @@
             "default": "read",
             "description": "Minimum mailbox permission to include.",
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -4567,10 +3905,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -4592,13 +3927,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -4615,21 +3944,14 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             },
             "permission": {
               "type": "string",
-              "enum": [
-                "read",
-                "write",
-                "admin"
-              ]
+              "enum": ["read", "write", "admin"]
             },
             "unreadCount": {
               "type": "integer",
@@ -4647,14 +3969,7 @@
               "maxLength": 240
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links",
-            "permission",
-            "unreadCount",
-            "needsActionCount"
-          ],
+          "required": ["ref", "title", "links", "permission", "unreadCount", "needsActionCount"],
           "additionalProperties": false
         }
       },
@@ -4688,9 +4003,7 @@
             "maximum": 50
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4713,10 +4026,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "label": {
@@ -4771,9 +4081,7 @@
                     "description": "Recipient email address."
                   }
                 },
-                "required": [
-                  "address"
-                ],
+                "required": ["address"],
                 "additionalProperties": false
               }
             },
@@ -4803,9 +4111,7 @@
                     "description": "Recipient email address."
                   }
                 },
-                "required": [
-                  "address"
-                ],
+                "required": ["address"],
                 "additionalProperties": false
               }
             },
@@ -4814,18 +4120,11 @@
             },
             "defaultFormat": {
               "type": "string",
-              "enum": [
-                "plain",
-                "markdown"
-              ]
+              "enum": ["plain", "markdown"]
             },
             "defaultPriority": {
               "type": "string",
-              "enum": [
-                "low",
-                "normal",
-                "high"
-              ]
+              "enum": ["low", "normal", "high"]
             },
             "defaultDeliveryReceipt": {
               "type": "boolean"
@@ -4838,11 +4137,7 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "unverified",
-                "verified",
-                "rejected"
-              ]
+              "enum": ["unverified", "verified", "rejected"]
             }
           },
           "required": [
@@ -4884,11 +4179,7 @@
             "default": "read",
             "description": "Minimum mailbox permission to include.",
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -4926,10 +4217,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -4951,13 +4239,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -4974,21 +4256,14 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             },
             "permission": {
               "type": "string",
-              "enum": [
-                "read",
-                "write",
-                "admin"
-              ]
+              "enum": ["read", "write", "admin"]
             },
             "health": {
               "type": "string",
@@ -5024,14 +4299,7 @@
               "maximum": 9007199254740991
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links",
-            "permission",
-            "health",
-            "syncEnabled"
-          ],
+          "required": ["ref", "title", "links", "permission", "health", "syncEnabled"],
           "additionalProperties": false
         }
       },
@@ -5070,9 +4338,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5097,19 +4363,10 @@
             },
             "permission": {
               "type": "string",
-              "enum": [
-                "read",
-                "write",
-                "admin"
-              ]
+              "enum": ["read", "write", "admin"]
             }
           },
-          "required": [
-            "id",
-            "uid",
-            "displayName",
-            "permission"
-          ],
+          "required": ["id", "uid", "displayName", "permission"],
           "additionalProperties": false
         }
       },
@@ -5130,9 +4387,7 @@
             "description": "Exact mail.mailbox ID returned by List mailboxes or a typed resource ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5165,11 +4420,7 @@
           },
           "permission": {
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "health": {
             "type": "string",
@@ -5258,9 +4509,7 @@
             "maximum": 50
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5283,10 +4532,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "name": {
@@ -5303,12 +4549,7 @@
               "maximum": 9007199254740991
             }
           },
-          "required": [
-            "ref",
-            "name",
-            "color",
-            "revision"
-          ],
+          "required": ["ref", "name", "color", "revision"],
           "additionalProperties": false
         }
       },
@@ -5335,10 +4576,7 @@
             "description": "Stable detected mailing-list key."
           }
         },
-        "required": [
-          "mailboxId",
-          "listKey"
-        ],
+        "required": ["mailboxId", "listKey"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5361,12 +4599,7 @@
               },
               "status": {
                 "type": "string",
-                "enum": [
-                  "active",
-                  "requesting",
-                  "unsubscribe_requested",
-                  "failed"
-                ]
+                "enum": ["active", "requesting", "unsubscribe_requested", "failed"]
               },
               "unsubscribe": {
                 "anyOf": [
@@ -5375,11 +4608,7 @@
                     "properties": {
                       "kind": {
                         "type": "string",
-                        "enum": [
-                          "one_click",
-                          "web",
-                          "email"
-                        ]
+                        "enum": ["one_click", "web", "email"]
                       },
                       "href": {
                         "type": "string",
@@ -5387,10 +4616,7 @@
                         "maxLength": 2048
                       }
                     },
-                    "required": [
-                      "kind",
-                      "href"
-                    ],
+                    "required": ["kind", "href"],
                     "additionalProperties": false
                   },
                   {
@@ -5417,10 +4643,7 @@
                 "type": "string"
               },
               "lastSender": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "unsubscribeRequestedAt": {
                 "anyOf": [
@@ -5435,10 +4658,7 @@
                 ]
               },
               "unsubscribeErrorCode": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               }
             },
             "required": [
@@ -5492,9 +4712,7 @@
             "maximum": 25
           }
         },
-        "required": [
-          "mailboxId"
-        ],
+        "required": ["mailboxId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5518,20 +4736,11 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "active",
-                "requesting",
-                "unsubscribe_requested",
-                "failed"
-              ]
+              "enum": ["active", "requesting", "unsubscribe_requested", "failed"]
             },
             "unsubscribeKind": {
               "type": "string",
-              "enum": [
-                "one_click",
-                "web",
-                "email"
-              ]
+              "enum": ["one_click", "web", "email"]
             },
             "messageCount": {
               "type": "integer",
@@ -5569,13 +4778,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -5592,24 +4795,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "listKey",
-            "name",
-            "address",
-            "status",
-            "messageCount",
-            "conversationCount",
-            "lastMessageAt",
-            "lastSubject"
-          ],
+          "required": ["listKey", "name", "address", "status", "messageCount", "conversationCount", "lastMessageAt", "lastSubject"],
           "additionalProperties": false
         }
       },
@@ -5648,10 +4839,7 @@
             "maximum": 50
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId"
-        ],
+        "required": ["mailboxId", "conversationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5674,10 +4862,7 @@
                   "description": "Stable 6-character resource ID"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
@@ -5699,13 +4884,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -5722,10 +4901,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
@@ -5770,10 +4946,7 @@
                     "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                   }
                 },
-                "required": [
-                  "name",
-                  "address"
-                ],
+                "required": ["name", "address"],
                 "additionalProperties": false
               }
             },
@@ -5800,10 +4973,7 @@
                     "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                   }
                 },
-                "required": [
-                  "name",
-                  "address"
-                ],
+                "required": ["name", "address"],
                 "additionalProperties": false
               }
             },
@@ -5863,9 +5033,7 @@
             "description": "Exact mail.message ID returned by List conversation messages or Search mail or a typed resource ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -5952,10 +5120,7 @@
                   "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                 }
               },
-              "required": [
-                "name",
-                "address"
-              ],
+              "required": ["name", "address"],
               "additionalProperties": false
             }
           },
@@ -5982,10 +5147,7 @@
                   "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                 }
               },
-              "required": [
-                "name",
-                "address"
-              ],
+              "required": ["name", "address"],
               "additionalProperties": false
             }
           },
@@ -6061,10 +5223,7 @@
                   "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                 }
               },
-              "required": [
-                "name",
-                "address"
-              ],
+              "required": ["name", "address"],
               "additionalProperties": false
             }
           },
@@ -6091,10 +5250,7 @@
                   "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                 }
               },
-              "required": [
-                "name",
-                "address"
-              ],
+              "required": ["name", "address"],
               "additionalProperties": false
             }
           },
@@ -6117,10 +5273,7 @@
                   "maxLength": 2048
                 }
               },
-              "required": [
-                "name",
-                "value"
-              ],
+              "required": ["name", "value"],
               "additionalProperties": false
             }
           },
@@ -6179,13 +5332,7 @@
                   "pattern": "^\\/api\\/mail\\/.*"
                 }
               },
-              "required": [
-                "id",
-                "filename",
-                "contentType",
-                "sizeBytes",
-                "downloadHref"
-              ],
+              "required": ["id", "filename", "contentType", "sizeBytes", "downloadHref"],
               "additionalProperties": false
             }
           },
@@ -6258,15 +5405,7 @@
                     ]
                   }
                 },
-                "required": [
-                  "id",
-                  "state",
-                  "scheduledAt",
-                  "undoUntil",
-                  "acceptedAt",
-                  "errorCode",
-                  "errorMessage"
-                ],
+                "required": ["id", "state", "scheduledAt", "undoUntil", "acceptedAt", "errorCode", "errorMessage"],
                 "additionalProperties": false
               },
               {
@@ -6339,9 +5478,7 @@
             "maximum": 65536
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6417,18 +5554,7 @@
             "const": "untrusted"
           }
         },
-        "required": [
-          "id",
-          "mailboxId",
-          "conversationId",
-          "subject",
-          "text",
-          "offset",
-          "length",
-          "totalBytes",
-          "nextOffset",
-          "trust"
-        ],
+        "required": ["id", "mailboxId", "conversationId", "subject", "text", "offset", "length", "totalBytes", "nextOffset", "trust"],
         "additionalProperties": false
       },
       "schemaHash": "e225ec97dda42120b1ca0eb14b3e2c72a00ac3df6565e463b54472d62bb2507a",
@@ -6448,9 +5574,7 @@
             "description": "Exact mail.reminder ID returned by Get personal reminder or a typed resource ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6479,11 +5603,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "pending",
-              "sent",
-              "canceled"
-            ]
+            "enum": ["pending", "sent", "canceled"]
           },
           "revision": {
             "type": "integer",
@@ -6501,16 +5621,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "userId",
-          "dueAt",
-          "state",
-          "revision",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "conversationId", "userId", "dueAt", "state", "revision", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "06c27ea89c4deb6e42059600dbf6ae988ae401bf3a7854e582a3f431ade2f0fa",
@@ -6557,10 +5668,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -6570,11 +5678,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6601,10 +5705,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -6648,10 +5749,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -6664,13 +5762,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -6687,20 +5779,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -6712,14 +5797,10 @@
             "tag": "mail",
             "title": "Mail",
             "description": "Search recent accessible mailboxes for messages.",
-            "aliases": [
-              "message"
-            ]
+            "aliases": ["message"]
           }
         ],
-        "scopeTypes": [
-          "mailbox"
-        ]
+        "scopeTypes": ["mailbox"]
       }
     }
   ],
@@ -6762,12 +5843,7 @@
             "description": "User UUID to assign, or null to unassign."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "expectedRevision",
-          "assigneeUserId"
-        ],
+        "required": ["mailboxId", "conversationId", "expectedRevision", "assigneeUserId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6796,18 +5872,10 @@
                     "type": "string"
                   },
                   "avatarHash": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
+                    "type": ["string", "null"]
                   }
                 },
-                "required": [
-                  "id",
-                  "uid",
-                  "displayName",
-                  "avatarHash"
-                ],
+                "required": ["id", "uid", "displayName", "avatarHash"],
                 "additionalProperties": false
               },
               {
@@ -6817,11 +5885,7 @@
           },
           "workStatus": {
             "type": "string",
-            "enum": [
-              "needs_action",
-              "waiting",
-              "done"
-            ]
+            "enum": ["needs_action", "waiting", "done"]
           },
           "snoozedUntil": {
             "anyOf": [
@@ -6841,13 +5905,7 @@
             "maximum": 9007199254740991
           }
         },
-        "required": [
-          "conversationId",
-          "assignee",
-          "workStatus",
-          "snoozedUntil",
-          "revision"
-        ],
+        "required": ["conversationId", "assignee", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
       "schemaHash": "f89e8f76020021d7be7897786a1894be8164377d8f620053b5932ec97284c08b",
@@ -6895,11 +5953,7 @@
             ]
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "body"
-        ],
+        "required": ["mailboxId", "conversationId", "body"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -6937,13 +5991,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "referencedMessageId",
-          "revision",
-          "deleted"
-        ],
+        "required": ["id", "conversationId", "referencedMessageId", "revision", "deleted"],
         "additionalProperties": false
       },
       "schemaHash": "c24f1a15d692e7d9d75f6a3bea4672619e74e041b1b9a63024d3c056f7ad6d88",
@@ -6983,12 +6031,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "commentId",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "conversationId", "commentId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7026,13 +6069,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "referencedMessageId",
-          "revision",
-          "deleted"
-        ],
+        "required": ["id", "conversationId", "referencedMessageId", "revision", "deleted"],
         "additionalProperties": false
       },
       "schemaHash": "561cecb7da5dda78e64ce9caf186040add5d37e0a3dbe3478c0f19171fab968e",
@@ -7077,13 +6114,7 @@
             "description": "Replacement internal comment body."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "commentId",
-          "expectedRevision",
-          "body"
-        ],
+        "required": ["mailboxId", "conversationId", "commentId", "expectedRevision", "body"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7121,13 +6152,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "referencedMessageId",
-          "revision",
-          "deleted"
-        ],
+        "required": ["id", "conversationId", "referencedMessageId", "revision", "deleted"],
         "additionalProperties": false
       },
       "schemaHash": "e6af99af451d3162f21a68c467f4aeda1325afc8e54d53f2b787a4b0db2bf13b",
@@ -7164,10 +6189,7 @@
                 "description": "Provider folder ID from which the conversation is being changed."
               }
             },
-            "required": [
-              "conversationId",
-              "sourceFolderId"
-            ],
+            "required": ["conversationId", "sourceFolderId"],
             "additionalProperties": false,
             "description": "Conversation and its current provider folder."
           },
@@ -7180,10 +6202,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "mailboxId",
-          "target"
-        ],
+        "required": ["mailboxId", "target"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7215,19 +6234,12 @@
                   "minLength": 1
                 }
               },
-              "required": [
-                "id",
-                "state"
-              ],
+              "required": ["id", "state"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "conversationId",
-          "correlationId",
-          "commands"
-        ],
+        "required": ["conversationId", "correlationId", "commands"],
         "additionalProperties": false
       },
       "schemaHash": "f5928af0c1c9b10c468c0c805fac9884583e14585b26ba9b4f52f2e5b9116f6b",
@@ -7264,10 +6276,7 @@
                 "description": "Provider folder ID from which the conversation is being changed."
               }
             },
-            "required": [
-              "conversationId",
-              "sourceFolderId"
-            ],
+            "required": ["conversationId", "sourceFolderId"],
             "additionalProperties": false,
             "description": "Conversation and its current provider folder."
           },
@@ -7283,19 +6292,11 @@
                   },
                   "role": {
                     "type": "string",
-                    "enum": [
-                      "inbox",
-                      "archive",
-                      "trash",
-                      "junk"
-                    ],
+                    "enum": ["inbox", "archive", "trash", "junk"],
                     "description": "Standard destination role."
                   }
                 },
-                "required": [
-                  "kind",
-                  "role"
-                ],
+                "required": ["kind", "role"],
                 "additionalProperties": false
               },
               {
@@ -7312,21 +6313,14 @@
                     "description": "Destination provider folder ID."
                   }
                 },
-                "required": [
-                  "kind",
-                  "folderId"
-                ],
+                "required": ["kind", "folderId"],
                 "additionalProperties": false
               }
             ],
             "description": "Provider destination role or folder."
           }
         },
-        "required": [
-          "mailboxId",
-          "target",
-          "destination"
-        ],
+        "required": ["mailboxId", "target", "destination"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7358,19 +6352,12 @@
                   "minLength": 1
                 }
               },
-              "required": [
-                "id",
-                "state"
-              ],
+              "required": ["id", "state"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "conversationId",
-          "correlationId",
-          "commands"
-        ],
+        "required": ["conversationId", "correlationId", "commands"],
         "additionalProperties": false
       },
       "schemaHash": "4df68d0f949ec5cecfeac5c21d00aee6c2aa98e815260e0dc43d315f88ba017f",
@@ -7404,11 +6391,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "conversationId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7437,11 +6420,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "pending",
-              "sent",
-              "canceled"
-            ]
+            "enum": ["pending", "sent", "canceled"]
           },
           "revision": {
             "type": "integer",
@@ -7459,16 +6438,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "userId",
-          "dueAt",
-          "state",
-          "revision",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "conversationId", "userId", "dueAt", "state", "revision", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "984ad3ea7899110d25d0fb20cf6e2d298fdb774d2a8238c570b900010f780d70",
@@ -7516,12 +6486,7 @@
             "description": "Current reminder revision, or null when creating it."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "dueAt",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "conversationId", "dueAt", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7550,11 +6515,7 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "pending",
-              "sent",
-              "canceled"
-            ]
+            "enum": ["pending", "sent", "canceled"]
           },
           "revision": {
             "type": "integer",
@@ -7572,16 +6533,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "userId",
-          "dueAt",
-          "state",
-          "revision",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "conversationId", "userId", "dueAt", "state", "revision", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "fdb941493a2fd2604bbcd5d2855d9dd566de1ccf74f567aa703a75a2b9bba2dd",
@@ -7629,12 +6581,7 @@
             "description": "Time to show the conversation again, or null to show it now."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "expectedRevision",
-          "snoozedUntil"
-        ],
+        "required": ["mailboxId", "conversationId", "expectedRevision", "snoozedUntil"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7663,18 +6610,10 @@
                     "type": "string"
                   },
                   "avatarHash": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
+                    "type": ["string", "null"]
                   }
                 },
-                "required": [
-                  "id",
-                  "uid",
-                  "displayName",
-                  "avatarHash"
-                ],
+                "required": ["id", "uid", "displayName", "avatarHash"],
                 "additionalProperties": false
               },
               {
@@ -7684,11 +6623,7 @@
           },
           "workStatus": {
             "type": "string",
-            "enum": [
-              "needs_action",
-              "waiting",
-              "done"
-            ]
+            "enum": ["needs_action", "waiting", "done"]
           },
           "snoozedUntil": {
             "anyOf": [
@@ -7708,13 +6643,7 @@
             "maximum": 9007199254740991
           }
         },
-        "required": [
-          "conversationId",
-          "assignee",
-          "workStatus",
-          "snoozedUntil",
-          "revision"
-        ],
+        "required": ["conversationId", "assignee", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
       "schemaHash": "9bf2980d31d60b2cf40d11c5e1da0549070e560b7900dacfd30deb0e69a6345d",
@@ -7750,19 +6679,11 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "done",
-              "open"
-            ],
+            "enum": ["done", "open"],
             "description": "Mark the conversation done or reopen it."
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "expectedRevision",
-          "status"
-        ],
+        "required": ["mailboxId", "conversationId", "expectedRevision", "status"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7791,18 +6712,10 @@
                     "type": "string"
                   },
                   "avatarHash": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
+                    "type": ["string", "null"]
                   }
                 },
-                "required": [
-                  "id",
-                  "uid",
-                  "displayName",
-                  "avatarHash"
-                ],
+                "required": ["id", "uid", "displayName", "avatarHash"],
                 "additionalProperties": false
               },
               {
@@ -7812,11 +6725,7 @@
           },
           "workStatus": {
             "type": "string",
-            "enum": [
-              "needs_action",
-              "waiting",
-              "done"
-            ]
+            "enum": ["needs_action", "waiting", "done"]
           },
           "snoozedUntil": {
             "anyOf": [
@@ -7836,13 +6745,7 @@
             "maximum": 9007199254740991
           }
         },
-        "required": [
-          "conversationId",
-          "assignee",
-          "workStatus",
-          "snoozedUntil",
-          "revision"
-        ],
+        "required": ["conversationId", "assignee", "workStatus", "snoozedUntil", "revision"],
         "additionalProperties": false
       },
       "schemaHash": "88e6fd1d92ab07657a778e90369e22a7a67ee30aedf99c424888a6fae0a7e51a",
@@ -7899,11 +6802,7 @@
             }
           }
         },
-        "required": [
-          "mailboxId",
-          "conversationId",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "conversationId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -7939,10 +6838,7 @@
                       "description": "Stable 6-character resource ID"
                     }
                   },
-                  "required": [
-                    "type",
-                    "id"
-                  ],
+                  "required": ["type", "id"],
                   "additionalProperties": false
                 },
                 "name": {
@@ -7959,21 +6855,12 @@
                   "maximum": 9007199254740991
                 }
               },
-              "required": [
-                "ref",
-                "name",
-                "color",
-                "revision"
-              ],
+              "required": ["ref", "name", "color", "revision"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "conversationId",
-          "conversationRevision",
-          "tags"
-        ],
+        "required": ["conversationId", "conversationRevision", "tags"],
         "additionalProperties": false
       },
       "schemaHash": "a4f8d355dd2d85db4454fd1d44fa0f15074b8b225d336423e4e4012f9a46e92b",
@@ -8005,16 +6892,10 @@
             "default": "draft",
             "description": "Whether cancellation restores or discards the draft.",
             "type": "string",
-            "enum": [
-              "draft",
-              "discard"
-            ]
+            "enum": ["draft", "discard"]
           }
         },
-        "required": [
-          "mailboxId",
-          "deliveryId"
-        ],
+        "required": ["mailboxId", "deliveryId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8023,10 +6904,7 @@
         "properties": {
           "disposition": {
             "type": "string",
-            "enum": [
-              "draft",
-              "discard"
-            ]
+            "enum": ["draft", "discard"]
           },
           "draftId": {
             "type": "string",
@@ -8034,10 +6912,7 @@
             "description": "Stable 6-character resource ID"
           }
         },
-        "required": [
-          "disposition",
-          "draftId"
-        ],
+        "required": ["disposition", "draftId"],
         "additionalProperties": false
       },
       "schemaHash": "aa1c1d6d23fa45229b691bb358e573e59441cfea137dc602fc3192362809f983",
@@ -8093,20 +6968,12 @@
                 "description": "Base64-encoded content; decoded content is limited to 105 KiB."
               }
             },
-            "required": [
-              "filename",
-              "base64"
-            ],
+            "required": ["filename", "base64"],
             "additionalProperties": false,
             "description": "Attachment to add."
           }
         },
-        "required": [
-          "mailboxId",
-          "draftId",
-          "expectedRevision",
-          "attachment"
-        ],
+        "required": ["mailboxId", "draftId", "expectedRevision", "attachment"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8155,12 +7022,7 @@
                   "maximum": 9007199254740991
                 }
               },
-              "required": [
-                "id",
-                "filename",
-                "contentType",
-                "byteLength"
-              ],
+              "required": ["id", "filename", "contentType", "byteLength"],
               "additionalProperties": false
             }
           },
@@ -8174,23 +7036,10 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "draft",
-              "scheduled",
-              "sending",
-              "sent",
-              "discarded"
-            ]
+            "enum": ["draft", "scheduled", "sending", "sent", "discarded"]
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "attachments",
-          "attachmentsTruncated",
-          "revision",
-          "state"
-        ],
+        "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
       "schemaHash": "5e92fd63fc272d9a5a8b741be7462e1f4565139be7de6ade05f362956031cf9f",
@@ -8230,12 +7079,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": [
-          "mailboxId",
-          "draftId",
-          "attachmentId",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "draftId", "attachmentId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8284,12 +7128,7 @@
                   "maximum": 9007199254740991
                 }
               },
-              "required": [
-                "id",
-                "filename",
-                "contentType",
-                "byteLength"
-              ],
+              "required": ["id", "filename", "contentType", "byteLength"],
               "additionalProperties": false
             }
           },
@@ -8303,23 +7142,10 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "draft",
-              "scheduled",
-              "sending",
-              "sent",
-              "discarded"
-            ]
+            "enum": ["draft", "scheduled", "sending", "sent", "discarded"]
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "attachments",
-          "attachmentsTruncated",
-          "revision",
-          "state"
-        ],
+        "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
       "schemaHash": "3e3cc06e035625728b96eab6593a881ee512534e74df0c27b59e3e6f20074f0c",
@@ -8374,9 +7200,7 @@
                   "description": "Recipient email address."
                 }
               },
-              "required": [
-                "address"
-              ]
+              "required": ["address"]
             }
           },
           "cc": {
@@ -8407,9 +7231,7 @@
                   "description": "Recipient email address."
                 }
               },
-              "required": [
-                "address"
-              ]
+              "required": ["address"]
             }
           },
           "bcc": {
@@ -8440,9 +7262,7 @@
                   "description": "Recipient email address."
                 }
               },
-              "required": [
-                "address"
-              ]
+              "required": ["address"]
             }
           },
           "subject": {
@@ -8461,20 +7281,13 @@
             "default": "markdown",
             "description": "Editable message body format.",
             "type": "string",
-            "enum": [
-              "plain",
-              "markdown"
-            ]
+            "enum": ["plain", "markdown"]
           },
           "priority": {
             "default": "normal",
             "description": "Message priority hint.",
             "type": "string",
-            "enum": [
-              "low",
-              "normal",
-              "high"
-            ]
+            "enum": ["low", "normal", "high"]
           },
           "requestDeliveryReceipt": {
             "default": false,
@@ -8490,12 +7303,7 @@
             "default": "new",
             "description": "Compose intent.",
             "type": "string",
-            "enum": [
-              "new",
-              "reply",
-              "reply_all",
-              "forward"
-            ]
+            "enum": ["new", "reply", "reply_all", "forward"]
           },
           "conversationId": {
             "description": "Conversation ID for a reply or forward.",
@@ -8556,18 +7364,12 @@
                   "description": "Base64-encoded content; decoded content is limited to 105 KiB."
                 }
               },
-              "required": [
-                "filename",
-                "base64"
-              ],
+              "required": ["filename", "base64"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "mailboxId",
-          "senderIdentityId"
-        ],
+        "required": ["mailboxId", "senderIdentityId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8616,12 +7418,7 @@
                   "maximum": 9007199254740991
                 }
               },
-              "required": [
-                "id",
-                "filename",
-                "contentType",
-                "byteLength"
-              ],
+              "required": ["id", "filename", "contentType", "byteLength"],
               "additionalProperties": false
             }
           },
@@ -8635,23 +7432,10 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "draft",
-              "scheduled",
-              "sending",
-              "sent",
-              "discarded"
-            ]
+            "enum": ["draft", "scheduled", "sending", "sent", "discarded"]
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "attachments",
-          "attachmentsTruncated",
-          "revision",
-          "state"
-        ],
+        "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
       "schemaHash": "297937228b6edfeb47c7db56f4315d39cad89e1e0cfb39ce5fe27f3d9eebd038",
@@ -8686,11 +7470,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": [
-          "mailboxId",
-          "draftId",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "draftId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8702,9 +7482,7 @@
             "const": true
           }
         },
-        "required": [
-          "deleted"
-        ],
+        "required": ["deleted"],
         "additionalProperties": false
       },
       "schemaHash": "ae5cfffa7fc893f9f4627ec8e24ee8128afb4967db2609d6a9e3848d0b7dde69",
@@ -8772,9 +7550,7 @@
                       "description": "Recipient email address."
                     }
                   },
-                  "required": [
-                    "address"
-                  ]
+                  "required": ["address"]
                 }
               },
               "cc": {
@@ -8804,9 +7580,7 @@
                       "description": "Recipient email address."
                     }
                   },
-                  "required": [
-                    "address"
-                  ]
+                  "required": ["address"]
                 }
               },
               "bcc": {
@@ -8836,9 +7610,7 @@
                       "description": "Recipient email address."
                     }
                   },
-                  "required": [
-                    "address"
-                  ]
+                  "required": ["address"]
                 }
               },
               "subject": {
@@ -8854,19 +7626,12 @@
               "format": {
                 "description": "Body format.",
                 "type": "string",
-                "enum": [
-                  "plain",
-                  "markdown"
-                ]
+                "enum": ["plain", "markdown"]
               },
               "priority": {
                 "description": "Message priority.",
                 "type": "string",
-                "enum": [
-                  "low",
-                  "normal",
-                  "high"
-                ]
+                "enum": ["low", "normal", "high"]
               },
               "requestDeliveryReceipt": {
                 "description": "Request a delivery receipt.",
@@ -8881,12 +7646,7 @@
             "description": "Fields to replace; omitted fields remain unchanged. Recipient arrays replace the entire list."
           }
         },
-        "required": [
-          "mailboxId",
-          "draftId",
-          "expectedRevision",
-          "patch"
-        ],
+        "required": ["mailboxId", "draftId", "expectedRevision", "patch"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -8935,12 +7695,7 @@
                   "maximum": 9007199254740991
                 }
               },
-              "required": [
-                "id",
-                "filename",
-                "contentType",
-                "byteLength"
-              ],
+              "required": ["id", "filename", "contentType", "byteLength"],
               "additionalProperties": false
             }
           },
@@ -8954,23 +7709,10 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "draft",
-              "scheduled",
-              "sending",
-              "sent",
-              "discarded"
-            ]
+            "enum": ["draft", "scheduled", "sending", "sent", "discarded"]
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "attachments",
-          "attachmentsTruncated",
-          "revision",
-          "state"
-        ],
+        "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
       "schemaHash": "2ef6348a1f188c786511ca0f6d8016cbdfd56bca18ec8e0392dc06a92c829bcd",
@@ -9055,20 +7797,11 @@
                 "description": "Warning identifiers accepted by the caller."
               }
             },
-            "required": [
-              "revision",
-              "fingerprint",
-              "warningIds"
-            ],
+            "required": ["revision", "fingerprint", "warningIds"],
             "additionalProperties": false
           }
         },
-        "required": [
-          "mailboxId",
-          "draftId",
-          "expectedRevision",
-          "senderIdentityId"
-        ],
+        "required": ["mailboxId", "draftId", "expectedRevision", "senderIdentityId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -9102,12 +7835,7 @@
             ]
           }
         },
-        "required": [
-          "commandId",
-          "state",
-          "draftId",
-          "conversationId"
-        ],
+        "required": ["commandId", "state", "draftId", "conversationId"],
         "additionalProperties": false
       },
       "schemaHash": "633e43d33458d744efe815990123e9dfa6471ba927bf8865213aa7c3dea4ef0e",
@@ -9176,9 +7904,7 @@
                       "description": "Recipient email address."
                     }
                   },
-                  "required": [
-                    "address"
-                  ]
+                  "required": ["address"]
                 }
               },
               "cc": {
@@ -9209,9 +7935,7 @@
                       "description": "Recipient email address."
                     }
                   },
-                  "required": [
-                    "address"
-                  ]
+                  "required": ["address"]
                 }
               },
               "bcc": {
@@ -9242,9 +7966,7 @@
                       "description": "Recipient email address."
                     }
                   },
-                  "required": [
-                    "address"
-                  ]
+                  "required": ["address"]
                 }
               },
               "subject": {
@@ -9263,20 +7985,13 @@
                 "default": "markdown",
                 "description": "Editable message body format.",
                 "type": "string",
-                "enum": [
-                  "plain",
-                  "markdown"
-                ]
+                "enum": ["plain", "markdown"]
               },
               "priority": {
                 "default": "normal",
                 "description": "Message priority hint.",
                 "type": "string",
-                "enum": [
-                  "low",
-                  "normal",
-                  "high"
-                ]
+                "enum": ["low", "normal", "high"]
               },
               "requestDeliveryReceipt": {
                 "default": false,
@@ -9289,19 +8004,12 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "senderIdentityId"
-            ],
+            "required": ["senderIdentityId"],
             "additionalProperties": false,
             "description": "Complete editable draft content replacing the current content."
           }
         },
-        "required": [
-          "mailboxId",
-          "draftId",
-          "expectedRevision",
-          "draft"
-        ],
+        "required": ["mailboxId", "draftId", "expectedRevision", "draft"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -9350,12 +8058,7 @@
                   "maximum": 9007199254740991
                 }
               },
-              "required": [
-                "id",
-                "filename",
-                "contentType",
-                "byteLength"
-              ],
+              "required": ["id", "filename", "contentType", "byteLength"],
               "additionalProperties": false
             }
           },
@@ -9369,23 +8072,10 @@
           },
           "state": {
             "type": "string",
-            "enum": [
-              "draft",
-              "scheduled",
-              "sending",
-              "sent",
-              "discarded"
-            ]
+            "enum": ["draft", "scheduled", "sending", "sent", "discarded"]
           }
         },
-        "required": [
-          "id",
-          "conversationId",
-          "attachments",
-          "attachmentsTruncated",
-          "revision",
-          "state"
-        ],
+        "required": ["id", "conversationId", "attachments", "attachmentsTruncated", "revision", "state"],
         "additionalProperties": false
       },
       "schemaHash": "8e6e61b24ce2dd2ba8c3e15690e6b324980d972d701e82e82ff5b39a6544eba6",
@@ -9420,11 +8110,7 @@
             "description": "Tag color as a six-digit hexadecimal value."
           }
         },
-        "required": [
-          "mailboxId",
-          "name",
-          "color"
-        ],
+        "required": ["mailboxId", "name", "color"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -9450,12 +8136,7 @@
             "maximum": 9007199254740991
           }
         },
-        "required": [
-          "id",
-          "name",
-          "color",
-          "revision"
-        ],
+        "required": ["id", "name", "color", "revision"],
         "additionalProperties": false
       },
       "schemaHash": "e09b23283bc4cf9c664e4afec783623318073ade60f01e367fdf95ab29cb8971",
@@ -9490,11 +8171,7 @@
             "description": "Current resource revision used for optimistic concurrency."
           }
         },
-        "required": [
-          "mailboxId",
-          "tagId",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "tagId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -9506,9 +8183,7 @@
             "const": true
           }
         },
-        "required": [
-          "deleted"
-        ],
+        "required": ["deleted"],
         "additionalProperties": false
       },
       "schemaHash": "80ebcf2d224ca6a2b5157aa13aa165b46bd48ab33ff635f1397b9aafcbf56993",
@@ -9553,11 +8228,7 @@
             "pattern": "^#[0-9a-fA-F]{6}$"
           }
         },
-        "required": [
-          "mailboxId",
-          "tagId",
-          "expectedRevision"
-        ],
+        "required": ["mailboxId", "tagId", "expectedRevision"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -9583,12 +8254,7 @@
             "maximum": 9007199254740991
           }
         },
-        "required": [
-          "id",
-          "name",
-          "color",
-          "revision"
-        ],
+        "required": ["id", "name", "color", "revision"],
         "additionalProperties": false
       },
       "schemaHash": "6f62ff408b11a1f8aad89965a977de57d863b870407df7679e5e60541e5f3c63",
@@ -9622,11 +8288,7 @@
             "description": "Exact advertised one-click HTTPS unsubscribe URL."
           }
         },
-        "required": [
-          "mailboxId",
-          "listKey",
-          "href"
-        ],
+        "required": ["mailboxId", "listKey", "href"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -9647,11 +8309,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "listKey",
-          "status",
-          "requestedAt"
-        ],
+        "required": ["listKey", "status", "requestedAt"],
         "additionalProperties": false
       },
       "schemaHash": "c703f1831018af8e3cdb26d28be62c0f41eacdef3e040f6517ef144758cd3218",
@@ -9667,11 +8325,7 @@
       "title": "Compose email",
       "description": "Write a new message in Mail.",
       "icon": "ti ti-mail-plus",
-      "keywords": [
-        "email",
-        "nachricht",
-        "verfassen"
-      ],
+      "keywords": ["email", "nachricht", "verfassen"],
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -9692,10 +8346,7 @@
                 "description": "Public contact ID."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           }
         },
@@ -9724,10 +8375,7 @@
             "description": "Public ID of the existing draft to keep and edit."
           }
         },
-        "required": [
-          "mailboxId",
-          "draftId"
-        ],
+        "required": ["mailboxId", "draftId"],
         "additionalProperties": false
       },
       "path": "/app/mail/calendar"

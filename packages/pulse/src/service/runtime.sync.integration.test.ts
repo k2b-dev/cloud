@@ -1,17 +1,13 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 
-const syncTest = process.env.PULSE_RUNTIME_NATS_TEST === "1" ? test : test.skip;
+const syncTest = testFor("database", "nats");
 syncTest(
   "scrape jobs retry a rolled-back write, hourly jobs catch up, and runtime drains an active scrape",
   async () => {
-    const [database] = await sql`SELECT current_database() AS name`;
-    if (database?.name !== "pulse_runtime_test")
-      throw Error("Runtime fault injection requires pulse_runtime_test");
-    const { migrate: auth } =
-      await import("../../../core/src/migrate/core/auth");
-    const { migrate: logging } =
-      await import("../../../core/src/migrate/core/logging");
+    const { migrate: auth } = await import("../../../core/src/migrate/core/auth");
+    const { migrate: logging } = await import("../../../core/src/migrate/core/logging");
     await auth();
     await logging();
     const { createSync } = await import("@k2b/sync");
@@ -87,12 +83,7 @@ syncTest(
         id: "pulse",
         delivery: { maxAttempts: 3, backoffMs: [60000, 120000] },
       });
-      for (const id of [
-        "pulse:metrics:scrape-due",
-        "pulse:rollup:hourly",
-        "pulse:retention",
-      ])
-        await scheduler.pause({ id });
+      for (const id of ["pulse:metrics:scrape-due", "pulse:rollup:hourly", "pulse:retention"]) await scheduler.pause({ id });
       const job = sync.job<{
         baseId: string;
         publicBaseId: string;
@@ -116,19 +107,15 @@ syncTest(
       };
       await job.submit({ key: `retry:${sourceId}`, input });
       await until(async () => {
-        const [row] =
-          await sql`SELECT count(*)::int AS count FROM pulse.metric_samples WHERE base_id=${baseId}::uuid`;
+        const [row] = await sql`SELECT count(*)::int AS count FROM pulse.metric_samples WHERE base_id=${baseId}::uuid`;
         return row?.count === 1;
       }, 45000);
       expect(calls).toBe(2);
       expect(fetchedAt[1]! - fetchedAt[0]!).toBeGreaterThanOrEqual(29000);
-      const [success] =
-        await sql`SELECT count(*)::int AS count FROM pulse.source_scrapes WHERE base_id=${baseId}::uuid AND success`;
+      const [success] = await sql`SELECT count(*)::int AS count FROM pulse.source_scrapes WHERE base_id=${baseId}::uuid AND success`;
       expect(success?.count).toBe(1);
       await sql.unsafe(`DROP TRIGGER ${trigger} ON pulse.metric_samples`);
-      const old = new Date(
-        Math.floor(Date.now() / 3600000) * 3600000 - 72 * 3600000,
-      ).toISOString();
+      const old = new Date(Math.floor(Date.now() / 3600000) * 3600000 - 72 * 3600000).toISOString();
       expect(
         (
           await ingestBatch({
@@ -173,17 +160,11 @@ syncTest(
         }),
       ]);
       const draining = pulseRuntime.stop();
-      expect(
-        await Promise.race([
-          draining.then(() => true),
-          Bun.sleep(50).then(() => false),
-        ]),
-      ).toBe(false);
+      expect(await Promise.race([draining.then(() => true), Bun.sleep(50).then(() => false)])).toBe(false);
       release();
       await draining;
       expect(sync.health().activeHandlers).toBe(0);
-      const [samples] =
-        await sql`SELECT count(*)::int AS count FROM pulse.metric_samples WHERE base_id=${baseId}::uuid`;
+      const [samples] = await sql`SELECT count(*)::int AS count FROM pulse.metric_samples WHERE base_id=${baseId}::uuid`;
       expect(samples?.count).toBe(5);
       const drained = await sync.drain({ timeoutMs: 5000 });
       expect(drained.timedOut).toBe(false);
@@ -193,9 +174,7 @@ syncTest(
       await sync.drain({ timeoutMs: 5000 });
       unbindProcessSync();
       exporter.stop(true);
-      await sql.unsafe(
-        `DROP TRIGGER IF EXISTS ${trigger} ON pulse.metric_samples`,
-      );
+      await sql.unsafe(`DROP TRIGGER IF EXISTS ${trigger} ON pulse.metric_samples`);
       await sql.unsafe(`DROP FUNCTION IF EXISTS ${fn}()`);
       await sql.unsafe(`DROP SEQUENCE IF EXISTS ${sequence}`);
       const {
@@ -209,20 +188,12 @@ syncTest(
             delete(name: string): Promise<boolean>;
           };
         }>;
-      } = await import(
-        Bun.resolveSync(
-          "@nats-io/jetstream",
-          new URL(".", import.meta.resolve("@k2b/sync")).pathname,
-        )
-      );
+      } = await import(Bun.resolveSync("@nats-io/jetstream", new URL(".", import.meta.resolve("@k2b/sync")).pathname));
       const manager = await jetstreamManager(connection);
       const ownedStreams: string[] = [];
       for await (const stream of manager.streams.list())
-        if (stream.config.metadata?.["sync.namespace"] === namespace)
-          ownedStreams.push(stream.config.name);
-      await Promise.all(
-        ownedStreams.map((name) => manager.streams.delete(name)),
-      );
+        if (stream.config.metadata?.["sync.namespace"] === namespace) ownedStreams.push(stream.config.name);
+      await Promise.all(ownedStreams.map((name) => manager.streams.delete(name)));
       await connection.drain();
       await sql`DELETE FROM pulse.bases WHERE id=${baseId}::uuid`;
     }

@@ -1,7 +1,7 @@
-import { DataPanel, DataTable, type DataTableColumn, Pagination, SettingsPage, StatCell, StatGrid, StatusBadge, useLocale } from "@k2b/ui";
 import type { AiProjectAdminListItem, AiProjectAdminSummary } from "@k2b/cloud/ai";
 import { formatDateTime } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { DataPanel, DataTable, type DataTableColumn, Pagination, SettingsPage, StatCell, StatGrid, StatusBadge, useLocale } from "@k2b/ui";
 import AiProjectAdminActions from "./AiProjectAdminActions.island";
 import { settingsMessages } from "./messages";
 

@@ -1,7 +1,7 @@
-import { MarkdownView, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { MarkdownView, Placeholder } from "@k2b/ui";
 import { ssr } from "../config";
 import { faqService } from "../service";
 import { faqMessages } from "./messages";

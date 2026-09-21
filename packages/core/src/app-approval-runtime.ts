@@ -1,6 +1,6 @@
-import type { Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { appApproval } from "@k2b/cloud/services";
+import type { Worker } from "@k2b/sync";
 import type { CoreNotificationSender } from "./notifications";
 
 const scheduler = lazySync((sync) => sync.scheduler({ id: "core-app-approval", delivery: { maxAttempts: 2, backoffMs: [5000] } }));

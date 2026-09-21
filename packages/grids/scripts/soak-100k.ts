@@ -1,12 +1,37 @@
 #!/usr/bin/env bun
+import { parseArgs } from "node:util";
 import { sql } from "bun";
+import { requireDatabaseUrl } from "../../../scripts/fixtures/test-infra";
 import { migrate } from "../src/migrate";
 import { gridsService } from "../src/service";
 import { ensureFieldIndex } from "../src/service/field-indexes";
 
-const ROWS = Number(process.env.ROWS ?? 100_000);
-const BATCH = Number(process.env.BATCH ?? 2_000);
-const KEEP = process.env.KEEP === "1";
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: {
+    rows: { type: "string", default: "100000" },
+    batch: { type: "string", default: "2000" },
+    keep: { type: "boolean", default: false },
+    help: { type: "boolean", default: false },
+  },
+});
+if (options.help) {
+  console.log(`Usage: CLOUD_TEST_DATABASE_URL=postgres://.../<name>_test bun packages/grids/scripts/soak-100k.ts [options]
+
+Seeds a large Grids fixture on the test database and checks aggregate queries.
+
+Options:
+  --rows <n>    Records to seed (default 100000)
+  --batch <n>   Records per insert batch (default 2000)
+  --keep        Keep the fixture after the run
+  --help        Show this help
+`);
+  process.exit(0);
+}
+requireDatabaseUrl();
+const ROWS = Number(options.rows);
+const BATCH = Number(options.batch);
+const KEEP = options.keep;
 
 const must = <T>(result: { ok: true; data: T } | { ok: false; error: { message: string } }): T => {
   if (!result.ok) throw new Error(result.error.message);

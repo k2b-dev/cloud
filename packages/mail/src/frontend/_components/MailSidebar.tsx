@@ -1,21 +1,21 @@
-import { mailCommandMessages } from "../../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { navigateTo, documentNavigate, type LinkNavigateEvent, refreshCurrentPath } from "@k2b/ssr/nav";
+import { documentNavigate, type LinkNavigateEvent, navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
-  createNavigation,
-  type NavigationItem,
-  type DropdownSection,
   AppWorkspace,
   ButtonLink,
+  createNavigation,
   Dropdown,
+  type DropdownSection,
+  type NavigationItem,
   prompts,
   toast,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { mailCommandMessages } from "../../commands";
 import type { ConversationView } from "../../contracts";
 import { serializeMailSearchState } from "../../search-state";
 import type { LocalTag } from "../../service/local-tags";

@@ -1,4 +1,3 @@
-import { SpaceComposeInputSchema, SpaceInvitationInputSchema } from "./commands";
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -98,6 +97,7 @@ import {
   TaskFocusInputSchema,
 } from "./capability-work-contracts";
 import { boundedWorkPage, runEventAgenda, runTaskFocus } from "./capability-work-queries";
+import { SpaceComposeInputSchema, SpaceInvitationInputSchema } from "./commands";
 import type { MutationResult, SpaceComment, SpaceItem, SpaceItemAttachment } from "./contracts";
 import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";

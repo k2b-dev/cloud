@@ -33,7 +33,10 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
     const stats = { totalRequests: 0 };
     mock.module("./stats", () => ({ stats, getRouteTable: () => ({ routeCount: 0 }), setRouteTable: () => {} }));
     mock.module("@k2b/cloud", () => ({
-      buildRuntimeFromRegistry: () => { builtVersion = registryVersion; return {}; },
+      buildRuntimeFromRegistry: () => {
+        builtVersion = registryVersion;
+        return {};
+      },
       listApps: async () => {
         listCalls++;
         return [];

@@ -4,7 +4,7 @@ import { aiProjectFilePathFromMount } from "./file-mount";
 import { aiFileStore, normalizeAiFilePath } from "./files-store";
 import { aiModelAccess } from "./model-access";
 import { defineAiTool } from "./tools";
-import { resolveAiAudioModel, runAiTranscription, type AiResolvedAudioModel } from "./transcription";
+import { type AiResolvedAudioModel, resolveAiAudioModel, runAiTranscription } from "./transcription";
 
 export const CloudAiTranscribeAudioInputSchema = z.object({
   path: z.string().trim().min(1).describe("Absolute path of the stored audio file. Project files are below /project."),

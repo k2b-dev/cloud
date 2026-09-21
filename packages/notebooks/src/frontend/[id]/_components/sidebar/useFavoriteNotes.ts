@@ -1,8 +1,8 @@
 import { prompts, useLocale } from "@k2b/ui";
 import { createEffect, createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { NoteTreeNode } from "./types";
 import { notebookWorkspaceMessages } from "../../messages";
+import type { NoteTreeNode } from "./types";
 
 export function useFavoriteNotes(params: { notebookId: string; initialFavoriteNoteIds: () => string[] }) {
   const locale = useLocale();

@@ -1,8 +1,8 @@
-import { test } from "bun:test";
 import { createHash } from "node:crypto";
 import { type SQL, sql } from "bun";
+import { testFor } from "../../../scripts/fixtures/test-infra";
 
-export const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+export const postgresTest = testFor("database");
 export const testUuid = () => Bun.randomUUIDv7();
 export const testShortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 

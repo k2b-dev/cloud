@@ -1,5 +1,5 @@
-import { Button, NoticeCard, Paper, TextInput } from "@k2b/ui";
 import { MinimalLayout, type MinimalLayoutProps } from "@k2b/cloud/ssr";
+import { Button, NoticeCard, Paper, TextInput } from "@k2b/ui";
 import { publicAttachmentMessages } from "./public-attachment-messages";
 
 type PublicAttachmentUnlockPageProps = {

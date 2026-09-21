@@ -1,4 +1,3 @@
-import { ContactComposeInputSchema } from "./commands";
 import { createHash } from "node:crypto";
 import {
   type CapabilityActionReview,
@@ -54,6 +53,7 @@ import {
 } from "./capability-contracts";
 import { type ContactCapabilityMessages, contactCapabilityMessages } from "./capability-messages";
 import { contactsCapabilityPresentation } from "./capability-presentation";
+import { ContactComposeInputSchema } from "./commands";
 import { type Contact, type ContactBook, type ContactNote, type ContactTag, contactsService } from "./service";
 import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID } from "./service/access";
 import {

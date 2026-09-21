@@ -1,5 +1,5 @@
-import { MarkdownView, prompts, toast } from "@k2b/ui";
 import type { AccountActionNoticeInput } from "@k2b/cloud/shared";
+import { MarkdownView, prompts, toast } from "@k2b/ui";
 import { apiClient } from "../api/client";
 import type { AccountsMessages } from "./messages";
 

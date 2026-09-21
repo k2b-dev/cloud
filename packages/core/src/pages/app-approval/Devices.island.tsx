@@ -1,15 +1,15 @@
+import { AppDevicesPageSchema, type AppDeviceView } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { Button, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
-import { AppDevicesPageSchema, type AppDeviceView } from "@k2b/cloud/contracts";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
-import { approvalApi, approvalRequestOptions, checked, parsed } from "./client";
-import ApprovalFeedback from "./Feedback";
-import { appApprovalMessages } from "./messages";
 import ApprovalStatus from "./ApprovalStatus";
 import type { ApprovalAvailability } from "./availability";
-import Pairing from "./Pairing";
+import { approvalApi, approvalRequestOptions, checked, parsed } from "./client";
+import ApprovalFeedback from "./Feedback";
 import InstallApp from "./InstallApp";
+import { appApprovalMessages } from "./messages";
+import Pairing from "./Pairing";
 
 export default function Devices(props: {
   initial: z.infer<typeof AppDevicesPageSchema> | null;
@@ -127,7 +127,7 @@ export default function Devices(props: {
         {(pairing) => (
           <Pairing
             {...pairing()}
-              actorId={pairing().userId}
+            actorId={pairing().userId}
             returnTo="/me/security"
             onClose={() => {
               setPairingOpen(false);

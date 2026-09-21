@@ -1,10 +1,8 @@
+import { jsonResponse, rateLimit, respond } from "@k2b/cloud/server";
 import { Hono } from "hono";
-import { rateLimit } from "@k2b/cloud/server";
 import { describeRoute } from "hono-openapi";
-import { jsonResponse } from "@k2b/cloud/server";
-import { respond } from "@k2b/cloud/server";
-import { quotesService } from "../service";
 import { z } from "zod";
+import { quotesService } from "../service";
 
 const QuoteSchema = z.object({
   text: z.string(),

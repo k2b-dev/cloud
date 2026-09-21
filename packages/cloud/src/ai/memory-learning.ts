@@ -1,21 +1,21 @@
-import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
-import { sql } from "bun";
 import { createHash } from "node:crypto";
+import { sql } from "bun";
 import { z } from "zod";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import { coreSettings } from "../services";
 import { logger } from "../services/logging";
 import { normalizeLocale } from "../shared/locale";
 import { parseAiAttachmentMarkers } from "./attachments";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
+import { type AiBackgroundMemoryProposal, aiMemories } from "./memories";
 import { type AiMemoryLearningChange, aiMemoryLearningRuns } from "./memory-learning-runs";
 import {
+  type AiMemoryWorkflowEvidence,
+  type AiMemoryWorkflowPattern,
   listAiPendingWorkflowPatterns,
   listAiTurnWorkflowEvidence,
   markAiWorkflowPatternReviewed,
-  type AiMemoryWorkflowEvidence,
-  type AiMemoryWorkflowPattern,
 } from "./memory-workflow-evidence";
-import { type AiBackgroundMemoryProposal, aiMemories } from "./memories";
 import { aiConversations } from "./store";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "./structured";
 import { resolveAiBackgroundModel, runAiStructured } from "./structured";

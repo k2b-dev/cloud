@@ -1,17 +1,17 @@
-import * as modelSettings from "./settings";
-import { beginAiCall, finishAiCall, backgroundCostState, releaseBackgroundCostStop } from "./inference-calls";
-import type { AiModelProfile } from "./types";
-import { drainQueuedMessages } from "./message-queue";
-import { aiConversations } from "./store";
-import { beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import type { AiQuotaRule } from "../shared/ai-quotas";
+import { backgroundCostState, beginAiCall, finishAiCall, releaseBackgroundCostStop } from "./inference-calls";
+import { drainQueuedMessages } from "./message-queue";
 import { quotaReport } from "./quota-report";
 import { aiQuotas, quotaWindow } from "./quotas";
 import { migrateAiQuotas } from "./quotas-migrate";
-import type { AiQuotaRule } from "../shared/ai-quotas";
-const url = new URL(process.env.DATABASE_URL || "postgres://localhost/unconfigured");
-const suite =
-  ["localhost", "127.0.0.1"].includes(url.hostname) && url.pathname.startsWith("/cloud_ai_quota_verify_") ? describe : describe.skip;
+import * as modelSettings from "./settings";
+import { aiConversations } from "./store";
+import type { AiModelProfile } from "./types";
+
+const suite = databaseSuite();
 const user = crypto.randomUUID(),
   other = crypto.randomUUID(),
   group = crypto.randomUUID(),
@@ -56,7 +56,13 @@ const charge = async (model: string, input = 60, output = 40) => {
   return id;
 };
 suite("Assistant quota PostgreSQL boundaries", () => {
+  let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
+  afterAll(async () => {
+    await sql.close();
+    await fresh?.drop();
+  });
   beforeAll(async () => {
+    fresh = await useFreshDatabase("ai_quotas");
     await sql`CREATE SCHEMA auth`;
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE auth.users(id UUID PRIMARY KEY,uid TEXT,display_name TEXT)`;

@@ -1,4 +1,3 @@
-import { fileQueries, fileActions } from "./file-capabilities";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
@@ -10,6 +9,7 @@ import { err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { persistedEntryRefId, resolveEntryRefId } from "./data/references";
 import { markdownRevision } from "./document-assets";
+import { fileActions, fileQueries } from "./file-capabilities";
 import { filesUrl } from "./frontend/urls";
 import { ENTRY_TYPE } from "./resource-ref";
 import { FilesError, filesService } from "./service";

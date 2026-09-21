@@ -94,8 +94,7 @@ export function DocsOverviewPage(props: DocsOverviewPageProps) {
           <h1>Build applications on Cloud.</h1>
         </div>
         <p class="docs-overview-lead">
-          Start with a working service, then use the platform APIs your
-          application needs. Cloud handles shared concerns; your application
+          Start with a working service, then use the platform APIs your application needs. Cloud handles shared concerns; your application
           keeps its domain logic and release cycle.
         </p>
       </header>
@@ -110,9 +109,7 @@ export function DocsOverviewPage(props: DocsOverviewPageProps) {
             {(entry, index) => (
               <li>
                 <a href={docsHref(entry.path)}>
-                  <span class="docs-overview-index">
-                    {String(index() + 1).padStart(2, "0")}
-                  </span>
+                  <span class="docs-overview-index">{String(index() + 1).padStart(2, "0")}</span>
                   <span>
                     <strong>{entry.title}</strong>
                     <small>{entry.description}</small>
@@ -125,10 +122,7 @@ export function DocsOverviewPage(props: DocsOverviewPageProps) {
         </ol>
       </section>
 
-      <section
-        class="docs-overview-directory"
-        aria-labelledby="docs-directory-title"
-      >
+      <section class="docs-overview-directory" aria-labelledby="docs-directory-title">
         <header>
           <p>Browse</p>
           <h2 id="docs-directory-title">Find the contract you need.</h2>
@@ -143,15 +137,7 @@ export function DocsOverviewPage(props: DocsOverviewPageProps) {
                   <For each={group.links}>
                     {(link) => (
                       <li>
-                        <a
-                          href={
-                            "href" in link
-                              ? `/${props.locale}${link.href}`
-                              : docsHref(link.path)
-                          }
-                        >
-                          {link.label}
-                        </a>
+                        <a href={"href" in link ? `/${props.locale}${link.href}` : docsHref(link.path)}>{link.label}</a>
                       </li>
                     )}
                   </For>

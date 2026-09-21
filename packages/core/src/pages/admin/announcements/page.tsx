@@ -1,12 +1,12 @@
-import { DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import type { AnnouncementEntry } from "@k2b/cloud/contracts";
-import { getLocale, type AuthContext } from "@k2b/cloud/server";
+import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { announcements } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
+import { DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../../../config";
 import CacheNotice from "../CacheNotice.island";
-import AnnouncementActions from "./AnnouncementActions.island";
 import { adminMessages } from "../messages";
+import AnnouncementActions from "./AnnouncementActions.island";
 
 const fmtDate = (value: string | null, locale: string) =>
   value ? new Date(value).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" }) : "—";

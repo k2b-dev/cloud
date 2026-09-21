@@ -1,6 +1,6 @@
 import type { PulseBase, PulseDashboard, PulseSavedQuery, PulseSource, PulseSourceScrape } from "../contracts";
-import type { PulseSourceApiKey } from "./types";
 import { compactId, formatDate, yesNo } from "./shared";
+import type { PulseSourceApiKey } from "./types";
 
 export const baseRows = (bases: PulseBase[]) =>
   bases.map((base) => ({

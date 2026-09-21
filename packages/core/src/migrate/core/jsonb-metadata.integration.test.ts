@@ -1,12 +1,12 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as audit } from "./audit";
 import { migrate as auth } from "./auth";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 import { migrate as notifications } from "./notifications";
 
-// Only run against a disposable migrated database, never an installation.
-describe.skipIf(process.env.CLOUD_JSONB_UPGRADE_TEST !== "1")("JSONB startup upgrade", () => {
+databaseSuite()("JSONB startup upgrade", () => {
   beforeAll(async () => {
     await auth();
     await audit();

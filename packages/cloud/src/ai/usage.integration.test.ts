@@ -1,23 +1,22 @@
-import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { beforeAll, expect, test } from "bun:test";
 import { nessi, type Provider } from "@k2b/nessi";
+import { sql } from "bun";
 import { z } from "zod";
+import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
 import { migrateCloudAi } from "./migrate";
+import { inferenceProvider } from "./quota-provider";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 import { recordAiStructuredRun } from "./structured-runs";
-import { beginAiCall, finishAiCall, type AiCallContext } from "./inference-calls";
-import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 import { aiUsage } from "./usage";
 
-// Requires the Core auth/workflow schema in a disposable database. Never use a shared dev database.
-const databaseUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
-const isolated =
-  ["127.0.0.1", "localhost"].includes(databaseUrl.hostname) &&
-  /^\/cloud_ai_usage_verify_(?!upgrade(?:_|$))[a-z0-9_]+$/.test(databaseUrl.pathname);
-if (isolated) await migrateCloudAi();
-const suite = isolated ? describe : describe.skip;
+const suite = databaseSuite();
+beforeAll(async () => {
+  if (!testInfra.database) return;
+  await migrateCloudAi();
+});
 
 const fixture = async () => {
   const prefix = `usage-${crypto.randomUUID()}`;

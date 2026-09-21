@@ -1,22 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiFileStore } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import { aiConversations } from "./store";
 
-const databaseAvailable = async () => {
-  try {
-    const [row] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!row?.users) return false;
-    await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await databaseAvailable()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async (label: string): Promise<string> => {
   const suffix = crypto.randomUUID();
@@ -39,6 +29,9 @@ const insertServiceAccount = async (label: string): Promise<string> => {
 };
 
 suite("AI live invalidation outbox", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("keeps only the global live-enqueue function signature", async () => {
     const rows = await sql<{ arguments: string }[]>`
       SELECT pg_get_function_identity_arguments(procedure.oid) AS arguments

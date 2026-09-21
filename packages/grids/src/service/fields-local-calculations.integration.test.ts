@@ -1,5 +1,6 @@
 import { beforeAll, expect, spyOn } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as fieldIndexes from "./field-indexes";
@@ -9,7 +10,7 @@ import { get as getRecord } from "./record-read";
 import * as records from "./record-write";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 }, 30_000);
 
 const fixture = async () => {

@@ -1,6 +1,6 @@
-import { invokeCapabilityStream } from "./capability-streams";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
+import { invokeCapabilityStream } from "./capability-streams";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
 /**
  * defineApp() — The single entry point for every cloud app.
@@ -72,8 +72,8 @@ import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability
 import { createHeartbeat } from "./heartbeat";
 import { compileHelp } from "./help";
 import { createPageResponses } from "./page-responses";
-import { getProcessSync, startProcessSync } from "./process-sync";
 import { configurePostgresApplicationName } from "./postgres-application-name";
+import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
@@ -303,7 +303,7 @@ export const defineApp = <
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
   configurePostgresApplicationName(opts.id);
-  const isDevelopment = process.env.NODE_ENV === "development";
+  const isDevelopment = env.IS_DEVELOPMENT;
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
 
   // ── 0. Register declared settings into the runtime registry ──────────
@@ -321,7 +321,7 @@ export const defineApp = <
     dev: isDevelopment,
     verbose: true,
     rootDir,
-    componentRoots: [resolve(process.env.APP_DIR ?? rootDir, "src"), fileURLToPath(new URL("../", import.meta.url))],
+    componentRoots: [resolve(env.APP_DIR ?? rootDir, "src"), fileURLToPath(new URL("../", import.meta.url))],
     basePath: opts.basePath,
     template: ({ body, scripts, title, description, theme, lang, performanceRoute }) => {
       const themeFixed = theme !== undefined;
@@ -673,13 +673,30 @@ export const defineApp = <
             };
           });
         for (const kind of ["queries", "actions"] as const) {
-          server.post(`/api/_internal/capabilities/v1/streams/${kind}/:capabilityId/:verb`, capabilityAuth(kind), auth.requireOAuthScope(kind === "queries" ? "read" : "write", "admin"), async c => {
-            const actor = c.get("actor");
-            return invokeCapabilityStream({ compiled: compiledCapabilities, kind, localId: c.req.param("capabilityId") ?? "", verb: c.req.param("verb") ?? "", request: c.req.raw,
-              context: { actor, accessSubject: c.get("accessSubject"), user: actor.kind === "user" ? actor.user : actor.delegatedUser,
-                locale: resolveLocale(c.req.raw.headers, await get<string>("app.locale")),
-                requestId: normalizeInvocationRequestId(c.req.header("x-request-id")) ?? crypto.randomUUID(), origin: CapabilityOriginSchema.catch("http").parse(c.req.header(CAPABILITY_ORIGIN_HEADER)), signal: c.req.raw.signal } });
-          });
+          server.post(
+            `/api/_internal/capabilities/v1/streams/${kind}/:capabilityId/:verb`,
+            capabilityAuth(kind),
+            auth.requireOAuthScope(kind === "queries" ? "read" : "write", "admin"),
+            async (c) => {
+              const actor = c.get("actor");
+              return invokeCapabilityStream({
+                compiled: compiledCapabilities,
+                kind,
+                localId: c.req.param("capabilityId") ?? "",
+                verb: c.req.param("verb") ?? "",
+                request: c.req.raw,
+                context: {
+                  actor,
+                  accessSubject: c.get("accessSubject"),
+                  user: actor.kind === "user" ? actor.user : actor.delegatedUser,
+                  locale: resolveLocale(c.req.raw.headers, await get<string>("app.locale")),
+                  requestId: normalizeInvocationRequestId(c.req.header("x-request-id")) ?? crypto.randomUUID(),
+                  origin: CapabilityOriginSchema.catch("http").parse(c.req.header(CAPABILITY_ORIGIN_HEADER)),
+                  signal: c.req.raw.signal,
+                },
+              });
+            },
+          );
         }
         const capabilityReadScope = auth.requireOAuthScope("read", "admin");
         const capabilityWriteScope = auth.requireOAuthScope("write", "admin");

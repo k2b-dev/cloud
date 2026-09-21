@@ -37,26 +37,16 @@ describe("assistantHelp", () => {
     expect(assistantHelp.getMarkdown("assistant-overview", "de")).toContain(
       "Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten",
     );
-    expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain(
-      "Der Assistent trennt Projekt-Chats und allgemeine Chats",
-    );
-    expect(assistantHelp.getMarkdown("assistant-guidance", "de")).toContain(
-      "Eine hilfreiche Anfrage formulieren",
-    );
+    expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain("Der Assistent trennt Projekt-Chats und allgemeine Chats");
+    expect(assistantHelp.getMarkdown("assistant-guidance", "de")).toContain("Eine hilfreiche Anfrage formulieren");
   });
 
   test("resolves regional and unknown locales through the fallback chain", () => {
-    expect(assistantHelp.getMarkdown("assistant-overview", "de-CH")).toBe(
-      assistantHelp.getMarkdown("assistant-overview", "de")!,
-    );
+    expect(assistantHelp.getMarkdown("assistant-overview", "de-CH")).toBe(assistantHelp.getMarkdown("assistant-overview", "de")!);
     expect(assistantHelp.getMarkdown("assistant-overview", "de-CH")).toContain(
       "Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten",
     );
-    expect(assistantHelp.getMarkdown("assistant-overview", "fr")).toBe(
-      assistantHelp.getMarkdown("assistant-overview")!,
-    );
-    expect(assistantHelp.getMarkdown("assistant-overview", "fr")).toContain(
-      "workspace for your personal Cloud agent",
-    );
+    expect(assistantHelp.getMarkdown("assistant-overview", "fr")).toBe(assistantHelp.getMarkdown("assistant-overview")!);
+    expect(assistantHelp.getMarkdown("assistant-overview", "fr")).toContain("workspace for your personal Cloud agent");
   });
 });

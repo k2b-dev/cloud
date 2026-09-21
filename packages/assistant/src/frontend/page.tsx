@@ -1,9 +1,9 @@
 import {
-  getAiChatQuotas,
   aiConversations,
   aiProjects,
   aiUserPrefs,
   assistantAiSettingsState,
+  getAiChatQuotas,
   listAssistantAiModels,
   loadAiStreamState,
 } from "@k2b/cloud/ai";
@@ -54,9 +54,13 @@ export default ssr<AuthContext>(async (c) => {
         perPage: 20,
       })
     : null;
-  const projectContext = activeProject ? await loadAssistantProjectContextSnapshot({ actor: c.get("actor"), accessSubject: subject }, activeProject.id) : null;
+  const projectContext = activeProject
+    ? await loadAssistantProjectContextSnapshot({ actor: c.get("actor"), accessSubject: subject }, activeProject.id)
+    : null;
 
-  const selectedConversationId = activeProject ? null : (requestedConversationId ?? conversations.find(conversation => !conversation.isDone)?.shortId ?? null);
+  const selectedConversationId = activeProject
+    ? null
+    : (requestedConversationId ?? conversations.find((conversation) => !conversation.isDone)?.shortId ?? null);
   const resolvedActiveConversation = selectedConversationId
     ? await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
     : null;

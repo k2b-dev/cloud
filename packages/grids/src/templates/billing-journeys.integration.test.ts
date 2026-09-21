@@ -8,6 +8,7 @@ import { createWorkflowRun } from "@k2b/cloud/workflows/store";
 import { dates } from "@k2b/stdlib";
 import { extractXml } from "@stackforge-eu/factur-x";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { DocumentDefaults } from "../contracts";
 import { createGermanBillingProfile, germanBillingProfile } from "../document-profiles/einvoice-de";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
@@ -26,7 +27,7 @@ import { runGridsWorkflowRun } from "../service/workflow-runtime";
 import { createBillingTemplate } from "./billing";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   // Issued evidence is deliberately immutable. The harness drops its isolated
   // database afterward, rather than disabling application evidence protections.
   const [db] = await sql`SELECT current_database() AS name`;
@@ -165,113 +166,118 @@ const ref = (tableId: string, recordId: string): WorkflowJsonValue => ({ kind: "
 const lines = (price: string) => [{ Label1: "Consulting", Unit01: ["C62"], Qty001: "1.0000", Price1: price, Vat001: ["vat019"] }];
 const succeeded = (run: { state: unknown; error: unknown }) => expect(run.state, JSON.stringify(run.error)).toBe("succeeded");
 
+const pdftotext = Bun.which(process.env.PDFTOTEXT ?? "pdftotext");
 const realPdfJourneyTest =
-  process.env.GRIDS_DB_TEST === "1" && process.env.GRIDS_PDF_TEST === "1"
+  testInfra.database && testInfra.gotenberg && pdftotext
     ? journeyTest
     : (name: string, run: () => Promise<void>) => test.skip(name, run, journeyBudget);
+const pdfSkipReason = pdftotext ? "" : " (skipped: Poppler pdftotext is not on PATH; install Poppler or set PDFTOTEXT)";
 
-realPdfJourneyTest("billing workflows persist real invoice, correction and self-billing PDFs with matching embedded XML", async () => {
-  const pdftotext = Bun.which(process.env.PDFTOTEXT ?? "pdftotext");
-  if (!pdftotext) throw new Error("Real billing PDF verification requires pdftotext on PATH or PDFTOTEXT");
-  const directory = process.env.GRIDS_PDF_REVIEW_DIR ?? (await mkdtemp(join(tmpdir(), "grids-billing-journey-pdf-")));
-  const profile = createGermanBillingProfile({
-    render: (input) =>
-      renderFacturXHtmlToPdfWithConfig(input, {
-        url: process.env.GRIDS_PDF_URL ?? "http://localhost:3001",
-        timeoutMs: 30_000,
-        maxHtmlBytes: 1_000_000,
-        maxPdfBytes: 10_000_000,
-      }),
-  });
-  const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
-  try {
-    const f = await fixture();
-    const parties = await f.table("parties");
-    const bills = await f.table("bills");
-    const company = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
-    await f.configureBusiness({
-      legalName: "Journey issuer",
-      vatId: "DE123456789",
-      address: company.street,
-      postalCode: company.postal_code,
-      city: company.city,
-      countryCode: "DE",
-      iban: company.iban,
-      accountName: company.account_name,
+realPdfJourneyTest(
+  `billing workflows persist real invoice, correction and self-billing PDFs with matching embedded XML${pdfSkipReason}`,
+  async () => {
+    const gotenberg = testInfra.gotenberg;
+    if (!pdftotext || !gotenberg) throw new Error("Real billing PDF verification requires Gotenberg and pdftotext");
+    const directory = process.env.GRIDS_PDF_REVIEW_DIR ?? (await mkdtemp(join(tmpdir(), "grids-billing-journey-pdf-")));
+    const profile = createGermanBillingProfile({
+      render: (input) =>
+        renderFacturXHtmlToPdfWithConfig(input, {
+          url: gotenberg,
+          timeoutMs: 30_000,
+          maxHtmlBytes: 1_000_000,
+          maxPdfBytes: 10_000_000,
+        }),
     });
-    const partner = await parties.add({ ...company, name: "Journey partner", vat_id: "DE987654321" });
-    const values = {
-      party: [partner.id],
-      invoice_date: "2026-09-15",
-      service_date: "2026-09-01",
-      due_date: "2026-09-28",
-      buyer_reference: "Journey order 42",
-      positions: lines("100.0000"),
-    };
-    const invoice = await bills.add({ ...values, kind: ["invoice"] });
-    const invoiceRef = ref(bills.id, invoice.id);
-    succeeded(await f.invoke("Issue invoice", { bill: invoiceRef }));
-    succeeded(await f.invoke("Prepare correction", { bill: invoiceRef }));
-    const [correction] = await sql`SELECT id::text FROM grids.records WHERE table_id = ${bills.id}::uuid AND id != ${invoice.id}::uuid`;
-    expect(correction).toBeDefined();
-    await bills.edit(correction.id, { reason: "Full journey correction", invoice_date: "2026-09-15", due_date: "2026-09-28" });
-    succeeded(await f.invoke("Issue correction", { bill: ref(bills.id, correction.id) }));
-    const selfBilling = await bills.add({ ...values, kind: ["selfBilling"], agreement: "Journey agreement 42" });
-    succeeded(await f.invoke("Issue self-billing", { bill: ref(bills.id, selfBilling.id) }));
+    const render = spyOn(germanBillingProfile, "issue").mockImplementation((snapshot, context) => profile.issue(snapshot, context));
+    try {
+      const f = await fixture();
+      const parties = await f.table("parties");
+      const bills = await f.table("bills");
+      const company = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
+      await f.configureBusiness({
+        legalName: "Journey issuer",
+        vatId: "DE123456789",
+        address: company.street,
+        postalCode: company.postal_code,
+        city: company.city,
+        countryCode: "DE",
+        iban: company.iban,
+        accountName: company.account_name,
+      });
+      const partner = await parties.add({ ...company, name: "Journey partner", vat_id: "DE987654321" });
+      const values = {
+        party: [partner.id],
+        invoice_date: "2026-09-15",
+        service_date: "2026-09-01",
+        due_date: "2026-09-28",
+        buyer_reference: "Journey order 42",
+        positions: lines("100.0000"),
+      };
+      const invoice = await bills.add({ ...values, kind: ["invoice"] });
+      const invoiceRef = ref(bills.id, invoice.id);
+      succeeded(await f.invoke("Issue invoice", { bill: invoiceRef }));
+      succeeded(await f.invoke("Prepare correction", { bill: invoiceRef }));
+      const [correction] = await sql`SELECT id::text FROM grids.records WHERE table_id = ${bills.id}::uuid AND id != ${invoice.id}::uuid`;
+      expect(correction).toBeDefined();
+      await bills.edit(correction.id, { reason: "Full journey correction", invoice_date: "2026-09-15", due_date: "2026-09-28" });
+      succeeded(await f.invoke("Issue correction", { bill: ref(bills.id, correction.id) }));
+      const selfBilling = await bills.add({ ...values, kind: ["selfBilling"], agreement: "Journey agreement 42" });
+      succeeded(await f.invoke("Issue self-billing", { bill: ref(bills.id, selfBilling.id) }));
 
-    const rows = await sql<Array<{ id: string; record_id: string }>>`
+      const rows = await sql<Array<{ id: string; record_id: string }>>`
       SELECT id::text, record_id::text FROM grids.documents WHERE base_id = ${f.baseId}::uuid`;
-    expect(rows).toHaveLength(3);
-    let invoiceNumber = "";
-    for (const [recordId, filename, title, typeCode] of [
-      [invoice.id, "invoice", "Rechnung", "380"],
-      [correction.id, "correction", "Rechnungskorrektur", "381"],
-      [selfBilling.id, "self-billing", "Gutschrift (Selbstabrechnung)", "389"],
-    ] as const) {
-      const row = rows.find((entry) => entry.record_id === recordId);
-      if (!row) throw new Error(`Missing ${filename} document`);
-      const document = await getDocument(row.id);
-      if (!document) throw new Error(`Missing ${filename} metadata`);
-      const pdf = await getDocumentPdf(document, "en");
-      const structured = await getDocumentArtifact(document.id, "structured", "en");
-      if (!pdf.ok) throw new Error(pdf.error.message);
-      if (!structured.ok) throw new Error(structured.error.message);
-      const xml = new TextDecoder().decode(structured.data.bytes);
-      const embedded = await extractXml(pdf.data.pdf);
-      expect(embedded.filename.toLowerCase()).toBe("factur-x.xml");
-      const normalized = (value: string) => value.trim().replace(/encoding="utf-8"/i, 'encoding="UTF-8"');
-      expect(normalized(embedded.xml)).toBe(normalized(xml));
-      expect(xml).toContain(`<ram:TypeCode>${typeCode}</ram:TypeCode>`);
-      expect(xml).toContain("<ram:GrandTotalAmount>119.00</ram:GrandTotalAmount>");
-      const path = join(directory, `${filename}.pdf`);
-      await Bun.write(path, pdf.data.pdf);
-      if (process.env.GRIDS_PDF_REVIEW_DIR) await Bun.write(join(directory, `${filename}.xml`), structured.data.bytes);
-      const extraction = Bun.spawn([pdftotext, "-layout", path, "-"], { stdout: "pipe", stderr: "pipe" });
-      const [text, error] = await Promise.all([new Response(extraction.stdout).text(), new Response(extraction.stderr).text()]);
-      expect(await extraction.exited, error).toBe(0);
-      expect(text).toContain(title);
-      expect(text).toContain(document.documentNumber);
-      expect(text).toContain("Consulting");
-      expect(text).toContain("119,00 EUR");
-      expect(text).toContain(company.iban);
-      if (filename === "invoice") invoiceNumber = document.documentNumber;
-      if (filename === "correction") {
-        expect(invoiceNumber).not.toBe("");
-        expect(text).toContain(invoiceNumber);
-        expect(xml).toContain(invoiceNumber);
+      expect(rows).toHaveLength(3);
+      let invoiceNumber = "";
+      for (const [recordId, filename, title, typeCode] of [
+        [invoice.id, "invoice", "Rechnung", "380"],
+        [correction.id, "correction", "Rechnungskorrektur", "381"],
+        [selfBilling.id, "self-billing", "Gutschrift (Selbstabrechnung)", "389"],
+      ] as const) {
+        const row = rows.find((entry) => entry.record_id === recordId);
+        if (!row) throw new Error(`Missing ${filename} document`);
+        const document = await getDocument(row.id);
+        if (!document) throw new Error(`Missing ${filename} metadata`);
+        const pdf = await getDocumentPdf(document, "en");
+        const structured = await getDocumentArtifact(document.id, "structured", "en");
+        if (!pdf.ok) throw new Error(pdf.error.message);
+        if (!structured.ok) throw new Error(structured.error.message);
+        const xml = new TextDecoder().decode(structured.data.bytes);
+        const embedded = await extractXml(pdf.data.pdf);
+        expect(embedded.filename.toLowerCase()).toBe("factur-x.xml");
+        const normalized = (value: string) => value.trim().replace(/encoding="utf-8"/i, 'encoding="UTF-8"');
+        expect(normalized(embedded.xml)).toBe(normalized(xml));
+        expect(xml).toContain(`<ram:TypeCode>${typeCode}</ram:TypeCode>`);
+        expect(xml).toContain("<ram:GrandTotalAmount>119.00</ram:GrandTotalAmount>");
+        const path = join(directory, `${filename}.pdf`);
+        await Bun.write(path, pdf.data.pdf);
+        if (process.env.GRIDS_PDF_REVIEW_DIR) await Bun.write(join(directory, `${filename}.xml`), structured.data.bytes);
+        const extraction = Bun.spawn([pdftotext, "-layout", path, "-"], { stdout: "pipe", stderr: "pipe" });
+        const [text, error] = await Promise.all([new Response(extraction.stdout).text(), new Response(extraction.stderr).text()]);
+        expect(await extraction.exited, error).toBe(0);
+        expect(text).toContain(title);
+        expect(text).toContain(document.documentNumber);
+        expect(text).toContain("Consulting");
+        expect(text).toContain("119,00 EUR");
+        expect(text).toContain(company.iban);
+        if (filename === "invoice") invoiceNumber = document.documentNumber;
+        if (filename === "correction") {
+          expect(invoiceNumber).not.toBe("");
+          expect(text).toContain(invoiceNumber);
+          expect(xml).toContain(invoiceNumber);
+        }
+        if (filename === "self-billing") {
+          expect(text).toContain("Journey agreement 42");
+          expect(xml).toContain("Journey agreement 42");
+        }
       }
-      if (filename === "self-billing") {
-        expect(text).toContain("Journey agreement 42");
-        expect(xml).toContain("Journey agreement 42");
-      }
+      expect(render).toHaveBeenCalledTimes(3);
+      if (process.env.GRIDS_PDF_REVIEW_DIR) console.info(`Billing workflow PDF review files: ${directory}`);
+    } finally {
+      render.mockRestore();
+      if (!process.env.GRIDS_PDF_REVIEW_DIR) await rm(directory, { recursive: true });
     }
-    expect(render).toHaveBeenCalledTimes(3);
-    if (process.env.GRIDS_PDF_REVIEW_DIR) console.info(`Billing workflow PDF review files: ${directory}`);
-  } finally {
-    render.mockRestore();
-    if (!process.env.GRIDS_PDF_REVIEW_DIR) await rm(directory, { recursive: true });
-  }
-});
+  },
+);
 
 journeyTest("invoice issuance recovers a renderer outage after finalization without changing its number or frozen data", async () => {
   let rendererAvailable = false;

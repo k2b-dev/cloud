@@ -3,13 +3,14 @@ import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { createCustomAppsApi } from "../api/custom-apps";
 import { FormConfigSchema } from "../contracts";
 import { postgresTest, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { grantAccess, revokeAccess } from "../service/access";
 import { listByBase } from "../service/custom-apps";
-import { projectPublicId, resolvePublicId, type PublicResourceType } from "../service/public-resources";
+import { type PublicResourceType, projectPublicId, resolvePublicId } from "../service/public-resources";
 import { create as createRecord, get as getRecord, update as updateRecord } from "../service/records";
 import { instantiate } from "../service/templates";
 import { runGridsWorkflowRun } from "../service/workflow-runtime";
@@ -43,7 +44,7 @@ const userFor = (id: string): User => ({
 });
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   const [database] = await sql`SELECT current_database() AS name`;
   if (!database.name.startsWith("grids_verify_")) throw new Error("Template runtime tests require an isolated grids_verify_ database");
   await migrate();

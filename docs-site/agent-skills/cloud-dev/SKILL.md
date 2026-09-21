@@ -147,7 +147,9 @@ runtime; rebuild only when an image-baked input changed. Follow the repository's
 commands and ownership map rather than rebuilding the complete stack by default.
 
 Start with the fastest relevant check, then verify each affected permission,
-data, registration, and SSR/browser boundary. Before release, test against the
+data, registration, and SSR/browser boundary. Integration tests gate on
+`CLOUD_TEST_*` variables and never touch a database whose name does not end in
+`_test`. Before release, test against the
 target Cloud version with the published package version used in production.
 Update the application's docs when observable behavior changes. Finish when
 code, focused tests, and documentation describe one contract.

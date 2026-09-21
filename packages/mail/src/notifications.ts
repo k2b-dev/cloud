@@ -1,5 +1,3 @@
-import { i18n } from "@k2b/stdlib";
-import type { Worker } from "@k2b/sync";
 import { type BoundNotificationMap, lazySync, notification } from "@k2b/cloud";
 import {
   coreSettings,
@@ -11,6 +9,8 @@ import {
   stopRuntimeResources,
   trace,
 } from "@k2b/cloud/services";
+import { i18n } from "@k2b/stdlib";
+import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { z } from "zod";
 import { SHORT_ID_REGEX } from "./lib/short-id";

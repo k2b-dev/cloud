@@ -2,6 +2,7 @@ import { beforeAll, describe, expect } from "bun:test";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createWorkflowRun } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { create, get, update } from "../service/records";
@@ -149,8 +150,8 @@ const invoke = async (fixture: Fixture, workflow: Workflow, inputs: Record<strin
 
 describe("authored template workflow transitions", () => {
   beforeAll(async () => {
-    if (process.env.GRIDS_DB_TEST !== "1") return;
-    const target = new URL(process.env.DATABASE_URL ?? "");
+    if (!testInfra.database) return;
+    const target = new URL(testInfra.database ?? "");
     expect(["localhost", "127.0.0.1"]).toContain(target.hostname);
     await migrate();
   });

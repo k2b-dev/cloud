@@ -1,6 +1,6 @@
-import { Button, ButtonLink, NoticeCard, NumberInput, Placeholder, Switch, TextInput, useLocale } from "@k2b/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import type { AiQuotaConfig } from "@k2b/cloud/shared";
+import { Button, ButtonLink, NoticeCard, NumberInput, Placeholder, Switch, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onMount, Show } from "solid-js";
 
 export default function AiBackgroundBudget(props: {

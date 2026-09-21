@@ -1,6 +1,6 @@
 import type { PulseCurrentState, PulseRecordedEvent } from "../../contracts";
-import type { ActivityEventGroup, ActivityStateGroup } from "./types";
 import { eventGroupId, signalSubject, stateGroupId } from "./signal-helpers";
+import type { ActivityEventGroup, ActivityStateGroup } from "./types";
 
 const newestEventFirst = (left: PulseRecordedEvent, right: PulseRecordedEvent): number => Date.parse(right.ts) - Date.parse(left.ts);
 

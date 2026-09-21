@@ -1,6 +1,6 @@
-import { aiQuotas } from "./quotas";
 import { sql } from "bun";
 import { type AiUsageQuery, AiUsageQuerySchema } from "../shared/ai-usage";
+import { aiQuotas } from "./quotas";
 
 export { AI_USAGE_RANGES, type AiUsageRange } from "../shared/ai-usage";
 

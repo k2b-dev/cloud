@@ -167,14 +167,20 @@ export const assistantChatCommands = [
       },
     }),
   ),
-  ...(["done", "reopen"] as const).map(action => command(`chats ${action}`, {
-    summary: action === "done" ? "Mark a chat done without archiving its resources" : "Reopen a done chat",
-    args: { chat: arg.required({ valueLabel: "chat-id" }) },
-    async run({ ctx, args }) {
-      const result = await readApi<AiConversation>(ctx, conversationPath(args.chat, "/done"), jsonRequest("PUT", { done: action === "done" }));
-      printValue(ctx, result);
-    },
-  })),
+  ...(["done", "reopen"] as const).map((action) =>
+    command(`chats ${action}`, {
+      summary: action === "done" ? "Mark a chat done without archiving its resources" : "Reopen a done chat",
+      args: { chat: arg.required({ valueLabel: "chat-id" }) },
+      async run({ ctx, args }) {
+        const result = await readApi<AiConversation>(
+          ctx,
+          conversationPath(args.chat, "/done"),
+          jsonRequest("PUT", { done: action === "done" }),
+        );
+        printValue(ctx, result);
+      },
+    }),
+  ),
   command("chats timeline", {
     summary: "List user-message navigation points in a chat",
     args: { chat: arg.required({ valueLabel: "chat-id" }) },

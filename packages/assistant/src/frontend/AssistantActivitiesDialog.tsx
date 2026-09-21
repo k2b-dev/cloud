@@ -1,14 +1,14 @@
+import type { AiChatTaskOccurrenceView, AiChatTaskView, AiStoredMessage } from "@k2b/cloud/ai";
 import { AiChatActionsProvider, createAiChatTimeline } from "@k2b/cloud/ai/ui";
 import { navigateTo } from "@k2b/ssr/nav";
-import { assistantConversationHref } from "./assistant-navigation";
 import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Button, Chat, MarkdownView, NoticeCard, Placeholder, prompts, renderSafeMarkdown, StatusBadge, useLocale } from "@k2b/ui";
-import type { AiChatTaskView, AiChatTaskOccurrenceView, AiStoredMessage } from "@k2b/cloud/ai";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { AssistantLiveProvider, type AssistantLiveHub, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
+import { formatAssistantTaskSchedule, occurrencePresentation, openAssistantTask } from "./AssistantTasksDialog";
+import { type AssistantLiveHub, AssistantLiveProvider, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
+import { assistantConversationHref } from "./assistant-navigation";
 import { assistantBrowserText, useAssistantText } from "./ui-copy";
-import { openAssistantTask, formatAssistantTaskSchedule, occurrencePresentation } from "./AssistantTasksDialog";
 
 export type AssistantActivity = { task: AiChatTaskView; occurrence: AiChatTaskOccurrenceView; chatTitle: string | null; unread: boolean };
 type ActivitiesPage = { items: AssistantActivity[]; hasMore: boolean };

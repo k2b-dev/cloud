@@ -1,35 +1,36 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { createDisposableDatabase, testInfra } from "../../../scripts/fixtures/test-infra";
 import { initializeSchema } from "./schema";
 
-const enabled = process.env.PULSE_SCHEMA_DB_TEST === "1";
+const enabled = testInfra.database !== undefined;
 const databaseTest = enabled ? test : test.skip;
 
-const assertDisposableDatabase = async () => {
-  const [row] = await sql`SELECT current_database() AS name`;
-  if (row?.name !== "pulse_schema_test") throw new Error("Schema tests require the dedicated pulse_schema_test database");
-};
+let database: Awaited<ReturnType<typeof createDisposableDatabase>> | undefined;
 
+// Installation tests drop whole schemas, so they own a private database. The
+// default `sql` connects lazily to `DATABASE_URL`, which only works when this
+// file is the first database user in its process (`bun test --isolate`).
 beforeAll(async () => {
   if (!enabled) return;
-  await assertDisposableDatabase();
+  database = await createDisposableDatabase("pulse_schema");
+  process.env.DATABASE_URL = database.url;
+  const [row] = await sql`SELECT current_database() AS name`;
+  if (row?.name !== database.name) throw new Error("Schema tests need their own database; run this file in its own process");
   await sql`DROP SCHEMA IF EXISTS pulse CASCADE`.simple();
   await sql`DROP SCHEMA IF EXISTS auth CASCADE`.simple();
 });
 
 afterAll(async () => {
-  if (!enabled) return;
-  await assertDisposableDatabase();
-  await sql`DROP SCHEMA IF EXISTS pulse CASCADE`.simple();
-  await sql`DROP SCHEMA IF EXISTS auth CASCADE`.simple();
+  if (!database) return;
   await sql.close();
+  await database.drop();
 });
 
 describe("fresh Pulse installation", () => {
   databaseTest(
     "rolls back an incomplete installation",
     async () => {
-      await assertDisposableDatabase();
       await expect(initializeSchema()).rejects.toThrow();
       const [row] = await sql`SELECT to_regnamespace('pulse') IS NULL AS absent`;
       expect(row?.absent).toBe(true);
@@ -40,7 +41,6 @@ describe("fresh Pulse installation", () => {
   databaseTest(
     "installs once under concurrent starts and preserves existing data on restart",
     async () => {
-      await assertDisposableDatabase();
       await sql`CREATE SCHEMA auth`.simple();
       await sql`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
       await sql`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
@@ -51,10 +51,12 @@ describe("fresh Pulse installation", () => {
       expect(row?.name).toBe("Preserved");
       const [installation] = await sql`SELECT count(*)::int AS count FROM pulse.installation`;
       expect(installation?.count).toBe(1);
-      const [sensitiveIndex] = await sql`SELECT indexdef FROM pg_indexes WHERE schemaname='pulse' AND indexname='idx_pulse_events_sensitive_retention'`;
+      const [sensitiveIndex] =
+        await sql`SELECT indexdef FROM pg_indexes WHERE schemaname='pulse' AND indexname='idx_pulse_events_sensitive_retention'`;
       expect(sensitiveIndex?.indexdef).toContain("(base_id, ts)");
       expect(sensitiveIndex?.indexdef).toContain("WHERE (sensitive <> '{}'::jsonb)");
-      const [recentIndex] = await sql`SELECT indexdef FROM pg_indexes WHERE schemaname='pulse' AND indexname='idx_pulse_events_base_recent'`;
+      const [recentIndex] =
+        await sql`SELECT indexdef FROM pg_indexes WHERE schemaname='pulse' AND indexname='idx_pulse_events_base_recent'`;
       expect(recentIndex?.indexdef).toContain("(base_id, ts DESC, recorded_at DESC)");
       await expect(Promise.resolve(sql`SELECT 'histogram'::pulse.metric_type`)).rejects.toThrow();
       await expect(
@@ -73,7 +75,6 @@ describe("fresh Pulse installation", () => {
   databaseTest(
     "rejects an existing Alpha schema without changing its data",
     async () => {
-      await assertDisposableDatabase();
       await sql`DROP SCHEMA pulse CASCADE`.simple();
       await sql`CREATE SCHEMA pulse`.simple();
       await sql`CREATE TABLE pulse.alpha_fixture (value TEXT)`.simple();

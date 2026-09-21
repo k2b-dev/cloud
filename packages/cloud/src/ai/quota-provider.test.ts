@@ -1,8 +1,9 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import type { Provider, ProviderEvent } from "@k2b/nessi";
+import { AiBackgroundAdmissionError, AiBackgroundCostError, type AiCallContext } from "./inference-calls";
 import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
-import { AiBackgroundAdmissionError, AiBackgroundCostError, type AiCallContext } from "./inference-calls";
+
 const profile: AiModelProfile = {
   id: "a",
   label: "A",

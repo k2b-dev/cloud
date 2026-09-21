@@ -1,8 +1,9 @@
-import { redis } from "bun";
+import { beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { redis, sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
+import { createTestSession } from "../services/session/session.test-fixture";
 import * as platformSettings from "../services/settings";
-import { describe, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
-import { createTestSession } from "../services/session/test-fixture";
 import { aiFileStore } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
@@ -10,18 +11,7 @@ import { __aiRoutesTest, aiRoutes } from "./routes";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 
-const databaseAvailable = async () => {
-  try {
-    const [row] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!row?.users) return false;
-    await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await databaseAvailable()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async (): Promise<string> => {
   const suffix = crypto.randomUUID();
@@ -52,6 +42,9 @@ describe("global AI route registration", () => {
 });
 
 suite("global AI conversation boundaries", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("assigns a Project only once even when two requests race", async () => {
     const userId = await insertUser();
     const subject = { type: "user" as const, userId };
@@ -59,14 +52,26 @@ suite("global AI conversation boundaries", () => {
     const second = await aiProjects.create({ subject, name: "Second" });
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
-      const results = await Promise.all([first, second].map(project => aiConversations.setConversationProject({
-        conversationId: chat.id, ownerUserId: userId, projectId: project.id, onlyUnassigned: true,
-      })));
-      expect(results.filter(result => result.ok)).toHaveLength(1);
-      expect(results.filter(result => !result.ok)).toEqual([{ ok: false, reason: "already_assigned" }]);
-      expect(await aiConversations.setConversationProject({
-        conversationId: chat.id, ownerUserId: userId, projectId: null, onlyUnassigned: true,
-      })).toEqual({ ok: false, reason: "already_assigned" });
+      const results = await Promise.all(
+        [first, second].map((project) =>
+          aiConversations.setConversationProject({
+            conversationId: chat.id,
+            ownerUserId: userId,
+            projectId: project.id,
+            onlyUnassigned: true,
+          }),
+        ),
+      );
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, reason: "already_assigned" }]);
+      expect(
+        await aiConversations.setConversationProject({
+          conversationId: chat.id,
+          ownerUserId: userId,
+          projectId: null,
+          onlyUnassigned: true,
+        }),
+      ).toEqual({ ok: false, reason: "already_assigned" });
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
       await sql`DELETE FROM ai.projects WHERE id IN (${first.id}::uuid,${second.id}::uuid)`;
@@ -75,19 +80,25 @@ suite("global AI conversation boundaries", () => {
   });
   test("an upload storage failure produces a safe correlated diagnostic", async () => {
     const userId = await insertUser();
-    const chat = await aiConversations.createConversation({ownerUserId:userId});
-    const warning = spyOn(console,"warn").mockImplementation(()=>{});
-    const upload = spyOn(aiFileStore,"createUserUpload").mockRejectedValue(new Error("storage unavailable"));
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    const upload = spyOn(aiFileStore, "createUserUpload").mockRejectedValue(new Error("storage unavailable"));
     try {
       const token = await createTestSession(userId);
-      const body = new FormData(); body.append("file",new File(["private file content"],"fixture.txt"));
-      const response = await aiRoutes.request(`/conversations/${chat.shortId}/files`,{method:"POST",body,headers:{Authorization:`Bearer ${token}`}});
+      const body = new FormData();
+      body.append("file", new File(["private file content"], "fixture.txt"));
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/files`, {
+        method: "POST",
+        body,
+        headers: { Authorization: `Bearer ${token}` },
+      });
       expect(response.status).toBe(400);
-      const diagnostic = warning.mock.calls.find(call=>call[1] === "Conversation upload failed");
-      expect(diagnostic?.[2]).toMatchObject({code:"file_upload_failed",conversationId:chat.id});
+      const diagnostic = warning.mock.calls.find((call) => call[1] === "Conversation upload failed");
+      expect(diagnostic?.[2]).toMatchObject({ code: "file_upload_failed", conversationId: chat.id });
       expect(JSON.stringify(diagnostic)).not.toContain("private file content");
     } finally {
-      upload.mockRestore(); warning.mockRestore();
+      upload.mockRestore();
+      warning.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }

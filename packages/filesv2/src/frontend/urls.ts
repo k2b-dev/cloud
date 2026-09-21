@@ -1,5 +1,13 @@
 import type { BrowseOptions } from "../contracts";
-export function filesUrl(baseId?: string, path = "", after?: string | null, file?: string | null, search?: string | null, scope?: "folder" | "tree" | null, browse?: BrowseOptions) {
+export function filesUrl(
+  baseId?: string,
+  path = "",
+  after?: string | null,
+  file?: string | null,
+  search?: string | null,
+  scope?: "folder" | "tree" | null,
+  browse?: BrowseOptions,
+) {
   const query = new URLSearchParams();
   if (baseId) query.set("base", baseId);
   if (path) query.set("path", path);
@@ -12,7 +20,8 @@ export function filesUrl(baseId?: string, path = "", after?: string | null, file
 }
 
 /** The editor view: the folder stays in the URL so leaving the editor returns to the file's row. */
-export const editorUrl = (baseId: string, path: string) => `${filesUrl(baseId, path.split("/").slice(0, -1).join("/"), null, path)}&view=edit`;
+export const editorUrl = (baseId: string, path: string) =>
+  `${filesUrl(baseId, path.split("/").slice(0, -1).join("/"), null, path)}&view=edit`;
 
 export function pathCrumbs(path: string) {
   const parts = path.split("/").filter(Boolean);

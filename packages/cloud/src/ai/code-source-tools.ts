@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { readBoundedJson } from "../_internal/bounded-json";
+import { getApp } from "../_internal/registry";
 import {
   capabilityIdempotencyKeyHash,
   capabilityRequestHash,
@@ -6,17 +8,27 @@ import {
   completeCapabilityClaim,
   markCapabilityClaimUncertain,
 } from "../capabilities/claims";
-import { getApp } from "../_internal/registry";
-import { readBoundedJson } from "../_internal/bounded-json";
-import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { signInvocationToken } from "../services/identity/invocation-token";
+import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
-import { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 import { resolveAiCapabilityActor } from "./capability-execution";
+import { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 import { aiConversations } from "./store";
 import { defineAiTool } from "./tools";
 
-const WRITE_TOOLS = new Set(["code_create", "code_write", "code_remove", "code_update", "code_fork", "code_publish", "code_restore", "code_database_export", ...Object.entries(CODE_SOURCE_TOOLS).filter(([, definition]) => "review" in definition && definition.review).map(([name]) => name)]);
+const WRITE_TOOLS = new Set([
+  "code_create",
+  "code_write",
+  "code_remove",
+  "code_update",
+  "code_fork",
+  "code_publish",
+  "code_restore",
+  "code_database_export",
+  ...Object.entries(CODE_SOURCE_TOOLS)
+    .filter(([, definition]) => "review" in definition && definition.review)
+    .map(([name]) => name),
+]);
 
 const Reply = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), data: z.unknown() }),
@@ -85,7 +97,7 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
     };
     if ("review" in definition && (typeof definition.review === "function" ? definition.review(input) : definition.review)) {
       const preview = z.object({ data: z.object({ message: z.string().min(1) }) }).parse((await send(true)).data).data;
-      if (!await context.requestApproval(preview.message)) throw new Error("The user declined this change. No mutation was sent.");
+      if (!(await context.requestApproval(preview.message))) throw new Error("The user declined this change. No mutation was sent.");
     }
     // Reuse the platform replay guard; these tools are not registered capabilities.
     const claim = WRITE_TOOLS.has(name)

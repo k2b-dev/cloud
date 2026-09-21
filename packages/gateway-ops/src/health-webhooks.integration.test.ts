@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
+import { testFor } from "../../../scripts/fixtures/test-infra";
 import type { GatewayHealth } from "./health";
 
-const dbTest = process.env.GATEWAY_OPS_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 const health: GatewayHealth = {
   status: "error",

@@ -24,7 +24,6 @@ import ContactFavoriteButton from "./ContactFavoriteButton";
 import ContactNotesSection from "./ContactNotesSection";
 import ContactOrgTreeView from "./ContactOrgTreeView";
 import ContactQuickEdit from "./ContactQuickEdit";
-import { detailMessages } from "./detail-messages";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
 import { contactFavoriteKey, listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresSelectedContactRefresh } from "./contacts-live";
@@ -36,6 +35,7 @@ import {
   requestContactNoteComposer,
   setSelectedContactInUrl,
 } from "./context";
+import { detailMessages } from "./detail-messages";
 
 type Props = {
   initialContact: Contact | null;

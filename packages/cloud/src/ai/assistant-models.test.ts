@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { assistantAiSettingsState, isAssistantChatTurn, selectAssistantAiModelId } from "./assistant-models";
 import { aiModelAccess } from "./model-access";
-import * as transcription from "./transcription";
 import * as settings from "./settings";
+import * as transcription from "./transcription";
 import type { AiPublicModelProfile } from "./types";
 
 const subject = { type: "user" as const, userId: "user" };

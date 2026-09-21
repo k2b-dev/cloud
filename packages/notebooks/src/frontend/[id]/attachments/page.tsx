@@ -7,12 +7,12 @@
  * no client-side filter, results stay deterministic.
  */
 
-import { AppWorkspace, Pagination, ScrollArea } from "@k2b/ui";
 import { hasRole } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { AppWorkspace, Pagination, ScrollArea } from "@k2b/ui";
 import { toPublicAttachment } from "@/api/public-resources";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../config";
@@ -44,11 +44,14 @@ export default ssr<AuthContext>(async (c) => {
   if (!notebook) return ssr.error(c, 404, { action: { label: "Notebooks", href: "/app/notebooks" } });
   const notebookId = notebook.id;
 
-  const permission = hasRole(user, "admin") ? "admin" : await notebooksService.notebook.permission.get({
-    notebookId,
-    userId: user.id,
-  });
-  if (permission === "none") return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: "Notebooks", href: "/app/notebooks" } });
+  const permission = hasRole(user, "admin")
+    ? "admin"
+    : await notebooksService.notebook.permission.get({
+        notebookId,
+        userId: user.id,
+      });
+  if (permission === "none")
+    return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: "Notebooks", href: "/app/notebooks" } });
   // Readers only use Book; inline attachment links remain available there.
   if (permission === "read") return c.redirect(`/app/notebooks/${notebook.shortId}?mode=book`);
 

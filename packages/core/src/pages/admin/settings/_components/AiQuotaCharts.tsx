@@ -1,6 +1,6 @@
+import type { AiQuotaReport } from "@k2b/cloud/shared";
 import { ChartExplorer, prepareChartSnapshot, useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
-import type { AiQuotaReport } from "@k2b/cloud/shared";
 import { quotaMessages } from "./ai-quota-messages";
 
 export default function AiQuotaCharts(props: { report: AiQuotaReport; modelName: (id: string) => string }) {

@@ -21,7 +21,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
       queries: {
         "ai.task.run.read": {
           title: "Ausführung einer Hintergrundaufgabe lesen",
-          description: "Zeigt Ergebnis, Fehler und isolierten Ausführungsverlauf einer eigenen Aufgabe. Verwenden Sie Aufgaben- und Ausführungs-IDs aus ai.task.read. Für eine blockierte Aufgabe zuerst die Berechtigungen mit ai.task.update prüfen und ändern, danach ai.task.run aufrufen.",
+          description:
+            "Zeigt Ergebnis, Fehler und isolierten Ausführungsverlauf einer eigenen Aufgabe. Verwenden Sie Aufgaben- und Ausführungs-IDs aus ai.task.read. Für eine blockierte Aufgabe zuerst die Berechtigungen mit ai.task.update prüfen und ändern, danach ai.task.run aufrufen.",
           input: {
             taskId: "Öffentliche ID der eigenen Aufgabe aus ai.task.read.",
             occurrenceId: "ID der konkreten Ausführung aus ai.task.read.",
@@ -29,7 +30,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "entities.search": {
           title: "Empfänger für Zugriffsrechte suchen",
-          description: "Sucht sichtbare Benutzer, Gruppen und Dienstkonten für Berechtigungen. Öffentliche und angemeldete Benutzer sind explizite Empfänger und keine Suchergebnisse.",
+          description:
+            "Sucht sichtbare Benutzer, Gruppen und Dienstkonten für Berechtigungen. Öffentliche und angemeldete Benutzer sind explizite Empfänger und keine Suchergebnisse.",
           input: {
             query: "Name oder Kontokennung; leer werden sichtbare Empfänger aufgelistet.",
             types: "Gewünschte Empfängertypen; ohne Angabe werden alle sichtbaren Typen berücksichtigt.",
@@ -39,7 +41,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "ai.skill.access.read": {
           title: "Skill-Zugriffsrechte lesen",
-          description: "Liest Berechtigungen und deren Revision vor einer Änderung. Erfordert Verwaltungsrechte. Zugriffe auf Skills und Studio-Apps sind unabhängig.",
+          description:
+            "Liest Berechtigungen und deren Revision vor einer Änderung. Erfordert Verwaltungsrechte. Zugriffe auf Skills und Studio-Apps sind unabhängig.",
           input: { skillId: "ID des Skills, dessen Zugriffsrechte gelesen werden." },
         },
         "ai.chat.read": {
@@ -148,7 +151,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
       actions: {
         "ai.skill.access.change": {
           title: "Skill-Zugriffsrechte ändern",
-          description: "Erteilt, ändert oder entzieht eine Skill-Berechtigung nach erneuter Benutzerbestätigung. Lesen Sie zuerst ai.skill.access.read. Gewährt keinen Zugriff auf Apps, die der Skill referenziert.",
+          description:
+            "Erteilt, ändert oder entzieht eine Skill-Berechtigung nach erneuter Benutzerbestätigung. Lesen Sie zuerst ai.skill.access.read. Gewährt keinen Zugriff auf Apps, die der Skill referenziert.",
           input: {
             skillId: "ID des zu verwaltenden Skills.",
             expectedAccessRevision: "Exakte Revision aus ai.skill.access.read; nach einem Konflikt erneut lesen und prüfen.",
@@ -245,7 +249,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "grants[].appId": "ID der App, die die Capability bereitstellt.",
             "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
             "grants[].kind": "Operationstyp: query für Lesen oder action für Änderungen.",
-            "grants[].fixedInput": "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
+            "grants[].fixedInput":
+              "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
             chatId: "Lesbare sechsstellige AI-Konversation ID.",
             prompt: "Genaue Aufforderung zur Übermittlung an diesen Chat, wenn die Aufgabe ausgeführt wird.",
             schedule: "Wann diese Aufgabe ausgeführt werden soll.",
@@ -289,7 +294,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "grants[].appId": "ID der App, die die Capability bereitstellt.",
             "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
             "grants[].kind": "Operationstyp: query für Lesen oder action für Änderungen.",
-            "grants[].fixedInput": "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
+            "grants[].fixedInput":
+              "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
             taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
             prompt: "Beim Ausführen der Aufgabe wird eine Ersatzaufforderung bereitgestellt.",
             schedule: "Einmaliger oder wiederkehrender Ersatzplan.",

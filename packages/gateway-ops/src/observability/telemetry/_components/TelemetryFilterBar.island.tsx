@@ -1,15 +1,14 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { ButtonLink, FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../../../messages";
 import {
   DEFAULT_TELEMETRY_ROUTE_SORT,
   TELEMETRY_RANGES,
   TELEMETRY_ROUTE_SORTS,
-  TELEMETRY_SORT_LABELS,
   type TelemetryRange,
   type TelemetryRouteSort,
 } from "../contracts";
 import { buildTelemetryFilterUrl, clearTelemetryFiltersUrl, hasActiveTelemetryFilters, selectAppUrl, type TelemetryFilter } from "./types";
-import { gatewayOpsMessages, type GatewayOpsMessages } from "../../../messages";
 
 export type TelemetryAppFilterOption = {
   id: string;

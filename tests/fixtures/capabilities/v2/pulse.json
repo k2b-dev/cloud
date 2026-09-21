@@ -108,13 +108,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -131,10 +125,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             },
@@ -150,21 +141,11 @@
                   "pattern": "^[0-9A-Za-z]{6}$"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "name",
-            "description",
-            "createdAt",
-            "updatedAt",
-            "ref"
-          ],
+          "required": ["id", "name", "description", "createdAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
@@ -185,9 +166,7 @@
             "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -233,13 +212,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -256,21 +229,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "id",
-          "name",
-          "description",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "name", "description", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "cc265ffedfe2b78f58f78aae6eba2700756401dd2613b843fed1ad36e2af204a",
@@ -317,10 +281,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -330,11 +291,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -361,10 +318,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -408,10 +362,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -424,13 +375,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -447,20 +392,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -472,9 +410,7 @@
             "tag": "pulse",
             "title": "Pulse",
             "description": "Show Pulse Bases only.",
-            "aliases": [
-              "telemetry"
-            ]
+            "aliases": ["telemetry"]
           }
         ]
       }
@@ -500,20 +436,13 @@
           "scope": {
             "description": "Optional signal kind filter.",
             "type": "string",
-            "enum": [
-              "metric",
-              "event",
-              "state"
-            ]
+            "enum": ["metric", "event", "state"]
           },
           "role": {
             "default": "dimension",
             "description": "Field role to discover; sensitive fields are excluded.",
             "type": "string",
-            "enum": [
-              "dimension",
-              "attribute"
-            ]
+            "enum": ["dimension", "attribute"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -529,9 +458,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "baseId"
-        ],
+        "required": ["baseId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -547,11 +474,7 @@
             },
             "scope": {
               "type": "string",
-              "enum": [
-                "metric",
-                "event",
-                "state"
-              ]
+              "enum": ["metric", "event", "state"]
             },
             "signalName": {
               "type": "string",
@@ -560,10 +483,7 @@
             },
             "role": {
               "type": "string",
-              "enum": [
-                "dimension",
-                "attribute"
-              ]
+              "enum": ["dimension", "attribute"]
             },
             "key": {
               "type": "string",
@@ -572,15 +492,7 @@
             },
             "valueType": {
               "type": "string",
-              "enum": [
-                "null",
-                "string",
-                "number",
-                "boolean",
-                "object",
-                "array",
-                "mixed"
-              ]
+              "enum": ["null", "string", "number", "boolean", "object", "array", "mixed"]
             },
             "observedCount": {
               "type": "integer",
@@ -606,13 +518,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -629,25 +535,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "sourceId",
-            "scope",
-            "signalName",
-            "role",
-            "key",
-            "valueType",
-            "observedCount",
-            "firstSeenAt",
-            "lastSeenAt"
-          ],
+          "required": ["sourceId", "scope", "signalName", "role", "key", "valueType", "observedCount", "firstSeenAt", "lastSeenAt"],
           "additionalProperties": false
         }
       },
@@ -675,10 +568,7 @@
           "type": {
             "description": "Optional metric type filter.",
             "type": "string",
-            "enum": [
-              "gauge",
-              "counter"
-            ]
+            "enum": ["gauge", "counter"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -694,9 +584,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "baseId"
-        ],
+        "required": ["baseId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -724,10 +612,7 @@
             },
             "type": {
               "type": "string",
-              "enum": [
-                "gauge",
-                "counter"
-              ]
+              "enum": ["gauge", "counter"]
             },
             "seriesCount": {
               "type": "integer",
@@ -755,13 +640,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -778,21 +657,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "name",
-            "unit",
-            "type",
-            "seriesCount",
-            "lastSeenAt"
-          ],
+          "required": ["name", "unit", "type", "seriesCount", "lastSeenAt"],
           "additionalProperties": false
         }
       },
@@ -819,10 +689,7 @@
             "description": "Pulse query DSL text."
           }
         },
-        "required": [
-          "baseId",
-          "query"
-        ],
+        "required": ["baseId", "query"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -836,11 +703,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "metric",
-                  "events",
-                  "states"
-                ]
+                "enum": ["metric", "events", "states"]
               },
               {
                 "type": "null"
@@ -855,10 +718,7 @@
               "properties": {
                 "severity": {
                   "type": "string",
-                  "enum": [
-                    "error",
-                    "info"
-                  ]
+                  "enum": ["error", "info"]
                 },
                 "message": {
                   "type": "string",
@@ -866,19 +726,12 @@
                   "maxLength": 1000
                 }
               },
-              "required": [
-                "severity",
-                "message"
-              ],
+              "required": ["severity", "message"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "valid",
-          "kind",
-          "diagnostics"
-        ],
+        "required": ["valid", "kind", "diagnostics"],
         "additionalProperties": false
       },
       "schemaHash": "d01d2fcea4ae27bda242a091bc6bc7c4ea8833f7592fb580bfdd530472c680cb",
@@ -904,10 +757,7 @@
             "description": "Pulse query DSL text."
           }
         },
-        "required": [
-          "baseId",
-          "query"
-        ],
+        "required": ["baseId", "query"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -916,11 +766,7 @@
         "properties": {
           "kind": {
             "type": "string",
-            "enum": [
-              "metric",
-              "events",
-              "states"
-            ]
+            "enum": ["metric", "events", "states"]
           },
           "query": {
             "type": "string",
@@ -939,10 +785,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 },
                 "value": {
-                  "type": [
-                    "number",
-                    "null"
-                  ]
+                  "type": ["number", "null"]
                 },
                 "group": {
                   "type": "object",
@@ -957,10 +800,7 @@
                   }
                 }
               },
-              "required": [
-                "bucket",
-                "value"
-              ],
+              "required": ["bucket", "value"],
               "additionalProperties": false
             }
           },
@@ -986,10 +826,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 },
                 "value": {
-                  "type": [
-                    "number",
-                    "null"
-                  ]
+                  "type": ["number", "null"]
                 },
                 "sourceId": {
                   "anyOf": [
@@ -1037,16 +874,7 @@
                   }
                 }
               },
-              "required": [
-                "id",
-                "kind",
-                "ts",
-                "value",
-                "sourceId",
-                "resourceKey",
-                "resourceType",
-                "dimensions"
-              ],
+              "required": ["id", "kind", "ts", "value", "sourceId", "resourceKey", "resourceType", "dimensions"],
               "additionalProperties": false
             }
           },
@@ -1129,15 +957,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 }
               },
-              "required": [
-                "key",
-                "value",
-                "sourceId",
-                "resourceKey",
-                "resourceType",
-                "dimensions",
-                "updatedAt"
-              ],
+              "required": ["key", "value", "sourceId", "resourceKey", "resourceType", "dimensions", "updatedAt"],
               "additionalProperties": false
             }
           },
@@ -1150,15 +970,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "kind",
-          "query",
-          "points",
-          "events",
-          "states",
-          "limitApplied",
-          "truncated"
-        ],
+        "required": ["kind", "query", "points", "events", "states", "limitApplied", "truncated"],
         "additionalProperties": false
       },
       "schemaHash": "0efa619163147cb6fe288745c63eba4ec054308c97793653e67091c5e9f91ff4",
@@ -1179,9 +991,7 @@
             "description": "Composite Base-ID/resource-key value returned by Search Pulse Resources in a pulse.resource ref; pass the ref id unchanged."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1249,13 +1059,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -1272,24 +1076,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "id",
-          "baseId",
-          "baseName",
-          "key",
-          "resourceId",
-          "label",
-          "type",
-          "lastSeenAt"
-        ],
+        "required": ["id", "baseId", "baseName", "key", "resourceId", "label", "type", "lastSeenAt"],
         "additionalProperties": false
       },
       "schemaHash": "00b0dc53ce132f717fa1f685382f42cd35c550b672097fec0f9f3c359ed05730",
@@ -1336,10 +1128,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -1349,11 +1138,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1380,10 +1165,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -1427,10 +1209,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -1443,13 +1222,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1466,20 +1239,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -1491,9 +1257,7 @@
             "tag": "pulse-resource",
             "title": "Pulse resources",
             "description": "Show observed Pulse resources only.",
-            "aliases": [
-              "resource"
-            ]
+            "aliases": ["resource"]
           }
         ]
       }
@@ -1517,10 +1281,7 @@
             "description": "Saved-query ID returned by List saved Pulse Queries or a pulse.saved_query ref."
           }
         },
-        "required": [
-          "baseId",
-          "queryId"
-        ],
+        "required": ["baseId", "queryId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1529,11 +1290,7 @@
         "properties": {
           "kind": {
             "type": "string",
-            "enum": [
-              "metric",
-              "events",
-              "states"
-            ]
+            "enum": ["metric", "events", "states"]
           },
           "query": {
             "type": "string",
@@ -1552,10 +1309,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 },
                 "value": {
-                  "type": [
-                    "number",
-                    "null"
-                  ]
+                  "type": ["number", "null"]
                 },
                 "group": {
                   "type": "object",
@@ -1570,10 +1324,7 @@
                   }
                 }
               },
-              "required": [
-                "bucket",
-                "value"
-              ],
+              "required": ["bucket", "value"],
               "additionalProperties": false
             }
           },
@@ -1599,10 +1350,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 },
                 "value": {
-                  "type": [
-                    "number",
-                    "null"
-                  ]
+                  "type": ["number", "null"]
                 },
                 "sourceId": {
                   "anyOf": [
@@ -1650,16 +1398,7 @@
                   }
                 }
               },
-              "required": [
-                "id",
-                "kind",
-                "ts",
-                "value",
-                "sourceId",
-                "resourceKey",
-                "resourceType",
-                "dimensions"
-              ],
+              "required": ["id", "kind", "ts", "value", "sourceId", "resourceKey", "resourceType", "dimensions"],
               "additionalProperties": false
             }
           },
@@ -1742,15 +1481,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 }
               },
-              "required": [
-                "key",
-                "value",
-                "sourceId",
-                "resourceKey",
-                "resourceType",
-                "dimensions",
-                "updatedAt"
-              ],
+              "required": ["key", "value", "sourceId", "resourceKey", "resourceType", "dimensions", "updatedAt"],
               "additionalProperties": false
             }
           },
@@ -1763,15 +1494,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "kind",
-          "query",
-          "points",
-          "events",
-          "states",
-          "limitApplied",
-          "truncated"
-        ],
+        "required": ["kind", "query", "points", "events", "states", "limitApplied", "truncated"],
         "additionalProperties": false
       },
       "schemaHash": "6fa27774caad77c668ea0b8d0b1424f35d384e68b4742c1d4658156d178a7ca8",
@@ -1809,9 +1532,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "baseId"
-        ],
+        "required": ["baseId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1872,23 +1593,11 @@
                   "pattern": "^[0-9A-Za-z]{6}$"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "baseId",
-            "name",
-            "description",
-            "query",
-            "createdAt",
-            "updatedAt",
-            "ref"
-          ],
+          "required": ["id", "baseId", "name", "description", "query", "createdAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
@@ -1909,9 +1618,7 @@
             "description": "Saved-query ID returned by List saved Pulse Queries or a pulse.saved_query ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1958,15 +1665,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "baseId",
-          "name",
-          "description",
-          "query",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "baseId", "name", "description", "query", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "1a7fbe93ae01ae68b8ca5c745402cc6e07e4144e6f7751741732a41b62a6e136",
@@ -2004,9 +1703,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "baseId"
-        ],
+        "required": ["baseId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2026,10 +1723,7 @@
             },
             "kind": {
               "type": "string",
-              "enum": [
-                "metrics",
-                "http_ingest"
-              ]
+              "enum": ["metrics", "http_ingest"]
             },
             "name": {
               "type": "string",
@@ -2088,13 +1782,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -2111,10 +1799,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             },
@@ -2130,25 +1815,11 @@
                   "pattern": "^[0-9A-Za-z]{6}$"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "baseId",
-            "kind",
-            "name",
-            "enabled",
-            "lastSeenAt",
-            "lastError",
-            "lastErrorAt",
-            "updatedAt",
-            "ref"
-          ],
+          "required": ["id", "baseId", "kind", "name", "enabled", "lastSeenAt", "lastError", "lastErrorAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
@@ -2169,9 +1840,7 @@
             "description": "Pulse Source ID returned by List Pulse Sources or a pulse.source ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2188,10 +1857,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "metrics",
-              "http_ingest"
-            ]
+            "enum": ["metrics", "http_ingest"]
           },
           "name": {
             "type": "string",
@@ -2250,13 +1916,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -2273,25 +1933,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "id",
-          "baseId",
-          "kind",
-          "name",
-          "enabled",
-          "lastSeenAt",
-          "lastError",
-          "lastErrorAt",
-          "updatedAt"
-        ],
+        "required": ["id", "baseId", "kind", "name", "enabled", "lastSeenAt", "lastError", "lastErrorAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "3f75716d5d829dc6dd14413e11e5da9f0ca31ac1efc235bbb2a664888ce6aa7e",

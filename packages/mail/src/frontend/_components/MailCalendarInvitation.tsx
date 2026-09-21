@@ -1,11 +1,11 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { mailCommandMessages } from "../../commands";
 import { documentNavigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, InlineGuidance, Placeholder, prompts, Select, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { mailCommandMessages } from "../../commands";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailRemainingMessages } from "./mail-remaining-messages";

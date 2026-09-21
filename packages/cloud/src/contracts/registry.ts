@@ -51,6 +51,8 @@ export type AppRegistryWidget = {
 };
 
 export type AppRuntimeMetadata = {
+  /** Cloud version of the running app. Missing on apps built before versions were baked in. */
+  version?: string;
   release: string;
   syncVersion: string;
 };

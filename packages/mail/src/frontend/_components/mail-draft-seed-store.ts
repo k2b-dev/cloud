@@ -1,4 +1,4 @@
-import { mailDraftSeedSchema, type MailDraftSeed } from "../../contracts";
+import { type MailDraftSeed, mailDraftSeedSchema } from "../../contracts";
 
 const SEED_TTL_MS = 24 * 60 * 60 * 1_000;
 const SEED_PREFIX = "cloud:mail:draft-seed:";

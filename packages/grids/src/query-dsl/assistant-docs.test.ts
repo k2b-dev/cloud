@@ -104,9 +104,29 @@ describe("GQL assistant docs", () => {
     const context = ctx();
     const target = { kind: "table" as const, id: hiddenTableId, shortId: "Parent", name: "Parents" };
     context.tables.push(target);
-    context.fieldsByTableId[table.id]!.push(field({ id: "33333333-3333-4333-8333-333333333333", shortId: "Link01", name: "Parent", type: "relation", config: { targetTableId: target.id } }));
-    context.views = hydrateDslViewQueries({ ...context, views: [{ kind: "view", id: "44444444-4444-4444-8444-444444444444", shortId: "Totals", name: "Totals", tableId: table.id,
-      source: "from table Items\ngroup by Parent\naggregate sum(formula(Quantity * 2)) as doubled", query: {} }] });
+    context.fieldsByTableId[table.id]!.push(
+      field({
+        id: "33333333-3333-4333-8333-333333333333",
+        shortId: "Link01",
+        name: "Parent",
+        type: "relation",
+        config: { targetTableId: target.id },
+      }),
+    );
+    context.views = hydrateDslViewQueries({
+      ...context,
+      views: [
+        {
+          kind: "view",
+          id: "44444444-4444-4444-8444-444444444444",
+          shortId: "Totals",
+          name: "Totals",
+          tableId: table.id,
+          source: "from table Items\ngroup by Parent\naggregate sum(formula(Quantity * 2)) as doubled",
+          query: {},
+        },
+      ],
+    });
     expect(context.views).toHaveLength(1);
     const markdown = renderGqlAssistantContext({ base: { name: "Inventory", shortId: "INV01", description: null }, ctx: context });
     expect(markdown).toContain("`doubled`: aggregate sum sql:numeric");

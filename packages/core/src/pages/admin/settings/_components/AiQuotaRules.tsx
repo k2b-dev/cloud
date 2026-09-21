@@ -1,26 +1,26 @@
-import { hasBillableAiPricing } from "@k2b/cloud/shared";
-import AiBackgroundBudget from "./AiBackgroundBudget";
+import { PrincipalPicker, principalKey } from "@k2b/cloud/access/ui";
+import { coreClient } from "@k2b/cloud/clients/core";
+import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaRule, hasBillableAiPricing } from "@k2b/cloud/shared";
 import {
   Button,
   DataTable,
-  NumberInput,
-  NoticeCard,
+  dialogCore,
   LocaleProvider,
+  NoticeCard,
+  NumberInput,
   PanelDialog,
   Placeholder,
-  Select,
-  Switch,
-  dialogCore,
   panelDialogOptions,
   prompts,
+  Select,
+  Switch,
   useLocale,
 } from "@k2b/ui";
-import { PrincipalPicker, principalKey } from "@k2b/cloud/access/ui";
-import { coreClient } from "@k2b/cloud/clients/core";
-import { AiQuotaConfigSchema, type AiQuotaConfig, type AiQuotaRule } from "@k2b/cloud/shared";
 import { createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import AiBackgroundBudget from "./AiBackgroundBudget";
 import AiQuotaIdentity from "./AiQuotaIdentity";
 import { quotaMessages } from "./ai-quota-messages";
+
 const api = coreClient.admin.core["ai-quotas"];
 export default function AiQuotaRules(props: {
   config: AiQuotaConfig;

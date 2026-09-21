@@ -1,6 +1,7 @@
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { ButtonLink, FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { gatewayOpsMessages } from "../../../messages";
 import {
   buildJobsFilterUrl,
   defaultJobsFilter,
@@ -9,7 +10,6 @@ import {
   jobsDurationOptions,
   jobsWindowOptions,
 } from "./types";
-import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   filter: JobsFilterState;

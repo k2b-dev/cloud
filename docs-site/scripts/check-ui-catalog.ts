@@ -6,25 +6,18 @@ import {
   uiCatalogEntries,
   uiCatalogSections,
 } from "../src/ui/catalog";
-import {
-  catalogContextFiles,
-  catalogContexts,
-  standaloneUiContextFiles,
-} from "../src/ui/context";
-import { catalogDemoRenderers } from "../src/ui/UiCatalogPage";
+import { catalogContextFiles, catalogContexts, standaloneUiContextFiles } from "../src/ui/context";
 import { demoSectionLoaders } from "../src/ui/demo-sections";
+import { catalogDemoRenderers } from "../src/ui/UiCatalogPage";
 
 const sorted = (values: Iterable<string>) => [...values].sort();
-const difference = (left: readonly string[], right: readonly string[]) =>
-  left.filter((value) => !right.includes(value));
-const duplicateValues = (values: readonly string[]) =>
-  values.filter((value, index) => values.indexOf(value) !== index);
+const difference = (left: readonly string[], right: readonly string[]) => left.filter((value) => !right.includes(value));
+const duplicateValues = (values: readonly string[]) => values.filter((value, index) => values.indexOf(value) !== index);
 const exactSetFailures = (label: string, expected: readonly string[], actual: readonly string[]) => [
   ...difference(expected, actual).map((value) => `${label} missing ${value}`),
   ...difference(actual, expected).map((value) => `${label} has unknown ${value}`),
 ];
-const identifierPattern = (name: string) =>
-  new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+const identifierPattern = (name: string) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
 
 const catalogIds = sorted(uiCatalogEntries.map((entry) => entry.id));
 const contextIds = sorted(Object.keys(catalogContexts));
@@ -61,9 +54,7 @@ const incompleteContext = uiCatalogEntries
       !entry.context.includes("## Example"),
   )
   .map((entry) => entry.id);
-const agentOnlyHeadings = uiCatalogEntries
-  .filter((entry) => entry.context.includes("## For agents"))
-  .map((entry) => entry.id);
+const agentOnlyHeadings = uiCatalogEntries.filter((entry) => entry.context.includes("## For agents")).map((entry) => entry.id);
 const fallbackContext = uiCatalogEntries
   .filter((entry) =>
     [
@@ -78,18 +69,14 @@ const portableBoundaryViolations = uiCatalogEntries
   .filter(
     (entry) =>
       entry.scope === "portable" &&
-      (!entry.context.includes("@k2b/ui") ||
-        entry.context.includes("@k2b/cloud/") ||
-        entry.context.includes("@k2b/cloud")),
+      (!entry.context.includes("@k2b/ui") || entry.context.includes("@k2b/cloud/") || entry.context.includes("@k2b/cloud")),
   )
   .map((entry) => entry.id);
 const cloudBoundaryViolations = uiCatalogEntries
   .filter((entry) => entry.scope === "cloud" && !entry.context.includes("@k2b/cloud"))
   .map((entry) => entry.id);
 
-const portableSectionIds = uiCatalogSections
-  .filter((section) => section.scope === "portable")
-  .map((section) => section.id);
+const portableSectionIds = uiCatalogSections.filter((section) => section.scope === "portable").map((section) => section.id);
 const portableDemoFiles = [
   ...portableSectionIds.map((section) => `../src/ui/demo-sections/${section}.tsx`),
   "../src/ui/demo-sections/charts.tsx",
@@ -119,13 +106,7 @@ const portableDemoBoundaryViolations = portableDemoSources
 const liveRuntimeImports = new Set<string>();
 const unsupportedUiImports: string[] = [];
 for (const { path, source } of portableDemoSources) {
-  const sourceFile = ts.createSourceFile(
-    path,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   for (const statement of sourceFile.statements) {
     if (
       !ts.isImportDeclaration(statement) ||
@@ -165,55 +146,35 @@ const liveExceptionCollisions = liveExports.filter((name) => explicitExceptions.
 const staleHiddenExports = difference(hiddenExports, runtimeExports);
 const staleDocumentedOnlyExports = difference(documentedOnlyExports, runtimeExports);
 const unknownLiveImports = difference(liveExports, runtimeExports);
-const undocumentedRuntimeExports = runtimeExports.filter(
-  (name) => !liveRuntimeImports.has(name) && !explicitExceptions.includes(name),
-);
-const emptyExceptionReasons = [
-  ...Object.entries(hiddenUiCatalogExports),
-  ...Object.entries(documentedOnlyUiCatalogExports),
-]
+const undocumentedRuntimeExports = runtimeExports.filter((name) => !liveRuntimeImports.has(name) && !explicitExceptions.includes(name));
+const emptyExceptionReasons = [...Object.entries(hiddenUiCatalogExports), ...Object.entries(documentedOnlyUiCatalogExports)]
   .filter(([, reason]) => reason.trim().length < 12)
   .map(([name]) => name);
 const portableContextCorpus = uiCatalogEntries
   .filter((entry) => entry.scope === "portable")
   .map((entry) => entry.context)
   .join("\n");
-const documentedOnlyWithoutContext = documentedOnlyExports.filter(
-  (name) => !identifierPattern(name).test(portableContextCorpus),
-);
+const documentedOnlyWithoutContext = documentedOnlyExports.filter((name) => !identifierPattern(name).test(portableContextCorpus));
 
 const contextDirectory = new URL("../src/ui/context/", import.meta.url);
-const discoveredContextFiles = sorted(
-  new Bun.Glob("**/*.md").scanSync({ cwd: contextDirectory.pathname }),
-);
+const discoveredContextFiles = sorted(new Bun.Glob("**/*.md").scanSync({ cwd: contextDirectory.pathname }));
 const registeredContextFiles = sorted(Object.values(catalogContextFiles));
 const standaloneContextFiles = sorted(Object.keys(standaloneUiContextFiles));
 const expectedContextFiles = sorted([...registeredContextFiles, ...standaloneContextFiles]);
-const contextFileFailures = exactSetFailures(
-  "Context filesystem",
-  expectedContextFiles,
-  discoveredContextFiles,
-);
+const contextFileFailures = exactSetFailures("Context filesystem", expectedContextFiles, discoveredContextFiles);
 const duplicateContextFiles = duplicateValues(registeredContextFiles);
 const emptyStandaloneReasons = Object.entries(standaloneUiContextFiles)
   .filter(([, reason]) => reason.trim().length < 12)
   .map(([file]) => file);
 
-const overviewContext = await Bun.file(
-  new URL("../src/ui/context/overview.md", import.meta.url),
-).text();
-const overviewCloudMatches =
-  overviewContext.split("## Cloud components")[1]?.matchAll(/^-\s+\*\*(.+?)\*\*/gm) ?? [];
+const overviewContext = await Bun.file(new URL("../src/ui/context/overview.md", import.meta.url)).text();
+const overviewCloudMatches = overviewContext.split("## Cloud components")[1]?.matchAll(/^-\s+\*\*(.+?)\*\*/gm) ?? [];
 const overviewCloudTitles = Array.from(overviewCloudMatches, (match) => match[1]).sort();
 const catalogCloudTitles = uiCatalogEntries
   .filter((entry) => entry.scope === "cloud")
   .map((entry) => entry.page.title)
   .sort();
-const overviewCloudFailures = exactSetFailures(
-  "Cloud overview",
-  catalogCloudTitles,
-  overviewCloudTitles,
-);
+const overviewCloudFailures = exactSetFailures("Cloud overview", catalogCloudTitles, overviewCloudTitles);
 
 const failures = [
   [
@@ -259,9 +220,7 @@ if (failed.length > 0) {
 const requireHttp = Bun.argv.includes("--require-http");
 const smokeBaseUrl = process.env.CLOUD_UI_CATALOG_URL?.replace(/\/$/, "");
 if (requireHttp && !smokeBaseUrl) {
-  console.error(
-    "UI catalog HTTP smoke is required but CLOUD_UI_CATALOG_URL is not configured.",
-  );
+  console.error("UI catalog HTTP smoke is required but CLOUD_UI_CATALOG_URL is not configured.");
   process.exit(1);
 }
 
@@ -282,10 +241,7 @@ if (smokeBaseUrl) {
           smokeFailures.push(`${entry.id}: page returned ${pageResponse.status}`);
         } else if (!island || island[1].trim().length === 0) {
           smokeFailures.push(`${entry.id}: empty initial island HTML`);
-        } else if (
-          !island[1].includes("ui-demo-card") ||
-          island[1].includes("No live example is registered")
-        ) {
+        } else if (!island[1].includes("ui-demo-card") || island[1].includes("No live example is registered")) {
           smokeFailures.push(`${entry.id}: expected live demo card was not rendered`);
         } else if (html.includes("<solid-client")) {
           smokeFailures.push(`${entry.id}: client-only demo wrapper`);
@@ -299,9 +255,7 @@ if (smokeBaseUrl) {
           smokeFailures.push(`${entry.id}: raw Markdown differs from canonical context`);
         }
       } catch (error) {
-        smokeFailures.push(
-          `${entry.id}: request failed (${error instanceof Error ? error.message : String(error)})`,
-        );
+        smokeFailures.push(`${entry.id}: request failed (${error instanceof Error ? error.message : String(error)})`);
       }
     }
   });
@@ -313,9 +267,7 @@ if (smokeBaseUrl) {
     process.exit(1);
   }
 
-  console.log(
-    `UI catalog HTTP smoke passed (${uiCatalogEntries.length} SSR pages and raw Markdown routes).`,
-  );
+  console.log(`UI catalog HTTP smoke passed (${uiCatalogEntries.length} SSR pages and raw Markdown routes).`);
 }
 
 console.log(

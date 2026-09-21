@@ -41,7 +41,7 @@ const notificationMessages = i18n.define({
 });
 
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
-const configuredLocale = (locale?: string): Promise<string> => locale ? Promise.resolve(locale) : settings.get<string>("app.locale");
+const configuredLocale = (locale?: string): Promise<string> => (locale ? Promise.resolve(locale) : settings.get<string>("app.locale"));
 
 const applicationUrl = async (): Promise<string> => {
   const configured = await settings.get<string>("app.url");
@@ -103,10 +103,7 @@ export const NOTIFICATIONS = {
     recipient: "user",
     label: "Local account onboarding",
     description: "Required sign-in guidance for a newly created local account.",
-    presentation: presentation(
-      "Einrichtung lokaler Konten",
-      "Erforderliche Anmeldehinweise für ein neu erstelltes lokales Konto.",
-    ),
+    presentation: presentation("Einrichtung lokaler Konten", "Erforderliche Anmeldehinweise für ein neu erstelltes lokales Konto."),
     delivery: requiredEmail,
     data: z.object({ email: z.string().email(), accountExpires: z.string().nullable() }),
     render: (_, { locale }) => ({ title: text(locale).accountReady, body: text(locale).localReady }),
@@ -133,10 +130,7 @@ export const NOTIFICATIONS = {
     recipient: "user",
     label: "Account request decisions",
     description: "Required explanation when an account request is denied with a reason.",
-    presentation: presentation(
-      "Entscheidungen über Kontoanfragen",
-      "Erforderliche Begründung, wenn eine Kontoanfrage abgelehnt wird.",
-    ),
+    presentation: presentation("Entscheidungen über Kontoanfragen", "Erforderliche Begründung, wenn eine Kontoanfrage abgelehnt wird."),
     delivery: requiredEmail,
     data: z.object({ firstName: z.string(), reason: z.string() }),
     render: (_, { locale }) => ({ title: text(locale).requestUpdate, body: text(locale).requestReviewed }),

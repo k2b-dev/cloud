@@ -1,18 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite, testFor } from "../../../scripts/fixtures/test-infra";
 import { shortIdsFinalized } from "./lib/short-id";
 import { migrate } from "./migrate";
 
-const canUseDatabase = async () => {
-  try {
-    await sql`SELECT 1`;
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Venue short-ID migration", () => {
   test("is idempotent and leaves every persisted public resource resolvable", async () => {
@@ -44,7 +36,7 @@ suite("Venue short-ID migration", () => {
   }, 30_000);
 });
 
-(process.env.APP_JSONB_MIGRATION_TEST === "1" ? test : test.skip)(
+testFor("database")(
   "repairs encoded section objects losslessly and preserves unsupported values across startup",
   async () => {
     await migrate();

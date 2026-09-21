@@ -1,20 +1,19 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { SQL } from "bun";
+import { createDisposableDatabase, databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { createRailPreferencesService } from "./rail-preferences";
 
-const url = process.env.CLOUD_RAIL_TEST_DATABASE_URL;
-const suite = url ? describe : describe.skip;
+const suite = databaseSuite();
 suite("Core rail preferences persistence", () => {
   let db: SQL;
+  let disposable: Awaited<ReturnType<typeof createDisposableDatabase>>;
   let service: ReturnType<typeof createRailPreferencesService>;
   const first = crypto.randomUUID();
   const second = crypto.randomUUID();
   beforeAll(async () => {
-    const target = new URL(url!);
-    if (target.pathname !== "/cloud_rail_test" || !["localhost", "127.0.0.1"].includes(target.hostname))
-      throw new Error("Dedicated local cloud_rail_test database required");
-    db = new SQL(url!);
+    disposable = await createDisposableDatabase("rail_preferences");
+    db = new SQL(disposable.url);
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, uid TEXT NOT NULL, provider TEXT NOT NULL, profile TEXT NOT NULL)`.simple();
     const { migrate } = await import("../../../core/src/migrate/core/rail-preferences");
@@ -27,6 +26,7 @@ suite("Core rail preferences persistence", () => {
     if (db) {
       await db`DELETE FROM auth.users WHERE id IN (${first}::uuid, ${second}::uuid)`;
       await db.close();
+      await disposable.drop();
     }
   });
   test("round trips independently, rejects concurrent stale writes and cascades account deletion", async () => {

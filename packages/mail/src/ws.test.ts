@@ -1,8 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { err, fail, ok } from "@k2b/stdlib";
-import { CursorMismatchError } from "@k2b/sync";
 import { getProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
+import { err, fail, ok } from "@k2b/stdlib";
+import { CursorMismatchError } from "@k2b/sync";
+import { testFor } from "../../../scripts/fixtures/test-infra";
 import { MAIL_LIVE_WS_TYPE, type MailInvalidation, type MailLiveServerMessage, parseMailLiveServerMessage } from "./live-events";
 import type { MailRequestContext } from "./service/auth";
 import {
@@ -452,7 +453,7 @@ describe("Mail live connection", () => {
     }
   });
 
-  (process.env.MAIL_INTEGRATION_TESTS === "1" ? test : test.skip)(
+  testFor("database", "nats")(
     "bounds a real JetStream reconnect, refreshes coverage, and tails only authorized mailbox events",
     async () => {
       const topic = getProcessSync().topic<MailInvalidation>({

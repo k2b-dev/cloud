@@ -1,10 +1,10 @@
-import { createSignal, Show, onCleanup } from "solid-js";
-import { Button, FilterChip, TextInput, Switch, useLocale } from "@k2b/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { navigateTo } from "@k2b/ssr/nav";
+import { Button, FilterChip, Switch, TextInput, useLocale } from "@k2b/ui";
+import { createSignal, onCleanup, Show } from "solid-js";
+import { isTelemetryRange, TELEMETRY_RANGES } from "../contracts";
+import { type BrowserFilter, browserUrl } from "./filter";
 import { browserMessages } from "./messages";
-import { browserUrl, type BrowserFilter } from "./filter";
-import { TELEMETRY_RANGES, isTelemetryRange } from "../contracts";
 
 export default function Controls(props: { filter: BrowserFilter; apps: { id: string; name: string }[]; enabled: boolean | null }) {
   const { t } = browserMessages.resolve([useLocale()()]);

@@ -1,5 +1,5 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { createNavigation, type NavigationItem, AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, createNavigation, type NavigationItem, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";

@@ -27,7 +27,8 @@ describe("admin AI Project routes", () => {
     const grant = spyOn(aiProjects.admin, "grantAccess");
     const routes = createAdminAiProjectsRoutes(pass);
     const response = await routes.request("/AbC234/access", {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ principal: { type: "public" }, permission: "admin" }),
     });
     expect(response.status).toBe(400);

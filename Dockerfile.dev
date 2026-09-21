@@ -1,40 +1,13 @@
+# syntax=docker/dockerfile:1.7-labs
 FROM oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
 WORKDIR /app
 
 # 1. Copy only package.json files first so the install layer is cached
-#    independently of source changes. Update this list when adding a new app.
+#    independently of source changes.
 COPY package.json bun.lock bunfig.toml ./
 COPY patches/ patches/
-COPY pwas/pwa-auth/package.json pwas/pwa-auth/
-COPY packages/cloud/package.json packages/cloud/
-COPY packages/accounts/package.json packages/accounts/
-COPY packages/api-docs/package.json packages/api-docs/
-COPY packages/assistant/package.json packages/assistant/
-COPY packages/capabilities/package.json packages/capabilities/
-COPY packages/contacts/package.json packages/contacts/
-COPY packages/core/package.json packages/core/
-COPY packages/cloud-cli/package.json packages/cloud-cli/
-COPY packages/dashboard/package.json packages/dashboard/
-COPY packages/faq/package.json packages/faq/
-COPY packages/files/package.json packages/files/
-COPY packages/filesv2/package.json packages/filesv2/
-COPY packages/grids/package.json packages/grids/
-COPY packages/gateway/package.json packages/gateway/
-COPY packages/gateway-ops/package.json packages/gateway-ops/
-COPY packages/ipa-hosts/package.json packages/ipa-hosts/
-COPY packages/mail/package.json packages/mail/
-COPY packages/notebooks/package.json packages/notebooks/
-COPY packages/oauth/package.json packages/oauth/
-COPY packages/pulse/package.json packages/pulse/
-COPY packages/proxy-auth/package.json packages/proxy-auth/
-COPY packages/quotes/package.json packages/quotes/
-COPY packages/spaces/package.json packages/spaces/
-COPY packages/tools/package.json packages/tools/
-COPY packages/ui/package.json packages/ui/
-COPY packages/venue/package.json packages/venue/
-COPY packages/weather/package.json packages/weather/
-COPY fixtures/ui-ssr/package.json fixtures/ui-ssr/
-COPY docs-site/package.json docs-site/
+COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
+COPY tsconfig.base.json ./
 
 # --ignore-scripts: skip postinstall hooks. The base image already
 # ships bun, but `bun-plugin-tailwind` declares `bun >=1.0.0` as a peer dep, so

@@ -23,14 +23,22 @@ export function assistantConversationFileSource(
         const path = `/${file.dictationRecordedAt ? voiceInputs() : "Chat"}${file.path}`;
         paths.set(path, file.path);
         return {
-          path, mediaType: file.mediaType, size: file.size, updatedAt: file.updatedAt,
-          ...(file.dictationRecordedAt ? { displayName: formatDictationTimestamp(file.dictationRecordedAt, locale()), icon: "ti-microphone" } : {}),
+          path,
+          mediaType: file.mediaType,
+          size: file.size,
+          updatedAt: file.updatedAt,
+          ...(file.dictationRecordedAt
+            ? { displayName: formatDictationTimestamp(file.dictationRecordedAt, locale()), icon: "ti-microphone" }
+            : {}),
         };
       });
     },
     read: (path) => source.read(actualPath(path)),
     downloadHref: (path) => source.downloadHref?.(actualPath(path)) ?? null,
     isReadOnly: () => true,
-    write: undefined, rename: undefined, remove: undefined, upload: undefined,
+    write: undefined,
+    rename: undefined,
+    remove: undefined,
+    upload: undefined,
   };
 }

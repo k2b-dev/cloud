@@ -1,8 +1,8 @@
 import type { EditorView } from "@codemirror/view";
 import { prompts } from "@k2b/ui";
 import { buildDataBlockTemplate, dataBlockRefSelection } from "../../../lib/editor/data-block-template";
-import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
 import { notebookWorkspaceMessages } from "../../messages";
+import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
 
 /**
  * Editor-level actions used by the toolbar AND the slash-command palette.

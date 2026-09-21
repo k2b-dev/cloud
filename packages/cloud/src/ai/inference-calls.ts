@@ -1,9 +1,8 @@
-import { hasBillableAiPricing } from "../shared/ai-costs";
-import { sql, type SQL } from "bun";
+import { type SQL, sql } from "bun";
 import type { AccessSubject } from "../server/services/access";
-import { aiCostDecimal, aiCostUnits, aiDecimalUnits, aiBudgetUnits } from "../shared/ai-costs";
+import { aiBudgetUnits, aiCostDecimal, aiCostUnits, aiDecimalUnits, hasBillableAiPricing } from "../shared/ai-costs";
+import { AiQuotaError, aiQuotas, quotaWindow } from "./quotas";
 import type { AiModelProfile } from "./types";
-import { aiQuotas, AiQuotaError, quotaWindow } from "./quotas";
 
 export class AiBackgroundCostError extends Error {
   readonly code = "ai_background_cost_stop";

@@ -9,9 +9,9 @@ import { parsePgJsonValue } from "../postgres";
 import { isMandatePolicyNarrowing, type MandatePolicyV1, MandatePolicyV1Schema, mandatePolicyAllows, parseMandatePolicy } from "./policy";
 
 export {
-  CapabilityGrantsSchema,
-  CapabilityGrantSchema,
   type CapabilityGrant,
+  CapabilityGrantSchema,
+  CapabilityGrantsSchema,
   capabilityGrantAllows,
   isMandatePolicyNarrowing,
   MANDATE_POLICY_MAX_IDENTIFIERS,

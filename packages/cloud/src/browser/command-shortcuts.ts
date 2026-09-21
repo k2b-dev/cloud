@@ -1,4 +1,4 @@
-import { COMMANDS_CHANGED, collectContextAwareCommands, type ContextAwareCommand } from "./command-bridge";
+import { COMMANDS_CHANGED, type ContextAwareCommand, collectContextAwareCommands } from "./command-bridge";
 
 const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 const modifiers = ["ctrl", "alt", "shift", "meta"] as const;

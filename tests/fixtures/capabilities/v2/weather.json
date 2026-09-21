@@ -34,9 +34,7 @@
             "maximum": 25
           }
         },
-        "required": [
-          "query"
-        ],
+        "required": ["query"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -72,11 +70,7 @@
               "maxLength": 160
             }
           },
-          "required": [
-            "name",
-            "lat",
-            "lon"
-          ],
+          "required": ["name", "lat", "lon"],
           "additionalProperties": false
         }
       },
@@ -107,10 +101,7 @@
                     "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
                   }
                 },
-                "required": [
-                  "kind",
-                  "locationId"
-                ],
+                "required": ["kind", "locationId"],
                 "additionalProperties": false
               },
               {
@@ -134,20 +125,14 @@
                     "description": "Longitude in decimal degrees from -180 to 180."
                   }
                 },
-                "required": [
-                  "kind",
-                  "lat",
-                  "lon"
-                ],
+                "required": ["kind", "lat", "lon"],
                 "additionalProperties": false
               }
             ],
             "description": "Saved location or explicit coordinates used for the forecast."
           }
         },
-        "required": [
-          "source"
-        ],
+        "required": ["source"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -342,10 +327,7 @@
                     "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
                   }
                 },
-                "required": [
-                  "kind",
-                  "locationId"
-                ],
+                "required": ["kind", "locationId"],
                 "additionalProperties": false
               },
               {
@@ -369,20 +351,14 @@
                     "description": "Longitude in decimal degrees from -180 to 180."
                   }
                 },
-                "required": [
-                  "kind",
-                  "lat",
-                  "lon"
-                ],
+                "required": ["kind", "lat", "lon"],
                 "additionalProperties": false
               }
             ],
             "description": "Saved location or explicit coordinates used for the forecast."
           }
         },
-        "required": [
-          "source"
-        ],
+        "required": ["source"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -614,15 +590,7 @@
                   "maximum": 100
                 }
               },
-              "required": [
-                "timestamp",
-                "temperature",
-                "icon",
-                "precipitation",
-                "precipitationProbability",
-                "windSpeed",
-                "cloudCover"
-              ],
+              "required": ["timestamp", "temperature", "icon", "precipitation", "precipitationProbability", "windSpeed", "cloudCover"],
               "additionalProperties": false
             }
           },
@@ -687,24 +655,12 @@
                   "maximum": 1440
                 }
               },
-              "required": [
-                "date",
-                "icon",
-                "tempMin",
-                "tempMax",
-                "precipitation",
-                "precipitationProbability",
-                "sunshine"
-              ],
+              "required": ["date", "icon", "tempMin", "tempMax", "precipitation", "precipitationProbability", "sunshine"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "current",
-          "hourly",
-          "daily"
-        ],
+        "required": ["current", "hourly", "daily"],
         "additionalProperties": false
       },
       "schemaHash": "49f506c927720c2ca7edea3e82e7d2f64beab61c44ade850323eae748d191f6a",
@@ -781,13 +737,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -804,10 +754,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             },
@@ -823,21 +770,11 @@
                   "pattern": "^[0-9A-Za-z]{6}$"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "name",
-            "state",
-            "lat",
-            "lon",
-            "ref"
-          ],
+          "required": ["id", "name", "state", "lat", "lon", "ref"],
           "additionalProperties": false
         }
       },
@@ -858,9 +795,7 @@
             "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -907,13 +842,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -930,21 +859,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "id",
-          "name",
-          "state",
-          "lat",
-          "lon"
-        ],
+        "required": ["id", "name", "state", "lat", "lon"],
         "additionalProperties": false
       },
       "schemaHash": "e1d3baa94ce93e4b4409a650c4faa161acedd93428741ffcb0400ffcc73c8292",
@@ -991,10 +911,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -1004,11 +921,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1035,10 +948,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -1082,10 +992,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -1098,13 +1005,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1121,20 +1022,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -1146,11 +1040,7 @@
             "tag": "weather",
             "title": "Weather",
             "description": "Show saved weather locations.",
-            "aliases": [
-              "forecast",
-              "location",
-              "temperature"
-            ]
+            "aliases": ["forecast", "location", "temperature"]
           }
         ]
       }
@@ -1190,11 +1080,7 @@
             "description": "Longitude copied from the chosen city result, or another trusted coordinate source."
           }
         },
-        "required": [
-          "name",
-          "lat",
-          "lon"
-        ],
+        "required": ["name", "lat", "lon"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1241,13 +1127,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -1264,21 +1144,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "id",
-          "name",
-          "state",
-          "lat",
-          "lon"
-        ],
+        "required": ["id", "name", "state", "lat", "lon"],
         "additionalProperties": false
       },
       "schemaHash": "d69b72b97af65cfdf243d35447ab79165c4732cf0c75f21eaf561c64a96c0bc9",
@@ -1302,9 +1173,7 @@
             "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
           }
         },
-        "required": [
-          "locationId"
-        ],
+        "required": ["locationId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1320,10 +1189,7 @@
             "const": true
           }
         },
-        "required": [
-          "locationId",
-          "deleted"
-        ],
+        "required": ["locationId", "deleted"],
         "additionalProperties": false
       },
       "schemaHash": "9bdc3b312c1b0ec001b4360509a08c5194ec7f790a97f30b4c764cbebdfae361",

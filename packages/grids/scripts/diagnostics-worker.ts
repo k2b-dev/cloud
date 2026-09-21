@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { loadavg } from "node:os";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { set as setSetting } from "@k2b/cloud/services/settings";
 import { createSync } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
 import { sql } from "bun";
-import { app } from "../src/config";
 import type { GqlRuntimeTraceEnd } from "../src/api/gql-observability";
 import { executeGqlSourceForContext } from "../src/api/gql-runtime";
-import { readDocumentArtifact } from "../src/service/document-issuance";
-import { create } from "../src/service/records";
+import { app } from "../src/config";
 import { update as updateBase } from "../src/service/bases";
+import { readDocumentArtifact } from "../src/service/document-issuance";
 import { refreshLocalCalculations } from "../src/service/local-calculation-storage";
+import { create } from "../src/service/records";
 import { instantiateDefinition } from "../src/service/templates";
 import { invokeGridsWorkflow, startWorkflowRuntime, stopWorkflowRuntime } from "../src/service/workflow-runtime";
 import { createBillingTemplate } from "../src/templates/billing";
@@ -21,9 +22,17 @@ import type { GridTemplate } from "../src/templates/types";
 import { type DiagnosticReport, type DiagnosticSample, writeDiagnosticReport } from "./diagnostics-report";
 import { localVerificationUrl } from "./verification";
 
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: { report: { type: "string" }, namespace: { type: "string" }, help: { type: "boolean", default: false } },
+});
+if (options.help) {
+  console.log("Internal worker of diagnostics.ts; run `bun packages/grids/scripts/diagnostics.ts --help` instead.");
+  process.exit(0);
+}
 const db = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
 assert.match(db.pathname, /^\/grids_verify_[a-f0-9]{32}$/);
-const directory = process.env.GRIDS_DIAGNOSTICS_REPORT;
+const directory = options.report;
 assert(directory, "Run diagnostics.ts, not its worker directly");
 const pdfUrl = localVerificationUrl("Gotenberg", process.env.GRIDS_PDF_URL);
 const report: DiagnosticReport = {
@@ -36,7 +45,7 @@ const must = <T>(result: { ok: true; data: T } | { ok: false; error: { message: 
   if (!result.ok) throw new Error(result.error.message);
   return result.data;
 };
-const namespace = process.env.GRIDS_DIAGNOSTICS_NAMESPACE;
+const namespace = options.namespace;
 assert(namespace && namespace.startsWith("grids-diagnostics-"));
 const connection = await connect({
   servers: localVerificationUrl("NATS", process.env.SYNC_TEST_SERVERS).toString(),
@@ -182,18 +191,24 @@ try {
   const parties = await billing.resolve("parties"),
     bills = await billing.resolve("bills");
   const address = { street: "Test 1", postal_code: "89073", city: "Ulm", iban: "DE89370400440532013000", account_name: "Company" };
-  must(await updateBase(billing.base.id, {
-    documentDefaults: {
-      legalName: "Diagnostic issuer",
-      vatId: "DE123456789",
-      address: address.street,
-      postalCode: address.postal_code,
-      city: address.city,
-      countryCode: "DE",
-      iban: address.iban,
-      accountName: address.account_name,
-    },
-  }, actorId));
+  must(
+    await updateBase(
+      billing.base.id,
+      {
+        documentDefaults: {
+          legalName: "Diagnostic issuer",
+          vatId: "DE123456789",
+          address: address.street,
+          postalCode: address.postal_code,
+          city: address.city,
+          countryCode: "DE",
+          iban: address.iban,
+          accountName: address.account_name,
+        },
+      },
+      actorId,
+    ),
+  );
   const party = must(
     await create(parties.id, parties.values({ ...address, name: "Diagnostic buyer", vat_id: "DE987654321" }), actorId, "workflow"),
   );

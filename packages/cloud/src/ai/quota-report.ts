@@ -1,11 +1,11 @@
-import { hasBillableAiPricing } from "../shared/ai-costs";
-import { readAiSettingsState } from "./settings";
-import { toPgTextArray } from "../services/postgres";
 import { sql } from "bun";
-import { recursiveGroupIdsSubquery } from "../services/accounts/group-sql";
-import { AiQuotaReportQuerySchema, type AiQuotaReport, type AiQuotaReportQuery } from "../shared/ai-quotas";
 import { resolveDisplayNames } from "../server/services/access";
+import { recursiveGroupIdsSubquery } from "../services/accounts/group-sql";
+import { toPgTextArray } from "../services/postgres";
+import { hasBillableAiPricing } from "../shared/ai-costs";
+import { type AiQuotaReport, type AiQuotaReportQuery, AiQuotaReportQuerySchema } from "../shared/ai-quotas";
 import { aiQuotas } from "./quotas";
+import { readAiSettingsState } from "./settings";
 
 /** Resolve display metadata only for administration, never on the inference path. */
 export async function quotaAdminConfig() {

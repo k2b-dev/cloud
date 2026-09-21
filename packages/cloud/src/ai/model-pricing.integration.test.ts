@@ -1,23 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { set as writeSetting } from "../services/settings";
 import { decryptValue } from "../services/settings/crypto";
 import { getAiCredential, setAiCredential } from "./credentials";
 import { migrateCloudAi } from "./migrate";
-import { setAiModelPricing } from "./model-pricing";
 import { aiModelAccess } from "./model-access";
+import { setAiModelPricing } from "./model-pricing";
 
-// This suite mutates model configuration and must never target the shared development database/cache.
-const dbUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
-const cacheUrl = new URL(process.env.VALKEY_URL ?? process.env.REDIS_URL ?? "redis://localhost:6379");
-const isolated =
-  ["localhost", "127.0.0.1"].includes(dbUrl.hostname) &&
-  /^\/cloud_ai_pricing_verify_[a-z0-9_]+$/.test(dbUrl.pathname) &&
-  ["localhost", "127.0.0.1"].includes(cacheUrl.hostname) &&
-  Boolean(cacheUrl.port) &&
-  cacheUrl.port !== "6379";
-if (isolated) await migrateCloudAi();
-const suite = isolated ? describe : describe.skip;
+const suite = databaseSuite();
+beforeAll(async () => {
+  if (!testInfra.database) return;
+  await migrateCloudAi();
+});
 
 suite("model reference price persistence", () => {
   test("changes only prices, keeps credentials and fields, rejects stale writes, removes prices, and rejects audio", async () => {

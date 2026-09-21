@@ -8,7 +8,17 @@ export const AdminLocationSchema = AdminQuerySchema.extend({
 });
 export type AdminLocation = z.infer<typeof AdminLocationSchema>;
 export type AdminView = AdminLocation["view"];
-export type AdminSnapshot = { source: string; result: AdminResult; archives: ArchivePage | null; browse: AdminBrowseResult | null; shares?: SharePage; uploads?: { items: { id: string; shareId: string | null; path: string; size: number; state: string; error: string | null; updatedAt: string }[]; next: string | null } };
+export type AdminSnapshot = {
+  source: string;
+  result: AdminResult;
+  archives: ArchivePage | null;
+  browse: AdminBrowseResult | null;
+  shares?: SharePage;
+  uploads?: {
+    items: { id: string; shareId: string | null; path: string; size: number; state: string; error: string | null; updatedAt: string }[];
+    next: string | null;
+  };
+};
 export function adminHref(location: AdminLocation, patch: Partial<AdminLocation> = {}) {
   const next = { ...location, ...patch };
   const search = new URLSearchParams();

@@ -1,19 +1,20 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { UserSchema } from "@k2b/cloud/contracts";
 import type { RequestActor } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { Filegate, FilegateError } from "@k2b/filegate";
 import { sql } from "bun";
+import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
 import { withRootLock } from "../src/data/operations";
 import { migrate } from "../src/migrate";
 import { createFilesService } from "../src/service";
+import { assertPrivateDatabase, localFilegateToken } from "./private-database";
 
-// Explicit opt-in: these tests create and remove their own prefix in both roots.
-const endpoint = process.env.FILESV2_TEST_FILEGATE_URL;
-const suite = endpoint ? describe : describe.skip;
+// These tests create and remove their own prefix in both roots.
+const suite = suiteFor("database", "filegate");
 suite("real Filegate directory lifecycle", () => {
   const prefix = `filesv2-test-${crypto.randomUUID()}`;
   const uid = 31001;
@@ -73,12 +74,9 @@ suite("real Filegate directory lifecycle", () => {
     };
   };
   beforeAll(async () => {
-    if (new URL(process.env.DATABASE_URL ?? "postgres://invalid/").pathname !== "/cloud_filesv2_filegate_test")
-      throw new Error("Dedicated cloud_filesv2_filegate_test database required");
-    const tokenPath = process.env.FILESV2_TEST_FILEGATE_TOKEN_FILE;
-    if (!tokenPath) throw new Error("FILESV2_TEST_FILEGATE_TOKEN_FILE is required");
-    const token = (await Bun.file(tokenPath).text()).trim();
-    client = new Filegate({ baseUrl: endpoint!, token });
+    await assertPrivateDatabase();
+    const token = await localFilegateToken();
+    client = new Filegate({ baseUrl: testInfra.filegate!, token });
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
@@ -99,7 +97,7 @@ suite("real Filegate directory lifecycle", () => {
     );
     await set("freeipa.enable", true);
     configuration = {
-      url: endpoint!,
+      url: testInfra.filegate!,
       token,
       tokenConfigured: true,
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
@@ -145,9 +143,8 @@ suite("real Filegate directory lifecycle", () => {
       },
       connect: () => client,
       publicOrigin: async () => "http://localhost:3000",
-      userById: async (userId) => ipaUser.kind === "user" && ipaUser.user.id === userId ? ipaUser.user : null,
+      userById: async (userId) => (ipaUser.kind === "user" && ipaUser.user.id === userId ? ipaUser.user : null),
       transfer: fetch,
-
     });
   }, 30_000);
   afterAll(async () => {
@@ -159,7 +156,6 @@ suite("real Filegate directory lifecycle", () => {
           if (!(error instanceof FilegateError && error.status === 404)) throw error;
         }
       }
-    await sql.close();
   });
 
   test("FreeIPA provision, inherited rights, private archive, restore and administrator deletion", async () => {
@@ -249,15 +245,28 @@ suite("real Filegate directory lifecycle", () => {
     if (launch.kind === "markdown") throw new Error("Expected office editor");
     const fileId = new URL(launch.action).searchParams.get("WOPISrc")!.split("/").at(-1)!;
     const timestamp = (await service.editorFileInfo(launch.token, fileId)).LastModifiedTime;
-    const saves = await Promise.allSettled(["writer one", "writer two"].map(value => service.editorSave(launch.token, fileId, { timestamp, read: async () => new Blob([value]) })));
-    expect(saves.filter(result => result.status === "fulfilled" && "modified" in result.value)).toHaveLength(1);
+    const saves = await Promise.allSettled(
+      ["writer one", "writer two"].map((value) =>
+        service.editorSave(launch.token, fileId, { timestamp, read: async () => new Blob([value]) }),
+      ),
+    );
+    expect(saves.filter((result) => result.status === "fulfilled" && "modified" in result.value)).toHaveLength(1);
     for (const result of saves) {
       if (result.status === "rejected") expect(result.reason).toMatchObject({ code: "operation_busy" });
       else if (!("modified" in result.value)) expect(result.value).toEqual({ conflict: true });
     }
-    expect(await service.editorSave(launch.token, fileId, { timestamp, read: async () => new Blob(["stale retry"]) })).toEqual({ conflict: true });
+    expect(await service.editorSave(launch.token, fileId, { timestamp, read: async () => new Blob(["stale retry"]) })).toEqual({
+      conflict: true,
+    });
     const current = await root.stat(target);
-    const upload = await service.upload(ipaUser, { baseId, path: "Conflict.odt", size: 0, onConflict: "overwrite", idempotencyKey: crypto.randomUUID(), expectedRevision: `fs:${current.modified}:${current.size}` });
+    const upload = await service.upload(ipaUser, {
+      baseId,
+      path: "Conflict.odt",
+      size: 0,
+      onConflict: "overwrite",
+      idempotencyKey: crypto.randomUUID(),
+      expectedRevision: `fs:${current.modified}:${current.size}`,
+    });
     await withRootLock("freeipa", async () => {
       await expect(service.commitUpload(ipaUser, { baseId, id: upload.id })).rejects.toMatchObject({ code: "operation_busy" });
     });

@@ -12,7 +12,15 @@ export type ScrollAreaProps = Omit<JSX.HTMLAttributes<HTMLDivElement>, "children
 };
 
 export function ScrollArea(props: ScrollAreaProps): JSX.Element {
-  const [local, elementProps] = splitProps(props, ["children", "scrollPreserveKey", "class", "scrollFade", "orientation", "viewportSize", "ref"]);
+  const [local, elementProps] = splitProps(props, [
+    "children",
+    "scrollPreserveKey",
+    "class",
+    "scrollFade",
+    "orientation",
+    "viewportSize",
+    "ref",
+  ]);
   let body!: HTMLDivElement;
   createScrollFade(
     () => body,

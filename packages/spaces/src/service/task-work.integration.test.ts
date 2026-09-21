@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { ItemFilterSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import * as comments from "./comments";
@@ -7,8 +8,7 @@ import * as dependencies from "./item-dependencies";
 import { get, listFiltered, move, setCompleted } from "./items";
 import { change, read } from "./task-work";
 
-const [tables] = await sql<{ work: string | null }[]>`SELECT to_regclass('spaces.task_work')::text AS work`.catch(() => []);
-const suite = tables?.work ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Spaces agent work", () => {
   test("coordinates workers, records service-account handoffs and atomically completes with results", async () => {

@@ -1,4 +1,3 @@
-import { ok } from "@k2b/stdlib";
 import { defineCapabilities } from "@k2b/cloud";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
@@ -6,6 +5,7 @@ import { invokeCapabilityWithDataSchema as invokeCapabilityInBrowser } from "@k2
 import { type CapabilityCaller, invokeCapabilityWithDataSchema as invokeCapabilityOnServer } from "@k2b/cloud/capabilities/server";
 import { assertCapabilityManifestEvolution, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type AccessSubject, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
+import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 
 export const inventoryResourceClipboard = cloudResourceClipboard;

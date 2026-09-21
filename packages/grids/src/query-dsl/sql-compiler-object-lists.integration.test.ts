@@ -1,5 +1,6 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { compileFormulaSourceToSql } from "../service/formula-sql-compiler";
 import { createDslScopedFormulaFieldResolver } from "./scoped-formula";
@@ -13,7 +14,7 @@ import {
 } from "./sql-compiler.integration-fixtures";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 postgresTest("joined list reductions use typed calculated cells and preserve frozen values", async () => {

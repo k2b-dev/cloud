@@ -1,9 +1,9 @@
 import { BottomSheet, Navigation, SegmentedControl, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
-import { AppLaunchpadPanel, type AppLaunchpadContext } from "./AppLaunchpadPanel";
+import { type AppLaunchpadContext, AppLaunchpadPanel } from "./AppLaunchpadPanel";
 import { openMobileMenu } from "./mobile-menu-history";
-import { observeWorkspaceNavigation, readWorkspaceNavigation } from "./workspace-navigation";
 import { platformMessages } from "./platform-messages";
+import { observeWorkspaceNavigation, readWorkspaceNavigation } from "./workspace-navigation";
 
 export function openCloudMobileMenu(apps: AppLaunchpadContext) {
   return openMobileMenu((beforeSelect) => (close, context) => (

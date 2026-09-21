@@ -15,19 +15,29 @@ export function setupTaskNavigation(props: {
   searchDescription: string;
 }) {
   onMount(() => {
-    onCleanup(registerCommandHandler("spaces.task.compose", ComposeInput, props.openTaskForm,
-      (input) => !input.spaceId || input.spaceId === props.currentSpaceId()));
-    onCleanup(registerSearchNavigation(async (target) => {
-      if (!props.canOpenInCurrentView(target.href)) return false;
-      await props.openInCurrentView(target);
-      return true;
-    }));
-    onCleanup(registerContextAwareCommand({
-      id: "spaces.search",
-      title: props.searchLabel,
-      description: props.searchDescription,
-      action: { search: { scope: { appId: "spaces", label: props.searchLabel } } },
-    }));
+    onCleanup(
+      registerCommandHandler(
+        "spaces.task.compose",
+        ComposeInput,
+        props.openTaskForm,
+        (input) => !input.spaceId || input.spaceId === props.currentSpaceId(),
+      ),
+    );
+    onCleanup(
+      registerSearchNavigation(async (target) => {
+        if (!props.canOpenInCurrentView(target.href)) return false;
+        await props.openInCurrentView(target);
+        return true;
+      }),
+    );
+    onCleanup(
+      registerContextAwareCommand({
+        id: "spaces.search",
+        title: props.searchLabel,
+        description: props.searchDescription,
+        action: { search: { scope: { appId: "spaces", label: props.searchLabel } } },
+      }),
+    );
     void consumeCommandLink();
   });
   return {

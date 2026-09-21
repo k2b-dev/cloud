@@ -317,10 +317,21 @@ export default function QrCodeGenerator() {
                     onValueChange={setVcFirstName}
                     required
                   />
-                  <TextInput label={t().vcLastNameLabel} placeholder={t().vcLastNamePlaceholder} value={vcLastName} onValueChange={setVcLastName} />
+                  <TextInput
+                    label={t().vcLastNameLabel}
+                    placeholder={t().vcLastNamePlaceholder}
+                    value={vcLastName}
+                    onValueChange={setVcLastName}
+                  />
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput label={t().vcOrgLabel} placeholder={t().vcOrgPlaceholder} icon="ti ti-building" value={vcOrg} onValueChange={setVcOrg} />
+                  <TextInput
+                    label={t().vcOrgLabel}
+                    placeholder={t().vcOrgPlaceholder}
+                    icon="ti ti-building"
+                    value={vcOrg}
+                    onValueChange={setVcOrg}
+                  />
                   <TextInput
                     label={t().vcTitleLabel}
                     placeholder={t().vcTitlePlaceholder}
@@ -330,8 +341,20 @@ export default function QrCodeGenerator() {
                   />
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput label={t().vcPhoneLabel} placeholder="+49 123 456 7890" icon="ti ti-phone" value={vcPhone} onValueChange={setVcPhone} />
-                  <TextInput label={t().vcEmailLabel} placeholder={t().vcEmailPlaceholder} icon="ti ti-mail" value={vcEmail} onValueChange={setVcEmail} />
+                  <TextInput
+                    label={t().vcPhoneLabel}
+                    placeholder="+49 123 456 7890"
+                    icon="ti ti-phone"
+                    value={vcPhone}
+                    onValueChange={setVcPhone}
+                  />
+                  <TextInput
+                    label={t().vcEmailLabel}
+                    placeholder={t().vcEmailPlaceholder}
+                    icon="ti ti-mail"
+                    value={vcEmail}
+                    onValueChange={setVcEmail}
+                  />
                 </div>
                 <TextInput
                   label={t().vcWebsiteLabel}
@@ -341,12 +364,23 @@ export default function QrCodeGenerator() {
                   onValueChange={setVcWebsite}
                 />
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput label={t().vcStreetLabel} placeholder={t().vcStreetPlaceholder} icon="ti ti-map-pin" value={vcStreet} onValueChange={setVcStreet} />
+                  <TextInput
+                    label={t().vcStreetLabel}
+                    placeholder={t().vcStreetPlaceholder}
+                    icon="ti ti-map-pin"
+                    value={vcStreet}
+                    onValueChange={setVcStreet}
+                  />
                   <TextInput label={t().vcCityLabel} placeholder="Berlin" value={vcCity} onValueChange={setVcCity} />
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <TextInput label={t().vcZipLabel} placeholder="10115" value={vcZip} onValueChange={setVcZip} />
-                  <TextInput label={t().vcCountryLabel} placeholder={t().vcCountryPlaceholder} value={vcCountry} onValueChange={setVcCountry} />
+                  <TextInput
+                    label={t().vcCountryLabel}
+                    placeholder={t().vcCountryPlaceholder}
+                    value={vcCountry}
+                    onValueChange={setVcCountry}
+                  />
                 </div>
               </Match>
 
@@ -374,7 +408,12 @@ export default function QrCodeGenerator() {
                     onValueChange={(value) => setEvStart(value ?? "")}
                     clearable
                   />
-                  <DateTimePicker label={t().evEndLabel} value={() => evEnd() || null} onValueChange={(value) => setEvEnd(value ?? "")} clearable />
+                  <DateTimePicker
+                    label={t().evEndLabel}
+                    value={() => evEnd() || null}
+                    onValueChange={(value) => setEvEnd(value ?? "")}
+                    clearable
+                  />
                 </div>
                 <TextInput
                   label={t().evDescriptionLabel}

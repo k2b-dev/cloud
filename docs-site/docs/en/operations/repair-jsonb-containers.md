@@ -53,7 +53,7 @@ production baseline above.
 The checkout's maintenance script can inspect an explicitly supported table:
 
 ```sh
-bun --no-env-file scripts/repair-jsonb-containers.ts --table audit.events
+bun --no-env-file packages/core/scripts/repair-jsonb-containers.ts --table audit.events
 ```
 
 Supply `DATABASE_URL` through the intended database's secret environment. The

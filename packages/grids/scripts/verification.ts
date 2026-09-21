@@ -23,3 +23,22 @@ export const assertVerificationReport = (xml: string, phase: string): void => {
     throw new Error(`${phase} ran no tests, skipped tests, or reported failures`);
   }
 };
+
+/** Phases selected by `--shard <index>/<count>` (1-based, over the full phase list) and/or `--phase <name>`. */
+export const selectPhases = <T extends { name: string }>(phases: T[], options: { phase?: string; shard?: string }): T[] => {
+  let selected = phases;
+  if (options.shard) {
+    const match = /^([1-9]\d*)\/([1-9]\d*)$/.exec(options.shard);
+    const index = Number(match?.[1]);
+    const count = Number(match?.[2]);
+    if (!match || index > count) throw new Error(`Invalid shard "${options.shard}"; expected <index>/<count> with 1 <= index <= count`);
+    selected = selected.filter((_, position) => position % count === index - 1);
+  }
+  if (options.phase) {
+    if (!phases.some((phase) => phase.name === options.phase)) {
+      throw new Error(`Unknown phase "${options.phase}"; known: ${phases.map((phase) => phase.name).join(", ")}`);
+    }
+    selected = selected.filter((phase) => phase.name === options.phase);
+  }
+  return selected;
+};

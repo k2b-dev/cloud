@@ -1,5 +1,5 @@
-import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import type { AiChatTaskView } from "@k2b/cloud/ai";
+import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 
 // Presentation only: enforcement continues to use the exact stored grants.
 export async function taskGrantPresentation(grants: AiChatTaskView["grants"], locale = "en") {
@@ -47,7 +47,9 @@ export async function taskGrantReview(grants: AiChatTaskView["grants"], locale =
   return {
     label: locale.startsWith("de") ? "Das erlaubst du dieser Aufgabe" : "What you allow this task to do",
     value: items.length
-      ? items.map((item) => `**${escape(item.title)}** · ${escape(item.app)}  \n${escape(item.scope).replaceAll("\n", "  \n")}`).join("\n\n")
+      ? items
+          .map((item) => `**${escape(item.title)}** · ${escape(item.app)}  \n${escape(item.scope).replaceAll("\n", "  \n")}`)
+          .join("\n\n")
       : locale.startsWith("de")
         ? "Keine zusätzlichen Zugriffe."
         : "No additional access.",

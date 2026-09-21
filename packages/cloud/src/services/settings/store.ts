@@ -13,12 +13,12 @@
  * snapshot exposed via `c.get("settings")` (built by snapshot.ts middleware).
  */
 
+import { sql } from "bun";
 import { HTTPException } from "hono/http-exception";
 import { hasRole, type User } from "../../contracts/shared";
-import { sql } from "bun";
-import { requestCacheRedis } from "../request-cache-redis";
-import { toPgTextArray } from "../postgres";
 import { claimCacheFill, completeCacheFill, MISSING_SETTING } from "../cache-fill";
+import { toPgTextArray } from "../postgres";
+import { requestCacheRedis } from "../request-cache-redis";
 import { decryptValue, encryptValue } from "./crypto";
 import { SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
 

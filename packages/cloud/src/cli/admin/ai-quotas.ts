@@ -1,13 +1,13 @@
-import { AiModelPricingSchema, type AiModelPricing } from "../../shared/ai-costs";
+import { type AiModelPricing, AiModelPricingSchema } from "../../shared/ai-costs";
 import {
-  AiQuotaConfigSchema,
-  AiQuotaReportQuerySchema,
-  AiQuotaIdentitySchema,
-  AiQuotaResetSchema,
   type AiQuotaConfig,
+  AiQuotaConfigSchema,
   type AiQuotaIdentity,
+  AiQuotaIdentitySchema,
+  AiQuotaReportQuerySchema,
+  AiQuotaResetSchema,
 } from "../../shared/ai-quotas";
-import { cliText, command, confirmFlag, flag, printRows, printStructured, type CloudCliContext } from "../index";
+import { type CloudCliContext, cliText, command, confirmFlag, flag, printRows, printStructured } from "../index";
 import { apiGet, apiJson, queryString, readJsonInput } from "./shared";
 
 const path = "/api/admin/core/ai-quotas";

@@ -1,8 +1,8 @@
 import { prompts } from "@k2b/ui";
 import type { PulseSource } from "../../contracts";
-import { normalizeEndpointInput, parseScrapeInterval } from "./helpers";
 import type { pulseMessages } from "../../messages";
 import { usePulseMessages } from "../use-messages";
+import { normalizeEndpointInput, parseScrapeInterval } from "./helpers";
 
 type SourceEditResult = Record<string, unknown> | null | undefined;
 type SourceEditFields = Parameters<typeof prompts.form>[0]["fields"];

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { once } from "node:events";
 import { createConnection } from "node:net";
-import type { ServerWebSocket } from "bun";
 import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import type { ServerWebSocket } from "bun";
 import { buildRouteTable } from "./trie";
 import { tryUpgradeWebSocket, websocketHandlers } from "./ws-proxy";
 

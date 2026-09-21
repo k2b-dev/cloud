@@ -1,7 +1,8 @@
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { env } from "@k2b/cloud/config";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import { RecordAuditContextSchema } from "../contracts";
@@ -105,7 +106,7 @@ type AuditCursor = z.infer<typeof AuditCursorSchema>;
 const AUDIT_CURSOR_SIGNATURE_DOMAIN = "grids:combined-audit-cursor:v1\0";
 
 const auditCursorSigningKey = (): string => {
-  const key = process.env.APP_SECRET?.trim();
+  const key = env.APP_SECRET;
   if (!key) throw new Error("APP_SECRET is required for Combined audit pagination");
   return key;
 };

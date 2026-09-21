@@ -16,8 +16,8 @@ import {
   setJoinAlias,
 } from "./resolver-scope";
 import { type ResolvedSource, resolveSource } from "./resolver-source";
+import { type DslSummaryJoin, resolveSummaryJoin } from "./resolver-summary-joins";
 import type { DslJoin } from "./types";
-import { resolveSummaryJoin, type DslSummaryJoin } from "./resolver-summary-joins";
 
 const MAX_JOIN_COUNT = 5;
 const MAX_JOIN_DEPTH = 3;
@@ -169,7 +169,10 @@ export const resolveJoins = (
     if (join.source.kind === "view") {
       const summary = resolveSummaryJoin(join, source, scope, ctx);
       if (isDiagnostic(summary)) diagnostics.push(summary);
-      else { summaryJoins.push(summary); scope.summaryJoins.set(normalizeRefKey(summary.alias), summary); }
+      else {
+        summaryJoins.push(summary);
+        scope.summaryJoins.set(normalizeRefKey(summary.alias), summary);
+      }
       continue;
     }
     const result = resolveRelationJoin(join, source, scope, ctx);

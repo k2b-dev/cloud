@@ -1,19 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { getTelemetryTimeseries } from "./service";
 
-const canUseTelemetryDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<Array<{ rollups: string | null }>>`
-      SELECT to_regclass('gateway.telemetry_rollups_minute')::text AS rollups
-    `;
-    return Boolean(row?.rollups);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseTelemetryDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("telemetry timeseries", () => {
   test("separates server errors and weights interval duration by request count", async () => {

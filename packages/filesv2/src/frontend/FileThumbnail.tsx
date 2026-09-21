@@ -11,46 +11,88 @@ const CONCURRENCY = 3;
 const RETRY_DELAYS = [600, 1500, 3000];
 let active = 0;
 const waiting: Array<() => void> = [];
-const acquire = (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
-  if (signal.aborted) { reject(signal.reason); return; }
-  const ready = () => { signal.removeEventListener("abort", cancel); resolve(); };
-  const cancel = () => {
-    const index = waiting.indexOf(ready);
-    if (index >= 0) waiting.splice(index, 1);
-    reject(signal.reason);
-  };
-  if (active < CONCURRENCY) { active++; resolve(); }
-  else { waiting.push(ready); signal.addEventListener("abort", cancel, { once: true }); }
-});
+const acquire = (signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const ready = () => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    };
+    const cancel = () => {
+      const index = waiting.indexOf(ready);
+      if (index >= 0) waiting.splice(index, 1);
+      reject(signal.reason);
+    };
+    if (active < CONCURRENCY) {
+      active++;
+      resolve();
+    } else {
+      waiting.push(ready);
+      signal.addEventListener("abort", cancel, { once: true });
+    }
+  });
 const release = () => {
   const next = waiting.shift();
   if (next) next();
   else active--;
 };
-const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
-  if (signal.aborted) { reject(signal.reason); return; }
-  const cancel = () => { clearTimeout(timer); reject(signal.reason); };
-  const timer = setTimeout(() => { signal.removeEventListener("abort", cancel); resolve(); }, ms);
-  signal.addEventListener("abort", cancel, { once: true });
-});
-const loadImage = (url: string, signal: AbortSignal) => new Promise<string>((resolve, reject) => {
-  if (signal.aborted) { reject(signal.reason); return; }
-  const image = new Image();
-  const cleanup = () => { signal.removeEventListener("abort", cancel); image.onload = null; image.onerror = null; };
-  const cancel = () => { cleanup(); image.removeAttribute("src"); reject(signal.reason); };
-  image.crossOrigin = "anonymous";
-  image.referrerPolicy = "no-referrer";
-  image.onload = () => { cleanup(); resolve(url); };
-  image.onerror = () => { cleanup(); reject(new Error("thumbnail_unavailable")); };
-  signal.addEventListener("abort", cancel, { once: true });
-  image.src = url;
-});
+const sleep = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const cancel = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", cancel, { once: true });
+  });
+const loadImage = (url: string, signal: AbortSignal) =>
+  new Promise<string>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const image = new Image();
+    const cleanup = () => {
+      signal.removeEventListener("abort", cancel);
+      image.onload = null;
+      image.onerror = null;
+    };
+    const cancel = () => {
+      cleanup();
+      image.removeAttribute("src");
+      reject(signal.reason);
+    };
+    image.crossOrigin = "anonymous";
+    image.referrerPolicy = "no-referrer";
+    image.onload = () => {
+      cleanup();
+      resolve(url);
+    };
+    image.onerror = () => {
+      cleanup();
+      reject(new Error("thumbnail_unavailable"));
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    image.src = url;
+  });
 
 type ThumbnailProps = { baseId: string; locationKey?: string; entry: FileEntry; large?: boolean; hero?: boolean };
 export default function FileThumbnail(props: ThumbnailProps) {
-  return <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified, props.hero])}>
-    {(_key) => <ThumbnailImage {...props} />}
-  </Show>;
+  return (
+    <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified, props.hero])}>
+      {(_key) => <ThumbnailImage {...props} />}
+    </Show>
+  );
 }
 function ThumbnailImage(props: ThumbnailProps) {
   const [url, setUrl] = createSignal<string | null>(null);
@@ -62,7 +104,11 @@ function ThumbnailImage(props: ThumbnailProps) {
     for (const [attempt, delay] of [0, ...RETRY_DELAYS].entries()) {
       if (delay) await sleep(delay, signal).catch(() => {});
       if (signal.aborted) return;
-      try { await acquire(signal); } catch { return; }
+      try {
+        await acquire(signal);
+      } catch {
+        return;
+      }
       try {
         const response = await apiClient.bases[":baseId"].thumbnail.$post(
           { param: { baseId: props.baseId }, json: { path: props.entry.path, size: props.hero ? "large" : "small" } },

@@ -1,8 +1,7 @@
-import ContactCreateLauncher from "../_components/ContactCreateLauncher.island";
-import { AppWorkspace } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../../config";
 import { contactsService } from "../../service";
 import { captureContactEventCursor } from "../../service/events";
@@ -15,6 +14,7 @@ import {
   resolveBookPublicIds,
   resolvePublicId,
 } from "../../service/public-resources";
+import ContactCreateLauncher from "../_components/ContactCreateLauncher.island";
 import ContactDetailPanel from "../_components/ContactDetailPanel.island";
 import ContactsLiveEvents from "../_components/ContactsLiveEvents.island";
 import ContactsSidebar from "../_components/ContactsSidebar";

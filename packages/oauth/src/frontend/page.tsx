@@ -1,10 +1,10 @@
-import { DataTable, type DataTableColumn, NoticeCard, Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { formatDate } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { DataTable, type DataTableColumn, NoticeCard, Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../config";
 import { oauthService } from "../service";
 import ClientActions from "./_components/ClientActions.island";

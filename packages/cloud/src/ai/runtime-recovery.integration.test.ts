@@ -1,13 +1,12 @@
-import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { expect, spyOn } from "bun:test";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { logging } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
+import { __aiRuntimeTest } from "./runtime";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
-import { __aiRuntimeTest } from "./runtime";
 
-const available = await sql`SELECT to_regclass('logging.entries') AS name`.then((rows) => Boolean(rows[0]?.name)).catch(() => false);
-const recovery = available ? test : test.skip;
+const recovery = testFor("database");
 const persisted = async (conversationId: string, code: string) => {
   for (let attempt = 0; attempt < 50; attempt++) {
     const result = await logging.list({ page: 1, perPage: 10, offset: 0 }, { source: "ai:runtime", search: conversationId });
@@ -99,10 +98,18 @@ recovery("a failed completion publication remains recoverable and logs turn corr
 });
 
 recovery("background sweep finalization does not finish the interactive chat stream", async () => {
-  const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" }, background: { taskId: "task01", occurrenceId: "run001", context: [] } });
+  const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
+    kind: "chat",
+    input: "Run",
+    toolSource: { kind: "none" },
+    background: { taskId: "task01", occurrenceId: "run001", context: [] },
+  });
   const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
   try {
-    await __aiRuntimeTest.publishSweepFinished({ conversationId: crypto.randomUUID(), turnId: crypto.randomUUID(), attempt: 1, seq: 7 }, "failed");
+    await __aiRuntimeTest.publishSweepFinished(
+      { conversationId: crypto.randomUUID(), turnId: crypto.randomUUID(), attempt: 1, seq: 7 },
+      "failed",
+    );
     expect(publish).not.toHaveBeenCalled();
   } finally {
     config.mockRestore();

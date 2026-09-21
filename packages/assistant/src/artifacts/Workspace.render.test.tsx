@@ -27,20 +27,33 @@ test("URL-selected panel reserves its space during SSR without loading its conte
     const controller = createArtifactWorkspace(href);
     expect(controller.state().active).toBe(taskTab("task01", "task01").key);
     expect(controller.mobile()).toBe("workspace");
-    return createComponent(AppWorkspace, { get children() {
-      return createComponent(AppWorkspace.Content, { get children() {
-        return createComponent(AppWorkspace.Main, { get children() {
-          return [
-            createComponent(AppWorkspace.MainPane, { id: "chat", label: "Chat", children: "Chat" }),
-            createComponent(AppWorkspace.MainPane, { id: "workspace", label: "Workspace", open: controller.state().tabs.length > 0, defaultSize: 620,
-              get children() { return createComponent(Placeholder, { state: "loading", title: "Loading" }); } }),
-          ];
-        } });
-      } });
-    } });
+    return createComponent(AppWorkspace, {
+      get children() {
+        return createComponent(AppWorkspace.Content, {
+          get children() {
+            return createComponent(AppWorkspace.Main, {
+              get children() {
+                return [
+                  createComponent(AppWorkspace.MainPane, { id: "chat", label: "Chat", children: "Chat" }),
+                  createComponent(AppWorkspace.MainPane, {
+                    id: "workspace",
+                    label: "Workspace",
+                    open: controller.state().tabs.length > 0,
+                    defaultSize: 620,
+                    get children() {
+                      return createComponent(Placeholder, { state: "loading", title: "Loading" });
+                    },
+                  }),
+                ];
+              },
+            });
+          },
+        });
+      },
+    });
   });
   expect(html).toContain('data-workspace-main-region="workspace"');
   expect(html).toContain('aria-busy="true"');
-  expect(html).toContain('620px');
+  expect(html).toContain("620px");
   expect(createArtifactWorkspace("/app/assistant?workspace=broken").state().tabs).toEqual([]);
 });

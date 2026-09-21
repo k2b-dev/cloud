@@ -1,5 +1,5 @@
 import type { Node } from "@k2b/filegate";
-import { sql, SQL } from "bun";
+import { SQL, sql } from "bun";
 import type { Area, BaseKind } from "../contracts";
 export type Operation = {
   id: string;
@@ -27,10 +27,13 @@ export const withRootLock = <T>(root: string, run: () => Promise<T>) => withFile
 const uploadLocks = new SQL({ max: 4, connectionTimeout: 5 });
 let activeUploads = 0;
 export async function withUploadLock<T>(id: string, run: () => Promise<T>): Promise<T> {
-  if(activeUploads >= 4)throw new Error("operation_busy");
+  if (activeUploads >= 4) throw new Error("operation_busy");
   activeUploads++;
-  try { return await withFilesLock(`filesv2:upload:${id}`, run, uploadLocks); }
-  finally { activeUploads--; }
+  try {
+    return await withFilesLock(`filesv2:upload:${id}`, run, uploadLocks);
+  } finally {
+    activeUploads--;
+  }
 }
 async function withFilesLock<T>(key: string, run: () => Promise<T>, pool = sql): Promise<T> {
   const connection = await pool.reserve();

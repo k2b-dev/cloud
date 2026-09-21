@@ -291,16 +291,12 @@ describe("@k2b/ui Cloud content contract", () => {
   });
 
   test("keeps table hover subtle without weakening the selected row", () => {
-    expect(uiCss).toMatch(
-      /\.k2b-data-table :is\(th, td\)\[data-highlighted="true"\] \{[^}]*var\(--k2b-hover\) 30%, transparent/s,
-    );
+    expect(uiCss).toMatch(/\.k2b-data-table :is\(th, td\)\[data-highlighted="true"\] \{[^}]*var\(--k2b-hover\) 30%, transparent/s);
     expect(uiCss).toMatch(
       /\.k2b-data-table__row\[data-hover="true"\]:not\(\[data-selected="true"\]\):hover \{[^}]*var\(--k2b-hover\) 50%, transparent/s,
     );
     expect(uiCss).toMatch(/\.k2b-data-table__row\[data-selected="true"\] \{[^}]*background: var\(--k2b-selected\)/s);
-    expect(uiCss).toMatch(
-      /\.k2b-data-table__row\[data-selected="true"\] > td\[data-highlighted="true"\] \{[^}]*background: transparent/s,
-    );
+    expect(uiCss).toMatch(/\.k2b-data-table__row\[data-selected="true"\] > td\[data-highlighted="true"\] \{[^}]*background: transparent/s);
   });
 
   test("keeps the DataTable overlay scrollbar as quiet as shared panel scrollbars", () => {

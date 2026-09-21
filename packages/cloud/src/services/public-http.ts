@@ -1,5 +1,5 @@
-import { request, type RequestOptions } from "node:https";
 import type { ClientRequest, IncomingMessage } from "node:http";
+import { type RequestOptions, request } from "node:https";
 import { resolvePublicNetworkAddresses } from "./network-security";
 
 export type PublicHttpInput = {

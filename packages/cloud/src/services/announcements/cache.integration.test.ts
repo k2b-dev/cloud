@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { redis, sql } from "bun";
-import { announcements } from "./index";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { buildProjectedUser } from "../session/user";
+import { announcements } from "./index";
 
-const suite = process.env.CLOUD_CACHE_TEST === "1" && process.env.DATABASE_URL?.endsWith("/cloud_cache_test") ? describe : describe.skip;
+const suite = suiteFor("database", "valkey");
 const key = "appglobalcache:shared:announcements:v1";
 const userId = crypto.randomUUID();
 const ids: string[] = [];

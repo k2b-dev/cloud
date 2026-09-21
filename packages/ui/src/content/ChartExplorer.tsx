@@ -1,15 +1,15 @@
-import type { ChartCursor } from "./chart-cursor";
-import { createEffect, createMemo, createSignal, createUniqueId, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, type JSX, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
-import { Paper } from "../surfaces/Paper";
-import { DescriptionList } from "../surfaces/DescriptionList";
 import { SelectChip } from "../inputs/SelectChip";
-import { useUiMessages } from "../intl/messages";
 import { useLocale } from "../intl/locale";
-import DataTable, { type DataTableSort } from "./DataTable";
+import { useUiMessages } from "../intl/messages";
+import { DescriptionList } from "../surfaces/DescriptionList";
+import { Paper } from "../surfaces/Paper";
 import { ChartSnapshotView } from "./ChartSnapshotView";
-import { validateChartExplorerData, type ChartExplorerData, type ChartExplorerRow } from "./chart-explorer";
+import type { ChartCursor } from "./chart-cursor";
+import { type ChartExplorerData, type ChartExplorerRow, validateChartExplorerData } from "./chart-explorer";
+import DataTable, { type DataTableSort } from "./DataTable";
 
 export type ChartExplorerColumn<T> = {
   id: string;

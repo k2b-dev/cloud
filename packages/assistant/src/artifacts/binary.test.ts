@@ -13,5 +13,8 @@ test("binary transfers enforce the byte budget across chunks", async () => {
       }),
     );
   expect(await readBinaryResponse(response(), 4)).toEqual(new Uint8Array([0, 255, 1, 128]));
-  await expect(readBinaryResponse(response(), 3)).rejects.toMatchObject({ code: "STORAGE_FULL", message: expect.stringContaining("nothing was written") });
+  await expect(readBinaryResponse(response(), 3)).rejects.toMatchObject({
+    code: "STORAGE_FULL",
+    message: expect.stringContaining("nothing was written"),
+  });
 });

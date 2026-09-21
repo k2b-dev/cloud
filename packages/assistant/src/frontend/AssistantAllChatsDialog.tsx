@@ -1,6 +1,6 @@
+import type { AiConversation, AiConversationPage, AiConversationStatusFilter, AiProject } from "@k2b/cloud/ai";
 import { query as solidQuery } from "@k2b/stdlib/solid";
 import { Button, dialogCore, PanelDialog, Placeholder, panelDialogFixedOptions, SegmentedControl, TextInput } from "@k2b/ui";
-import type { AiConversation, AiConversationPage, AiConversationStatusFilter, AiProject } from "@k2b/cloud/ai";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import AssistantAllChatsList from "./AssistantAllChatsList";
@@ -56,7 +56,8 @@ function AssistantAllChatsDialog(props: {
     source,
     load: async (serialized, { abortSignal }) => {
       const input = JSON.parse(serialized) as { query: string; view: ChatView; page: number };
-      const status = input.view !== "all" && input.view !== "archived" && input.view !== "done" ? (input.view as AiConversationStatusFilter) : undefined;
+      const status =
+        input.view !== "all" && input.view !== "archived" && input.view !== "done" ? (input.view as AiConversationStatusFilter) : undefined;
       return assistantApi.listConversationsPage({
         q: input.query || undefined,
         page: input.page,

@@ -86,7 +86,7 @@ export class RateLimitError extends Error {
 // ==========================
 
 export const ratelimit = (config: RateLimiterConfig): RateLimiter => {
-  // windowSecs: 0 — e.g. Number(process.env.RL_WINDOW) on an unset var — made
+  // windowSecs: 0 — e.g. `Number()` of an unset variable — made
   // both window keys Infinity and collapse to one, elapsedRatio NaN, and
   // `EXPIRE key 0` delete the counter on every first increment, so the
   // weighted count never exceeded the limit and the limiter allowed

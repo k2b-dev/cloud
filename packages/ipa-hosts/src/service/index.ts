@@ -1,18 +1,8 @@
-import { ipaHosts } from "../backend";
-import { audit, type AuditActor, type AuditTarget } from "@k2b/cloud/services";
+import { err, fail, freeipa, ok, type PageParams, type Paginated, paginate, type Result, type ServiceErrorCode } from "@k2b/cloud/server";
+import { type AuditActor, type AuditTarget, audit } from "@k2b/cloud/services";
 import { getFreeIpaConfig } from "@k2b/cloud/services/freeipa-config";
-import {
-  err,
-  fail,
-  freeipa,
-  ok,
-  paginate,
-  type PageParams,
-  type Paginated,
-  type Result,
-  type ServiceErrorCode,
-} from "@k2b/cloud/server";
 import type { IpaHost, IpaHostgroup } from "@/contracts";
+import { ipaHosts } from "../backend";
 
 type IpaMutationResult = { ok: true } | { ok: false; error: string; status: 400 | 401 | 403 | 404 | 500 };
 type IpaHostsActor = { userId: string; uid: string; roles: string[]; provider?: string | null };

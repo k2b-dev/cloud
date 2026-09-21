@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
 import { grantSpaceAccess, resolveSpaceApiKeyPermission, revokeSpaceAccess, updateSpaceAccessPermission } from "./access";
 import { checkOverlap, listCalendar, searchAcross } from "./items";
 import { list as listSpaces, listPage as listSpacesPage } from "./spaces";
 
-const databaseTest = process.env.CLOUD_DATABASE_TEST === "1" ? test : test.skip;
+const databaseTest = testFor("database");
 
 const resourceSubject = {
   type: "service_account" as const,

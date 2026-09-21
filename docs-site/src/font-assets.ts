@@ -10,8 +10,5 @@ const displayFontFile = "instrument-sans-latin-wght-normal.woff2";
 
 export const renderFontPreloads = (assets: string, includeDisplayFont = false) =>
   [...(includeDisplayFont ? [displayFontFile] : []), ...textFontFiles]
-    .map(
-      (filename) =>
-        `<link rel="preload" href="${assets}/fonts/${filename}" as="font" type="font/woff2" crossorigin>`,
-    )
+    .map((filename) => `<link rel="preload" href="${assets}/fonts/${filename}" as="font" type="font/woff2" crossorigin>`)
     .join("\n    ");

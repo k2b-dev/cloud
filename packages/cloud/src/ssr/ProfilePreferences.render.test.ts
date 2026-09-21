@@ -1,4 +1,3 @@
-import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
+import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import type { User } from "../contracts/shared";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-profile-preferences-tests-"));
@@ -92,5 +92,7 @@ describe("ProfilePreferences SSR", () => {
 });
 
 let railSnapshot: ReturnType<typeof stubRailSnapshot>;
-beforeEach(() => { railSnapshot = stubRailSnapshot(); });
+beforeEach(() => {
+  railSnapshot = stubRailSnapshot();
+});
 afterEach(() => railSnapshot.mockRestore());

@@ -116,9 +116,7 @@ export default function FormSubmit(props: Props) {
     }
     return failures;
   });
-  const validationFailures = createMemo(() =>
-    validationAttempted() ? allValidationFailures() : [],
-  );
+  const validationFailures = createMemo(() => (validationAttempted() ? allValidationFailures() : []));
   const validationErrors = createMemo(() =>
     Object.fromEntries(validationFailures().map((failure) => [failure.errorFieldId, failure.message])),
   );

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { AiTodoPlanSchema, parseAiTodoPlan } from "./todo-contracts";
-import { AiRunTimeout } from "./run-timeout";
 import { SETTINGS_MAP, validateSettingValue } from "../services/settings/defaults";
+import { AiRunTimeout } from "./run-timeout";
+import { AiTodoPlanSchema, parseAiTodoPlan } from "./todo-contracts";
 
 test("working plans reject ambiguous identities and concurrent active steps", () => {
   const active = { id: "inspect", content: "Inspect input", status: "in_progress" };

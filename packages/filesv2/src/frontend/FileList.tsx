@@ -2,6 +2,7 @@ import { Checkbox, type CollectionSelection, Format, IconButton } from "@k2b/ui"
 import { For, type JSX, Show } from "solid-js";
 
 export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-${string}`]: string | undefined };
+
 import type { FileEntry } from "../contracts";
 import FileThumbnail from "./FileThumbnail";
 
@@ -29,7 +30,16 @@ export default function FileList(props: {
   /** Host attributes per row, for example drag-and-drop handlers and the attributes their styling reads. */
   rowProps?: (row: FileRow) => RowAttributes;
   virtualProps?: (row: VirtualRow) => RowAttributes;
-  messages: { name: string; size: string; modified: string; details: (name: string) => string; toggle: (name: string) => string; select: (name: string) => string; more: string; up: string };
+  messages: {
+    name: string;
+    size: string;
+    modified: string;
+    details: (name: string) => string;
+    toggle: (name: string) => string;
+    select: (name: string) => string;
+    more: string;
+    up: string;
+  };
   /** Current order; clicking a column header asks the host to sort by it. */
   sort?: { key: "name" | "modified" | "size" | "type"; direction: "asc" | "desc" };
   onSort?: (key: "name" | "modified" | "size") => void;
@@ -42,14 +52,17 @@ export default function FileList(props: {
 }) {
   const nested = (event: Event) => event.target instanceof Element && !!event.target.closest("button,a,input,label,[role=button]");
   const label = (row: FileRow): JSX.Element =>
-    props.pathBase !== undefined && props.pathBase !== null ? `/${props.pathBase ? row.path.slice(props.pathBase.length + 1) : row.path}` : row.name;
+    props.pathBase !== undefined && props.pathBase !== null
+      ? `/${props.pathBase ? row.path.slice(props.pathBase.length + 1) : row.path}`
+      : row.name;
   const icon = (row: FileRow) => {
     const busy = row.loading || props.opening === row.path;
     if (busy) return <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />;
     if (props.tree && row.directory) return <i class={row.expanded ? "ti ti-folder-open" : "ti ti-folder"} aria-hidden="true" />;
     return <FileThumbnail baseId={props.baseId} entry={row} />;
   };
-  const ariaSort = (key: "name" | "modified" | "size") => (props.sort?.key === key ? (props.sort.direction === "asc" ? "ascending" : "descending") : undefined);
+  const ariaSort = (key: "name" | "modified" | "size") =>
+    props.sort?.key === key ? (props.sort.direction === "asc" ? "ascending" : "descending") : undefined;
   const header = (key: "name" | "modified" | "size", label: string) => (
     <span role="columnheader" aria-sort={ariaSort(key)} class={`filesv2-list__cell filesv2-list__cell--${key}`}>
       <Show when={props.onSort} fallback={label}>
@@ -176,7 +189,13 @@ export default function FileList(props: {
               </Show>
               <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
                 <Show when={props.tree && row.directory} fallback={icon(row)}>
-                  <button type="button" class="filesv2-list__disclosure" aria-label={props.messages.toggle(row.name)} aria-expanded={!!row.expanded} onClick={() => props.onToggle?.(row)}>
+                  <button
+                    type="button"
+                    class="filesv2-list__disclosure"
+                    aria-label={props.messages.toggle(row.name)}
+                    aria-expanded={!!row.expanded}
+                    onClick={() => props.onToggle?.(row)}
+                  >
                     {icon(row)}
                   </button>
                 </Show>
@@ -197,7 +216,13 @@ export default function FileList(props: {
                 </span>
               </Show>
               <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--info">
-                <IconButton size="xs" variant="ghost" class="filesv2-list__info" label={props.messages.details(row.name)} onClick={() => props.onDetails(row)}>
+                <IconButton
+                  size="xs"
+                  variant="ghost"
+                  class="filesv2-list__info"
+                  label={props.messages.details(row.name)}
+                  onClick={() => props.onDetails(row)}
+                >
                   <i class="ti ti-info-circle" aria-hidden="true" />
                 </IconButton>
               </span>

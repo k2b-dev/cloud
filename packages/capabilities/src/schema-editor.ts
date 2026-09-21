@@ -209,7 +209,11 @@ const validateString = (field: Extract<EditorField, { kind: "string" }>, value: 
   return undefined;
 };
 
-const parseArray = (field: Extract<EditorField, { kind: "array" }>, source: string, locale: string): { value?: unknown[]; error?: string } => {
+const parseArray = (
+  field: Extract<EditorField, { kind: "array" }>,
+  source: string,
+  locale: string,
+): { value?: unknown[]; error?: string } => {
   const t = capabilityRuntimeMessages.resolve([locale]).t;
   const lines = source
     .split(/\r?\n/)
@@ -241,7 +245,11 @@ const buildJsonInput = (source: string, locale: string): InputBuildResult => {
   }
 };
 
-const buildNumberField = (field: Extract<EditorField, { kind: "number" | "integer" }>, value: EditorValue, locale: string): FieldBuildResult => {
+const buildNumberField = (
+  field: Extract<EditorField, { kind: "number" | "integer" }>,
+  value: EditorValue,
+  locale: string,
+): FieldBuildResult => {
   const t = capabilityRuntimeMessages.resolve([locale]).t;
   if (value === null || typeof value !== "number") {
     return { include: false, error: field.required ? t.required({ label: field.label }) : undefined };

@@ -1,12 +1,13 @@
 import { chmod, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { buildEnv } from "../src/config";
 
 const root = resolve(import.meta.dir, "../../..");
-const outputDir = resolve(process.env.CLD_OUTPUT_DIR ?? resolve(root, "packages/cloud-cli/dist"));
-const version = (process.env.CLD_VERSION ?? "0.0.0-dev").replace(/^cli-v/, "");
+const env = buildEnv();
+const outputDir = resolve(env.outputDir ?? resolve(root, "packages/cloud-cli/dist"));
+const version = (env.version ?? "0.0.0-dev").replace(/^cli-v/, "");
 const commit =
-  process.env.CLD_COMMIT ??
-  (Bun.spawnSync(["git", "rev-parse", "--short=12", "HEAD"], { cwd: root }).stdout.toString().trim() || "unknown");
+  env.commit ?? (Bun.spawnSync(["git", "rev-parse", "--short=12", "HEAD"], { cwd: root }).stdout.toString().trim() || "unknown");
 
 const targets = [
   { id: "darwin_arm64", bunTarget: "bun-darwin-arm64" },
@@ -15,7 +16,7 @@ const targets = [
   { id: "linux_x64", bunTarget: "bun-linux-x64-baseline" },
 ] as const;
 
-const requestedTargets = new Set((process.env.CLD_TARGETS ?? targets.map((target) => target.id).join(",")).split(","));
+const requestedTargets = new Set((env.targets ?? targets.map((target) => target.id).join(",")).split(","));
 const selectedTargets = targets.filter((target) => requestedTargets.has(target.id));
 
 if (selectedTargets.length === 0 || selectedTargets.length !== requestedTargets.size) {

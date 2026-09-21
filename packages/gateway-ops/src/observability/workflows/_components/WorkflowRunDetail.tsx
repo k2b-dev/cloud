@@ -1,12 +1,12 @@
-import { DataPanel, DataTable, type DataTableColumn, NoticeCard, StatusBadge, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { formatDurationMs, formatNumber, formatRelative } from "@k2b/cloud/shared";
 import type { WorkflowRunState } from "@k2b/cloud/workflows";
 import type { WorkflowRunDetail, WorkflowStepSummary } from "@k2b/cloud/workflows/store";
+import { DataPanel, DataTable, type DataTableColumn, NoticeCard, StatusBadge, StructuredDataPreview, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../../../messages";
 import { type WorkflowsFilterState, workflowsFilter } from "../filters";
 import { EFFECT_TONE, RUN_TONE, runErrorSummary, STEP_TONE, stepDetail } from "../presentation";
 import WorkflowRunActions from "./WorkflowRunActions.island";
-import { gatewayOpsMessages, type GatewayOpsMessages } from "../../../messages";
 
 const attentionStepFor = (detail: WorkflowRunDetail) =>
   detail.steps.find((step) => step.state === "needs_attention" && (step.effectState === "executing" || step.effectState === "ambiguous"));
@@ -37,34 +37,35 @@ const RunSteps = (props: { steps: WorkflowStepSummary[] }) => {
     { id: "duration", header: t.duration, align: "right" },
   ];
   return (
-  <DataTable
-    rows={props.steps}
-    columns={columns}
-    getRowId={(step) => step.stepKey}
-    density="compact"
-    class="overflow-x-auto"
-    empty={t.noRecordedStep}
-    renderCell={({ row, col, value, render }) => {
-      if (col.id === "step") return <span class="font-mono text-xs">{row.stepKey}</span>;
-      if (col.id === "action") return <span class="text-secondary">{row.action ?? row.kind}</span>;
-      if (col.id === "state") return <StatusBadge tone={STEP_TONE[row.state] ?? "neutral"} label={stateLabel(row.state, t)} variant="dot" />;
-      if (col.id === "effect")
-        return row.effectState ? (
-          <StatusBadge tone={EFFECT_TONE[row.effectState] ?? "neutral"} label={stateLabel(row.effectState, t)} variant="dot" />
-        ) : (
-          <span class="text-dimmed">—</span>
-        );
-      if (col.id === "details")
-        return (
-          <span class="block max-w-[360px] truncate text-secondary" title={stepDetail(row, t.waitingOn)}>
-            {stepDetail(row, t.waitingOn)}
-          </span>
-        );
-      if (col.id === "attempts") return <span class="text-dimmed">{formatNumber(row.attempt + 1, { locale: locale() })}</span>;
-      if (col.id === "duration") return <span class="text-secondary">{formatDurationMs(row.durationMs, { locale: locale() })}</span>;
-      return render(value);
-    }}
-  />
+    <DataTable
+      rows={props.steps}
+      columns={columns}
+      getRowId={(step) => step.stepKey}
+      density="compact"
+      class="overflow-x-auto"
+      empty={t.noRecordedStep}
+      renderCell={({ row, col, value, render }) => {
+        if (col.id === "step") return <span class="font-mono text-xs">{row.stepKey}</span>;
+        if (col.id === "action") return <span class="text-secondary">{row.action ?? row.kind}</span>;
+        if (col.id === "state")
+          return <StatusBadge tone={STEP_TONE[row.state] ?? "neutral"} label={stateLabel(row.state, t)} variant="dot" />;
+        if (col.id === "effect")
+          return row.effectState ? (
+            <StatusBadge tone={EFFECT_TONE[row.effectState] ?? "neutral"} label={stateLabel(row.effectState, t)} variant="dot" />
+          ) : (
+            <span class="text-dimmed">—</span>
+          );
+        if (col.id === "details")
+          return (
+            <span class="block max-w-[360px] truncate text-secondary" title={stepDetail(row, t.waitingOn)}>
+              {stepDetail(row, t.waitingOn)}
+            </span>
+          );
+        if (col.id === "attempts") return <span class="text-dimmed">{formatNumber(row.attempt + 1, { locale: locale() })}</span>;
+        if (col.id === "duration") return <span class="text-secondary">{formatDurationMs(row.durationMs, { locale: locale() })}</span>;
+        return render(value);
+      }}
+    />
   );
 };
 
@@ -109,28 +110,28 @@ const RunOverview = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterS
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
   return (
-  <section>
-    <h3 class="text-xs font-semibold text-primary">{t.runOverview}</h3>
-    <dl class="mt-2 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-      <RunFact label={t.trigger}>{props.detail.eventType ?? t.directInvocation}</RunFact>
-      <RunFact label={t.occurred}>{formatRelative(props.detail.occurredAt, { locale: locale() })}</RunFact>
-      <RunFact label={t.startLag}>{formatDurationMs(props.detail.startLagMs, { locale: locale() })}</RunFact>
-      <RunFact label={t.duration}>{formatDurationMs(props.detail.durationMs, { locale: locale() })}</RunFact>
-      {props.detail.parentRunId ? (
-        <RunFact label={t.parentRun}>
-          <a
-            class="font-mono text-[11px] hover:underline"
-            href={workflowsFilter.build(props.state, { view: "runs", run: props.detail.parentRunId, parent: "" })}
-          >
-            {props.detail.parentRunId}
-          </a>
-        </RunFact>
-      ) : null}
-    </dl>
-    <div class="mt-3">
-      <ChildLinks detail={props.detail} state={props.state} />
-    </div>
-  </section>
+    <section>
+      <h3 class="text-xs font-semibold text-primary">{t.runOverview}</h3>
+      <dl class="mt-2 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
+        <RunFact label={t.trigger}>{props.detail.eventType ?? t.directInvocation}</RunFact>
+        <RunFact label={t.occurred}>{formatRelative(props.detail.occurredAt, { locale: locale() })}</RunFact>
+        <RunFact label={t.startLag}>{formatDurationMs(props.detail.startLagMs, { locale: locale() })}</RunFact>
+        <RunFact label={t.duration}>{formatDurationMs(props.detail.durationMs, { locale: locale() })}</RunFact>
+        {props.detail.parentRunId ? (
+          <RunFact label={t.parentRun}>
+            <a
+              class="font-mono text-[11px] hover:underline"
+              href={workflowsFilter.build(props.state, { view: "runs", run: props.detail.parentRunId, parent: "" })}
+            >
+              {props.detail.parentRunId}
+            </a>
+          </RunFact>
+        ) : null}
+      </dl>
+      <div class="mt-3">
+        <ChildLinks detail={props.detail} state={props.state} />
+      </div>
+    </section>
   );
 };
 
@@ -150,56 +151,62 @@ const Disclosure = (props: { title: string; description: string; children: JSX.E
 const RunPayloads = (props: { detail: WorkflowRunDetail }) => {
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
-  return <Disclosure title={t.inputsOutputs} description={t.invocationDataDescription}>
-    <div class="grid gap-3 lg:grid-cols-2">
-      <StructuredDataPreview title={t.inputs} data={props.detail.inputs} empty={t.noInputs} />
-      <StructuredDataPreview title={t.result} data={props.detail.result} empty={props.detail.resultMessage ?? t.noResult} />
-      {props.detail.eventData ? <StructuredDataPreview title={t.eventPayload} data={props.detail.eventData} class="lg:col-span-2" /> : null}
-    </div>
-  </Disclosure>;
+  return (
+    <Disclosure title={t.inputsOutputs} description={t.invocationDataDescription}>
+      <div class="grid gap-3 lg:grid-cols-2">
+        <StructuredDataPreview title={t.inputs} data={props.detail.inputs} empty={t.noInputs} />
+        <StructuredDataPreview title={t.result} data={props.detail.result} empty={props.detail.resultMessage ?? t.noResult} />
+        {props.detail.eventData ? (
+          <StructuredDataPreview title={t.eventPayload} data={props.detail.eventData} class="lg:col-span-2" />
+        ) : null}
+      </div>
+    </Disclosure>
+  );
 };
 
 const DurableExecutionData = (props: { detail: WorkflowRunDetail }) => {
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
-  return <Disclosure title={t.technicalDetails} description={t.technicalDetailsDescription}>
-    <div class="flex flex-col gap-3">
-      <StructuredDataPreview
-        title={t.identity}
-        data={{
-          runId: props.detail.id,
-          scopeId: props.detail.scopeId,
-          parentRunId: props.detail.parentRunId,
-          revision: props.detail.revision,
-        }}
-      />
-      {props.detail.error ? <StructuredDataPreview title={t.error} data={props.detail.error} /> : null}
-      {Object.keys(props.detail.effectBudget).length > 0 ? (
+  return (
+    <Disclosure title={t.technicalDetails} description={t.technicalDetailsDescription}>
+      <div class="flex flex-col gap-3">
         <StructuredDataPreview
-          title={t.effectBudget}
-          data={Object.fromEntries(
-            Object.entries(props.detail.effectBudget).map(([dimension, limit]) => [
-              dimension,
-              { used: props.detail.effectsUsed[dimension] ?? 0, limit },
-            ]),
-          )}
+          title={t.identity}
+          data={{
+            runId: props.detail.id,
+            scopeId: props.detail.scopeId,
+            parentRunId: props.detail.parentRunId,
+            revision: props.detail.revision,
+          }}
         />
-      ) : null}
-      <StructuredDataPreview
-        title={t.stepJournal}
-        data={props.detail.steps.map((step) => ({
-          stepKey: step.stepKey,
-          sourcePath: step.sourcePath,
-          iterationPath: step.iterationPath,
-          outcome: step.outcome,
-          dependency: step.dependency,
-          effectKey: step.effectKey,
-          effectState: step.effectState,
-        }))}
-      />
-      <StructuredDataPreview title={t.pinnedDefinition} data={{ source: props.detail.source }} />
-    </div>
-  </Disclosure>;
+        {props.detail.error ? <StructuredDataPreview title={t.error} data={props.detail.error} /> : null}
+        {Object.keys(props.detail.effectBudget).length > 0 ? (
+          <StructuredDataPreview
+            title={t.effectBudget}
+            data={Object.fromEntries(
+              Object.entries(props.detail.effectBudget).map(([dimension, limit]) => [
+                dimension,
+                { used: props.detail.effectsUsed[dimension] ?? 0, limit },
+              ]),
+            )}
+          />
+        ) : null}
+        <StructuredDataPreview
+          title={t.stepJournal}
+          data={props.detail.steps.map((step) => ({
+            stepKey: step.stepKey,
+            sourcePath: step.sourcePath,
+            iterationPath: step.iterationPath,
+            outcome: step.outcome,
+            dependency: step.dependency,
+            effectKey: step.effectKey,
+            effectState: step.effectState,
+          }))}
+        />
+        <StructuredDataPreview title={t.pinnedDefinition} data={{ source: props.detail.source }} />
+      </div>
+    </Disclosure>
+  );
 };
 
 const RunOutcome = (props: { detail: WorkflowRunDetail }) => {
@@ -221,9 +228,8 @@ const RunOutcome = (props: { detail: WorkflowRunDetail }) => {
         tone="danger"
         title={error.message}
         detail={
-          [error.code, error.retryable === null ? null : error.retryable ? t.runCanRetry : t.runWillNotRetry]
-            .filter(Boolean)
-            .join(" · ") || undefined
+          [error.code, error.retryable === null ? null : error.retryable ? t.runCanRetry : t.runWillNotRetry].filter(Boolean).join(" · ") ||
+          undefined
         }
       />
     );
@@ -241,9 +247,7 @@ const RunBody = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterState
       </div>
       <div class="px-3 pb-2">
         <h3 class="text-xs font-semibold text-primary">{t.executionSteps}</h3>
-        <p class="text-[10px] text-dimmed">
-          {t.recordedSteps({ count: props.detail.steps.length })}
-        </p>
+        <p class="text-[10px] text-dimmed">{t.recordedSteps({ count: props.detail.steps.length })}</p>
       </div>
       <RunSteps steps={props.detail.steps} />
       <div class="flex flex-col gap-2 px-3 py-3">
@@ -265,7 +269,8 @@ export default function WorkflowRunDetailView(props: { detail: WorkflowRunDetail
         <span class="mt-1 flex flex-wrap items-center gap-2">
           <StatusBadge tone={RUN_TONE[props.detail.state]} label={stateLabel(props.detail.state, t)} />
           <span class="text-dimmed">
-            {props.detail.appId} · {props.detail.mode} · {t.attemptNumber({ count: props.detail.attempt })} · {formatRelative(props.detail.createdAt, { locale: locale() })}
+            {props.detail.appId} · {props.detail.mode} · {t.attemptNumber({ count: props.detail.attempt })} ·{" "}
+            {formatRelative(props.detail.createdAt, { locale: locale() })}
           </span>
         </span>
       }

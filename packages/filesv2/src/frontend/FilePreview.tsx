@@ -7,11 +7,22 @@ import { contentLease, previewFile, previewKind, readPreview } from "./file-prev
 import { useFilesMessages } from "./messages";
 
 /** Mounted for one selected revision; closing it aborts text/PDF reads. */
-type PreviewProps = { variant?: "default" | "plain"; previewLines?: number; onExpandPreview?: () => void; headingScale?: "compact" | "normal"; baseId: string; locationKey?: string; entry: FileEntry; onDownload: () => void };
+type PreviewProps = {
+  variant?: "default" | "plain";
+  previewLines?: number;
+  onExpandPreview?: () => void;
+  headingScale?: "compact" | "normal";
+  baseId: string;
+  locationKey?: string;
+  entry: FileEntry;
+  onDownload: () => void;
+};
 export default function FilePreview(props: PreviewProps) {
-  return <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified])}>
-    {(_key) => <RevisionPreview {...props} />}
-  </Show>;
+  return (
+    <Show keyed when={JSON.stringify([props.baseId, props.locationKey, props.entry.path, props.entry.modified])}>
+      {(_key) => <RevisionPreview {...props} />}
+    </Show>
+  );
 }
 function RevisionPreview(props: PreviewProps) {
   const t = useBrowserMessages();

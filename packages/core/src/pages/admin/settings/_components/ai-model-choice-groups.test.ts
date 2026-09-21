@@ -15,8 +15,9 @@ describe("AI model choice groups", () => {
   });
 
   test("omits groups absent from the current options", () => {
-    expect(
-      aiModelGroupFiltersFor([{ dataBoundary: "hosted", capabilities: ["streaming", "tools"] }]).map((group) => group.label),
-    ).toEqual(["Hosted", "Tools"]);
+    expect(aiModelGroupFiltersFor([{ dataBoundary: "hosted", capabilities: ["streaming", "tools"] }]).map((group) => group.label)).toEqual([
+      "Hosted",
+      "Tools",
+    ]);
   });
 });

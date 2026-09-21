@@ -1,9 +1,10 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { markMetricHoursDirty, runHourlyRollup } from "./metric-rollups";
 
-const dbTest = process.env.PULSE_METRIC_QUERY_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 const HOUR = 3_600_000;
 const deferred = () => Promise.withResolvers<void>();
 const until = async (check: () => Promise<boolean>) => {
@@ -18,12 +19,6 @@ const blockedBy = async (pid: number) => {
   return row.blocked === true;
 };
 const fixture = async (run: (base: string, hour: Date, series: string[]) => Promise<void>) => {
-  const target = new URL(process.env.DATABASE_URL ?? "");
-  if (!["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) || target.pathname !== "/pulse_analytics_test") {
-    throw Error("Metric concurrency tests require loopback pulse_analytics_test");
-  }
-  const [database] = await sql`SELECT current_database() AS name`;
-  if (database.name !== "pulse_analytics_test") throw Error("Wrong disposable database");
   const base = crypto.randomUUID();
   await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${base}::uuid,${newShortId()},'Hour concurrency')`;
   try {

@@ -1,23 +1,24 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import { sql, type SQL } from "bun";
+import { type SQL, sql } from "bun";
+import { env } from "../config/env";
+import { type AccountCategory, accountCategory } from "../contracts/account-categories";
 import {
-  APP_APPROVAL_LIMITS as limits,
   APP_APPROVAL_PATH,
   APP_APPROVAL_PROTOCOL,
-  AppDevicePublicKeySchema,
-  appDeviceProofMessage,
-  appPairingProofMessage,
   type AppDevicePublicKey,
+  AppDevicePublicKeySchema,
   type AppDeviceRequest,
   type AppDeviceView,
   type AppPendingLogin,
+  appDeviceProofMessage,
+  appPairingProofMessage,
+  APP_APPROVAL_LIMITS as limits,
 } from "../contracts/app-approval";
-import { accountCategory, type AccountCategory } from "../contracts/account-categories";
+import { publicCloudOrigin } from "../shared/app-url";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { audit } from "./audit";
-import { decryptValue } from "./settings/crypto";
-import { publicCloudOrigin } from "../shared/app-url";
 import { CORE_SETTINGS } from "./settings/core-settings";
+import { decryptValue } from "./settings/crypto";
 
 export class AppApprovalError extends Error {
   constructor(
@@ -47,13 +48,13 @@ export const readAppApprovalConfig = async (db: SQL = sql, requireAppOrigin = tr
   const adminPairing = values.get("user.app_approval.admin_pairing") ?? false;
   if (typeof enabled !== "boolean" || typeof adminPairing !== "boolean") return reject("UNAVAILABLE", 503);
   // The issuer is the operator's canonical URL, never the request Host header.
-  const rawIssuer = values.get("app.url") ?? process.env.APP_URL ?? "localhost:3000";
+  const rawIssuer = values.get("app.url") ?? env.APP_URL ?? "localhost:3000";
   const rawOrigin = values.get("user.app_approval.origin") ?? CORE_SETTINGS["user.app_approval.origin"].default;
   const origin = (value: unknown) => {
     if (typeof value !== "string") return reject("UNAVAILABLE", 503);
     try {
       const url = new URL(value);
-      const development = process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      const development = env.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
       if (
         (url.protocol !== "https:" && !(url.protocol === "http:" && development)) ||
         url.username ||

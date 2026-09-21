@@ -13,7 +13,12 @@ export async function loadSelectedAiSkills(ids: readonly string[], turnId: strin
     if (!subject || !allowed) throw new Error("The selected Skill requires a model and tool scope that allow Skills.");
     const skill = await aiSkills.loadForTurn(turnId, { id }, subject);
     if (!skill) throw new Error(`Selected Skill ${id} is unavailable or access was revoked.`);
-    loaded.push({ name: skill.name, revision: skill.revision, instructions: skill.instructions, files: skill.files.map(file => file.path) });
+    loaded.push({
+      name: skill.name,
+      revision: skill.revision,
+      instructions: skill.instructions,
+      files: skill.files.map((file) => file.path),
+    });
   }
   return loaded;
 }

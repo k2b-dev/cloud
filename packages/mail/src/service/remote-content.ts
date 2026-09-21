@@ -1,8 +1,8 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { audit } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { RemoteContentRuleInput, RemoteContentRuleScope } from "../contracts";
 import { normalizeEmailAddress, normalizeEmailDomain } from "./address-normalization";

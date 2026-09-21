@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { encryptSecret } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
 import { ConversationGetDataSchema } from "../capability-contracts";
 import { unavailableProviderLimitSnapshot } from "../contracts";
@@ -62,8 +63,7 @@ import { searchMessages } from "./search";
 import { ingestEnvelope } from "./sync-runtime";
 import { createConversationTriageCommands } from "./triage";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 suite("mail PostgreSQL foundation", () => {
   const suffix = crypto.randomUUID().slice(0, 8);

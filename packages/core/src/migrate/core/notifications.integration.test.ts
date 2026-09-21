@@ -1,19 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "./notifications";
 
-const canRun = async (): Promise<boolean> => {
-  if (!process.env.APP_SECRET) return false;
-  try {
-    const [row] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    return Boolean(row?.users);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canRun()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("notification migration", () => {
   test("scrubs legacy terminal payloads and requires payloads for retryable states", async () => {

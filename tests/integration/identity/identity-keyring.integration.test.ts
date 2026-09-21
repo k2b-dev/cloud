@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../../packages/cloud/src/_internal/process-identity";
 import {
@@ -15,8 +15,9 @@ import { readIdentityKeyEncryptionConfig } from "../../../packages/cloud/src/ser
 import { migrate } from "../../../packages/core/src/migrate/core/auth";
 import { migrate as migrateLogging } from "../../../packages/core/src/migrate/core/logging";
 import { migrate as migrateSettings } from "../../../packages/core/src/migrate/core/settings";
+import { suiteFor, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 
-const suite = process.env.CLOUD_IDENTITY_KEYRING_INTEGRATION === "1" ? describe : describe.skip;
+const suite = suiteFor("database");
 const keyA = "10".repeat(32);
 const keyB = "20".repeat(32);
 
@@ -27,10 +28,9 @@ suite("Core identity key ring", () => {
     next: process.env.CLOUD_IDENTITY_NEXT_KEY,
   };
 
+  let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   beforeAll(async () => {
-    if (!new URL(process.env.DATABASE_URL!).pathname.startsWith("/cloud_identity_keyring_")) {
-      throw new Error("Identity keyring integration requires a disposable cloud_identity_keyring_ database");
-    }
+    fresh = await useFreshDatabase("identity_keyring");
     bindProcessApplicationId("core");
     process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = keyA;
     delete process.env.CLOUD_IDENTITY_PREVIOUS_KEY;
@@ -40,7 +40,8 @@ suite("Core identity key ring", () => {
     await migrateLogging();
   }, 30_000);
 
-  afterAll(() => {
+  afterAll(async () => {
+    await fresh?.drop();
     clearProcessApplicationId();
     for (const [name, value] of [
       ["CLOUD_IDENTITY_KEY_ENCRYPTION_KEY", original.current],

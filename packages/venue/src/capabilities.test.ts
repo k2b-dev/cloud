@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityExecutionContext,
@@ -6,8 +7,8 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { sql } from "bun";
+import { testFor } from "../../../scripts/fixtures/test-infra";
 import { venueCapabilities } from "./capabilities";
 import { VenueListDataSchema } from "./capability-contracts";
 import { newShortId } from "./lib/short-id";
@@ -78,17 +79,6 @@ const invokeAction = (localId: string, input: unknown, context: CapabilityExecut
   });
 };
 
-const canUseDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<{ venues: string | null; users: string | null }[]>`
-      SELECT to_regclass('venue.venues')::text AS venues, to_regclass('auth.users')::text AS users
-    `;
-    return Boolean(row?.venues && row.users);
-  } catch {
-    return false;
-  }
-};
-
 const futureDateForWeekday = (weekday: number): string => {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + 1);
@@ -96,7 +86,7 @@ const futureDateForWeekday = (weekday: number): string => {
   return date.toISOString().slice(0, 10);
 };
 
-const postgresTest = (await canUseDatabase()) ? test : test.skip;
+const postgresTest = testFor("database");
 
 describe("Venue capabilities", () => {
   test("declares the curated agent surface", () => {

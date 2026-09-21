@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { resolveChatFileLink } from "./chat-file-link";
 import { workspaceSelectionFromHref } from "../artifacts/workspace-state";
+import { resolveChatFileLink } from "./chat-file-link";
 
 const current = "http://localhost:3000/app/assistant?conversation=qxGsYe";
 const paths = ["/files/inventar-uebersicht.md", "/Bericht mit ü.md"];
@@ -15,7 +15,16 @@ test("known file paths and same-origin URLs open a reloadable chat workspace", (
 });
 
 test("unrelated links and files absent from this chat are unchanged", () => {
-  for (const href of ["/app/grids/base", "/files/missing.md", "https://external.test/files/inventar-uebersicht.md", "//external.test/files/inventar-uebersicht.md", "javascript:alert(1)", "#section", "/files/inventar-uebersicht.md?download=1", "/bad%FF"]) {
+  for (const href of [
+    "/app/grids/base",
+    "/files/missing.md",
+    "https://external.test/files/inventar-uebersicht.md",
+    "//external.test/files/inventar-uebersicht.md",
+    "javascript:alert(1)",
+    "#section",
+    "/files/inventar-uebersicht.md?download=1",
+    "/bad%FF",
+  ]) {
     expect(resolveChatFileLink(href, current, "qxGsYe", paths)).toBeNull();
   }
   expect(resolveChatFileLink(paths[0]!, current, "other", [])).toBeNull();

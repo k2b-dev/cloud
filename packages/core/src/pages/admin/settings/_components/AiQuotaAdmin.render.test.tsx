@@ -2,11 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AiQuotaConfig } from "@k2b/cloud/shared";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { AiQuotaConfig } from "@k2b/cloud/shared";
 import { quotaFixture } from "./ai-quota-fixture";
+
 const root = mkdtempSync(join(tmpdir(), "quota-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));

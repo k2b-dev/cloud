@@ -678,7 +678,9 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__main[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__main-pane[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__main-pane")).not.toContain("border-right");
-      expect(css).toMatch(/\.k2b-app-workspace__main-pane:has\(~\s*\[data-workspace-main-region\]\)[^{]*\{border-right:1px solid var\(--k2b-border\)/);
+      expect(css).toMatch(
+        /\.k2b-app-workspace__main-pane:has\(~\s*\[data-workspace-main-region\]\)[^{]*\{border-right:1px solid var\(--k2b-border\)/,
+      );
       expect(rule(".k2b-app-workspace__sidebar-item")).toContain("--k2b-sidebar-item-depth");
       expect(rule(".k2b-app-workspace__sidebar-icon-action")).toContain("width:100%");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("background:var(--k2b-surface-muted)");

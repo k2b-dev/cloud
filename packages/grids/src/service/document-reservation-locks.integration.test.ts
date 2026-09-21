@@ -1,5 +1,6 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { jsonDocumentProfile } from "../document-profiles/table";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -9,7 +10,7 @@ import { enable as enableHistory } from "./durable-history";
 import { enable as enableFinalization, finalize } from "./record-finalization";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   const [db] = await sql<Array<{ name: string }>>`SELECT current_database() AS name`;
   if (!db?.name.startsWith("grids_verify_")) throw new Error("Document reservation locks require an isolated grids_verify_ database");
   await migrate();

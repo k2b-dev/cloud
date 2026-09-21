@@ -1,9 +1,16 @@
-import { ScrollArea, type ScrollAreaProps } from "./ScrollArea";
 import { createSignal, createUniqueId, type JSX, onCleanup, onMount } from "solid-js";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
+import { ScrollArea, type ScrollAreaProps } from "./ScrollArea";
 
 /** A non-modal, interactive row preview. Native popover owns light dismissal. */
-export function SidebarItemPreview(props: { label: string; children: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: ScrollAreaProps["viewportSize"]; onOpenChange?: (open: boolean) => void }) {
+export function SidebarItemPreview(props: {
+  label: string;
+  children: JSX.Element | ((close: () => void) => JSX.Element);
+  trigger?: "action" | "row";
+  align?: "center" | "end";
+  viewportSize?: ScrollAreaProps["viewportSize"];
+  onOpenChange?: (open: boolean) => void;
+}) {
   const id = `sidebar-preview-${createUniqueId()}`;
   const [open, setOpen] = createSignal(false);
   let button!: HTMLButtonElement;
@@ -13,8 +20,14 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pinned = false;
   let dismissed = false;
-  const clear = () => { clearTimeout(timer); timer = undefined; };
-  const close = () => { clear(); panel.hidePopover(); };
+  const clear = () => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  const close = () => {
+    clear();
+    panel.hidePopover();
+  };
   const position = () => {
     const target = row ?? button;
     positionTooltipSurface(panel, target, "right");
@@ -30,13 +43,17 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
     panel.showPopover();
     position();
   };
-  const enter = () => { clear(); if (!dismissed && !open()) timer = setTimeout(show, 250); };
+  const enter = () => {
+    clear();
+    if (!dismissed && !open()) timer = setTimeout(show, 250);
+  };
   const leave = () => {
     clear();
     dismissed = false;
-    if (!pinned) timer = setTimeout(() => {
-      if (!panel.contains(document.activeElement) && !row?.contains(document.activeElement)) close();
-    }, 180);
+    if (!pinned)
+      timer = setTimeout(() => {
+        if (!panel.contains(document.activeElement) && !row?.contains(document.activeElement)) close();
+      }, 180);
   };
   const dismiss = () => {
     const restore = panel.contains(document.activeElement);
@@ -46,8 +63,14 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
   };
   const toggle = () => {
     clear();
-    if (open() && pinned) { dismiss(); return; }
-    dismissed = false; pinned = true; show(); panel.focus();
+    if (open() && pinned) {
+      dismiss();
+      return;
+    }
+    dismissed = false;
+    pinned = true;
+    show();
+    panel.focus();
   };
   onMount(() => {
     row = button.closest<HTMLElement>(".k2b-app-workspace__sidebar-item");
@@ -59,7 +82,9 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
       main?.setAttribute("aria-expanded", "false");
       main?.addEventListener("click", toggle);
     }
-    const pointerEnter = (event: PointerEvent) => { if (event.pointerType === "mouse") enter(); };
+    const pointerEnter = (event: PointerEvent) => {
+      if (event.pointerType === "mouse") enter();
+    };
     const focusOut = (event: FocusEvent) => {
       const next = event.relatedTarget;
       if (next instanceof Node && (panel.contains(next) || row?.contains(next))) return;
@@ -70,7 +95,9 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
       if (event.key !== "Escape" || !open()) return;
       dismiss();
     };
-    const reposition = () => { if (open()) position(); };
+    const reposition = () => {
+      if (open()) position();
+    };
     row?.addEventListener("pointerenter", pointerEnter);
     row?.addEventListener("pointerleave", leave);
     row?.addEventListener("focusin", enter);
@@ -82,7 +109,8 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
     const observer = new ResizeObserver(reposition);
     observer.observe(panel);
     onCleanup(() => {
-      clear(); observer.disconnect();
+      clear();
+      observer.disconnect();
       main?.removeEventListener("click", toggle);
       row?.removeEventListener("pointerenter", pointerEnter);
       row?.removeEventListener("pointerleave", leave);
@@ -94,17 +122,44 @@ export function SidebarItemPreview(props: { label: string; children: JSX.Element
       window.removeEventListener("scroll", reposition, true);
     });
   });
-  return <>
-    <button ref={button} type="button" class="k2b-app-workspace__sidebar-item-action k2b-app-workspace__sidebar-preview-trigger"
-      data-visibility="hover" aria-label={props.label} aria-haspopup="dialog" aria-expanded={open()} aria-controls={id}
-      data-row-trigger={props.trigger === "row" ? "true" : undefined}
-      onClick={toggle}><i class={props.trigger === "row" ? "ti ti-chevron-right" : "ti ti-info-circle"} aria-hidden="true" /></button>
-    <div ref={panel} id={id} popover="auto" role="dialog" aria-label={props.label} tabIndex={-1}
-      class="k2b-app-workspace__sidebar-preview" onPointerEnter={clear} onPointerLeave={leave}
-      onToggle={(event) => { const visible = event.newState === "open"; setOpen(visible); main?.setAttribute("aria-expanded", String(visible)); props.onOpenChange?.(visible); if (!visible) pinned = false; }}>
-      <ScrollArea viewportSize={props.viewportSize} class="k2b-app-workspace__sidebar-preview-body">
-        {typeof props.children === "function" ? props.children(dismiss) : props.children}
-      </ScrollArea>
-    </div>
-  </>;
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        class="k2b-app-workspace__sidebar-item-action k2b-app-workspace__sidebar-preview-trigger"
+        data-visibility="hover"
+        aria-label={props.label}
+        aria-haspopup="dialog"
+        aria-expanded={open()}
+        aria-controls={id}
+        data-row-trigger={props.trigger === "row" ? "true" : undefined}
+        onClick={toggle}
+      >
+        <i class={props.trigger === "row" ? "ti ti-chevron-right" : "ti ti-info-circle"} aria-hidden="true" />
+      </button>
+      <div
+        ref={panel}
+        id={id}
+        popover="auto"
+        role="dialog"
+        aria-label={props.label}
+        tabIndex={-1}
+        class="k2b-app-workspace__sidebar-preview"
+        onPointerEnter={clear}
+        onPointerLeave={leave}
+        onToggle={(event) => {
+          const visible = event.newState === "open";
+          setOpen(visible);
+          main?.setAttribute("aria-expanded", String(visible));
+          props.onOpenChange?.(visible);
+          if (!visible) pinned = false;
+        }}
+      >
+        <ScrollArea viewportSize={props.viewportSize} class="k2b-app-workspace__sidebar-preview-body">
+          {typeof props.children === "function" ? props.children(dismiss) : props.children}
+        </ScrollArea>
+      </div>
+    </>
+  );
 }

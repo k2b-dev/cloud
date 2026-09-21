@@ -1,5 +1,5 @@
-import { hasCapabilityTable } from "./capability-result";
 import type { AiTurnBlock } from "../protocol";
+import { hasCapabilityTable } from "./capability-result";
 import { isCardToolName, isSurveyToolName, isTextEditorToolName } from "./message-utils";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -8,7 +8,13 @@ type Group = { kind: "tools"; blocks: Tool[] } | { kind: "block"; block: AiTurnB
 export function isFailedTool(tool: Tool): boolean {
   if (tool.isError || tool.status === "failed" || tool.status === "rejected") return true;
   const result = tool.result;
-  return ["code_run","code_inspect","code_interact"].includes(tool.name) && result !== null && typeof result === "object" && "status" in result && result.status === "error";
+  return (
+    ["code_run", "code_inspect", "code_interact"].includes(tool.name) &&
+    result !== null &&
+    typeof result === "object" &&
+    "status" in result &&
+    result.status === "error"
+  );
 }
 
 /** Visible content and interactive decisions are boundaries; model request boundaries are not. */

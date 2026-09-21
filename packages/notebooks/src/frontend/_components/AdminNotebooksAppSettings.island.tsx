@@ -12,7 +12,18 @@
 
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, dialogCore, NumberInput, PanelDialog, Placeholder, panelDialogOptions, TextInput, toast, useLocale } from "@k2b/ui";
+import {
+  Button,
+  ButtonLink,
+  dialogCore,
+  NumberInput,
+  PanelDialog,
+  Placeholder,
+  panelDialogOptions,
+  TextInput,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { notebooksAdminMessages } from "../admin-messages";
@@ -209,12 +220,7 @@ const SettingsBody = (props: { close: () => void }) => {
 
   return (
     <PanelDialog>
-      <PanelDialog.Header
-        title={t().notebookSettings}
-        subtitle={t().settingsSubtitle}
-        icon="ti ti-settings"
-        close={close}
-      />
+      <PanelDialog.Header title={t().notebookSettings} subtitle={t().settingsSubtitle} icon="ti ti-settings" close={close} />
       <PanelDialog.Body>
         <PanelDialog.Section title={t().settings} subtitle={t().settingsSectionSubtitle} icon="ti ti-adjustments">
           <Show when={!entries.loading()} fallback={<Placeholder state="loading" align="left" title={t().loadingSettings} />}>

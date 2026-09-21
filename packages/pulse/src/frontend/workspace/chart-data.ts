@@ -3,7 +3,7 @@ import type { DataTableColumn } from "@k2b/ui";
 import type { MetricQueryPoint } from "../../contracts";
 import { intervalToMs } from "../../query-dsl/interval";
 import { isCalendarBucket } from "../../query-dsl/time-window";
-import { compactDate, compactDateWithDelta, compactDay, formatQueryBucket } from "./date-format";
+import { compactDate, formatQueryBucket } from "./date-format";
 import { formatValue } from "./metric-format";
 
 export const metricPointGroupLabel = (point: MetricQueryPoint): string =>

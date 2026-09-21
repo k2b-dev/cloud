@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import type { ClientRequest, IncomingMessage } from "node:http";
-import { aiFileStore } from "./files-store";
 import {
   buildPinnedFetchFileRequestOptions,
   CloudAiFetchFileInputSchema,
   downloadPublicFile,
   runCloudAiFetchFile,
 } from "./fetch-file-tool";
+import { aiFileStore } from "./files-store";
 
 const publicAddress = { address: "203.0.114.10", family: 4 as const };
 

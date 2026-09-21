@@ -38,6 +38,7 @@ export function safeQuery(sql: string, parameterCount?: number) {
     if (next?.word === "(" && /^[a-z]/.test(current.word) && !functions.has(current.word) && !syntaxBeforeParen.has(current.word))
       throw new Error("DB_SQL_UNSUPPORTED");
   }
-  if (parameterCount !== undefined && tokens.filter(token => token.word === "?" && !token.quoted).length !== parameterCount) throw new Error("DB_SQL_PARAMS");
+  if (parameterCount !== undefined && tokens.filter((token) => token.word === "?" && !token.quoted).length !== parameterCount)
+    throw new Error("DB_SQL_PARAMS");
   return `SELECT * FROM (${sql}) LIMIT 1001`;
 }

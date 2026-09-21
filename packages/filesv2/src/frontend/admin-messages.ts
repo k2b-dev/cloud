@@ -29,10 +29,12 @@ export const adminMessages = i18n.define({
       archives: "Archive",
       settings: "Settings",
       shares: "Shares",
-      sharesDescription: "Manage public links across all storage locations, including those whose owners no longer have access. Link secrets are shown only when created.",
+      sharesDescription:
+        "Manage public links across all storage locations, including those whose owners no longer have access. Link secrets are shown only when created.",
       unresolvedUploads: "Unresolved uploads",
       reservedBudget: "Budget stays reserved until the transfer is known",
-      unresolvedUploadsHint: "A missing Filegate receipt does not prove an upload failed. These reservations keep counting towards the inbox budget. Check the listed transfer on its original storage server; the periodic reconciliation releases only confirmed expired or aborted sessions.",
+      unresolvedUploadsHint:
+        "A missing Filegate receipt does not prove an upload failed. These reservations keep counting towards the inbox budget. Check the listed transfer on its original storage server; the periodic reconciliation releases only confirmed expired or aborted sessions.",
       noUnresolvedUploads: "No unresolved uploads",
       uploadStorageChanged: "Original storage is no longer configured",
       uploadOpeningUnknown: "Session creation was not confirmed",
@@ -96,7 +98,8 @@ export const adminMessages = i18n.define({
       unixExecution: "Unix execution",
       statisticsUnavailable: "No filesystem scan is available. File, folder and size totals are unknown; Refresh requests a new scan.",
       statisticsPartial: "The last scan was incomplete. File, folder and size totals remain unknown; Refresh requests a new scan.",
-      statisticsUnverified: "Cached index statistics do not confirm the current filesystem contents. File, folder and size totals remain unknown.",
+      statisticsUnverified:
+        "Cached index statistics do not confirm the current filesystem contents. File, folder and size totals remain unknown.",
       statisticsObserved: "Totals reflect the last completed filesystem scan. Later changes may not be included.",
       lastObserved: "Last complete scan",
       loadingVersions: "Loading versions…",
@@ -157,10 +160,12 @@ export const adminMessages = i18n.define({
       archives: "Archiv",
       settings: "Einstellungen",
       shares: "Freigaben",
-      sharesDescription: "Öffentliche Links aller Ablagen verwalten, auch wenn ihre Ersteller keinen Zugriff mehr haben. Link-Geheimnisse werden nur beim Erstellen angezeigt.",
+      sharesDescription:
+        "Öffentliche Links aller Ablagen verwalten, auch wenn ihre Ersteller keinen Zugriff mehr haben. Link-Geheimnisse werden nur beim Erstellen angezeigt.",
       unresolvedUploads: "Ungeklärte Uploads",
       reservedBudget: "Das Budget bleibt bis zur Klärung reserviert",
-      unresolvedUploadsHint: "Ein fehlender Filegate-Beleg beweist nicht, dass ein Upload fehlgeschlagen ist. Diese Reservierungen zählen weiter zum Inbox-Budget. Prüfe den angezeigten Transfer auf seinem ursprünglichen Speicherserver; der regelmäßige Abgleich gibt nur bestätigt abgelaufene oder abgebrochene Sitzungen frei.",
+      unresolvedUploadsHint:
+        "Ein fehlender Filegate-Beleg beweist nicht, dass ein Upload fehlgeschlagen ist. Diese Reservierungen zählen weiter zum Inbox-Budget. Prüfe den angezeigten Transfer auf seinem ursprünglichen Speicherserver; der regelmäßige Abgleich gibt nur bestätigt abgelaufene oder abgebrochene Sitzungen frei.",
       noUnresolvedUploads: "Keine ungeklärten Uploads",
       uploadStorageChanged: "Ursprünglicher Speicher ist nicht mehr konfiguriert",
       uploadOpeningUnknown: "Sitzungserstellung wurde nicht bestätigt",
@@ -223,9 +228,12 @@ export const adminMessages = i18n.define({
       versions: "Versionen",
       managedWrites: "Atomare Konfliktprüfung",
       unixExecution: "Unix-Ausführung",
-      statisticsUnavailable: "Es liegt keine Dateisystemprüfung vor. Datei-, Ordneranzahl und Gesamtgröße sind unbekannt; Aktualisieren fordert eine neue Prüfung an.",
-      statisticsPartial: "Die letzte Dateisystemprüfung war unvollständig. Datei-, Ordneranzahl und Gesamtgröße bleiben unbekannt; Aktualisieren fordert eine neue Prüfung an.",
-      statisticsUnverified: "Zwischengespeicherte Indexwerte bestätigen den aktuellen Dateisysteminhalt nicht. Datei-, Ordneranzahl und Gesamtgröße bleiben unbekannt.",
+      statisticsUnavailable:
+        "Es liegt keine Dateisystemprüfung vor. Datei-, Ordneranzahl und Gesamtgröße sind unbekannt; Aktualisieren fordert eine neue Prüfung an.",
+      statisticsPartial:
+        "Die letzte Dateisystemprüfung war unvollständig. Datei-, Ordneranzahl und Gesamtgröße bleiben unbekannt; Aktualisieren fordert eine neue Prüfung an.",
+      statisticsUnverified:
+        "Zwischengespeicherte Indexwerte bestätigen den aktuellen Dateisysteminhalt nicht. Datei-, Ordneranzahl und Gesamtgröße bleiben unbekannt.",
       statisticsObserved: "Die Werte stammen aus der letzten vollständigen Dateisystemprüfung. Spätere Änderungen können fehlen.",
       lastObserved: "Letzte vollständige Prüfung",
       loadingVersions: "Versionen werden geladen…",
@@ -234,7 +242,8 @@ export const adminMessages = i18n.define({
       versionComment: "Kommentar",
       versionPinned: "Angeheftet",
       deleteVersion: "Version endgültig löschen",
-      confirmDeleteVersion: "Diese gespeicherte Version endgültig löschen? Sie kann nicht wiederhergestellt werden. Die aktuelle Datei bleibt unverändert.",
+      confirmDeleteVersion:
+        "Diese gespeicherte Version endgültig löschen? Sie kann nicht wiederhergestellt werden. Die aktuelle Datei bleibt unverändert.",
       versionsGuidance: "Nur Administratoren können gespeicherte Versionen endgültig löschen. Die aktuelle Datei bleibt dabei unverändert.",
       transfers: "Aktive Uploads",
       available: "Verfügbar",
@@ -249,7 +258,8 @@ export const adminMessages = i18n.define({
       collaboraExplanation:
         "Collabora Online öffnet Textdokumente, Tabellen und Präsentationen zur gemeinsamen Bearbeitung direkt in Files. Jedes Speichern ersetzt die Datei in Filegate über diese Anwendung; Browser laden den Editor von der Collabora-Adresse, und Collabora muss diese Cloud erreichen.",
       collaboraUrl: "Collabora-Adresse",
-      collaboraUrlHint: "Adresse, von der Browser den Editor laden, zum Beispiel https://office.example.org. Leer lassen, um die Bearbeitung zu deaktivieren.",
+      collaboraUrlHint:
+        "Adresse, von der Browser den Editor laden, zum Beispiel https://office.example.org. Leer lassen, um die Bearbeitung zu deaktivieren.",
       collaboraInternalUrl: "Interne Collabora-Adresse",
       collaboraInternalUrlHint: "Nur wenn diese Anwendung Collabora über eine andere Adresse erreicht als Browser.",
       collaboraWopiOrigin: "Cloud-Adresse für Collabora",

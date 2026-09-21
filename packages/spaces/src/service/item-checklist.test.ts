@@ -1,20 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import * as checklist from "./item-checklist";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ checklist: string | null }[]>`
-      SELECT to_regclass('spaces.item_checklist_entries')::text AS checklist
-    `;
-    return Boolean(row?.checklist);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 const actor = { kind: "system" as const, id: null };
 
 suite("Spaces task checklist", () => {

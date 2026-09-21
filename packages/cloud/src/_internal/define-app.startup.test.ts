@@ -88,6 +88,8 @@ describe("application startup readiness", () => {
           expect(await (await server.fetch(new Request("http://startup-test/_cloud/ready"))).json()).toEqual({
             status: "ready",
             appId: "startup-test",
+            version: "0.0.0-local",
+            release: "development",
           });
         }
       } finally {

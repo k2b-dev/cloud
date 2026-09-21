@@ -1,3 +1,4 @@
+import { env } from "@k2b/cloud/config";
 import { z } from "zod";
 
 export type OAuthUserGrantReference =
@@ -39,7 +40,7 @@ export class OAuthAuthorityGrantRejectedError extends Error {
 }
 
 const coreOrigin = (): string => {
-  const value = process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim();
+  const value = env.CLOUD_CORE_INTERNAL_ORIGIN;
   if (!value) throw new Error("CLOUD_CORE_INTERNAL_ORIGIN is required for Core OAuth issuance");
   const url = new URL(value);
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("CLOUD_CORE_INTERNAL_ORIGIN must use HTTP or HTTPS");
@@ -49,7 +50,7 @@ const coreOrigin = (): string => {
 export const probeOAuthTokenAuthority = async (
   options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
 ): Promise<void> => {
-  const brokerSecret = options.brokerSecret ?? process.env.CLOUD_OAUTH_BROKER_SECRET?.trim();
+  const brokerSecret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
   if (!brokerSecret || !/^[a-fA-F0-9]{64}$/.test(brokerSecret)) {
     throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
   }
@@ -71,7 +72,7 @@ export const issueOAuthTokenBatch = async (
   options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
 ): Promise<string[]> => {
   if (requests.length < 1 || requests.length > 2) throw new Error("OAuth authority accepts one or two tokens per batch");
-  const brokerSecret = options.brokerSecret ?? process.env.CLOUD_OAUTH_BROKER_SECRET?.trim();
+  const brokerSecret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
   if (!brokerSecret || !/^[a-fA-F0-9]{64}$/.test(brokerSecret)) {
     throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
   }

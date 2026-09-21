@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { registerSettings } from "./defaults";
 import * as settings from "./index";
 
@@ -12,17 +13,8 @@ import * as settings from "./index";
  * end, so no key any app reads is involved.
  */
 
-const canUseSettingsTable = async () => {
-  try {
-    const [row] = await sql<{ entries: string | null }[]>`SELECT to_regclass('settings.entries')::text AS entries`;
-    return Boolean(row?.entries);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseSettingsTable()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const probeKey = () => `test.transaction_probe_${crypto.randomUUID().replaceAll("-", "")}`;
 

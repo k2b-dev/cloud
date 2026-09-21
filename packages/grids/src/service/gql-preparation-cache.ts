@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "@k2b/cloud/config";
 import { RedisClient } from "bun";
 import { z } from "zod";
 import { stableCustomAppStringify } from "../custom-apps/stable-value";
@@ -99,7 +100,7 @@ let reconnectAfter = 0;
 const connectedClient = (): RedisClient | null => {
   if (Date.now() < reconnectAfter) return null;
   if (!client) {
-    const url = process.env.VALKEY_URL || process.env.REDIS_URL;
+    const url = env.REDIS_URL;
     if (!url) return null;
     client = new RedisClient(url, { enableOfflineQueue: false });
   }
@@ -157,5 +158,5 @@ export const gqlPreparation = createGqlPreparationCache(
       if (connection) await withPreparationCacheDeadline(connection, () => connection.set(key, value, "EX", TTL_SECONDS));
     },
   },
-  process.env.APP_SECRET ?? "",
+  env.APP_SECRET,
 );

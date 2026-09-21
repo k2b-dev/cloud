@@ -1,5 +1,6 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import { toPublicWorkflowPayloads } from "../api/workflow-api-shared";
 import { migrate } from "../migrate";
@@ -11,7 +12,7 @@ import { findWorkflowDocumentDataForStep, loadWorkflowQueryData, persistWorkflow
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   await migrateCoreWorkflows();
   await migrate();
 });

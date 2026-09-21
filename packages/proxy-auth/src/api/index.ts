@@ -7,8 +7,8 @@ import {
   CreateProxyAuthClientSchema,
   ErrorResponseSchema,
   MessageResponseSchema,
-  ProxyAuthClientSchema,
   ProxyAuthClientParamSchema,
+  ProxyAuthClientSchema,
   UpdateProxyAuthClientSchema,
 } from "@/contracts";
 import { proxyAuthService } from "../service";

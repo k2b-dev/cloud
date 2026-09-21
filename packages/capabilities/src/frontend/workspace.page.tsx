@@ -1,8 +1,7 @@
-import CapabilitiesNavigation from "./CapabilitiesNavigation.island";
-import { AppWorkspace, DataTable, type DataTableColumn, IconButtonLink, Pagination, Placeholder, StatusBadge } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { AppWorkspace, DataTable, type DataTableColumn, IconButtonLink, Pagination, Placeholder, StatusBadge } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { type CapabilityAppSummary, loadCapabilityWorkspace, type SelectedCapability, selectCapability } from "../catalog";
 import { ssr } from "../config";
@@ -14,6 +13,7 @@ import {
   paginateCapabilityOperations,
   parseCapabilityTableState,
 } from "../workspace-data";
+import CapabilitiesNavigation from "./CapabilitiesNavigation.island";
 import CapabilitiesWorkspace from "./CapabilitiesWorkspace.island";
 import CapabilitySearchButton from "./CapabilitySearchButton.island";
 import { capabilityUiMessages } from "./messages";

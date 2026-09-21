@@ -1,3 +1,4 @@
+import { markdown } from "@k2b/cloud/shared";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
@@ -8,11 +9,11 @@ import {
   MarkdownView,
   openSpotlightSearch,
   Placeholder,
-  prompts,ScrollArea,
+  prompts,
+  ScrollArea,
   SegmentedControl,
   useLocale,
 } from "@k2b/ui";
-import { markdown } from "@k2b/cloud/shared";
 import { diffLines } from "diff";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";

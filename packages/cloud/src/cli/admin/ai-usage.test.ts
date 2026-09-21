@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { defineCliCommands } from "../commands";
 import type { CloudCliContext, CloudCliFlags } from "../index";
 import { aiUsageCommands } from "./ai-usage";
+
 const module = defineCliCommands({ name: "admin", summary: "AI usage", commands: aiUsageCommands });
 const invoke = async (args: string[], flags: CloudCliFlags, result: unknown, output: "json" | "jsonl" = "json") => {
   const paths: string[] = [];

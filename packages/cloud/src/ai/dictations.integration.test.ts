@@ -1,22 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { createAccess } from "../server/services/access";
-import { aiDictations } from "./dictations";
 import { processAiDictation } from "./dictation-runtime";
+import { aiDictations } from "./dictations";
 import { aiFileStore } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 import type { AiResolvedAudioModel } from "./transcription";
 
-let available = false;
-try {
-  await sql`SELECT 1 FROM auth.users LIMIT 1`;
+const suite = databaseSuite();
+beforeAll(async () => {
+  if (!testInfra.database) return;
   await migrateCloudAi();
-  available = true;
-} catch {
-  /* reported as skipped */
-}
-const suite = available ? describe : describe.skip;
+});
 const audio = new Uint8Array(44);
 audio.set(new TextEncoder().encode("RIFF"));
 audio.set(new TextEncoder().encode("WAVE"), 8);
@@ -80,15 +77,25 @@ suite("durable dictation", () => {
       expect(file.dictationRecordedAt).toBe(original.dictationRecordedAt);
       await expect(aiFileStore.write({ ...input, path: file.path, origin: "assistant" })).rejects.toThrow("Cannot overwrite");
       await aiFileStore.copyToConversation({ sourceConversationId: input.conversationId, targetConversationId: target.id });
-      expect((await aiFileStore.stat({ conversationId: target.id, path: file.path }))?.dictationRecordedAt).toBe(original.dictationRecordedAt);
+      expect((await aiFileStore.stat({ conversationId: target.id, path: file.path }))?.dictationRecordedAt).toBe(
+        original.dictationRecordedAt,
+      );
       const { turn } = await aiConversations.submitChatTurn({
-        conversationId: input.conversationId, modelProfileId: "test",
-        runConfig: { kind: "chat", input: "Inspect recording", toolSource: { kind: "none" }, files: { attached: [file], available: [file, upload], total: 2 } },
+        conversationId: input.conversationId,
+        modelProfileId: "test",
+        runConfig: {
+          kind: "chat",
+          input: "Inspect recording",
+          toolSource: { kind: "none" },
+          files: { attached: [file], available: [file, upload], total: 2 },
+        },
         userMessage: { role: "user", content: ["Inspect recording"] },
       });
       await aiFileStore.write({ ...input, path: file.path, origin: "user", allowUserOverwrite: true });
       expect((await aiFileStore.stat({ ...input, path: file.path }))?.dictationRecordedAt).toBeUndefined();
-      expect((await aiFileStore.readTurnFile({ turnId: turn.id, path: file.path }))?.dictationRecordedAt).toBe(original.dictationRecordedAt);
+      expect((await aiFileStore.readTurnFile({ turnId: turn.id, path: file.path }))?.dictationRecordedAt).toBe(
+        original.dictationRecordedAt,
+      );
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${target.id}`;
       await cleanup();

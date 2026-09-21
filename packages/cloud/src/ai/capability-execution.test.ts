@@ -4,11 +4,10 @@ import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import type { dispatchCapability } from "../api/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
+import * as categoryPolicy from "../services/account-category-policy";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import type { AiConversation } from "./types";
-
-import * as categoryPolicy from "../services/account-category-policy";
 
 afterEach(() => mock.restore());
 
@@ -41,7 +40,10 @@ const conversation = (ownerId: string): AiConversation => ({
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: "2026-09-14T00:00:00.000Z",
+  archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -98,9 +100,14 @@ describe("AI capability authority", () => {
     expect(resolved).toEqual({ actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } });
     expect(allowed).toHaveBeenCalledWith(current);
     allowed.mockResolvedValueOnce(false);
-    await expect(resolveAiCapabilityActor({
-      conversationId: "conversation-1", persistedActor: { kind: "user", user: current }, store, getUser: async () => current,
-    })).rejects.toThrow("category is disabled");
+    await expect(
+      resolveAiCapabilityActor({
+        conversationId: "conversation-1",
+        persistedActor: { kind: "user", user: current },
+        store,
+        getUser: async () => current,
+      }),
+    ).rejects.toThrow("category is disabled");
 
     await expect(
       resolveAiCapabilityActor({

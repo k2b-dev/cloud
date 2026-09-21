@@ -1,11 +1,11 @@
-import { beginAiCall, finishAiCall } from "./inference-calls";
 import { openAICompatibleTranscription, type TranscriptionProvider } from "@k2b/nessi/ai";
-import { trace, logger, type TraceContext } from "../services/logging";
 import { coreSettings } from "../services";
-import { getAiCredential } from "./credentials";
+import { logger, type TraceContext, trace } from "../services/logging";
 import { AI_AUDIO_MAX_BYTES, inspectAiAudio } from "./audio-format";
+import { getAiCredential } from "./credentials";
+import { beginAiCall, finishAiCall } from "./inference-calls";
 import { readAiSettingsState, selectAiModelProfile } from "./settings";
-import { safelyRecordStructuredRun, type AiUsageAttribution } from "./structured-runs";
+import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
 import type { AiDataBoundary, AiModelProfile } from "./types";
 
 export const AI_AUDIO_MODEL_SETTING_KEY = "ai.audio_model_id";

@@ -1,6 +1,6 @@
-import type { StatusTone } from "@k2b/ui";
-import type { CapabilityOrigin } from "@k2b/cloud/contracts";
 import type { CapabilityExecutionStatus, CapabilityValueMeta } from "@k2b/cloud/capabilities/store";
+import type { CapabilityOrigin } from "@k2b/cloud/contracts";
+import type { StatusTone } from "@k2b/ui";
 
 /**
  * `denied` and `rejected` are refusals rather than defects, so they stay amber

@@ -1,5 +1,8 @@
-import { AssistantProjectSkills } from "./AssistantProjectSkills";
-import { AssistantProjectApps } from "./AssistantProjectApps";
+import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@k2b/cloud/ai";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
+import { coreClient } from "@k2b/cloud/clients/core";
+import { formatDateTime } from "@k2b/cloud/shared";
 import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { query as solidQuery } from "@k2b/stdlib/solid";
 import {
@@ -14,12 +17,6 @@ import {
   ScrollArea,
   toast,
 } from "@k2b/ui";
-import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@k2b/cloud/ai";
-import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { assistantProjectSearchOptions } from "./assistant-search";
-import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
-import { coreClient } from "@k2b/cloud/clients/core";
-import { formatDateTime } from "@k2b/cloud/shared";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantProjectContextSnapshot } from "../project-context";
@@ -41,9 +38,12 @@ import {
   openAssistantMarkdown,
 } from "./AssistantContextContent";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
+import { AssistantProjectApps } from "./AssistantProjectApps";
 import { openAssistantProjectSettingsDialog } from "./AssistantProjectSettingsDialog";
+import { AssistantProjectSkills } from "./AssistantProjectSkills";
 import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
+import { assistantProjectSearchOptions } from "./assistant-search";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type Props = {
@@ -120,7 +120,9 @@ export default function AssistantProjectView(props: Props) {
         : 0;
       setLightbox({ images, index });
     } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : text("Images could not be loaded."), { title: text("Could not open images") });
+      void prompts.error(error instanceof Error ? error.message : text("Images could not be loaded."), {
+        title: text("Could not open images"),
+      });
     }
   };
 
@@ -181,7 +183,8 @@ export default function AssistantProjectView(props: Props) {
   };
 
   const deleteKnowledge = async (item: AiProjectKnowledge) => {
-    if (!(await prompts.confirm(copy().removeFromProject({ name: item.title }), { title: text("Delete knowledge"), variant: "danger" }))) return;
+    if (!(await prompts.confirm(copy().removeFromProject({ name: item.title }), { title: text("Delete knowledge"), variant: "danger" })))
+      return;
     await runContextAction(`knowledge:${item.id}`, "Knowledge deleted", () =>
       coreClient.ai.projects[":projectId"].knowledge[":knowledgeId"].$delete({
         param: { projectId: props.project.id, knowledgeId: item.id },
@@ -257,7 +260,8 @@ export default function AssistantProjectView(props: Props) {
 
   const deleteReference = async (reference: NonNullable<AssistantProjectContextSnapshot["references"]>[number]) => {
     const label = reference.label || `${reference.ref.type} · ${reference.ref.id}`;
-    if (!(await prompts.confirm(copy().removeFromProject({ name: label }), { title: text("Remove Cloud reference"), variant: "danger" }))) return;
+    if (!(await prompts.confirm(copy().removeFromProject({ name: label }), { title: text("Remove Cloud reference"), variant: "danger" })))
+      return;
     await runContextAction(`reference:${reference.id}`, "Cloud reference removed", () =>
       coreClient.ai.projects[":projectId"].references[":referenceId"].$delete({
         param: { projectId: props.project.id, referenceId: reference.id },
@@ -269,7 +273,9 @@ export default function AssistantProjectView(props: Props) {
     try {
       await downloadAssistantContextFile(file);
     } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : text("File could not be downloaded."), { title: text("Could not download file") });
+      void prompts.error(error instanceof Error ? error.message : text("File could not be downloaded."), {
+        title: text("Could not download file"),
+      });
     }
   };
 
@@ -377,7 +383,12 @@ export default function AssistantProjectView(props: Props) {
                   </h2>
                   <span class="text-xs tabular-nums text-dimmed">{chats.pages()[0]?.total ?? chatItems().length}</span>
                 </div>
-                <IconButton size="xs" variant="subtle" label={copy().searchChatsIn({ project: props.project.name })} onClick={() => void searchChats()}>
+                <IconButton
+                  size="xs"
+                  variant="subtle"
+                  label={copy().searchChatsIn({ project: props.project.name })}
+                  onClick={() => void searchChats()}
+                >
                   <i class="ti ti-search" aria-hidden="true" />
                 </IconButton>
               </header>
@@ -560,7 +571,10 @@ export default function AssistantProjectView(props: Props) {
                       </Show>
                     }
                   >
-                    <Show when={regularFiles().length > 0} fallback={<AssistantContextEmpty>{text("No Project files yet.")}</AssistantContextEmpty>}>
+                    <Show
+                      when={regularFiles().length > 0}
+                      fallback={<AssistantContextEmpty>{text("No Project files yet.")}</AssistantContextEmpty>}
+                    >
                       <AssistantContextRows>
                         <For each={regularFiles().slice(0, CONTEXT_PREVIEW_LIMIT)}>
                           {(file) => (

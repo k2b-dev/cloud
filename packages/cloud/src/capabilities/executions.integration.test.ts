@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import {
   listCapabilityExecutions,
   migrateCloudCapabilities,
@@ -8,12 +9,15 @@ import {
   summarizeCapabilityExecutions,
 } from "./executions";
 
-// This suite migrates and writes data. It must never use a shared developer database.
-const databaseUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
-const isolated =
-  ["127.0.0.1", "localhost"].includes(databaseUrl.hostname) && /^\/cloud_capabilities_verify_[a-z0-9_]+$/.test(databaseUrl.pathname);
-if (isolated) await migrateCloudCapabilities();
-const suite = isolated ? describe : describe.skip;
+const suite = databaseSuite();
+// Summaries and pruning cover the whole execution table, so the file owns a private database.
+beforeAll(async () => {
+  if (!testInfra.database) return;
+  await useFreshDatabase("capability_executions");
+  const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
+  await runCoreSetup();
+  await migrateCloudCapabilities();
+});
 
 const at = (minutesAgo: number): Date => new Date(Date.now() - minutesAgo * 60_000);
 

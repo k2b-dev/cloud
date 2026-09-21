@@ -6,10 +6,7 @@
  * do, on whose behalf, and did it work" in one place. The page is read-only:
  * the dispatcher owns every row.
  */
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
+
 import {
   type CapabilityExecution,
   type CapabilityExecutionGroup,
@@ -17,18 +14,22 @@ import {
   listCapabilityExecutions,
   summarizeCapabilityExecutions,
 } from "@k2b/cloud/capabilities/store";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
+import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../../config";
 import CapabilitiesFilterBar from "./_components/CapabilitiesFilterBar.island";
 import ExecutionDetail from "./_components/ExecutionDetail";
 import {
-  capabilitiesFilter,
   type CapabilitiesFilterState,
+  capabilitiesFilter,
   EXECUTIONS_PER_PAGE,
   executionFilter,
   ORIGIN_FILTERS,
   STATUS_FILTERS,
-  windowStart,
   WINDOWS,
+  windowStart,
 } from "./filters";
 import { statusLabel } from "./labels";
 import { capabilityOpsMessages } from "./ops-messages";

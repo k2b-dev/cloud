@@ -529,10 +529,14 @@ export const queryEventAggregateData = async (
         AND event.dimensions @> (${dimensions}::jsonb #>> '{}')::jsonb
         AND event.ts >= ${since} AND event.ts < ${range.to}
     )
-    ${unique ? sql`, identities AS (
+    ${
+      unique
+        ? sql`, identities AS (
       SELECT bucket,group_data,source_identity,${identity} AS identity FROM scoped
       GROUP BY bucket,group_data,source_identity,${identity}
-    )` : sql``}
+    )`
+        : sql``
+    }
     SELECT ${query.bucket === "all" && groupBy.length === 0 ? sql`${range.from}::timestamptz AS bucket` : sql`bucket`},
       ${eventAggregateExpression(aggregation)} AS value,
       ${query.bucket === "all" && groupBy.length === 0 ? sql`'{}'::jsonb AS group_data` : sql`group_data`}

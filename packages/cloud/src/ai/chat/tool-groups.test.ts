@@ -35,20 +35,37 @@ test("summary deduplicates categories without claiming success for a failed test
   expect(summary).toBe("Read files, Worked with code · 1 failed");
 });
 
-test("a completed code tool reporting a runtime error counts as failed work",()=>{
-  expect(summarizeToolGroup([{id:"code",kind:"tool",name:"code_run",callId:"code",status:"completed",result:{status:"error",error:"Invalid UI"}}],"en")).toContain("1 failed");
+test("a completed code tool reporting a runtime error counts as failed work", () => {
+  expect(
+    summarizeToolGroup(
+      [
+        {
+          id: "code",
+          kind: "tool",
+          name: "code_run",
+          callId: "code",
+          status: "completed",
+          result: { status: "error", error: "Invalid UI" },
+        },
+      ],
+      "en",
+    ),
+  ).toContain("1 failed");
 });
 
 test("chat visualizations remain visible outside tool disclosures", () => {
   const groups = groupToolBlocks([tool("run", "code_run"), tool("view", "code_present"), tool("read")]);
-  expect(groups.map(group => group.kind)).toEqual(["tools", "block", "tools"]);
+  expect(groups.map((group) => group.kind)).toEqual(["tools", "block", "tools"]);
 });
 
 test("only successful requested tables interrupt compact tool summaries", () => {
-  const result = { data: { rows: [{ name: "Visible" }] }, presentation: { kind: "table", rowsPath: ["rows"], columns: [{ path: ["name"], label: "Name" }] } };
+  const result = {
+    data: { rows: [{ name: "Visible" }] },
+    presentation: { kind: "table", rowsPath: ["rows"], columns: [{ path: ["name"], label: "Name" }] },
+  };
   const table = { ...tool("table", "grids__query__gql_dot_execute"), result };
   const groups = groupToolBlocks([tool("before"), table, tool("after")]);
-  expect(groups.map(group => group.kind)).toEqual(["tools", "block", "tools"]);
+  expect(groups.map((group) => group.kind)).toEqual(["tools", "block", "tools"]);
   expect(groupToolBlocks([{ ...table, result: { data: result.data } }])[0]?.kind).toBe("tools");
   expect(groupToolBlocks([{ ...table, isError: true, status: "failed" }])[0]?.kind).toBe("tools");
   expect(groupToolBlocks([{ ...table, status: "running" }])[0]?.kind).toBe("tools");

@@ -1,6 +1,6 @@
-import { ssr } from "../config";
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { ssr } from "../config";
 import spaceDetailPage from "./[id]/page";
 import spacesAdminPage from "./admin";
 import spacesPage from "./page";

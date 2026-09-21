@@ -1,20 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { createPgOutbox } from "./outbox";
 
 const TABLE = "ai.live_invalidation_outbox";
 
-const canUseOutboxTable = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<{ outbox: string | null }[]>`SELECT to_regclass(${TABLE})::text AS outbox`;
-    return Boolean(row?.outbox);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseOutboxTable()) ? describe : describe.skip;
+const suite = databaseSuite();
+// Row counts below cover the whole outbox table, so the file owns a private database.
+beforeAll(async () => {
+  if (!testInfra.database) return;
+  await useFreshDatabase("outbox");
+  const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
+  await runCoreSetup();
+});
 
 type Row = { id: string; audience_user_id: string; attempts: number };
 

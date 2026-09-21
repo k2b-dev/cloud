@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { redis } from "bun";
-import * as platformServices from "@k2b/cloud/services";
 import type { User } from "@k2b/cloud/contracts";
+import * as platformServices from "@k2b/cloud/services";
 import { oauthTokens } from "@k2b/cloud/services";
+import { redis } from "bun";
 import { generateSpecs } from "hono-openapi";
 import { conversationContext, publicResources } from "../service";
 import app from ".";

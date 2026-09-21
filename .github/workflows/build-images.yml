@@ -1,0 +1,200 @@
+name: Build images
+
+# Reusable: builds every release image natively per architecture, pushes by
+# digest, merges the platform digests into one index per image, attests the
+# provenance of that index, and publishes `release-images.json`.
+# Tags are always immutable: `sha-<12>` plus the extra `inputs.tags`.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Cloud version embedded as CLOUD_VERSION
+        required: true
+        type: string
+      release:
+        description: Immutable release tag embedded as CLOUD_RELEASE (sha-<12>)
+        required: true
+        type: string
+      tags:
+        description: JSON array of extra image tags (e.g. ["v0.8.0"])
+        required: false
+        type: string
+        default: "[]"
+      push:
+        description: Push images and write the registry build cache
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.2
+
+jobs:
+  list:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      images: ${{ steps.list.outputs.images }}
+      owner: ${{ steps.list.outputs.owner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - id: list
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          echo "images=$(bun scripts/workspace.ts images | jq -c .)" >> "$GITHUB_OUTPUT"
+          echo "owner=${OWNER,,}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: list
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        image: ${{ fromJSON(needs.list.outputs.images) }}
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          provenance: mode=max
+          sbom: true
+          build-args: |
+            APP_ID=${{ matrix.image.appId || '' }}
+            CLOUD_VERSION=${{ inputs.version }}
+            CLOUD_RELEASE=${{ inputs.release }}
+            CLOUD_DOCS_SITE_URL=https://cloud.k2b.dev
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=${{ inputs.push }},name=ghcr.io/${{ needs.list.outputs.owner }}/${{ matrix.image.image }}
+          cache-from: type=registry,ref=ghcr.io/${{ needs.list.outputs.owner }}/cloud-buildcache:${{ matrix.image.image }}-${{ matrix.arch }}
+          cache-to: ${{ inputs.push && format('type=registry,mode=max,ref=ghcr.io/{0}/cloud-buildcache:{1}-{2}', needs.list.outputs.owner, matrix.image.image, matrix.arch) || '' }}
+      - name: Record digest
+        if: inputs.push
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/digest"
+          printf '%s' "$DIGEST" > "$RUNNER_TEMP/digest/${{ matrix.arch }}"
+      - if: inputs.push
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digest-${{ matrix.image.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digest/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: [list, build]
+    if: inputs.push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.list.outputs.images) }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: digest-${{ matrix.image.image }}-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: merge
+        env:
+          IMAGE: ghcr.io/${{ needs.list.outputs.owner }}/${{ matrix.image.image }}
+          RELEASE: ${{ inputs.release }}
+          EXTRA_TAGS: ${{ inputs.tags }}
+        run: |
+          set -euo pipefail
+          amd64=$(cat "$RUNNER_TEMP/digests/amd64")
+          arm64=$(cat "$RUNNER_TEMP/digests/arm64")
+          tags=$(jq -nc --arg release "$RELEASE" --argjson extra "$EXTRA_TAGS" '[$release] + $extra | unique')
+          [[ "$(jq -r '.[]' <<<"$tags" | grep -cE '^(main|latest)$')" == "0" ]] || { echo "Mutable tags are never published." >&2; exit 1; }
+          args=()
+          while read -r tag; do args+=(--tag "$IMAGE:$tag"); done < <(jq -r '.[]' <<<"$tags")
+          docker buildx imagetools create "${args[@]}" "$IMAGE@$amd64" "$IMAGE@$arm64"
+          digest=$(docker buildx imagetools inspect "$IMAGE:$RELEASE" --format '{{json .Manifest.Digest}}' | jq -r .)
+          platforms=$(docker buildx imagetools inspect "$IMAGE@$digest" --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}} {{end}}')
+          for platform in linux/amd64 linux/arm64; do
+            grep -q "$platform" <<<"$platforms" || { echo "$IMAGE@$digest lacks $platform" >&2; exit 1; }
+          done
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          jq -nc --arg image "${{ matrix.image.image }}" --arg digest "$digest" --argjson tags "$tags" \
+            '{image: $image, digest: $digest, tags: $tags}' > "$RUNNER_TEMP/merged.json"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ needs.list.outputs.owner }}/${{ matrix.image.image }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: merged-${{ matrix.image.image }}
+          path: ${{ runner.temp }}/merged.json
+          if-no-files-found: error
+          retention-days: 1
+
+  release-set:
+    needs: [list, merge]
+    if: inputs.push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: merged-*
+          path: ${{ runner.temp }}/merged
+      - name: Assemble release-images.json and verify the complete set
+        env:
+          IMAGES: ${{ needs.list.outputs.images }}
+        run: |
+          set -euo pipefail
+          jq -s 'sort_by(.image)' "$RUNNER_TEMP"/merged/*/merged.json > release-images.json
+          expected=$(jq -r '.[].image' <<<"$IMAGES" | sort)
+          actual=$(jq -r '.[].image' release-images.json | sort)
+          diff <(echo "$expected") <(echo "$actual") || { echo "release-images.json does not cover every workspace image." >&2; exit 1; }
+          jq . release-images.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-images
+          path: release-images.json
+          if-no-files-found: error
+          retention-days: 30

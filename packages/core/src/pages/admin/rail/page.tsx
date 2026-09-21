@@ -2,8 +2,8 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { railShortcuts } from "@k2b/cloud/services";
 import { AdminLayout, getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
-import RailAdmin from "./RailAdmin.island";
 import { railAdminMessages } from "./messages";
+import RailAdmin from "./RailAdmin.island";
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);

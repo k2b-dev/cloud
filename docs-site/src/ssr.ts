@@ -1,5 +1,5 @@
 import type { ThemeMode } from "@k2b/fibel";
-import { fibelSsrTemplate, type FibelSsrTemplateOptions } from "@k2b/fibel/solid";
+import { type FibelSsrTemplateOptions, fibelSsrTemplate } from "@k2b/fibel/solid";
 import { createConfig } from "@k2b/ssr";
 import { renderFontPreloads } from "./font-assets";
 import { siteUrl } from "./site-config";

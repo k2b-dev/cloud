@@ -1,8 +1,8 @@
-import { spaceCommandMessages } from "../../../../commands";
-import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { createEffect, onCleanup } from "solid-js";
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
+import { createEffect, onCleanup } from "solid-js";
+import { spaceCommandMessages } from "../../../../commands";
 import { useSpaceMessages } from "../../messages";
 
 type Props = {

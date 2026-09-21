@@ -1,4 +1,3 @@
-import { clearProcessApplicationId, getProcessApplicationId } from "./process-identity";
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
 import { type Handler, Hono } from "hono";
@@ -16,6 +15,7 @@ import * as settingsSnapshot from "../services/settings/snapshot";
 import { getRuntimeContext } from "../ssr/runtime";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
+import { clearProcessApplicationId, getProcessApplicationId } from "./process-identity";
 import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 

@@ -2,9 +2,9 @@
 // so the typed client is a cloud-lib export and is identical regardless of
 // which container loads it.
 
+import { coreClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, NoticeCard, prompts, SettingsSection, toast } from "@k2b/ui";
-import { coreClient } from "@k2b/cloud/clients/core";
 import { createSignal, Show } from "solid-js";
 import { useOperationMessages } from "./account-operations-messages";
 

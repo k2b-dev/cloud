@@ -1,5 +1,6 @@
 import { useLocale } from "@k2b/ui";
 import { quotaMessages } from "./ai-quota-messages";
+
 const icons = {
   user: "ti ti-user",
   group: "ti ti-users",

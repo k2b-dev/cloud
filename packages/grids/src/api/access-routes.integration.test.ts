@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { err, fail, ok } from "@k2b/stdlib";
 import type { AuthContext } from "@k2b/cloud/server";
+import { err, fail, ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createAccessEntryRoutes } from "./access-entry-routes";
@@ -112,7 +113,7 @@ const cleanup = async (fixture: Fixture) => {
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("access routes integration", () => {

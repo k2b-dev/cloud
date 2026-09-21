@@ -1,11 +1,12 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn } from "bun:test";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { PRESENTATION_MODES } from "../lib/presentation-mode";
 import { migrate } from "../migrate";
 import * as notebooks from "./notebooks";
 import * as workspaceEvents from "./workspace-events";
 
-const postgresTest = process.env.NOTEBOOKS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 const notebookId = crypto.randomUUID();
 const accessId = crypto.randomUUID();
 const shortId = Math.random().toString(36).slice(2, 8).padEnd(6, "x");
@@ -13,7 +14,7 @@ const name = `Presentation test ${shortId}`;
 let published: ReturnType<typeof spyOn<typeof workspaceEvents, "notebookUpdated">> | undefined;
 
 beforeAll(async () => {
-  if (process.env.NOTEBOOKS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   await migrate();
   await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${shortId}, ${name})`;
   await sql`INSERT INTO auth.access (id, permission) VALUES (${accessId}::uuid, 'read')`;
@@ -23,7 +24,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   published?.mockRestore();
-  if (process.env.NOTEBOOKS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebookId}::uuid`;
   await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
 }, 30_000);

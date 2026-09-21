@@ -1,11 +1,12 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { err, fail, ok } from "@k2b/cloud/server";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { createDashboard, listDashboards } from "./dashboard-management";
 import { getDashboardSnapshot } from "./public-dashboard-snapshot";
 
-const postgresTest = process.env.PULSE_DASHBOARD_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 postgresTest(
   "persists only a JSON object source, renders its compiled query, and exposes refresh failures",
   async () => {

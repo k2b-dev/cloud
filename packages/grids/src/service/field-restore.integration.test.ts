@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { fieldUniqueIndexName } from "./field-indexes";
 import * as fields from "./fields";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 describe("field restore Postgres integration", () => {

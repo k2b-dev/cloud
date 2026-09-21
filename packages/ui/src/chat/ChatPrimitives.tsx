@@ -1,9 +1,9 @@
 import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
-import { Dropdown, type DropdownItem } from "../actions/Dropdown";
-import { ChatContextPopup } from "./ChatContextPopup";
 import { Button } from "../actions/Button";
+import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
+import { ChatContextPopup } from "./ChatContextPopup";
 import { executeChatAction } from "./chat-behavior";
 import type { ChatAction, ChatActivityTone, ChatAttachment, ChatContextUsageData, ChatMessageStatus, ChatRole } from "./types";
 
@@ -342,13 +342,18 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
         data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
         style={style()}
         open={open()}
-        onToggle={(event) => { setExpanded(event.currentTarget.open); props.onOpenChange?.(event.currentTarget.open); }}
+        onToggle={(event) => {
+          setExpanded(event.currentTarget.open);
+          props.onOpenChange?.(event.currentTarget.open);
+        }}
         aria-busy={props.busy ? "true" : undefined}
       >
         <summary class="k2b-chat-activity__row">
           <ActivityContent {...props} disclosure />
         </summary>
-        <div class="k2b-chat-activity__body">{props.renderBody ? <Show when={open() ? props.renderBody : undefined}>{(render) => render()()}</Show> : props.children}</div>
+        <div class="k2b-chat-activity__body">
+          {props.renderBody ? <Show when={open() ? props.renderBody : undefined}>{(render) => render()()}</Show> : props.children}
+        </div>
       </details>
     </Show>
   );

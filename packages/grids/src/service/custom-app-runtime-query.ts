@@ -6,10 +6,10 @@ import type { DslQueryContextValues } from "../query-dsl/parameters";
 import { previewDslQuery } from "../query-dsl/preview";
 import type { DslResultCursor } from "../query-dsl/result-cursor";
 import { collectDslPlanTableIds } from "../query-dsl/source-plan";
-import { compileCustomAppQuery } from "./custom-app-query";
 import type { SqlClient } from "./audit";
-import type { ExpansionViewer } from "./relations";
+import { compileCustomAppQuery } from "./custom-app-query";
 import { relationLabelFields } from "./relation-targets";
+import type { ExpansionViewer } from "./relations";
 
 type PublishedQueryCapability = {
   sourceHash?: string;

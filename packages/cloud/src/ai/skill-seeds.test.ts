@@ -14,12 +14,15 @@ describe("Cloud AI Skill seeds", () => {
     expect(seedOnce).toHaveBeenCalledTimes(11);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 47 });
+    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 48 });
     expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
-    expect(inputs.find(candidate => candidate.name === "assistant-data-analysis")).toMatchObject({ key: "assistant:data-analysis", version: 6 });
+    expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")).toMatchObject({
+      key: "assistant:data-analysis",
+      version: 6,
+    });
     expect(codeMode?.instructions).toContain("todo_write");
-    expect(inputs.find(candidate => candidate.name === "assistant-data-analysis")?.instructions).toContain("todo_write");
-    expect(codeMode?.references?.map(reference => reference.path)).toContain("references/analytics.md");
+    expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")?.instructions).toContain("todo_write");
+    expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/analytics.md");
     expect(inputs.some((candidate) => candidate.name === "cloud-kit")).toBeFalse();
     const input = inputs.find((candidate) => candidate.name === "skill-creator");
     expect(input).toMatchObject({ key: "core:skill-creator", name: "skill-creator" });
@@ -36,15 +39,10 @@ describe("Cloud AI Skill seeds", () => {
 
     const assistant = inputs.find((candidate) => candidate.name === "cloud-assistant");
     expect(assistant).toMatchObject({ key: "assistant:cloud-assistant", name: "cloud-assistant" });
-    for (const text of [
-      "runtime Chat ID",
-      "core.ai.chat.search",
-      "core.ai.chat.message",
-      "scheduled-tasks",
-    ]) {
+    for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.message", "scheduled-tasks"]) {
       expect(assistant?.instructions).toContain(text);
     }
-    const scheduled = inputs.find(candidate => candidate.name === "scheduled-tasks");
+    const scheduled = inputs.find((candidate) => candidate.name === "scheduled-tasks");
     expect(scheduled).toMatchObject({ key: "assistant:scheduled-tasks", version: 1 });
     expect(scheduled?.description).toContain("one-time reminders");
     expect(scheduled?.instructions).toContain("fixedInput");

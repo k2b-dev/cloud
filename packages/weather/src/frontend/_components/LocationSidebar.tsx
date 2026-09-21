@@ -1,8 +1,8 @@
-import WeatherNavigation from "../WeatherNavigation.island";
-import { AppWorkspace, useLocale } from "@k2b/ui";
 import { type WeatherData, weatherService } from "@k2b/cloud/services";
+import { AppWorkspace, useLocale } from "@k2b/ui";
 import { weatherMessages } from "../../messages";
 import AddLocationButton from "../AddLocation.island";
+import WeatherNavigation from "../WeatherNavigation.island";
 
 type Location = {
   id: string;

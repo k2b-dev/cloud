@@ -1,11 +1,11 @@
+import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { createNavigation, type NavigationItem, useLocale } from "@k2b/ui";
-import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { createSignal } from "solid-js";
-import { createContactsSearch, spotlightMessages } from "./contact-spotlight";
-import { createBookController } from "./create-book";
 import { openBookSettingsDialog } from "./BookSettingsDialog";
 import { bookMessages } from "./book-messages";
+import { createContactsSearch, spotlightMessages } from "./contact-spotlight";
+import { createBookController } from "./create-book";
 
 export default function ContactsNavigation(props: { items: readonly NavigationItem[]; label: string }) {
   const locale = useLocale();

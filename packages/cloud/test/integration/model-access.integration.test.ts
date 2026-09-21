@@ -1,17 +1,14 @@
-import { beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
-import type { Principal } from "../../src/contracts/shared";
-import { decryptValue, encryptValue } from "../../src/services/settings/crypto";
+import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
+import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
 import { AiModelAccessConflict, aiModelAccess } from "../../src/ai/model-access";
 import { migrateAiModelAccess } from "../../src/ai/model-access-migrate";
+import type { Principal } from "../../src/contracts/shared";
+import { decryptValue, encryptValue } from "../../src/services/settings/crypto";
 
-const databaseUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
-// This suite owns a fresh model-access namespace, never a shared development database.
-const isolated =
-  ["localhost", "127.0.0.1"].includes(databaseUrl.hostname) && /^\/cloud_ai_model_access_verify_[a-z0-9_]+$/.test(databaseUrl.pathname);
-const enabled = process.env.CLOUD_AI_MODEL_ACCESS_TEST === "1";
-if (enabled && !isolated) throw new Error("Model-access tests require a dedicated local cloud_ai_model_access_verify_* database");
-const suite = enabled ? describe : describe.skip;
+const suite = databaseSuite();
 const profiles = ["open", "limited"].map((id) => ({ id, label: id, provider: "ollama", model: id }));
 const draft = <T extends Principal>(principal: T) => ({ principal, permission: "read" as const });
 
@@ -21,12 +18,18 @@ suite("Assistant model grants using normal Cloud access", () => {
   let groupId: string;
   let serviceAccountId: string;
   const subject = () => ({ type: "user" as const, userId });
+  let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
+  afterAll(async () => {
+    await sql.close();
+    await fresh?.drop();
+  });
   const sync = (ids: string[], changes: Parameters<typeof aiModelAccess.syncProfiles>[1] = []) =>
     sql.begin((tx) => aiModelAccess.syncProfiles(ids, changes, tx));
 
   beforeAll(async () => {
-    const [existing] = await sql<{ resource: string | null }[]>`SELECT to_regclass('ai.model_access_resources')::text AS resource`;
-    if (existing?.resource) throw new Error("Model-access fixture requires a fresh dedicated database.");
+    fresh = await useFreshDatabase("model_access");
+    await migrateAuth();
+    await migrateSettings();
     await sql`CREATE SCHEMA IF NOT EXISTS ai`;
     const value = await encryptValue(JSON.stringify(profiles));
     await sql`INSERT INTO settings.entries (key, value) VALUES ('ai.model_profiles_json', ${value})`;

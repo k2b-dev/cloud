@@ -11,8 +11,8 @@
 
 import { redis, sql } from "bun";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";
-import { SETTINGS, SETTINGS_MAP, resolveSettingPresentation, type SettingDef, validateSettingValue } from "./defaults";
-import { bulkRead, deleteKey, invalidateSettingsCache, readKey, writeKey } from "./store";
+import { resolveSettingPresentation, SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
+import { bulkRead, deleteKey, readKey, writeKey } from "./store";
 
 type SqlClient = typeof sql;
 
@@ -175,8 +175,8 @@ export async function remove(key: string, db?: SqlClient): Promise<void> {
 
 import type { SettingEntry } from "../../contracts/shared";
 
-export { invalidateSettingsCache } from "./store";
 export type { SettingEntry } from "../../contracts/shared";
+export { invalidateSettingsCache } from "./store";
 
 export async function getAll(locale?: string): Promise<SettingEntry[]> {
   // Determine which keys have a custom row in Postgres (vs. falling back to

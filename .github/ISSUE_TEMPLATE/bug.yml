@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in Cloud behaves incorrectly.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Cloud version
+      description: The `version` reported by `/_cloud/ready` of the affected application, or the `sha-` tag for a main-branch build.
+      placeholder: v0.7.0
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: Application
+      placeholder: mail, grids, core, gateway
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. Observe …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the response, log line, or screenshot. Remove secrets and personal data.
+    validations:
+      required: true

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import type { sql } from "bun";
 
 /** Mirror directory-owned attributes, including missing values; never apply local defaults. */
 export const mirrorIpaPosix = async (

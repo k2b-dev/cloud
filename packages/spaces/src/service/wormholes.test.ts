@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import type { PermissionLevel } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { actorForUser, create, transfer, type WormholeActor } from "./wormholes";
 
@@ -16,19 +17,8 @@ type Fixture = {
   accessIds: string[];
 };
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ wormholes: string | null; users: string | null }[]>`
-      SELECT to_regclass('spaces.wormholes')::text AS wormholes, to_regclass('auth.users')::text AS users
-    `;
-    return Boolean(row?.wormholes && row.users);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async (suffix: string, label: string) => {
   const [row] = await sql<{ id: string }[]>`

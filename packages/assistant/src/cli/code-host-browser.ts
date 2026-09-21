@@ -2,6 +2,7 @@ import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
 import { type Browser, chromium } from "playwright";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import type {} from "../artifacts/runtime/cli-host";
+import { appEnv } from "../env";
 import { HOST_HEADER } from "./code-host-http";
 
 type Call = Parameters<AiFrontendToolHandler>[0];
@@ -12,7 +13,7 @@ export async function createBrowserCodeHost(
   const browser: Browser = await chromium
     .launch({
       headless: true,
-      ...(process.env.CLOUD_CLI_CHROMIUM ? { executablePath: process.env.CLOUD_CLI_CHROMIUM } : {}),
+      ...(appEnv.CLOUD_CLI_CHROMIUM ? { executablePath: appEnv.CLOUD_CLI_CHROMIUM } : {}),
     })
     .catch(() => {
       throw new Error(

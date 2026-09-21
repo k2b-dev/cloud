@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Window as HappyWindow } from "happy-dom";
-import { APP_WORKSPACE_SIDEBAR_COLLAPSED } from "./app-workspace-state";
 import { installAppWorkspaceController } from "./app-workspace-controller";
+import { APP_WORKSPACE_SIDEBAR_COLLAPSED } from "./app-workspace-state";
 
 type Frame = (time: number) => void;
 type Rect = { height: number; width: number };

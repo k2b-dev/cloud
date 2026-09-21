@@ -1,8 +1,8 @@
 import { Hono, type MiddlewareHandler } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
+import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
-import { RailAdminSchema, RailAdminInputSchema } from "../contracts/rail-admin";
+import { RailAdminInputSchema, RailAdminSchema } from "../contracts/rail-admin";
 import { RAIL_PREFERENCES_MAX_BYTES } from "../contracts/rail-preferences";
 import { type AuthContext, auth, jsonResponse, requiresAdmin, v } from "../server";
 import { RailAdminError, railShortcuts } from "../services/rail-shortcuts";

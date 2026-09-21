@@ -1,3 +1,4 @@
+import { reviewCapabilityAction } from "@k2b/cloud/capabilities";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -16,7 +17,6 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { reviewCapabilityAction } from "@k2b/cloud/capabilities";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { ActionReviewContent, confirmActionRun } from "../action-review";
 import type { SelectedCapability } from "../catalog";
@@ -208,14 +208,7 @@ function ResponsePanel(props: {
           fallback={
             <Show
               when={props.visible() ? outcome() : null}
-              fallback={
-                <Placeholder
-                  variant="panel"
-                  icon="ti ti-player-play"
-                  title={t().ready}
-                  description={t().readyDescription}
-                />
-              }
+              fallback={<Placeholder variant="panel" icon="ti ti-player-play" title={t().ready} description={t().readyDescription} />}
             >
               {(value) => <OutcomeContent outcome={value()} selection={props.selection} />}
             </Show>
@@ -251,10 +244,7 @@ function OutcomeContent(props: { outcome: CapabilityInvocationOutcome; selection
           {(details) => {
             const data = details();
             return (
-              <StructuredDataPreview
-                title={t().details}
-                data={isStructuredDataValue(data) ? data : { error: t().invalidErrorDetails }}
-              />
+              <StructuredDataPreview title={t().details} data={isStructuredDataValue(data) ? data : { error: t().invalidErrorDetails }} />
             );
           }}
         </Show>

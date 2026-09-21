@@ -2,9 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import type { CapabilityCatalogClientResult, CapabilityClientResult } from "@k2b/cloud/capabilities";
 import { createConfig } from "@k2b/ssr";
 import type { FileSource } from "@k2b/ui";
-import type { CapabilityCatalogClientResult, CapabilityClientResult } from "@k2b/cloud/capabilities";
 
 const root = mkdtempSync(resolve(tmpdir(), "assistant-context-content-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -28,12 +28,24 @@ describe("Assistant context files", () => {
     const originalFetch = globalThis.fetch;
     const recordedAt = "2026-09-11T11:42:00Z";
     const files = [
-      { path: "/renamed.wav", size: 44, mediaType: "audio/wav", origin: "user", updatedAt: recordedAt, dictationRecordedAt: recordedAt, version: 1 },
+      {
+        path: "/renamed.wav",
+        size: 44,
+        mediaType: "audio/wav",
+        origin: "user",
+        updatedAt: recordedAt,
+        dictationRecordedAt: recordedAt,
+        version: 1,
+      },
       { path: "/dictation-manual.m4a", size: 44, mediaType: "audio/mp4", origin: "user", updatedAt: recordedAt, version: 1 },
     ];
     try {
       globalThis.fetch = Object.assign(async () => Response.json({ files }), { preconnect: originalFetch.preconnect });
-      const picker = assistantConversationFileSource("chat-id", () => "de-DE", () => "Spracheingaben");
+      const picker = assistantConversationFileSource(
+        "chat-id",
+        () => "de-DE",
+        () => "Spracheingaben",
+      );
       const entries = await picker.list();
       expect(entries[0]!.path).toBe("/Spracheingaben/renamed.wav");
       expect(entries[0]!.displayName).toContain("11.09.26");
@@ -41,13 +53,24 @@ describe("Assistant context files", () => {
       expect(entries[1]!.displayName).toBeUndefined();
       expect(picker.actualPath(entries[0]!.path)).toBe("/renamed.wav");
       expect(picker.downloadHref?.(entries[0]!.path)).toContain("path=%2Frenamed.wav");
-    } finally { globalThis.fetch = originalFetch; }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test("groups dictation by provenance and keeps its real read/download identity", async () => {
     const chat = source("chat");
     const files: AssistantContextFile[] = [
-      { id: "recorded", path: "/renamed.wav", mediaType: "audio/wav", size: 44, scope: "chat", source: chat, dictationRecordedAt: "2026-09-11T11:42:00Z", displayName: "11.09.26, 13:42:00" },
+      {
+        id: "recorded",
+        path: "/renamed.wav",
+        mediaType: "audio/wav",
+        size: 44,
+        scope: "chat",
+        source: chat,
+        dictationRecordedAt: "2026-09-11T11:42:00Z",
+        displayName: "11.09.26, 13:42:00",
+      },
       { id: "uploaded", path: "/dictation-upload.m4a", mediaType: "audio/mp4", size: 44, scope: "chat", source: chat },
     ];
     const combined = assistantContextFileSource(files);
@@ -132,7 +155,8 @@ describe("Assistant Cloud references", () => {
                   openWorld: false,
                 },
               ],
-              actions: [], commands: [],
+              actions: [],
+              commands: [],
             },
           },
         ],

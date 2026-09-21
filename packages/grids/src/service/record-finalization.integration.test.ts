@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { parseFormula } from "../formula/parser";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -18,7 +19,7 @@ import { aggregate as aggregateRecords, group as groupRecords, list as listRecor
 import { buildRelationLabelCacheForIds, lookupRecords } from "./relation-labels";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 const fixture = async (policy: { mode: "direct" } | { mode: "fourEyes"; approverGroupId: string } = { mode: "direct" }) => {

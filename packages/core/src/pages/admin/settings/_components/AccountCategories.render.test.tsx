@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CORE_SETTINGS } from "@k2b/cloud/services/settings/core-settings";
 import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
-import { CORE_SETTINGS } from "@k2b/cloud/services/settings/core-settings";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { authMessages } from "../../../auth/messages";
@@ -21,6 +21,7 @@ const { default: AccountOperations } = await import("./AccountOperations.island.
 
 import { accountOperationsMessages } from "./account-operations-messages";
 import { accountSettingsSection } from "./account-settings";
+
 const { default: ApprovalStatus } = await import("../../../app-approval/ApprovalStatus");
 const { default: DocumentationLink } = await import("./DocumentationLink");
 

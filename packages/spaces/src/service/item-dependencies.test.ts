@@ -1,22 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import * as dependencies from "./item-dependencies";
 import { get as getItem, setCompleted } from "./items";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ dependencies: string | null }[]>`
-      SELECT to_regclass('spaces.item_dependencies')::text AS dependencies
-    `;
-    return Boolean(row?.dependencies);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the migrated backing service is absent. */
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Spaces task dependencies", () => {
   test("supports multiple blockers and rejects duplicates, cycles, events, and cross-space links", async () => {

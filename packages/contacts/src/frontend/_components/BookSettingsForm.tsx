@@ -1,3 +1,5 @@
+import { type GrantableLevel, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -12,15 +14,13 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { type GrantableLevel, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
-import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactBook, ContactTag } from "../../service";
 import { readErrorMessage } from "./api";
 import BookActions from "./BookActions";
-import { bookMessages } from "./book-messages";
 import type { BookSettingsContext } from "./BookSettingsDialog";
+import { bookMessages } from "./book-messages";
 import { createBlockedReconciliation, createQueuedReconciliation, settingsInteractionBlocked } from "./book-settings-reconcile";
 import DeleteBookButton from "./DeleteBookButton";
 
@@ -340,12 +340,7 @@ export default function BookSettingsForm(props: Props) {
       <SettingsModal.Group title={t().groupBook}>
         <SettingsModal.Tab id="general" title={t().tabGeneral} icon="ti ti-id" description={t().tabGeneralDescription}>
           <SettingsGroup title={t().identityTitle} description={t().identityDescription}>
-            <SettingsField
-              label={t().bookNameLabel}
-              description={t().bookNameDescription}
-              error={nameError}
-              changed={nameChanged}
-            >
+            <SettingsField label={t().bookNameLabel} description={t().bookNameDescription} error={nameError} changed={nameChanged}>
               <TextInput
                 aria-label={t().bookNameLabel}
                 placeholder={t().bookNamePlaceholder}

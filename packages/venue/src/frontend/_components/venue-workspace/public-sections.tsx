@@ -13,7 +13,7 @@ import {
 import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { PublicSection, PublicSectionInput } from "../../../contracts";
-import { venueMessages, type VenueMessages } from "../../../messages";
+import { type VenueMessages, venueMessages } from "../../../messages";
 import { DialogFrame } from "./schedule";
 
 type MenuItemDraft = {

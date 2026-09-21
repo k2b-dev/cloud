@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { resolvePublicId, resolvePublicIds } from "./public-resources";
 
@@ -17,7 +18,7 @@ describe("Spaces public resource boundary", () => {
     expect(await resolvePublicIds("items", ["AbC123", "legacy1"])).toBeNull();
   });
 
-  (process.env.CLOUD_DATABASE_TEST === "1" ? test : test.skip)("preserves duplicate selectors and their input order", async () => {
+  testFor("database")("preserves duplicate selectors and their input order", async () => {
     const first = { id: crypto.randomUUID(), shortId: newShortId() };
     const second = { id: crypto.randomUUID(), shortId: newShortId() };
     try {

@@ -1,10 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import type { QueryBlock, QueryFilter } from "../lib/query-blocks";
 import { migrate } from "../migrate";
 import { resolveNoteQuery } from "./note-query";
 
-const postgresTest = process.env.NOTEBOOKS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 const id = () => crypto.randomUUID();
 const shortId = () => Math.random().toString(36).slice(2, 8).padEnd(6, "x");
 
@@ -55,7 +57,7 @@ const titlesFor = async (filter: QueryFilter, match: QueryBlock["match"] = "all"
   (await resolve(baseQuery({ where: [filter], match }))).items.map((item) => item.title);
 
 beforeAll(async () => {
-  if (process.env.NOTEBOOKS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   await migrate();
   await sql`
     INSERT INTO notebooks.notebooks (id, short_id, name) VALUES
@@ -103,7 +105,7 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
-  if (process.env.NOTEBOOKS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   await sql`DELETE FROM notebooks.notebooks WHERE id IN (${notebookId}::uuid, ${otherNotebookId}::uuid)`;
   await sql`DELETE FROM auth.access WHERE id IN (${accessId}::uuid, ${serviceAccessId}::uuid)`;
   await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid`;

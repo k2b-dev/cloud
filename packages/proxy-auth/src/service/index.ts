@@ -1,7 +1,7 @@
-import { sql } from "bun";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { err, fail, ok, paginate, type PageParams, type Paginated } from "@k2b/stdlib";
-import type { ProxyAuthAllowedGroup, ProxyAuthClient, CreateProxyAuthClient, UpdateProxyAuthClient } from "@/contracts";
+import { err, fail, ok, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
+import { sql } from "bun";
+import type { CreateProxyAuthClient, ProxyAuthAllowedGroup, ProxyAuthClient, UpdateProxyAuthClient } from "@/contracts";
 
 type Db = typeof sql;
 

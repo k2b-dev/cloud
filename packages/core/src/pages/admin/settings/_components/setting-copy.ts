@@ -77,7 +77,8 @@ const de: Record<string, SettingCopy> = {
   },
   "app.documentation_url": {
     label: "Dokumentationsadresse",
-    description: "Basisadresse für Doku-Links in der Administration. Eigener Cloud-Doku-Spiegel oder lokaler Fibel-Server; unabhängig von der App-Anmeldung.",
+    description:
+      "Basisadresse für Doku-Links in der Administration. Eigener Cloud-Doku-Spiegel oder lokaler Fibel-Server; unabhängig von der App-Anmeldung.",
   },
   "app.home_path": {
     label: "Startpfad",

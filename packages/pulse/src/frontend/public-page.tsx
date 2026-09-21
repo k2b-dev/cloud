@@ -1,10 +1,10 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { ssr } from "../config";
+import { pulseMessages } from "../messages";
 import { pulseService } from "../service";
 import { projectDashboardSnapshot } from "../service/public-resources";
 import PublicPulseDashboard from "./PublicPulseDashboard.island";
 import { parsePublicDashboardDisplayHeight, parsePublicDashboardTheme } from "./public-dashboard-runtime";
-import { pulseMessages } from "../messages";
 
 export default ssr<AuthContext>(async (c) => {
   c.header("Referrer-Policy", "no-referrer");

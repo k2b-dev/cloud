@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { render } from "solid-js/web";
 import { createSignal } from "solid-js";
+import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
 test("standalone readers retain personal controls while public visitors only manage local data", async () => {
@@ -18,5 +18,8 @@ test("standalone readers retain personal controls while public visitors only man
     expect(dom.root.textContent).not.toContain("Create your own copy");
     expect(dom.root.textContent).not.toContain("Secrets");
     expect(dom.root.textContent).toContain("Local data");
-  } finally { dispose(); dom.cleanup(); }
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
 });

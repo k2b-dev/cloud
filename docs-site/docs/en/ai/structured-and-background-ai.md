@@ -15,8 +15,9 @@ Use `runAiStructured()` for one schema-valid model result.
 It is the right API for classification, extraction, enrichment, and other
 bounded tasks that do not need a conversation.
 
-`runAiStructured()` executes a model request. It does not receive an actor or
-an access subject. Optional usage attribution is metadata, not authorization.
+`runAiStructured()` executes a model request. It does not authorize domain access. Optional usage attribution is metadata,
+not authorization; an optional trusted `usageSubject` selects personal chat
+quota accounting instead of background accounting.
 
 
 
@@ -301,3 +302,25 @@ exempt. This stop is independent of direct Assistant budgets.
 See [Usage and feedback](/en/docs/ai/usage-and-feedback) for the accounting limits,
 price configuration and CLI operations. Audio transcription remains unpriced
 because the current provider result contains no billable duration.
+
+## Shared text, classification and extraction tasks
+
+`AiTaskRequestSchema` and its `AiTaskRequestInput`/`AiTaskRequest` types are
+available from `@k2b/cloud/ai` and the browser-safe `@k2b/cloud/ai/browser`.
+They describe `generate_text`, `classify`, `classify_many` and `extract_data`.
+Workflow AI actions and Assistant Code Mode use the same schemas and
+`executeAiTask(request, options)` implementation. The executor returns
+`{ output, usage }`; it does not create a workflow or grant domain access.
+
+Server callers supply `taskPrefix`, `appId`, `signal`, and trusted attribution.
+For interactive, user-owned calculations, pass the authenticated `usageSubject`
+to charge the personal chat allowance. Without it, `runAiStructured` keeps its
+background-budget behavior. Attribution alone never selects a budget or grants
+model access. `AiQuotaError` exposes allowance failures to server callers.
+
+Authorize the resource before inference. Use `selectAssistantAiModelId(subject,
+requestedModelId)` for Assistant model grants and `resolveAiModel` with
+`personalAiModelPolicy` for the matching data-boundary policy; pass that resolver
+through `resolveModel`. Supply only verified server-side identities, not IDs from
+the calculation's input. The calculations receive only the supplied prompt and
+input, with no tools or implicit conversation context.

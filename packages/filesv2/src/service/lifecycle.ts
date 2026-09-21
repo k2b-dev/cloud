@@ -674,7 +674,10 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
       if (!(await loc.root.info()).versioning.enabled) return [];
       return (await loc.root.versions(loc.target)).map((version) => ({
-        id: version.id, created: version.created, size: version.size, pinned: version.pinned,
+        id: version.id,
+        created: version.created,
+        size: version.size,
+        pinned: version.pinned,
         comment: typeof version.metadata?.comment === "string" ? version.metadata.comment : null,
         author: typeof version.metadata?.author === "string" ? version.metadata.author : null,
       }));

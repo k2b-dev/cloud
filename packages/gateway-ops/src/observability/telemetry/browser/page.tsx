@@ -1,15 +1,15 @@
-import { DataTable, StatCell, StatGrid, ButtonLink, NoticeCard } from "@k2b/ui";
 import { listAppsDetailed } from "@k2b/cloud";
-import { logging, coreSettings, type WebVitalsOverview, type WebVitalName } from "@k2b/cloud/services";
 import { getLocale } from "@k2b/cloud/server";
+import { coreSettings, logging, type WebVitalName, type WebVitalsOverview } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
+import { ButtonLink, DataTable, NoticeCard, StatCell, StatGrid } from "@k2b/ui";
 import type { Context, Env } from "hono";
 import Controls from "./Controls.island";
-import VitalCharts from "./VitalCharts.island";
+import { buildVitalCharts, vitalValue } from "./charts";
+import { browserUrl, parseBrowserFilter } from "./filter";
 import ModeNav from "./ModeNav";
 import { browserMessages } from "./messages";
-import { parseBrowserFilter, browserUrl } from "./filter";
-import { buildVitalCharts, vitalValue } from "./charts";
+import VitalCharts from "./VitalCharts.island";
 
 export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
   const locale = getLocale(c);

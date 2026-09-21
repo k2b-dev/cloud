@@ -1,4 +1,4 @@
-import { Chart, Paper, createChartCursor, type ChartTooltipFormatter } from "@k2b/ui";
+import { Chart, type ChartTooltipFormatter, createChartCursor, Paper } from "@k2b/ui";
 import { DemoCard } from "./DemoCard";
 
 const start = Date.UTC(2026, 8, 13, 17, 15);

@@ -1,9 +1,9 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { redis } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { waitForMailProviderSlot } from "./provider-pacer";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats", "valkey");
 
 suite("Mail provider pacer", () => {
   const remoteResourceId = crypto.randomUUID();

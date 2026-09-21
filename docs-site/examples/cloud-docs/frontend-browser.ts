@@ -13,29 +13,18 @@ type InventoryEvent = { cursor: string };
 
 const parseInventoryEvent = (raw: string): InventoryEvent => {
   const value: unknown = JSON.parse(raw);
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("cursor" in value) ||
-    typeof value.cursor !== "string"
-  ) {
+  if (typeof value !== "object" || value === null || !("cursor" in value) || typeof value.cursor !== "string") {
     throw new Error("Inventory event is invalid");
   }
   return { cursor: value.cursor };
 };
 
-export const createItemQuery = (
-  itemId: Accessor<string>,
-  initial: { source: string; data: InventoryItem },
-) =>
+export const createItemQuery = (itemId: Accessor<string>, initial: { source: string; data: InventoryItem }) =>
   query.create<string, InventoryItem, InventoryEvent>({
     source: itemId,
     initial,
     load: async (id, { abortSignal }) => {
-      const response = await inventoryClient.items[":id"].$get(
-        { param: { id } },
-        { init: { signal: abortSignal } },
-      );
+      const response = await inventoryClient.items[":id"].$get({ param: { id } }, { init: { signal: abortSignal } });
       if (!response.ok) throw new Error("Item could not be loaded");
       return response.json();
     },

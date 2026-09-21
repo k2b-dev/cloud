@@ -1,14 +1,15 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { SQL } from "bun";
+import { createDisposableDatabase, databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import type { RequestActor, UserProvider } from "../../contracts/shared";
 import { buildProjectedUser } from "../session/user";
 import { encryptValue } from "../settings/crypto";
 import { createAccountIdentityService } from "./identities";
 
-const url = process.env.CLOUD_IDENTITY_TEST_DATABASE_URL;
-const suite = url ? describe : describe.skip;
+const suite = databaseSuite();
 suite("public account identity reads against isolated Postgres", () => {
   let db: SQL;
+  let disposable: Awaited<ReturnType<typeof createDisposableDatabase>>;
   let service: ReturnType<typeof createAccountIdentityService>;
   const config = { enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" };
   const setting = async (key: string, value: unknown) => {
@@ -28,9 +29,8 @@ suite("public account identity reads against isolated Postgres", () => {
     return row!.id;
   };
   beforeAll(async () => {
-    if (!url || process.env.DATABASE_URL !== url || new URL(url).pathname !== "/cloud_identity_test")
-      throw new Error("Both database URLs must select the dedicated cloud_identity_test database");
-    db = new SQL(url);
+    disposable = await createDisposableDatabase("identities");
+    db = new SQL(disposable.url);
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), uid text UNIQUE NOT NULL, provider text NOT NULL, profile text NOT NULL, admin boolean NOT NULL DEFAULT false, account_expires timestamptz)`.simple();
@@ -49,6 +49,7 @@ suite("public account identity reads against isolated Postgres", () => {
   });
   afterAll(async () => {
     await db?.close();
+    await disposable?.drop();
   });
 
   test("reads only caller and exposes actual UID and primary GID without assuming equality", async () => {

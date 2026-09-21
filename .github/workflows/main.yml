@@ -1,0 +1,115 @@
+name: Main
+
+# Runs after CI succeeded on main: keeps the release-please PR current, then
+# builds every image exactly once for the commit (tagged sha-<12>, plus
+# vX.Y.Z when this commit is a release) and finishes the release from that
+# build. Everything is chained here because tags and PRs created with
+# GITHUB_TOKEN never trigger other workflows.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One release path at a time: two quick pushes never run release-please or
+# the release jobs concurrently. Never cancelled, a run always finishes.
+concurrency:
+  group: main-release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    # Only same-repository pushes to main (workflow_run also fires for fork
+    # pull-request runs whose head branch is named main).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      sha: ${{ steps.context.outputs.sha }}
+      sha12: ${{ steps.context.outputs.sha12 }}
+      version: ${{ steps.context.outputs.version }}
+      tags: ${{ steps.context.outputs.tags }}
+      cloud_released: ${{ steps.release.outputs.release_created == 'true' }}
+      npm_cloud_released: ${{ steps.release.outputs['packages/cloud--release_created'] == 'true' }}
+      npm_ui_released: ${{ steps.release.outputs['packages/ui--release_created'] == 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          # RELEASE_PLEASE_TOKEN (GitHub App or fine-grained PAT) lets the
+          # release PR receive normal CI runs; GITHUB_TOKEN cannot trigger them.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: main
+      - id: context
+        env:
+          RELEASED: ${{ steps.release.outputs.release_created == 'true' }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          if [[ "$RELEASED" == "true" ]]; then
+            version="$RELEASE_VERSION"
+            tags="[\"v$RELEASE_VERSION\"]"
+          else
+            version="$(jq -r '."."' .release-please-manifest.json)-next.${sha:0:12}"
+            tags="[]"
+          fi
+          {
+            echo "sha=$sha"
+            echo "sha12=${sha:0:12}"
+            echo "version=$version"
+            echo "tags=$tags"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  images:
+    needs: release-please
+    uses: ./.github/workflows/build-images.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.version }}
+      release: sha-${{ needs.release-please.outputs.sha12 }}
+      tags: ${{ needs.release-please.outputs.tags }}
+      push: true
+
+  release:
+    needs: [release-please, images]
+    if: >-
+      needs.release-please.outputs.cloud_released == 'true' ||
+      needs.release-please.outputs.npm_cloud_released == 'true' ||
+      needs.release-please.outputs.npm_ui_released == 'true'
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    secrets: inherit
+    with:
+      version: ${{ needs.release-please.outputs.version }}
+      sha: ${{ needs.release-please.outputs.sha }}
+      cloud_released: ${{ needs.release-please.outputs.cloud_released == 'true' }}
+      npm_cloud_released: ${{ needs.release-please.outputs.npm_cloud_released == 'true' }}
+      npm_ui_released: ${{ needs.release-please.outputs.npm_ui_released == 'true' }}

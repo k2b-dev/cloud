@@ -1,4 +1,3 @@
-import { appCredentialCommands } from "./app-credentials";
 /**
  * `cld admin` — Cloud administration surfaces.
  *
@@ -9,10 +8,11 @@ import { appCredentialCommands } from "./app-credentials";
 import { defineCliCommands } from "../commands";
 import { accountAdministrationCommands } from "./account-administration";
 import { accountCategoryCommands } from "./account-categories";
-import { appSignInCommands } from "./app-sign-in";
-import { aiSkillCommands } from "./ai-skills";
 import { aiQuotaCommands } from "./ai-quotas";
+import { aiSkillCommands } from "./ai-skills";
 import { aiUsageCommands } from "./ai-usage";
+import { appCredentialCommands } from "./app-credentials";
+import { appSignInCommands } from "./app-sign-in";
 import { dataCommands } from "./data";
 import { documentationCommands } from "./documentation";
 import { gatewayCommands } from "./gateway";

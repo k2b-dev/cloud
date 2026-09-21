@@ -172,7 +172,10 @@ describe("Filesv2 CLI integration", () => {
       body: { filename: "minutes.md", content: Buffer.from("# Minutes\n").toString("base64"), name: "Minutes" },
     });
     expect(requests[2]?.body).toMatchObject({ source: { baseId: base.id, path: "minutes.md" } });
-    expect(requests[3]).toMatchObject({ method: "PATCH", body: { name: "Changed", file: { filename: "minutes.md", content: Buffer.from("# Minutes\n").toString("base64") } } });
+    expect(requests[3]).toMatchObject({
+      method: "PATCH",
+      body: { name: "Changed", file: { filename: "minutes.md", content: Buffer.from("# Minutes\n").toString("base64") } },
+    });
     expect(requests[5]?.body).toEqual({ principal: { type: "authenticated" } });
     expect(requests[6]?.body).toEqual({ baseId: base.id, path: "Created.md" });
     expect(requests[7]?.path).toEndWith("/markdown");
@@ -207,16 +210,55 @@ describe("Filesv2 CLI integration", () => {
       requests.push(new URL(request.url));
       return Response.json({ base, path: "Documents", query: "report", scope: "tree", items: [entry], next: "next-cursor" });
     });
-    for (const args of [["list", base.id], ["search", base.id, "report"]]) {
+    for (const args of [
+      ["list", base.id],
+      ["search", base.id, "report"],
+    ]) {
       const defaults = await run(["--json", "filesv2", ...args], { server: server.url.href });
       expect(defaults.exitCode, defaults.stderr).toBe(0);
-      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({ sort: "name", order: "asc", type: "all", groupFolders: "true" });
-      const filtered = await run(["--json", "filesv2", ...args, "--path", "Documents", "--after", "opaque+/= cursor", "--sort", "size", "--order", "desc", "--type", "files", "--no-group-folders"], { server: server.url.href });
+      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({
+        sort: "name",
+        order: "asc",
+        type: "all",
+        groupFolders: "true",
+      });
+      const filtered = await run(
+        [
+          "--json",
+          "filesv2",
+          ...args,
+          "--path",
+          "Documents",
+          "--after",
+          "opaque+/= cursor",
+          "--sort",
+          "size",
+          "--order",
+          "desc",
+          "--type",
+          "files",
+          "--no-group-folders",
+        ],
+        { server: server.url.href },
+      );
       expect(filtered.exitCode, filtered.stderr).toBe(0);
-      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({ path: "Documents", after: "opaque+/= cursor", sort: "size", order: "desc", type: "files", groupFolders: "false" });
-      const alternate = await run(["--json", "filesv2", ...args, "--sort", "modified", "--type", "directories"], { server: server.url.href });
+      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({
+        path: "Documents",
+        after: "opaque+/= cursor",
+        sort: "size",
+        order: "desc",
+        type: "files",
+        groupFolders: "false",
+      });
+      const alternate = await run(["--json", "filesv2", ...args, "--sort", "modified", "--type", "directories"], {
+        server: server.url.href,
+      });
       expect(alternate.exitCode, alternate.stderr).toBe(0);
-      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({ sort: "modified", type: "directories", groupFolders: "true" });
+      expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({
+        sort: "modified",
+        type: "directories",
+        groupFolders: "true",
+      });
       const invalid = await run(["filesv2", ...args, "--sort", "type"], { server: server.url.href });
       expect(invalid.exitCode).not.toBe(0);
     }
@@ -294,7 +336,11 @@ describe("Filesv2 CLI integration", () => {
     expect(saved.exitCode, saved.stderr).toBe(0);
     expect(JSON.parse(saved.stdout)).toEqual({ saved: true });
     expect(saved.stdout + saved.stderr).not.toContain(secret);
-    expect(payloads[0]).toEqual({ ...input, collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" }, token: secret });
+    expect(payloads[0]).toEqual({
+      ...input,
+      collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
+      token: secret,
+    });
     for (const value of [input, { ...input, token: "" }, { ...input, cloud: { ...input.cloud, autoCreate: true, autoArchive: false } }]) {
       const result = await run(["--jsonl", "filesv2", "admin", "configuration", "set", "--stdin"], {
         server: server.url.href,
@@ -920,7 +966,16 @@ test("upload opens a session through Cloud, streams segments to Filegate without
     expect(request.headers.get("cookie")).toBeNull();
     const url = new URL(request.url);
     expect(url.searchParams.get("lease")).toBe(leaseSecret);
-    const status = () => ({ id: "s1", root: "cloud", size: 14, chunkSize: 4, expires: "2030-01-01T00:00:00Z", state: "open", uploadedSegments: 0, received });
+    const status = () => ({
+      id: "s1",
+      root: "cloud",
+      size: 14,
+      chunkSize: 4,
+      expires: "2030-01-01T00:00:00Z",
+      state: "open",
+      uploadedSegments: 0,
+      received,
+    });
     if (url.searchParams.has("segments")) return Response.json({ items: [] });
     if (request.method === "GET") return Response.json(status());
     expect(request.method).toBe("PUT");
@@ -933,13 +988,28 @@ test("upload opens a session through Cloud, streams segments to Filegate without
     const url = new URL(request.url);
     seen.push(`${request.method} ${url.pathname}`);
     if (url.pathname.endsWith("/uploads")) {
-      expect(await request.json()).toMatchObject({ path: "Documents/notes.txt", size: 14, onConflict: "overwrite", idempotencyKey: expect.any(String) });
-      return Response.json({ id: "s1", path: "Documents/notes.txt", size: 14, chunkSize: 4, state: "open", url: `${transfer.url}?lease=${leaseSecret}`, expires: "2030-01-01T00:00:00Z" });
+      expect(await request.json()).toMatchObject({
+        path: "Documents/notes.txt",
+        size: 14,
+        onConflict: "overwrite",
+        idempotencyKey: expect.any(String),
+      });
+      return Response.json({
+        id: "s1",
+        path: "Documents/notes.txt",
+        size: 14,
+        chunkSize: 4,
+        state: "open",
+        url: `${transfer.url}?lease=${leaseSecret}`,
+        expires: "2030-01-01T00:00:00Z",
+      });
     }
     expect(received).toBe(14);
     return Response.json({ base, entry: { ...entry, name: "notes.txt", path: "Documents/notes.txt", size: 14 } });
   });
-  const result = await run(["--json", "filesv2", "upload", base.id, local, "--to", "Documents/notes.txt", "--replace"], { server: cloud.url.href });
+  const result = await run(["--json", "filesv2", "upload", base.id, local, "--to", "Documents/notes.txt", "--replace"], {
+    server: cloud.url.href,
+  });
   expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout).entry).toMatchObject({ path: "Documents/notes.txt", size: 14 });
   expect(result.stdout + result.stderr).not.toContain(leaseSecret);
@@ -954,18 +1024,49 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
     seen.push(`${request.method} ${url.pathname}`);
     if (url.pathname.endsWith("/delete")) {
       expect(await request.json()).toEqual({ paths: [entry.path, "Documents/old.txt"] });
-      const trashEntry = { id: "11111111-1111-4111-8111-111111111111", original: entry.path, name: entry.name, directory: false, deletedAt: entry.modified };
+      const trashEntry = {
+        id: "11111111-1111-4111-8111-111111111111",
+        original: entry.path,
+        name: entry.name,
+        directory: false,
+        deletedAt: entry.modified,
+      };
       return Response.json({ entries: [trashEntry], results: [{ path: entry.path, ok: true, entry: trashEntry }] });
     }
     if (url.pathname.endsWith("/restore") && url.pathname.includes("/trash/")) return Response.json({ base, entry });
-    if (url.pathname.endsWith("/versions")) return Response.json([{ id: "v1", created: entry.modified, size: 4, pinned: false, comment: "draft", author: "alice" }]);
+    if (url.pathname.endsWith("/versions"))
+      return Response.json([{ id: "v1", created: entry.modified, size: 4, pinned: false, comment: "draft", author: "alice" }]);
     if (url.pathname.endsWith("/versions/restore-as")) {
       expect(await request.json()).toEqual({ path: entry.path, id: "v1", name: "copy.txt" });
       return Response.json({ base, entry: { ...entry, path: "Documents/copy.txt", name: "copy.txt" } });
     }
     if (url.pathname.endsWith("/shares") && request.method === "POST") {
-      expect(await request.json()).toEqual({ kind: "download", paths: [entry.path], folder: "", title: "Report", expiresIn: "7d", maxFileSize: 104857600, maxTotalSize: 1073741824, showUploadNames: false });
-      return Response.json({ id: "s1", kind: "download", url: "https://cloud.test/share/filesv2/s/tok", title: "Report", note: null, base, scope: "Documents", items: [entry.path], createdBy: "alice", createdAt: entry.modified, expiresAt: entry.modified, state: "active", accessCount: 0, lastAccessedAt: null });
+      expect(await request.json()).toEqual({
+        kind: "download",
+        paths: [entry.path],
+        folder: "",
+        title: "Report",
+        expiresIn: "7d",
+        maxFileSize: 104857600,
+        maxTotalSize: 1073741824,
+        showUploadNames: false,
+      });
+      return Response.json({
+        id: "s1",
+        kind: "download",
+        url: "https://cloud.test/share/filesv2/s/tok",
+        title: "Report",
+        note: null,
+        base,
+        scope: "Documents",
+        items: [entry.path],
+        createdBy: "alice",
+        createdAt: entry.modified,
+        expiresAt: entry.modified,
+        state: "active",
+        accessCount: 0,
+        lastAccessedAt: null,
+      });
     }
     if (url.pathname.endsWith("/revoke")) return Response.json({ id: "s1", state: "revoked", title: "Report" });
     return Response.json({ message: "unexpected" }, { status: 500 });
@@ -997,7 +1098,7 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
 
 test("documents create calls the API and edit-url prints the Cloud address locally", async () => {
   const seen: string[] = [];
-  const cloud = serve(async request => {
+  const cloud = serve(async (request) => {
     expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
     const url = new URL(request.url);
     seen.push(`${request.method} ${url.pathname}`);
@@ -1018,9 +1119,17 @@ test("documents create calls the API and edit-url prints the Cloud address local
   expect(seen).toEqual([`POST /api/filesv2/bases/${base.id}/documents`]);
 });
 
-
 test("batch partial results preserve successes and return a failure exit status", async () => {
-  const cloud = serve(() => Response.json({ base, entries: [entry], results: [{ path: entry.path, ok: true, entry }, { path: "missing.txt", ok: false, error: "not_found" }] }));
+  const cloud = serve(() =>
+    Response.json({
+      base,
+      entries: [entry],
+      results: [
+        { path: entry.path, ok: true, entry },
+        { path: "missing.txt", ok: false, error: "not_found" },
+      ],
+    }),
+  );
   const result = await run(["--json", "filesv2", "move", base.id, entry.path, "missing.txt", "--to", "Target"], { server: cloud.url.href });
   expect(result.exitCode).toBe(1);
   expect(JSON.parse(result.stdout).results).toHaveLength(2);
@@ -1033,45 +1142,93 @@ test("new administration and inbox settings use the authenticated API without st
     expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
     const url = new URL(request.url);
     seen.push(`${request.method} ${url.pathname}`);
-    if (url.pathname === "/api/filesv2/admin/shares" || url.pathname === "/api/filesv2/admin/uploads") return Response.json({ items: [], next: null });
+    if (url.pathname === "/api/filesv2/admin/shares" || url.pathname === "/api/filesv2/admin/uploads")
+      return Response.json({ items: [], next: null });
     if (url.pathname === "/api/filesv2/admin/versions") {
       expect(request.method).toBe("DELETE");
-      expect(await request.json()).toMatchObject({ path: "a.txt", id: "v1", confirmPath: "home/alice/a.txt", area: "cloud", kind: "users", name: "alice" });
+      expect(await request.json()).toMatchObject({
+        path: "a.txt",
+        id: "v1",
+        confirmPath: "home/alice/a.txt",
+        area: "cloud",
+        kind: "users",
+        name: "alice",
+      });
       return Response.json({ deleted: true });
     }
     if (url.pathname.endsWith("/shares")) {
-      expect(await request.json()).toMatchObject({ kind: "inbox", folder: "Inbox", expiresIn: "unlimited", maxFileSize: 123, maxTotalSize: 456, showUploadNames: true, note: "private", publicNote: "hello" });
+      expect(await request.json()).toMatchObject({
+        kind: "inbox",
+        folder: "Inbox",
+        expiresIn: "unlimited",
+        maxFileSize: 123,
+        maxTotalSize: 456,
+        showUploadNames: true,
+        note: "private",
+        publicNote: "hello",
+      });
       return Response.json({ url: "https://cloud.test/share/filesv2/inbox/once" });
     }
     return Response.json({ state: "revoked", title: "Inbox" });
   });
   const options = { server: cloud.url.href };
-  for (const args of [["admin", "shares", "list"], ["admin", "uploads", "list"], ["admin", "shares", "revoke", "abc"], ["admin", "versions", "delete", "a.txt", "v1", "--name", "alice", "--confirm-path", "home/alice/a.txt", "--yes"], ["shares", "create", base.id, "Inbox", "--kind", "inbox", "--title", "Drop", "--expires-in", "unlimited", "--max-file-size", "123", "--max-total-size", "456", "--show-upload-names", "--note", "private", "--public-note", "hello"]]) {
+  for (const args of [
+    ["admin", "shares", "list"],
+    ["admin", "uploads", "list"],
+    ["admin", "shares", "revoke", "abc"],
+    ["admin", "versions", "delete", "a.txt", "v1", "--name", "alice", "--confirm-path", "home/alice/a.txt", "--yes"],
+    [
+      "shares",
+      "create",
+      base.id,
+      "Inbox",
+      "--kind",
+      "inbox",
+      "--title",
+      "Drop",
+      "--expires-in",
+      "unlimited",
+      "--max-file-size",
+      "123",
+      "--max-total-size",
+      "456",
+      "--show-upload-names",
+      "--note",
+      "private",
+      "--public-note",
+      "hello",
+    ],
+  ]) {
     const result = await run(["--json", "filesv2", ...args], options);
     expect(result.exitCode, result.stderr).toBe(0);
   }
   expect(seen).toHaveLength(5);
 });
 
-
 test("cross-area copy and strict search failures use the same CLI contract", async () => {
-  const requests: Array<{source:string; body:unknown}> = [];
+  const requests: Array<{ source: string; body: unknown }> = [];
   let denied = 403;
   const cloud = serve(async (request) => {
     expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
     const url = new URL(request.url);
-    if (url.pathname.endsWith("/search")) return Response.json({code:denied === 403 ? "forbidden" : "not_found",message:"Storage changed"},{status:denied});
-    requests.push({source:decodeURIComponent(url.pathname.split("/").at(-2)!),body:await request.json()});
-    return Response.json({base,entries:[entry],results:[{path:entry.path,ok:true,entry}]});
+    if (url.pathname.endsWith("/search"))
+      return Response.json({ code: denied === 403 ? "forbidden" : "not_found", message: "Storage changed" }, { status: denied });
+    requests.push({ source: decodeURIComponent(url.pathname.split("/").at(-2)!), body: await request.json() });
+    return Response.json({ base, entries: [entry], results: [{ path: entry.path, ok: true, entry }] });
   });
-  for (const [source,target] of [[`cloud:groups:${identityId}`,`freeipa:users:${identityId}`],[`freeipa:users:${identityId}`,`cloud:groups:${identityId}`]] as const) {
-    const result = await run(["--json","filesv2","copy",source,entry.path,"--target-base",target,"--to","Documents"],{server:cloud.url.href});
-    expect(result.exitCode,result.stderr).toBe(0);
-    expect(requests.at(-1)).toEqual({source,body:{paths:[entry.path],targetBaseId:target,folder:"Documents"}});
+  for (const [source, target] of [
+    [`cloud:groups:${identityId}`, `freeipa:users:${identityId}`],
+    [`freeipa:users:${identityId}`, `cloud:groups:${identityId}`],
+  ] as const) {
+    const result = await run(["--json", "filesv2", "copy", source, entry.path, "--target-base", target, "--to", "Documents"], {
+      server: cloud.url.href,
+    });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(requests.at(-1)).toEqual({ source, body: { paths: [entry.path], targetBaseId: target, folder: "Documents" } });
   }
-  for (const status of [403,404]) {
+  for (const status of [403, 404]) {
     denied = status;
-    const result = await run(["--json","filesv2","search",base.id,"report","--after","cursor"],{server:cloud.url.href});
+    const result = await run(["--json", "filesv2", "search", base.id, "report", "--after", "cursor"], { server: cloud.url.href });
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).not.toContain('"items":[]');
   }
@@ -1080,19 +1237,22 @@ test("cross-area copy and strict search failures use the same CLI contract", asy
 test("share passwords are read from a private file for download and inbox without echoing them", async () => {
   const path = join(await directory(), "password.txt");
   const password = "test share password";
-  await writeFile(path, `${password}\n`, {mode:0o600});
+  await writeFile(path, `${password}\n`, { mode: 0o600 });
   const kinds: unknown[] = [];
-  const cloud = serve(async request => {
+  const cloud = serve(async (request) => {
     expect(request.method).toBe("POST");
     const body = await request.json();
     expect(body.password).toBe(password);
     kinds.push(body.kind);
-    return Response.json({id:"s1",passwordProtected:true,url:"https://cloud.test/share/filesv2/s/token"});
+    return Response.json({ id: "s1", passwordProtected: true, url: "https://cloud.test/share/filesv2/s/token" });
   });
-  for (const kind of ["download","inbox"]) {
-    const result = await run(["filesv2","shares","create",base.id,"Docs","--kind",kind,"--title","Protected","--password-file",path],{server:cloud.url.href});
-    expect(result.exitCode,result.stderr).toBe(0);
-    expect(result.stdout+result.stderr).not.toContain(password);
+  for (const kind of ["download", "inbox"]) {
+    const result = await run(
+      ["filesv2", "shares", "create", base.id, "Docs", "--kind", kind, "--title", "Protected", "--password-file", path],
+      { server: cloud.url.href },
+    );
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout + result.stderr).not.toContain(password);
   }
-  expect(kinds).toEqual(["download","inbox"]);
+  expect(kinds).toEqual(["download", "inbox"]);
 });

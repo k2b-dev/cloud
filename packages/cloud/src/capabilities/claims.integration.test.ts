@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { compileCapabilities } from "../_internal/capabilities";
 import { dispatchCapability } from "../api/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
@@ -18,12 +19,11 @@ import {
 } from "./claims";
 import { listCapabilityExecutions, migrateCloudCapabilities } from "./executions";
 
-// This suite migrates and writes data. It must never use a shared developer database.
-const databaseUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
-const isolated =
-  ["127.0.0.1", "localhost"].includes(databaseUrl.hostname) && /^\/cloud_capabilities_verify_[a-z0-9_]+$/.test(databaseUrl.pathname);
-if (isolated) await migrateCloudCapabilities();
-const suite = isolated ? describe : describe.skip;
+const suite = databaseSuite();
+beforeAll(async () => {
+  if (!testInfra.database) return;
+  await migrateCloudCapabilities();
+});
 
 const compiled = compileCapabilities(
   "demo",

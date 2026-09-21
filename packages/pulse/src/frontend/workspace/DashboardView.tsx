@@ -21,13 +21,11 @@ import type {
   PulseRecordedEvent,
   PulseSource,
 } from "../../contracts";
-import { intervalToMs } from "../../query-dsl/interval";
 import { formatDashboardConditionText, matchDashboardCondition } from "../dashboard-conditions";
 import { usePulseMessages } from "../use-messages";
 import { queryBucketMaxGap } from "./chart-data";
 import { formatQueryBucket } from "./date-format";
 import {
-  compactDate,
   compactDateWithDelta,
   dashboardCellSpan,
   dashboardLayoutWidgets,

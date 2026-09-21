@@ -1,8 +1,26 @@
 // Real model evaluation against disposable data services; never writes to a user's chat.
-import { resolveAiModel } from "../../cloud/src/ai/settings";
+
+import { parseArgs } from "node:util";
 import { sql } from "bun";
-const inputDirectory = Bun.argv[2] ?? process.env.ASSISTANT_EVAL_FILES;
-if (!inputDirectory) throw new Error("Usage: bun packages/assistant/scripts/eval-code-mode.ts <CSV-directory>");
+import { resolveAiModel } from "../../cloud/src/ai/settings";
+
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: { files: { type: "string" }, help: { type: "boolean", default: false } },
+});
+if (options.help) {
+  console.log(`Usage: bun packages/assistant/scripts/eval-code-mode.ts --files <CSV-directory>
+
+Evaluates Code Mode with the configured AI model against disposable data services.
+
+Options:
+  --files <dir>   Directory with the CSV evaluation inputs
+  --help          Show this help
+`);
+  process.exit(0);
+}
+const inputDirectory = options.files;
+if (!inputDirectory) throw new Error("--files <CSV-directory> is required");
 const { provider, profile } = await resolveAiModel();
 const token = crypto.randomUUID();
 const proxy = Bun.serve({

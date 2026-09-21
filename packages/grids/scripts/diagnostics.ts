@@ -2,18 +2,36 @@ import { closeSync, openSync } from "node:fs";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { cpus, freemem, loadavg, tmpdir, totalmem } from "node:os";
 import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
 import { SQL } from "bun";
+import { testInfra } from "../../../scripts/fixtures/test-infra";
 import { type DiagnosticReport, writeDiagnosticReport } from "./diagnostics-report";
 import { localVerificationUrl } from "./verification";
 
 // Parent owns the disposable database and the worker's hard deadline. Domain
 // modules are loaded only in children with the isolated DATABASE_URL.
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: { "report-dir": { type: "string" }, help: { type: "boolean", default: false } },
+});
+if (options.help) {
+  console.log(`Usage: bun packages/grids/scripts/diagnostics.ts [--report-dir <dir>]
+
+Runs the Grids performance diagnostics on a disposable database. Infrastructure
+comes from CLOUD_TEST_DATABASE_URL, CLOUD_TEST_NATS_SERVERS and CLOUD_TEST_GOTENBERG_URL.
+
+Options:
+  --report-dir <dir>   Parent directory for the report (default: system temp directory)
+  --help               Show this help
+`);
+  process.exit(0);
+}
 const root = resolve(import.meta.dir, "../../..");
-const source = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
-const nats = localVerificationUrl("NATS", process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222");
-const pdf = localVerificationUrl("Gotenberg", process.env.GRIDS_PDF_URL ?? "http://localhost:3001");
+const source = localVerificationUrl("PostgreSQL", testInfra.database);
+const nats = localVerificationUrl("NATS", testInfra.nats ?? "nats://127.0.0.1:4222");
+const pdf = localVerificationUrl("Gotenberg", testInfra.gotenberg ?? "http://localhost:3001");
 const name = `grids_verify_${crypto.randomUUID().replaceAll("-", "")}`;
 const namespace = `grids-diagnostics-${crypto.randomUUID()}`;
 const cacheName = `${namespace}-cache`;
@@ -21,7 +39,7 @@ const adminUrl = new URL(source);
 adminUrl.pathname = "/postgres";
 const admin = new SQL(adminUrl, { connectionTimeout: 5, max: 1 });
 source.pathname = `/${name}`;
-const parent = process.env.GRIDS_DIAGNOSTICS_DIR ?? tmpdir();
+const parent = options["report-dir"] ?? tmpdir();
 await mkdir(parent, { recursive: true });
 const directory = await mkdtemp(join(parent, "grids-diagnostics-"));
 const env = {
@@ -29,8 +47,6 @@ const env = {
   DATABASE_URL: source.toString(),
   SYNC_TEST_SERVERS: nats.toString(),
   GRIDS_PDF_URL: pdf.toString(),
-  GRIDS_DIAGNOSTICS_REPORT: directory,
-  GRIDS_DIAGNOSTICS_NAMESPACE: namespace,
   REDIS_URL: "",
   VALKEY_URL: "",
 };
@@ -88,7 +104,7 @@ try {
   created = true;
   for (const [label, args] of [
     ["bootstrap", ["packages/grids/scripts/verify.ts", "--bootstrap"]],
-    ["measurement", ["packages/grids/scripts/diagnostics-worker.ts"]],
+    ["measurement", ["packages/grids/scripts/diagnostics-worker.ts", "--report", directory, "--namespace", namespace]],
   ] as const) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let setup: ReturnType<typeof setTimeout> | undefined;

@@ -786,4 +786,5 @@ export const __notificationBatchTest = {
   selectionHash,
   recipientHash,
   resolveCandidates,
+  processBatchChunk,
 };

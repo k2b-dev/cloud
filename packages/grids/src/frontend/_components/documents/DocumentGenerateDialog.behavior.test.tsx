@@ -63,9 +63,11 @@ for (const issuancePolicy of ["repeatable", "oncePerFinalizedRecord"] as const) 
       expect(dom.document.body.textContent).toContain("Connection interrupted");
       dom.document.querySelector("dialog")!.dispatchEvent(new Event("cancel", { cancelable: true }));
       await Bun.sleep(5);
-      expect(dom.document.body.textContent).toContain(issuancePolicy === "oncePerFinalizedRecord"
-        ? "You can reopen it and retry: this template keeps one issuance per finalized record."
-        : "If you close this dialog, first check the document list before generating again: a new attempt can create another document.");
+      expect(dom.document.body.textContent).toContain(
+        issuancePolicy === "oncePerFinalizedRecord"
+          ? "You can reopen it and retry: this template keeps one issuance per finalized record."
+          : "If you close this dialog, first check the document list before generating again: a new attempt can create another document.",
+      );
       const cancel = Array.from(dom.document.querySelectorAll("button")).filter((item) => item.textContent?.trim() === "Cancel");
       cancel.at(-1)!.click();
       await Bun.sleep(5);

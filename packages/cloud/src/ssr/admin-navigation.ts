@@ -45,7 +45,9 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     }))
     .sort((a, b) => a.app.name.localeCompare(b.app.name));
 
-  aiLinks.push(...contributedApps.flatMap(({groups}) => groups.filter(group => group.section === "ai").flatMap(group => group.links)));
+  aiLinks.push(
+    ...contributedApps.flatMap(({ groups }) => groups.filter((group) => group.section === "ai").flatMap((group) => group.links)),
+  );
 
   const appsWithGroups = new Set(contributedApps.filter(({ groups }) => groups.length > 0).map(({ app }) => app.id));
   const appLinks = apps
@@ -66,7 +68,9 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
         { href: "/admin/announcements", icon: "ti-speakerphone", label: t.announcements },
       ],
     },
-    ...contributedApps.flatMap(({ groups }) => groups.filter(group => group.section !== "ai").map(({label,links}) => ({label,links}))),
+    ...contributedApps.flatMap(({ groups }) =>
+      groups.filter((group) => group.section !== "ai").map(({ label, links }) => ({ label, links })),
+    ),
     {
       label: t.userManagement,
       links: [

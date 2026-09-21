@@ -221,9 +221,14 @@ export const fieldReferenceSuggestions = (
   if (scope) {
     const join = joins.find((item) => normalizeRefKey(item.alias) === normalizeRefKey(scope));
     if (join) {
-      if (join.derivedColumns) return rankItems(query, range, join.derivedColumns
-        .filter((column) => purpose === "join" ? column.kind === "group" : columnAllowedForPurpose(column, purpose, aggregate))
-        .map((column) => derivedColumnItem(range, column)));
+      if (join.derivedColumns)
+        return rankItems(
+          query,
+          range,
+          join.derivedColumns
+            .filter((column) => (purpose === "join" ? column.kind === "group" : columnAllowedForPurpose(column, purpose, aggregate)))
+            .map((column) => derivedColumnItem(range, column)),
+        );
       if (purpose === "join") items.push(pseudoIdItem(range, "id"));
       pushFields(join.fields);
       return rankItems(query, range, uniqueItems(items));

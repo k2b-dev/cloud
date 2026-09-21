@@ -10,10 +10,7 @@ type SaveQueryFormResult = Record<string, unknown> | null | undefined;
 
 const cleanText = (value: unknown): string => String(value ?? "").trim();
 
-export const defaultSavedQueryName = (
-  compiled: PulseExplorerQuery | null,
-  t = pulseMessages.resolve().t,
-): string => {
+export const defaultSavedQueryName = (compiled: PulseExplorerQuery | null, t = pulseMessages.resolve().t): string => {
   if (!compiled) return t.pulseQuery;
   if (compiled.kind === "metric") return compiled.metric;
   if (compiled.kind === "events") return compiled.event || t.allEvents;

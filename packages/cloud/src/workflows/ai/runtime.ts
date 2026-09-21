@@ -1,11 +1,10 @@
-import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
 import { StructuredOutputError } from "@k2b/nessi";
 import type { Job, Worker } from "@k2b/sync";
-import { z } from "zod";
 import { lazySync } from "../../_internal/process-sync";
-import { isAiSettingsError, type RunAiStructuredInput, runAiStructured } from "../../ai";
+import { isAiSettingsError, runAiStructured } from "../../ai";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
+import { executeAiTask } from "../../ai/task-execution";
 
-import type { WorkflowJsonValue } from "../contracts";
 import {
   claimWorkflowAiTask,
   completeWorkflowAiTask,
@@ -17,7 +16,7 @@ import {
   wakeWorkflowAiTask,
   workflowAiTaskCancellationRequested,
 } from "./store";
-import type { WorkflowAiRequest, WorkflowAiTask } from "./types";
+import type { WorkflowAiTask } from "./types";
 
 const JOB_ID = "cloud.workflow-ai";
 const MAX_ATTEMPTS = 3;
@@ -72,92 +71,18 @@ export const settleWorkflowAiAttemptFailure = async (
   return "failed";
 };
 
-const asJson = (value: unknown): WorkflowJsonValue => JSON.parse(JSON.stringify(value)) as WorkflowJsonValue;
-const choiceEnum = (values: string[]) => z.enum(values as [string, ...string[]]);
-const structuredOutputSchema = (fields: Extract<WorkflowAiRequest, { kind: "extract_data" }>["fields"]) => {
-  const shape: Record<string, z.ZodType> = {};
-  for (const field of fields) {
-    let schema: z.ZodType =
-      field.type === "text"
-        ? z.string().max(field.maxLength ?? 20_000)
-        : field.type === "number"
-          ? z.number()
-          : field.type === "boolean"
-            ? z.boolean()
-            : field.type === "date_time"
-              ? z.iso.datetime({ offset: true })
-              : choiceEnum(field.choices!);
-    if (!field.required) schema = schema.optional();
-    shape[field.name] = schema.describe(field.description);
-  }
-  return z.object(shape).strict();
-};
-
-export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructured: StructuredRunner, signal: AbortSignal) => {
-  const request = task.request;
-  const common = {
-    appId: task.appId,
-    attribution: { workflowRunId: task.runId, stepKey: task.stepKey, userId: task.usageUserId },
-    requestedModelId: task.modelProfileId,
-    signal,
-    temperature: 0,
-  } satisfies Partial<RunAiStructuredInput<z.ZodType>>;
-
-  if (request.kind === "generate_text") {
-    const result = await runStructured({
-      ...common,
-      task: "workflow-generate-text",
-      systemPrompt: request.prompt,
-      input: request.input === undefined ? "Create the requested text." : JSON.stringify(request.input),
-      outputName: "generated_text",
-      output: z.object({ text: z.string().max(request.maxOutputChars) }),
-      maxOutputTokens: Math.min(8_192, Math.max(64, Math.ceil(request.maxOutputChars / 2))),
-    });
-    return { output: result.output.text as WorkflowJsonValue, usage: result.usage ? asJson(result.usage) : null };
-  }
-
-  if (request.kind === "classify") {
-    const result = await runStructured({
-      ...common,
-      task: "workflow-classify",
-      systemPrompt: `${request.prompt}\nReturn exactly one of the declared choices.`,
-      input: JSON.stringify(request.input),
-      outputName: "classification",
-      output: z.object({ choice: choiceEnum(request.choices) }),
-      maxOutputTokens: 200,
-    });
-    return { output: result.output.choice as WorkflowJsonValue, usage: result.usage ? asJson(result.usage) : null };
-  }
-
-  if (request.kind === "extract_data") {
-    const result = await runStructured({
-      ...common,
-      task: "workflow-extract-data",
-      systemPrompt: `${request.prompt}\nReturn only the declared fields. Do not invent values that are not supported by the input.`,
-      input: JSON.stringify(request.input),
-      outputName: "structured_data",
-      output: structuredOutputSchema(request.fields),
-      maxOutputTokens: 4_096,
-    });
-    return { output: asJson(result.output), usage: result.usage ? asJson(result.usage) : null };
-  }
-
-  const maximum = request.maxChoices ?? request.choices.length;
-  const result = await runStructured({
-    ...common,
-    task: "workflow-classify-many",
-    systemPrompt: `${request.prompt}\nReturn only unique values from the declared choices.`,
-    input: JSON.stringify(request.input),
-    outputName: "classifications",
-    output: z.object({ choices: z.array(choiceEnum(request.choices)).min(request.minChoices).max(maximum) }),
-    maxOutputTokens: 500,
-  });
-  const selected = new Set(result.output.choices);
-  return {
-    output: request.choices.filter((choice) => selected.has(choice)) as WorkflowJsonValue,
-    usage: result.usage ? asJson(result.usage) : null,
-  };
-};
+export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructured: StructuredRunner, signal: AbortSignal) =>
+  executeAiTask(
+    task.request,
+    {
+      appId: task.appId,
+      attribution: { workflowRunId: task.runId, stepKey: task.stepKey, userId: task.usageUserId },
+      requestedModelId: task.modelProfileId,
+      signal,
+      taskPrefix: "workflow",
+    },
+    runStructured,
+  );
 
 const retryableError = (error: unknown): boolean => {
   if (error instanceof AiBackgroundAdmissionError) return error.retryable;

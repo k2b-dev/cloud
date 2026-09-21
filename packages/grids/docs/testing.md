@@ -2,7 +2,7 @@
 
 ## Lightweight performance diagnosis
 
-From the repository root, run `bun run --cwd packages/grids perf:diagnose`.
+From the repository root, run `bun packages/grids/scripts/diagnostics.ts` with `CLOUD_TEST_DATABASE_URL`, `CLOUD_TEST_NATS_SERVERS`, and `CLOUD_TEST_GOTENBERG_URL` set.
 It uses the same local PostgreSQL, NATS, Gotenberg and `PDFTOTEXT` prerequisites
 as verification below, plus Docker with the local `valkey/valkey:8-alpine` image.
 It reuses those services and starts one small, temporary Valkey cache. Settings
@@ -46,8 +46,8 @@ Gotenberg and Poppler's `pdftotext` executable. It reads the root `.env` and use
 
 - `DATABASE_URL` for PostgreSQL;
 - `REDIS_URL` for Valkey;
-- `SYNC_TEST_SERVERS` for NATS (default: `nats://127.0.0.1:4222`);
-- `GRIDS_PDF_URL` for Gotenberg (default: `http://localhost:3001`);
+- `CLOUD_TEST_NATS_SERVERS` for NATS (for example `nats://127.0.0.1:4222`);
+- `CLOUD_TEST_GOTENBERG_URL` for Gotenberg (for example `http://localhost:3001`);
 - `PDFTOTEXT` for an optional executable path (default: `pdftotext` on `PATH`).
 
 The runner rejects remote PostgreSQL, NATS and Gotenberg URLs. It checks database,
@@ -87,8 +87,9 @@ operator log (`grids:documents`) while consumers receive the generic document
 error. The focused integration tests cover both boundaries.
 
 The separate `process-crashes` phase carries a finalized-record document workflow
-through real child-process failures. It requires `GRIDS_CRASH_TEST=1`, which the
-full runner sets, and refuses databases outside its `grids_verify_` namespace.
+through real child-process failures. It runs whenever `CLOUD_TEST_DATABASE_URL`,
+`CLOUD_TEST_NATS_SERVERS`, and `CLOUD_TEST_GOTENBERG_URL` are set and refuses
+databases outside its `grids_verify_` namespace.
 It kills workers after number reservation, during artifact storage, after the
 document commit and after a local HTTP receiver accepts an effect. A fifth worker
 is suspended and resumed after another worker takes over, before the new owner
@@ -122,9 +123,9 @@ selection contains Grids. No image in that selection is published unless
 certification succeeds. A failed, cancelled or unexpectedly skipped certification
 blocks that release. Releases selecting only other applications do not run it.
 
-`bun test` is the fast subset, not proof that integrations pass. `test:db` and
-`test:coverage` use the configured database directly; use only a disposable test
-database for those commands.
+`bun test` without `CLOUD_TEST_*` is the fast subset, not proof that integrations
+pass. With `CLOUD_TEST_DATABASE_URL` set, `bun test` and `test:coverage` use that
+database directly; its name must end in `_test`.
 
 Linting, coverage measurement, load tests and
 [visual browser checks](browser-regression-checklist.md) are separate checks.

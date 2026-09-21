@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import {
   listAiPendingWorkflowPatterns,
   listAiTurnWorkflowEvidence,
@@ -8,17 +9,6 @@ import {
 } from "./memory-workflow-evidence";
 import { migrateCloudAi } from "./migrate";
 import { createAiShortId } from "./short-id";
-
-const canUseAiDatabase = async () => {
-  try {
-    const [authRow] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!authRow?.users) return false;
-    await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 const insertUser = async (suffix: string): Promise<string> => {
   const [row] = await sql<{ id: string }[]>`
@@ -43,7 +33,10 @@ const insertCompletedTurn = async (userId: string): Promise<{ conversationId: st
   return { conversationId: conversation!.id, turnId: turn!.id };
 };
 
-describe.skipIf(!(await canUseAiDatabase()))("AI workflow evidence (integration)", () => {
+databaseSuite()("AI workflow evidence (integration)", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("counts idempotent successful receipts per user and reviews a three-turn pattern", async () => {
     const suffix = crypto.randomUUID();
     const firstUser = await insertUser(`${suffix}-first`);

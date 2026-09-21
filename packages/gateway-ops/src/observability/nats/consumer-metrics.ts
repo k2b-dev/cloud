@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { natsDiagnosticsConfig, natsDiagnosticsDependencies, type NatsDiagnosticsDependencies, type NatsInventorySummary } from "./service";
+import { type NatsDiagnosticsDependencies, type NatsInventorySummary, natsDiagnosticsConfig, natsDiagnosticsDependencies } from "./service";
 
 const counter = z.number().int().nonnegative();
 const pageSchema = z.object({

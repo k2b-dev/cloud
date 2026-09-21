@@ -1,38 +1,38 @@
-import { openAssistantActivities } from "./AssistantActivitiesDialog";
-import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
-import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { assistantSearchOptions, assistantProjectSearchOptions, assistantProjectsSearchOptions } from "./assistant-search";
-import { assistantCommandMessages } from "../commands";
+import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
-import { useAssistantText } from "./ui-copy";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import {
   AppWorkspace,
   createNavigation,
-  type NavigationItem,
-  dialogCore,
-  PanelDialog,
-  panelDialogOptions,
   Dropdown,
+  dialogCore,
   Format,
   IconButton,
+  type NavigationItem,
+  PanelDialog,
+  panelDialogOptions,
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import { type Accessor, createSignal, For, createEffect, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
+import { artifactMessages } from "../artifacts/messages";
+import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
+import { assistantCommandMessages } from "../commands";
+import { openAssistantActivities } from "./AssistantActivitiesDialog";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
+import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";
+import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
 import { ConversationStatusMeta } from "./conversation-status";
 import { conversationStatusPresentation } from "./conversation-view";
 import { assistantMessages } from "./messages";
-import { artifactMessages } from "../artifacts/messages";
+import { useAssistantText } from "./ui-copy";
 
 type AssistantSidebarProps = {
   conversations: Accessor<AiConversation[]>;
@@ -53,21 +53,32 @@ type AssistantSidebarProps = {
   live: AssistantLiveHub;
 };
 
-function AssistantSearchButton(props: { project?: AiProject; currentChat?: boolean; registerCommand?: boolean; variant?: "item" | "icon" }) {
+function AssistantSearchButton(props: {
+  project?: AiProject;
+  currentChat?: boolean;
+  registerCommand?: boolean;
+  variant?: "item" | "icon";
+}) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
-  const options = () => props.project ? assistantProjectSearchOptions(props.project) : assistantSearchOptions(locale());
-  const title = () => props.project ? assistantCommandMessages.resolve([locale()]).t.searchProject : t().searchChats;
+  const options = () => (props.project ? assistantProjectSearchOptions(props.project) : assistantSearchOptions(locale()));
+  const title = () => (props.project ? assistantCommandMessages.resolve([locale()]).t.searchProject : t().searchChats);
   const openSearch = () => openGlobalSearch(options());
 
   createEffect(() => {
     if (!props.registerCommand) return;
-    onCleanup(registerContextAwareCommand({
-      id: "assistant.search", title: title(), description: props.project
-        ? assistantCommandMessages.resolve([locale()]).t.searchProjectDescription({ name: props.project.name })
-        : assistantCommandMessages.resolve([locale()]).t.searchChatsDescription,
-      icon: "ti ti-search", shortcut: props.currentChat ? undefined : "mod+shift+k", action: { search: options() },
-    }));
+    onCleanup(
+      registerContextAwareCommand({
+        id: "assistant.search",
+        title: title(),
+        description: props.project
+          ? assistantCommandMessages.resolve([locale()]).t.searchProjectDescription({ name: props.project.name })
+          : assistantCommandMessages.resolve([locale()]).t.searchChatsDescription,
+        icon: "ti ti-search",
+        shortcut: props.currentChat ? undefined : "mod+shift+k",
+        action: { search: options() },
+      }),
+    );
   });
 
   return props.variant === "icon" ? (
@@ -124,7 +135,8 @@ function ConversationSidebarItem(props: {
           <span>
             <Show when={props.conversation.pinnedAt} fallback={<i class={props.project?.icon || "ti ti-message"} aria-hidden="true" />}>
               <i class="ti ti-pin text-accent" role="img" aria-label={assistantMessages.resolve([locale()]).t.pinnedLabel} />
-            </Show> {props.project?.name ?? text("Chat")}
+            </Show>{" "}
+            {props.project?.name ?? text("Chat")}
           </span>
         ) : undefined
       }
@@ -156,7 +168,17 @@ function ConversationSidebarItem(props: {
         ),
       }}
     >
-      <AppWorkspace.SidebarItemLabel marquee={false}>{props.conversation.title}<Show when={props.conversation.hasActiveSchedule}><i class="assistant-chat-schedule-icon ti ti-clock" role="img" aria-label={text("Active schedule")} title={text("Active schedule")} /></Show></AppWorkspace.SidebarItemLabel>
+      <AppWorkspace.SidebarItemLabel marquee={false}>
+        {props.conversation.title}
+        <Show when={props.conversation.hasActiveSchedule}>
+          <i
+            class="assistant-chat-schedule-icon ti ti-clock"
+            role="img"
+            aria-label={text("Active schedule")}
+            title={text("Active schedule")}
+          />
+        </Show>
+      </AppWorkspace.SidebarItemLabel>
       <Show when={!props.conversation.pinnedAt}>
         <AppWorkspace.SidebarItemAction
           icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
@@ -172,7 +194,11 @@ function ConversationSidebarItem(props: {
           onSelect={() => void toggleDone()}
         >
           <Show when={!props.conversation.isDone} fallback={<i class="ti ti-arrow-back-up" aria-hidden="true" />}>
-            <i class={props.donePhase === "saving" ? "ti ti-loader-2 animate-spin motion-reduce:animate-none" : "ti ti-check"} aria-hidden="true" /><span role="status">{text("Done")}</span>
+            <i
+              class={props.donePhase === "saving" ? "ti ti-loader-2 animate-spin motion-reduce:animate-none" : "ti ti-check"}
+              aria-hidden="true"
+            />
+            <span role="status">{text("Done")}</span>
           </Show>
         </AppWorkspace.SidebarItemAction>
       </Show>
@@ -184,29 +210,55 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const text = useAssistantText();
-  const [doneFeedback, setDoneFeedback] = createSignal<ReadonlyMap<string, { conversation: AiConversation; phase: DonePhase; index: number }>>(new Map());
+  const [doneFeedback, setDoneFeedback] = createSignal<
+    ReadonlyMap<string, { conversation: AiConversation; phase: DonePhase; index: number }>
+  >(new Map());
   const timers = new Set<ReturnType<typeof setTimeout>>();
   let disposed = false;
-  onCleanup(() => { disposed = true; for (const timer of timers) clearTimeout(timer); });
-  const clearFeedback = (id: string) => setDoneFeedback(current => { const next = new Map(current); next.delete(id); return next; });
-  const setPhase = (id: string, phase: DonePhase) => setDoneFeedback(current => {
-    const entry = current.get(id);
-    return entry ? new Map(current).set(id, { ...entry, phase }) : current;
+  onCleanup(() => {
+    disposed = true;
+    for (const timer of timers) clearTimeout(timer);
   });
+  const clearFeedback = (id: string) =>
+    setDoneFeedback((current) => {
+      const next = new Map(current);
+      next.delete(id);
+      return next;
+    });
+  const setPhase = (id: string, phase: DonePhase) =>
+    setDoneFeedback((current) => {
+      const entry = current.get(id);
+      return entry ? new Map(current).set(id, { ...entry, phase }) : current;
+    });
   const later = (action: () => void, delay: number) => {
-    const timer = setTimeout(() => { timers.delete(timer); if (!disposed) action(); }, delay);
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      if (!disposed) action();
+    }, delay);
     timers.add(timer);
   };
   const toggleDone = async (conversation: AiConversation) => {
     if (doneFeedback().has(conversation.id)) return;
-    setDoneFeedback(current => new Map(current).set(conversation.id, { conversation, phase: "saving", index: props.conversations().findIndex(item => item.id === conversation.id) }));
+    setDoneFeedback((current) =>
+      new Map(current).set(conversation.id, {
+        conversation,
+        phase: "saving",
+        index: props.conversations().findIndex((item) => item.id === conversation.id),
+      }),
+    );
     try {
       const updated = await assistantApi.setConversationDone(conversation.id, !conversation.isDone);
       if (disposed) return;
       props.onConversationUpdated?.(updated);
-      if (conversation.isDone) { clearFeedback(conversation.id); return; }
+      if (conversation.isDone) {
+        clearFeedback(conversation.id);
+        return;
+      }
       setPhase(conversation.id, "confirmed");
-      later(() => { setPhase(conversation.id, "leaving"); later(() => clearFeedback(conversation.id), 150); }, 450);
+      later(() => {
+        setPhase(conversation.id, "leaving");
+        later(() => clearFeedback(conversation.id), 150);
+      }, 450);
     } catch {
       if (disposed) return;
       clearFeedback(conversation.id);
@@ -215,12 +267,13 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   };
   const visibleConversations = () => {
     const retained = doneFeedback();
-    const current = props.conversations().filter(item => !retained.has(item.id));
-    for (const item of [...retained.values()].sort((a, b) => a.index - b.index)) current.splice(Math.max(0, Math.min(item.index, current.length)), 0, item.conversation);
+    const current = props.conversations().filter((item) => !retained.has(item.id));
+    for (const item of [...retained.values()].sort((a, b) => a.index - b.index))
+      current.splice(Math.max(0, Math.min(item.index, current.length)), 0, item.conversation);
     return current;
   };
-  const activeConversations = () => visibleConversations().filter(conversation => !conversation.isDone);
-  const doneConversations = () => visibleConversations().filter(conversation => conversation.isDone);
+  const activeConversations = () => visibleConversations().filter((conversation) => !conversation.isDone);
+  const doneConversations = () => visibleConversations().filter((conversation) => conversation.isDone);
   const activeView = () => props.activeView ?? "chat";
   const activeProjectId = () => (activeView() === "chat" ? (props.activeProjectId ?? null) : null);
   const activeConversationId = () => (activeView() === "chat" && !activeProjectId() ? (props.activeConversationId?.() ?? null) : null);
@@ -261,10 +314,24 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <div class="flex items-center justify-between gap-2">
               <strong>{t().projects}</strong>
               <div class="flex items-center gap-1">
-                <IconButton size="xs" label={t().searchProjects} onClick={() => { close(); openProjectSearch(); }}>
+                <IconButton
+                  size="xs"
+                  label={t().searchProjects}
+                  onClick={() => {
+                    close();
+                    openProjectSearch();
+                  }}
+                >
                   <i class="ti ti-search" aria-hidden="true" />
                 </IconButton>
-                <IconButton size="xs" label={t().createProject} onClick={() => { close(); void props.onCreateProject?.(); }}>
+                <IconButton
+                  size="xs"
+                  label={t().createProject}
+                  onClick={() => {
+                    close();
+                    void props.onCreateProject?.();
+                  }}
+                >
                   <i class="ti ti-plus" aria-hidden="true" />
                 </IconButton>
               </div>
@@ -274,7 +341,10 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                 <AppWorkspace.SidebarItem
                   icon={project.icon || "ti ti-folder"}
                   active={activeProjectId() === project.id}
-                  onClick={() => { close(); void openProject(project); }}
+                  onClick={() => {
+                    close();
+                    void openProject(project);
+                  }}
                 >
                   <AppWorkspace.SidebarItemLabel marquee={false}>{project.name}</AppWorkspace.SidebarItemLabel>
                 </AppWorkspace.SidebarItem>
@@ -347,14 +417,17 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       <Show when={!doneConversations().length}>
         <p class="px-2 py-1 text-xs text-dimmed">{text("No done chats.")}</p>
       </Show>
-      <AppWorkspace.SidebarItem icon="ti ti-eye" onClick={() => openAllChats()}>{t().allChats}</AppWorkspace.SidebarItem>
+      <AppWorkspace.SidebarItem icon="ti ti-eye" onClick={() => openAllChats()}>
+        {t().allChats}
+      </AppWorkspace.SidebarItem>
     </AppWorkspace.SidebarSection>
   );
-  const collapsedChatMenu = () => chatConversations().map((conversation) => ({
-    label: conversation.title,
-    icon: conversation.pinnedAt ? "ti ti-pin text-accent" : conversation.hasActiveSchedule ? "ti ti-clock" : "ti ti-message",
-    action: () => openConversationFromCommand(conversation),
-  }));
+  const collapsedChatMenu = () =>
+    chatConversations().map((conversation) => ({
+      label: conversation.title,
+      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : conversation.hasActiveSchedule ? "ti ti-clock" : "ti ti-message",
+      action: () => openConversationFromCommand(conversation),
+    }));
 
   const searchProject = () => props.projects?.find((project) => project.id === activeProjectId());
   const openSearch = () => {
@@ -397,8 +470,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const openStudio = async () => {
     if (studioOpen) return;
     studioOpen = true;
-    try { await openStudioDialog({ activeAppId: props.activeAppId, signal: studioLifetime.signal }); }
-    finally { studioOpen = false; }
+    try {
+      await openStudioDialog({ activeAppId: props.activeAppId, signal: studioLifetime.signal });
+    } finally {
+      studioOpen = false;
+    }
   };
   onMount(() => {
     const url = new URL(window.location.href);
@@ -584,17 +660,33 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
             <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
-            <AppWorkspace.SidebarItem icon="ti ti-inbox" title={text("Background activity")} onClick={() => void openAssistantActivities(props.live)}>{text("Background activity")}</AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem
+              icon="ti ti-inbox"
+              title={text("Background activity")}
+              onClick={() => void openAssistantActivities(props.live)}
+            >
+              {text("Background activity")}
+            </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
               {t().personalize}
             </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
           <AppWorkspace.SidebarFooter sidebarMode="collapsed">
-            <AppWorkspace.SidebarItem icon="ti ti-check" title={text("Done")} onClick={() => openAllChats(true)}>{text("Done")}</AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem icon="ti ti-check" title={text("Done")} onClick={() => openAllChats(true)}>
+              {text("Done")}
+            </AppWorkspace.SidebarItem>
             <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
-            <AppWorkspace.SidebarItem icon="ti ti-inbox" title={text("Background activity")} onClick={() => void openAssistantActivities(props.live)}>{text("Background activity")}</AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarItem icon="ti ti-user-cog" title={t().personalize} onClick={() => void openAssistantPrefsModal()}>{t().personalize}</AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem
+              icon="ti ti-inbox"
+              title={text("Background activity")}
+              onClick={() => void openAssistantActivities(props.live)}
+            >
+              {text("Background activity")}
+            </AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem icon="ti ti-user-cog" title={t().personalize} onClick={() => void openAssistantPrefsModal()}>
+              {t().personalize}
+            </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>

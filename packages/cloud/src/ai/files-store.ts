@@ -1,5 +1,5 @@
-import { aiFileContentVersion, AiFileWriteError, AiFileVersionConflict } from "./file-content-version";
-import { sql, type SQL } from "bun";
+import { type SQL, sql } from "bun";
+import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 
 export { guessAiMediaType } from "./file-media-type";
 
@@ -142,7 +142,8 @@ export const aiFileStore = {
     producerCallKey: string;
     mediaType: string;
   }): Promise<AiFileStat> {
-    if (input.bytes.byteLength > AI_FILES_MAX_FILE_BYTES_DEFAULT) throw new AiFileWriteError("STORAGE_FULL", "File exceeds the destination file limit; nothing was written.");
+    if (input.bytes.byteLength > AI_FILES_MAX_FILE_BYTES_DEFAULT)
+      throw new AiFileWriteError("STORAGE_FULL", "File exceeds the destination file limit; nothing was written.");
     if (!normalizeAiFilePath(input.path)) {
       throw new Error("Invalid tool artifact path or file size.");
     }
@@ -199,7 +200,8 @@ export const aiFileStore = {
   },
 
   async list(input: { conversationId: string; prefix?: string; after?: string; limit?: number }): Promise<AiFileStat[]> {
-    if (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 1000)) throw new Error("Invalid file page limit");
+    if (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 1000))
+      throw new Error("Invalid file page limit");
     const prefix = input.prefix ?? "/";
     const pattern = `${prefix.endsWith("/") ? prefix : `${prefix}/`}%`;
     const rows = await sql<FileRow[]>`
@@ -306,16 +308,29 @@ export const aiFileStore = {
     }
 
     return sql.begin(async (tx) => {
-      const [conversation] = await tx<{ id: string; created_by_user_id: string; archived_at: Date | null }[]>`SELECT id,created_by_user_id,archived_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
-      if (input.ownerUserId !== undefined && (!conversation || conversation.created_by_user_id !== input.ownerUserId || conversation.archived_at)) throw new Error("Conversation access denied");
+      const [conversation] = await tx<
+        { id: string; created_by_user_id: string; archived_at: Date | null }[]
+      >`SELECT id,created_by_user_id,archived_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      if (
+        input.ownerUserId !== undefined &&
+        (!conversation || conversation.created_by_user_id !== input.ownerUserId || conversation.archived_at)
+      )
+        throw new Error("Conversation access denied");
       if (input.expectedVersion !== undefined) {
-        const [existing] = await tx<FileContentRow[]>`SELECT path,size,media_type,origin,updated_at,version,bytes FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${input.path}`;
-        const version = existing ? aiFileContentVersion({ ...toContent(existing), id: `${input.conversationId}:${input.path}:${existing.version}` }) : null;
+        const [existing] = await tx<
+          FileContentRow[]
+        >`SELECT path,size,media_type,origin,updated_at,version,bytes FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${input.path}`;
+        const version = existing
+          ? aiFileContentVersion({ ...toContent(existing), id: `${input.conversationId}:${input.path}:${existing.version}` })
+          : null;
         if (version !== input.expectedVersion) throw new AiFileVersionConflict();
       }
       const otherBytes = await aiConversationStoredBytes(tx, input.conversationId, input.path);
       if (otherBytes + input.bytes.byteLength > maxConversation) {
-        throw new AiFileWriteError("STORAGE_FULL", `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
+        throw new AiFileWriteError(
+          "STORAGE_FULL",
+          `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`,
+        );
       }
       if (input.origin === "user") {
         if (input.allowUserOverwrite) {
@@ -347,7 +362,9 @@ export const aiFileStore = {
         `;
         if (!written[0]) throw new Error(`Cannot overwrite user-uploaded file ${input.path}.`);
       }
-      const [written] = await tx<FileRow[]>`SELECT path,size,media_type,origin,dictation_recorded_at,updated_at,version FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${input.path}`;
+      const [written] = await tx<
+        FileRow[]
+      >`SELECT path,size,media_type,origin,dictation_recorded_at,updated_at,version FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${input.path}`;
       return toStat(written!);
     });
   },
@@ -374,7 +391,10 @@ export const aiFileStore = {
       }
       const total = await aiConversationStoredBytes(tx, input.conversationId);
       if (total + input.bytes.byteLength > maxConversation) {
-        throw new AiFileWriteError("STORAGE_FULL", `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
+        throw new AiFileWriteError(
+          "STORAGE_FULL",
+          `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`,
+        );
       }
       const appended = await tx<{ id: string }[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
@@ -461,11 +481,19 @@ export const aiFileStore = {
 };
 
 /** Authorized services may expose this read after resolving the conversation owner. */
-export const listAiConversationFiles = (conversationId: string, prefix?: string, page?: { after?: string; limit: number }): Promise<AiFileStat[]> =>
-  aiFileStore.list({ conversationId, prefix, ...page });
+export const listAiConversationFiles = (
+  conversationId: string,
+  prefix?: string,
+  page?: { after?: string; limit: number },
+): Promise<AiFileStat[]> => aiFileStore.list({ conversationId, prefix, ...page });
 
 /** Authorized byte-preserving read for app-owned artifact importers. */
-export async function readAiConversationFile(input: { conversationId: string; ownerUserId: string; path: string; version?: number }): Promise<AiFileContent | null> {
+export async function readAiConversationFile(input: {
+  conversationId: string;
+  ownerUserId: string;
+  path: string;
+  version?: number;
+}): Promise<AiFileContent | null> {
   const { aiConversations } = await import("./store");
   const conversation = await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId: input.ownerUserId });
   if (!conversation || conversation.archivedAt) return null;
@@ -475,17 +503,27 @@ export async function readAiConversationFile(input: { conversationId: string; ow
 
 /** Save one agent-produced file without overwriting an existing or user-edited file. */
 export async function createAiConversationArtifact(input: {
-  conversationId: string; ownerUserId: string; path: string; bytes: Uint8Array; mediaType: string; producerCallKey: string;
+  conversationId: string;
+  ownerUserId: string;
+  path: string;
+  bytes: Uint8Array;
+  mediaType: string;
+  producerCallKey: string;
 }): Promise<AiFileStat> {
   const { aiConversations } = await import("./store");
-  const conversation = await aiConversations.getConversation({conversationId:input.conversationId,ownerUserId:input.ownerUserId});
+  const conversation = await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId: input.ownerUserId });
   if (!conversation || conversation.archivedAt) throw new Error("Conversation access denied");
   return aiFileStore.createToolArtifact(input);
 }
 
 /** Explicit, revision-checked file replacement for authorized transfer services. */
 export async function writeAiConversationFile(input: {
-  conversationId: string; ownerUserId: string; path: string; bytes: Uint8Array; mediaType: string; expectedVersion: string | null;
+  conversationId: string;
+  ownerUserId: string;
+  path: string;
+  bytes: Uint8Array;
+  mediaType: string;
+  expectedVersion: string | null;
 }): Promise<AiFileStat> {
   if (normalizeAiFilePath(input.path) !== input.path) throw new Error("Invalid file path");
   const current = await aiFileStore.stat(input);

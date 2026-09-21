@@ -46,7 +46,7 @@ export async function build({ development = false } = {}) {
       __PWA_VERSION__: JSON.stringify(
         development
           ? "dev"
-          : `${process.env.PWA_VERSION || "unreleased"}${process.env.PWA_REVISION ? ` (${process.env.PWA_REVISION.slice(0, 7)})` : ""}`,
+          : `${process.env.CLOUD_VERSION || "unreleased"}${process.env.CLOUD_RELEASE && process.env.CLOUD_RELEASE !== "local" ? ` (${process.env.CLOUD_RELEASE})` : ""}`,
       ),
     },
   });

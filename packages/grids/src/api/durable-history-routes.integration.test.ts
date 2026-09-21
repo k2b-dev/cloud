@@ -4,13 +4,14 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import recordsRoutes from "./records";
 import tablesRoutes from "./tables";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 const app = new Hono<AuthContext>().route("/tables", tablesRoutes).route("/records", recordsRoutes);

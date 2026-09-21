@@ -2,7 +2,9 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { AppWorkspace, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup } from "solid-js";
 import { createToolSearch, toolSearchMessages } from "./tool-search";
+
 export { toolSearchMessages } from "./tool-search";
+
 type Props = { variant?: SpotlightButtonVariant; registerCommand?: boolean };
 export default function ToolSearchButton(props: Props) {
   const locale = useLocale();

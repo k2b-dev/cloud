@@ -150,7 +150,10 @@ export const parseDelimitedText = (
 
   const pushField = () => {
     if (row.length < maxColumns) row.push(field);
-    else { truncated = true; columnsTruncated = true; }
+    else {
+      truncated = true;
+      columnsTruncated = true;
+    }
     field = "";
   };
   const pushRow = () => {

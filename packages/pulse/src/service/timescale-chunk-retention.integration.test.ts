@@ -1,23 +1,15 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { runRetentionBatch } from "./runtime";
 import { pruneEmptyTimescaleChunk } from "./timescale-chunk-retention";
 
-const dbTest = process.env.PULSE_CHUNK_RETENTION_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest(
   "empty chunk maintenance preserves shared-base and dirty data and yields to writers",
   async () => {
-    const target = new URL(process.env.DATABASE_URL ?? "");
-    if (
-      !["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) ||
-      !["/pulse_analytics_test", "/pulse_schema_test"].includes(target.pathname)
-    ) {
-      throw new Error("Chunk retention tests require an explicit loopback disposable database");
-    }
-    const [database] = await sql`SELECT current_database() AS name`;
-    if (!["pulse_analytics_test", "pulse_schema_test"].includes(database.name)) throw new Error("Wrong disposable database");
     const [extension] = await sql`SELECT 1 FROM pg_extension WHERE extname='timescaledb'`;
     if (!extension) {
       expect(await pruneEmptyTimescaleChunk()).toEqual({ dropped: 0, deferred: false });

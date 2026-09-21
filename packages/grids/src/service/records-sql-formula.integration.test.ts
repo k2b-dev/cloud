@@ -1,8 +1,9 @@
+import { describe, expect } from "bun:test";
+import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { parseFormula } from "../formula/parser";
 import { lockFinalizedSchema } from "./finalized-schema";
 import { refreshLocalCalculations } from "./local-calculation-storage";
-import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
-import { parseFormula } from "../formula/parser";
 import { aggregate, get, group, list } from "./records";
 
 // Raw SQL fixtures must materialize the same stored calculations as normal writes.
@@ -12,7 +13,7 @@ const materialize = (tableId: string) =>
     await refreshLocalCalculations(tx, tableId);
   });
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);

@@ -1,26 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, SignJWT } from "jose";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import { publicCloudOrigin } from "../shared/app-url";
 import { clearOAuthVerifierCachesForTest, resolveOAuthTokenActor, verifyAccessToken } from "./oauth-tokens";
 import * as settings from "./settings";
 
-const canUseDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<Array<{ clients: string | null; users: string | null }>>`
-      SELECT to_regclass('oauth.clients')::text AS clients,
-             to_regclass('auth.users')::text AS users
-    `;
-    const [client] = await sql<Array<{ present: boolean }>>`
-      SELECT true AS present FROM oauth.clients WHERE client_id = 'cloud-cli'
-    `;
-    return Boolean(row?.clients && row.users && client?.present);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 const userId = crypto.randomUUID();
 const uid = `oauth-verifier-${userId}`;
 const coreKid = crypto.randomUUID();
@@ -106,8 +93,10 @@ suite("OAuth access-token verifier", () => {
       user: { id: userId },
     });
     expect(queries).toEqual([
-      expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/),
-      expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/),
+      expect.stringMatching(/FROM oauth\.clients/),
+      expect.stringMatching(/FROM settings\.entries/),
+      expect.stringMatching(/FROM oauth\.clients/),
+      expect.stringMatching(/FROM settings\.entries/),
     ]);
     expect(queries.join("\n")).not.toMatch(/(?:auth|oauth)\.signing_keys/);
   });
@@ -165,8 +154,10 @@ suite("OAuth access-token verifier", () => {
       countedSql,
     );
     expect(queries).toEqual([
-      expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/),
-      expect.stringMatching(/FROM oauth\.clients/), expect.stringMatching(/FROM settings\.entries/),
+      expect.stringMatching(/FROM oauth\.clients/),
+      expect.stringMatching(/FROM settings\.entries/),
+      expect.stringMatching(/FROM oauth\.clients/),
+      expect.stringMatching(/FROM settings\.entries/),
     ]);
     expect(queries.join("\n")).not.toMatch(/(?:auth|oauth)\.signing_keys/);
     expect(service).toMatchObject({

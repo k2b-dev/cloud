@@ -1,4 +1,4 @@
-# Infrastructure services – run with: bun run dev:infra
+# Infrastructure services – started by `bun run dev` (stopped with `bun run dev:down --infra`)
 
 # Persistent single-node JetStream for local development. Cluster failure tests
 # belong to the dedicated Sync test cluster, not the everyday app stack.
@@ -75,7 +75,7 @@ services:
       - ipa_nats_data:/data
 
   geo:
-    image: ghcr.io/valentinkolb/geo:latest
+    image: ghcr.io/valentinkolb/geo@sha256:bd4cf5b4e8114c6a838eacb3dc9a6db318e21d04ca2602cafe88e71f1dcae7b1
     container_name: geo
     restart: unless-stopped
     ports:
@@ -155,7 +155,7 @@ configs:
           path: /data/freeipa
           execution: true
           index: false
-  # Prepared by bun run dev:infra; contains only the admin public key.
+  # Prepared by `bun run dev`; contains only the admin public key.
   nats_system_config:
     file: ./.local/nats/system.conf
   nats_config:

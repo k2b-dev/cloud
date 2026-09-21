@@ -1,4 +1,5 @@
 import type { CapabilityCaller } from "../capabilities/server";
+import { env } from "../config/env";
 
 export const CODE_CAPABILITY_TOKEN_HEADER = "x-cloud-code-capability-token";
 export const codeCapabilityOperation = (conversationId: string, turnId: string) => `code-capabilities:${conversationId}:${turnId}`;
@@ -8,7 +9,7 @@ export const codeCapabilityPath = (conversationId: string, turnId: string) => `/
 export function createCodeCapabilityTransport(
   current: () => { conversationId: string; turnId: string; token: string },
 ): NonNullable<CapabilityCaller["transport"]> {
-  const configured = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+  const configured = env.CLOUD_CORE_INTERNAL_ORIGIN;
   if (!configured) throw new Error("CLOUD_CORE_INTERNAL_ORIGIN is required for the code host");
   const origin = new URL(configured);
   if (!["http:", "https:"].includes(origin.protocol)) throw new Error("Invalid Core origin");

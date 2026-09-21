@@ -1,17 +1,17 @@
-import { z } from "zod";
 import {
-  AiFileLocation,
-  AiFileReference,
-  aiConversations,
-  aiProjects,
-  aiFileContentVersion,
+  type AiFileLocation,
+  type AiFileReference,
   AiFileVersionConflict,
-  normalizeAiFilePath,
+  aiConversations,
+  aiFileContentVersion,
+  aiProjects,
   listAiConversationFiles,
+  normalizeAiFilePath,
   readAiConversationFile,
   writeAiConversationFile,
 } from "@k2b/cloud/ai";
-import { artifacts, ArtifactError, user, type ArtifactIdentity } from "./service";
+import { z } from "zod";
+import { ArtifactError, type ArtifactIdentity, artifacts, user } from "./service";
 
 type Container = Pick<AiFileLocation, "scope" | "id">;
 async function resolve(location: Container, identity: ArtifactIdentity, write = false) {

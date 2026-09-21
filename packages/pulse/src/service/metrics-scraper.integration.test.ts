@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { err, fail, ok } from "@k2b/cloud/server";
 import { SQL, sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { ingestBatch } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
 import { dueMetricsSources } from "./runtime";
 
-const enabled = process.env.PULSE_METRICS_SCRAPER_DB_TEST === "1";
+const enabled = testInfra.database !== undefined;
 const postgresTest = enabled ? test : test.skip;
 
 let endpoint: ReturnType<typeof Bun.serve> | undefined;

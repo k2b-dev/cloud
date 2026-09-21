@@ -71,6 +71,7 @@ supported surface; links within references add related workflows when needed.
 | Persist JSON or files locally/shared | [Storage](references/storage.md) |
 | Copy files between chats, Projects and Apps | [File transfers](references/files.md) |
 | Resource SQL, schema, row CRUD, imports | [Database](references/database.md) |
+| Generate text, classify data or extract structured fields | [AI calculations](references/ai.md) |
 | Discovered Cloud queries/actions | [Capability calls](references/capabilities.md) |
 | External HTTPS and personal secrets | [HTTP and secrets](references/http.md) |
 | Call a published App action; declare handlers | [App actions](references/app-actions.md) |

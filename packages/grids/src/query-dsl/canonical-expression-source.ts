@@ -3,11 +3,11 @@ import type { Expr, Literal } from "../formula/types";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import type { Field } from "../service/types";
 import type { DslDerivedViewColumn, DslResolvedRelationJoin, DslResolverDiagnostic } from "./resolver";
-import { gqlFieldRef, gqlLiteralSource, gqlQuotedRef } from "./source-format";
-import type { DslQualifiedRef } from "./types";
-import type { DslSummaryJoin } from "./resolver-summary-joins";
 import { derivedColumnByRef } from "./resolver-derived-columns";
 import { isResolverDiagnostic } from "./resolver-diagnostics";
+import type { DslSummaryJoin } from "./resolver-summary-joins";
+import { gqlFieldRef, gqlLiteralSource, gqlQuotedRef } from "./source-format";
+import type { DslQualifiedRef } from "./types";
 
 export type CanonicalScope = {
   tableId: string;
@@ -105,7 +105,8 @@ export const resolveFieldRef = (
   const summary = ref.scope ? scope.summariesByAlias?.get(normalizeRefKey(ref.scope)) : undefined;
   if (summary) {
     const column = derivedColumnByRef(summary.columns, ref.ref, ref.span);
-    return isResolverDiagnostic(column) ? { ok: false, diagnostic: column }
+    return isResolverDiagnostic(column)
+      ? { ok: false, diagnostic: column }
       : { ok: true, text: `${summary.alias}.${gqlQuotedRef(column.publicKey ?? column.key)}` };
   }
   if (scope.derivedColumns && !ref.scope) {

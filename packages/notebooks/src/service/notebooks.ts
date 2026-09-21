@@ -1,7 +1,7 @@
-import type { DateContext } from "@k2b/stdlib";
 import type { MutationResult } from "@k2b/cloud/contracts";
 import { deleteAccess, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { get as settingsGet, logger, serviceAccounts } from "@k2b/cloud/services";
+import { logger, serviceAccounts, get as settingsGet } from "@k2b/cloud/services";
+import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate, validateNoteTitleTemplate } from "../lib/note-title-template";
 import { isPresentationMode, type PresentationMode } from "../lib/presentation-mode";

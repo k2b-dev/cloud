@@ -1,6 +1,6 @@
-import { assistantCodeCommands } from "./cli/code";
 import { defineCliCommands } from "@k2b/cloud/cli";
 import { assistantChatCommands, assistantManagementCommands } from "./cli/chat";
+import { assistantCodeCommands } from "./cli/code";
 import { assistantRootCommand } from "./cli/interactive";
 import { assistantPersonalizationCommands } from "./cli/personalization";
 import { assistantProjectCommands } from "./cli/projects";

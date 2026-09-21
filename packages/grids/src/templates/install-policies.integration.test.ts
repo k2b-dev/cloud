@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { listTemplatesForTable } from "../service/document-templates";
@@ -10,7 +11,7 @@ import { instantiateDefinition } from "../service/templates";
 import { formula, type GridTemplate, table } from "./types";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 const definition = (): GridTemplate => ({

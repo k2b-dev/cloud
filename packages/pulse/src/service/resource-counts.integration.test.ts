@@ -1,22 +1,15 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { ingestBatch } from "./ingest-writer";
 import { listResources } from "./signal-catalog";
 
-const dbTest = process.env.PULSE_RESOURCE_COUNTS_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest(
   "complete, filtered and paginated resources retain exact event counts",
   async () => {
-    const target = new URL(process.env.DATABASE_URL ?? "");
-    if (
-      !["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) ||
-      !["/pulse_analytics_test", "/pulse_schema_test"].includes(target.pathname)
-    )
-      throw Error("Disposable loopback database required");
-    const [database] = await sql`SELECT current_database() AS name`;
-    if (!["pulse_analytics_test", "pulse_schema_test"].includes(database.name)) throw Error("Wrong disposable database");
     const baseId = crypto.randomUUID();
     const sources = [crypto.randomUUID(), crypto.randomUUID()];
     const [user] =

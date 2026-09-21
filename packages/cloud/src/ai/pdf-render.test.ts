@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { PdfPages, renderPdfPages, PDF_MAX_BYTES } from "./pdf-render";
+import { PDF_MAX_BYTES, PdfPages, renderPdfPages } from "./pdf-render";
 import { visionPdfFixture } from "./pdf-render.fixture";
 
 test.skipIf(process.platform !== "linux")("PDF renderer selects one-based pages in requested order and emits bounded PNGs", async () => {

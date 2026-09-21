@@ -2,17 +2,17 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { AiConversationSource } from "@k2b/cloud/ai";
+import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
-  visibleAssistantReferences,
   assistantResourceTypeLabel,
   splitAssistantConversationSources,
+  visibleAssistantReferences,
 } from "./assistant-context";
 
 const root = mkdtempSync(resolve(tmpdir(), "assistant-chat-context-"));
@@ -78,7 +78,16 @@ describe("Assistant chat context", () => {
         get children() {
           return createComponent(AssistantChatContextContent, {
             chatId: "cHt234",
-            initial: { chatId: "cHt234", sources: [reference], files: [], tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [] },
+            initial: {
+              chatId: "cHt234",
+              sources: [reference],
+              files: [],
+              tasks: [],
+              viewerUserId: "test",
+              apps: [],
+              runCount: 0,
+              runs: [],
+            },
           });
         },
       }),
@@ -132,7 +141,16 @@ describe("Assistant chat context", () => {
         }),
       );
 
-    const empty = { chatId: "cHt234", sources: [], files: [], tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [] } satisfies AssistantChatContextSnapshot;
+    const empty = {
+      chatId: "cHt234",
+      sources: [],
+      files: [],
+      tasks: [],
+      viewerUserId: "test",
+      apps: [],
+      runCount: 0,
+      runs: [],
+    } satisfies AssistantChatContextSnapshot;
     const populated = { ...empty, sources: [source("web", "docs")] } satisfies AssistantChatContextSnapshot;
 
     expect(assistantChatContextHasContent(empty)).toBeFalse();
@@ -169,7 +187,16 @@ describe("Assistant chat context", () => {
         get children() {
           return createComponent(AssistantChatContextContent, {
             chatId: "cHt234",
-            initial: { chatId: "cHt234", sources: [source("web", "Cloud docs")], files: [], tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [] },
+            initial: {
+              chatId: "cHt234",
+              sources: [source("web", "Cloud docs")],
+              files: [],
+              tasks: [],
+              viewerUserId: "test",
+              apps: [],
+              runCount: 0,
+              runs: [],
+            },
           });
         },
       }),
@@ -221,7 +248,11 @@ describe("Assistant chat context", () => {
                 file("file-three.txt", "text/plain"),
                 file("file-four.txt", "text/plain"),
               ],
-              tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [],
+              tasks: [],
+              viewerUserId: "test",
+              apps: [],
+              runCount: 0,
+              runs: [],
             },
           });
         },
@@ -273,7 +304,18 @@ test("hides only the current chat and the task already shown in Scheduled", () =
   ];
   expect(visibleAssistantReferences(refs, "cHt234", "tSk234").map((item) => item.key)).toEqual(["other-chat", "other-task"]);
   expect(visibleAssistantReferences(refs, "cHt234").map((item) => item.key)).toEqual(["other-chat", "visible-task", "other-task"]);
-  expect(assistantChatContextHasContent({ chatId: "cHt234", sources: refs.slice(0, 1), files: [], tasks: [], viewerUserId: "test", apps: [], runCount: 0, runs: [] })).toBe(false);
+  expect(
+    assistantChatContextHasContent({
+      chatId: "cHt234",
+      sources: refs.slice(0, 1),
+      files: [],
+      tasks: [],
+      viewerUserId: "test",
+      apps: [],
+      runCount: 0,
+      runs: [],
+    }),
+  ).toBe(false);
   expect(refs).toHaveLength(4);
 });
 

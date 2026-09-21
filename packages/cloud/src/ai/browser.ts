@@ -1,5 +1,7 @@
-export { parseAiTodoPlan, type AiTodoPlan } from "./todo-contracts";
-export { CodeResourceId, CodeActionInput, CODE_RUNTIME_TOOL_NAMES, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
+export { CODE_RUNTIME_TOOL_NAMES, CodeActionInput, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
+export { type AiTaskRequest, type AiTaskRequestInput, AiTaskRequestSchema } from "./task-contracts";
+export { type AiTodoPlan, parseAiTodoPlan } from "./todo-contracts";
+
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import type { AiConversation, AiDraftContentPart } from "./types";
 

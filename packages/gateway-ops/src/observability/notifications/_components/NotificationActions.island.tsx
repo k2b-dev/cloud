@@ -1,8 +1,8 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Dropdown, IconButton, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { apiClient } from "../api-client";
+import { Button, Dropdown, prompts, toast, useLocale } from "@k2b/ui";
 import { gatewayOpsMessages } from "../../../messages";
+import { apiClient } from "../api-client";
 
 type NotificationActionsProps = {
   id: string;

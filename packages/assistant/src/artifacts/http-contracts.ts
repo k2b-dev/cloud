@@ -37,7 +37,13 @@ export const HeaderValue = z
 export const SecretReference = z.object({ secret: SecretName, prefix: HeaderValue.default("") }).strict();
 export type SecretReference = z.infer<typeof SecretReference>;
 export const HttpScope = z
-  .object({ resourceId: z.string().regex(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/).optional(), conversationId: z.string().min(1).max(80).optional() })
+  .object({
+    resourceId: z
+      .string()
+      .regex(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/)
+      .optional(),
+    conversationId: z.string().min(1).max(80).optional(),
+  })
   .strict()
   .refine((v) => v.resourceId || v.conversationId, "A resource or conversation is required");
 export type HttpScope = z.infer<typeof HttpScope>;

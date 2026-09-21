@@ -1,9 +1,5 @@
-import { TELEMETRY_RANGES } from "./contracts";
-import { browserTelemetryPage } from "./browser/page";
-import ModeNav from "./browser/ModeNav";
-import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
 import { listAppsDetailed } from "@k2b/cloud";
-import { type AuthContext, getLocale, getDateConfig } from "@k2b/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import {
   formatNumber as fmtCount,
   formatDurationMs as fmtMs,
@@ -11,10 +7,12 @@ import {
   formatRatio as fmtRatio,
 } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
+import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../../config";
 import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { listAppSloWindows } from "../../grids-operational-health";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
 import RouteDetailPanel from "./_components/RouteDetailPanel";
 import TelemetryFilterBar, { type TelemetryAppFilterOption } from "./_components/TelemetryFilterBar.island";
 import {
@@ -24,6 +22,9 @@ import {
   selectRouteUrl,
   type TelemetryFilter,
 } from "./_components/types";
+import ModeNav from "./browser/ModeNav";
+import { browserTelemetryPage } from "./browser/page";
+import { TELEMETRY_RANGES } from "./contracts";
 import {
   getTelemetryOverview,
   getTelemetryTimeseries,
@@ -34,7 +35,6 @@ import {
   type TelemetryRouteRow,
   type TelemetryRouteSort,
 } from "./service";
-import { gatewayOpsMessages, type GatewayOpsMessages } from "../../messages";
 
 /** Individual requests shown once a route is selected. */
 const DRILLDOWN_EVENT_LIMIT = 100;

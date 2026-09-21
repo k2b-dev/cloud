@@ -1,9 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { DEFAULT_LINUX_IDENTITY_CONFIGURATION } from "@k2b/cloud/contracts";
+import type { PosixCandidate } from "@k2b/cloud/services";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
-import { DEFAULT_LINUX_IDENTITY_CONFIGURATION } from "@k2b/cloud/contracts";
-import type { PosixCandidate } from "@k2b/cloud/services";
 
 const user = (id: string, uid: string): PosixCandidate => ({
   id,

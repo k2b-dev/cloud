@@ -1,14 +1,14 @@
-import { COMMANDS_CHANGED, contextCommandsWithShortcuts, shortcutLabel } from "../browser/command-shortcuts";
-import { searchHelpTopics } from "./layout-help-search";
+import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "@k2b/cloud/shared";
 import { clipboard } from "@k2b/stdlib/solid";
 import { Button, IconButton, IconButtonLink, MarkdownView, NoticeCard, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
-import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "@k2b/cloud/shared";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { COMMANDS_CHANGED, contextCommandsWithShortcuts, shortcutLabel } from "../browser/command-shortcuts";
 import { appAccentStyle } from "./app-appearance";
 import { type GlobalSearchHelpApp, openGlobalSearchHelpDialog } from "./GlobalSearchHelpDialog";
 import { helpMessages } from "./help-messages";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
 import { adjacentHelpDocuments, focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
+import { searchHelpTopics } from "./layout-help-search";
 import { layoutHelpTopicHref } from "./layout-help-url";
 
 type HelpTopicBase = {
@@ -114,9 +114,7 @@ const Shortcuts = (props: { openSearchHelp: () => void }) => {
     window.addEventListener(COMMANDS_CHANGED, update);
     onCleanup(() => window.removeEventListener(COMMANDS_CHANGED, update));
   });
-  const entries = createMemo(() =>
-    commands().filter((command) => command.shortcut),
-  );
+  const entries = createMemo(() => commands().filter((command) => command.shortcut));
   return (
     <div class="flex flex-col gap-3">
       <p class="text-sm leading-relaxed text-dimmed">{t().shortcutsIntro}</p>

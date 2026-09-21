@@ -1,6 +1,6 @@
-import { ssr } from "../config";
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { ssr } from "../config";
 import filesDetailPage from "./[baseType]/[baseId]/page";
 import filesAdminPage from "./admin";
 import filesHomePage from "./home/page";
@@ -14,8 +14,4 @@ export default new Hono<AuthContext>()
   .get("/search", auth.requireAccount({ provider: "ipa", profile: "user", onReject: ssr.access.onReject }), ...filesSearchPage)
   .get("/home", auth.requireAccount({ provider: "ipa", profile: "user", onReject: ssr.access.onReject }), ...filesHomePage)
   .get("/home/*", auth.requireAccount({ provider: "ipa", profile: "user", onReject: ssr.access.onReject }), ...filesHomePage)
-  .get(
-    "/:baseType/:baseId",
-    auth.requireAccount({ provider: "ipa", profile: "user", onReject: ssr.access.onReject }),
-    ...filesDetailPage,
-  );
+  .get("/:baseType/:baseId", auth.requireAccount({ provider: "ipa", profile: "user", onReject: ssr.access.onReject }), ...filesDetailPage);

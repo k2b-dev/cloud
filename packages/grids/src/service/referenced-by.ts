@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { env } from "@k2b/cloud/config";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -62,7 +63,7 @@ type LinkRow = {
 };
 
 const signingKey = (): string => {
-  const key = process.env.APP_SECRET?.trim();
+  const key = env.APP_SECRET;
   if (!key) throw new Error("APP_SECRET is required for referenced-by pagination");
   return key;
 };

@@ -33,13 +33,17 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       errors.push(e.message);
       console.error(e.message);
     });
-    let revision = 1, publishedRevision = 1, compileCalls = 0;
+    let revision = 1,
+      publishedRevision = 1,
+      compileCalls = 0;
     let hasTables = true;
-    const saves: (()=>void)[]=[];
-    async function finishSave(){
-      const until=Date.now()+5000;
-      while(!saves.length&&Date.now()<until)await Bun.sleep(10);
-      const resolve=saves.shift();if(!resolve)throw new Error("Save request was not sent");resolve();
+    const saves: (() => void)[] = [];
+    async function finishSave() {
+      const until = Date.now() + 5000;
+      while (!saves.length && Date.now() < until) await Bun.sleep(10);
+      const resolve = saves.shift();
+      if (!resolve) throw new Error("Save request was not sent");
+      resolve();
     }
     let source = {
       entry: "main.ts",
@@ -67,7 +71,9 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
         const input = request.postDataJSON();
         data =
           input.operation === "tables.list"
-            ? (hasTables ? [{ name: "ledger" }] : [])
+            ? hasTables
+              ? [{ name: "ledger" }]
+              : []
             : input.operation === "schema.get"
               ? { columns: [{ name: "amount", type: "integer" }] }
               : { data: [{ amount: 1250 }] };
@@ -102,13 +108,17 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       await route.fulfill({ json: data });
     });
     await page.goto(server.url + "app/assistant/apps/00000000-0000-4000-8000-000000000001/edit");
-    expect(await page.locator(".k2b-split-button__primary").evaluate(el => ({
-      top: getComputedStyle(el).borderTopRightRadius,
-      bottom: getComputedStyle(el).borderBottomRightRadius,
-    }))).toEqual({top:"0px",bottom:"0px"});
+    expect(
+      await page.locator(".k2b-split-button__primary").evaluate((el) => ({
+        top: getComputedStyle(el).borderTopRightRadius,
+        bottom: getComputedStyle(el).borderBottomRightRadius,
+      })),
+    ).toEqual({ top: "0px", bottom: "0px" });
     const editor = page.getByRole("textbox", { name: "main.ts", exact: true });
-    expect(await page.getByRole("button", {name:"Publish", exact:true}).isDisabled()).toBe(true);
-    await editor.fill('export default () => { ui.text({value:"Changed"}); ui.button({label:"Pick", onClick: async () => { const file = await files.open(); if(file) ui.text({value:file.name}); }}); ui.button({label:"Ask", onClick: async () => { setTimeout(() => console.info("Waiting"), 30); if(await ui.modal.confirm({title:"Test dialog",message:"Continue?"})) await files.save("ok", "result.txt"); }}); };');
+    expect(await page.getByRole("button", { name: "Publish", exact: true }).isDisabled()).toBe(true);
+    await editor.fill(
+      'export default () => { ui.text({value:"Changed"}); ui.button({label:"Pick", onClick: async () => { const file = await files.open(); if(file) ui.text({value:file.name}); }}); ui.button({label:"Ask", onClick: async () => { setTimeout(() => console.info("Waiting"), 30); if(await ui.modal.confirm({title:"Test dialog",message:"Continue?"})) await files.save("ok", "result.txt"); }}); };',
+    );
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[aria-busy="true"]') !== null);
     await editor.fill('export default () => { ui.text({value:"Typed while saving"}); };');
@@ -126,46 +136,49 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
     expect(await editor.inputValue()).toContain("Changed");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await finishSave();
-    await page.getByRole("button", {name:"Publish",exact:true}).click();
-    await page.waitForFunction(() => { const b = Array.from(document.querySelectorAll("button")).find(b=>b.textContent?.trim()==="Publish"); return b?.disabled && b.getAttribute("aria-busy") !== "true"; });
+    await page.getByRole("button", { name: "Publish", exact: true }).click();
+    await page.waitForFunction(() => {
+      const b = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Publish");
+      return b?.disabled && b.getAttribute("aria-busy") !== "true";
+    });
     expect(publishedRevision).toBe(revision);
     expect(compileCalls).toBe(0);
-    await page.getByRole("button", {name:"Start",exact:true}).click();
+    await page.getByRole("button", { name: "Start", exact: true }).click();
     await page.getByText("Changed", { exact: true }).waitFor();
     expect(compileCalls).toBe(1);
     const chooser = page.waitForEvent("filechooser");
-    await page.getByRole("button", {name:"Pick",exact:true}).click();
-    await (await chooser).setFiles({name:"local-example.csv",mimeType:"text/csv",buffer:Buffer.from("a;b\n1;2")});
-    await page.getByText("local-example.csv", {exact:true}).waitFor();
-    await page.getByRole("button",{name:"Ask",exact:true}).click();
-    await page.getByText("Continue?",{exact:true}).waitFor();
+    await page.getByRole("button", { name: "Pick", exact: true }).click();
+    await (await chooser).setFiles({ name: "local-example.csv", mimeType: "text/csv", buffer: Buffer.from("a;b\n1;2") });
+    await page.getByText("local-example.csv", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Ask", exact: true }).click();
+    await page.getByText("Continue?", { exact: true }).waitFor();
     const download = page.waitForEvent("download");
-    await page.getByRole("button",{name:"Confirm",exact:true}).click();
+    await page.getByRole("button", { name: "Confirm", exact: true }).click();
     expect((await download).suggestedFilename()).toBe("result.txt");
-    await page.screenshot({path:"/tmp/assistant-advanced-editor.png"});
-    await page.setViewportSize({width:800,height:900});
-    await page.getByRole("tab",{name:"Code",exact:true}).click();
+    await page.screenshot({ path: "/tmp/assistant-advanced-editor.png" });
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.getByRole("tab", { name: "Code", exact: true }).click();
     expect(await editor.isVisible()).toBe(true);
-    expect(await page.getByText("Changed",{exact:true}).isVisible()).toBe(false);
-    await page.getByRole("tab",{name:"Execution",exact:true}).click();
-    expect(await page.getByText("Changed",{exact:true}).isVisible()).toBe(true);
-    await page.setViewportSize({width:1400,height:900});
+    expect(await page.getByText("Changed", { exact: true }).isVisible()).toBe(false);
+    await page.getByRole("tab", { name: "Execution", exact: true }).click();
+    expect(await page.getByText("Changed", { exact: true }).isVisible()).toBe(true);
+    await page.setViewportSize({ width: 1400, height: 900 });
     page.on("dialog", (dialog) => void dialog.accept());
     await page.goto(server.url + "app/assistant/apps/00000000-0000-4000-8000-000000000001/database");
     await page.getByRole("textbox", { name: "query.sql" }).fill("SELECT amount FROM ledger LIMIT 100");
     await page.getByRole("button", { name: "Start", exact: true }).click();
     await page.getByText("1250", { exact: true }).waitFor();
     expect(await page.getByRole("button", { name: "CSV", exact: true }).isEnabled()).toBe(true);
-    expect(await page.getByRole("tab", {name:"Table", exact:true}).count()).toBe(0);
-    expect(await page.getByRole("button", {name:"Table", exact:true}).count()).toBe(0);
-    await page.getByRole("tab", {name:"Schema", exact:true}).click();
-    await page.getByText("integer", {exact:true}).waitFor();
-    await page.screenshot({path:"/tmp/assistant-sql-simplified.png"});
+    expect(await page.getByRole("tab", { name: "Table", exact: true }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Table", exact: true }).count()).toBe(0);
+    await page.getByRole("tab", { name: "Schema", exact: true }).click();
+    await page.getByText("integer", { exact: true }).waitFor();
+    await page.screenshot({ path: "/tmp/assistant-sql-simplified.png" });
     hasTables = false;
-    await page.getByRole("button", {name:"Refresh", exact:true}).click();
-    await page.getByText("This database has no tables yet.", {exact:true}).waitFor();
-    await page.getByRole("tab", {name:"SQL", exact:true}).click();
-    expect(await page.getByRole("textbox", {name:"query.sql"}).inputValue()).toBe("SELECT amount FROM ledger LIMIT 100");
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.getByText("This database has no tables yet.", { exact: true }).waitFor();
+    await page.getByRole("tab", { name: "SQL", exact: true }).click();
+    expect(await page.getByRole("textbox", { name: "query.sql" }).inputValue()).toBe("SELECT amount FROM ledger LIMIT 100");
     await page.goto(server.url + "reader?reader");
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     expect(await page.getByRole("menuitem", { name: "Edit manually" }).count()).toBe(0);
@@ -173,23 +186,23 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
     await page.getByRole("tab", { name: "Key/value data", exact: true }).click();
     await page.getByText("local-fixture", { exact: true }).waitFor();
     expect(await page.getByText("private-fixture", { exact: true }).count()).toBe(0);
-    await page.getByRole("button",{name:"Delete all my local files and KV",exact:true}).click();
-    await page.getByRole("button",{name:"Confirm",exact:true}).click();
-    await page.getByText("No entries",{exact:true}).waitFor();
-    const privateRemains=await page.evaluate(async()=>{
-      const root=await navigator.storage.getDirectory();
-      const resources=await root.getDirectoryHandle("assistant-artifacts");
-      const resource=await resources.getDirectoryHandle("00000000-0000-4000-8000-000000000001");
-      const user=await resource.getDirectoryHandle("someone-else");
+    await page.getByRole("button", { name: "Delete all my local files and KV", exact: true }).click();
+    await page.getByRole("button", { name: "Confirm", exact: true }).click();
+    await page.getByText("No entries", { exact: true }).waitFor();
+    const privateRemains = await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const resources = await root.getDirectoryHandle("assistant-artifacts");
+      const resource = await resources.getDirectoryHandle("00000000-0000-4000-8000-000000000001");
+      const user = await resource.getDirectoryHandle("someone-else");
       return (await (await (await user.getDirectoryHandle("kv")).getFileHandle("private-fixture")).getFile()).text();
     });
     expect(privateRemains).toBe("99");
     await page.goto(server.url + "starters");
     await page.locator(".assistant-starter").first().waitFor();
     expect(await page.locator(".assistant-starter").count()).toBe(4);
-    await page.screenshot({path:"/tmp/assistant-starters-live.png"});
-    await page.setViewportSize({width:390,height:844});
-    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: "/tmp/assistant-starters-live.png" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(errors).toEqual([]);
   } finally {
     await browser.close();

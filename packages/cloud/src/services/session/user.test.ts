@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import type { sql } from "bun";
 import { loadJwtSessionUser } from "./user";
 
 describe("JWT session actor query", () => {

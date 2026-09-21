@@ -1,13 +1,13 @@
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { ButtonLink, FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { gatewayOpsMessages } from "../../../messages";
 import {
   buildRegistryNotificationsUrl,
   NOTIFICATION_ADMIN_BASE_URL,
   type NotificationAppFilterOption,
   type RegistryStatusFilter,
 } from "./filter-state";
-import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   search: string;
@@ -18,11 +18,15 @@ type Props = {
 
 export default function RegistryFilterBar(props: Props) {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  const statusOptions: FilterChipSection[] = [{ options: [
-    { value: "all", label: t.all, icon: "ti ti-list" },
-    { value: "active", label: t.active, icon: "ti ti-check", color: "#059669" },
-    { value: "inactive", label: t.inactive, icon: "ti ti-archive", color: "#71717a" },
-  ] }];
+  const statusOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.all, icon: "ti ti-list" },
+        { value: "active", label: t.active, icon: "ti ti-check", color: "#059669" },
+        { value: "inactive", label: t.inactive, icon: "ti ti-archive", color: "#71717a" },
+      ],
+    },
+  ];
   const navigate = (patch: Partial<Pick<Props, "status" | "appIds">>) =>
     navigateTo(
       buildRegistryNotificationsUrl({

@@ -1,17 +1,15 @@
-import { ssr } from "../config";
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
-import assistantPage from "./page";
-import runnerPage from "../artifacts/runner-page";
 import appsPage from "../artifacts/apps-page";
+import runnerPage from "../artifacts/runner-page";
+import { ssr } from "../config";
+import assistantPage from "./page";
 
 export default new Hono<AuthContext>()
-  .get("/apps", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), c => c.redirect("/app/assistant?studio=1"))
+  .get("/apps", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), (c) => c.redirect("/app/assistant?studio=1"))
   .get("/apps/:id/run", auth.requireRole("*"), ...runnerPage)
   .get("/apps/:id", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...appsPage)
   .get("/apps/:id/edit", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...appsPage)
   .get("/apps/:id/database", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...appsPage)
   .get("/", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...assistantPage)
-  .get("/chats", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), (c) =>
-    c.redirect("/app/assistant"),
-  );
+  .get("/chats", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), (c) => c.redirect("/app/assistant"));

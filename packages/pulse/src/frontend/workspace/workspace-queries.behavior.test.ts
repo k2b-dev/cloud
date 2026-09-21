@@ -4,8 +4,8 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { PulseDashboard, PulseMetricSeries, PulseSource } from "../../contracts";
 import type { PulseWorkspaceProps, PulseWorkspaceQueryCoverage, WorkspaceView } from "./types";
-import { createPulseWorkspaceQueries } from "./workspace-queries";
 import { createWorkspaceDerivedModel } from "./workspace-derived-model";
+import { createPulseWorkspaceQueries } from "./workspace-queries";
 import { createPulseWorkspaceState } from "./workspace-state";
 
 const deferred = <T>() => {
@@ -525,7 +525,11 @@ describe("Pulse workspace queries", () => {
     name: "Ops",
     config: {
       dsl: "",
-      layout: { version: 1, sections: [], controls: [{ id: "range", kind: "range", variable: "period", label: "Range", defaultValue: "1h" }] },
+      layout: {
+        version: 1,
+        sections: [],
+        controls: [{ id: "range", kind: "range", variable: "period", label: "Range", defaultValue: "1h" }],
+      },
     },
     publicEnabled: false,
     createdAt: "2026-01-01T00:00:00.000Z",

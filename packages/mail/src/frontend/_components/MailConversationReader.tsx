@@ -1,5 +1,5 @@
-import { mailCommandMessages } from "../../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import type { CloudTheme } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
@@ -19,9 +19,9 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { CloudTheme } from "@k2b/cloud/shared";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { mailCommandMessages } from "../../commands";
 import type {
   ConversationDraftSummary,
   DeriveDraftFromMessageInput,
@@ -737,7 +737,11 @@ export default function MailConversationReader(props: {
           scope: "selection",
           id: `mail.${conversationId}.${intent}`,
           title: intent === "reply" ? t().reply : intent === "reply_all" ? t().replyAll : t().forward,
-          description: mailCommandMessages.resolve([locale()]).t[intent === "reply_all" ? "replyAllDescription" : intent === "reply" ? "replyDescription" : "forwardDescription"]({ subject: props.subject }),
+          description: mailCommandMessages
+            .resolve([locale()])
+            .t[intent === "reply_all" ? "replyAllDescription" : intent === "reply" ? "replyDescription" : "forwardDescription"]({
+              subject: props.subject,
+            }),
           icon: intent === "forward" ? "ti ti-arrow-forward-up" : "ti ti-arrow-back-up",
           ...(intent === "reply" ? { shortcut: "r" } : {}),
           action: () => respondToLatest(intent),

@@ -1,5 +1,6 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { MATH_FORMULA_FUNCTIONS } from "../formula/functions-math";
 import { FormulaDecimal } from "../formula/numeric";
 import { postgresTest } from "../integration-test-utils";
@@ -7,7 +8,7 @@ import { migrate } from "../migrate";
 import { compileFormulaSourceToSql } from "./formula-sql-compiler";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 }, 120_000);
 
 postgresTest("general powers retain the same 80 significant digits in both runtimes", async () => {

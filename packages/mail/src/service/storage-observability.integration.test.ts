@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailStorageSummarySchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -9,7 +10,7 @@ import { createMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
 import { getMailStorageSummary, reconcileMailStorageUsage, requestMailStorageReconciliation } from "./storage-observability";
 
-const suite = process.env.MAIL_INTEGRATION_TESTS === "1" ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 const contextFor = (user: { id: string; uid: string; admin: boolean }): MailRequestContext => ({
   actor: {

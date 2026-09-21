@@ -1,5 +1,3 @@
-import { saveCapabilityStream } from "./capability-streams";
-import { CapabilityStreamSchema } from "../contracts/capabilities";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import {
@@ -8,11 +6,13 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
+  CapabilityStreamSchema,
   CloudResourceRefSchema,
   capabilityResultSchema,
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
+import { saveCapabilityStream } from "./capability-streams";
 import { arg, type CliInputFlagValue, type CloudCliContext, command, defineCliCommands, flag, readCliInput } from "./index";
 
 const parseInput = async (input: CliInputFlagValue): Promise<unknown> => {
@@ -120,33 +120,46 @@ export default defineCliCommands({
   name: "capabilities",
   summary: "Discover and invoke versioned Cloud app capabilities.",
   commands: [
-    ...(["read", "write", "status", "abort"] as const).map(verb => command(`stream-${verb}`, {
-      summary: `${verb} an authenticated binary capability stream`,
-      flags: {
-        input: flag.input({ required: true, description: "Stream descriptor JSON; use --input-file or --stdin" }),
-        ...(verb === "read" ? { out: flag.string({ required: true, description: "New output file; never overwritten" }) } : {}),
-        ...(verb === "write" ? { file: flag.string({ required: true, description: "Local binary file to upload" }) } : {}),
-      },
-      run: async ({ctx, flags}) => {
-        const stream = CapabilityStreamSchema.parse(await parseInput(flags.input));
-        if ((verb === "read") !== (stream.direction === "read")) throw new Error("Wrong stream direction.");
-        const body = verb === "write" ? Bun.file(String(flags.file)) : undefined;
-        if (body && (!(await body.exists()) || body.size !== stream.size)) throw new Error("Input file must match the authorized byte size.");
-        const controller = new AbortController();
-        const abort = () => controller.abort();
-        process.once("SIGINT", abort); process.once("SIGTERM", abort);
-        try {
-          const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(300_000)]);
-          const response = await ctx.fetch(`/api/capabilities/v1/streams/${verb}`, {
-            method: "POST", headers: {"x-cloud-stream-id": stream.id, "content-type": "application/octet-stream"},
-            body, signal, redirect: "error",
-          });
-          printGenericResult(ctx, verb === "read"
-            ? await saveCapabilityStream(response, stream, String(flags.out), signal)
-            : await readCapabilityJson(response, CAPABILITY_MAX_RESULT_BYTES));
-        } finally { process.off("SIGINT", abort); process.off("SIGTERM", abort); }
-      },
-    })),
+    ...(["read", "write", "status", "abort"] as const).map((verb) =>
+      command(`stream-${verb}`, {
+        summary: `${verb} an authenticated binary capability stream`,
+        flags: {
+          input: flag.input({ required: true, description: "Stream descriptor JSON; use --input-file or --stdin" }),
+          ...(verb === "read" ? { out: flag.string({ required: true, description: "New output file; never overwritten" }) } : {}),
+          ...(verb === "write" ? { file: flag.string({ required: true, description: "Local binary file to upload" }) } : {}),
+        },
+        run: async ({ ctx, flags }) => {
+          const stream = CapabilityStreamSchema.parse(await parseInput(flags.input));
+          if ((verb === "read") !== (stream.direction === "read")) throw new Error("Wrong stream direction.");
+          const body = verb === "write" ? Bun.file(String(flags.file)) : undefined;
+          if (body && (!(await body.exists()) || body.size !== stream.size))
+            throw new Error("Input file must match the authorized byte size.");
+          const controller = new AbortController();
+          const abort = () => controller.abort();
+          process.once("SIGINT", abort);
+          process.once("SIGTERM", abort);
+          try {
+            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(300_000)]);
+            const response = await ctx.fetch(`/api/capabilities/v1/streams/${verb}`, {
+              method: "POST",
+              headers: { "x-cloud-stream-id": stream.id, "content-type": "application/octet-stream" },
+              body,
+              signal,
+              redirect: "error",
+            });
+            printGenericResult(
+              ctx,
+              verb === "read"
+                ? await saveCapabilityStream(response, stream, String(flags.out), signal)
+                : await readCapabilityJson(response, CAPABILITY_MAX_RESULT_BYTES),
+            );
+          } finally {
+            process.off("SIGINT", abort);
+            process.off("SIGTERM", abort);
+          }
+        },
+      }),
+    ),
     command("catalog", {
       summary: "List live capability manifests",
       flags: {

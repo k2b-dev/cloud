@@ -53,9 +53,7 @@ export const Pagination = (props: PaginationProps): JSX.Element => {
   return (
     <Show when={totalPages() > 1}>
       <nav class="k2b-pagination" aria-label={messages().pagination}>
-        <span class="k2b-sr-only">
-          {messages().pageOf({ page: currentPage(), total: totalPages() })}
-        </span>
+        <span class="k2b-sr-only">{messages().pageOf({ page: currentPage(), total: totalPages() })}</span>
         <div class="k2b-pagination__pages">
           <Show when={currentPage() > 1}>
             <PaginationLink href={href(currentPage() - 1)} rel="prev" label={messages().previousPage} onNavigate={props.onNavigate}>

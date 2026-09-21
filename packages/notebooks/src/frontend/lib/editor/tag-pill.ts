@@ -13,8 +13,8 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 import { notebookWorkspaceMessages } from "../../[id]/messages";
+import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 
 /** Match `(start-of-line OR whitespace) #tag` — with `#tag` allowing nested
  *  `parent/child` and at least one letter as the first char to exclude

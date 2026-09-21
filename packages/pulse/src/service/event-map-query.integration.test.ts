@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { EventQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { queryEventMapData } from "./event-map-query";
 
-const runDbSmoke = process.env.PULSE_EVENT_MAP_DB_TEST === "1";
+const runDbSmoke = testInfra.database !== undefined;
 const postgresTest = runDbSmoke ? test : test.skip;
 
 beforeAll(async () => {

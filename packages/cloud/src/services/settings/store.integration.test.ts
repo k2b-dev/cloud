@@ -1,13 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { redis, sql } from "bun";
-import { encryptValue } from "./crypto";
-import { registerSettings } from "./defaults";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { MISSING_SETTING } from "../cache-fill";
 import { buildProjectedUser } from "../session/user";
-import { bulkRead, invalidateSettingsCacheForAdmin, invalidateSettingsCache, readKey } from "./store";
+import { encryptValue } from "./crypto";
+import { registerSettings } from "./defaults";
+import { bulkRead, invalidateSettingsCache, invalidateSettingsCacheForAdmin, readKey } from "./store";
 
-const enabled = process.env.CLOUD_CACHE_TEST === "1" && process.env.DATABASE_URL?.endsWith("/cloud_cache_test");
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "valkey");
 const key = `test.cache.${crypto.randomUUID()}`;
 const cacheKey = `settings:${key}`;
 const fallbackKey = key + ".fallback";

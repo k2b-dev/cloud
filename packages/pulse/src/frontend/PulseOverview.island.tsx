@@ -33,11 +33,7 @@ export default function PulseOverview(props: Props) {
   const filteredBases = createMemo(() => props.bases.filter((base) => matchesBase(base, query())));
   const createMutation = mutation.create<PulseBase, { name: string; description: string | null }>({
     mutation: (intent, { abortSignal }) =>
-      jsonFetch<PulseBase>(
-        "/api/pulse/bases",
-        { method: "POST", body: JSON.stringify(intent), signal: abortSignal },
-        t().createBaseFailed,
-      ),
+      jsonFetch<PulseBase>("/api/pulse/bases", { method: "POST", body: JSON.stringify(intent), signal: abortSignal }, t().createBaseFailed),
     onSuccess: (base) => {
       toast.success(t().baseCreated);
       navigateTo(`/app/pulse/${base.id}`);
@@ -75,11 +71,7 @@ export default function PulseOverview(props: Props) {
     <AppOverview title={t().appName} subtitle={t().appDescription} icon="ti ti-activity-heartbeat">
       <AppOverview.Main
         title={t().yourBases}
-        description={
-          props.bases.length === 0
-            ? t().firstBaseDescription
-            : t().baseCount({ count: props.bases.length })
-        }
+        description={props.bases.length === 0 ? t().firstBaseDescription : t().baseCount({ count: props.bases.length })}
         toolbar={
           <TextInput
             name="pulse-search"

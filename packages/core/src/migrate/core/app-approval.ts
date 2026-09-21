@@ -1,4 +1,4 @@
-import { sql, type SQL } from "bun";
+import { type SQL, sql } from "bun";
 
 /** Additive, opt-in credential storage. Private keys never enter this schema. */
 export const migrate = async (db: SQL = sql): Promise<void> => {

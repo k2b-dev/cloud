@@ -1,5 +1,5 @@
-import { createNavigation, type NavigationItem, useLocale } from "@k2b/ui";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
+import { createNavigation, type NavigationItem, useLocale } from "@k2b/ui";
 import { openCapabilitySearch } from "./capability-search";
 import { capabilityUiMessages } from "./messages";
 

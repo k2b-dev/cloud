@@ -1,15 +1,14 @@
 import { Button, Chat, type ChatTimelineItem, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import type { AiActiveTurn } from "../client/projection";
-import { type AiActiveTurnSegment, isRenderableTurnBlock, splitActiveTurnBlocks } from "../protocol";
+import { type AiActiveTurnSegment, splitActiveTurnBlocks } from "../protocol";
 import { type AiAssistantTimelineItem, buildAiMessageTimeline, copyTextFromAssistantEntries } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
 import { AiTurnBlockList } from "./blocks";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { formatWorkedDuration, isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
-import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { aiChatMessages } from "./messages";
-import { CloudSurveyResultBlock } from "./visual-tools";
+import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import {
@@ -19,6 +18,7 @@ import {
   createAiSteerMessageActions,
   createAiUserMessageActions,
 } from "./user-message";
+import { CloudSurveyResultBlock } from "./visual-tools";
 
 export type AiChatTimelineSession = {
   messages: readonly AiStoredMessage[];
@@ -70,10 +70,15 @@ export function AiAssistantContent(props: {
 }): JSX.Element {
   const locale = useLocale();
   const turnId = () => props.item.loopId ?? props.item.id;
-  return <div class="flex flex-col gap-2">
-    <Chat.Activity icon="ti ti-route" label={`${locale().startsWith("de") ? "Gearbeitet für" : "Worked for"} ${formatWorkedDuration(props.item.workedMs)}`} />
-    <AiTurnBlockList blocks={props.item.blocks} turnId={turnId()} disclosureState={props.disclosureState} />
-  </div>;
+  return (
+    <div class="flex flex-col gap-2">
+      <Chat.Activity
+        icon="ti ti-route"
+        label={`${locale().startsWith("de") ? "Gearbeitet für" : "Worked for"} ${formatWorkedDuration(props.item.workedMs)}`}
+      />
+      <AiTurnBlockList blocks={props.item.blocks} turnId={turnId()} disclosureState={props.disclosureState} />
+    </div>
+  );
 }
 
 const storedItems = (
@@ -171,10 +176,18 @@ const storedItems = (
         class: segment.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined,
         content: (
           <>
-            <Show when={index === 0 && item.entries.find(entry => entry.meta?.scheduledTask)?.meta?.scheduledTask}>
-              {task => <Button variant="ghost" size="xs" class="mb-2" onClick={() => actions.onOpenScheduledTaskRun?.(task().taskId, task().occurrenceId)} disabled={!actions.onOpenScheduledTaskRun}>
-                <i class="ti ti-calendar-time" aria-hidden="true" /> {aiChatMessages(locale).backgroundRun}
-              </Button>}
+            <Show when={index === 0 && item.entries.find((entry) => entry.meta?.scheduledTask)?.meta?.scheduledTask}>
+              {(task) => (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  class="mb-2"
+                  onClick={() => actions.onOpenScheduledTaskRun?.(task().taskId, task().occurrenceId)}
+                  disabled={!actions.onOpenScheduledTaskRun}
+                >
+                  <i class="ti ti-calendar-time" aria-hidden="true" /> {aiChatMessages(locale).backgroundRun}
+                </Button>
+              )}
             </Show>
             <AiAssistantContent
               item={{ ...item, blocks: segment.blocks }}

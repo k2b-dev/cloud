@@ -70,13 +70,25 @@ describe("AI Project reference routes", () => {
     const get = spyOn(aiProjects, "getByShortId");
     const list = spyOn(aiProjects, "list");
     const routes = __buildAiProjectsRoutesForTest({ limit: pass });
-    for (const path of ["/", `/${projectShortId}`, `/${projectShortId}/knowledge`, `/${projectShortId}/files`, `/${projectShortId}/files/FiL234`, `/${projectShortId}/references`]) {
+    for (const path of [
+      "/",
+      `/${projectShortId}`,
+      `/${projectShortId}/knowledge`,
+      `/${projectShortId}/files`,
+      `/${projectShortId}/files/FiL234`,
+      `/${projectShortId}/references`,
+    ]) {
       expect((await routes.request(path)).status).toBe(401);
     }
-    expect((await routes.request(`/${projectShortId}/knowledge`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: "Public", content: "Shared" }),
-    })).status).toBe(401);
+    expect(
+      (
+        await routes.request(`/${projectShortId}/knowledge`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title: "Public", content: "Shared" }),
+        })
+      ).status,
+    ).toBe(401);
     expect(get).not.toHaveBeenCalled();
     expect(list).not.toHaveBeenCalled();
   });
@@ -84,10 +96,15 @@ describe("AI Project reference routes", () => {
   test("rejects public project grants before invoking the service", async () => {
     const grant = spyOn(aiProjects, "grantAccess");
     const routes = __buildAiProjectsRoutesForTest({ limit: pass, authenticate });
-    expect((await routes.request(`/${projectShortId}/access`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ principal: { type: "public" }, permission: "read" }),
-    })).status).toBe(400);
+    expect(
+      (
+        await routes.request(`/${projectShortId}/access`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ principal: { type: "public" }, permission: "read" }),
+        })
+      ).status,
+    ).toBe(400);
     expect(grant).not.toHaveBeenCalled();
   });
 

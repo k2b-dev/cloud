@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createAdminAiUsageRoutes } from "./admin-ai-usage";
 import { aiUsage } from "../ai/usage";
+import { createAdminAiUsageRoutes } from "./admin-ai-usage";
 
 describe("AI usage HTTP boundary", () => {
   test("requires admin authentication on every read", async () => {

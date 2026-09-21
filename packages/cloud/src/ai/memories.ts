@@ -459,9 +459,7 @@ export const aiMemories = {
           action: "retired" as const,
           kind: memory.kind,
           content: memory.content,
-          ...(memory.resource_type && memory.resource_id
-            ? { resourceRef: { type: memory.resource_type, id: memory.resource_id } }
-            : {}),
+          ...(memory.resource_type && memory.resource_id ? { resourceRef: { type: memory.resource_type, id: memory.resource_id } } : {}),
         }));
       }
 
@@ -509,19 +507,20 @@ export const aiMemories = {
         );
         const created = rows[0];
         return created
-          ? [{
-              action: "added",
-              kind: created.kind,
-              content: created.content,
-              ...(resourceRef ? { resourceRef } : {}),
-            }]
+          ? [
+              {
+                action: "added",
+                kind: created.kind,
+                content: created.content,
+                ...(resourceRef ? { resourceRef } : {}),
+              },
+            ]
           : [];
       }
 
       if (duplicate && !targets.some((memory) => memory.id === duplicate.id)) {
         const duplicateResourceMatches =
-          proposal.kind !== "workflow" ||
-          (duplicate.resource_type === resourceRef?.type && duplicate.resource_id === resourceRef?.id);
+          proposal.kind !== "workflow" || (duplicate.resource_type === resourceRef?.type && duplicate.resource_id === resourceRef?.id);
         if (duplicate.kind !== proposal.kind || !duplicateResourceMatches) return [];
         await tx`
           UPDATE ai.memories old
@@ -532,15 +531,17 @@ export const aiMemories = {
             AND old.source = 'background' AND old.priority = 'normal'
             AND old.deleted_at IS NULL AND old.superseded_by_id IS NULL
         `;
-        return [{
-          action: "merged",
-          kind: duplicate.kind,
-          content: duplicate.content,
-          previousContent: targets.map((memory) => memory.content).join(" · "),
-          ...(duplicate.resource_type && duplicate.resource_id
-            ? { resourceRef: { type: duplicate.resource_type, id: duplicate.resource_id } }
-            : {}),
-        }];
+        return [
+          {
+            action: "merged",
+            kind: duplicate.kind,
+            content: duplicate.content,
+            previousContent: targets.map((memory) => memory.content).join(" · "),
+            ...(duplicate.resource_type && duplicate.resource_id
+              ? { resourceRef: { type: duplicate.resource_type, id: duplicate.resource_id } }
+              : {}),
+          },
+        ];
       }
 
       const destination = targets[0]!;
@@ -565,13 +566,15 @@ export const aiMemories = {
             AND deleted_at IS NULL AND superseded_by_id IS NULL
         `;
       }
-      return [{
-        action: proposal.action === "merge" ? "merged" : "updated",
-        kind: proposal.kind,
-        content,
-        previousContent: targets.map((memory) => memory.content).join(" · "),
-        ...(resourceRef ? { resourceRef } : {}),
-      }];
+      return [
+        {
+          action: proposal.action === "merge" ? "merged" : "updated",
+          kind: proposal.kind,
+          content,
+          previousContent: targets.map((memory) => memory.content).join(" · "),
+          ...(resourceRef ? { resourceRef } : {}),
+        },
+      ];
     });
   },
 

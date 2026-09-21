@@ -2,8 +2,8 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal, onMount } from "solid-js";
-import { apiClient } from "../api-client";
 import { gatewayOpsMessages } from "../../../messages";
+import { apiClient } from "../api-client";
 
 type SendResult = {
   sent: number;
@@ -57,15 +57,12 @@ const SendAllPending = () => {
     const count = pendingCount();
     if (count === null || count === 0) return;
 
-    const confirmed = await prompts.confirm(
-      t.sendPendingConfirm({ count }),
-      {
-        title: t.sendAllPendingTitle,
-        icon: "ti ti-send",
-        confirmText: t.sendNotificationCount({ count }),
-        cancelText: t.cancel,
-      },
-    );
+    const confirmed = await prompts.confirm(t.sendPendingConfirm({ count }), {
+      title: t.sendAllPendingTitle,
+      icon: "ti ti-send",
+      confirmText: t.sendNotificationCount({ count }),
+      cancelText: t.cancel,
+    });
 
     if (confirmed) {
       await sendAllMutation.mutate();

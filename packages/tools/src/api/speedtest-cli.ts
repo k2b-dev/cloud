@@ -1,10 +1,10 @@
+import type { AuthContext } from "@k2b/cloud/server";
 import { Hono } from "hono";
-import { type AuthContext } from "@k2b/cloud/server";
 import { resolveSpeedtestBase } from "./_url";
 
 const buildJsScript = (
   base: string,
-): string => `// StuVe Cloud speedtest — runs on Bun or Node 19+ (or Node 18 with --experimental-global-webcrypto).
+): string => `// Cloud speedtest — runs on Bun or Node 19+ (or Node 18 with --experimental-global-webcrypto).
 // Pass --json for a single-line JSON result instead of human-readable output.
 
 const BASE = ${JSON.stringify(base)};
@@ -141,7 +141,7 @@ if (wantsJson) {
 }
 `;
 
-const buildPyScript = (base: string): string => `# StuVe Cloud speedtest — runs on Python 3.7+ with stdlib only.
+const buildPyScript = (base: string): string => `# Cloud speedtest — runs on Python 3.7+ with stdlib only.
 # Pass --json for a single-line JSON result instead of human-readable output.
 
 import sys, os, time, math, json, threading, http.client

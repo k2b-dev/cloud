@@ -1,4 +1,3 @@
-import { createHelpReader, type HelpReader, type HelpReaderFactory, type HelpMetadata, type HelpArticle } from "../services/help";
 import { createHash } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -16,12 +15,7 @@ import {
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
-import {
-  HELP_SEARCH_MAX_LIMIT,
-  helpResourceUri,
-  parseHelpResourceUri,
-  readHelpArticle,
-} from "../_internal/help-catalog";
+import { HELP_SEARCH_MAX_LIMIT, helpResourceUri, parseHelpResourceUri, readHelpArticle } from "../_internal/help-catalog";
 import { getCapability, listApps } from "../_internal/registry";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
@@ -39,6 +33,7 @@ import {
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
+import { createHelpReader, type HelpArticle, type HelpMetadata, type HelpReader, type HelpReaderFactory } from "../services/help";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
 import { get } from "../services/settings";
@@ -485,7 +480,8 @@ const createMcpServer = (
     (helpLocale ??= (dependencies.getOperatorLocale ?? (() => get<string>("app.locale")))().then((operatorDefault) =>
       resolveLocale(request.headers, operatorDefault),
     ));
-  const helpReader = async () => (dependencies.help ?? ((locale) => createHelpReader(locale, { listApps: registry })))(await resolveHelpLocale());
+  const helpReader = async () =>
+    (dependencies.help ?? ((locale) => createHelpReader(locale, { listApps: registry })))(await resolveHelpLocale());
   const hasScope = (scope: "read" | "write"): boolean =>
     oauthScopes === null || oauthScopes.includes(scope) || oauthScopes.includes("admin");
   const requireScope = (scope: "read" | "write"): void => {
@@ -567,10 +563,7 @@ const createMcpServer = (
         return (await callHelpTool(message.params.name, message.params.arguments, await helpReader()))!;
       } catch (error) {
         log.error("Failed to call MCP Help tool", { error: error instanceof Error ? error.message : String(error) });
-        return boundedToolResult(
-          { code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: "Help is currently unavailable" },
-          true,
-        );
+        return boundedToolResult({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: "Help is currently unavailable" }, true);
       }
     }
     let selected: CapabilityTool | null;

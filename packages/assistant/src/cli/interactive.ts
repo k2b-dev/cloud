@@ -1,13 +1,6 @@
-import type { CodeApproval, CapabilityDecision } from "../artifacts/runtime/capabilities";
 import { basename } from "node:path";
 import { createInterface } from "node:readline";
-import type {
-  AiFileStat,
-  AiPendingTurnAction,
-  AiPublicModelProfile,
-  CloudAiSurveyInput,
-  CloudAiTextEditorInput,
-} from "@k2b/cloud/ai";
+import type { AiFileStat, AiPendingTurnAction, AiPublicModelProfile, CloudAiSurveyInput, CloudAiTextEditorInput } from "@k2b/cloud/ai";
 import {
   AI_TURN_ATTACHMENT_MAX_ITEMS,
   CloudAiCardInputSchema,
@@ -15,6 +8,7 @@ import {
   CloudAiTextEditorInputSchema,
 } from "@k2b/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
+import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { closeCliCodeHost } from "./code-host";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
 import { jsonRequest, readApi } from "./shared";
@@ -314,7 +308,7 @@ const resolveAttention = async (input: {
       conversationId: input.conversationId,
       turnId: input.turnId,
       signal: input.signal,
-      onCapabilityApproval:request=>collectCapabilityApproval(input.ctx,input.reader,request),
+      onCapabilityApproval: (request) => collectCapabilityApproval(input.ctx, input.reader, request),
       onToolBlock: (block) => {
         if (block.name === "card" && block.status === "completed") printCard(input.ctx, block.args);
       },
@@ -325,26 +319,30 @@ const resolveAttention = async (input: {
   return null;
 };
 
-export async function collectCapabilityApproval(ctx:CloudCliContext,reader:LineReader,request:CodeApproval):Promise<CapabilityDecision>{
+export async function collectCapabilityApproval(
+  ctx: CloudCliContext,
+  reader: LineReader,
+  request: CodeApproval,
+): Promise<CapabilityDecision> {
   if ("type" in request) {
     ctx.print(terminalSafeText(`External HTTP: ${request.method} ${request.url}`));
     ctx.print("This request may change external data or incur charges. Secret values are injected only by the server.");
-    ctx.print(terminalSafeText(JSON.stringify(request.headers,null,2)));
-    if(request.bodyBytes)ctx.print(terminalSafeText(`${request.bodyBytes} bytes: ${request.bodyPreview}`));
-    if(request.bodyTruncated)ctx.print("Body preview is incomplete; review source and inputs before approving.");
-    const answer=(await reader.read("Send request? [y/N]: "))?.trim().toLowerCase();
-    return {approved:answer==="y"||answer==="yes"};
+    ctx.print(terminalSafeText(JSON.stringify(request.headers, null, 2)));
+    if (request.bodyBytes) ctx.print(terminalSafeText(`${request.bodyBytes} bytes: ${request.bodyPreview}`));
+    if (request.bodyTruncated) ctx.print("Body preview is incomplete; review source and inputs before approving.");
+    const answer = (await reader.read("Send request? [y/N]: "))?.trim().toLowerCase();
+    return { approved: answer === "y" || answer === "yes" };
   }
 
-  if(request.resource){
+  if (request.resource) {
     ctx.print(terminalSafeText(`App: ${request.resource.title}`));
     ctx.print("Returned Cloud data may be stored in this app and read by others with access. Personal remembered approvals do not apply.");
   }
-  ctx.print(terminalSafeText(request.review?.message??request.title));
-  ctx.print(terminalSafeText(JSON.stringify(request.input,null,2).slice(0,16000)));
-  const answer=(await reader.read(request.allowAlways ? "Approve? [y/N/always]: " : "Approve? [y/N]: "))?.trim().toLowerCase();
-  if(request.allowAlways && answer==="always")return {approved:true,remember:"always"};
-  return {approved:answer==="y"||answer==="yes"};
+  ctx.print(terminalSafeText(request.review?.message ?? request.title));
+  ctx.print(terminalSafeText(JSON.stringify(request.input, null, 2).slice(0, 16000)));
+  const answer = (await reader.read(request.allowAlways ? "Approve? [y/N/always]: " : "Approve? [y/N]: "))?.trim().toLowerCase();
+  if (request.allowAlways && answer === "always") return { approved: true, remember: "always" };
+  return { approved: answer === "y" || answer === "yes" };
 }
 
 export const runInteractiveAssistant = async (
@@ -399,7 +397,7 @@ export const runInteractiveAssistant = async (
         },
         watch: true,
         signal: abort.signal,
-        onCapabilityApproval:request=>collectCapabilityApproval(ctx,reader,request),
+        onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
         onToolBlock: (block) => {
           if (block.name === "card" && block.status === "completed") printCard(ctx, block.args);
         },
@@ -474,7 +472,7 @@ export const runInteractiveAssistant = async (
         conversationId: detail.conversation.id,
         turnId,
         signal: abort.signal,
-        onCapabilityApproval:request=>collectCapabilityApproval(ctx,reader,request),
+        onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
         onToolBlock: (block) => {
           if (block.name === "card" && block.status === "completed") printCard(ctx, block.args);
         },

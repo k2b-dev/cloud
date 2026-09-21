@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -13,8 +14,7 @@ import { createMailbox } from "./mailboxes";
 import { createProviderConnection } from "./provider-connections";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 const contextFor = (user: { id: string; uid: string }): MailRequestContext => ({
   actor: {

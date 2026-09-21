@@ -1,9 +1,9 @@
+import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { ButtonLink, FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { gatewayOpsMessages } from "../../../messages";
 import { buildLegacyNotificationsUrl, type LegacyNotificationStatusFilter, NOTIFICATION_ADMIN_BASE_URL } from "./filter-state";
 import SendAllPending from "./SendAllPending";
-import { gatewayOpsMessages } from "../../../messages";
 
 export type NotificationStatusFilter = LegacyNotificationStatusFilter;
 
@@ -18,12 +18,16 @@ const buildNotificationsUrl = (filter: { search?: string; status?: NotificationS
 
 export default function NotificationFilterBar(props: Props) {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  const statusOptions: FilterChipSection[] = [{ options: [
-    { value: "all", label: t.all, icon: "ti ti-list" },
-    { value: "pending", label: t.pending, icon: "ti ti-clock", color: "#d97706" },
-    { value: "sent", label: t.sent, icon: "ti ti-check", color: "#059669" },
-    { value: "error", label: t.error, icon: "ti ti-alert-circle", color: "#ef4444" },
-  ] }];
+  const statusOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.all, icon: "ti ti-list" },
+        { value: "pending", label: t.pending, icon: "ti ti-clock", color: "#d97706" },
+        { value: "sent", label: t.sent, icon: "ti ti-check", color: "#059669" },
+        { value: "error", label: t.error, icon: "ti ti-alert-circle", color: "#ef4444" },
+      ],
+    },
+  ];
   const searchAction = buildNotificationsUrl({ status: props.status });
 
   const setStatus = (value: string[]) => {

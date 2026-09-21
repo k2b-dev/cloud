@@ -1,10 +1,10 @@
 import { Show } from "solid-js";
 import { Button } from "../actions/Button";
+import { useUiMessages } from "../intl/messages";
 import { Paper } from "../surfaces/Paper";
 import { StatusBadge } from "../surfaces/StatusBadge";
-import { useUiMessages } from "../intl/messages";
 import { ChartFilterControls, type ChartFilterControlsProps } from "./ChartFilterControls";
-import type { ChartExplorerController, ChartExplorerCharts } from "./chart-explorer";
+import type { ChartExplorerCharts, ChartExplorerController } from "./chart-explorer";
 
 export type ChartExplorerControlsProps<C extends ChartExplorerCharts> = {
   explorer: ChartExplorerController<C>;

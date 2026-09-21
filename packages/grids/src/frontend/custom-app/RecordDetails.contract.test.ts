@@ -12,7 +12,9 @@ describe("App record details", () => {
     expect(source).not.toContain('class="divide-y rounded-xl border"');
     expect(source).not.toContain('class="rounded-xl border p-4"');
     expect(source).not.toContain("divide-y");
-    expect(source).toContain('layout={props.block.layout === "summary" ? "rows" : props.block.layout === "context" ? "grid" : props.block.layout}');
+    expect(source).toContain(
+      'layout={props.block.layout === "summary" ? "rows" : props.block.layout === "context" ? "grid" : props.block.layout}',
+    );
     expect(source).toContain("aria-label={messages().downloadFile({ filename: document.filename })}");
     expect(source).toContain("onClick={() => void download(document)}");
     expect(source).toContain("messages().downloadPdf");

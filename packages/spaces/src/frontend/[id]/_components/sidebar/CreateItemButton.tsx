@@ -3,7 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, dialogCore, prompts, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { SpaceColumn, SpaceItem, SpaceTag, SpaceItemResourceReferenceInput } from "@/contracts";
+import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceTag } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";

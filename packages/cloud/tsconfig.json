@@ -1,24 +1,27 @@
 {
-  "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.AsyncIterable"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
-  },
+  "extends": "../../tsconfig.base.json",
   "include": ["./src/**/*.ts", "./src/**/*.tsx", "./src/types/**/*.d.ts", "./test/integration/**/*.ts"],
-  "exclude": ["./dist", "./node_modules"]
+  "exclude": ["./dist", "./node_modules"],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@k2b/cloud": ["./src/index.ts"],
+      "@k2b/cloud/account/ui": ["./src/account/ui.ts"],
+      "@k2b/cloud/ai/ui": ["./src/ai/ui.tsx"],
+      "@k2b/cloud/server": ["./src/server/index.ts"],
+      "@k2b/cloud/server/*": ["./src/server/*"],
+      "@k2b/cloud/browser": ["./src/server/api-client.ts"],
+      "@k2b/cloud/shared": ["./src/shared/index.ts"],
+      "@k2b/cloud/services": ["./src/services/index.ts"],
+      "@k2b/cloud/services/*": ["./src/services/*"],
+      "@k2b/cloud/ssr": ["./src/ssr/index.ts"],
+      "@k2b/cloud/ssr/*": ["./src/ssr/*"],
+      "@k2b/cloud/config": ["./src/config/index.ts"],
+      "@k2b/cloud/config/*": ["./src/config/*"],
+      "@k2b/cloud/contracts": ["./src/contracts/index.ts"],
+      "@k2b/cloud/contracts/*": ["./src/contracts/*"],
+      "@k2b/cloud/api": ["./src/api/index.ts"],
+      "@k2b/cloud/clients/core": ["./src/clients/core.ts"]
+    }
+  }
 }

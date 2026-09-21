@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import {
   claimMailInvalidationBatch,
@@ -10,8 +11,7 @@ import {
   notifyMailInvalidations,
 } from "./events";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 suite("Mail live invalidation outbox", () => {
   const mailboxId = crypto.randomUUID();
@@ -97,8 +97,7 @@ suite("Mail live invalidation outbox", () => {
     const outboxId = await sql.begin((tx) => enqueueMailInvalidation(tx, { mailboxId }));
     const claimed = await claimMailInvalidationBatch();
     const row = claimed.find((candidate) => candidate.id === outboxId);
-    expect(row).toBeDefined();
-    if (!row) return;
+    if (!row) throw new Error("claimMailInvalidationBatch did not return the enqueued row");
 
     await dispatchMailInvalidation(row, async () => {
       throw new Error("topic unavailable");
@@ -116,8 +115,7 @@ suite("Mail live invalidation outbox", () => {
       WHERE id = ${outboxId}::uuid
     `;
     const retried = (await claimMailInvalidationBatch()).find((candidate) => candidate.id === outboxId);
-    expect(retried).toBeDefined();
-    if (!retried) return;
+    if (!retried) throw new Error("claimMailInvalidationBatch did not return the retried row");
     const published: string[] = [];
     await dispatchMailInvalidation(retried, async (candidate) => published.push(candidate.id));
     expect(published).toEqual([outboxId]);

@@ -1,12 +1,13 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import type { EventQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { queryEventMapData } from "./event-map-query";
 import { ingestBatch } from "./ingest-writer";
 import { queryEventAggregateData, queryEventsData } from "./query-execution";
 
-const dbTest = process.env.PULSE_EVENT_AGGREGATION_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest(
   "website analytics use exact windows, DST calendar days and source-local period uniques",

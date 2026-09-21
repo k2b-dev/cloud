@@ -1,23 +1,8 @@
 {
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true,
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "strict": true,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "types": ["bun"]
+    "types": ["bun"],
+    "noUncheckedIndexedAccess": false
   },
-  "include": [
-    "examples/**/*.ts",
-    "fibel.config.ts",
-    "plugins/**/*.ts",
-    "scripts/**/*.ts",
-    "src/**/*.ts",
-    "src/**/*.tsx"
-  ]
+  "include": ["examples/**/*.ts", "fibel.config.ts", "plugins/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "src/**/*.tsx"]
 }

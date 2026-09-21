@@ -1,12 +1,12 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { logging } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { testFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrateLogMetadataReader } from "./logging-metadata";
 
 const readWebVitals = logging.webVitals;
 
-// Run against a development database with CLOUD_ADMIN_SLICE_TEST=1.
-const databaseTest = process.env.CLOUD_ADMIN_SLICE_TEST === "1" ? test : test.skip;
+const databaseTest = testFor("database");
 databaseTest("legacy metadata with unsupported Unicode stays readable without changing the original", async () => {
   await migrateLogMetadataReader();
   for (const encoded of ['{"value":"\\u0000"}', '{"value":"\\ud800"}', '{"value":"\\udc00"}']) {

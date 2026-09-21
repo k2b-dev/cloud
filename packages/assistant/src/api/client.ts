@@ -1,5 +1,3 @@
-import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
-import type { AssistantSidebarPreview } from "../sidebar-preview";
 import type {
   AiConversation,
   AiConversationPage,
@@ -24,8 +22,11 @@ import type {
   AiUserPrefs,
   AiChatTaskView as AssistantChatTask,
 } from "@k2b/cloud/ai";
+import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
+import type { AssistantSidebarPreview } from "../sidebar-preview";
 
 type AiEditableMemoryKind = Exclude<AiMemoryKind, "workflow">;
+
 import { api } from "@k2b/cloud/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
@@ -52,12 +53,18 @@ const readError = async (response: Pick<Response, "json">, fallback: string): Pr
 /** Typed conversation-management facade used by the Assistant UI. */
 export const assistantApi = {
   listChatFiles: async (conversationId: string, signal?: AbortSignal) => {
-    const response = await client.conversations[":conversationId"].files.$get({ param: { conversationId }, query: {} }, { init: { signal } });
+    const response = await client.conversations[":conversationId"].files.$get(
+      { param: { conversationId }, query: {} },
+      { init: { signal } },
+    );
     if (!response.ok) throw new Error(await readError(response, "Failed to load files"));
     return (await response.json()).files;
   },
   assignProject: async (conversationId: string, projectId: string) => {
-    const response = await client.conversations[":conversationId"].project.$put({ param: { conversationId }, json: { projectId, onlyUnassigned: true } });
+    const response = await client.conversations[":conversationId"].project.$put({
+      param: { conversationId },
+      json: { projectId, onlyUnassigned: true },
+    });
     if (!response.ok) throw new Error(await readError(response, "Failed to assign Project"));
     return response.json();
   },
@@ -66,19 +73,22 @@ export const assistantApi = {
     if (!response.ok) throw new Error(await readError(response, "Failed to load allowances"));
     return response.json();
   },
-  projectSkills: async (projectId:string, page=1, q="", available=false, signal?:AbortSignal) => {
-    const response=await skillsClient["project-links"][":projectId"].$get({param:{projectId},query:{page:String(page),q,available:available ? "true" : "false"}},{init:{signal}});
-    if (!response.ok) throw new Error(await readError(response,"Could not load Skills."));
+  projectSkills: async (projectId: string, page = 1, q = "", available = false, signal?: AbortSignal) => {
+    const response = await skillsClient["project-links"][":projectId"].$get(
+      { param: { projectId }, query: { page: String(page), q, available: available ? "true" : "false" } },
+      { init: { signal } },
+    );
+    if (!response.ok) throw new Error(await readError(response, "Could not load Skills."));
     return response.json();
   },
-  linkedSkillProjects: async (skillId:string) => {
-    const response=await skillsClient[":skillId"].projects.$get({param:{skillId}});
-    if (!response.ok) throw new Error(await readError(response,"Failed to load skill access"));
+  linkedSkillProjects: async (skillId: string) => {
+    const response = await skillsClient[":skillId"].projects.$get({ param: { skillId } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load skill access"));
     return (await response.json()).projects;
   },
-  linkSkillProject: async (skillId:string,projectId:string,linked:boolean) => {
-    const response=await skillsClient[":skillId"].projects[":projectId"].$put({param:{skillId,projectId},json:{linked}});
-    if (!response.ok) throw new Error(await readError(response,"Could not update Project skills."));
+  linkSkillProject: async (skillId: string, projectId: string, linked: boolean) => {
+    const response = await skillsClient[":skillId"].projects[":projectId"].$put({ param: { skillId, projectId }, json: { linked } });
+    if (!response.ok) throw new Error(await readError(response, "Could not update Project skills."));
     return response.json();
   },
   listSkills: async (signal?: AbortSignal, query?: string): Promise<AiSkillSummary[]> => {
@@ -131,7 +141,10 @@ export const assistantApi = {
     principal: AiSkillAccess["principal"],
     permission: AiSkillAccess["permission"],
   ): Promise<AiSkillAccess> => {
-    const response = await skillsClient[":skillId"].access.$post({ param: { skillId }, json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission } });
+    const response = await skillsClient[":skillId"].access.$post({
+      param: { skillId },
+      json: { principal: AuthenticatedPrincipalSchema.parse(principal), permission },
+    });
     if (!response.ok) throw new Error(await readError(response, "Failed to share skill"));
     return (await response.json()).access;
   },
@@ -149,22 +162,27 @@ export const assistantApi = {
     if (!response.ok) throw new Error(await readError(response, "Failed to revoke skill access"));
   },
 
-  loadQueuedMessages: async (conversationId:string, signal?:AbortSignal) => {
-    const response = await client.conversations[":conversationId"].queue.$get({param:{conversationId}}, {init:{signal}});
-    if (!response.ok) throw new Error(await readError(response,"Failed to load queued messages"));
+  loadQueuedMessages: async (conversationId: string, signal?: AbortSignal) => {
+    const response = await client.conversations[":conversationId"].queue.$get({ param: { conversationId } }, { init: { signal } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load queued messages"));
     return response.json();
   },
-  editQueuedMessage: async (conversationId:string,messageId:string,text:string) => {
-    const response = await client.conversations[":conversationId"].queue[":messageId"].$patch({param:{conversationId,messageId},json:{text}});
-    if (!response.ok) throw new Error(await readError(response,"Failed to edit queued message"));
+  editQueuedMessage: async (conversationId: string, messageId: string, text: string) => {
+    const response = await client.conversations[":conversationId"].queue[":messageId"].$patch({
+      param: { conversationId, messageId },
+      json: { text },
+    });
+    if (!response.ok) throw new Error(await readError(response, "Failed to edit queued message"));
   },
-  cancelQueuedMessage: async (conversationId:string,messageId:string) => {
-    const response = await client.conversations[":conversationId"].queue[":messageId"].$delete({param:{conversationId,messageId}});
-    if (!response.ok) throw new Error(await readError(response,"Failed to remove queued message"));
+  cancelQueuedMessage: async (conversationId: string, messageId: string) => {
+    const response = await client.conversations[":conversationId"].queue[":messageId"].$delete({ param: { conversationId, messageId } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to remove queued message"));
   },
-  retryQueuedMessage: async (conversationId:string,messageId:string) => {
-    const response = await client.conversations[":conversationId"].queue[":messageId"].retry.$post({param:{conversationId,messageId}});
-    if (!response.ok) throw new Error(await readError(response,"Failed to retry queued message"));
+  retryQueuedMessage: async (conversationId: string, messageId: string) => {
+    const response = await client.conversations[":conversationId"].queue[":messageId"].retry.$post({
+      param: { conversationId, messageId },
+    });
+    if (!response.ok) throw new Error(await readError(response, "Failed to retry queued message"));
   },
   loadSidebar: async (signal?: AbortSignal): Promise<AssistantSidebarSnapshot> => {
     const response = await assistantClient.workspace.sidebar.$get({}, { init: { signal } });
@@ -173,7 +191,10 @@ export const assistantApi = {
   },
 
   loadSidebarPreview: async (conversationId: string, signal?: AbortSignal): Promise<AssistantSidebarPreview> => {
-    const response = await assistantClient.workspace.conversations[":conversationId"].preview.$get({ param: { conversationId } }, { init: { signal } });
+    const response = await assistantClient.workspace.conversations[":conversationId"].preview.$get(
+      { param: { conversationId } },
+      { init: { signal } },
+    );
     if (!response.ok) throw new Error(await readError(response, "Failed to load chat details"));
     return response.json();
   },
@@ -250,7 +271,6 @@ export const assistantApi = {
     if (!response.ok) throw new Error(await readError(response, "Failed to load chats"));
     return response.json();
   },
-
 
   listConversationResources: async (input: {
     conversationId: string;
@@ -389,7 +409,9 @@ export const assistantApi = {
     if (!response.ok) throw new Error(await readError(response, "Failed to delete memory"));
   },
 
-  listMemoryLearningRuns: async (input: { page?: number; perPage?: number; signal?: AbortSignal } = {}): Promise<AiMemoryLearningRunPage> => {
+  listMemoryLearningRuns: async (
+    input: { page?: number; perPage?: number; signal?: AbortSignal } = {},
+  ): Promise<AiMemoryLearningRunPage> => {
     const response = await client["memory-learning-runs"].$get(
       { query: { page: String(input.page ?? 1), perPage: String(input.perPage ?? 20) } },
       { init: { signal: input.signal } },

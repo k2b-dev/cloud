@@ -1,11 +1,11 @@
-import { Button, DataTable, NoticeCard, Placeholder, Tabs, useLocale } from "@k2b/ui";
 import { files } from "@k2b/stdlib/browser";
+import { Button, DataTable, NoticeCard, Placeholder, Tabs, useLocale } from "@k2b/ui";
 import Papa from "papaparse";
 import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
+import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
-import { advancedMessages } from "./advanced-messages";
 import { SourceEditor } from "./SourceEditor";
 
 const Rows = z.object({
@@ -58,20 +58,21 @@ export function SqlConsole(props: {
     try {
       let data: Record<string, unknown>[];
       if (mode === "schema") {
-        const tables = z.array(z.object({ name: z.string() })).parse(
-          await artifactClient.databaseInspect(props.id, { operation: "tables.list" }, current.signal),
-        );
+        const tables = z
+          .array(z.object({ name: z.string() }))
+          .parse(await artifactClient.databaseInspect(props.id, { operation: "tables.list" }, current.signal));
         data = [];
         for (const table of tables) {
           current.signal.throwIfAborted();
-          const schema = z.object({ columns: z.array(z.record(z.string(), z.unknown())) }).parse(
-            await artifactClient.databaseInspect(props.id, { operation: "schema.get", table: table.name }, current.signal),
-          );
-          data.push(...schema.columns.map(column => ({ [a().table]: table.name, ...column })));
+          const schema = z
+            .object({ columns: z.array(z.record(z.string(), z.unknown())) })
+            .parse(await artifactClient.databaseInspect(props.id, { operation: "schema.get", table: table.name }, current.signal));
+          data.push(...schema.columns.map((column) => ({ [a().table]: table.name, ...column })));
         }
       } else {
-        data = Rows.parse(await artifactClient.databaseInspect(props.id,
-          { operation: "query", sql: text(), params: [] }, current.signal)).data;
+        data = Rows.parse(
+          await artifactClient.databaseInspect(props.id, { operation: "query", sql: text(), params: [] }, current.signal),
+        ).data;
       }
       if (current !== controller) return;
       setRows(data);
@@ -85,7 +86,9 @@ export function SqlConsole(props: {
   }
   return (
     <div class="assistant-sql-console">
-      <Show when={view() === "query"}><p class="assistant-sql-hint">{a().queryHelp}</p></Show>
+      <Show when={view() === "query"}>
+        <p class="assistant-sql-hint">{a().queryHelp}</p>
+      </Show>
       <Show
         when={!status.error}
         fallback={
@@ -166,27 +169,32 @@ export function SqlConsole(props: {
                 <i class={view() === "query" ? "ti ti-player-play" : "ti ti-refresh"} />
                 {view() === "query" ? t().start : t().refresh}
               </Button>
-              <Show when={busy()}><Button size="sm" variant="ghost" onClick={() => controller?.abort()}>
-                {t().stop}
-              </Button></Show>
-              <Show when={view() === "query"}><Button
-                size="sm" variant="ghost"
-                disabled={!rows()?.length}
-                onClick={() =>
-                  files.downloadFileFromContent(
-                    "\uFEFF" +
-                      Papa.unparse(
-                        { fields: columns(), data: rows()!.map((row) => columns().map((key) => cell(row[key]))) },
-                        { delimiter: ";", newline: "\r\n", escapeFormulae: true },
-                      ),
-                    "query-results.csv",
-                    "text/csv;charset=utf-8",
-                  )
-                }
-              >
-                <i class="ti ti-download" />
-                CSV
-              </Button></Show>
+              <Show when={busy()}>
+                <Button size="sm" variant="ghost" onClick={() => controller?.abort()}>
+                  {t().stop}
+                </Button>
+              </Show>
+              <Show when={view() === "query"}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!rows()?.length}
+                  onClick={() =>
+                    files.downloadFileFromContent(
+                      "\uFEFF" +
+                        Papa.unparse(
+                          { fields: columns(), data: rows()!.map((row) => columns().map((key) => cell(row[key]))) },
+                          { delimiter: ";", newline: "\r\n", escapeFormulae: true },
+                        ),
+                      "query-results.csv",
+                      "text/csv;charset=utf-8",
+                    )
+                  }
+                >
+                  <i class="ti ti-download" />
+                  CSV
+                </Button>
+              </Show>
               <Show when={rows()}>
                 <small>
                   {rows()!.length} {a().rows} · {elapsed().toFixed(0)} ms
@@ -198,14 +206,21 @@ export function SqlConsole(props: {
             </Show>
             <div class="assistant-sql-results">
               <Show when={!busy()} fallback={<Placeholder state="loading" title={t().loading} />}>
-                <Show when={rows()} fallback={<Show when={view() === "query"}><Placeholder title={a().noResults} /></Show>}>
+                <Show
+                  when={rows()}
+                  fallback={
+                    <Show when={view() === "query"}>
+                      <Placeholder title={a().noResults} />
+                    </Show>
+                  }
+                >
                   <Show when={view() !== "schema" || rows()?.length} fallback={<Placeholder title={a().noTables} />}>
-                  <DataTable
-                    surface="paper"
-                    rows={rows() ?? []}
-                    columns={columns().map((key) => ({ id: key, header: key, value: (row: Record<string, unknown>) => cell(row[key]) }))}
-                    empty={a().empty}
-                  />
+                    <DataTable
+                      surface="paper"
+                      rows={rows() ?? []}
+                      columns={columns().map((key) => ({ id: key, header: key, value: (row: Record<string, unknown>) => cell(row[key]) }))}
+                      empty={a().empty}
+                    />
                   </Show>
                 </Show>
               </Show>

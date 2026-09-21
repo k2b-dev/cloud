@@ -5,9 +5,9 @@ import { Dropdown, prompts, toast, useLocale } from "@k2b/ui";
 import { useContext } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FileBaseInfo, FileInfo } from "@/contracts";
+import { filesMessages } from "../messages";
 import { FileContext, fileApiUrl, fileAppUrlForPath, requestFileLightboxOpen, setDetailFileInUrl, setHighlightedFiles } from "./context";
 import MoveTargetSearch from "./MoveTargetSearch";
-import { filesMessages } from "../messages";
 
 export type FileActionContext = {
   baseType: FileBaseInfo["type"];

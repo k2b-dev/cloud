@@ -1,4 +1,3 @@
-
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
@@ -30,7 +29,11 @@ export default ssr<AuthContext>(async (c) => {
     isMailInvitationIntegrationAvailable(),
   ]);
 
-  if (state.kind !== "ok") return ssr.error(c, state.kind === "accessDenied" ? 403 : 404, { description: state.message, action: { label: t.allSpaces, href: "/app/spaces" } });
+  if (state.kind !== "ok")
+    return ssr.error(c, state.kind === "accessDenied" ? 403 : 404, {
+      description: state.message,
+      action: { label: t.allSpaces, href: "/app/spaces" },
+    });
 
   return () => (
     <Layout c={c} fullWidth title={state.title}>

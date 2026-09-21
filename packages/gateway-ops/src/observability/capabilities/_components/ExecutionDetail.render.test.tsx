@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { CapabilityExecution } from "@k2b/cloud/capabilities/store";
+import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 

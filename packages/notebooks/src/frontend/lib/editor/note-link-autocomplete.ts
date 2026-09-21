@@ -39,8 +39,8 @@ import {
 } from "@codemirror/autocomplete";
 import { apiClient } from "../../../api/client";
 import { createNotebookFetchCache } from "./_lib/notebook-fetch-cache";
-import { isInsideFencedCode } from "./editor-scope";
 import { withIcon } from "./completion-icon";
+import { isInsideFencedCode } from "./editor-scope";
 
 /** Lightweight note projection — only what the popup needs. */
 type NoteRef = {

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 
@@ -26,8 +26,12 @@ test("Markdown examples import existing public UI exports, including type import
     for (const [, code] of readFileSync(file, "utf8").matchAll(/```(?:tsx?|jsx?)[^\n]*\n([\s\S]*?)```/g)) {
       const source = ts.createSourceFile(file, code!, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       for (const statement of source.statements) {
-        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) ||
-          statement.moduleSpecifier.text !== "@k2b/ui") continue;
+        if (
+          !ts.isImportDeclaration(statement) ||
+          !ts.isStringLiteral(statement.moduleSpecifier) ||
+          statement.moduleSpecifier.text !== "@k2b/ui"
+        )
+          continue;
         const bindings = statement.importClause?.namedBindings;
         if (statement.importClause?.name) failures.push(`${file}: unsupported default UI import`);
         if (!bindings || !ts.isNamedImports(bindings)) continue;
@@ -46,22 +50,28 @@ test("standalone Markdown examples typecheck against the current UI contract", (
   for (const file of pages) {
     let index = 0;
     for (const [, code] of readFileSync(file, "utf8").matchAll(/```tsx typecheck\n([\s\S]*?)```/g)) {
-      examples.set(join(root, `packages/ui/.docs-example-${examples.size}.tsx`),
-        `// ${file} example ${++index}\n${code}`);
+      examples.set(join(root, `packages/ui/.docs-example-${examples.size}.tsx`), `// ${file} example ${++index}\n${code}`);
     }
   }
   expect(examples.size).toBeGreaterThanOrEqual(4);
-  const options = { ...parsed.options, noEmit: true, noUnusedLocals: false, noUnusedParameters: false,
-    paths: { ...parsed.options.paths, "@k2b/ui": [join(root, "packages/ui/src/index.ts")] } };
+  const options = {
+    ...parsed.options,
+    noEmit: true,
+    noUnusedLocals: false,
+    noUnusedParameters: false,
+    paths: { ...parsed.options.paths, "@k2b/ui": [join(root, "packages/ui/src/index.ts")] },
+  };
   const host = ts.createCompilerHost(options);
   const getSourceFile = host.getSourceFile.bind(host);
   host.getSourceFile = (file, languageVersion, onError, shouldCreateNewSourceFile) => {
     const code = examples.get(file);
-    return code === undefined ? getSourceFile(file, languageVersion, onError, shouldCreateNewSourceFile)
+    return code === undefined
+      ? getSourceFile(file, languageVersion, onError, shouldCreateNewSourceFile)
       : ts.createSourceFile(file, code, languageVersion, true, ts.ScriptKind.TSX);
   };
   const exampleProgram = ts.createProgram([...examples.keys()], options, host);
-  const failures = ts.getPreEmitDiagnostics(exampleProgram)
+  const failures = ts
+    .getPreEmitDiagnostics(exampleProgram)
     .filter((diagnostic) => diagnostic.file && examples.has(diagnostic.file.fileName))
     .map((diagnostic) => `${diagnostic.file?.text.split("\n")[0]}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
   expect(failures).toEqual([]);

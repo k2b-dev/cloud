@@ -1,5 +1,6 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
@@ -20,7 +21,7 @@ import { billingAmountFields, billingLineConfig } from "./billing-lines";
 import type { GridTemplate } from "./types";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 postgresTest("billing full GQL projection reuses compiled roots and preserves live errors and frozen amounts", async () => {

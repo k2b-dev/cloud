@@ -1,18 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { get, update } from "./items";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ items: string | null }[]>`SELECT to_regclass('spaces.items')::text AS items`;
-    return Boolean(row?.items);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Spaces item updates", () => {
   test("preserves unrelated fields across concurrent partial updates", async () => {

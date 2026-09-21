@@ -1,10 +1,10 @@
-import { readWebVitals } from "./web-vitals";
 import { sql } from "bun";
 import type { PaginationParams } from "../../contracts/shared";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { registerSettings } from "../settings/defaults";
 import { redactMetadata } from "./redaction";
 import { observeSyncEvent, TRACE_STUCK_AFTER_MS, trace } from "./trace";
+import { readWebVitals } from "./web-vitals";
 
 export type {
   TraceAttributes,

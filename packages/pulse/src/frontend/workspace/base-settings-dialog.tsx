@@ -1,3 +1,5 @@
+import { PermissionEditor } from "@k2b/cloud/access/ui";
+import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -12,13 +14,11 @@ import {
   TextInput,
   toast,
 } from "@k2b/ui";
-import { PermissionEditor } from "@k2b/cloud/access/ui";
-import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { type Accessor, createSignal, onCleanup, Show } from "solid-js";
 import type { PulseBase } from "../../contracts";
+import { usePulseMessages } from "../use-messages";
 import { jsonFetch } from "./helpers";
 import type { GrantableLevel } from "./types";
-import { usePulseMessages } from "../use-messages";
 
 type BaseSettingsDialogOptions = {
   base: PulseBase;
@@ -249,12 +249,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
             </SettingsModal.Group>
 
             <SettingsModal.Group title={t().data}>
-              <SettingsModal.Tab
-                id="retention"
-                title={t().retention}
-                icon="ti ti-clock-cog"
-                description={t().retentionTabDescription}
-              >
+              <SettingsModal.Tab id="retention" title={t().retention} icon="ti ti-clock-cog" description={t().retentionTabDescription}>
                 <SettingsGroup title={t().dataLifecycle} description={t().dataLifecycleDescription}>
                   <SettingsField
                     label={t().rawDataRetention}
@@ -327,10 +322,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                 tone="danger"
                 description={t().destructiveBaseActions}
               >
-                <SettingsGroup
-                  title={t().clearTelemetry}
-                  description={t().clearTelemetryDescription}
-                >
+                <SettingsGroup title={t().clearTelemetry} description={t().clearTelemetryDescription}>
                   <SettingsGroup.Action>
                     <Button
                       type="button"
@@ -344,10 +336,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     </Button>
                   </SettingsGroup.Action>
                 </SettingsGroup>
-                <SettingsGroup
-                  title={t().deletePulseBase}
-                  description={t().deletePulseBaseDescription}
-                >
+                <SettingsGroup title={t().deletePulseBase} description={t().deletePulseBaseDescription}>
                   <SettingsGroup.Action>
                     <Button
                       type="button"

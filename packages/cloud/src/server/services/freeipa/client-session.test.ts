@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { call } from "./client";
 import { getServiceSession, login } from "./session";
-import { TEST_CA_CERT, TEST_SERVER_CERT, TEST_SERVER_KEY } from "./test-certificates";
+import { TEST_CA_CERT, TEST_SERVER_CERT, TEST_SERVER_KEY } from "./test-certificates.test-fixture";
 import { setFreeIpaTlsResolver } from "./tls";
 
 let server: ReturnType<typeof Bun.serve> | null = null;

@@ -1,7 +1,7 @@
-import { AiFileLocation, AiFileReference } from "./file-reference-contracts";
 import { z } from "zod";
-import { CodeResourceId } from "./browser-code-contracts";
 import { PrincipalSchema } from "../contracts/shared";
+import { CodeResourceId } from "./browser-code-contracts";
+import { AiFileLocation, AiFileReference } from "./file-reference-contracts";
 
 // Flat Assistant tool inputs. The owning service also validates its domain contracts.
 const Id = z.object({ id: CodeResourceId }).strict();
@@ -42,76 +42,142 @@ const DatabaseSql = z.object({
 const CodeWriteInput = Id.extend({
   expectedRevision: z.number().int().positive(),
   entry: ArtifactPath.optional(),
-  files: z.array(z.union([ArtifactFile, z.object({ path: ArtifactPath, fromFile: AiFileReference }).strict()])).min(1).max(64),
+  files: z
+    .array(z.union([ArtifactFile, z.object({ path: ArtifactPath, fromFile: AiFileReference }).strict()]))
+    .min(1)
+    .max(64),
 });
 
 export const CODE_SOURCE_TOOLS = {
   code_files: {
-    description: "List authorized files in one explicit chat, Project or App shared store. Returns locations, metadata and nextAfter. Use code_file_stat to obtain the opaque version before copying; does not load bytes into model context.",
-    input: AiFileLocation.omit({ path: true }).extend({ after: z.string().max(500).default(""), limit: z.number().int().min(1).max(1000).default(100) }),
+    description:
+      "List authorized files in one explicit chat, Project or App shared store. Returns locations, metadata and nextAfter. Use code_file_stat to obtain the opaque version before copying; does not load bytes into model context.",
+    input: AiFileLocation.omit({ path: true }).extend({
+      after: z.string().max(500).default(""),
+      limit: z.number().int().min(1).max(1000).default(100),
+    }),
   },
   code_file_stat: {
-    description: "Inspect one authorized file location. Returns exists plus its exact versioned reference, size and mediaType, never its bytes. App files require Use, Project files Read, chats ownership.",
+    description:
+      "Inspect one authorized file location. Returns exists plus its exact versioned reference, size and mediaType, never its bytes. App files require Use, Project files Read, chats ownership.",
     input: z.object({ file: AiFileLocation }).strict(),
   },
   code_file_copy: {
-    description: "Copy one exact file version between chat, Project and App shared stores with fresh review. Source bytes never enter tool output. App destination requires Use, Project destination Write, chat destination ownership. Set expectedVersion null only for a new destination; otherwise use its version from code_file_stat. Source/version, target rights, overwrite and byte limits are rechecked. This grants no access to other files.",
+    description:
+      "Copy one exact file version between chat, Project and App shared stores with fresh review. Source bytes never enter tool output. App destination requires Use, Project destination Write, chat destination ownership. Set expectedVersion null only for a new destination; otherwise use its version from code_file_stat. Source/version, target rights, overwrite and byte limits are rechecked. This grants no access to other files.",
     review: true,
-    input: z.object({ source: AiFileReference, destination: AiFileLocation, expectedVersion: z.string().min(1).max(128).nullable() }).strict(),
+    input: z
+      .object({ source: AiFileReference, destination: AiFileLocation, expectedVersion: z.string().min(1).max(128).nullable() })
+      .strict(),
   },
   code_database_export: {
-    description: "Export an App database backup into the current chat as a file. Manage required. Returns the actual path/version; no backup bytes enter tool output. Never overwrites an existing file. The chat file-size/storage limits apply. This is a Studio backup operation, not access to vendor APIs.",
-    input: Id.extend({ path: z.string().startsWith("/").max(240).default("/database.sqlite").describe("New chat filename; an existing path is rejected. Choose another name after a conflict.") }),
+    description:
+      "Export an App database backup into the current chat as a file. Manage required. Returns the actual path/version; no backup bytes enter tool output. Never overwrites an existing file. The chat file-size/storage limits apply. This is a Studio backup operation, not access to vendor APIs.",
+    input: Id.extend({
+      path: z
+        .string()
+        .startsWith("/")
+        .max(240)
+        .default("/database.sqlite")
+        .describe("New chat filename; an existing path is rejected. Choose another name after a conflict."),
+    }),
   },
   code_manage_read: {
-    description: "Read an App management snapshot before deletion: title, source revision, publication, file/JSON counts, database connection and managementRevision. Manage required. Does not expose another user's credentials or database server internals.", input: Id,
+    description:
+      "Read an App management snapshot before deletion: title, source revision, publication, file/JSON counts, database connection and managementRevision. Manage required. Does not expose another user's credentials or database server internals.",
+    input: Id,
   },
   code_delete: {
-    description: "Permanently delete an App, all source history, publications, grants and server data with fresh review. Read code_manage_read first. Database physical cleanup is queued, not claimed finished. Cannot delete an App that changed since review.", review: true,
+    description:
+      "Permanently delete an App, all source history, publications, grants and server data with fresh review. Read code_manage_read first. Database physical cleanup is queued, not claimed finished. Cannot delete an App that changed since review.",
+    review: true,
     input: Id.extend({ expectedManagementRevision: z.string().regex(/^[a-f0-9]{64}$/) }),
   },
   code_database_read: {
-    description: "Read App database connection status, generation, dataRevision and aggregate overview. Manage required; does not create a database. These are Studio contracts, not access to the backing service API.",
+    description:
+      "Read App database connection status, generation, dataRevision and aggregate overview. Manage required; does not create a database. These are Studio contracts, not access to the backing service API.",
     input: Id,
   },
   code_database_clear: {
-    description: "Permanently clear all table rows with fresh review while preserving schema, source, files and JSON storage. Manage required. Read code_database_read first. Returns completed and clearedTables; partial failure is explicit and cannot be blindly retried.",
+    description:
+      "Permanently clear all table rows with fresh review while preserving schema, source, files and JSON storage. Manage required. Read code_database_read first. Returns completed and clearedTables; partial failure is explicit and cannot be blindly retried.",
     review: true,
     input: Id.extend({ expectedGeneration: z.string().regex(/^[a-f0-9]{64}$/), expectedDataRevision: z.uuid() }),
   },
   code_database_reset: {
-    description: "Disconnect and permanently discard an App database, including schema, with fresh review. Preserves source, publications and files/JSON storage. Next explicit connection creates an empty database; physical deletion is queued. Read code_database_read first. Never use as a routine query fix.",
+    description:
+      "Disconnect and permanently discard an App database, including schema, with fresh review. Preserves source, publications and files/JSON storage. Next explicit connection creates an empty database; physical deletion is queued. Read code_database_read first. Never use as a routine query fix.",
     review: true,
-    input: Id.extend({ expectedGeneration: z.string().regex(/^[a-f0-9]{64}$/).nullable(), expectedDataRevision: z.uuid().nullable() }),
+    input: Id.extend({
+      expectedGeneration: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .nullable(),
+      expectedDataRevision: z.uuid().nullable(),
+    }),
   },
   code_storage_list: {
-    description: "Inspect an App's shared files or JSON keys for administration. Manage required. Returns storageRevision, counts and a page of key/bytes/mediaType/version metadata; no file contents. Follow nextAfter.",
-    input: Id.extend({ area: z.enum(["files", "kv"]), after: z.string().max(240).default(""), limit: z.number().int().min(1).max(1000).default(100) }),
+    description:
+      "Inspect an App's shared files or JSON keys for administration. Manage required. Returns storageRevision, counts and a page of key/bytes/mediaType/version metadata; no file contents. Follow nextAfter.",
+    input: Id.extend({
+      area: z.enum(["files", "kv"]),
+      after: z.string().max(240).default(""),
+      limit: z.number().int().min(1).max(1000).default(100),
+    }),
   },
   code_storage_delete: {
-    description: "Delete one shared file/JSON key, or clear an explicit storage area, with fresh user review. Manage required. Source, publications and database are preserved. Read code_storage_list first.",
+    description:
+      "Delete one shared file/JSON key, or clear an explicit storage area, with fresh user review. Manage required. Source, publications and database are preserved. Read code_storage_list first.",
     review: true,
-    input: Id.extend({ area: z.enum(["files", "kv", "all"]), key: z.string().min(1).max(240).optional().describe("Delete this exact key; omit to clear the entire area. Not valid with area all."), expectedStorageRevision: z.number().int().positive().describe("storageRevision from code_storage_list; concurrent writes invalidate the review.") }).refine(input => input.area !== "all" || input.key === undefined, "all clears both areas and cannot select a key"),
+    input: Id.extend({
+      area: z.enum(["files", "kv", "all"]),
+      key: z.string().min(1).max(240).optional().describe("Delete this exact key; omit to clear the entire area. Not valid with area all."),
+      expectedStorageRevision: z
+        .number()
+        .int()
+        .positive()
+        .describe("storageRevision from code_storage_list; concurrent writes invalidate the review."),
+    }).refine((input) => input.area !== "all" || input.key === undefined, "all clears both areas and cannot select a key"),
   },
   code_access_read: {
-    description: "Read an App's current grants and accessRevision before changing access. Manage required. App Use is read; Manage is admin. Skill access is separate.",
+    description:
+      "Read an App's current grants and accessRevision before changing access. Manage required. App Use is read; Manage is admin. Skill access is separate.",
     input: Id,
   },
   code_access_change: {
-    description: "Grant, change or revoke one App permission with fresh user review. Read code_access_read first. Sharing a referenced Skill is a separate operation.",
+    description:
+      "Grant, change or revoke one App permission with fresh user review. Read code_access_read first. Sharing a referenced Skill is a separate operation.",
     review: true,
     input: Id.extend({
-      expectedAccessRevision: z.string().regex(/^[a-f0-9]{64}$/).describe("Exact accessRevision returned by code_access_read."),
-      principal: PrincipalSchema.refine(principal => principal.type !== "service_account", "Studio Apps support user, group, authenticated or public grants.").optional().describe("New user or group from core.entities.search, authenticated, or public (read/run only, no server data). Service accounts are unsupported. Supply principal OR accessId."),
+      expectedAccessRevision: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .describe("Exact accessRevision returned by code_access_read."),
+      principal: PrincipalSchema.refine(
+        (principal) => principal.type !== "service_account",
+        "Studio Apps support user, group, authenticated or public grants.",
+      )
+        .optional()
+        .describe(
+          "New user or group from core.entities.search, authenticated, or public (read/run only, no server data). Service accounts are unsupported. Supply principal OR accessId.",
+        ),
       accessId: z.uuid().optional().describe("Existing grant ID from code_access_read; supply accessId OR principal."),
       permission: z.enum(["read", "admin"]).nullable().describe("read means Use, admin means Manage; null removes an existing accessId."),
-    }).refine(input => Number(input.principal !== undefined) + Number(input.accessId !== undefined) === 1
-      && (input.principal === undefined || input.permission !== null), "Supply principal with permission OR accessId with permission (null removes)")
-      .refine(input => input.principal?.type !== "public" || input.permission === "read", "Public Apps only support read/run access"),
+    })
+      .refine(
+        (input) =>
+          Number(input.principal !== undefined) + Number(input.accessId !== undefined) === 1 &&
+          (input.principal === undefined || input.permission !== null),
+        "Supply principal with permission OR accessId with permission (null removes)",
+      )
+      .refine((input) => input.principal?.type !== "public" || input.permission === "read", "Public Apps only support read/run access"),
   },
   code_actions: {
-    description: "Discover a visible App's currently published actions and their complete input/output JSON Schemas without running code. Returns publishedVersion for code_action. Requires Use; no draft source or management tools are loaded.",
-    input: Id.extend({ draft: z.boolean().default(false).describe("Inspect current draft actions instead of the publication; Manage required.") }),
+    description:
+      "Discover a visible App's currently published actions and their complete input/output JSON Schemas without running code. Returns publishedVersion for code_action. Requires Use; no draft source or management tools are loaded.",
+    input: Id.extend({
+      draft: z.boolean().default(false).describe("Inspect current draft actions instead of the publication; Manage required."),
+    }),
   },
   code_sql: {
     description:
@@ -163,7 +229,8 @@ export const CODE_SOURCE_TOOLS = {
     }),
   },
   code_unpublish: {
-    description: "Withdraw the current App publication with fresh review. Use code_manage_read first. Preserves source, publication history and data; ordinary Use-level callers can no longer start this App or its actions.",
+    description:
+      "Withdraw the current App publication with fresh review. Use code_manage_read first. Preserves source, publication history and data; ordinary Use-level callers can no longer start this App or its actions.",
     review: true,
     input: Id.extend({ expectedPublishedVersion: z.number().int().positive() }),
   },
@@ -189,8 +256,9 @@ export const CODE_SOURCE_TOOLS = {
     input: ArtifactCreate.pick({ title: true, description: true, icon: true }),
   },
   code_write: {
-    description: "Atomically save complete source files against expectedRevision from code_read/create. Other files stay unchanged. Returns revision and compiler diagnostics; never runs. fromFile imports one exact chat/Project/App file reference as UTF-8 source without printing bytes. File imports receive fresh review because source may be shared or published. Use code_file_stat first; source file and bundle byte limits apply.",
-    review: (input: unknown) => CodeWriteInput.parse(input).files.some(file => "fromFile" in file),
+    description:
+      "Atomically save complete source files against expectedRevision from code_read/create. Other files stay unchanged. Returns revision and compiler diagnostics; never runs. fromFile imports one exact chat/Project/App file reference as UTF-8 source without printing bytes. File imports receive fresh review because source may be shared or published. Use code_file_stat first; source file and bundle byte limits apply.",
+    review: (input: unknown) => CodeWriteInput.parse(input).files.some((file) => "fromFile" in file),
     input: CodeWriteInput,
   },
   code_remove: {

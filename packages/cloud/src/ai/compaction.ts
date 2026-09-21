@@ -91,7 +91,7 @@ const findLoopSplitIndex = (entries: StoreEntry[], keepLoops: number): number =>
 
 /** Preserve recent complete rounds, retaining one when the first loop has only two. */
 const findRoundSplitIndex = (entries: StoreEntry[]): number => {
-  const rounds = entries.flatMap((entry, index) => entry.message.role === "assistant" && entry.kind === "message" ? [index] : []);
+  const rounds = entries.flatMap((entry, index) => (entry.message.role === "assistant" && entry.kind === "message" ? [index] : []));
   if (!rounds.length) return -1;
   const candidate = rounds.length === 1 ? entries.length : rounds[rounds.length - (rounds.length > 2 ? 2 : 1)]!;
   const pending = new Set<string>();
@@ -132,8 +132,8 @@ export const createCloudCompactFn = (input: {
   return (ctx) => {
     const window = ctx.provider.contextWindow;
     const reserve = input.maxOutputTokens ?? 0;
-    const fillRatio = typeof ctx.fillRatio === "number" && window && window > reserve
-      ? ctx.fillRatio * window / (window - reserve) : ctx.fillRatio;
+    const fillRatio =
+      typeof ctx.fillRatio === "number" && window && window > reserve ? (ctx.fillRatio * window) / (window - reserve) : ctx.fillRatio;
     if (!ctx.force && (typeof fillRatio !== "number" || fillRatio < COMPACTION_FILL_RATIO)) return null;
 
     const totalLoops = countConversationLoops(ctx.entries);

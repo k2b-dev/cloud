@@ -10,9 +10,9 @@ import {
   type CapabilityActionManifest,
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
-  type CapabilityDefinitions,
   type CapabilityCommandManifest,
   CapabilityCommandManifestSchema,
+  type CapabilityDefinitions,
   type CapabilityError,
   CapabilityErrorSchema,
   type CapabilityExecutionContext,
@@ -433,7 +433,11 @@ const compileOperationSchemas = (definition: CapabilityQueryDefinition | Capabil
     inputSchema,
     dataSchema,
     resultZodSchema,
-    schemaHash: capabilityHash({ inputSchema, dataSchema, ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}) }),
+    schemaHash: capabilityHash({
+      inputSchema,
+      dataSchema,
+      ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
+    }),
   };
 };
 
@@ -469,8 +473,13 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
   for (const [localId, definition] of Object.entries(definitions.queries ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
     registerLocalId(localId, "Query");
     const label = `Query ${localId}`;
-    if (definition.stream && ((definition.stream.direction === "write" && !("idempotency" in definition)) || definition.stream.maxBytes <= 0)) throw new Error(`${label}: write streams require an Action and a positive byte budget`);
-    if (definition.stream?.direction === "write" && "idempotency" in definition && definition.idempotency !== "required") throw new Error(`${label}: write streams require idempotency`);
+    if (
+      definition.stream &&
+      ((definition.stream.direction === "write" && !("idempotency" in definition)) || definition.stream.maxBytes <= 0)
+    )
+      throw new Error(`${label}: write streams require an Action and a positive byte budget`);
+    if (definition.stream?.direction === "write" && "idempotency" in definition && definition.idempotency !== "required")
+      throw new Error(`${label}: write streams require idempotency`);
     const schemas = compileOperationSchemas(definition, label);
     if (definition.universalSearch) {
       const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
@@ -540,8 +549,13 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     if (definition.approval === "rememberable" && !definition.review) {
       throw new Error(`${label} must provide a review before approval can be remembered`);
     }
-    if (definition.stream && ((definition.stream.direction === "write" && !("idempotency" in definition)) || definition.stream.maxBytes <= 0)) throw new Error(`${label}: write streams require an Action and a positive byte budget`);
-    if (definition.stream?.direction === "write" && "idempotency" in definition && definition.idempotency !== "required") throw new Error(`${label}: write streams require idempotency`);
+    if (
+      definition.stream &&
+      ((definition.stream.direction === "write" && !("idempotency" in definition)) || definition.stream.maxBytes <= 0)
+    )
+      throw new Error(`${label}: write streams require an Action and a positive byte budget`);
+    if (definition.stream?.direction === "write" && "idempotency" in definition && definition.idempotency !== "required")
+      throw new Error(`${label}: write streams require idempotency`);
     const schemas = compileOperationSchemas(definition, label);
     const manifest = {
       localId,
@@ -736,13 +750,14 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
       );
     }
     assertClosedObjectInput(inputSchema, `Operation ${operation.localId} input`);
-    if (
-      operation.stream?.direction === "write" &&
-      (!("idempotency" in operation) || operation.idempotency !== "required")
-    ) {
+    if (operation.stream?.direction === "write" && (!("idempotency" in operation) || operation.idempotency !== "required")) {
       throw new Error(`Operation ${operation.localId} write streams require an idempotent Action`);
     }
-    const expectedSchemaHash = capabilityHash({ inputSchema: operation.inputSchema, dataSchema: operation.dataSchema, ...(operation.stream ? { stream: operation.stream } : {}) });
+    const expectedSchemaHash = capabilityHash({
+      inputSchema: operation.inputSchema,
+      dataSchema: operation.dataSchema,
+      ...(operation.stream ? { stream: operation.stream } : {}),
+    });
     if (operation.schemaHash !== expectedSchemaHash)
       throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
     if ("universalSearch" in operation && operation.universalSearch) {
@@ -1086,7 +1101,15 @@ export const invokeCompiledCapability = async (params: {
       return normalizeProviderError(invoked.error, "Capability returned an invalid error", params.onUnexpectedError);
     }
     const stream = invoked.data.stream;
-    if (stream && (Buffer.byteLength(stream.id) > 2048 || !operation.definition.stream || stream.direction !== operation.definition.stream.direction || stream.size > operation.definition.stream.maxBytes || Date.parse(stream.expiresAt) <= Date.now() || Date.parse(stream.expiresAt) > Date.now() + 86_400_000))
+    if (
+      stream &&
+      (Buffer.byteLength(stream.id) > 2048 ||
+        !operation.definition.stream ||
+        stream.direction !== operation.definition.stream.direction ||
+        stream.size > operation.definition.stream.maxBytes ||
+        Date.parse(stream.expiresAt) <= Date.now() ||
+        Date.parse(stream.expiresAt) > Date.now() + 86_400_000)
+    )
       return invalidProviderError("Stream is outside its declared policy or 24 hour lifetime");
     const validated = validateCapabilityResult(params.compiled, operation, invoked.data, params.onUnexpectedError);
     return validated.ok

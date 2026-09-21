@@ -88,7 +88,8 @@ export const browserMessages = i18n.define({
       detailsFor: (name: string) => `Details: ${name}`,
       loadFailed: "This folder could not be loaded.",
       moveTrashTitle: "Move to trash",
-      moveTrashQuestion: ({ n, name }: { n: number; name: string }) => (n === 1 ? `Move “${name}” to the trash?` : `Move ${n} items to the trash?`),
+      moveTrashQuestion: ({ n, name }: { n: number; name: string }) =>
+        n === 1 ? `Move “${name}” to the trash?` : `Move ${n} items to the trash?`,
       trashed: (n: number) => (n === 1 ? "Moved to trash." : `${n} items moved to the trash.`),
       renamed: "Renamed.",
       rename: "Rename",
@@ -168,7 +169,8 @@ export const browserMessages = i18n.define({
       quotaInvalid: "Choose positive limits. The per-file limit must not exceed the total budget.",
       uploadTooLarge: "This file exceeds the inbox's per-file limit.",
       shareDownloadScope: "Anyone with the link can download these entries until the link expires or is revoked.",
-      shareInboxScope: "Anyone with the link can upload files into this folder until the link expires or is revoked. Uploads never replace existing files.",
+      shareInboxScope:
+        "Anyone with the link can upload files into this folder until the link expires or is revoked. Uploads never replace existing files.",
       shareVisibility: "Only you and administrators can manage this link. Copy it now; it cannot be retrieved later.",
       createShare: "Create link",
       shareCreated: "Link created",
@@ -200,7 +202,8 @@ export const browserMessages = i18n.define({
       publicLinkUnavailable: "This link is no longer available",
       publicLinkUnavailableDescription: "The share has expired or was revoked.",
       publicAvailableUntil: (date: string) => `Available until ${date}.`,
-      publicInboxHint: "Drop files here or choose them. Each file goes straight to the storage; existing names are kept by adding a suffix.",
+      publicInboxHint:
+        "Drop files here or choose them. Each file goes straight to the storage; existing names are kept by adding a suffix.",
       publicUploaded: (name: string) => `${name} uploaded.`,
       sharedThrough: "Shared securely through Cloud",
       select: "Select",
@@ -208,10 +211,20 @@ export const browserMessages = i18n.define({
       replaceAll: "Replace existing",
       onlyNew: (n: number) => (n === 1 ? "Upload only the new file" : `Upload only the ${n} new files`),
       replaceManyQuestion: ({ count, total }: { count: number; total: number }) =>
-        count === total ? (count === 1 ? "The file already exists in this folder." : `All ${count} files already exist in this folder.`) : `${count} of ${total} files already exist in this folder.`,
+        count === total
+          ? count === 1
+            ? "The file already exists in this folder."
+            : `All ${count} files already exist in this folder.`
+          : `${count} of ${total} files already exist in this folder.`,
       uploadingTitle: "Preparing upload…",
       uploadSummary: ({ uploaded, skipped, failed }: { uploaded: number; skipped: number; failed: number }) =>
-        [uploaded === 1 ? "1 file uploaded" : `${uploaded} files uploaded`, skipped ? `${skipped} skipped` : null, failed ? `${failed} failed` : null].filter(Boolean).join(" · ") + ".",
+        [
+          uploaded === 1 ? "1 file uploaded" : `${uploaded} files uploaded`,
+          skipped ? `${skipped} skipped` : null,
+          failed ? `${failed} failed` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") + ".",
       upload: "Upload",
       newFile: "New file",
       newFileName: "File name",
@@ -234,7 +247,8 @@ export const browserMessages = i18n.define({
       documentName: (extension: string) => `Name (.${extension} is added)`,
       documentCreated: (name: string) => `${name} created.`,
       editorLoading: "Loading editor…",
-      editorExternalWrites: "Changes made outside this editor cannot be protected by atomic conflict checks here. Avoid editing this file in other applications at the same time.",
+      editorExternalWrites:
+        "Changes made outside this editor cannot be protected by atomic conflict checks here. Avoid editing this file in other applications at the same time.",
       editorFailed: "The editor could not be opened.",
       backToFolder: "Back to folder",
       kindImage: "Image",
@@ -331,7 +345,8 @@ export const browserMessages = i18n.define({
       searchIn: (folder: string) => `Suche in ${folder}`,
       clearSearch: "Suche zurücksetzen",
       noResultsTitle: "Keine passenden Einträge",
-      noResultsDescription: "Gesucht wird in den Namen unterhalb dieses Ordners. Probiere einen anderen Begriff oder suche ab einem übergeordneten Ordner.",
+      noResultsDescription:
+        "Gesucht wird in den Namen unterhalb dieses Ordners. Probiere einen anderen Begriff oder suche ab einem übergeordneten Ordner.",
       parentFolder: "Ordner",
       newFolder: "Neuer Ordner",
       newFolderName: "Ordnername",
@@ -358,7 +373,8 @@ export const browserMessages = i18n.define({
       detailsFor: (name: string) => `Details: ${name}`,
       loadFailed: "Dieser Ordner konnte nicht geladen werden.",
       moveTrashTitle: "In den Papierkorb verschieben",
-      moveTrashQuestion: ({ n, name }: { n: number; name: string }) => (n === 1 ? `„${name}“ in den Papierkorb verschieben?` : `${n} Einträge in den Papierkorb verschieben?`),
+      moveTrashQuestion: ({ n, name }: { n: number; name: string }) =>
+        n === 1 ? `„${name}“ in den Papierkorb verschieben?` : `${n} Einträge in den Papierkorb verschieben?`,
       trashed: (n: number) => (n === 1 ? "In den Papierkorb verschoben." : `${n} Einträge in den Papierkorb verschoben.`),
       renamed: "Umbenannt.",
       rename: "Umbenennen",
@@ -403,7 +419,8 @@ export const browserMessages = i18n.define({
       parentFolderUp: "Zum übergeordneten Ordner",
       trashTitle: "Papierkorb",
       trashEmpty: "Der Papierkorb ist leer.",
-      trashDescription: "Gelöschte Einträge bleiben hier, bis die Administration den Papierkorb leert. Wiederherstellen legt einen Eintrag an seinen alten Ort zurück.",
+      trashDescription:
+        "Gelöschte Einträge bleiben hier, bis die Administration den Papierkorb leert. Wiederherstellen legt einen Eintrag an seinen alten Ort zurück.",
       restore: "Wiederherstellen",
       restored: (name: string) => `„${name}“ wiederhergestellt.`,
       deletedAt: "Gelöscht",
@@ -438,8 +455,10 @@ export const browserMessages = i18n.define({
       quotaInvalid: "Wähle positive Limits. Das Limit pro Datei darf das gesamte Budget nicht überschreiten.",
       uploadTooLarge: "Diese Datei überschreitet das Dateigrößenlimit des Upload-Eingangs.",
       shareDownloadScope: "Jede Person mit dem Link kann diese Einträge herunterladen, bis der Link abläuft oder widerrufen wird.",
-      shareInboxScope: "Jede Person mit dem Link kann Dateien in diesen Ordner hochladen, bis der Link abläuft oder widerrufen wird. Bestehende Dateien werden nie ersetzt.",
-      shareVisibility: "Nur du und Administratoren können diesen Link verwalten. Kopiere ihn jetzt; er lässt sich später nicht erneut anzeigen.",
+      shareInboxScope:
+        "Jede Person mit dem Link kann Dateien in diesen Ordner hochladen, bis der Link abläuft oder widerrufen wird. Bestehende Dateien werden nie ersetzt.",
+      shareVisibility:
+        "Nur du und Administratoren können diesen Link verwalten. Kopiere ihn jetzt; er lässt sich später nicht erneut anzeigen.",
       createShare: "Link erstellen",
       shareCreated: "Link erstellt",
       shareLink: "Link",
@@ -449,7 +468,8 @@ export const browserMessages = i18n.define({
       shareCreateFailed: "Die Freigabe konnte nicht erstellt werden.",
       sharesTitle: "Freigaben",
       sharesDescription: "Deine öffentlichen Download-Links und Upload-Eingänge, auch für Ablagen, auf die du nicht mehr zugreifen kannst.",
-      noShares: "Noch keine Freigaben. Wähle Einträge aus und nutze „Öffentlich teilen“, oder gib einen Ordner in seinen Details als Upload-Eingang frei.",
+      noShares:
+        "Noch keine Freigaben. Wähle Einträge aus und nutze „Öffentlich teilen“, oder gib einen Ordner in seinen Details als Upload-Eingang frei.",
       shareKind: "Art",
       downloadShare: "Download",
       inboxShare: "Upload-Eingang",
@@ -462,7 +482,8 @@ export const browserMessages = i18n.define({
       stateRevoked: "Widerrufen",
       shareAccess: (n: number) => (n === 1 ? "1 Zugriff" : `${n} Zugriffe`),
       revoke: "Widerrufen",
-      revokeQuestion: "Neue Übertragungen werden gesperrt. Bereits ausgestellte Übertragungsfreigaben gelten bis zu ihrem Ablauf. Dies kann nicht rückgängig gemacht werden.",
+      revokeQuestion:
+        "Neue Übertragungen werden gesperrt. Bereits ausgestellte Übertragungsfreigaben gelten bis zu ihrem Ablauf. Dies kann nicht rückgängig gemacht werden.",
       revoked: "Freigabe widerrufen.",
       revokeFailed: "Die Freigabe konnte nicht widerrufen werden.",
       createdBy: "Erstellt von",
@@ -470,7 +491,8 @@ export const browserMessages = i18n.define({
       publicLinkUnavailable: "Dieser Link ist nicht mehr verfügbar",
       publicLinkUnavailableDescription: "Die Freigabe ist abgelaufen oder wurde widerrufen.",
       publicAvailableUntil: (date: string) => `Verfügbar bis ${date}.`,
-      publicInboxHint: "Dateien hier ablegen oder auswählen. Jede Datei geht direkt in die Ablage; bestehende Namen bleiben erhalten und bekommen einen Zusatz.",
+      publicInboxHint:
+        "Dateien hier ablegen oder auswählen. Jede Datei geht direkt in die Ablage; bestehende Namen bleiben erhalten und bekommen einen Zusatz.",
       publicUploaded: (name: string) => `${name} hochgeladen.`,
       sharedThrough: "Sicher geteilt über Cloud",
       select: "Auswählen",
@@ -478,10 +500,20 @@ export const browserMessages = i18n.define({
       replaceAll: "Bestehende ersetzen",
       onlyNew: (n: number) => (n === 1 ? "Nur die neue Datei hochladen" : `Nur die ${n} neuen Dateien hochladen`),
       replaceManyQuestion: ({ count, total }: { count: number; total: number }) =>
-        count === total ? (count === 1 ? "Die Datei existiert bereits in diesem Ordner." : `Alle ${count} Dateien existieren bereits in diesem Ordner.`) : `${count} von ${total} Dateien existieren bereits in diesem Ordner.`,
+        count === total
+          ? count === 1
+            ? "Die Datei existiert bereits in diesem Ordner."
+            : `Alle ${count} Dateien existieren bereits in diesem Ordner.`
+          : `${count} von ${total} Dateien existieren bereits in diesem Ordner.`,
       uploadingTitle: "Upload wird vorbereitet …",
       uploadSummary: ({ uploaded, skipped, failed }: { uploaded: number; skipped: number; failed: number }) =>
-        [uploaded === 1 ? "1 Datei hochgeladen" : `${uploaded} Dateien hochgeladen`, skipped ? `${skipped} übersprungen` : null, failed ? `${failed} fehlgeschlagen` : null].filter(Boolean).join(" · ") + ".",
+        [
+          uploaded === 1 ? "1 Datei hochgeladen" : `${uploaded} Dateien hochgeladen`,
+          skipped ? `${skipped} übersprungen` : null,
+          failed ? `${failed} fehlgeschlagen` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") + ".",
       upload: "Hochladen",
       newFile: "Neue Datei",
       newFileName: "Dateiname",
@@ -504,7 +536,8 @@ export const browserMessages = i18n.define({
       documentName: (extension: string) => `Name (.${extension} wird ergänzt)`,
       documentCreated: (name: string) => `${name} angelegt.`,
       editorLoading: "Editor wird geladen…",
-      editorExternalWrites: "Änderungen außerhalb dieses Editors können hier nicht atomar vor Überschreiben geschützt werden. Bearbeite diese Datei nicht gleichzeitig in anderen Anwendungen.",
+      editorExternalWrites:
+        "Änderungen außerhalb dieses Editors können hier nicht atomar vor Überschreiben geschützt werden. Bearbeite diese Datei nicht gleichzeitig in anderen Anwendungen.",
       editorFailed: "Der Editor konnte nicht geöffnet werden.",
       backToFolder: "Zurück zum Ordner",
       kindImage: "Bild",

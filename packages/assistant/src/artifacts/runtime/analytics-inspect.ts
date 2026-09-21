@@ -3,19 +3,38 @@ export function analyticsInteractions(node: AnalyticsNode): Array<{ id: string; 
   if (node.disabled) return [];
   const action = (event: AnalyticsEvent) => ({ id: node.id, event });
   switch (node.type) {
-    case "button": case "filePicker": return [{ id: node.id }];
-    case "input": case "number": case "slider": case "dateRange": case "select": case "multiSelect":
+    case "button":
+    case "filePicker":
+      return [{ id: node.id }];
+    case "input":
+    case "number":
+    case "slider":
+    case "dateRange":
+    case "select":
+    case "multiSelect":
       return [action({ type: "change", value: node.value })];
-    case "explorer": return [action({ type: "view", value: node.view === "chart" ? "table" : "chart" }), action({ type: "select", key: null })];
-    case "chart": return node.data.marks?.length ? [action({ type: "select", key: null })] : [];
-    case "table": return [action({ type: "select", key: null })];
-    case "group": return [action({ type: "refresh" }), action({ type: "request", request: node.desired })];
-    default: return [];
+    case "explorer":
+      return [action({ type: "view", value: node.view === "chart" ? "table" : "chart" }), action({ type: "select", key: null })];
+    case "chart":
+      return node.data.marks?.length ? [action({ type: "select", key: null })] : [];
+    case "table":
+      return [action({ type: "select", key: null })];
+    case "group":
+      return [action({ type: "refresh" }), action({ type: "request", request: node.desired })];
+    default:
+      return [];
   }
 }
 
 export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: number, detail: boolean) {
-  const base = { type: node.type, label: node.label, description: node.description, disabled: node.disabled, loading: node.loading, interactions: analyticsInteractions(node) };
+  const base = {
+    type: node.type,
+    label: node.label,
+    description: node.description,
+    disabled: node.disabled,
+    loading: node.loading,
+    interactions: analyticsInteractions(node),
+  };
   switch (node.type) {
     case "group":
       return {
@@ -39,7 +58,7 @@ export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: num
         totalRows: node.data.rows.length,
         ...(detail ? { rows: node.data.rows.slice(offset, offset + limit) } : {}),
         chartKind: "kind" in node.data.chart ? node.data.chart.kind : node.data.chart.options.kind,
-        ...("kind" in node.data.chart ? {mapping:node.data.chart} : {}),
+        ...("kind" in node.data.chart ? { mapping: node.data.chart } : {}),
       };
     case "table":
       return {
@@ -73,7 +92,7 @@ export function inspectAnalytics(node: AnalyticsNode, offset: number, limit: num
     case "button":
       return base;
     case "stat":
-      return {...base,value:node.value,format:node.format,...(detail?{trend:node.trend}:{})};
+      return { ...base, value: node.value, format: node.format, ...(detail ? { trend: node.trend } : {}) };
     default:
       return { ...base, value: node.value };
   }

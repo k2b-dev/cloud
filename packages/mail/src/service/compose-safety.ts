@@ -56,7 +56,8 @@ const safetyMessages = i18n.define({
       replyAllTitle: "Antwort an alle",
       replyAllDescription: ({ count }) => `Diese Antwort wird an ${count} Personen gesendet. Prüfe, ob alle sie benötigen.`,
       suspiciousLinkTitle: "Links in der E-Mail prüfen",
-      suspiciousLinkDescription: "Ein Link verwendet ein ungewöhnliches Ziel oder seine sichtbare Adresse stimmt nicht mit dem Ziel überein.",
+      suspiciousLinkDescription:
+        "Ein Link verwendet ein ungewöhnliches Ziel oder seine sichtbare Adresse stimmt nicht mit dem Ziel überein.",
       unrenderedTemplateTitle: "Nicht aufgelöster Platzhaltertext",
       unrenderedTemplateDescription: "Die E-Mail enthält Platzhalter wie {{ sender.email }}, die als reiner Text versendet werden.",
     },

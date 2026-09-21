@@ -9,9 +9,8 @@
     "./cli": "./src/cli.ts"
   },
   "scripts": {
-    "test": "APP_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef bun test src",
-    "test:load": "bun src/service/high-cardinality-load.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')"
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "APP_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef bun test src"
   },
   "dependencies": {
     "@k2b/ui": "workspace:*",

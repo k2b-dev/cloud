@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as durableHistory from "./durable-history";
@@ -101,7 +102,7 @@ const cleanup = async (item: Fixture) => {
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("form submission integration", () => {

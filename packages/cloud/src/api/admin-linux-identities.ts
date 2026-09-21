@@ -2,8 +2,8 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { LinuxIdentityConfigurationSchema, PosixOverridesSchema } from "../contracts/posix";
-import { auth, type AuthContext, v } from "../server";
-import { posix, PosixError } from "../services/accounts/posix";
+import { type AuthContext, auth, v } from "../server";
+import { PosixError, posix } from "../services/accounts/posix";
 
 const Id = z.object({ id: z.uuid() });
 const Configure = z.object({ config: LinuxIdentityConfigurationSchema, rangeReserved: z.boolean() }).strict();
@@ -29,7 +29,10 @@ export const createAdminLinuxIdentityRoutes = (
     )
     .put(
       "/configuration",
-      describeRoute({ tags: ["Linux identities"], summary: "Configure automatic local Linux identity assignment; does not enable computer login" }),
+      describeRoute({
+        tags: ["Linux identities"],
+        summary: "Configure automatic local Linux identity assignment; does not enable computer login",
+      }),
       v("json", Configure),
       async (c) => {
         const { config, rangeReserved } = c.req.valid("json");
@@ -45,7 +48,10 @@ export const createAdminLinuxIdentityRoutes = (
     )
     .post(
       "/users/:id",
-      describeRoute({ tags: ["Linux identities"], summary: "Backfill missing Linux attributes for one local full account; safe to repeat" }),
+      describeRoute({
+        tags: ["Linux identities"],
+        summary: "Backfill missing Linux attributes for one local full account; safe to repeat",
+      }),
       v("param", Id),
       async (c) => c.json(await service.provision(c.get("user"), c.req.valid("param").id)),
     )

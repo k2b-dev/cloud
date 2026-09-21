@@ -1,9 +1,9 @@
 import type { ClientRequest, IncomingHttpHeaders, IncomingMessage } from "node:http";
 import { type RequestOptions as HttpsRequestOptions, request as httpsRequest } from "node:https";
-import { resolvePublicNetworkAddresses, type PublicNetworkAddress } from "../services/network-security";
+import { z } from "zod";
+import { type PublicNetworkAddress, resolvePublicNetworkAddresses } from "../services/network-security";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, guessAiMediaType, normalizeAiFilePath } from "./files-store";
 import { defineAiTool } from "./tools";
-import { z } from "zod";
 
 const FETCH_FILE_MAX_REDIRECTS = 5;
 const FETCH_FILE_MAX_ADDRESS_ATTEMPTS = 4;

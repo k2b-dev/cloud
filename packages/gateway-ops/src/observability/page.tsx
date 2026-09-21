@@ -11,13 +11,13 @@
  * charts, while this entry point turns their aggregates into an operator queue.
  */
 
-import { ButtonLink, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { logging, type TraceWindow, trace } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
+import { ButtonLink, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../config";
 import OperationalCharts from "../frontend/OperationalCharts.island";
-import { prepareOperationalCharts, alignCountSeries } from "../frontend/operational-charts";
+import { alignCountSeries, prepareOperationalCharts } from "../frontend/operational-charts";
 import { buildGatewayHealth } from "../health";
 import { gatewayOpsMessages } from "../messages";
 import { buildOverviewSignals, type OverviewSignalSeverity, overviewVerdict } from "./overview";

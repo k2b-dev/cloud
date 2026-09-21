@@ -1,8 +1,8 @@
-import { requestCacheRedis } from "./request-cache-redis";
 import { type RailSnapshot, RailSnapshotSchema } from "../contracts/rail-preferences";
 import type { User } from "../contracts/shared";
 import { railPreferences } from "./rail-preferences";
 import { railShortcuts } from "./rail-shortcuts";
+import { requestCacheRedis } from "./request-cache-redis";
 
 // Private request metadata: never serialized into the public User contract.
 const versions = new WeakMap<User, string>();

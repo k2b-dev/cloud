@@ -1,8 +1,8 @@
-import { createEffect, onCleanup } from "solid-js";
-import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 import type { ChartDatum } from "@k2b/stdlib";
+import { createEffect, onCleanup } from "solid-js";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartKind } from "./Chart";
+import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 
 export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
 export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>

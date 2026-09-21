@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, spyOn } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { testInfra } from "../../../../../scripts/fixtures/test-infra";
 import { createCustomAppsApi } from "../../api/custom-apps";
 import { fromPublicFormConfig } from "../../api/form-api-shared";
 import type { CustomAppDefinition } from "../../custom-apps/contracts";
@@ -16,7 +17,7 @@ import "../_components/ssr-test-plugin";
 const { default: customAppPage } = await import("./page");
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("published App SSR availability", () => {

@@ -1,4 +1,4 @@
-import { openGlobalSearch, type GlobalSearchOptions } from "@k2b/cloud/browser/search";
+import { type GlobalSearchOptions, openGlobalSearch } from "@k2b/cloud/browser/search";
 import { useLocale } from "@k2b/ui";
 import { accountsSearchMessages } from "../search-messages";
 export const accountsSearchOptions = (locale: string): GlobalSearchOptions => ({

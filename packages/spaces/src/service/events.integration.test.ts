@@ -1,6 +1,7 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
+import { natsServers, testFor } from "../../../../scripts/fixtures/test-infra";
 
-const natsTest = process.env.CLOUD_SYNC_NATS_TEST === "1" ? test : test.skip;
+const natsTest = testFor("nats");
 
 natsTest(
   "live topic replays from an empty snapshot and fans out to independent subscribers",
@@ -9,11 +10,11 @@ natsTest(
     const { connect } = await import("@nats-io/transport-node");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const connection = await connect({
-      servers: process.env.NATS_SERVERS ?? "nats://localhost:4222",
+      servers: natsServers(),
       ignoreClusterUpdates: true,
       name: "spaces-topic-test",
     });
-    const sync = createSync({ connection, namespace: `test-${crypto.randomUUID()}`, application: "spaces" });
+    const sync = createSync({ connection, namespace: `test-${crypto.randomUUID()}`, application: "spaces", defaults: { replicas: 1 } });
     const abort = new AbortController();
     bindProcessSync(sync);
     try {

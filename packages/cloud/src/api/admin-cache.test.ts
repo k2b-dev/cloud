@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { announcements } from "../services/announcements";
-import { invalidateSettingsCacheForAdmin } from "../services/settings/store";
 import { buildProjectedUser } from "../services/session/user";
-import { adminAnnouncementRoutes } from "./announcements";
+import { invalidateSettingsCacheForAdmin } from "../services/settings/store";
 import adminCoreSettingsRoutes from "./admin-core-settings";
+import { adminAnnouncementRoutes } from "./announcements";
 
 const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: false });
 test("cache services reject missing and non-admin actors before touching Redis", async () => {

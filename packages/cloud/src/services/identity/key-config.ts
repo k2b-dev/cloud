@@ -1,5 +1,6 @@
 import { crypto } from "@k2b/stdlib";
 import { getProcessApplicationId } from "../../_internal/process-identity";
+import { env } from "../../config/env";
 
 const KEY_PATTERN = /^[0-9a-f]{64}$/i;
 
@@ -27,9 +28,9 @@ export const readIdentityKeyEncryptionConfig = async (): Promise<IdentityKeyEncr
   if (getProcessApplicationId() !== "core") {
     throw new Error("Private Cloud identity keys may only be loaded by the Core application");
   }
-  const current = parseKey("CLOUD_IDENTITY_KEY_ENCRYPTION_KEY", process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY, true)!;
-  const previous = parseKey("CLOUD_IDENTITY_PREVIOUS_KEY", process.env.CLOUD_IDENTITY_PREVIOUS_KEY, false);
-  const next = parseKey("CLOUD_IDENTITY_NEXT_KEY", process.env.CLOUD_IDENTITY_NEXT_KEY, false);
+  const current = parseKey("CLOUD_IDENTITY_KEY_ENCRYPTION_KEY", env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY, true)!;
+  const previous = parseKey("CLOUD_IDENTITY_PREVIOUS_KEY", env.CLOUD_IDENTITY_PREVIOUS_KEY, false);
+  const next = parseKey("CLOUD_IDENTITY_NEXT_KEY", env.CLOUD_IDENTITY_NEXT_KEY, false);
   const currentIdentified = await identify(current);
   const previousIdentified = previous ? await identify(previous) : null;
   const nextIdentified = next ? await identify(next) : null;
@@ -37,6 +38,7 @@ export const readIdentityKeyEncryptionConfig = async (): Promise<IdentityKeyEncr
   if (new Set(ids).size !== ids.length) {
     throw new Error("Configured Cloud identity KEKs must be distinct");
   }
-  if (previousIdentified && nextIdentified) throw new Error("Configure either CLOUD_IDENTITY_PREVIOUS_KEY or CLOUD_IDENTITY_NEXT_KEY, not both");
+  if (previousIdentified && nextIdentified)
+    throw new Error("Configure either CLOUD_IDENTITY_PREVIOUS_KEY or CLOUD_IDENTITY_NEXT_KEY, not both");
   return { current: currentIdentified, previous: previousIdentified, next: nextIdentified };
 };

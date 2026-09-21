@@ -1,4 +1,4 @@
-import { createSignal, type Accessor } from "solid-js";
+import { type Accessor, createSignal } from "solid-js";
 
 export type MailComposerTransition = "send" | "discard" | "handoff" | "recovery" | "attachment" | "calendar" | "delivery_options";
 

@@ -1,4 +1,4 @@
-import { commandPath, readCommand, CommandPathSchema } from "@k2b/cloud/contracts";
+import { CommandPathSchema, commandPath, readCommand } from "@k2b/cloud/contracts";
 import { MailDraftCalendarInputSchema } from "../../commands";
 
 export const mailDraftReturnHref = (value: string, mailboxId: string): string =>

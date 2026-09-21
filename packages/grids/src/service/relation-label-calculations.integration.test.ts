@@ -1,5 +1,6 @@
 import { beforeAll, expect, spyOn } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import * as objectLists from "../field-types/object-list";
 import * as evaluator from "../formula/evaluator";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
@@ -12,7 +13,7 @@ import { buildRelationLabelCacheForIds, lookupRecords } from "./relation-labels"
 import { loadRelationTargetsBatch } from "./relation-targets";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 }, 30_000);
 
 const fixture = async () => {

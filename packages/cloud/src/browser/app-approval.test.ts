@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { appApproval, AppApprovalClientError } from "./app-approval";
 import {
-  APP_APPROVAL_PROTOCOL,
-  APP_APPROVAL_PATH,
   APP_APPROVAL_LIMITS,
-  AppPairingClaimSchema,
+  APP_APPROVAL_PATH,
+  APP_APPROVAL_PROTOCOL,
   AppDeviceRequestSchema,
-  appPairingProofMessage,
+  AppPairingClaimSchema,
   appDeviceProofMessage,
+  appPairingProofMessage,
 } from "../contracts/app-approval";
+import { AppApprovalClientError, appApproval } from "./app-approval";
 
 const issuer = "https://cloud.example";
 const authenticatorOrigin = "https://auth.example";

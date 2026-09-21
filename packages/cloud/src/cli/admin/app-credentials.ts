@@ -52,15 +52,13 @@ export const appCredentialCommands = [
     async run({ ctx, args, flags }) {
       if (!flags.yes)
         throw new Error(cliText(ctx, { en: "Creating an app credential requires --yes.", de: "App-Zugang erstellen erfordert --yes." }));
-      const result = z
-        .object({ credential: metadata, token: z.string() })
-        .parse(
-          await apiJson(ctx, "POST", path(args.app), {
-            name: flags.name,
-            scopes: ["identity:invoke"],
-            ...(flags.expiresAt ? { expiresAt: flags.expiresAt } : {}),
-          }),
-        );
+      const result = z.object({ credential: metadata, token: z.string() }).parse(
+        await apiJson(ctx, "POST", path(args.app), {
+          name: flags.name,
+          scopes: ["identity:invoke"],
+          ...(flags.expiresAt ? { expiresAt: flags.expiresAt } : {}),
+        }),
+      );
       if (!printStructured(ctx, result)) ctx.print(result.token);
     },
   }),

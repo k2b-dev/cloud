@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { readableComputedTargetTableIds } from "../service/computed-projections";
 import type { ExpansionViewer } from "../service/relations";
@@ -17,7 +18,7 @@ import {
 } from "./sql-compiler.integration-fixtures";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => {

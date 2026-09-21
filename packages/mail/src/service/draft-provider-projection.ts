@@ -1,8 +1,8 @@
 import { type Readable, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { Lock, Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { createRuntimeTaskTracker, logger, stopRuntimeJobs, toPgTextArray } from "@k2b/cloud/services";
+import type { Lock, Worker } from "@k2b/sync";
 import { Splitter, Streamer } from "@zone-eu/mailsplit";
 import { sql } from "bun";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";

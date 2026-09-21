@@ -1,6 +1,6 @@
-import { createBookController } from "./create-book";
 import { AppWorkspace, Button, type ButtonVariant, useLocale } from "@k2b/ui";
 import { bookMessages } from "./book-messages";
+import { createBookController } from "./create-book";
 
 type Props = {
   class?: string;

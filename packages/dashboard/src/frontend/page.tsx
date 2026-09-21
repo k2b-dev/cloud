@@ -1,16 +1,5 @@
-import { gradients } from "@k2b/stdlib";
-import {
-  Placeholder,
-  ScrollArea,
-  Widget,
-  WidgetHero,
-  WidgetList,
-  WidgetPills,
-  WidgetStat,
-  WidgetStatus,
-  type WidgetStatusTone,
-} from "@k2b/ui";
 import { type DashboardWidget, listLegalLinks, listWidgets } from "@k2b/cloud";
+import { env } from "@k2b/cloud/config";
 import {
   hasRole,
   type Role,
@@ -24,6 +13,18 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { get, logger } from "@k2b/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
+import { gradients } from "@k2b/stdlib";
+import {
+  Placeholder,
+  ScrollArea,
+  Widget,
+  WidgetHero,
+  WidgetList,
+  WidgetPills,
+  WidgetStat,
+  WidgetStatus,
+  type WidgetStatusTone,
+} from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { ssr } from "../config";
 import { dashboardSettingsService } from "../service";
@@ -265,7 +266,7 @@ export default ssr<AuthContext>(async (c) => {
   const settings = legacySettings ?? storedSettings.settings;
   const gradient = gradients.getGradientById(settings.gradient);
 
-  const configuredCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim();
+  const configuredCoreOrigin = env.CLOUD_CORE_INTERNAL_ORIGIN;
   const [widgets, legalLinks, fallbackCoreOrigin] = await Promise.all([
     listWidgets(),
     listLegalLinks(locale),

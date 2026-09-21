@@ -1,14 +1,14 @@
 import { z } from "zod";
+import { LIMITS } from "../contracts";
 import {
-  AnalyticsNode,
   AnalyticsEvent,
+  AnalyticsNode,
   DateRange,
-  ExplorerSnapshot,
-  ExplorerRequest,
   type ExplorerData,
+  ExplorerRequest,
+  ExplorerSnapshot,
   type Row,
 } from "./analytics-contracts";
-import { LIMITS } from "../contracts";
 
 type NodeInput = z.input<typeof AnalyticsNode>;
 type Options<K extends AnalyticsNode["type"]> = Omit<Extract<NodeInput, { type: K }>, "type" | "id"> & { id?: string };
@@ -288,9 +288,13 @@ export function createAnalyticsUi(
       return { id: h.id, setValue: (value: string) => h.update({ value }) };
     },
     stat: (options: Options<"stat">) => {
-      const h = create("stat",options);
-      return {id:h.id,setValue:(value:number|null)=>h.update({value}),
-        setOptions:(options:Partial<Omit<Options<"stat">,"id">>)=>h.update(options),setLoading:h.setLoading};
+      const h = create("stat", options);
+      return {
+        id: h.id,
+        setValue: (value: number | null) => h.update({ value }),
+        setOptions: (options: Partial<Omit<Options<"stat">, "id">>) => h.update(options),
+        setLoading: h.setLoading,
+      };
     },
     chart: (input: Options<"chart"> & { onSelect?: (key: string | null) => unknown }) => {
       const { onSelect, ...options } = input;

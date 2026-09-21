@@ -1,4 +1,3 @@
-import { ButtonLink, DataPanel, DataTable, type DataTableColumn, RangePicker, StatusBadge, useLocale } from "@k2b/ui";
 import { formatDurationMs, formatNumber, formatPercent, formatRelative } from "@k2b/cloud/shared";
 import type {
   StrandedWorkflowEffect,
@@ -6,10 +5,11 @@ import type {
   WorkflowFamilySummary,
   WorkflowRunSummary,
 } from "@k2b/cloud/workflows/store";
+import { ButtonLink, DataPanel, DataTable, type DataTableColumn, RangePicker, StatusBadge, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../../../messages";
 import { WINDOWS, type WorkflowsFilterState, workflowsFilter } from "../filters";
 import { EFFECT_TONE, eventState, LAG_WARN_MS, RUN_TONE, runErrorSummary } from "../presentation";
-import { gatewayOpsMessages, type GatewayOpsMessages } from "../../../messages";
 
 type CommonProps = {
   state: WorkflowsFilterState;
@@ -46,7 +46,10 @@ export function WorkflowFamiliesView(props: CommonProps & { families: WorkflowFa
   return (
     <DataPanel
       title={t.workflowFamilies}
-      subtitle={t.matchingDefinitions({ count: `${formatNumber(props.families.length, { locale: locale() })}${props.hasNextPage ? "+" : ""}`, window: props.state.window })}
+      subtitle={t.matchingDefinitions({
+        count: `${formatNumber(props.families.length, { locale: locale() })}${props.hasNextPage ? "+" : ""}`,
+        window: props.state.window,
+      })}
       filters={props.filters}
       isEmpty={props.families.length === 0}
       empty={t.noWorkflowsWindow}
@@ -85,11 +88,13 @@ export function WorkflowFamiliesView(props: CommonProps & { families: WorkflowFa
                 <StatusBadge tone={RUN_TONE[row.latestState]} label={runLabel(row.latestState, t)} variant="dot" />
               </a>
             );
-          if (col.id === "runs") return <span class="text-[10px] tabular-nums text-dimmed">{formatNumber(row.runs, { locale: locale() })}</span>;
+          if (col.id === "runs")
+            return <span class="text-[10px] tabular-nums text-dimmed">{formatNumber(row.runs, { locale: locale() })}</span>;
           if (col.id === "failed")
             return (
               <span class={`text-[10px] tabular-nums ${row.failed > 0 ? "text-red-500" : "text-dimmed"}`}>
-                {formatNumber(row.failed, { locale: locale() })} · {formatPercent(row.runs === 0 ? 0 : row.failed / row.runs, { locale: locale() })}
+                {formatNumber(row.failed, { locale: locale() })} ·{" "}
+                {formatPercent(row.runs === 0 ? 0 : row.failed / row.runs, { locale: locale() })}
               </span>
             );
           if (col.id === "runtime")
@@ -105,13 +110,19 @@ export function WorkflowFamiliesView(props: CommonProps & { families: WorkflowFa
                 class={`text-[10px] tabular-nums ${
                   row.needsAttention > 0 || (queuedAge ?? 0) > LAG_WARN_MS ? "text-amber-600 dark:text-amber-400" : "text-dimmed"
                 }`}
-                title={row.needsAttention > 0 ? t.needAttentionCount({ count: formatNumber(row.needsAttention, { locale: locale() }) }) : undefined}
+                title={
+                  row.needsAttention > 0
+                    ? t.needAttentionCount({ count: formatNumber(row.needsAttention, { locale: locale() }) })
+                    : undefined
+                }
               >
-                {formatNumber(row.active, { locale: locale() })} / {queuedAge === null ? "—" : formatDurationMs(queuedAge, { locale: locale() })}
+                {formatNumber(row.active, { locale: locale() })} /{" "}
+                {queuedAge === null ? "—" : formatDurationMs(queuedAge, { locale: locale() })}
               </span>
             );
           }
-          if (col.id === "activity") return <span class="text-[10px] text-dimmed">{formatRelative(row.latestRunAt, { locale: locale() })}</span>;
+          if (col.id === "activity")
+            return <span class="text-[10px] text-dimmed">{formatRelative(row.latestRunAt, { locale: locale() })}</span>;
           if (col.id === "open")
             return (
               <ButtonLink variant="ghost" size="sm" href={href}>
@@ -140,7 +151,10 @@ export function WorkflowRunsView(props: CommonProps & { runs: WorkflowRunSummary
   return (
     <DataPanel
       title={props.state.parent ? t.childRuns : props.workflowName ? t.namedRuns({ name: props.workflowName }) : t.runs}
-      subtitle={t.runsInWindow({ count: `${formatNumber(props.runs.length, { locale: locale() })}${props.hasNextPage ? "+" : ""}`, window: props.state.window })}
+      subtitle={t.runsInWindow({
+        count: `${formatNumber(props.runs.length, { locale: locale() })}${props.hasNextPage ? "+" : ""}`,
+        window: props.state.window,
+      })}
       actions={
         <div class="flex flex-wrap items-center justify-end gap-2">
           {props.state.parent ? (
@@ -259,11 +273,22 @@ export function WorkflowEffectsView(props: CommonProps & { effects: StrandedWork
     { id: "age", header: t.unsettledFor, align: "right" },
     { id: "open", header: "", align: "right" },
   ];
-  const effectLabel = (state: string): string => state === "executing" ? t.executing : state === "ambiguous" ? t.ambiguous : state === "succeeded" ? t.succeeded : state === "failed" ? t.failed : state;
+  const effectLabel = (state: string): string =>
+    state === "executing"
+      ? t.executing
+      : state === "ambiguous"
+        ? t.ambiguous
+        : state === "succeeded"
+          ? t.succeeded
+          : state === "failed"
+            ? t.failed
+            : state;
   return (
     <DataPanel
       title={t.effectsRequiringEvidence}
-      subtitle={t.unsettledEffectsCount({ count: `${formatNumber(props.effects.length, { locale: locale() })}${props.hasNextPage ? "+" : ""}` })}
+      subtitle={t.unsettledEffectsCount({
+        count: `${formatNumber(props.effects.length, { locale: locale() })}${props.hasNextPage ? "+" : ""}`,
+      })}
       filters={props.filters}
       isEmpty={props.effects.length === 0}
       empty={props.state.app ? t.noEffectsForApp : t.noEffectsDecision}
@@ -311,7 +336,9 @@ export function WorkflowEventsView(props: CommonProps & { events: UndispatchedWo
   return (
     <DataPanel
       title={t.eventsWithoutRunTitle}
-      subtitle={t.undispatchedEventsCount({ count: `${formatNumber(props.events.length, { locale: locale() })}${props.hasNextPage ? "+" : ""}` })}
+      subtitle={t.undispatchedEventsCount({
+        count: `${formatNumber(props.events.length, { locale: locale() })}${props.hasNextPage ? "+" : ""}`,
+      })}
       filters={props.filters}
       isEmpty={props.events.length === 0}
       empty={props.state.app ? t.noEventsForApp : t.allEventsDispatched}

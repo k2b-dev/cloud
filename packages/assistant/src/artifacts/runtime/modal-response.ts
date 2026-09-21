@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ModalRequest, type ModalField } from "./modal-schema";
+import type { ModalField, ModalRequest } from "./modal-schema";
 
 function fieldValue(field: z.infer<typeof ModalField>, value: unknown) {
   if (value === undefined || value === null || value === "") {

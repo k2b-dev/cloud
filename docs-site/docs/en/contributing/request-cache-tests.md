@@ -5,7 +5,7 @@ section: Contributing
 order: 1315
 description: Run isolated cache, session-policy, migration, and Valkey disconnect checks.
 tags: [testing, cache, settings, identity]
-updated: 2026-09-11
+updated: 2026-09-21
 ---
 
 # Verify request caches
@@ -13,8 +13,7 @@ updated: 2026-09-11
 From the repository root, with Bun, workspace dependencies, and Docker available:
 
 ```bash
-bun run --cwd packages/ui build
-bun run test:request-cache
+CLOUD_TEST_DATABASE_URL=postgres://…/<name>_test CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 bun test --preload ./scripts/fixtures/test-infra.ts packages/cloud/test/integration/request-cache
 ```
 
 The runner starts disposable `postgres:17-alpine` and `valkey/valkey:8-alpine`
@@ -25,8 +24,7 @@ encryption key with test-only values, excludes other application environment
 variables, and disables automatic `.env` loading in child processes. Existing
 development services and data are not used.
 
-The same command runs in the **Request cache integration** GitHub Actions
-workflow on relevant pull requests and pushes. A failed migration or assertion
+The same command runs in the pull request `gate` and in the nightly workflow. A failed migration or assertion
 fails the command. Successful runs execute all five integration suites; they
 must not report skipped tests.
 

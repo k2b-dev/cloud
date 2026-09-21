@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-08-12
+updated: 2026-09-21
 ---
 
 # Monorepo development
@@ -19,7 +19,7 @@ described below.
 ## Start the core stack
 
 ```bash
-bun install
+bun install --frozen-lockfile
 bun run dev
 ```
 
@@ -35,8 +35,21 @@ Core, Dashboard, Accounts, and Assistant.
 Use `bun run dev:full` only when you need every optional application.
 
 `bun run dev:down` removes the application stack but keeps the infrastructure
-available for quick restarts. Stop it explicitly with
-`bun run dev:infra:down` when it is no longer needed.
+available for quick restarts. Stop the infrastructure explicitly with
+`docker compose -f compose.yml down` when it is no longer needed.
+
+| Root command | What it does |
+| --- | --- |
+| `bun run dev` | Start the infrastructure and the core services |
+| `bun run dev:full` | Start the infrastructure, core, and every optional application |
+| `bun run dev:down` | Remove the application stack, keep the infrastructure |
+| `bun run dev:start`, `dev:stop`, `dev:restart`, `dev:rebuild` | Manage individual applications |
+| `bun run dev:logs`, `dev:status`, `dev:help` | Inspect the stack and list commands |
+| `bun run dev:cld -- <args>` | Run the checkout's CLI against the local gateway |
+| `bun run check` | Repository rules, formatting, and every package typecheck |
+| `bun run format` | Format the workspace |
+| `bun run test [--integration] [--shard n/m]` | Run tests; see [Testing](/en/docs/contributing/testing) |
+| `bun run release:preflight` | Check a running fleet against a release; see [Build and deploy](/en/docs/operations/build-and-deploy) |
 
 ## Test Filegate locally
 
@@ -136,8 +149,7 @@ image. `dev:restart --running` does not include Postgres, Valkey, or the other
 infrastructure services because those use the separate infrastructure Compose
 file. It restarts services one at a time to bound startup CPU and memory.
 
-`dev:rebuild:all` applies the same readiness check to the complete stack. A
-command that exits successfully has observed each requested application's
+A command that exits successfully has observed each requested application's
 direct `/_cloud/ready` endpoint. `dev:status` reports `ready`, `starting`, or
 `unhealthy`; a merely running container is not considered ready.
 
@@ -169,7 +181,7 @@ bun run dev:cld -- admin app-sign-in config set --config '{"enabled":true,"origi
 ```
 
 Reuse the authenticator server if it is running, or start it with
-`bun run dev:pwa-auth`. Follow [Pair a device](/en/docs/accounts/devices#pair-a-device)
+`bun run --cwd pwas/pwa-auth dev`. Follow [Pair a device](/en/docs/accounts/devices#pair-a-device)
 and [Sign in with the app](/en/docs/accounts/app-sign-in#sign-in-with-the-app).
 Use a separate browser profile for the login being approved, and keep your
 working recovery method.
@@ -185,10 +197,11 @@ The documentation development server uses Bun hot reloading. After startup,
 transient source errors keep the last working HTTP handler available until a
 successful reload. The UI build marker still gates initial asset loading.
 
-Start or refresh the local Fibel server and point your development Cloud at it:
+Start or refresh the local Fibel server from `docs-site/compose.yml` and point
+your development Cloud at it:
 
 ```bash
-bun run dev:fibel
+docker compose -f docs-site/compose.yml up --build -d --wait
 bun run dev:cld -- admin documentation set --url http://localhost:4187 --yes
 ```
 
@@ -216,8 +229,9 @@ can use a new release immediately. Dependency lifecycle scripts are denied by
 default. Add no trusted package without verifying why its install script is
 required.
 
-Run `bun run check:dependencies` after editing a manifest and commit the
-updated `bun.lock` with the manifest change.
+Commit the updated `bun.lock` with the manifest change; `bun run check`
+verifies both. See [Dependency policy](/en/docs/contributing/dependency-policy)
+for root overrides and patches.
 
 ## Use one Compose network
 
@@ -232,7 +246,7 @@ Only the gateway publishes a host port. Do not publish each application.
 
 ## Configure local NATS diagnostics
 
-`bun run dev:infra` prepares a local system identity under `.local/nats` before
+`bun run dev` prepares a local system identity under `.local/nats` before
 starting infrastructure. The seed stays outside Git and is mounted only in
 Gateway Ops. Application streams use the `$G` account; diagnostics use `$SYS`.
 Before invoking infrastructure Compose directly, run
@@ -240,10 +254,13 @@ Before invoking infrastructure Compose directly, run
 
 ## Add a built-in application
 
-Add the package to the workspace and give it a development service in
-`compose.dev.yml`.
+A new application touches exactly three files: the `workspaces.packages` list
+in the root `package.json`, its service in `compose.dev.yml`, and its service
+in `compose.prod.yml`. Image names, the release set, and the CI matrix derive
+from `scripts/workspace.ts`; the `app-set` check in `bun run check` fails when
+the three files disagree.
 
-The service needs:
+The development service needs:
 
 - the shared environment;
 - `APP_ID`;
@@ -251,9 +268,6 @@ The service needs:
 - its own source mount;
 - the shared stylesheet;
 - the Cloud preload script and Bun start command.
-
-Add the package manifest to `Dockerfile.dev` so dependency installation remains
-cacheable.
 
 An HTTP application registers itself at startup. The gateway discovers it from
 the shared registry.
@@ -264,14 +278,19 @@ register application routes.
 ## Run checks
 
 ```bash
-bun run typecheck
+bun run check
 bun run test
 ```
 
+`bun run check` runs the repository rules under `scripts/checks/` (dependencies,
+import boundaries, package cycles, service API contracts, localization, CSS
+architecture, the application set, formatting) and every package typecheck.
+A new rule is one module under `scripts/checks/`.
+
 The root test command runs every workspace in a separate process. It uses each
 package's `test` script when one exists, preserving package-specific builds,
-environment variables, browser conditions, and preloads. Workspaces without a
-test script and root-owned tests still run in isolated Bun test processes.
+browser conditions, and preloads. Workspaces without a test script and
+root-owned tests still run in isolated Bun test processes.
 
 For a focused package:
 
@@ -280,54 +299,39 @@ bun run --cwd packages/grids typecheck
 bun test packages/grids
 ```
 
-The root typecheck also verifies import boundaries, package cycles, service API
-contracts, shared UI coverage, CSS architecture, and formatting.
-
 See [Frontend testing](/en/docs/frontend/testing) for browser-facing checks.
 
-Assistant separates server and DOM tests through its package test command:
+### Run integration checks
+
+Integration suites gate themselves on `CLOUD_TEST_*` variables through
+`scripts/fixtures/test-infra.ts`. Without them, `bun run test` skips the
+integration files and reports which ones. With them, the suites run and fail
+loudly when a target is unreachable:
 
 ```bash
-bun run --cwd packages/assistant test
-bun run --cwd packages/assistant typecheck
-bun run --cwd packages/assistant test:integration
+CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
+CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
+CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379/1 \
+bun run test --integration
 ```
 
-The test command runs `*.behavior.test.tsx` with the browser Solid build and
-the shared DOM compiler in a separate process. Other tests use the server
-build. The integration command creates disposable PostgreSQL and rsql
-containers and removes them afterward; it does not use the development database.
-
-### Run application integration checks
-
-Applications that talk to PostgreSQL and NATS keep those checks behind a
-package script. Mail is the reference:
+The database name must end in `_test`; the fixture refuses anything else so a
+run can never touch the development database. Create that database once on the
+development PostgreSQL:
 
 ```bash
-bun run --cwd packages/mail test:integration
+docker compose -f compose.yml exec postgres createdb -U postgres cloud_test
 ```
 
-The script sets `MAIL_INTEGRATION_TESTS=1` and loads
-`packages/mail/test/integration-preload.ts`. The preload isolates the run from
-the development stack in both directions:
-
-- it creates a private `cloud_mail_test_<random>` PostgreSQL database from
-  `DATABASE_URL`, migrates it like a fresh installation (core schemas, then the
-  application's own migrations), points the run at it, and drops it afterwards;
-- it uses a private `SYNC_NAMESPACE` and deletes the namespace's JetStream
-  streams afterwards, defaulting `NATS_SERVERS` to `nats://localhost:4222`.
-
-Without that isolation the running `app-mail` container competes for the same
-hydration jobs, workflow events, and commands, and the suite fails at random.
-The preload refuses to provision a database when `DATABASE_URL` does not point
-at `localhost` or `127.0.0.1`. Tests create their own users, mailboxes, and
-provider connections; nothing is seeded, so the run never depends on the state
-of your development database.
+Filesv2, Grids PDF rendering, and Assistant Studio suites additionally read
+`CLOUD_TEST_FILEGATE_URL`, `CLOUD_TEST_GOTENBERG_URL`, and `CLOUD_TEST_RSQL_URL`.
+[Testing](/en/docs/contributing/testing) lists every variable and what the pull
+request gate and the nightly run execute.
 
 Mail's schema is a single baseline in `packages/mail/src/schema.sql`; its runner
 knows exactly one version, `1` (`baseline`). A development database created by
-the previous 1..126 migration chain is refused with an explicit error. Mail has
-never been deployed, so reset such a machine once with:
+the previous 1..126 migration chain is refused with an explicit error. Reset
+such a machine once with:
 
 ```bash
 psql "$DATABASE_URL" -c 'DROP SCHEMA mail CASCADE;'
@@ -374,12 +378,12 @@ update its package dependency and all Cloud import prefixes together.
 `@k2b/ui` has its own package and independent release cycle.
 
 Cloud-owned production images use `ghcr.io/k2b-dev/cloud-*`. Deploy one
-complete immutable release tag with `CLOUD_IMAGE_TAG`; retain the previous
-image digests until the upgraded installation is verified. External Filegate
-and Geo images keep their own repositories and release paths.
+complete release with `CLOUD_IMAGE_TAG=vX.Y.Z`; retain the previous image
+digests until the upgraded installation is verified. External Filegate and Geo
+images keep their own repositories and release paths.
 
 The CLI installer and updater verify releases signed by
-`k2b-dev/cloud/.github/workflows/cli.yml`. No CLI GitHub releases existed
+`k2b-dev/cloud/.github/workflows/release.yml`. No CLI GitHub releases existed
 under the former repository owner at transfer time.
 
 ## Single-node development JetStream

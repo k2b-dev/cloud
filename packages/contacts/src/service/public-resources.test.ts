@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import {
   projectBooks,
   projectContacts,
@@ -10,16 +11,7 @@ import {
   resolvePublicIds,
 } from "./public-resources";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ books: string | null }[]>`SELECT to_regclass('contacts.books')::text AS books`;
-    return Boolean(row?.books);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Contacts public resource IDs", () => {
   let bookId = "";

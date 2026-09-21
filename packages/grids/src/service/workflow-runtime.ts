@@ -8,10 +8,8 @@
  * generation fence are all the kernel's — there is no second copy here.
  */
 
-import { err, fail, type Result } from "@k2b/stdlib";
-import { CursorMismatchError, RetentionGapError, type Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
-import { SQL } from "bun";
+import { env } from "@k2b/cloud/config";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeResources, trace } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeLocale } from "@k2b/cloud/shared";
@@ -32,15 +30,18 @@ import {
 } from "@k2b/cloud/workflows/runtime";
 import {
   createWorkflowActionPort,
-  createWorkflowWorker,
-  notifyWorkflowWorker,
   createWorkflowDryRunPort,
+  createWorkflowWorker,
   dryRunOneWorkflow,
+  notifyWorkflowWorker,
   runOneWorkflow,
   tickWorkflows,
   type WorkflowRunClaim,
   wakeExpiredWorkflowRuns,
 } from "@k2b/cloud/workflows/store";
+import { err, fail, type Result } from "@k2b/stdlib";
+import { CursorMismatchError, RetentionGapError, type Worker } from "@k2b/sync";
+import { SQL } from "bun";
 import { app } from "../config";
 import type { WorkflowRunEventScope } from "../lib/workflow-run-events";
 import type {
@@ -349,7 +350,7 @@ const workflowRecordEvents = createWorkflowRecordEventRuntime(invokeGridsWorkflo
 // ─── Draining what the kernel made claimable ─────────────────────────────────
 
 /** Names this process in a run's lease. Only ever read by a human. */
-const workerId = `grids:${Bun.env.HOSTNAME ?? "local"}:${process.pid}`;
+const workerId = `grids:${env.HOSTNAME ?? "local"}:${process.pid}`;
 
 /**
  * The declared actions, not a per-run port.

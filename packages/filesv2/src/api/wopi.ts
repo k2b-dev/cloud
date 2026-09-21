@@ -9,7 +9,8 @@ import { EDITOR_DOCUMENT_LIMIT, FilesError, filesService } from "../service";
  * query parameter, never with a Cloud session, and reads or writes whole documents through these routes.
  */
 const token = (c: Context<AuthContext>) => c.req.query("access_token") ?? "";
-const wopiRoute = (summary: string) => middleware.openapi({ summary: `${summary} (Collabora WOPI, editor token in access_token)`, security: [] });
+const wopiRoute = (summary: string) =>
+  middleware.openapi({ summary: `${summary} (Collabora WOPI, editor token in access_token)`, security: [] });
 export const wopiApi = new Hono<AuthContext>()
   .use("*", rateLimit({ keyBy: "ip", limitPerSecond: 20, windowSecs: 60 }))
   .use("*", auth.requireRole("*"))

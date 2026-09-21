@@ -1,11 +1,11 @@
 import { sql } from "bun";
 import { coreSettings } from "../services";
-import { decryptValue } from "../services/settings/crypto";
-import { invalidateSettingsCache, set as setSetting } from "../services/settings";
 import { audit } from "../services/audit";
-import { AiModelPricingSchema, type AiModelPricing } from "../shared/ai-costs";
-import { parseAiModelProfiles } from "./settings";
+import { invalidateSettingsCache, set as setSetting } from "../services/settings";
+import { decryptValue } from "../services/settings/crypto";
+import { type AiModelPricing, AiModelPricingSchema } from "../shared/ai-costs";
 import { AiQuotaError } from "./quotas";
+import { parseAiModelProfiles } from "./settings";
 
 /** Change prices only, preserving credentials and model access in their own stores. */
 export async function setAiModelPricing(id: string, pricing: AiModelPricing | null, expected: AiModelPricing | null, actorId: string) {

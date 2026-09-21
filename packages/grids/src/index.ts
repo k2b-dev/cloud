@@ -1,4 +1,3 @@
-import { getQuerySettings } from "./service/query-settings";
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { createRuntimeLifecycle, stopRuntimeResources } from "@k2b/cloud/services";
 import { Hono } from "hono";
@@ -14,6 +13,7 @@ import { stopBoundedQueryPool } from "./service/bounded-query";
 import { startControlledDestructionJobs, stopControlledDestructionJobs } from "./service/controlled-destruction";
 import { startEvidenceExportJobs, stopEvidenceExportJobs } from "./service/evidence-exports";
 import { startFieldIndexMaintenance, stopFieldIndexMaintenance } from "./service/field-index-maintenance";
+import { getQuerySettings } from "./service/query-settings";
 import { startRecordEventOutbox, stopRecordEventOutbox } from "./service/record-event-outbox";
 import { startExternalRecordOperationRetention, stopExternalRecordOperationRetention } from "./service/record-external-identity";
 import { startWorkflowRuntime, stopWorkflowRuntime } from "./service/workflow-runtime";

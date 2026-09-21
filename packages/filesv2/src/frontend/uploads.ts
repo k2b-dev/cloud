@@ -27,15 +27,23 @@ export async function uploadFile(
   file: Blob,
   options: {
     expectedRevision?: string;
-    onConflict: "error" | "overwrite"; signal: AbortSignal; fallback: string; onProgress?: (bytes: number) => void;
+    onConflict: "error" | "overwrite";
+    signal: AbortSignal;
+    fallback: string;
+    onProgress?: (bytes: number) => void;
   },
 ): Promise<EntryResult> {
   options.signal.throwIfAborted();
   const start = await browserUploadKey(["private", baseId, path, options.onConflict, options.expectedRevision ?? ""], file);
   const opened = await apiClient.bases[":baseId"].uploads.$post(
-    { param: { baseId }, json: { path,
+    {
+      param: { baseId },
+      json: {
+        path,
         expectedRevision: options.expectedRevision,
-        size: file.size, onConflict: options.onConflict, idempotencyKey: start.idempotencyKey,
+        size: file.size,
+        onConflict: options.onConflict,
+        idempotencyKey: start.idempotencyKey,
       },
     },
     { init: { signal: requestSignal(options.signal) } },

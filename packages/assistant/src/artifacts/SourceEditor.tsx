@@ -66,7 +66,9 @@ export function SourceEditor(props: {
       onKeyDown={(event) => {
         if (event.isComposing) return;
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && props.onRun) {
-          event.preventDefault(); props.onRun(); return;
+          event.preventDefault();
+          props.onRun();
+          return;
         }
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();

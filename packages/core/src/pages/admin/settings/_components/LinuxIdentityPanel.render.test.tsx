@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_LINUX_IDENTITY_CONFIGURATION } from "@k2b/cloud/contracts";
+import type { PosixCandidate } from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { DEFAULT_LINUX_IDENTITY_CONFIGURATION } from "@k2b/cloud/contracts";
-import type { PosixCandidate } from "@k2b/cloud/services";
 import { linuxMessages } from "./linux-messages";
 
 const root = mkdtempSync(join(tmpdir(), "core-linux-render-tests-"));

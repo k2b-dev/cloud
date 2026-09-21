@@ -1,22 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { ItemFilterSchema } from "@/contracts";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import * as activity from "./activity";
 import { listFiltered } from "./items";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ items: string | null; activity: string | null }[]>`
-      SELECT to_regclass('spaces.items')::text AS items, to_regclass('spaces.activity_events')::text AS activity
-    `;
-    return Boolean(row?.items && row.activity);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Spaces inactive task filtering", () => {
   test("includes only open tasks whose latest real activity is older than 30 days", async () => {

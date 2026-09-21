@@ -1,6 +1,6 @@
-import type { SoftNavigationResult } from "../../../lib/soft-navigation";
 import { hasOnlyNavigatorQuery } from "../../../../lib/navigator-url";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
+import type { SoftNavigationResult } from "../../../lib/soft-navigation";
 
 export type NoteNavigationTarget = {
   noteShortId: string;

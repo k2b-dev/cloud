@@ -1,5 +1,5 @@
-import { migrateLogMetadataReader } from "./logging-metadata";
 import { sql } from "bun";
+import { migrateLogMetadataReader } from "./logging-metadata";
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS logging`.simple();

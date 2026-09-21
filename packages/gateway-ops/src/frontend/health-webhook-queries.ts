@@ -48,11 +48,13 @@ export const readHealthWebhookResponse = async (
   throw new Error(fallback);
 };
 
-export const createHealthWebhookQueries = (messages = {
-  loadWebhooks: "Failed to load health webhooks",
-  loadSettings: "Failed to load gateway settings",
-  loadHealth: "Failed to load gateway health",
-}) => {
+export const createHealthWebhookQueries = (
+  messages = {
+    loadWebhooks: "Failed to load health webhooks",
+    loadSettings: "Failed to load gateway settings",
+    loadHealth: "Failed to load gateway health",
+  },
+) => {
   const webhooks = query.create<string, HealthWebhook[]>({
     source: () => "health-webhooks",
     load: async (_source, { abortSignal }) => {

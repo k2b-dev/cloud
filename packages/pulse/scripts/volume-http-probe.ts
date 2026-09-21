@@ -2,13 +2,30 @@
  * Start the application separately. Credentials stay in PULSE_LOAD_FIXTURE outside Git.
  * First observations and three repeated rounds are reported separately; this is not an ingest benchmark.
  */
+import { parseArgs } from "node:util";
 import { sql } from "bun";
 import { z } from "zod";
 import { MetricQueryResultSchema } from "../src/api/schemas";
 
-const fixturePath = process.env.PULSE_LOAD_FIXTURE;
-const metadataPath = process.env.PULSE_VOLUME_OUTPUT;
-if (!fixturePath || !metadataPath) throw Error("PULSE_LOAD_FIXTURE and PULSE_VOLUME_OUTPUT are required");
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: { fixture: { type: "string" }, metadata: { type: "string" }, help: { type: "boolean", default: false } },
+});
+if (options.help) {
+  console.log(`Usage: bun packages/pulse/scripts/volume-http-probe.ts --fixture <path> --metadata <path>
+
+Read-only authenticated HTTP queries against the completed SQL volume fixture (DATABASE_URL targets pulse_load_test).
+
+Options:
+  --fixture <path>    Owner-only JSON fixture with url, cookie, base and sources
+  --metadata <path>   Volume metadata written by volume-fixture.ts --output
+  --help              Show this help
+`);
+  process.exit(0);
+}
+const fixturePath = options.fixture;
+const metadataPath = options.metadata;
+if (!fixturePath || !metadataPath) throw Error("--fixture and --metadata are required");
 const fixture = z
   .object({
     url: z.string().url(),

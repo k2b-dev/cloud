@@ -1,7 +1,7 @@
-import { migrateAiQuotas } from "./quotas-migrate";
-import { migrateAiMessageQueue } from "./message-queue";
 import { sql } from "bun";
+import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
+import { migrateAiQuotas } from "./quotas-migrate";
 import { withAiShortId } from "./short-id";
 
 const backfillAiShortIds = async (
@@ -1441,8 +1441,10 @@ export const migrateCloudAi = async (): Promise<void> => {
       SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed
     `;
     if (extension?.installed) {
-      await sql.unsafe(`CREATE INDEX IF NOT EXISTS skills_search_bm25_idx
-        ON ai.skills USING bm25 ((search_text)) WITH (text_config='simple')`).simple();
+      await sql
+        .unsafe(`CREATE INDEX IF NOT EXISTS skills_search_bm25_idx
+        ON ai.skills USING bm25 ((search_text)) WITH (text_config='simple')`)
+        .simple();
     }
   } catch (error) {
     console.warn("Optional Skill BM25 index unavailable; native Skill search remains active", error);

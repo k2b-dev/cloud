@@ -1,5 +1,5 @@
 import { type SQL, sql } from "bun";
-import { RailAdminSchema, RailAdminInputSchema, type RailAdminInput, type RailAdminState } from "../contracts/rail-admin";
+import { type RailAdminInput, RailAdminInputSchema, RailAdminSchema, type RailAdminState } from "../contracts/rail-admin";
 import { RailShortcutSchema } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
 import { buildAccessPrincipalCondition, createAccess } from "../server/services/access";

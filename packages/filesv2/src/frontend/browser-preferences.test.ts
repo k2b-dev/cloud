@@ -3,7 +3,14 @@ import { defaultView, parsePreferences, preferencesCookie, viewFor, withView } f
 
 test("older preference cookies retain sort and view while defaulting to grouped folders", () => {
   const cookie = `${preferencesCookie}=${encodeURIComponent(JSON.stringify({ "cloud:groups:one": { view: "grid", size: "lg", sort: "size", direction: "desc" } }))}`;
-  expect(viewFor(parsePreferences(cookie), "cloud:groups:one")).toEqual({ view: "grid", size: "lg", sort: "size", direction: "desc", groupFolders: true, type: "all" });
+  expect(viewFor(parsePreferences(cookie), "cloud:groups:one")).toEqual({
+    view: "grid",
+    size: "lg",
+    sort: "size",
+    direction: "desc",
+    groupFolders: true,
+    type: "all",
+  });
 });
 
 test("folder grouping is remembered independently for complete storage identities", () => {

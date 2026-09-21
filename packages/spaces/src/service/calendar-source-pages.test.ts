@@ -1,19 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { listCalendarSourcePage } from "./items";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<
-      { items: string | null; access: string | null }[]
-    >`SELECT to_regclass('spaces.items')::text AS items, to_regclass('auth.access')::text AS access`;
-    return Boolean(row?.items && row.access);
-  } catch {
-    return false;
-  }
-};
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Calendar source pagination", () => {
   test("passes 101 finished series and keeps a later series with its differently ordered override", async () => {

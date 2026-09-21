@@ -7,7 +7,8 @@ describe("globally ordered browsing", () => {
     const requests: unknown[] = [];
     const fetch = async (options: Parameters<Parameters<typeof browsePage>[2]>[0]) => {
       requests.push(options);
-      if (options.type === "directories") return options.after ? { items: ["Z folder"] } : { items: ["A folder"], next: "directory-page-2" };
+      if (options.type === "directories")
+        return options.after ? { items: ["Z folder"] } : { items: ["A folder"], next: "directory-page-2" };
       return { items: ["A file", "Z file"] };
     };
     const first = await browsePage({ sort: "size", order: "desc" }, "root:path", fetch);
@@ -41,7 +42,10 @@ describe("globally ordered browsing", () => {
   });
   test("mixed sorting and type filters are passed upstream without local rearrangement", async () => {
     const requests: unknown[] = [];
-    const fetch = async (options: unknown) => { requests.push(options); return { items: ["Z", "a"] }; };
+    const fetch = async (options: unknown) => {
+      requests.push(options);
+      return { items: ["Z", "a"] };
+    };
     expect((await browsePage({ groupFolders: false, sort: "modified" }, "path", fetch)).items).toEqual(["Z", "a"]);
     await browsePage({ type: "files" }, "path", fetch);
     expect(requests).toEqual([
@@ -51,37 +55,49 @@ describe("globally ordered browsing", () => {
   });
   test("empty indexed page keeps its cursor; an exhausted empty directory phase advances once", async () => {
     let calls = 0;
-    const result = await browsePage({}, "path", async () => { calls++; return { items: [], next: "scan-next" }; });
+    const result = await browsePage({}, "path", async () => {
+      calls++;
+      return { items: [], next: "scan-next" };
+    });
     expect(result.next).not.toBeNull();
     expect(calls).toBe(1);
-    const files = await browsePage({}, "path", async options => options.type === "directories" ? { items: [] } : { items: ["file"] });
+    const files = await browsePage({}, "path", async (options) => (options.type === "directories" ? { items: [] } : { items: ["file"] }));
     expect(files).toEqual({ items: ["file"], next: null });
   });
   test("query, location, and malformed cursor changes reject before reading", async () => {
     const first = await browsePage({}, "root/path", async () => ({ items: ["one"], next: "next" }));
-    const forbidden = async () => { throw new Error("must not read"); };
-    for (const input of [{ after: "not-a-cursor" }, { after: first.next!, sort: "size" as const }, { after: first.next!, groupFolders: false }])
+    const forbidden = async () => {
+      throw new Error("must not read");
+    };
+    for (const input of [
+      { after: "not-a-cursor" },
+      { after: first.next!, sort: "size" as const },
+      { after: first.next!, groupFolders: false },
+    ])
       await expect(browsePage(input, "root/path", forbidden)).rejects.toMatchObject({ code: "cursor_invalid", status: 409 });
     await expect(browsePage({ after: first.next! }, "other/path", forbidden)).rejects.toMatchObject({ code: "cursor_invalid" });
   });
 });
 
-
 test("query bindings keep cursor size independent of long storage paths", async () => {
   const scope = "long/".repeat(819);
   const page = await browsePage({ groupFolders: false }, scope, async () => ({ items: ["one"], next: "upstream" }));
   expect(page.next!.length).toBeLessThan(256);
-  await expect(browsePage({ groupFolders: false, after: page.next! }, `${scope}different`, async () => ({ items: [] }))).rejects.toMatchObject({ code: "cursor_invalid" });
+  await expect(
+    browsePage({ groupFolders: false, after: page.next! }, `${scope}different`, async () => ({ items: [] })),
+  ).rejects.toMatchObject({ code: "cursor_invalid" });
 });
 
 test("strict upstream continuation errors never return the already read directory half", async () => {
   for (const status of [403, 404]) {
     let reads = 0;
-    await expect(browsePage({}, "strict", async options => {
-      reads++;
-      if (options.type === "directories") return {items:["visible-folder"]};
-      throw new FilegateError(status, status === 403 ? "forbidden" : "not_found", "changed");
-    })).rejects.toMatchObject({status});
+    await expect(
+      browsePage({}, "strict", async (options) => {
+        reads++;
+        if (options.type === "directories") return { items: ["visible-folder"] };
+        throw new FilegateError(status, status === 403 ? "forbidden" : "not_found", "changed");
+      }),
+    ).rejects.toMatchObject({ status });
     expect(reads).toBe(2);
   }
 });

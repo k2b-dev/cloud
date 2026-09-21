@@ -1,4 +1,4 @@
-import { PANES_LAYOUT_VERSION, parsePanesLayout, reconcilePanesLayout, type PanesLayout } from "@k2b/ui";
+import { PANES_LAYOUT_VERSION, type PanesLayout, parsePanesLayout, reconcilePanesLayout } from "@k2b/ui";
 
 export const QUERY_EXPLORER_PANES_KEY = "pulse.query-explorer";
 export const DASHBOARD_EDITOR_PANES_KEY = "pulse.dashboard-editor";
@@ -42,10 +42,7 @@ export const createDashboardEditorPanesLayout = (): PanesLayout => ({
   },
 });
 
-export const readPulsePanesLayoutCookie = (
-  cookieHeader: string | null | undefined,
-  storageKey: string,
-): PanesLayout | null => {
+export const readPulsePanesLayoutCookie = (cookieHeader: string | null | undefined, storageKey: string): PanesLayout | null => {
   if (!cookieHeader) return null;
   const name = cookieName(storageKey);
   const encoded = cookieHeader

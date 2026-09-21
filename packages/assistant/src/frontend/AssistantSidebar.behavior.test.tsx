@@ -1,9 +1,9 @@
-import { assistantApi } from "../api/client";
 import { expect, spyOn, test } from "bun:test";
 import type { AiConversation } from "@k2b/cloud/ai";
 import { createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { assistantApi } from "../api/client";
 
 const conversation = (id: string, title: string, projectId: string | null): AiConversation => ({
   id,
@@ -14,7 +14,10 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: "2026-09-14T00:00:00.000Z",
+  archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -32,20 +35,36 @@ test("chat clicks select immediately while loading, preserve native modifiers an
   const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
   const [selected, setSelected] = createSignal("first");
   let finish: (opened: boolean) => void = () => {};
-  const pending = new Promise<boolean>(resolve => { finish = resolve; });
+  const pending = new Promise<boolean>((resolve) => {
+    finish = resolve;
+  });
   const [project, setProject] = createSignal<string | null>(null);
   const [view, setView] = createSignal<"chat" | "apps" | "all">("chat");
   let opens = 0;
   let transitions = 0;
-  Object.defineProperty(dom.document, "startViewTransition", { configurable: true, value: () => { transitions++; } });
-  const dispose = render(() => <AssistantSidebar
-    conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
-    activeConversationId={selected}
-    activeProjectId={project()}
-    activeView={view()}
-    onOpenConversation={id => { opens++; setSelected(id); return pending; }}
-    live={live}
-  />, dom.root);
+  Object.defineProperty(dom.document, "startViewTransition", {
+    configurable: true,
+    value: () => {
+      transitions++;
+    },
+  });
+  const dispose = render(
+    () => (
+      <AssistantSidebar
+        conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
+        activeConversationId={selected}
+        activeProjectId={project()}
+        activeView={view()}
+        onOpenConversation={(id) => {
+          opens++;
+          setSelected(id);
+          return pending;
+        }}
+        live={live}
+      />
+    ),
+    dom.root,
+  );
   delegateEvents(["click"]);
   try {
     const link = dom.root.querySelector<HTMLAnchorElement>('a[href="/app/assistant?conversation=second"]')!;
@@ -92,29 +111,60 @@ test("footer project popup and mobile group share search and creation; pinned ch
   const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
   const { registerGlobalSearchHost } = await import("@k2b/cloud/browser/testing");
   const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
-  const project = { id: "Proj01", shortId: "Proj01", name: "Work", description: "", icon: "ti ti-folders", instructions: "", defaultModelProfileId: null, permission: "read" as const, revision: 1, createdAt: "", updatedAt: "" };
+  const project = {
+    id: "Proj01",
+    shortId: "Proj01",
+    name: "Work",
+    description: "",
+    icon: "ti ti-folders",
+    instructions: "",
+    defaultModelProfileId: null,
+    permission: "read" as const,
+    revision: 1,
+    createdAt: "",
+    updatedAt: "",
+  };
   let created = 0;
   const searches: unknown[] = [];
   const release = registerGlobalSearchHost((options) => searches.push(options));
   const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
-  const dispose = render(() => <AssistantSidebar projects={[project]} live={live}
-    onCreateProject={() => { created++; }}
-    conversations={() => [conversation("normal", "Normal", null), { ...conversation("pinned", "Pinned work", project.id), pinnedAt: "2026-09-16T00:00:00Z" }]}
-  />, dom.root);
+  const dispose = render(
+    () => (
+      <AssistantSidebar
+        projects={[project]}
+        live={live}
+        onCreateProject={() => {
+          created++;
+        }}
+        conversations={() => [
+          conversation("normal", "Normal", null),
+          { ...conversation("pinned", "Pinned work", project.id), pinnedAt: "2026-09-16T00:00:00Z" },
+        ]}
+      />
+    ),
+    dom.root,
+  );
   try {
     const body = dom.root.querySelector<HTMLElement>('.k2b-app-workspace__sidebar-body[data-sidebar-mode="expanded"]')!;
     const cards = Array.from(body.querySelectorAll<HTMLElement>('[data-variant="card"]'));
-    expect(cards.map((card) => card.querySelector('.k2b-app-workspace__sidebar-item-label-text')?.textContent)).toEqual(["Pinned work", "Normal"]);
-    expect(cards[0]!.querySelector('.k2b-app-workspace__sidebar-item-context-label .ti-pin.text-accent')).not.toBeNull();
-    expect(cards[0]!.querySelector('.k2b-app-workspace__sidebar-item-context-label')?.textContent).toContain("Work");
-    expect(cards[0]!.querySelector('.k2b-app-workspace__sidebar-item-context-meta .ti-pin')).toBeNull();
-    expect(Array.from(body.querySelectorAll('h2')).map((heading) => heading.textContent)).not.toContain("Chats");
+    expect(cards.map((card) => card.querySelector(".k2b-app-workspace__sidebar-item-label-text")?.textContent)).toEqual([
+      "Pinned work",
+      "Normal",
+    ]);
+    expect(cards[0]!.querySelector(".k2b-app-workspace__sidebar-item-context-label .ti-pin.text-accent")).not.toBeNull();
+    expect(cards[0]!.querySelector(".k2b-app-workspace__sidebar-item-context-label")?.textContent).toContain("Work");
+    expect(cards[0]!.querySelector(".k2b-app-workspace__sidebar-item-context-meta .ti-pin")).toBeNull();
+    expect(Array.from(body.querySelectorAll("h2")).map((heading) => heading.textContent)).not.toContain("Chats");
     const footer = dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
     const panel = footer.querySelector<HTMLElement>('[role="dialog"][aria-label="Projects"]')!;
     let closes = 0;
-    panel.hidePopover = () => { closes++; };
+    panel.hidePopover = () => {
+      closes++;
+    };
     panel.querySelector<HTMLButtonElement>('[aria-label="Search Projects…"]')!.click();
-    expect(searches).toEqual([{ query: "", scope: { appId: "assistant", tag: "assistant-project", label: "Projects", icon: "ti ti-folders" } }]);
+    expect(searches).toEqual([
+      { query: "", scope: { appId: "assistant", tag: "assistant-project", label: "Projects", icon: "ti ti-folders" } },
+    ]);
     panel.querySelector<HTMLButtonElement>('[aria-label="Create Project"]')!.click();
     expect(created).toBe(1);
     expect(closes).toBe(2);
@@ -133,7 +183,11 @@ test("footer project popup and mobile group share search and creation; pinned ch
     await mobile.activate("new-project");
     expect(searches).toHaveLength(2);
     expect(created).toBe(2);
-  } finally { release(); dispose(); dom.cleanup(); }
+  } finally {
+    release();
+    dispose();
+    dom.cleanup();
+  }
 });
 
 test("Done keeps its card through live updates, confirms success, then fades without blocking", async () => {
@@ -145,8 +199,16 @@ test("Done keeps its card through live updates, confirms success, then fades wit
   const completed = { ...original, isDone: true, done: true };
   const [items, setItems] = createSignal<AiConversation[]>([original]);
   let resolveSave: (value: AiConversation) => void = () => {};
-  const save = spyOn(assistantApi, "setConversationDone").mockImplementation(() => new Promise(resolve => { resolveSave = resolve; }));
-  const dispose = render(() => <AssistantSidebar conversations={items} live={live} onConversationUpdated={item => setItems([item])} />, dom.root);
+  const save = spyOn(assistantApi, "setConversationDone").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+  );
+  const dispose = render(
+    () => <AssistantSidebar conversations={items} live={live} onConversationUpdated={(item) => setItems([item])} />,
+    dom.root,
+  );
   delegateEvents(["click"]);
   const card = () => dom.root.querySelector<HTMLElement>('.assistant-chat-sidebar-item[data-variant="card"]');
   try {
@@ -156,15 +218,20 @@ test("Done keeps its card through live updates, confirms success, then fades wit
     setItems([completed]);
     expect(card()).not.toBeNull();
     resolveSave(completed);
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(card()?.classList.contains("assistant-chat-sidebar-item--confirmed")).toBe(true);
     expect(card()?.textContent).toContain("Done");
-    await new Promise(resolve => setTimeout(resolve, 460));
+    await new Promise((resolve) => setTimeout(resolve, 460));
     expect(card()?.classList.contains("assistant-chat-sidebar-item--leaving")).toBe(true);
-    await new Promise(resolve => setTimeout(resolve, 170));
+    await new Promise((resolve) => setTimeout(resolve, 170));
     expect(card()).toBeNull();
     expect(save).toHaveBeenCalledTimes(1);
-  } finally { dispose(); save.mockRestore(); live.dispose(); dom.cleanup(); }
+  } finally {
+    dispose();
+    save.mockRestore();
+    live.dispose();
+    dom.cleanup();
+  }
 });
 
 test("failed Done request leaves the chat available and clears its pending feedback", async () => {
@@ -177,10 +244,15 @@ test("failed Done request leaves the chat available and clears its pending feedb
   delegateEvents(["click"]);
   try {
     dom.root.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')!.click();
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     const card = dom.root.querySelector('.assistant-chat-sidebar-item[data-variant="card"]');
     expect(card).not.toBeNull();
     expect(card?.classList.contains("assistant-chat-sidebar-item--saving")).toBe(false);
     expect(card?.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')?.disabled).toBe(false);
-  } finally { dispose(); save.mockRestore(); live.dispose(); dom.cleanup(); }
+  } finally {
+    dispose();
+    save.mockRestore();
+    live.dispose();
+    dom.cleanup();
+  }
 });

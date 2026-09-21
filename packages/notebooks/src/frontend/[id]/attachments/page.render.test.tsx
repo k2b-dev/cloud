@@ -1,9 +1,9 @@
-import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
+import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
 import { notebooksService } from "../../../service";
 import "../_components/detail/ssr-test-plugin";
 
@@ -106,5 +106,7 @@ test("attachment search and pagination preserve an author's explicit presentatio
 });
 
 let railSnapshot: ReturnType<typeof stubRailSnapshot>;
-beforeEach(() => { railSnapshot = stubRailSnapshot(); });
+beforeEach(() => {
+  railSnapshot = stubRailSnapshot();
+});
 afterEach(() => railSnapshot.mockRestore());

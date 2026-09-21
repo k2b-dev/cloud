@@ -203,8 +203,10 @@ const renderPill = (notebookId: string, tag: string, locale?: string): string =>
  *  Walks the HTML segment-by-segment, leaving code blocks untouched. */
 export const transformTags = (html: string, params: { notebookId: string; locale?: string }): string => {
   const transformText = (text: string): string =>
-    text.replace(TAG_HTML_REGEX, (_match, prefix: string, tag: string) =>
-      `${prefix}${renderPill(params.notebookId, tag.toLowerCase(), params.locale)}`);
+    text.replace(
+      TAG_HTML_REGEX,
+      (_match, prefix: string, tag: string) => `${prefix}${renderPill(params.notebookId, tag.toLowerCase(), params.locale)}`,
+    );
 
   // Split on opening `<pre>` / `<code>` tags so we can walk the HTML
   // without parsing — content inside these blocks is copied verbatim.

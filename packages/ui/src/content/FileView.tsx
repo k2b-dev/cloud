@@ -24,10 +24,10 @@ import {
   Switch,
   untrack,
 } from "solid-js";
+import { Button } from "../actions/Button";
 import { prompts } from "../feedback/prompts";
 import { toast } from "../feedback/toast";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
-import { Button } from "../actions/Button";
 import { Select } from "../inputs/Select";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
@@ -194,24 +194,32 @@ function EditorToolButton(props: { icon: string; title: string; onClick: () => v
 
 function MoreLines(props: { count: number; onClick?: () => void }) {
   const messages = useUiMessages();
-  return <Show when={props.count > 0}><div class="k2b-content-file-view__truncated">
-    <Show when={props.onClick} fallback={<span>{messages().previewMoreLines(props.count)}</span>}>
-      <Button size="sm" variant="ghost" onClick={props.onClick}>{messages().previewMoreLines(props.count)}</Button>
+  return (
+    <Show when={props.count > 0}>
+      <div class="k2b-content-file-view__truncated">
+        <Show when={props.onClick} fallback={<span>{messages().previewMoreLines(props.count)}</span>}>
+          <Button size="sm" variant="ghost" onClick={props.onClick}>
+            {messages().previewMoreLines(props.count)}
+          </Button>
+        </Show>
+      </div>
     </Show>
-  </div></Show>;
+  );
 }
 function TextExcerpt(props: { renderer: FileViewRendererProps; text: string; markdown?: boolean }) {
   const lines = createMemo(() => props.text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n"));
-  const limit = () => props.renderer.previewLines === undefined ? lines().length : Math.max(1, props.renderer.previewLines);
+  const limit = () => (props.renderer.previewLines === undefined ? lines().length : Math.max(1, props.renderer.previewLines));
   const text = () => lines().slice(0, limit()).join("\n");
-  return <>
-    <div classList={{ "k2b-content-file-view__excerpt": props.renderer.previewLines !== undefined }}>
-      <Show when={props.markdown} fallback={<CodeDisplay code={text()} language={codeLanguage(props.renderer.file.path)} />}>
-        <MarkdownView markdown={text()} headingScale={props.renderer.headingScale ?? "compact"} />
-      </Show>
-    </div>
-    <MoreLines count={lines().length - limit()} onClick={props.renderer.onExpandPreview} />
-  </>;
+  return (
+    <>
+      <div classList={{ "k2b-content-file-view__excerpt": props.renderer.previewLines !== undefined }}>
+        <Show when={props.markdown} fallback={<CodeDisplay code={text()} language={codeLanguage(props.renderer.file.path)} />}>
+          <MarkdownView markdown={text()} headingScale={props.renderer.headingScale ?? "compact"} />
+        </Show>
+      </div>
+      <MoreLines count={lines().length - limit()} onClick={props.renderer.onExpandPreview} />
+    </>
+  );
 }
 
 function MarkdownRenderer(props: FileViewRendererProps) {
@@ -344,7 +352,12 @@ function JsonRenderer(props: FileViewRendererProps) {
     <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__document">
         <Show when={parsed().ok} fallback={<TextExcerpt renderer={props} text={props.content.content} />}>
-          <Show when={props.previewLines === undefined} fallback={<TextExcerpt renderer={props} text={JSON.stringify(parsedValue(), null, 2)} />}><StructuredDataPreview data={parsedValue()} maxRows={200} /></Show>
+          <Show
+            when={props.previewLines === undefined}
+            fallback={<TextExcerpt renderer={props} text={JSON.stringify(parsedValue(), null, 2)} />}
+          >
+            <StructuredDataPreview data={parsedValue()} maxRows={200} />
+          </Show>
         </Show>
       </div>
     </OverlayPanel>
@@ -356,77 +369,151 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
   const [preferences, setPreferences] = createSignal<DelimitedPreferences>({ encoding: "utf-8", delimiter: "auto", view: "table" });
   onMount(() => {
     if (!props.previewPreferencesKey) return;
-    try { setPreferences(readDelimitedPreferences(localStorage.getItem(props.previewPreferencesKey))); } catch { /* Storage may be disabled. */ }
+    try {
+      setPreferences(readDelimitedPreferences(localStorage.getItem(props.previewPreferencesKey)));
+    } catch {
+      /* Storage may be disabled. */
+    }
   });
   const update = (patch: Partial<DelimitedPreferences>) => {
     const next = { ...preferences(), ...patch };
     setPreferences(next);
     if (props.previewPreferencesKey) {
-      try { localStorage.setItem(props.previewPreferencesKey, JSON.stringify(next)); } catch { /* Keep the local selection. */ }
+      try {
+        localStorage.setItem(props.previewPreferencesKey, JSON.stringify(next));
+      } catch {
+        /* Keep the local selection. */
+      }
     }
   };
   const text = createMemo(() => decodeDelimitedContent(props.content, preferences().encoding));
-  const delimiter = () => preferences().delimiter === "auto"
-    ? (fileViewExtension(props.file.path) === "tsv" || props.content.mediaType === "text/tab-separated-values" ? "\t" : ",")
-    : preferences().delimiter;
+  const delimiter = () =>
+    preferences().delimiter === "auto"
+      ? fileViewExtension(props.file.path) === "tsv" || props.content.mediaType === "text/tab-separated-values"
+        ? "\t"
+        : ","
+      : preferences().delimiter;
   const [page, setPage] = createSignal(0);
-  createEffect(() => { text(); delimiter(); props.previewLines; setPage(0); });
-  const pageSize = () => props.previewLines === undefined ? 200 : Math.max(1, props.previewLines);
+  createEffect(() => {
+    text();
+    delimiter();
+    props.previewLines;
+    setPage(0);
+  });
+  const pageSize = () => (props.previewLines === undefined ? 200 : Math.max(1, props.previewLines));
   const preview = createMemo(() => parseDelimitedText(text(), delimiter(), { rows: pageSize() + 1, offset: page() * pageSize() }));
-  const settings = () => prompts.dialog(() => <div class="k2b-content-file-view__settings">
-    <Select label={messages().csvEncoding} value={preferences().encoding} disabled={props.content.encoding !== "base64"}
-      options={["utf-8", "windows-1252", "utf-16le", "utf-16be"]} onValueChange={(value) => { if (value) update({ encoding: value }); }} />
-    <Select label={messages().csvSeparator} value={preferences().delimiter} options={[
-      { value: "auto", label: messages().csvDefaultSeparator }, { value: ",", label: messages().csvComma },
-      { value: ";", label: messages().csvSemicolon }, { value: "\t", label: messages().csvTab }, { value: "|", label: "|" },
-    ]} onValueChange={(value) => { if (value) update({ delimiter: value }); }} />
-    <Select label={messages().csvView} value={preferences().view} options={[
-      { value: "table", label: messages().dataTable }, { value: "raw", label: messages().csvRaw },
-    ]} onValueChange={(value) => { if (value === "table" || value === "raw") update({ view: value }); }} />
-  </div>, { title: messages().csvSettings });
+  const settings = () =>
+    prompts.dialog(
+      () => (
+        <div class="k2b-content-file-view__settings">
+          <Select
+            label={messages().csvEncoding}
+            value={preferences().encoding}
+            disabled={props.content.encoding !== "base64"}
+            options={["utf-8", "windows-1252", "utf-16le", "utf-16be"]}
+            onValueChange={(value) => {
+              if (value) update({ encoding: value });
+            }}
+          />
+          <Select
+            label={messages().csvSeparator}
+            value={preferences().delimiter}
+            options={[
+              { value: "auto", label: messages().csvDefaultSeparator },
+              { value: ",", label: messages().csvComma },
+              { value: ";", label: messages().csvSemicolon },
+              { value: "\t", label: messages().csvTab },
+              { value: "|", label: "|" },
+            ]}
+            onValueChange={(value) => {
+              if (value) update({ delimiter: value });
+            }}
+          />
+          <Select
+            label={messages().csvView}
+            value={preferences().view}
+            options={[
+              { value: "table", label: messages().dataTable },
+              { value: "raw", label: messages().csvRaw },
+            ]}
+            onValueChange={(value) => {
+              if (value === "table" || value === "raw") update({ view: value });
+            }}
+          />
+        </div>
+      ),
+      { title: messages().csvSettings },
+    );
   const headers = createMemo(() => preview().rows[0] ?? []);
   const rows = createMemo(() => preview().rows.slice(1));
 
   return (
-    <OverlayPanel actions={<><OverlayAction icon="ti-adjustments-horizontal" title={messages().csvSettings} onClick={() => void settings()} /><DownloadAction {...props} /></>}>
+    <OverlayPanel
+      actions={
+        <>
+          <OverlayAction icon="ti-adjustments-horizontal" title={messages().csvSettings} onClick={() => void settings()} />
+          <DownloadAction {...props} />
+        </>
+      }
+    >
       <Show when={preferences().view === "table"} fallback={<TextExcerpt renderer={props} text={text()} />}>
-      <Show
-        when={headers().length > 0}
-        fallback={<Placeholder icon="ti ti-table" title={messages().emptyFile} description={messages().delimitedFileEmpty} />}
-      >
-        <div class="k2b-content-file-view__sheet">
-          <table class="k2b-content-file-view__table">
-            <thead>
-              <tr>
-                <For each={headers()}>
-                  {(header, index) => (
-                    <th scope="col">
-                      <span>{header || messages().column({ number: index() + 1 })}</span>
-                    </th>
+        <Show
+          when={headers().length > 0}
+          fallback={<Placeholder icon="ti ti-table" title={messages().emptyFile} description={messages().delimitedFileEmpty} />}
+        >
+          <div class="k2b-content-file-view__sheet">
+            <table class="k2b-content-file-view__table">
+              <thead>
+                <tr>
+                  <For each={headers()}>
+                    {(header, index) => (
+                      <th scope="col">
+                        <span>{header || messages().column({ number: index() + 1 })}</span>
+                      </th>
+                    )}
+                  </For>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={rows()}>
+                  {(row) => (
+                    <tr>
+                      <For each={headers()}>{(_, index) => <td>{row[index()] ?? ""}</td>}</For>
+                    </tr>
                   )}
                 </For>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={rows()}>
-                {(row) => (
-                  <tr>
-                    <For each={headers()}>{(_, index) => <td>{row[index()] ?? ""}</td>}</For>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-          <Show when={preview().columnsTruncated}><div class="k2b-content-file-view__truncated">{messages().previewColumnsLimited}</div></Show>
-          <Show when={props.previewLines !== undefined} fallback={
-            <Show when={preview().totalRows > 201}><div class="k2b-content-file-view__pagination">
-              <Button size="sm" variant="ghost" disabled={page() === 0} onClick={() => setPage(page() - 1)}>{messages().previous}</Button>
-              <span>{page() * pageSize() + 1}–{Math.min((page() + 1) * pageSize(), preview().totalRows - 1)} / {preview().totalRows - 1}</span>
-              <Button size="sm" variant="ghost" disabled={(page() + 1) * pageSize() >= preview().totalRows - 1} onClick={() => setPage(page() + 1)}>{messages().next}</Button>
-            </div></Show>
-          }><MoreLines count={preview().totalRows - rows().length - 1} onClick={props.onExpandPreview} /></Show>
-        </div>
-      </Show>
+              </tbody>
+            </table>
+            <Show when={preview().columnsTruncated}>
+              <div class="k2b-content-file-view__truncated">{messages().previewColumnsLimited}</div>
+            </Show>
+            <Show
+              when={props.previewLines !== undefined}
+              fallback={
+                <Show when={preview().totalRows > 201}>
+                  <div class="k2b-content-file-view__pagination">
+                    <Button size="sm" variant="ghost" disabled={page() === 0} onClick={() => setPage(page() - 1)}>
+                      {messages().previous}
+                    </Button>
+                    <span>
+                      {page() * pageSize() + 1}–{Math.min((page() + 1) * pageSize(), preview().totalRows - 1)} / {preview().totalRows - 1}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={(page() + 1) * pageSize() >= preview().totalRows - 1}
+                      onClick={() => setPage(page() + 1)}
+                    >
+                      {messages().next}
+                    </Button>
+                  </div>
+                </Show>
+              }
+            >
+              <MoreLines count={preview().totalRows - rows().length - 1} onClick={props.onExpandPreview} />
+            </Show>
+          </div>
+        </Show>
       </Show>
     </OverlayPanel>
   );
@@ -650,7 +737,11 @@ export default function FileView(props: FileViewProps) {
       : null;
 
   return (
-    <div class={`k2b-content-file-view ${props.class ?? ""}`} data-variant={props.variant} data-excerpt={props.previewLines !== undefined ? "true" : undefined}>
+    <div
+      class={`k2b-content-file-view ${props.class ?? ""}`}
+      data-variant={props.variant}
+      data-excerpt={props.previewLines !== undefined ? "true" : undefined}
+    >
       <Switch>
         <Match when={content.loading && content() === undefined}>
           <Placeholder icon="ti ti-loader-2" title={messages().loading} />

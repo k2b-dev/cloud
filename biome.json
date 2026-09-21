@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.2/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -7,7 +7,18 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/node_modules/**", "!**/dist/**", "!**/build/**", "!**/_ssr/**"]
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/build",
+      "!**/_ssr",
+      "!**/output",
+      "!**/.local",
+      "!**/*.svg",
+      "!packages/cloud/src/ai/code-mode-skill.ts",
+      "!packages/cloud/src/ai/data-analysis-skill.ts"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -18,7 +29,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": false,
+      "preset": "none",
       "correctness": {
         "noUnusedImports": "warn",
         "noUnusedVariables": "warn"
@@ -50,6 +61,9 @@
   "css": {
     "parser": {
       "tailwindDirectives": true
+    },
+    "formatter": {
+      "enabled": false
     }
   },
   "assist": {

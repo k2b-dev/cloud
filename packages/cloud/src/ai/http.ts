@@ -1,12 +1,12 @@
-import { AiQuotaError } from "./quotas";
-import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import type { Input, Message } from "@k2b/nessi";
 import type { Context } from "hono";
 import { z } from "zod";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, err, fail, respond } from "../server";
 import { aiAttachmentMarker } from "./attachments";
+import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
+import { AiQuotaError } from "./quotas";
 import { AiResourceMarkerSchema } from "./resource-markers";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
@@ -38,7 +38,8 @@ export const AiConversationDraftInputSchema = z
     content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
   })
   .superRefine((value, context) => {
-    if (value.content.reduce((length, part) => length + (part.type === "text" ? part.text.length : 0), 0) > 20_000) context.addIssue({ code: "custom", path: ["content"], message: "Draft text exceeds 20000 characters" });
+    if (value.content.reduce((length, part) => length + (part.type === "text" ? part.text.length : 0), 0) > 20_000)
+      context.addIssue({ code: "custom", path: ["content"], message: "Draft text exceeds 20000 characters" });
     if (value.content.filter((part) => part.type !== "text").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
       context.addIssue({ code: "custom", path: ["content"], message: `A draft can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items` });
     }
@@ -46,7 +47,9 @@ export const AiConversationDraftInputSchema = z
 
 export const AiInitialConversationDraftInputSchema = z
   .object({
-    content: z.array(z.union([AiDraftContentPartSchema.options[0], AiDraftContentPartSchema.options[1]])).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
+    content: z
+      .array(z.union([AiDraftContentPartSchema.options[0], AiDraftContentPartSchema.options[1]]))
+      .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
   })
   .superRefine((value, context) => {
     if (value.content.filter((part) => part.type === "resource").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
@@ -128,7 +131,11 @@ export const AiTurnInputSchema = z
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1)
       .optional(),
     modelProfileId: z.string().trim().min(1).optional(),
-    clientToolIds: z.array(AiClientToolIdSchema).max(1 + CODE_RUNTIME_TOOL_NAMES.length).refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique").optional(),
+    clientToolIds: z
+      .array(AiClientToolIdSchema)
+      .max(1 + CODE_RUNTIME_TOOL_NAMES.length)
+      .refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique")
+      .optional(),
   })
   .refine((input) => Boolean(input.message?.trim() || input.content?.length), {
     message: "Message or content is required.",
@@ -149,7 +156,11 @@ export const AiSubmitConversationDraftInputSchema = z.object({
   queueId: z.uuid().optional(),
   draftRevision: z.number().int().min(1),
   modelProfileId: z.string().trim().min(1).optional(),
-  clientToolIds: z.array(AiClientToolIdSchema).max(1 + CODE_RUNTIME_TOOL_NAMES.length).refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique").optional(),
+  clientToolIds: z
+    .array(AiClientToolIdSchema)
+    .max(1 + CODE_RUNTIME_TOOL_NAMES.length)
+    .refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique")
+    .optional(),
 });
 
 export const AiSteerInputSchema = z.object({
@@ -251,7 +262,7 @@ const aiSettingsServiceError = (error: AiSettingsError) => {
 };
 
 export const toAiErrorResponse = (c: Context<AuthContext>, error: unknown) => {
-  if (error instanceof AiQuotaError) return c.json({ok:false,error:error.message,message:error.message,code:error.code},429);
+  if (error instanceof AiQuotaError) return c.json({ ok: false, error: error.message, message: error.message, code: error.code }, 429);
   if (isAiSettingsError(error)) {
     return respond(c, fail(aiSettingsServiceError(error.aiError)));
   }

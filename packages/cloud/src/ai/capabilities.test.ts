@@ -1,9 +1,9 @@
-import { fixtureHelpReader, type FixtureCorpus } from "../../test/help-reader";
 import { describe, expect, test } from "bun:test";
 import { nessi, type ProviderRequest, type StoreEntry } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
 import { type CapabilityActionReview, CapabilityActionReviewSchema, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
@@ -229,7 +229,11 @@ describe("AI capability catalog", () => {
         },
       ],
     };
-    const prepared = prepareAiTools({ tools: createAiHelpTools(fixtureHelpReader(async () => [help])), actor, conversationId: "conversation-1" });
+    const prepared = prepareAiTools({
+      tools: createAiHelpTools(fixtureHelpReader(async () => [help])),
+      actor,
+      conversationId: "conversation-1",
+    });
     expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["search_help", "read_help"]);
     const search = prepared.tools[0];
     const read = prepared.tools[1];
@@ -269,7 +273,14 @@ describe("AI capability catalog", () => {
         de: [{ id: "start", title: "Starten", order: 10, markdown: "# Starten\n\nDeutsche Hilfe." }],
       },
     };
-    const [search] = prepareAiTools({ tools: createAiHelpTools(fixtureHelpReader(async () => [help]), "de-CH"), actor, conversationId: "localized" }).tools;
+    const [search] = prepareAiTools({
+      tools: createAiHelpTools(
+        fixtureHelpReader(async () => [help]),
+        "de-CH",
+      ),
+      actor,
+      conversationId: "localized",
+    }).tools;
     if (!search || search.kind !== "server") throw new Error("Help search missing");
     const result = await search.execute(
       { query: "Deutsche Hilfe" },
@@ -301,7 +312,11 @@ describe("AI capability catalog", () => {
         },
       ],
     };
-    const prepared = prepareAiTools({ tools: createAiHelpTools(fixtureHelpReader(async () => [{ ...help, documents: [help.documents[1]!, help.documents[0]!] }])), actor, conversationId: "conversation-1" });
+    const prepared = prepareAiTools({
+      tools: createAiHelpTools(fixtureHelpReader(async () => [{ ...help, documents: [help.documents[1]!, help.documents[0]!] }])),
+      actor,
+      conversationId: "conversation-1",
+    });
     const search = prepared.tools[0];
     const read = prepared.tools[1];
     if (!search || search.kind !== "server" || !read || read.kind !== "server") throw new Error("Help tools missing");
@@ -365,9 +380,14 @@ describe("AI capability catalog", () => {
 
     const unavailable = await resolver();
     expect(unavailable.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps", "search_help", "read_help"]);
-    const failingSearch = unavailable.find(tool => tool.def.name === "search_help");
+    const failingSearch = unavailable.find((tool) => tool.def.name === "search_help");
     if (!failingSearch || failingSearch.kind !== "server") throw new Error("Missing search");
-    await expect(failingSearch.execute({ query: "test" }, { signal: AbortSignal.timeout(1000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T })).rejects.toThrow("registry unavailable");
+    await expect(
+      failingSearch.execute(
+        { query: "test" },
+        { signal: AbortSignal.timeout(1000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
+      ),
+    ).rejects.toThrow("registry unavailable");
     const recovered = await resolver();
     const search = recovered.find((tool) => tool.def.name === "search_help");
     if (!search || search.kind !== "server") throw new Error("search_help missing");
@@ -749,31 +769,58 @@ describe("AI capability catalog", () => {
     const catalog = buildAiCapabilityCatalog([app]);
     let allow = false;
     const calls: string[] = [];
-    const prepared = prepareAiTools({tools: createLoadedAiCapabilityTools({catalog, actor, loadedNames: ["contacts.create", "contacts.list"],
-      authorizeBackground: async (entry) => {calls.push(`authorize:${entry.name}`); if (!allow) throw new Error("Grant denied");},
-      review: async () => {throw new Error("Unexpected interactive review");},
-      execute: async (entry) => {calls.push(`execute:${entry.name}`); return {data: {}};},
-    }), actor, conversationId: "conversation-1"});
-    const context = {signal: AbortSignal.timeout(1000), requestApproval: async () => {throw new Error("Unexpected approval");}, requestClientTool: async <T>(): Promise<T> => {throw new Error("Unexpected client");}};
+    const prepared = prepareAiTools({
+      tools: createLoadedAiCapabilityTools({
+        catalog,
+        actor,
+        loadedNames: ["contacts.create", "contacts.list"],
+        authorizeBackground: async (entry) => {
+          calls.push(`authorize:${entry.name}`);
+          if (!allow) throw new Error("Grant denied");
+        },
+        review: async () => {
+          throw new Error("Unexpected interactive review");
+        },
+        execute: async (entry) => {
+          calls.push(`execute:${entry.name}`);
+          return { data: {} };
+        },
+      }),
+      actor,
+      conversationId: "conversation-1",
+    });
+    const context = {
+      signal: AbortSignal.timeout(1000),
+      requestApproval: async () => {
+        throw new Error("Unexpected approval");
+      },
+      requestClientTool: async <T>(): Promise<T> => {
+        throw new Error("Unexpected client");
+      },
+    };
     for (const action of prepared.tools) {
       if (action.kind !== "server") throw new Error("Expected server tool");
-      await expect(action.execute({title: "Example"}, context)).rejects.toThrow("Grant denied");
+      await expect(action.execute({ title: "Example" }, context)).rejects.toThrow("Grant denied");
     }
-    expect(calls.some(call => call.startsWith("execute:"))).toBe(false);
+    expect(calls.some((call) => call.startsWith("execute:"))).toBe(false);
     allow = true;
-    for (const action of prepared.tools) if (action.kind === "server") await action.execute({title: "Example"}, context);
-    expect(calls.filter(call => call.startsWith("execute:"))).toHaveLength(2);
+    for (const action of prepared.tools) if (action.kind === "server") await action.execute({ title: "Example" }, context);
+    expect(calls.filter((call) => call.startsWith("execute:"))).toHaveLength(2);
   });
 
   test("background discovery keeps loaded tool names isolated with the existing eviction contract", async () => {
     const seed = ["mail.list"];
     const store = createRunToolStore(seed);
-    expect(await store.loadTools({conversationId: "chat", names: ["mail.list", "notes.read", "notes.edit"], maxLoadedTools: 2})).toEqual({loaded: ["notes.read", "notes.edit"], alreadyLoaded: ["mail.list"], evicted: ["mail.list"]});
+    expect(await store.loadTools({ conversationId: "chat", names: ["mail.list", "notes.read", "notes.edit"], maxLoadedTools: 2 })).toEqual({
+      loaded: ["notes.read", "notes.edit"],
+      alreadyLoaded: ["mail.list"],
+      evicted: ["mail.list"],
+    });
     expect(seed).toEqual(["mail.list"]);
-    expect(await store.getLoadedTools({conversationId: "chat"})).toEqual(["notes.read", "notes.edit"]);
-    const snapshot = await store.getLoadedTools({conversationId: "chat"});
+    expect(await store.getLoadedTools({ conversationId: "chat" })).toEqual(["notes.read", "notes.edit"]);
+    const snapshot = await store.getLoadedTools({ conversationId: "chat" });
     snapshot.push("other");
-    expect(await store.getLoadedTools({conversationId: "chat"})).toEqual(["notes.read", "notes.edit"]);
+    expect(await store.getLoadedTools({ conversationId: "chat" })).toEqual(["notes.read", "notes.edit"]);
   });
 
   test("explicit no-approval actions execute without review or a user prompt", async () => {
@@ -781,18 +828,35 @@ describe("AI capability catalog", () => {
     app.manifest.actions[0]!.approval = "none";
     const catalog = buildAiCapabilityCatalog([app]);
     let calls = 0;
-    const prepared = prepareAiTools({ tools: createLoadedAiCapabilityTools({
-      catalog, actor, loadedNames: ["contacts.create"],
-      review: async () => { throw new Error("Unexpected review"); },
-      execute: async () => { calls++; return { data: { id: "created" } }; },
-    }), actor, conversationId: "conversation-1" });
+    const prepared = prepareAiTools({
+      tools: createLoadedAiCapabilityTools({
+        catalog,
+        actor,
+        loadedNames: ["contacts.create"],
+        review: async () => {
+          throw new Error("Unexpected review");
+        },
+        execute: async () => {
+          calls++;
+          return { data: { id: "created" } };
+        },
+      }),
+      actor,
+      conversationId: "conversation-1",
+    });
     const action = prepared.tools[0];
     if (!action || action.kind !== "server") throw new Error("Missing action");
-    await action.execute({ title: "Example" }, {
-      callId: "no-approval", signal: AbortSignal.timeout(1000),
-      requestApproval: async () => { throw new Error("Unexpected approval"); },
-      requestClientTool: async <T>() => undefined as T,
-    });
+    await action.execute(
+      { title: "Example" },
+      {
+        callId: "no-approval",
+        signal: AbortSignal.timeout(1000),
+        requestApproval: async () => {
+          throw new Error("Unexpected approval");
+        },
+        requestClientTool: async <T>() => undefined as T,
+      },
+    );
     expect(calls).toBe(1);
   });
 

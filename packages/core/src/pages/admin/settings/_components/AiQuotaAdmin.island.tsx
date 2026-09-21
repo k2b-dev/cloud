@@ -1,39 +1,40 @@
+import { coreClient } from "@k2b/cloud/clients/core";
+import {
+  type AiQuotaConfig,
+  type AiQuotaReport,
+  type AiQuotaReportQuery,
+  AiQuotaReportQuerySchema,
+  type AiQuotaStatus,
+  aiQuotaHref,
+  type AiQuotaIdentity as Identity,
+} from "@k2b/cloud/shared";
 import { navigateTo } from "@k2b/ssr/nav";
 import {
   Button,
   ButtonLink,
   DataTable,
-  NoticeCard,
-  LocaleProvider,
   dialogCore,
-  panelDialogOptions,
   FilterChip,
+  LocaleProvider,
+  NoticeCard,
   Pagination,
   Placeholder,
   ProgressBar,
+  panelDialogOptions,
   Select,
   StatCell,
   StatGrid,
-  TextInput,
   Tabs,
+  TextInput,
   useLocale,
 } from "@k2b/ui";
-import { coreClient } from "@k2b/cloud/clients/core";
-import {
-  aiQuotaHref,
-  AiQuotaReportQuerySchema,
-  type AiQuotaConfig,
-  type AiQuotaReport,
-  type AiQuotaReportQuery,
-  type AiQuotaIdentity as Identity,
-  type AiQuotaStatus,
-} from "@k2b/cloud/shared";
 import { createSignal, For, Show } from "solid-js";
-import { quotaMessages } from "./ai-quota-messages";
-import AiQuotaIdentity from "./AiQuotaIdentity";
-import AiQuotaDetail from "./AiQuotaDetail";
-import AiQuotaRules from "./AiQuotaRules";
 import AiQuotaCharts from "./AiQuotaCharts";
+import AiQuotaDetail from "./AiQuotaDetail";
+import AiQuotaIdentity from "./AiQuotaIdentity";
+import AiQuotaRules from "./AiQuotaRules";
+import { quotaMessages } from "./ai-quota-messages";
+
 const api = coreClient.admin.core["ai-quotas"];
 export default function AiQuotaAdmin(props: {
   config: AiQuotaConfig;

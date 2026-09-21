@@ -1,7 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import * as proxyReturn from "./proxy-return";
 
-describe("proxy auth return tokens", () => {
+const suite = databaseSuite();
+
+suite("proxy auth return tokens", () => {
   test("creates and consumes one-time return tokens", async () => {
     const token = await proxyReturn.create({
       clientId: "proxy-client",

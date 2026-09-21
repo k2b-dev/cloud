@@ -1,14 +1,14 @@
-import { ButtonLink } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { accounts, appApproval, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
+import { ButtonLink } from "@k2b/ui";
 import { z } from "zod";
 import { ssr } from "../../config";
 import AccountHub from "../me/AccountHub";
-import { appApprovalMessages } from "./messages";
-import Pairing from "./Pairing.island";
 import ApprovalStatus from "./ApprovalStatus";
 import { approvalAvailability } from "./availability";
+import { appApprovalMessages } from "./messages";
+import Pairing from "./Pairing.island";
 
 export default ssr<AuthContext>(async (c) => {
   const actor = c.get("user");

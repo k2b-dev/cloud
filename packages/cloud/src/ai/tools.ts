@@ -146,7 +146,7 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
           selectedModel: input.selectedModel,
           locale: input.locale,
           timeZone: input.timeZone,
-          reportProgress: callId && report ? message => report(callId,message) : undefined,
+          reportProgress: callId && report ? (message) => report(callId, message) : undefined,
         });
       });
     }

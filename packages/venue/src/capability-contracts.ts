@@ -12,8 +12,7 @@ const ResourceIdSchema = z
 const VenueIdSchema = ResourceIdSchema.describe("Venue ID returned by Search/List Venues or a venue.venue ref.");
 const PageInputShape = { cursor: CursorSchema, limit: LimitSchema };
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
-const resourceRef = <Type extends string>(type: Type) =>
-  z.object({ type: z.literal(type), id: ResourceIdSchema }).strict();
+const resourceRef = <Type extends string>(type: Type) => z.object({ type: z.literal(type), id: ResourceIdSchema }).strict();
 
 export const VenueDataSchema = z
   .object({

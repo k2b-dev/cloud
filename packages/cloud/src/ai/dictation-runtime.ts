@@ -4,7 +4,7 @@ import { logger, trace } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { aiModelAccess } from "./model-access";
 import { aiProjects } from "./projects";
-import { AiTranscriptionError, describeTranscriptionFailure, runAiTranscription, type RunAiTranscriptionInput } from "./transcription";
+import { AiTranscriptionError, describeTranscriptionFailure, type RunAiTranscriptionInput, runAiTranscription } from "./transcription";
 
 const log = logger("ai:dictations");
 const queue = lazySync((sync) =>

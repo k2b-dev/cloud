@@ -40,7 +40,9 @@ describe("capability observability URL state", () => {
 
   test("translates URL state into a store filter without empty constraints", () => {
     expect(executionFilter(parse("?window=1h"))).toEqual({ since: expect.any(Date) });
-    const filter = executionFilter(parse("?app=mail&capability=mail.send&origin=assistant&status=failed&destructive=1&user=5de41b38-a3ac-47f3-b47c-da6472afbb42"));
+    const filter = executionFilter(
+      parse("?app=mail&capability=mail.send&origin=assistant&status=failed&destructive=1&user=5de41b38-a3ac-47f3-b47c-da6472afbb42"),
+    );
     expect(filter).toMatchObject({
       appId: "mail",
       capability: "mail.send",

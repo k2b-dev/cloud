@@ -1,6 +1,6 @@
 import { deserialize as deserializeProps, serialize as serializeProps } from "seroval";
 import type { Component, JSX, ParentProps } from "solid-js";
-import { children, createContext, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js";
+import { children, createContext, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import {
   type DesktopEnvironment,

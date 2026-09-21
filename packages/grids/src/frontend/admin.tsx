@@ -1,7 +1,7 @@
-import { ButtonLink, DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { ButtonLink, DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../config";
 import { gridsService } from "../service";
 import AdminGridsActions from "./_components/AdminGridsActions.island";

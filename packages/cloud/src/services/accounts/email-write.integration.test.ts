@@ -1,12 +1,14 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import "../../../../../scripts/fixtures/authorization-preload";
 import { migrate as migrateAuth } from "../../../../core/src/migrate/core/auth";
 import { freeipa } from "../../server/services";
 import { addIpa, updateProfile } from "../ipa/users";
 import * as local from "../providers/local/users";
 import * as settings from "../settings";
 
-const suite = process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip;
+const suite = suiteFor("database");
 const prefix = `email-write-${crypto.randomUUID()}`;
 const email = (name: string) => `${name}.${prefix}@example.test`;
 const createLocal = (mail: string) => local.create({ data: { email: mail }, profile: "guest", accountExpires: null });
@@ -33,8 +35,6 @@ const configuration = {
 
 suite("account email writes with legacy duplicates", () => {
   beforeAll(async () => {
-    if (new URL(process.env.DATABASE_URL!).pathname !== "/cloud_authorization_test")
-      throw new Error("Requires isolated cloud_authorization_test database");
     for (const [key, value] of Object.entries(configuration)) await settings.set(key, JSON.stringify(value));
   });
   beforeEach(() => {

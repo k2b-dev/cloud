@@ -1110,20 +1110,32 @@ describe("text editor presentation", () => {
 describe("scheduled result presentation", () => {
   test("keeps natural result prose and shows its originating background run", () => {
     const entry: AiStoredMessage = {
-      id: "background-result", shortId: "bgresult", conversationId: "chat", seq: 1,
-      kind: "message", message: { role: "assistant", content: [{ type: "text", text: "The morning overview is ready." }] },
-      loopId: null, modelProfileId: null, providerModel: null, usage: null,
-      stopReason: null, loopAggregate: null, loopDoneReason: null, compactedAt: null,
+      id: "background-result",
+      shortId: "bgresult",
+      conversationId: "chat",
+      seq: 1,
+      kind: "message",
+      message: { role: "assistant", content: [{ type: "text", text: "The morning overview is ready." }] },
+      loopId: null,
+      modelProfileId: null,
+      providerModel: null,
+      usage: null,
+      stopReason: null,
+      loopAggregate: null,
+      loopDoneReason: null,
+      compactedAt: null,
       meta: { scheduledTask: { taskId: "task", occurrenceId: "run", scheduledFor: "2026-09-20T08:00:00Z", trigger: "scheduled" } },
       createdAt: "2026-09-20T08:01:00Z",
     };
-    const html = renderToString(() => createComponent(AiChatActionsProvider, {
-      actions: { onOpenScheduledTaskRun: () => undefined },
-      get children() {
-        const items = createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })();
-        return items.map(item => item.content);
-      },
-    }));
+    const html = renderToString(() =>
+      createComponent(AiChatActionsProvider, {
+        actions: { onOpenScheduledTaskRun: () => undefined },
+        get children() {
+          const items = createAiChatTimeline({ messages: () => [entry], activeTurn: () => null })();
+          return items.map((item) => item.content);
+        },
+      }),
+    );
     expect(html).toContain("The morning overview is ready.");
     expect(html).toContain("Background run");
     expect(html).toContain("ti-calendar-time");

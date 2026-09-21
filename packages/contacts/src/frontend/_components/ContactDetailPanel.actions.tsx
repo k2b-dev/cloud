@@ -8,9 +8,9 @@ import { resolveContactName } from "../../shared";
 import AddMemberDialog from "./AddMemberDialog";
 import { readErrorMessage } from "./api";
 import ContactUpsertForm from "./ContactUpsertForm";
-import { detailMessages } from "./detail-messages";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
 import { setSelectedContactInUrl } from "./context";
+import { detailMessages } from "./detail-messages";
 
 export const createContactDetailActions = (config: {
   bookId: Accessor<string | null>;

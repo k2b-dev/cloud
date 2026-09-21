@@ -8,9 +8,19 @@ function read<T>(signal: AbortSignal, start: (resolve: (value: T) => void, rejec
   return new Promise((resolve, reject) => {
     const aborted = () => reject(signal.reason);
     signal.addEventListener("abort", aborted, { once: true });
-    const settle = (value: T) => { signal.removeEventListener("abort", aborted); resolve(value); };
-    const fail = (error: unknown) => { signal.removeEventListener("abort", aborted); reject(error); };
-    try { start(settle, fail); } catch (error) { fail(error); }
+    const settle = (value: T) => {
+      signal.removeEventListener("abort", aborted);
+      resolve(value);
+    };
+    const fail = (error: unknown) => {
+      signal.removeEventListener("abort", aborted);
+      reject(error);
+    };
+    try {
+      start(settle, fail);
+    } catch (error) {
+      fail(error);
+    }
   });
 }
 
@@ -46,8 +56,9 @@ export async function readDroppedEntries(entries: readonly FileSystemEntry[], si
     }
   };
   for (const entry of entries) {
-    try { await visit(entry, ""); }
-    catch (error) {
+    try {
+      await visit(entry, "");
+    } catch (error) {
       signal.throwIfAborted();
       if (error instanceof Error && error.message === "drop_too_large") throw error;
       errors.push(`${entry.name}: ${error instanceof Error ? error.message : "read_failed"}`);

@@ -1,8 +1,8 @@
-import { createContext } from "solid-js";
 import { navigateTo } from "@k2b/ssr/nav";
+import { createContext } from "solid-js";
 import type { FileBaseInfo } from "@/contracts";
-import type { FileSettings } from "./FileSettings.island";
 import { filePageUrl } from "../url";
+import type { FileSettings } from "./FileSettings.island";
 
 // =============================================================================
 // File Context - shared state for all file components
@@ -103,8 +103,8 @@ export const navigateWithParam = (key: string, value?: string) => {
 // Detail Panel Helpers (Hybrid SSR + Client-Side Pattern)
 // =============================================================================
 
+import { type DetailSelectPayload, detailPanel } from "@k2b/stdlib/solid";
 import type { FileInfo } from "@/contracts";
-import { detailPanel, type DetailSelectPayload } from "@k2b/stdlib/solid";
 
 /** Event name for file detail panel selection changes */
 export const DETAIL_FILE_SELECT_EVENT = "detail-file-select";

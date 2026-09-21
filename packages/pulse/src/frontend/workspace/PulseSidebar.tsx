@@ -1,9 +1,9 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { createNavigation, AppWorkspace, Dropdown } from "@k2b/ui";
+import { AppWorkspace, createNavigation, Dropdown } from "@k2b/ui";
 import { For, type JSX } from "solid-js";
 import type { PulseDashboard } from "../../contracts";
-import type { WorkspaceView } from "./types";
 import { usePulseMessages } from "../use-messages";
+import type { WorkspaceView } from "./types";
 
 type Props = {
   title: string;

@@ -1,10 +1,10 @@
-import PrincipalPicker from "./PrincipalPicker";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal } from "../contracts/shared";
 import { accessMessages } from "./messages";
+import PrincipalPicker from "./PrincipalPicker";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public API
@@ -147,7 +147,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const canEdit = () => props.canEdit !== false;
   const allowPublic = () => props.allowPublic === true;
   const allowAuthenticated = () => props.allowAuthenticated !== false;
-  const allowed = (principal: Principal) => resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, t());
+  const allowed = (principal: Principal) =>
+    resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, t());
 
   // Defensive dev-warning: an empty allowedLevels array makes the editor
   // unable to grant anything.
@@ -229,12 +230,17 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           level on pick. The user upgrades via the row pill if they want
           a higher level. KISS: one decision per step. */}
       <Show when={canEdit()}>
-        <PrincipalPicker existing={entries().map(e=>e.principal)} allowPublic={allowPublic()} allowAuthenticated={allowAuthenticated()} allowServiceAccounts={props.allowServiceAccounts}
-          disabled={busy()} onSelect={(principal,display)=>{
-            const permission=allowed(principal)[0]?.level;
-            if(permission&&!busy())grantMut.mutate({principal,permission,display});
-          }}/>
-
+        <PrincipalPicker
+          existing={entries().map((e) => e.principal)}
+          allowPublic={allowPublic()}
+          allowAuthenticated={allowAuthenticated()}
+          allowServiceAccounts={props.allowServiceAccounts}
+          disabled={busy()}
+          onSelect={(principal, display) => {
+            const permission = allowed(principal)[0]?.level;
+            if (permission && !busy()) grantMut.mutate({ principal, permission, display });
+          }}
+        />
       </Show>
     </div>
   );

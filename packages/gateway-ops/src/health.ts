@@ -1,4 +1,5 @@
 import { readAppRegistrySnapshot } from "@k2b/cloud";
+import { env } from "@k2b/cloud/config";
 import { listGatewayRouteSnapshots } from "@k2b/cloud/services";
 import { buildAppRuntimeStatuses } from "./app-runtime-status";
 import { getGridsOperationalSnapshot, gridsSloStatus, listAppSloWindows } from "./grids-operational-health";
@@ -81,7 +82,7 @@ export const buildGatewayHealth = async (scopeAppIds?: readonly string[]): Promi
   const syncOperations = buildSyncOperationalHealth(
     natsInventory,
     registeredApps.map((app) => app.id),
-    process.env.SYNC_NAMESPACE ?? "",
+    env.SYNC_NAMESPACE,
   );
   const runtimeStatuses = buildAppRuntimeStatuses(registry.apps, registry.issues);
   const latestSnapshot = snapshots.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;

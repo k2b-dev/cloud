@@ -16,15 +16,12 @@ export default function RemoveRegisteredAppButton(props: { id: string; name: str
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   const removeApp = mutation.create<{ id: string } | null, void>({
     mutation: async () => {
-      const confirmed = await prompts.confirm(
-        t.removeAppConfirm({ name: props.name }),
-        {
-          title: t.removeOfflineApp,
-          icon: "ti ti-trash",
-          confirmText: t.remove,
-          variant: "danger",
-        },
-      );
+      const confirmed = await prompts.confirm(t.removeAppConfirm({ name: props.name }), {
+        title: t.removeOfflineApp,
+        icon: "ti ti-trash",
+        confirmText: t.remove,
+        variant: "danger",
+      });
       if (!confirmed) return null;
       const response = await apiClient.apps[":id"].$delete({ param: { id: props.id } });
       if (!response.ok) throw new Error(await readErrorMessage(response, t.removeAppFailed));

@@ -1,7 +1,7 @@
-import { createNavigation, type NavigationItem, useLocale } from "@k2b/ui";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { createLocationPicker } from "./location-picker";
+import { createNavigation, type NavigationItem, useLocale } from "@k2b/ui";
 import { weatherMessages } from "../messages";
+import { createLocationPicker } from "./location-picker";
 
 export default function WeatherNavigation(props: { items: readonly NavigationItem[]; label: string }) {
   const locale = useLocale();

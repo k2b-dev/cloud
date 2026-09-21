@@ -20,7 +20,7 @@ CURL_RETRY_COUNT=3
 CURL_CONNECT_TIMEOUT=10
 CURL_MAX_TIME=60
 MAX_RELEASE_PAGES=100
-COSIGN_IDENTITY_REGEXP='^https://github\.com/k2b-dev/cloud/\.github/workflows/cli\.yml@refs/tags/cli-v[0-9]+\.[0-9]+\.[0-9]+$'
+COSIGN_IDENTITY_REGEXP='^https://github\.com/k2b-dev/cloud/\.github/workflows/release\.yml@refs/heads/main$'
 SKILL_ASSET="cloud-cli-skill.tar.gz"
 SKILL_NAME="cloud-cli"
 
@@ -44,14 +44,23 @@ latest_release() {
   while :; do
     body=$(curl_get "${API_BASE}/releases?per_page=100&page=${page}") || return 1
     [ "$(printf '%s' "$body" | tr -d '[:space:]')" = "[]" ] && break
-    page_tags=$(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\(cli-v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p')
+    # Tolerant of compact or pretty JSON: each release yields its tag_name
+    # followed by its draft/prerelease flags; drafts and prereleases are
+    # skipped like `cld update` does.
+    page_tags=$(printf '%s\n' "$body" \
+      | grep -oE '"(tag_name|draft|prerelease)"[[:space:]]*:[[:space:]]*("[^"]*"|true|false)' \
+      | awk -F'"' '
+        $2 == "tag_name" { tag = $4; ok[tag] = 1; next }
+        ($2 == "draft" || $2 == "prerelease") && $0 ~ /true$/ { ok[tag] = 0 }
+        END { for (t in ok) if (ok[t] && t ~ /^cloud-v[0-9]+\.[0-9]+\.[0-9]+$/) print t }
+      ')
     tags="${tags}${page_tags}\n"
     [ "$page" -lt "$MAX_RELEASE_PAGES" ] || return 1
     page=$((page + 1))
   done
   printf '%b' "$tags" | while IFS= read -r tag; do
     [ -n "$tag" ] || continue
-    key=$(stable_version_key "${tag#cli-v}") || continue
+    key=$(stable_version_key "${tag#cloud-v}") || continue
     [ -n "$key" ] && printf '%s %s\n' "$key" "$tag"
   done | sort | tail -n 1 | awk '{ print $2 }'
 }
@@ -59,8 +68,11 @@ latest_release() {
 while [ $# -gt 0 ]; do
   case "$1" in
     --prefix=*) PREFIX="${1#--prefix=}"; shift ;;
+    --prefix) [ $# -ge 2 ] || die "--prefix requires a value"; PREFIX="$2"; shift 2 ;;
     --skills-dir=*) SKILLS_DIR="${1#--skills-dir=}"; shift ;;
+    --skills-dir) [ $# -ge 2 ] || die "--skills-dir requires a value"; SKILLS_DIR="$2"; shift 2 ;;
     --version=*) VERSION="${1#--version=}"; shift ;;
+    --version) [ $# -ge 2 ] || die "--version requires a value"; VERSION="$2"; shift 2 ;;
     --no-verify) VERIFY=0; shift ;;
     --no-skills) INSTALL_SKILL=0; shift ;;
     --claude-symlink) CLAUDE_SYMLINK=1; shift ;;
@@ -72,9 +84,11 @@ Usage: install.sh [options]
 
 Install or update Cloud CLI.
 
+  Options accept --flag=VALUE or --flag VALUE.
+
   --prefix=DIR       Install into DIR (default: ~/.local/bin)
   --skills-dir=DIR   Install agent skills into DIR (default: ~/.agents/skills)
-  --version=VERSION  Install cli-vX.Y.Z or X.Y.Z (default: latest CLI release)
+  --version=VERSION  Install cloud-vX.Y.Z or X.Y.Z (default: latest Cloud release)
   --no-verify        Skip optional Cosign verification; SHA-256 is still required
   --no-skills        Skip installing the Cloud CLI agent skill
   --claude-symlink   Symlink the skill into ~/.claude/skills/cloud-cli
@@ -138,11 +152,11 @@ have curl || die "curl is required"
 if [ "$VERSION" = "latest" ]; then
   VERSION=$(latest_release) || die "could not find a Cloud CLI release"
   [ -n "$VERSION" ] || die "could not find a stable Cloud CLI release"
-elif [ "${VERSION#cli-v}" = "$VERSION" ]; then
-  VERSION="cli-v${VERSION#v}"
+elif [ "${VERSION#cloud-v}" = "$VERSION" ]; then
+  VERSION="cloud-v${VERSION#v}"
 fi
 
-VERSION_NUM=${VERSION#cli-v}
+VERSION_NUM=${VERSION#cloud-v}
 TARGET_KEY=$(stable_version_key "$VERSION_NUM")
 [ -n "$TARGET_KEY" ] || die "--version must be a stable version such as 1.2.3"
 ASSET="cld_${OS}_${ARCH}"

@@ -9,8 +9,8 @@
     "./cli": "./src/cli.ts"
   },
   "scripts": {
-    "test": "bun test",
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')"
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "bun test"
   },
   "dependencies": {
     "@scalar/hono-api-reference": "0.10.20",

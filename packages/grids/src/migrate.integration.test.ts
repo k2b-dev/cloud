@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { afterAll, describe, expect } from "bun:test";
+import { SQL } from "bun";
+import { createDisposableDatabase, testFor } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../core/src/migrate/core/workflows";
 import { migrate } from "./migrate";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
@@ -22,16 +23,18 @@ const schemaSnapshot = async (db: SQL) => db`
   ORDER BY 1, 2, 3
 `;
 
-const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
-  const sourceUrl = process.env.DATABASE_URL;
-  if (!sourceUrl) throw new Error("DATABASE_URL is required for migration integration tests");
-  const databaseName = `grids_migrate_${Bun.randomUUIDv7().replaceAll("-", "")}`;
-  const databaseUrl = new URL(sourceUrl);
-  databaseUrl.pathname = `/${databaseName}`;
+// Disposable databases still open when the file ends (for example after a
+// test timeout) are dropped here so a failed run never leaks them.
+const undropped = new Set<() => Promise<void>>();
+afterAll(async () => {
+  for (const drop of undropped) await drop();
+});
 
-  await sql.unsafe(`CREATE DATABASE "${databaseName}"`);
-  console.info(`[grids:migration-test] Isolated database: ${databaseName}`);
-  const database = new SQL(databaseUrl);
+const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
+  const isolated = await createDisposableDatabase("grids_migrate");
+  undropped.add(isolated.drop);
+  console.info(`[grids:migration-test] Isolated database: ${isolated.name}`);
+  const database = new SQL(isolated.url);
   try {
     await database`CREATE SCHEMA auth`.simple();
     await database`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
@@ -39,8 +42,12 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
     await database`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
     await run(database);
   } finally {
-    await database.close({ timeout: 5 });
-    await sql.unsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
+    try {
+      await database.close({ timeout: 5 });
+    } finally {
+      undropped.delete(isolated.drop);
+      await isolated.drop();
+    }
   }
 };
 

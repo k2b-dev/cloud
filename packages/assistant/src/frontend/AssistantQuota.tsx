@@ -1,7 +1,7 @@
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { query } from "@k2b/stdlib/solid";
 import { Button, Chat, Format, ProgressBar, useLocale } from "@k2b/ui";
-import { For, Show, onCleanup, onMount } from "solid-js";
+import { For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { quotaText } from "./quota-messages";
 

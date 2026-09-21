@@ -1,13 +1,13 @@
+import type { AiChatTaskView as AssistantChatTask, AiChatTaskOccurrenceView as AssistantChatTaskOccurrence } from "@k2b/cloud/ai";
+import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { query, timed } from "@k2b/stdlib/solid";
-import { useLocale, Button, Dropdown, NoticeCard, Placeholder, prompts, StatusBadge, Tabs, MarkdownView, toast } from "@k2b/ui";
+import { Button, Dropdown, MarkdownView, NoticeCard, Placeholder, prompts, StatusBadge, Tabs, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
-import type { AiChatTaskOccurrenceView as AssistantChatTaskOccurrence, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
 import { assistantApi } from "../api/client";
-import { navigateTo } from "@k2b/ssr/nav";
 import { taskTab, workspaceSelectionHref } from "../artifacts/workspace-state";
-import { assistantConversationHref } from "./assistant-navigation";
 import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
+import { assistantConversationHref } from "./assistant-navigation";
 import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {

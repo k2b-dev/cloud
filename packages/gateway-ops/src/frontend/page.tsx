@@ -1,5 +1,5 @@
 import { readAppRegistrySnapshot } from "@k2b/cloud";
-import { type AuthContext, getLocale, getDateConfig } from "@k2b/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "../observability/telemetry/contracts";
@@ -15,15 +15,15 @@ const rangeUrl = (url: URL, range: TelemetryRange): string => {
   return query ? `${url.pathname}?${query}` : url.pathname;
 };
 
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatRatio as fmtRatio, formatDateTime } from "@k2b/cloud/shared";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { type AppRuntimeStatus, buildAppRuntimeStatuses } from "../app-runtime-status";
 import { ssr } from "../config";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
 import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../observability/telemetry/service";
 import { listRegisteredAppStatus, type RegisteredAppStatus } from "../registered-apps";
 import RemoveRegisteredAppButton from "./RemoveRegisteredAppButton.island";
-import { gatewayOpsMessages, type GatewayOpsMessages } from "../messages";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

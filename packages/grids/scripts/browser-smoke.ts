@@ -7,14 +7,44 @@
  * regress during v1 polish. Avoid golden screenshots and fragile full-app
  * snapshots; assert visible user-facing behaviour.
  */
+import { readFile } from "node:fs/promises";
+import { parseArgs } from "node:util";
 import { type Browser, type BrowserContext, type BrowserContextOptions, chromium, type Page, type Request } from "playwright";
 
-const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "dev-admin";
-const SESSION_TOKEN = process.env.SESSION_TOKEN;
-const HEADLESS = process.env.HEADLESS !== "0";
-const KEEP = process.env.KEEP === "1";
-const TIMEOUT = Number(process.env.BROWSER_SMOKE_TIMEOUT_MS ?? 20_000);
+const { values: options } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: {
+    "base-url": { type: "string", default: "http://localhost:3000" },
+    "admin-token-file": { type: "string" },
+    "session-token-file": { type: "string" },
+    headed: { type: "boolean", default: false },
+    keep: { type: "boolean", default: false },
+    "timeout-ms": { type: "string", default: "20000" },
+    help: { type: "boolean", default: false },
+  },
+});
+if (options.help) {
+  console.log(`Usage: bun packages/grids/scripts/browser-smoke.ts [options]
+
+Options:
+  --base-url <url>             Running Cloud dev server (default http://localhost:3000)
+  --admin-token-file <path>    File containing the dev admin token (default token "dev-admin")
+  --session-token-file <path>  File containing an existing session token (skips admin login)
+  --headed                     Show the browser window
+  --keep                       Keep the fixture after the run
+  --timeout-ms <n>             Per-step timeout in milliseconds (default 20000)
+  --help                       Show this help
+`);
+  process.exit(0);
+}
+const readSecret = async (path: string | undefined): Promise<string | undefined> =>
+  path ? (await readFile(path, "utf8")).trim() : undefined;
+const BASE_URL = options["base-url"];
+const ADMIN_TOKEN = (await readSecret(options["admin-token-file"])) ?? "dev-admin";
+const SESSION_TOKEN = await readSecret(options["session-token-file"]);
+const HEADLESS = !options.headed;
+const KEEP = options.keep;
+const TIMEOUT = Number(options["timeout-ms"]);
 
 type ApiError = Error & { status?: number; body?: string };
 

@@ -1,7 +1,6 @@
-import { SpaceInvitationInputSchema } from "./commands";
 import { expect, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { SpaceComposeInputSchema } from "./commands";
+import { SpaceComposeInputSchema, SpaceInvitationInputSchema } from "./commands";
 
 test("Spaces Commands accept an empty form or bounded source reference, never copied message bodies", () => {
   const manifest = compileCapabilityManifest("spaces", {

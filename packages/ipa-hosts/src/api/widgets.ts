@@ -1,7 +1,7 @@
-import { i18n } from "@k2b/stdlib";
 import type { WidgetBlock, WidgetResponse } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
+import { i18n } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { ipaHostsService } from "../service";
 

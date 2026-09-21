@@ -1,7 +1,7 @@
 import { sql } from "bun";
 import type { CloudResourceRef } from "../contracts/capabilities";
-import { withAiShortId } from "./short-id";
 import type { AiMemoryKind } from "./memories";
+import { withAiShortId } from "./short-id";
 
 export type AiMemoryLearningRunStatus = "running" | "ok" | "skipped" | "failed";
 export type AiMemoryLearningRunKind = "turn" | "workflow";

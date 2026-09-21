@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { cancel, overview, processRun, reconcileStuckControlledDestructionRuns, start } from "./controlled-destruction";
@@ -9,7 +10,7 @@ import { create as createHold } from "./preservation-holds";
 import * as records from "./record-write";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 const createFixture = async () => {

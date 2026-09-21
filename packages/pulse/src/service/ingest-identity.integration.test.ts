@@ -1,13 +1,14 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { ServiceAccount } from "@k2b/cloud/contracts";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { PulseResourceRef } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { initializeSchema } from "../schema";
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { type CurrentStateRow, mapCurrentState } from "./telemetry-values";
 
-const enabled = process.env.PULSE_INGEST_IDENTITY_DB_TEST === "1";
+const enabled = testInfra.database !== undefined;
 const databaseTest = enabled ? test : test.skip;
 beforeAll(async () => {
   if (enabled) await initializeSchema();

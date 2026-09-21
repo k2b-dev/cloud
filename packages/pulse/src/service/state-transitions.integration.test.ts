@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { PulseState } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { ingestBatch } from "./ingest-writer";
 
-const runDbSmoke = process.env.PULSE_STATE_TRANSITIONS_DB_TEST === "1";
+const runDbSmoke = testInfra.database !== undefined;
 const postgresTest = runDbSmoke ? test : test.skip;
 
 beforeAll(async () => {

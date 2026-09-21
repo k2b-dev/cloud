@@ -1,15 +1,14 @@
-import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
-import { ContextStudio } from "../artifacts/ContextStudio";
-import { formatDictationTimestamp } from "./dictation-files";
-import { query } from "@k2b/stdlib/solid";
-import { useLocale, Button, Lightbox, Placeholder, prompts, StatusBadge, FileView, MarkdownView, TextInput } from "@k2b/ui";
-import type { JSX } from "solid-js";
 import type { AiConversationSource, AiProject, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
+import { query } from "@k2b/stdlib/solid";
+import { Button, FileView, Lightbox, MarkdownView, Placeholder, prompts, StatusBadge, TextInput, useLocale } from "@k2b/ui";
+import type { JSX } from "solid-js";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
+import { ContextStudio } from "../artifacts/ContextStudio";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
+import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import { AssistantChatContextSurface } from "./AssistantChatContextSurfaces";
 import {
   type AssistantContextFile,
@@ -31,9 +30,9 @@ import { AssistantTasksView, assistantTaskTitle, formatAssistantTaskSchedule } f
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
-  visibleAssistantReferences,
   assistantResourceTypeLabel,
   splitAssistantConversationSources,
+  visibleAssistantReferences,
 } from "./assistant-context";
 import {
   type AssistantLiveHub,
@@ -42,20 +41,30 @@ import {
   matchesAssistantInvalidation,
   useAssistantLive,
 } from "./assistant-live";
+import { formatDictationTimestamp } from "./dictation-files";
 import { assistantBrowserCopy, assistantBrowserText, useAssistantText } from "./ui-copy";
 
 export { splitAssistantConversationSources } from "./assistant-context";
 
 const CONTEXT_PREVIEW_LIMIT = 3;
 export type ContextCategory = "apps" | "files" | "sources" | "knowledge" | "tasks";
-export type ContextView = { task?: { id: string }; context?: { conversationId: string; category: ContextCategory; project?: AiProject | null }; file?: { conversationId: string; path: string }; key: string; title: string; render: () => JSX.Element };
+export type ContextView = {
+  task?: { id: string };
+  context?: { conversationId: string; category: ContextCategory; project?: AiProject | null };
+  file?: { conversationId: string; path: string };
+  key: string;
+  title: string;
+  render: () => JSX.Element;
+};
 type ContextNavigation = {
   onOpenView?: (view: ContextView) => void;
   category?: ContextCategory;
 };
 
 export const assistantChatContextHasContent = (snapshot: AssistantChatContextSnapshot): boolean =>
-  visibleAssistantReferences(snapshot.sources, snapshot.chatId, snapshot.tasks.find((task) => task.state !== "completed")?.id).some((source) => source.kind !== "file") ||
+  visibleAssistantReferences(snapshot.sources, snapshot.chatId, snapshot.tasks.find((task) => task.state !== "completed")?.id).some(
+    (source) => source.kind !== "file",
+  ) ||
   snapshot.runs.length > 0 ||
   snapshot.files.length > 0 ||
   snapshot.tasks.some((task) => task.state !== "completed");
@@ -148,7 +157,9 @@ const createAssistantChatContextState = (props: AssistantChatContextQueryProps) 
 
 type AssistantChatContextState = ReturnType<typeof createAssistantChatContextState>;
 
-function AssistantChatContextView(props: ContextNavigation & { state: AssistantChatContextState; onOpenApp?: (id: string, title: string, start?: boolean) => void }) {
+function AssistantChatContextView(
+  props: ContextNavigation & { state: AssistantChatContextState; onOpenApp?: (id: string, title: string, start?: boolean) => void },
+) {
   const live = useAssistantLive();
   const openRun = (taskId: string, occurrenceId: string) => void openAssistantTaskRun(taskId, occurrenceId, live);
   const locale = useLocale();
@@ -156,22 +167,52 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
   const [search, setSearch] = createSignal("");
   const includes = (title: string) => !props.category || title.toLocaleLowerCase().includes(search().trim().toLocaleLowerCase());
   const section = (category: ContextCategory) => !props.category || props.category === category;
-  const limit = () => props.category ? Infinity : CONTEXT_PREVIEW_LIMIT;
-  const openMarkdown = (title: string, markdown: string, icon?: string) => props.onOpenView
-    ? props.onOpenView({ key: `${props.state.context()?.chat.chatId}:markdown:${title}`, title, render: () => <MarkdownView markdown={markdown} headingScale="compact" /> })
-    : openAssistantMarkdown(title, markdown, icon);
+  const limit = () => (props.category ? Infinity : CONTEXT_PREVIEW_LIMIT);
+  const openMarkdown = (title: string, markdown: string, icon?: string) =>
+    props.onOpenView
+      ? props.onOpenView({
+          key: `${props.state.context()?.chat.chatId}:markdown:${title}`,
+          title,
+          render: () => <MarkdownView markdown={markdown} headingScale="compact" />,
+        })
+      : openAssistantMarkdown(title, markdown, icon);
   const openFiles = (files: readonly AssistantContextFile[], selected?: AssistantContextFile) => {
     if (!props.onOpenView) return openAssistantContextFiles(files, selected);
     if (!selected) return overview("files", text("Files"));
     const file = selected;
-    props.onOpenView({ file: file.scope === "chat" ? { conversationId: props.state.context()!.chat.chatId, path: file.path } : undefined, key: `${props.state.context()!.chat.chatId}:${file.id}`, title: file.displayName ?? file.path.split("/").pop()!, render: () => <FileView previewPreferencesKey="assistant.csv-preview" file={{ path: file.path }} load={() => file.source.read(file.path)} downloadHref={file.source.downloadHref?.(file.path)} /> });
+    props.onOpenView({
+      file: file.scope === "chat" ? { conversationId: props.state.context()!.chat.chatId, path: file.path } : undefined,
+      key: `${props.state.context()!.chat.chatId}:${file.id}`,
+      title: file.displayName ?? file.path.split("/").pop()!,
+      render: () => (
+        <FileView
+          previewPreferencesKey="assistant.csv-preview"
+          file={{ path: file.path }}
+          load={() => file.source.read(file.path)}
+          downloadHref={file.source.downloadHref?.(file.path)}
+        />
+      ),
+    });
   };
-  const openTask = (task: AssistantChatTask) => props.onOpenView?.({ task: { id: task.id }, key: `task:${task.id}`, title: assistantTaskTitle(task), render: () => null });
+  const openTask = (task: AssistantChatTask) =>
+    props.onOpenView?.({ task: { id: task.id }, key: `task:${task.id}`, title: assistantTaskTitle(task), render: () => null });
   const overview = (category: ContextCategory, title: string) => {
     const context = props.state.context();
     if (!context || !props.onOpenView) return;
-    props.onOpenView({ context: { conversationId: context.chat.chatId, category, project: context.project }, key: `${context.chat.chatId}:${category}`, title,
-      render: () => <AssistantChatContextContent chatId={context.chat.chatId} project={context.project} category={category} onOpenView={props.onOpenView} onOpenApp={props.onOpenApp} /> });
+    props.onOpenView({
+      context: { conversationId: context.chat.chatId, category, project: context.project },
+      key: `${context.chat.chatId}:${category}`,
+      title,
+      render: () => (
+        <AssistantChatContextContent
+          chatId={context.chat.chatId}
+          project={context.project}
+          category={category}
+          onOpenView={props.onOpenView}
+          onOpenApp={props.onOpenApp}
+        />
+      ),
+    });
   };
   const [lightbox, setLightbox] = createSignal<{ images: Awaited<ReturnType<typeof loadAssistantContextImages>>; index: number } | null>(
     null,
@@ -225,7 +266,10 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
         const hasMixedScope = (items: readonly AssistantContextFile[]) =>
           items.some((file) => file.scope === "chat") && items.some((file) => file.scope === "project");
         const openImages = async (selected?: AssistantContextFile) => {
-          if (props.onOpenView) { openFiles(images(), selected); return; }
+          if (props.onOpenView) {
+            openFiles(images(), selected);
+            return;
+          }
           try {
             const loaded = await loadAssistantContextImages(files());
             const index = selected
@@ -236,7 +280,9 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
               : 0;
             setLightbox({ images: loaded, index });
           } catch (error) {
-            void prompts.error(error instanceof Error ? error.message : text("Images could not be loaded."), { title: text("Could not open images") });
+            void prompts.error(error instanceof Error ? error.message : text("Images could not be loaded."), {
+              title: text("Could not open images"),
+            });
           }
         };
         const allReferences = () => [
@@ -257,9 +303,16 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
             reference,
           })),
         ];
-        const refOf = (item: ReturnType<typeof allReferences>[number]) => item.kind === "source" ? item.source.ref : item.reference.ref;
-        const references = () => allReferences().filter(item => refOf(item)?.type !== "assistant.artifact");
-        const apps = () => [...new Map(allReferences().filter(item => refOf(item)?.type === "assistant.artifact").reverse().map(item => [refOf(item)!.id, item])).values()];
+        const refOf = (item: ReturnType<typeof allReferences>[number]) => (item.kind === "source" ? item.source.ref : item.reference.ref);
+        const references = () => allReferences().filter((item) => refOf(item)?.type !== "assistant.artifact");
+        const apps = () => [
+          ...new Map(
+            allReferences()
+              .filter((item) => refOf(item)?.type === "assistant.artifact")
+              .reverse()
+              .map((item) => [refOf(item)!.id, item]),
+          ).values(),
+        ];
         const openReferences = async () => {
           const items = references();
           const selected = await prompts.search<(typeof items)[number]>(
@@ -289,8 +342,28 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
         };
         return (
           <div class={props.category ? "flex flex-col gap-4" : "flex flex-col gap-3"}>
-            <Show when={props.category && props.category !== "tasks"}><TextInput value={search()} onValueChange={setSearch} aria-label={text("Search")} placeholder={text("Search")} /></Show>
-            <Show when={props.category && !(props.category === "apps" ? apps().filter(app => includes(app.title)).length + value().chat.runs.length : props.category === "files" ? files().filter(file => includes(file.displayName ?? file.path)).length : props.category === "sources" ? references().filter(item => includes(item.title)).length + value().chat.sources.filter(item => includes(item.title)).length : props.category === "knowledge" ? (value().project ? 1 : 0) + (value().projectContext?.knowledge.length ?? 0) : value().chat.tasks.length)}><p role="status" class="text-sm text-secondary">{text(search() ? "No matching items." : "No items yet.")}</p></Show>
+            <Show when={props.category && props.category !== "tasks"}>
+              <TextInput value={search()} onValueChange={setSearch} aria-label={text("Search")} placeholder={text("Search")} />
+            </Show>
+            <Show
+              when={
+                props.category &&
+                !(props.category === "apps"
+                  ? apps().filter((app) => includes(app.title)).length + value().chat.runs.length
+                  : props.category === "files"
+                    ? files().filter((file) => includes(file.displayName ?? file.path)).length
+                    : props.category === "sources"
+                      ? references().filter((item) => includes(item.title)).length +
+                        value().chat.sources.filter((item) => includes(item.title)).length
+                      : props.category === "knowledge"
+                        ? (value().project ? 1 : 0) + (value().projectContext?.knowledge.length ?? 0)
+                        : value().chat.tasks.length)
+              }
+            >
+              <p role="status" class="text-sm text-secondary">
+                {text(search() ? "No matching items." : "No items yet.")}
+              </p>
+            </Show>
             <Show when={section("knowledge") && value().project}>
               {(project) => (
                 <AssistantContextSection title={project().name} identity>
@@ -309,7 +382,13 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
               )}
             </Show>
 
-            <Show when={props.category === "knowledge"}><For each={value().projectContext?.knowledge.filter(item => includes(item.title))}>{item => <AssistantContextRow title={item.title} icon="ti ti-bulb" onClick={() => void openMarkdown(item.title, item.content)} />}</For></Show>
+            <Show when={props.category === "knowledge"}>
+              <For each={value().projectContext?.knowledge.filter((item) => includes(item.title))}>
+                {(item) => (
+                  <AssistantContextRow title={item.title} icon="ti ti-bulb" onClick={() => void openMarkdown(item.title, item.content)} />
+                )}
+              </For>
+            </Show>
             <Show when={!props.category && section("knowledge") && value().projectContext}>
               {(project) => (
                 <Show when={project().knowledge[0]}>
@@ -322,7 +401,13 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
                           onClick={() => void openMarkdown(item().title, item().content, "ti ti-bulb")}
                         />
                         <Show when={!props.category && project().knowledge.length > 1}>
-                          <AssistantContextViewAll onClick={() => props.onOpenView ? overview("knowledge", text("Project knowledge")) : void openAssistantKnowledgeSearch(project().knowledge)} />
+                          <AssistantContextViewAll
+                            onClick={() =>
+                              props.onOpenView
+                                ? overview("knowledge", text("Project knowledge"))
+                                : void openAssistantKnowledgeSearch(project().knowledge)
+                            }
+                          />
                         </Show>
                       </AssistantContextRows>
                     </AssistantContextSection>
@@ -334,7 +419,11 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
             <Show when={section("sources") && value().chat.sources.length > 0}>
               <AssistantContextSection title={text("Sources")}>
                 <AssistantContextRows>
-                  <For each={value().chat.sources.filter(source => includes(source.title)).slice(0, limit())}>
+                  <For
+                    each={value()
+                      .chat.sources.filter((source) => includes(source.title))
+                      .slice(0, limit())}
+                  >
                     {(source) => (
                       <AssistantContextRow
                         icon={source.icon}
@@ -345,7 +434,14 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
                     )}
                   </For>
                   <Show when={!props.category && value().chat.sources.length > CONTEXT_PREVIEW_LIMIT}>
-                    <AssistantContextViewAll count={value().chat.sources.length} onClick={() => props.onOpenView ? overview("sources", text("Sources")) : void openSourceSearch(text("Sources"), value().chat.sources)} />
+                    <AssistantContextViewAll
+                      count={value().chat.sources.length}
+                      onClick={() =>
+                        props.onOpenView
+                          ? overview("sources", text("Sources"))
+                          : void openSourceSearch(text("Sources"), value().chat.sources)
+                      }
+                    />
                   </Show>
                 </AssistantContextRows>
               </AssistantContextSection>
@@ -353,15 +449,34 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
 
             <Show when={section("apps") && (apps().length > 0 || value().chat.runs.length > 0)}>
               <AssistantContextSection title={props.category === "apps" ? "" : "Studio"}>
-                <Show when={props.category === "apps"} fallback={
-                  <AssistantContextRows>
-                    <For each={apps().filter(app => includes(app.title)).slice(0, limit())}>{app => <AssistantContextRow
-                      icon={app.kind === "source" ? app.source.icon ?? "ti ti-app-window" : "ti ti-app-window"}
-                      title={app.title} description={app.kind === "source" ? app.source.preview ?? undefined : undefined}
-                      onClick={() => props.onOpenApp ? props.onOpenApp(refOf(app)!.id, app.title) : void openAssistantCloudReference(app.title, refOf(app)!)} />}</For>
-                    <Show when={!props.category}><AssistantContextViewAll count={apps().length + value().chat.runCount} onClick={() => overview("apps", "Studio")} /></Show>
-                  </AssistantContextRows>
-                }>
+                <Show
+                  when={props.category === "apps"}
+                  fallback={
+                    <AssistantContextRows>
+                      <For
+                        each={apps()
+                          .filter((app) => includes(app.title))
+                          .slice(0, limit())}
+                      >
+                        {(app) => (
+                          <AssistantContextRow
+                            icon={app.kind === "source" ? (app.source.icon ?? "ti ti-app-window") : "ti ti-app-window"}
+                            title={app.title}
+                            description={app.kind === "source" ? (app.source.preview ?? undefined) : undefined}
+                            onClick={() =>
+                              props.onOpenApp
+                                ? props.onOpenApp(refOf(app)!.id, app.title)
+                                : void openAssistantCloudReference(app.title, refOf(app)!)
+                            }
+                          />
+                        )}
+                      </For>
+                      <Show when={!props.category}>
+                        <AssistantContextViewAll count={apps().length + value().chat.runCount} onClick={() => overview("apps", "Studio")} />
+                      </Show>
+                    </AssistantContextRows>
+                  }
+                >
                   <ContextStudio snapshot={value().chat} search={search()} refresh={props.state.refresh} onStart={props.onOpenApp} />
                 </Show>
               </AssistantContextSection>
@@ -370,7 +485,11 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
             <Show when={section("sources") && references().length > 0}>
               <AssistantContextSection title={assistantContextCountTitle(references().length, text("Reference"), text("References"))}>
                 <AssistantContextRows>
-                  <For each={references().filter(item => includes(item.title)).slice(0, limit())}>
+                  <For
+                    each={references()
+                      .filter((item) => includes(item.title))
+                      .slice(0, limit())}
+                  >
                     {(reference) => (
                       <AssistantContextRow
                         icon={reference.icon}
@@ -391,7 +510,10 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
                     )}
                   </For>
                   <Show when={!props.category && references().length > CONTEXT_PREVIEW_LIMIT}>
-                    <AssistantContextViewAll count={references().length} onClick={() => props.onOpenView ? overview("sources", text("Sources")) : void openReferences()} />
+                    <AssistantContextViewAll
+                      count={references().length}
+                      onClick={() => (props.onOpenView ? overview("sources", text("Sources")) : void openReferences())}
+                    />
                   </Show>
                 </AssistantContextRows>
               </AssistantContextSection>
@@ -400,7 +522,11 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
             <Show when={section("files") && images().length > 0}>
               <AssistantContextSection title={assistantContextCountTitle(images().length, text("Image"), text("Images"))}>
                 <AssistantContextRows>
-                  <For each={images().filter(file => includes(file.displayName ?? file.path)).slice(0, limit())}>
+                  <For
+                    each={images()
+                      .filter((file) => includes(file.displayName ?? file.path))
+                      .slice(0, limit())}
+                  >
                     {(file) => (
                       <AssistantContextRow
                         icon="ti ti-photo"
@@ -421,10 +547,19 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
             <Show when={section("files") && voiceInputs().length > 0}>
               <AssistantContextSection title={text("Voice inputs")}>
                 <AssistantContextRows>
-                  <For each={voiceInputs().filter(file => includes(file.displayName ?? file.path)).slice(0, limit())}>{(file) => (
-                    <AssistantContextRow icon="ti ti-microphone" title={file.displayName!}
-                      onClick={() => void openFiles(voiceInputs(), file)} />
-                  )}</For>
+                  <For
+                    each={voiceInputs()
+                      .filter((file) => includes(file.displayName ?? file.path))
+                      .slice(0, limit())}
+                  >
+                    {(file) => (
+                      <AssistantContextRow
+                        icon="ti ti-microphone"
+                        title={file.displayName!}
+                        onClick={() => void openFiles(voiceInputs(), file)}
+                      />
+                    )}
+                  </For>
                   <Show when={!props.category && voiceInputs().length > CONTEXT_PREVIEW_LIMIT}>
                     <AssistantContextViewAll count={voiceInputs().length} onClick={() => void openFiles(voiceInputs())} />
                   </Show>
@@ -435,7 +570,11 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
             <Show when={section("files") && regularFiles().length > 0}>
               <AssistantContextSection title={assistantContextCountTitle(regularFiles().length, text("File"), text("Files"))}>
                 <AssistantContextRows>
-                  <For each={regularFiles().filter(file => includes(file.displayName ?? file.path)).slice(0, limit())}>
+                  <For
+                    each={regularFiles()
+                      .filter((file) => includes(file.displayName ?? file.path))
+                      .slice(0, limit())}
+                  >
                     {(file) => (
                       <AssistantContextRow
                         icon="ti ti-file"
@@ -453,24 +592,42 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
               </AssistantContextSection>
             </Show>
 
-            <Show when={props.category === "tasks"}><AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} onOpenTask={props.onOpenView ? openTask : undefined} /></Show>
+            <Show when={props.category === "tasks"}>
+              <AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} onOpenTask={props.onOpenView ? openTask : undefined} />
+            </Show>
             <Show when={!props.category && section("tasks") && value().chat.tasks[0]}>
               {(task) => {
                 const status = () => taskStatus(task(), text);
                 return (
                   <AssistantContextSection title={text("Scheduled")}>
                     <AssistantContextRows>
-                      <AssistantContextRow title={assistantTaskTitle(task())} description={formatAssistantTaskSchedule(task(), locale())}
+                      <AssistantContextRow
+                        title={assistantTaskTitle(task())}
+                        description={formatAssistantTaskSchedule(task(), locale())}
                         onClick={props.onOpenView ? () => openTask(task()) : undefined}
-                        trailing={<StatusBadge label={status().label} tone={status().tone} variant="text" />} />
+                        trailing={<StatusBadge label={status().label} tone={status().tone} variant="text" />}
+                      />
                       <Show when={!props.category && value().chat.tasks.length > 1}>
                         <AssistantContextViewAll
                           onClick={() =>
-                            props.onOpenView ? overview("tasks", text("Scheduled tasks")) : void prompts.dialog<void>(() => <AssistantLiveProvider value={live}><AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} onOpenTask={props.onOpenView ? openTask : undefined} /></AssistantLiveProvider>, {
-                              title: text("Scheduled tasks"),
-                              icon: "ti ti-calendar-time",
-                              size: "large",
-                            })
+                            props.onOpenView
+                              ? overview("tasks", text("Scheduled tasks"))
+                              : void prompts.dialog<void>(
+                                  () => (
+                                    <AssistantLiveProvider value={live}>
+                                      <AssistantTasksView
+                                        chatId={value().chat.chatId}
+                                        onOpenRun={openRun}
+                                        onOpenTask={props.onOpenView ? openTask : undefined}
+                                      />
+                                    </AssistantLiveProvider>
+                                  ),
+                                  {
+                                    title: text("Scheduled tasks"),
+                                    icon: "ti ti-calendar-time",
+                                    size: "large",
+                                  },
+                                )
                           }
                         />
                       </Show>
@@ -495,14 +652,16 @@ function AssistantChatContextView(props: ContextNavigation & { state: AssistantC
   );
 }
 
-export function AssistantChatContextContent(props: ContextNavigation & {
-  chatId: string;
-  project?: AiProject | null;
-  initial?: AssistantChatContextSnapshot | null;
-  onPresenceChange?: (hasContent: boolean | null) => void;
-  onSnapshotChange?: (snapshot: AssistantChatContextSnapshot | null) => void;
-  onOpenApp?: (id: string, title: string, start?: boolean) => void;
-}) {
+export function AssistantChatContextContent(
+  props: ContextNavigation & {
+    chatId: string;
+    project?: AiProject | null;
+    initial?: AssistantChatContextSnapshot | null;
+    onPresenceChange?: (hasContent: boolean | null) => void;
+    onSnapshotChange?: (snapshot: AssistantChatContextSnapshot | null) => void;
+    onOpenApp?: (id: string, title: string, start?: boolean) => void;
+  },
+) {
   const state = createAssistantChatContextState(props);
   createEffect(() => {
     props.onPresenceChange?.(state.presence());
@@ -511,14 +670,16 @@ export function AssistantChatContextContent(props: ContextNavigation & {
   return <AssistantChatContextView state={state} onOpenApp={props.onOpenApp} category={props.category} onOpenView={props.onOpenView} />;
 }
 
-export function AssistantChatContextPanel(props: ContextNavigation & {
-  chatId: string;
-  project?: AiProject | null;
-  initial?: AssistantChatContextSnapshot | null;
-  onPresenceChange?: (hasContent: boolean | null) => void;
-  onSnapshotChange?: (snapshot: AssistantChatContextSnapshot | null) => void;
-  onOpenApp?: (id: string, title: string, start?: boolean) => void;
-}) {
+export function AssistantChatContextPanel(
+  props: ContextNavigation & {
+    chatId: string;
+    project?: AiProject | null;
+    initial?: AssistantChatContextSnapshot | null;
+    onPresenceChange?: (hasContent: boolean | null) => void;
+    onSnapshotChange?: (snapshot: AssistantChatContextSnapshot | null) => void;
+    onOpenApp?: (id: string, title: string, start?: boolean) => void;
+  },
+) {
   const state = createAssistantChatContextState(props);
   createEffect(() => {
     props.onPresenceChange?.(state.presence());
@@ -533,11 +694,36 @@ export function AssistantChatContextPanel(props: ContextNavigation & {
   );
 }
 
-export const openAssistantChatContextDialog = (chatId: string, project: AiProject | null, live: AssistantLiveHub, onOpenApp?: (id: string, title: string, start?: boolean) => void, onOpenView?: (view: ContextView) => void) =>
+export const openAssistantChatContextDialog = (
+  chatId: string,
+  project: AiProject | null,
+  live: AssistantLiveHub,
+  onOpenApp?: (id: string, title: string, start?: boolean) => void,
+  onOpenView?: (view: ContextView) => void,
+) =>
   prompts.dialog<void>(
     (close) => (
       <AssistantLiveProvider value={live}>
-        <AssistantChatContextContent chatId={chatId} project={project} onOpenApp={onOpenApp ? (id, title, start) => { onOpenApp(id, title, start); close(); } : undefined} onOpenView={onOpenView ? view => { onOpenView(view); close(); } : undefined} />
+        <AssistantChatContextContent
+          chatId={chatId}
+          project={project}
+          onOpenApp={
+            onOpenApp
+              ? (id, title, start) => {
+                  onOpenApp(id, title, start);
+                  close();
+                }
+              : undefined
+          }
+          onOpenView={
+            onOpenView
+              ? (view) => {
+                  onOpenView(view);
+                  close();
+                }
+              : undefined
+          }
+        />
       </AssistantLiveProvider>
     ),
     { title: assistantBrowserText("Chat context"), icon: "ti ti-adjustments-horizontal", size: "medium" },

@@ -1,7 +1,7 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { SegmentedControl, useLocale } from "@k2b/ui";
-import { buildNotificationViewUrl, type NotificationAdminView } from "./filter-state";
 import { gatewayOpsMessages } from "../../../messages";
+import { buildNotificationViewUrl, type NotificationAdminView } from "./filter-state";
 
 export default function NotificationViewSwitch(props: { view: NotificationAdminView }) {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);

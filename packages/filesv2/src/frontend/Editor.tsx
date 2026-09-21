@@ -57,7 +57,8 @@ export default function Editor(props: { launch: OfficeEditorLaunch; onBack: () =
     setTheme(cloudTheme());
     setDark(isDark());
     const onMessage = (event: MessageEvent) => {
-      if (event.source !== frame.contentWindow || event.origin !== new URL(props.launch.action).origin || typeof event.data !== "string") return;
+      if (event.source !== frame.contentWindow || event.origin !== new URL(props.launch.action).origin || typeof event.data !== "string")
+        return;
       let message: { MessageId?: string; Values?: Record<string, unknown> };
       try {
         message = JSON.parse(event.data);
@@ -87,14 +88,30 @@ export default function Editor(props: { launch: OfficeEditorLaunch; onBack: () =
     <AppWorkspace.Main scroll={false} class="filesv2-editor" aria-busy={!loaded()}>
       <Show when={props.launch.managed === false && props.launch.canWrite}>
         <div class="shrink-0 p-3">
-          <InlineGuidance tone="warning" icon="ti ti-alert-triangle">{b().editorExternalWrites}</InlineGuidance>
+          <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
+            {b().editorExternalWrites}
+          </InlineGuidance>
         </div>
       </Show>
       <div class="filesv2-editor__frame">
         <iframe ref={frame} name={frameName} title={props.launch.entry.name} allow="clipboard-read; clipboard-write" />
         <Show when={!loaded()}>
           <div class="filesv2-editor__loading">
-            <Show when={!failed()} fallback={<Placeholder state="error" variant="panel" title={b().editorFailed} action={<Button size="sm" variant="secondary" onClick={back}>{b().backToFolder}</Button>} />}>
+            <Show
+              when={!failed()}
+              fallback={
+                <Placeholder
+                  state="error"
+                  variant="panel"
+                  title={b().editorFailed}
+                  action={
+                    <Button size="sm" variant="secondary" onClick={back}>
+                      {b().backToFolder}
+                    </Button>
+                  }
+                />
+              }
+            >
               <Placeholder state="loading" variant="panel" description={b().editorLoading} />
             </Show>
           </div>
@@ -104,7 +121,11 @@ export default function Editor(props: { launch: OfficeEditorLaunch; onBack: () =
         <input type="hidden" name="access_token" value={props.launch.token} />
         <input type="hidden" name="access_token_ttl" value={String(props.launch.tokenTtl)} />
         <input type="hidden" name="css_variables" value={theme()} />
-        <input type="hidden" name="ui_defaults" value={`SavedUIState=false;UIMode=compact;TextRuler=false;TextSidebar=false;SpreadsheetSidebar=false;PresentationSidebar=false;UITheme=${dark() ? "dark" : "light"}`} />
+        <input
+          type="hidden"
+          name="ui_defaults"
+          value={`SavedUIState=false;UIMode=compact;TextRuler=false;TextSidebar=false;SpreadsheetSidebar=false;PresentationSidebar=false;UITheme=${dark() ? "dark" : "light"}`}
+        />
         <input type="hidden" name="lang" value={locale()} />
       </form>
     </AppWorkspace.Main>

@@ -134,10 +134,12 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
     const preview = dom.root.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Preview"]');
     if (!preview) throw new Error(dom.root.innerHTML);
     preview.getBoundingClientRect = () => rect(80, 0, 100, 40);
-    const pressPreview = (preview as HTMLButtonElement & {
-      $$pointerdown?: (event: PointerEvent & { currentTarget: HTMLButtonElement }) => void;
-      $$click?: (event?: MouseEvent) => void;
-    }).$$pointerdown;
+    const pressPreview = (
+      preview as HTMLButtonElement & {
+        $$pointerdown?: (event: PointerEvent & { currentTarget: HTMLButtonElement }) => void;
+        $$click?: (event?: MouseEvent) => void;
+      }
+    ).$$pointerdown;
     const clickPreview = (preview as HTMLButtonElement & { $$click?: (event?: MouseEvent) => void }).$$click;
     if (!pressPreview || !clickPreview) throw new Error("Expected preview pointer handlers");
 
@@ -218,9 +220,11 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
     if (!preview || !surface) throw new Error(dom.root.innerHTML);
     preview.getBoundingClientRect = () => rect(80, 0, 100, 40);
     surface.getBoundingClientRect = () => rect(80, 0, 100, 40);
-    const pressPreview = (preview as HTMLButtonElement & {
-      $$pointerdown?: (event: PointerEvent & { currentTarget: HTMLButtonElement }) => void;
-    }).$$pointerdown;
+    const pressPreview = (
+      preview as HTMLButtonElement & {
+        $$pointerdown?: (event: PointerEvent & { currentTarget: HTMLButtonElement }) => void;
+      }
+    ).$$pointerdown;
     if (!pressPreview) throw new Error("Expected preview pointer handler");
     dom.document.addEventListener(
       "pointerdown",
@@ -302,7 +306,7 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
     expect(dom.root.textContent).toContain("History content");
     expect(dom.root.textContent).not.toContain("Source editor");
     const source = dom.root.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Source"]');
-    const activateSource = (source as HTMLButtonElement & { $$click?: () => void } | null)?.$$click;
+    const activateSource = (source as (HTMLButtonElement & { $$click?: () => void }) | null)?.$$click;
     expect(typeof activateSource).toBe("function");
     activateSource?.();
     await Promise.resolve();
@@ -778,9 +782,7 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
       }),
     );
     await Promise.resolve();
-    const pointerPreview = dom.window.document.body.querySelector(
-      ".k2b-panes__drag-preview[aria-hidden='true']",
-    ) as HTMLElement | null;
+    const pointerPreview = dom.window.document.body.querySelector(".k2b-panes__drag-preview[aria-hidden='true']") as HTMLElement | null;
     expect(pointerPreview).not.toBeNull();
     expect(pointerPreview).not.toBe(previewSource);
     expect(pointerPreview?.style.width).toBe("92px");

@@ -12,9 +12,9 @@ import {
 } from "@k2b/ui";
 import { type Accessor, createSignal, Show } from "solid-js";
 import type { PulseDashboard } from "../../contracts";
+import { usePulseMessages } from "../use-messages";
 import { DASHBOARD_REFRESH_OPTIONS, refreshOptionFromConfig } from "./helpers";
 import type { RefreshIntervalOption } from "./types";
-import { usePulseMessages } from "../use-messages";
 
 type DashboardSettingsDialogOptions = {
   currentDashboard: Accessor<PulseDashboard>;
@@ -62,12 +62,7 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
             closeLabel={t().close}
           >
             <SettingsModal.Group title={t().dashboard}>
-              <SettingsModal.Tab
-                id="general"
-                title={t().general}
-                icon="ti ti-settings"
-                description={t().dashboardGeneralDescription}
-              >
+              <SettingsModal.Tab id="general" title={t().general} icon="ti ti-settings" description={t().dashboardGeneralDescription}>
                 <SettingsGroup title={t().display} description={t().dashboardDisplayDescription}>
                   <SettingsField
                     label={t().name}
@@ -109,17 +104,10 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
             </SettingsModal.Group>
 
             <SettingsModal.Group title={t().sharing}>
-              <SettingsModal.Tab
-                id="public-link"
-                title={t().publicLink}
-                icon="ti ti-link"
-                description={t().publicLinkDescription}
-              >
+              <SettingsModal.Tab id="public-link" title={t().publicLink} icon="ti ti-link" description={t().publicLinkDescription}>
                 <SettingsGroup title={t().publicAccess} description={t().changesImmediate}>
                   <NoticeCard tone={options.currentDashboard().publicEnabled ? "success" : "info"} icon={false}>
-                    {options.currentDashboard().publicEnabled
-                      ? t().publicEnabledDescription
-                      : t().publicDisabledDescription}
+                    {options.currentDashboard().publicEnabled ? t().publicEnabledDescription : t().publicDisabledDescription}
                   </NoticeCard>
                   <div class="flex flex-wrap items-center gap-2">
                     <Button

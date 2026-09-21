@@ -41,8 +41,8 @@ import {
 } from "@codemirror/autocomplete";
 import { apiClient } from "@/api/client";
 import { createNotebookFetchCache } from "./_lib/notebook-fetch-cache";
-import { isInsideFencedCode } from "./editor-scope";
 import { withIcon } from "./completion-icon";
+import { isInsideFencedCode } from "./editor-scope";
 
 /** Notebook tag-search response shape. */
 type TagSummary = { tag: string; count: number };

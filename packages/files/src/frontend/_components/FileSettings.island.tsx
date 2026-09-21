@@ -1,6 +1,6 @@
-import { IconButton, MultiSelectInput, SegmentedControl, Switch, Tooltip, useLocale } from "@k2b/ui";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
+import { IconButton, MultiSelectInput, SegmentedControl, Switch, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { filesMessages } from "../messages";
 

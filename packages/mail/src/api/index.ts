@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
 import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
@@ -18,7 +18,6 @@ import {
   spacesMailDestinationsSchema,
 } from "../app-integration-contracts";
 import { attachmentPreviewKind, attachmentPreviewSignatureMatches, baseAttachmentContentType } from "../attachment-preview-policy";
-import { localizeMailError } from "../service/error-messages";
 import {
   type AttachmentLink,
   type AttachmentLinkPage,
@@ -138,6 +137,7 @@ import {
   triage,
 } from "../service";
 import { resolveByteRange } from "../service/byte-range";
+import { localizeMailError } from "../service/error-messages";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
 import { loadMailboxConversationDetail, loadMailboxPageData } from "../service/workspace";

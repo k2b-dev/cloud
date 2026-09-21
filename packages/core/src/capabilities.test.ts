@@ -19,9 +19,9 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
-import { audit, accountsAppService } from "@k2b/cloud/services";
-import { accessRevision } from "@k2b/cloud/server";
 import * as accessService from "@k2b/cloud/server";
+import { accessRevision } from "@k2b/cloud/server";
+import { accountsAppService, audit } from "@k2b/cloud/services";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 import { aiCapabilities } from "./capabilities";
 
@@ -156,24 +156,62 @@ afterEach(() => mock.restore());
 describe("Core AI capabilities", () => {
   test("recipient discovery preserves actor visibility and returns directly usable principals", async () => {
     const list = spyOn(accountsAppService.entity, "list").mockResolvedValue({
-      items: [{ kind: "user", user }], page: 2, perPage: 1, hasNext: true, total: 3,
+      items: [{ kind: "user", user }],
+      page: 2,
+      perPage: 1,
+      hasNext: true,
+      total: 3,
     });
-    const result = await aiCapabilities.queries["entities.search"].run({ query: "Assistant", types: ["user"], cursor: "2", limit: 1 }, context);
-    expect(list).toHaveBeenCalledWith(expect.objectContaining({ actor: { userId: user.id, uid: user.uid, roles: user.roles, provider: user.provider }, pagination: { page: 2, perPage: 1 } }));
-    expect(result).toMatchObject({ ok: true, data: { data: [{ principal: { type: "user", userId: user.id }, label: user.displayName }], page: { nextCursor: "3" } } });
+    const result = await aiCapabilities.queries["entities.search"].run(
+      { query: "Assistant", types: ["user"], cursor: "2", limit: 1 },
+      context,
+    );
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor: { userId: user.id, uid: user.uid, roles: user.roles, provider: user.provider },
+        pagination: { page: 2, perPage: 1 },
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      data: { data: [{ principal: { type: "user", userId: user.id }, label: user.displayName }], page: { nextCursor: "3" } },
+    });
   });
 
   test("Skill access changes require a fresh review and pass the exact grant revision to the owning service", async () => {
     spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
-    const grants = [{ id: "AbC234", shortId: "AbC234", principal: { type: "user" as const, userId: user.id }, permission: "admin" as const, createdAt: "" }];
+    const grants = [
+      {
+        id: "AbC234",
+        shortId: "AbC234",
+        principal: { type: "user" as const, userId: user.id },
+        permission: "admin" as const,
+        createdAt: "",
+      },
+    ];
     spyOn(aiSkills, "listAccess").mockResolvedValue(grants);
     const update = spyOn(aiSkills, "updateAccess").mockResolvedValue(true);
-    spyOn(accessService, "resolveDisplayNames").mockImplementation(async entries => entries.map(entry => ({...entry,displayName:"Alice Example"})));
+    spyOn(accessService, "resolveDisplayNames").mockImplementation(async (entries) =>
+      entries.map((entry) => ({ ...entry, displayName: "Alice Example" })),
+    );
     const operation = aiCapabilities.actions["ai.skill.access.change"];
-    const input = { skillId: skill.shortId, accessId: "AbC234", permission: "read" as const, expectedAccessRevision: accessRevision(grants) };
+    const input = {
+      skillId: skill.shortId,
+      accessId: "AbC234",
+      permission: "read" as const,
+      expectedAccessRevision: accessRevision(grants),
+    };
     const manifest = compileCapabilityManifest("core", aiCapabilities);
-    expect(manifest.actions.find(action => action.localId === "ai.skill.access.change")?.approval).toBeUndefined();
-    expect(await operation.review(input, context)).toMatchObject({ ok: true, data: { details: expect.arrayContaining([{ label: "Before", value: "admin" }, { label: "After", value: "read" }]) } });
+    expect(manifest.actions.find((action) => action.localId === "ai.skill.access.change")?.approval).toBeUndefined();
+    expect(await operation.review(input, context)).toMatchObject({
+      ok: true,
+      data: {
+        details: expect.arrayContaining([
+          { label: "Before", value: "admin" },
+          { label: "After", value: "read" },
+        ]),
+      },
+    });
     expect(JSON.stringify(await operation.review(input, context))).toContain("Alice Example");
     expect(JSON.stringify(await operation.review(input, context))).toContain(user.id);
     expect(await operation.review({ ...input, expectedAccessRevision: "0".repeat(64) }, context)).toMatchObject({ ok: false });
@@ -801,12 +839,19 @@ describe("Core AI capabilities", () => {
 
 test("task reference metadata uses the request locale with English fallback", async () => {
   spyOn(aiChatTasks, "list").mockResolvedValue([scheduledTask]);
-  for (const [locale, prefix] of [["de-DE", "Aktiv · Wiederkehrend:"], ["fr", "Active · Recurring:"]] as const) {
+  for (const [locale, prefix] of [
+    ["de-DE", "Aktiv · Wiederkehrend:"],
+    ["fr", "Active · Recurring:"],
+  ] as const) {
     const result = await aiCapabilities.queries["ai.tasks.list"].run({ limit: 20 }, { ...context, locale });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("Task query failed");
-    expect(result.data.refs?.[0]).toMatchObject({ type: "core.ai.task", id: scheduledTask.shortId,
-      title: scheduledTask.prompt, icon: "ti ti-calendar-clock" });
+    expect(result.data.refs?.[0]).toMatchObject({
+      type: "core.ai.task",
+      id: scheduledTask.shortId,
+      title: scheduledTask.prompt,
+      icon: "ti ti-calendar-clock",
+    });
     expect(result.data.refs?.[0]?.preview).toStartWith(prefix);
     expect(result.data.refs?.[0]?.preview).toContain("Europe/Berlin");
   }

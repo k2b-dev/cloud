@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "separate-pull-requests": false,
+  "bootstrap-sha": "b95fa63a3c14dbf6012a3625512ce1ae789f07b1",
+  "packages": {
+    ".": {
+      "component": "cloud",
+      "package-name": "cloud",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [{ "type": "json", "path": "packages/cloud-cli/package.json", "jsonpath": "$.version" }]
+    },
+    "packages/cloud": {
+      "component": "npm-cloud",
+      "package-name": "@k2b/cloud"
+    },
+    "packages/ui": {
+      "component": "npm-ui",
+      "package-name": "@k2b/ui"
+    }
+  }
+}

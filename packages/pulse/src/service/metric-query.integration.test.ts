@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { MetricQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { queryMetricData } from "./query-execution";
 
-const runDbSmoke = process.env.PULSE_METRIC_QUERY_DB_TEST === "1";
+const runDbSmoke = testInfra.database !== undefined;
 const postgresTest = runDbSmoke ? test : test.skip;
 
 beforeAll(async () => {
@@ -80,11 +81,15 @@ describe("Pulse grouped metric query Postgres smoke", () => {
       ]);
 
       // Exercise warmed connections while independent transactions compete for the pool.
-      const reads = await Promise.all(Array.from({ length: 20 }, async (_, index) => {
-        await sql.begin(async (tx) => { await tx`SELECT ${index}::int`; });
-        return queryMetricData({ ...baseQuery, aggregation: "latest", reduce: "sum" });
-      }));
-      expect(reads.every(result => result.ok && result.data[0]?.value === 35)).toBe(true);
+      const reads = await Promise.all(
+        Array.from({ length: 20 }, async (_, index) => {
+          await sql.begin(async (tx) => {
+            await tx`SELECT ${index}::int`;
+          });
+          return queryMetricData({ ...baseQuery, aggregation: "latest", reduce: "sum" });
+        }),
+      );
+      expect(reads.every((result) => result.ok && result.data[0]?.value === 35)).toBe(true);
 
       const totalLatest = await queryMetricData({ ...baseQuery, aggregation: "latest", reduce: "sum" });
       expect(totalLatest.ok).toBe(true);

@@ -1,3 +1,5 @@
+import type { WorkflowBoundPlan, WorkflowDiagnostic } from "@k2b/cloud/workflows";
+import { createWorkflowYamlHighlighter } from "@k2b/cloud/workflows/editor";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   AutocompleteEditor,
@@ -11,8 +13,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { WorkflowBoundPlan, WorkflowDiagnostic } from "@k2b/cloud/workflows";
-import { createWorkflowYamlHighlighter } from "@k2b/cloud/workflows/editor";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";

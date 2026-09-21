@@ -2,8 +2,8 @@ import { LocaleProvider } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { getLocale } from "../server/locale";
 import { readThemeFromCookieHeader } from "../shared/theme";
-import type { MinimalLayoutContext } from "./layout-context";
 import LayoutPreferences from "./LayoutPreferences.island";
+import type { MinimalLayoutContext } from "./layout-context";
 import TimezoneCookie from "./TimezoneCookie.island";
 
 export type MinimalLayoutPreferencePosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";

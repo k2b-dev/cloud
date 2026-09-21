@@ -1,10 +1,10 @@
-import { type AuthContext, middleware, auth } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { adminQueueWidgetHandler } from "./api/widgets";
+import { accountsCapabilities } from "./capabilities";
 import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
-import { accountsCapabilities } from "./capabilities";
 import { accountsHelp } from "./help";
 
 const service = {};

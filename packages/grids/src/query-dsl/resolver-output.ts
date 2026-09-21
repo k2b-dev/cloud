@@ -1,5 +1,7 @@
 import type { RecordQuery } from "../contracts";
+import { normalizeRefKey } from "../ref-syntax";
 import { compileFormulaAstToSql } from "../service/formula-sql-compiler";
+import { derivedColumnByRef } from "./resolver-derived-columns";
 import { type DslResolverDiagnostic, diagnostic, isResolverDiagnostic as isDiagnostic } from "./resolver-diagnostics";
 import { scopedFormulaResolverForScope } from "./resolver-formula-scope";
 import {
@@ -12,10 +14,8 @@ import {
   relationOutputDiagnostic,
   type Scope,
 } from "./resolver-scope";
-import type { DslSelectItem, DslSourceSpan } from "./types";
-import { normalizeRefKey } from "../ref-syntax";
-import { derivedColumnByRef } from "./resolver-derived-columns";
 import { gqlQuotedRef } from "./source-format";
+import type { DslSelectItem, DslSourceSpan } from "./types";
 
 export type DslJoinedColumn = {
   joinAlias: string;
@@ -96,8 +96,14 @@ export const resolveQueryPlanSelect = (
         if (computedIds.has(id)) return diagnostic(`duplicate select output "${label}"`, item.span);
         computedIds.add(id);
         scope.computedAliases.add(label);
-        const computed = { kind: "computed" as const, id, label, expression: `${summary.alias}.${gqlQuotedRef(column.publicKey ?? column.key)}` };
-        columns.push(computed); outputColumns.push(computed);
+        const computed = {
+          kind: "computed" as const,
+          id,
+          label,
+          expression: `${summary.alias}.${gqlQuotedRef(column.publicKey ?? column.key)}`,
+        };
+        columns.push(computed);
+        outputColumns.push(computed);
         continue;
       }
     }

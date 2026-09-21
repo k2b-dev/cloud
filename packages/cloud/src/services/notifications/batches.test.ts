@@ -1,61 +1,12 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite, testFor } from "../../../../../scripts/fixtures/test-infra";
+import "../../../../../scripts/fixtures/authorization-preload";
 import { audit } from "../audit";
 import { __notificationBatchTest, notificationBatches } from "./batches";
 
-const canUseAuthDatabase = async () => {
-  try {
-    const [row] = await sql<
-      {
-        users: string | null;
-        groups: string | null;
-        user_groups: string | null;
-        group_groups: string | null;
-      }[]
-    >`
-      SELECT
-        to_regclass('auth.users')::text AS users,
-        to_regclass('auth.groups')::text AS groups,
-        to_regclass('auth.user_groups_v2')::text AS user_groups,
-        to_regclass('auth.group_groups_v2')::text AS group_groups
-    `;
-    return Boolean(row?.users && row.groups && row.user_groups && row.group_groups);
-  } catch {
-    return false;
-  }
-};
-
-const canUseNotificationBatchDatabase = async () => {
-  if (!(await canUseAuthDatabase())) return false;
-  try {
-    const [row] = await sql<
-      {
-        batches: string | null;
-        batch_recipients: string | null;
-      }[]
-    >`
-      SELECT
-        to_regclass('notifications.batches')::text AS batches,
-        to_regclass('notifications.batch_recipients')::text AS batch_recipients
-    `;
-    return Boolean(row?.batches && row.batch_recipients);
-  } catch {
-    return false;
-  }
-};
-
-// Database tests are opt-in and may only use the disposable authorization fixture.
-const enabled = process.env.CLOUD_DATABASE_TEST === "1";
-const databaseUrl = new URL(process.env.DATABASE_URL ?? "postgres://localhost/unconfigured");
-if (enabled && !(["localhost", "127.0.0.1"].includes(databaseUrl.hostname) && databaseUrl.pathname === "/cloud_authorization_test")) {
-  throw new Error("Notification batch integration requires the disposable cloud_authorization_test database");
-}
-const databaseAvailable = enabled && (await canUseNotificationBatchDatabase());
-if (enabled && !databaseAvailable) {
-  throw new Error("Required authorization test database is unavailable or not migrated");
-}
-const suite = databaseAvailable ? describe : describe.skip;
-const databaseTest = databaseAvailable ? test : test.skip;
+const suite = databaseSuite();
+const databaseTest = testFor("database");
 
 const insertUser = async (suffix: string, label: string) => {
   const [row] = await sql<{ id: string }[]>`

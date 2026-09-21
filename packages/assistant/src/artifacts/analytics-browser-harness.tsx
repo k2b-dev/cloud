@@ -1,7 +1,7 @@
-import { render } from "solid-js/web";
 import { createSignal } from "solid-js";
-import { createArtifactSession, type RunSnapshot } from "./runtime/session";
+import { render } from "solid-js/web";
 import { RuntimeView } from "./RuntimeView";
+import { createArtifactSession, type RunSnapshot } from "./runtime/session";
 
 function Harness() {
   const [state, setState] = createSignal<RunSnapshot>();

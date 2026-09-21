@@ -1,5 +1,5 @@
-import { browserMessages } from "./messages";
 import { telemetryModeUrl } from "./filter";
+import { browserMessages } from "./messages";
 export default function ModeNav(props: { url: string; locale: string; browser?: boolean }) {
   const { t } = browserMessages.resolve([props.locale]);
   const url = new URL(props.url);

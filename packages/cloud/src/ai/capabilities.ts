@@ -1,6 +1,3 @@
-import { createHelpReader, type HelpReaderFactory } from "../services/help";
-import { createCodeSourceTool } from "./code-source-tools";
-import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
@@ -15,7 +12,10 @@ import {
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestActor } from "../server";
+import { createHelpReader, type HelpReaderFactory } from "../services/help";
 import { recordRejectedAiCapability } from "./capability-execution";
+import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
+import { createCodeSourceTool } from "./code-source-tools";
 import { CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES } from "./default-tools";
 import { type AiToolPreparationContext, defineAiTool, type PreparedAiTools, prepareAiTools } from "./tools";
 import type { AiConversationService, AiRuntimeTool, AiToolPresentation } from "./types";

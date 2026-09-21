@@ -1,6 +1,6 @@
-import type { Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { logger, trace } from "@k2b/cloud/services";
+import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { buildGatewayHealth, type GatewayHealth, type GatewayHealthStatus, scopeGatewayHealth } from "./health";
 

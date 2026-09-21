@@ -1,6 +1,6 @@
+import type { CloudTheme } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import { type DropdownItem, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
-import type { CloudTheme } from "@k2b/cloud/shared";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { DraftDerivationKind, DraftIntent, SenderIdentity } from "../../contracts";
 import type { MailSecurityFinding } from "../../security-contracts";

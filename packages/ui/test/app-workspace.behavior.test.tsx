@@ -12,7 +12,14 @@ describe("@k2b/ui AppWorkspace behavior", () => {
   test("fades only scrollable sidebar content and clears the hint at the end", async () => {
     const dom = createDomTestHarness();
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
-    const dispose = render(() => <AppWorkspace.SidebarBody scrollFade><div>Chats</div></AppWorkspace.SidebarBody>, dom.root);
+    const dispose = render(
+      () => (
+        <AppWorkspace.SidebarBody scrollFade>
+          <div>Chats</div>
+        </AppWorkspace.SidebarBody>
+      ),
+      dom.root,
+    );
     try {
       const body = dom.root.firstElementChild as HTMLElement;
       Object.defineProperties(body, { scrollHeight: { configurable: true, value: 500 }, clientHeight: { value: 200 } });
@@ -25,7 +32,10 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       Object.defineProperty(body, "scrollHeight", { value: 200 });
       body.dispatchEvent(new Event("scroll"));
       expect(body.dataset.scrollFade).toBeUndefined();
-    } finally { dispose(); dom.cleanup(); }
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
   });
 
   test("keeps main pane content mounted when visibility inputs and mobile selection change", async () => {
@@ -35,11 +45,23 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     const [mobile, setMobile] = createSignal("chat");
     const [chatOpen, setChatOpen] = createSignal(true);
     let mounts = 0;
-    const Content = () => { mounts++; return <input aria-label="Draft" />; };
-    const dispose = render(() => <AppWorkspace.Main mobilePane={mobile()}>
-      <AppWorkspace.MainPane id="chat" label="Chat" open={chatOpen()}><div>Chat</div></AppWorkspace.MainPane>
-      <AppWorkspace.MainPane id="workspace" label="Workspace" open={count() > 0}><Content /></AppWorkspace.MainPane>
-    </AppWorkspace.Main>, dom.root);
+    const Content = () => {
+      mounts++;
+      return <input aria-label="Draft" />;
+    };
+    const dispose = render(
+      () => (
+        <AppWorkspace.Main mobilePane={mobile()}>
+          <AppWorkspace.MainPane id="chat" label="Chat" open={chatOpen()}>
+            <div>Chat</div>
+          </AppWorkspace.MainPane>
+          <AppWorkspace.MainPane id="workspace" label="Workspace" open={count() > 0}>
+            <Content />
+          </AppWorkspace.MainPane>
+        </AppWorkspace.Main>
+      ),
+      dom.root,
+    );
     try {
       const input = dom.root.querySelector<HTMLInputElement>("input")!;
       input.value = "Keep my draft";
@@ -60,7 +82,10 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       expect(dom.root.querySelector("input")).toBeNull();
       setCount(1);
       expect(mounts).toBe(2);
-    } finally { dispose(); dom.cleanup(); }
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
   });
 
   test("keeps sidebar active state and aria-current reactive", async () => {
@@ -112,18 +137,42 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     const [disabled, setDisabled] = createSignal(false);
     let selections = 0;
     const openings: boolean[] = [];
-    const dispose = render(() => <AppWorkspace.SidebarItem variant="card" context={status()} contextMeta={count()} description={status()}
-      preview={{ label: "Details", viewportSize: "compact", onOpenChange: open => openings.push(open), content: <input aria-label="Preview note" value={status()} /> }}>
-      <AppWorkspace.SidebarItemIcon icon={count() === 1 ? "ti ti-clock" : "ti ti-check"} />
-      <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>
-      <AppWorkspace.SidebarItemMeta>{count()}</AppWorkspace.SidebarItemMeta>
-      <AppWorkspace.SidebarItemAction label={status()} icon="ti ti-check" disabled={disabled()} onSelect={() => { selections++; }} />
-    </AppWorkspace.SidebarItem>, dom.root);
+    const dispose = render(
+      () => (
+        <AppWorkspace.SidebarItem
+          variant="card"
+          context={status()}
+          contextMeta={count()}
+          description={status()}
+          preview={{
+            label: "Details",
+            viewportSize: "compact",
+            onOpenChange: (open) => openings.push(open),
+            content: <input aria-label="Preview note" value={status()} />,
+          }}
+        >
+          <AppWorkspace.SidebarItemIcon icon={count() === 1 ? "ti ti-clock" : "ti ti-check"} />
+          <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>
+          <AppWorkspace.SidebarItemMeta>{count()}</AppWorkspace.SidebarItemMeta>
+          <AppWorkspace.SidebarItemAction
+            label={status()}
+            icon="ti ti-check"
+            disabled={disabled()}
+            onSelect={() => {
+              selections++;
+            }}
+          />
+        </AppWorkspace.SidebarItem>
+      ),
+      dom.root,
+    );
     try {
       const control = dom.root.querySelector<HTMLButtonElement>('[aria-label="Reading"]')!;
       const note = dom.root.querySelector<HTMLInputElement>('[aria-label="Preview note"]')!;
       control.focus();
-      setTitle("Stock import"); setStatus("Verified"); setCount(3);
+      setTitle("Stock import");
+      setStatus("Verified");
+      setCount(3);
       expect(dom.root.textContent).toContain("Stock import");
       expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-meta")?.textContent).toBe("3");
       expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-icon i")?.className).toBe("ti ti-check");
@@ -132,9 +181,9 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       expect(dom.root.querySelector('[aria-label="Preview note"]')).toBe(note);
       expect(note.value).toBe("Verified");
       expect(dom.root.querySelector('[data-variant="card"]')).not.toBeNull();
-      expect(dom.root.querySelector('.k2b-app-workspace__sidebar-item-context-label')?.textContent).toBe("Verified");
-      expect(dom.root.querySelector('.k2b-app-workspace__sidebar-item-context-meta')?.textContent).toBe("3");
-      expect(dom.root.querySelector('.k2b-app-workspace__sidebar-item-label')?.getAttribute("data-marquee")).toBe("false");
+      expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-context-label")?.textContent).toBe("Verified");
+      expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-context-meta")?.textContent).toBe("3");
+      expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-label")?.getAttribute("data-marquee")).toBe("false");
       setDisabled(true);
       expect(control.disabled).toBe(true);
       control.click();
@@ -151,7 +200,10 @@ describe("@k2b/ui AppWorkspace behavior", () => {
         panel.dispatchEvent(event);
       }
       expect(openings).toEqual([true, false]);
-    } finally { dispose(); dom.cleanup(); }
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
   });
 
   test("collapsible sections keep content mounted and count reactive", async () => {
@@ -159,23 +211,32 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     delegateEvents(["click"], dom.document);
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
     const [count, setCount] = createSignal(0);
-    const dispose = render(() => <AppWorkspace.SidebarSection title="Done" count={count()} collapsible defaultOpen={false}>
-      <input aria-label="Retained value" />
-    </AppWorkspace.SidebarSection>, dom.root);
+    const dispose = render(
+      () => (
+        <AppWorkspace.SidebarSection title="Done" count={count()} collapsible defaultOpen={false}>
+          <input aria-label="Retained value" />
+        </AppWorkspace.SidebarSection>
+      ),
+      dom.root,
+    );
     try {
       const toggle = dom.root.querySelector<HTMLButtonElement>("button")!;
       const content = dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-section-content")!;
       const input = dom.root.querySelector<HTMLInputElement>("input")!;
       input.value = "Keep";
       expect(content.hidden).toBe(true);
-      setCount(2); toggle.click();
+      setCount(2);
+      toggle.click();
       expect(toggle.textContent).toContain("2");
       expect(toggle.getAttribute("aria-expanded")).toBe("true");
       expect(content.hidden).toBe(false);
       toggle.click();
       expect(content.hidden).toBe(true);
       expect(input.value).toBe("Keep");
-    } finally { dispose(); dom.cleanup(); }
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
   });
 
   test("renders grouped actions beside the row control", async () => {
@@ -277,12 +338,7 @@ describe("@k2b/ui AppWorkspace behavior", () => {
           <AppWorkspace.SidebarItem href="/handlerless" navigation="enhanced">
             Handlerless
           </AppWorkspace.SidebarItem>
-          <AppWorkspace.SidebarIconAction
-            href="/handlerless-icon"
-            navigation="enhanced"
-            icon="ti ti-link"
-            label="Handlerless icon"
-          />
+          <AppWorkspace.SidebarIconAction href="/handlerless-icon" navigation="enhanced" icon="ti ti-link" label="Handlerless icon" />
         </div>
       ),
       dom.root,

@@ -6,8 +6,8 @@ import {
   buildPostgresFilterUrl,
   defaultPostgresFilter,
   hasActivePostgresFilters,
-  parsePostgresSort,
   type PostgresFilter,
+  parsePostgresSort,
 } from "./filter-state";
 
 type Props = PostgresFilter & {

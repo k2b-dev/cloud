@@ -1,11 +1,10 @@
-import { sealCapabilityStream, dispatchCapabilityStream } from "./capability-streams";
-import { CapabilityStreamSchema } from "../contracts/capability-streams";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getCapability, listApps } from "../_internal/registry";
+import { resolveCommandLink } from "../capabilities/command-link";
 import {
   type CapabilityClaimScope,
   type CapabilityExecutionStatus,
@@ -34,6 +33,8 @@ import {
   type CapabilityOrigin,
   capabilityResultJsonSchema,
 } from "../contracts/capabilities";
+import { CapabilityStreamSchema } from "../contracts/capability-streams";
+import { CommandLinkSchema, CommandRequestSchema } from "../contracts/commands";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import {
   type AuthContext,
@@ -48,8 +49,6 @@ import {
   v,
 } from "../server";
 import { logger, settings } from "../services";
-import { resolveCommandLink } from "../capabilities/command-link";
-import { CommandRequestSchema, CommandLinkSchema } from "../contracts/commands";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import type { InvocationAuthority } from "../services/identity/invocation-token";
@@ -58,6 +57,7 @@ import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { withMandateIssueAuthority } from "../services/mandates";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
+import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
 const log = logger("capabilities");
 const QUERY_TIMEOUT_MS = 15_000;
@@ -340,7 +340,8 @@ const runCapabilityDispatch = async (
     return invalid;
   }
 
-  if (params.mandate && operation.stream) return errorResponse("STREAM_UNSUPPORTED_AUTHORITY", "Streams require an interactive user or service-account request", 403);
+  if (params.mandate && operation.stream)
+    return errorResponse("STREAM_UNSUPPORTED_AUTHORITY", "Streams require an interactive user or service-account request", 403);
 
   let requestBody: string;
   try {
@@ -626,12 +627,31 @@ const runCapabilityDispatch = async (
   const body = upstreamBody.data as Record<string, unknown>;
   if (!params.review && body.stream !== undefined) {
     const stream = CapabilityStreamSchema.safeParse(body.stream);
-    if (!stream.success || !operation.stream || stream.data.direction !== operation.stream.direction || stream.data.size > operation.stream.maxBytes || Date.parse(stream.data.expiresAt) <= Date.now() || Date.parse(stream.data.expiresAt) > Date.now() + 86_400_000 || !params.authority)
+    if (
+      !stream.success ||
+      !operation.stream ||
+      stream.data.direction !== operation.stream.direction ||
+      stream.data.size > operation.stream.maxBytes ||
+      Date.parse(stream.data.expiresAt) <= Date.now() ||
+      Date.parse(stream.data.expiresAt) > Date.now() + 86_400_000 ||
+      !params.authority
+    )
       return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain");
     try {
-      body.stream = await sealCapabilityStream(stream.data, { appId: params.appId, kind: params.kind, capabilityId: params.capabilityId, schemaHash: operation.schemaHash, authority: params.authority, requestId, origin: params.origin, continuation: params.continuation });
+      body.stream = await sealCapabilityStream(stream.data, {
+        appId: params.appId,
+        kind: params.kind,
+        capabilityId: params.capabilityId,
+        schemaHash: operation.schemaHash,
+        authority: params.authority,
+        requestId,
+        origin: params.origin,
+        continuation: params.continuation,
+      });
       if (Buffer.byteLength(JSON.stringify(body)) > CAPABILITY_MAX_RESULT_BYTES) throw new Error("Stream result too large");
-    } catch { return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain"); }
+    } catch {
+      return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain");
+    }
   }
   return settle({ body, status: 200 }, "succeeded");
 };
@@ -722,11 +742,23 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
   return new Hono<AuthContext>()
     .use("/capabilities/v1/*", dependencies.authenticate ?? auth.requireRole("authenticated"))
     .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
-    .post("/capabilities/v1/streams/:verb", describeRoute({
-      tags:["Capabilities"],summary:"Transfer or inspect one authorized binary stream",...requiresAuth,
-      description:"POST read/write/status/abort with x-cloud-stream-id. Write sends raw bytes; read returns raw bytes. Status and abort return the upload state. No automatic retries.",
-      responses:{200:{description:"Binary content, write receipt, or transfer state"},403:{description:"Stream does not belong to this caller"},409:{description:"Transfer or contract changed"},410:{description:"Stream expired"}},
-    }), async c => dispatchCapabilityStream(c.req.raw, auth.getAuthority(c), c.req.param("verb"), dependencies))
+    .post(
+      "/capabilities/v1/streams/:verb",
+      describeRoute({
+        tags: ["Capabilities"],
+        summary: "Transfer or inspect one authorized binary stream",
+        ...requiresAuth,
+        description:
+          "POST read/write/status/abort with x-cloud-stream-id. Write sends raw bytes; read returns raw bytes. Status and abort return the upload state. No automatic retries.",
+        responses: {
+          200: { description: "Binary content, write receipt, or transfer state" },
+          403: { description: "Stream does not belong to this caller" },
+          409: { description: "Transfer or contract changed" },
+          410: { description: "Stream expired" },
+        },
+      }),
+      async (c) => dispatchCapabilityStream(c.req.raw, auth.getAuthority(c), c.req.param("verb"), dependencies),
+    )
     .get(
       "/capabilities/v1/catalog",
       describeRoute({

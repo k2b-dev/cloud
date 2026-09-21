@@ -1,10 +1,11 @@
-import { query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, NoticeCard, PanelDialog, Placeholder, ProgressBar, prompts, useLocale } from "@k2b/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import type { AiQuotaIdentity as Identity } from "@k2b/cloud/shared";
+import { query } from "@k2b/stdlib/solid";
+import { Button, ButtonLink, NoticeCard, PanelDialog, Placeholder, ProgressBar, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import AiQuotaIdentity, { quotaIdentityIcon } from "./AiQuotaIdentity";
 import { quotaMessages } from "./ai-quota-messages";
+
 const api = coreClient.admin.core["ai-quotas"];
 export default function AiQuotaDetail(props: {
   unit: string;

@@ -1,4 +1,4 @@
-import { prepareChartSnapshot, type ChartExplorerRequest, type ChartExplorerSnapshot, type ChartExplorerData } from "@k2b/ui";
+import { type ChartExplorerData, type ChartExplorerRequest, type ChartExplorerSnapshot, prepareChartSnapshot } from "@k2b/ui";
 import { queueSteps } from "./chart-local-data";
 export const deliverySteps = queueSteps;
 export const deliverySeries = [

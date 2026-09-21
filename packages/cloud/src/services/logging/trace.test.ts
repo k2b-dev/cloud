@@ -1,23 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import type { SyncEvent } from "@k2b/sync";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { flushSyncTraceEvents, observeSyncEvent, trace, traceSyncEvent } from "./trace";
 
-const canUseTraceDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<{ spans: string | null; events: string | null }[]>`
-      SELECT
-        to_regclass('logging.trace_spans')::text AS spans,
-        to_regclass('logging.trace_events')::text AS events
-    `;
-    return Boolean(row?.spans && row.events);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseTraceDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const syncEvent = (event: Omit<SyncEvent, "at"> & { at?: Date }): SyncEvent => ({ at: new Date(), ...event });
 

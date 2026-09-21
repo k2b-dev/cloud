@@ -14,11 +14,11 @@ import { runGridsWorkflowRun } from "./workflow-runtime";
 
 const [runId, checkpoint, namespace, receiverPort] = process.argv.slice(2);
 const database = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
-if (!/^\/grids_verify_[a-f0-9]{32}$/.test(database.pathname) || !runId || !namespace?.startsWith("grids-crash-")) {
+if (!/^\/grids_verify_[a-f0-9]{16}_test$/.test(database.pathname) || !runId || !namespace?.startsWith("grids-crash-")) {
   throw new Error("Crash worker requires an isolated verification database and namespace");
 }
 const connection = await connect({
-  servers: localVerificationUrl("NATS", process.env.SYNC_TEST_SERVERS).toString(),
+  servers: localVerificationUrl("NATS", process.env.NATS_SERVERS).toString(),
   ignoreClusterUpdates: true,
 });
 const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
@@ -38,7 +38,7 @@ spyOn(rendering, "renderDocumentPdf").mockImplementation(async (document, locale
   if (content.kind !== "html") throw new Error("Crash fixture requires an HTML document");
   return rendering.renderDocumentHtmlPdf({ content, data: document.renderData, filename: document.filename }, locale, {
     config: {
-      url: localVerificationUrl("Gotenberg", process.env.GRIDS_PDF_URL).toString(),
+      url: localVerificationUrl("Gotenberg", process.env.GOTENBERG_URL).toString(),
       timeoutMs: 30_000,
       maxHtmlBytes: 1_000_000,
       maxPdfBytes: 10_000_000,

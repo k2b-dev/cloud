@@ -5,8 +5,8 @@ import { notebooksService } from "@/service";
 import { ssr } from "../config";
 import { parseLastNotebookId, parsePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
 import { projectNotebook } from "./[id]/page-data";
-import NotebooksOverview from "./NotebooksOverview.island";
 import { notebooksPageMessages } from "./messages";
+import NotebooksOverview from "./NotebooksOverview.island";
 
 /**
  * Notebooks list page - shows all notebooks the user has access to

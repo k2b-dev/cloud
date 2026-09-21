@@ -5,8 +5,10 @@
  * is inside SQL template literals, so these tests are the whole safety net for
  * the cutover. They exist before anything imports the module.
  */
-import { describe, expect, test } from "bun:test";
+
+import { describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import { migrate } from "../migrate";
 import { GRIDS_EVENT } from "../workflows/events";
@@ -26,7 +28,7 @@ import {
 } from "./workflow-definitions";
 import { startWorkflowRun } from "./workflow-runs";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 const SCHEDULED = `triggers:
   schedule:

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { FORMULA_LIMITS } from "../formula/parser";
-import { createObjectListEntry, OBJECT_LIST_LIMITS, ObjectListConfigSchema, objectListRecordInputValues, validateObjectList } from "./object-list";
+import {
+  createObjectListEntry,
+  OBJECT_LIST_LIMITS,
+  ObjectListConfigSchema,
+  objectListRecordInputValues,
+  validateObjectList,
+} from "./object-list";
 
 const fields = [
   { id: "Label1", name: "Description", type: "text", required: true, config: { maxLength: 80 } },
@@ -10,13 +16,21 @@ const config = { fields };
 
 describe("typed object-list values", () => {
   test("column defaults use scalar validation and initialize independent entries only", () => {
-    const config = ObjectListConfigSchema.parse({ fields: [
-      { id: "Amount", name: "Amount", type: "number", defaultValue: 0 },
-      { id: "Flag01", name: "Flag", type: "boolean", defaultValue: false },
-      { id: "Choice", name: "Choice", type: "select", defaultValue: ["one"], config: { multiple: true, options: [{ id: "one", label: "One" }] } },
-      { id: "Empty1", name: "Empty", type: "text", defaultValue: null },
-      { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount * 2" } },
-    ] });
+    const config = ObjectListConfigSchema.parse({
+      fields: [
+        { id: "Amount", name: "Amount", type: "number", defaultValue: 0 },
+        { id: "Flag01", name: "Flag", type: "boolean", defaultValue: false },
+        {
+          id: "Choice",
+          name: "Choice",
+          type: "select",
+          defaultValue: ["one"],
+          config: { multiple: true, options: [{ id: "one", label: "One" }] },
+        },
+        { id: "Empty1", name: "Empty", type: "text", defaultValue: null },
+        { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount * 2" } },
+      ],
+    });
     const first = createObjectListEntry(config);
     const second = createObjectListEntry(config);
     expect(first).toEqual({ Amount: "0", Flag01: false, Choice: ["one"] });

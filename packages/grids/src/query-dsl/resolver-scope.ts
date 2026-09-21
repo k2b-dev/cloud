@@ -5,8 +5,8 @@ import type { FormulaSqlExpression } from "../service/formula-sql-compiler";
 import type { Field } from "../service/types";
 import type { DslResolverContext, DslTableSource } from "./resolver-context";
 import { type DslResolverDiagnostic, diagnostic, isResolverDiagnostic as isDiagnostic } from "./resolver-diagnostics";
-import type { DslQualifiedRef, DslSourceSpan } from "./types";
 import type { DslSummaryJoin } from "./resolver-summary-joins";
+import type { DslQualifiedRef, DslSourceSpan } from "./types";
 
 export type Scope = {
   documentMetadata: boolean;
@@ -124,7 +124,8 @@ export const fieldByRefMap = (
 
 const aliasKey = (alias: string): string => normalizeRefKey(alias);
 
-export const hasJoinAlias = (scope: Scope, alias: string): boolean => scope.joins.has(aliasKey(alias)) || scope.summaryJoins.has(aliasKey(alias));
+export const hasJoinAlias = (scope: Scope, alias: string): boolean =>
+  scope.joins.has(aliasKey(alias)) || scope.summaryJoins.has(aliasKey(alias));
 
 export const setJoinAlias = (scope: Scope, alias: string, join: JoinScope): void => {
   scope.joins.set(aliasKey(alias), join);

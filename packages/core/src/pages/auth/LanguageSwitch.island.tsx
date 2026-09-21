@@ -1,6 +1,6 @@
+import { LOCALE_COOKIE } from "@k2b/cloud/shared";
 import { cookies } from "@k2b/stdlib/browser";
 import { Dropdown, useLocale } from "@k2b/ui";
-import { LOCALE_COOKIE } from "@k2b/cloud/shared";
 
 export default function LanguageSwitch() {
   const locale = useLocale();

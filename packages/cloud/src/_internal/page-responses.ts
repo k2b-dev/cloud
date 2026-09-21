@@ -1,8 +1,8 @@
 import type { HtmlFn } from "@k2b/ssr";
 import type { Context } from "hono";
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
-import { preloadLayoutAnnouncements } from "../server/middleware/settings";
 import { getLocale } from "../server/locale";
+import { preloadLayoutAnnouncements } from "../server/middleware/settings";
 import { createLoginRedirectUrl } from "../shared/redirect";
 import type { PageOptions } from "./define-app";
 

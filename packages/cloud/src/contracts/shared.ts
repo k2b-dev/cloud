@@ -289,9 +289,18 @@ export const AccountActivityListResponseSchema = z.object({
 export type AccountActivityListResponse = z.infer<typeof AccountActivityListResponseSchema>;
 
 export const AuthenticatedPrincipalSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("user").describe("One user account."), userId: z.uuid().describe("Exact user ID returned by the Accounts directory.") }),
-  z.object({ type: z.literal("group").describe("Members of one group."), groupId: z.uuid().describe("Exact group ID returned by the Accounts directory.") }),
-  z.object({ type: z.literal("service_account").describe("One service account."), serviceAccountId: z.uuid().describe("Exact service account ID returned by the Accounts directory.") }),
+  z.object({
+    type: z.literal("user").describe("One user account."),
+    userId: z.uuid().describe("Exact user ID returned by the Accounts directory."),
+  }),
+  z.object({
+    type: z.literal("group").describe("Members of one group."),
+    groupId: z.uuid().describe("Exact group ID returned by the Accounts directory."),
+  }),
+  z.object({
+    type: z.literal("service_account").describe("One service account."),
+    serviceAccountId: z.uuid().describe("Exact service account ID returned by the Accounts directory."),
+  }),
   z.object({ type: z.literal("authenticated").describe("Every authenticated identity; no directory ID is needed.") }),
 ]);
 

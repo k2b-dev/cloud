@@ -5,9 +5,9 @@ import { gridsCommands } from "../cli";
 import { CreateDocumentTemplateSchema } from "../contracts";
 import { documentProfiles } from "../document-profiles";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
+import { filterOperatorsForType, validateFilterValue } from "../service/filter-compiler-validation";
 import { DOCUMENT_TEMPLATE_REFERENCE } from "./documents-support";
 import { fieldTypeReferences } from "./schema-support";
-import { filterOperatorsForType, validateFilterValue } from "../service/filter-compiler-validation";
 
 const references = ["grids.md", "grids-schema.md", "grids-documents.md", "grids-build-apps.md"];
 
@@ -26,11 +26,14 @@ test("form guide covers the public config, input properties and validation opera
 test("command index covers every registered Grids command", async () => {
   const markdown = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
   const index = markdown.split("## Command index")[1]!.match(/```text\n([\s\S]*?)```/)![1]!;
-  const paths = index.trim().split("\n").flatMap((line) => {
-    const parts = line.split(" ");
-    const verbs = parts.pop()!.split("|");
-    return verbs.map((verb) => [...parts, verb].join(" "));
-  });
+  const paths = index
+    .trim()
+    .split("\n")
+    .flatMap((line) => {
+      const parts = line.split(" ");
+      const verbs = parts.pop()!.split("|");
+      return verbs.map((verb) => [...parts, verb].join(" "));
+    });
   for (const command of gridsCommands) expect(paths).toContain(command.path.join(" "));
 });
 

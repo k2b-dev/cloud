@@ -1,4 +1,3 @@
-import { mailCommandMessages } from "../../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
@@ -27,6 +26,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { mailCommandMessages } from "../../commands";
 import type { ConversationDraftSummary } from "../../contracts";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "../../service/collaboration";
 import type { ConversationContentSummary } from "../../service/conversation-summary";

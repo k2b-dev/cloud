@@ -1,14 +1,8 @@
+import { lazySync } from "@k2b/cloud";
+import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
+import { toPgTextArray } from "@k2b/cloud/services/postgres";
 import type { Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
-import { lazySync } from "@k2b/cloud";
-import {
-  createRuntimeLifecycle,
-  createRuntimeTaskTracker,
-  logger,
-  stopRuntimeJobs,
-  stopRuntimeResources,
-} from "@k2b/cloud/services";
-import { toPgTextArray } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
 import { z } from "zod";
 import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../contracts";
@@ -1233,12 +1227,7 @@ const claimedState = (claimed: { previousState: string }): "queued" | "ambiguous
  * claimed for reconciliation is never re-executed fresh. The requeue itself
  * never reaches the provider and therefore never consumes an attempt.
  */
-const requeueCommand = async (
-  command: DbCommandExecution,
-  state: "queued" | "ambiguous",
-  code: string,
-  message: string,
-): Promise<void> => {
+const requeueCommand = async (command: DbCommandExecution, state: "queued" | "ambiguous", code: string, message: string): Promise<void> => {
   await sql`
     UPDATE mail.commands
     SET

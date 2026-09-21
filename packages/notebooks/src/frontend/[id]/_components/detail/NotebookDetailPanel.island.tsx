@@ -1,5 +1,5 @@
-import { notebookCommandMessages } from "../../../../commands";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, fileIcons, type Paginated } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
@@ -19,10 +19,10 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
+import { notebookCommandMessages } from "../../../../commands";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
 import type { Backlink } from "../../../../service/links";
 import { buildNoteUrl, buildVersionsUrl } from "../../../params";

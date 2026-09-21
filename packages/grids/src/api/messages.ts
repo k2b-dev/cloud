@@ -53,7 +53,8 @@ export const gridsApiMessages = i18n.define({
         "This action is no longer permitted or available. Reload the app. If the action is still unavailable, contact the app owner.",
       workflowStatusNeedsAttention:
         "This workflow needs review. Check the current results and contact the app owner before starting it again.",
-      workflowStatusCanceled: "The workflow was canceled. Steps already completed may have changed data; check the current results before starting it again.",
+      workflowStatusCanceled:
+        "The workflow was canceled. Steps already completed may have changed data; check the current results before starting it again.",
       workflowStatusFailed: "The workflow could not finish. Check the current results and contact the app owner before starting it again.",
       invalidBaseId: "Invalid base id",
       invalidCommentCursor: "Invalid comment cursor.",
@@ -165,7 +166,8 @@ export const gridsApiMessages = i18n.define({
         "Diese Aktion ist nicht mehr erlaubt oder verfügbar. Lade die App neu. Bleibt die Aktion nicht verfügbar, wende dich an die App-Verantwortlichen.",
       workflowStatusNeedsAttention:
         "Dieser Workflow muss geprüft werden. Prüfe die bisherigen Ergebnisse und wende dich vor einem erneuten Start an die App-Verantwortlichen.",
-      workflowStatusCanceled: "Der Workflow wurde abgebrochen. Bereits abgeschlossene Schritte können Daten verändert haben; prüfe die Ergebnisse vor einem erneuten Start.",
+      workflowStatusCanceled:
+        "Der Workflow wurde abgebrochen. Bereits abgeschlossene Schritte können Daten verändert haben; prüfe die Ergebnisse vor einem erneuten Start.",
       workflowStatusFailed:
         "Der Workflow konnte nicht abgeschlossen werden. Prüfe die bisherigen Ergebnisse und wende dich vor einem erneuten Start an die App-Verantwortlichen.",
       invalidBaseId: "Ungültige Basis-ID",

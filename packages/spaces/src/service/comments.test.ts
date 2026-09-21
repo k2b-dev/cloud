@@ -1,22 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
 import { create as createComment, list, remove as removeComment, update as updateComment } from "./comments";
 import { latestSpaceEventCursor, liveSpaceEvents } from "./events";
 import { create, splitRecurring, update } from "./items";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ comments: string | null }[]>`SELECT to_regclass('spaces.comments')::text AS comments`;
-    return Boolean(row?.comments);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Spaces comment pagination", () => {
   test("allows only the author to edit and delete during the first 10 minutes", async () => {

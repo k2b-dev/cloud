@@ -7,7 +7,6 @@ import type { Contact, ContactRef } from "../../service";
 import { resolveContactName } from "../../shared";
 import { readErrorMessage } from "./api";
 import { openBookSettingsDialog } from "./BookSettingsDialog";
-import { type ContactFormText, contactFormErrorMessage, contactFormMessages, contactRowLabels } from "./contact-form-messages";
 import ContactSearchPicker from "./ContactSearchPicker";
 import ContactTagsPicker from "./ContactTagsPicker";
 import { AddressFields, BankAccountFields, ReachFields } from "./ContactUpsertForm.fields";
@@ -25,6 +24,7 @@ import {
   emptyAddressRow,
   emptyBankAccountRow,
 } from "./ContactUpsertForm.model";
+import { type ContactFormText, contactFormErrorMessage, contactFormMessages, contactRowLabels } from "./contact-form-messages";
 
 type ContactUpsertMode = "create" | "edit";
 

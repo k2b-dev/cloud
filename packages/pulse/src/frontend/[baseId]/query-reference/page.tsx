@@ -2,11 +2,11 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { preloadLayoutHelp } from "@k2b/cloud/ssr/help";
 import { ssr } from "../../../config";
+import { pulseMessages } from "../../../messages";
 import { pulseService } from "../../../service";
 import { projectPublicRelations, projectSources, resolvePublicId } from "../../../service/public-resources";
 import PulseQueryReferenceWindow from "../../PulseQueryReferenceWindow.island";
 import { readReferenceTab } from "../../query-reference-tabs";
-import { pulseMessages } from "../../../messages";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = pulseMessages.resolve([getLocale(c)]);

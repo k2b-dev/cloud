@@ -1,6 +1,6 @@
-import { createScrollFade } from "../layout/scroll-fade";
 import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
+import { createScrollFade } from "../layout/scroll-fade";
 import Placeholder from "../surfaces/Placeholder";
 import { ChatActivity, ChatMessage } from "./ChatPrimitives";
 import { isChatNearBottom, restoredChatScrollTop } from "./chat-behavior";
@@ -67,7 +67,10 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   const [loadingOlderInternally, setLoadingOlderInternally] = createSignal(false);
   const [historyError, setHistoryError] = createSignal<string | null>(null);
   let viewportRef: HTMLDivElement | undefined;
-  createScrollFade(() => viewportRef, () => props.scrollFade !== false);
+  createScrollFade(
+    () => viewportRef,
+    () => props.scrollFade !== false,
+  );
   let contentRef: HTMLDivElement | undefined;
   let topSentinelRef: HTMLDivElement | undefined;
   let followFrame: number | undefined;
@@ -88,12 +91,16 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   };
 
   props.scrollToAnchorRef?.((anchorId) => {
-    const anchor = Array.from(contentRef?.querySelectorAll<HTMLElement>("[data-chat-anchor]") ?? [])
-      .find((element) => element.dataset.chatAnchor === String(anchorId));
+    const anchor = Array.from(contentRef?.querySelectorAll<HTMLElement>("[data-chat-anchor]") ?? []).find(
+      (element) => element.dataset.chatAnchor === String(anchorId),
+    );
     if (!viewportRef || !anchor) return false;
     cancelFollow();
     setPinned(false);
-    viewportRef.scrollTop = Math.max(0, viewportRef.scrollTop + anchor.getBoundingClientRect().top - viewportRef.getBoundingClientRect().top - 16);
+    viewportRef.scrollTop = Math.max(
+      0,
+      viewportRef.scrollTop + anchor.getBoundingClientRect().top - viewportRef.getBoundingClientRect().top - 16,
+    );
     return true;
   });
 

@@ -1,5 +1,5 @@
-import { bookshopTemplate, createBookshopTemplate } from "./bookshop";
 import { createBillingTemplate } from "./billing";
+import { bookshopTemplate, createBookshopTemplate } from "./bookshop";
 import { createFinanceTemplate, financeTemplate } from "./finance";
 import { createInventoryTemplate, inventoryTemplate } from "./inventory";
 import type { GridTemplate } from "./types";

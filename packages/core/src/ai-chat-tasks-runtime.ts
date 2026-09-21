@@ -1,10 +1,10 @@
-import { backgroundTaskInstructions } from "./ai-background-prompt";
-import type { JobContext, Worker } from "@k2b/sync";
 import { lazySync } from "@k2b/cloud";
 import { aiChatTasks, aiConversations, aiProjects, listAiConversationFiles, personalAiModelPolicy } from "@k2b/cloud/ai";
 import { enqueueExistingAiTurn, prepareAiChatTurn } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings, logger } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
+import type { JobContext, Worker } from "@k2b/sync";
+import { backgroundTaskInstructions } from "./ai-background-prompt";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 
 const APP_ID = "core";
@@ -33,9 +33,11 @@ const taskScheduler = lazySync((sync) => {
 /** Read the existing scheduler's next slot; domain task state remains authoritative. */
 export const nextChatTaskRuns = async () => {
   try {
-    return new Map((await taskScheduler().list())
-      .filter(schedule => schedule.id.startsWith(SCHEDULE_PREFIX))
-      .map(schedule => [schedule.id.slice(SCHEDULE_PREFIX.length), schedule.nextRunAt.toISOString()]));
+    return new Map(
+      (await taskScheduler().list())
+        .filter((schedule) => schedule.id.startsWith(SCHEDULE_PREFIX))
+        .map((schedule) => [schedule.id.slice(SCHEDULE_PREFIX.length), schedule.nextRunAt.toISOString()]),
+    );
   } catch (error) {
     log.warn("Could not read upcoming task slots", { error: error instanceof Error ? error.message : String(error) });
     return new Map<string, string>();

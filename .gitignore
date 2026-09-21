@@ -2,30 +2,25 @@
 .DS_Store
 .claude
 
-# Pre-modularization reference material, kept on disk but not versioned
-_old/
-
-# Local tooling state (skill task tracking, lint cache)
+# Local tooling state
 .dex/
 .fallow/
 /.playwright-cli/
 /.agents/
 /skills-lock.json
 
-# Local scratch notes (todos, draft reviews)
+# Local scratch notes
 /plans/
 todo/
 /tmp/
 /docs/
-
-# Per-developer seed scripts (hardcoded user UUIDs etc.)
-scripts/seed-dashboard-demo.ts
 
 # Environment / local config
 .env
 .env.*
 !.env.example
 !.env.*.example
+**/.local
 
 # Dependencies
 node_modules
@@ -44,12 +39,9 @@ _ssr
 /output/
 coverage
 **/coverage
-
-# Generated CSS
 **/public/build.css
 
 # Logs / caches
 *.log
 .cache
 **/.cache
-**/.local

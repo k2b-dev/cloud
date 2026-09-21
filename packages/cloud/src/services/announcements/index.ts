@@ -1,11 +1,7 @@
-import { requestCacheRedis } from "../request-cache-redis";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { HTTPException } from "hono/http-exception";
-import { hasRole, type User } from "../../contracts/shared";
 import { z } from "zod";
-import { AnnouncementDisplayEntrySchema } from "../../contracts/announcements";
-import { claimCacheFill, completeCacheFill } from "../cache-fill";
 import type {
   AnnouncementCookieState,
   AnnouncementDisplayEntry,
@@ -13,8 +9,12 @@ import type {
   CreateAnnouncement,
   UpdateAnnouncement,
 } from "../../contracts/announcements";
+import { AnnouncementDisplayEntrySchema } from "../../contracts/announcements";
+import { hasRole, type User } from "../../contracts/shared";
 import { markdown } from "../../shared/markdown";
+import { claimCacheFill, completeCacheFill } from "../cache-fill";
 import { logger } from "../logging";
+import { requestCacheRedis } from "../request-cache-redis";
 
 const log = logger("announcements");
 const ACTIVE_CACHE_KEY = "appglobalcache:shared:announcements:v1";

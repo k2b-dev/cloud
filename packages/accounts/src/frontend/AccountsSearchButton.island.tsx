@@ -1,10 +1,9 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup } from "solid-js";
-import { useAccountsMessages } from "./messages";
-import { createAccountsSearch, accountsSearchOptions } from "./accounts-search";
-
 import { accountsSearchMessages } from "../search-messages";
+import { accountsSearchOptions, createAccountsSearch } from "./accounts-search";
+import { useAccountsMessages } from "./messages";
 
 type Props = { isAdmin: boolean; variant?: SpotlightButtonVariant; registerCommand?: boolean };
 export default function AccountsSearchButton(props: Props) {

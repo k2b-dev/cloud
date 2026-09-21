@@ -25,8 +25,8 @@ import type { FormFieldEntry } from "../../../service/forms";
 import { errorMessage } from "../utils/api-helpers";
 import { FormFieldsEditor } from "./FormFieldsEditor";
 import { FormValidationsEditor } from "./FormValidationsEditor";
-import { gridsFormMessages } from "./messages";
 import { FormFieldWidthSelect } from "./field-layout";
+import { gridsFormMessages } from "./messages";
 
 type OpenFormEditorDialogArgs = {
   form: PublicForm;
@@ -378,30 +378,32 @@ function FormEditor(props: {
                     );
                   return (
                     <div class="flex flex-col gap-2">
-                    <Checkbox
-                      label={field.name}
-                      value={selected}
-                      disabled={!selected() && !inspection().ok}
-                      description={(() => {
-                        const result = inspection();
-                        return result.ok ? undefined : formComputedDiagnosticMessage(result.code, locale());
-                      })()}
-                      onValueChange={(checked) => {
-                        setComputedFields((current) =>
-                          checked ? [...current, { fieldId: field.id }] : current.filter((entry) => entry.fieldId !== field.id),
-                        );
-                        markDirty();
-                      }}
-                    />
-                    <Show when={selected()}>
-                      <FormFieldWidthSelect
-                        value={computedFields().find((entry) => entry.fieldId === field.id)?.width}
-                        onChange={(width) => {
-                          setComputedFields((current) => current.map((entry) => entry.fieldId === field.id ? { ...entry, width } : entry));
+                      <Checkbox
+                        label={field.name}
+                        value={selected}
+                        disabled={!selected() && !inspection().ok}
+                        description={(() => {
+                          const result = inspection();
+                          return result.ok ? undefined : formComputedDiagnosticMessage(result.code, locale());
+                        })()}
+                        onValueChange={(checked) => {
+                          setComputedFields((current) =>
+                            checked ? [...current, { fieldId: field.id }] : current.filter((entry) => entry.fieldId !== field.id),
+                          );
                           markDirty();
                         }}
                       />
-                    </Show>
+                      <Show when={selected()}>
+                        <FormFieldWidthSelect
+                          value={computedFields().find((entry) => entry.fieldId === field.id)?.width}
+                          onChange={(width) => {
+                            setComputedFields((current) =>
+                              current.map((entry) => (entry.fieldId === field.id ? { ...entry, width } : entry)),
+                            );
+                            markDirty();
+                          }}
+                        />
+                      </Show>
                     </div>
                   );
                 }}
