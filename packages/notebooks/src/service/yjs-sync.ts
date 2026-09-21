@@ -41,6 +41,8 @@ export const createYjsAwarenessTopic = lazySync((sync) =>
   sync.topic<YjsAwarenessEvent>({
     id: AWARENESS_TOPIC_PREFIX,
     retention: { maxAgeMs: AWARENESS_RETENTION_MS, maxBytes: 64 * 1024 * 1024 },
+    // JetStream rejects a duplicate window longer than max_age; Sync's default (120 s) exceeds this retention (#70).
+    dedupeWindowMs: AWARENESS_RETENTION_MS,
     maxPayloadBytes: MAX_AWARENESS_TOPIC_PAYLOAD_BYTES + 4096,
   }),
 );
