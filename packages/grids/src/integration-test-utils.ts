@@ -4,7 +4,20 @@ import { testFor } from "../../../scripts/fixtures/test-infra";
 
 export const postgresTest = testFor("database");
 export const testUuid = () => Bun.randomUUIDv7();
-export const testShortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
+const shortIdSpace = 36 ** 5;
+let shortIdCounter = Date.now() % shortIdSpace;
+
+/**
+ * Six-character short id for raw fixture inserts that bypass the production
+ * `insertWithShortId` retry: a one-character prefix plus a five-digit base36
+ * counter. The counter never repeats within a process, and it starts at the
+ * process start time so later test processes sharing one database stay ahead
+ * of earlier ones; fixtures cannot collide on `idx_grids_*_short_id`.
+ */
+export const testShortId = (prefix: string) => {
+  shortIdCounter = (shortIdCounter + 1) % shortIdSpace;
+  return `${prefix.slice(0, 1)}${shortIdCounter.toString(36).padStart(5, "0")}`;
+};
 
 export const insertTestDocumentArtifact = async (params: {
   documentId: string;
