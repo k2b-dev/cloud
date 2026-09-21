@@ -60,6 +60,7 @@ export type FileEntry = {
 };
 /** Present when an administrator configured Collabora; the browser then offers editing and new documents. */
 export type EditorInfo = { documentFormat: DocumentFormat };
+/** `issues` lists failures of enabled areas; an area the operator disabled is omitted entirely. */
 export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[]; editor: EditorInfo | null };
 export type DirectoryResult = {
   readme?: FileEntry | null;
