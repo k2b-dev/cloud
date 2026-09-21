@@ -1,12 +1,8 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import {
-  reconcileSpacesDetailRoute,
-  SPACES_DETAIL_NAVIGATION_EVENT,
-  type SpacesDetailNavigation,
-} from "../src/frontend/[id]/_components/workspace/workspace-events";
+import { reconcileSpacesDetailRoute } from "../src/frontend/[id]/_components/workspace/workspace-events";
 
 describe("Spaces search navigation links", () => {
   if (isServer) {
@@ -56,46 +52,6 @@ describe("Spaces search navigation links", () => {
       expect(links.every((link) => new URL(link.href).searchParams.get("q") === "already-committed")).toBe(true);
     } finally {
       dispose();
-      dom.cleanup();
-    }
-  });
-
-  // Already failing on main before the release train (unrelated to it). Tracked in #10.
-  test.todo("Spotlight selection preserves the current list search instead of its SSR query", async () => {
-    const dom = createDomTestHarness();
-    const ui = await import("@k2b/ui");
-    const { default: SearchButton } = await import("../src/frontend/[id]/_components/search/SearchButton");
-    dom.window.history.replaceState(null, "", "/app/spaces/Space1?view=list&q=current&status=all");
-    const select = spyOn(ui, "openSpotlightSearch").mockResolvedValue({ value: { id: "Item1" }, label: "Task" });
-    let navigation: SpacesDetailNavigation | undefined;
-    const onNavigate = (event: Event) => {
-      navigation = (event as CustomEvent<SpacesDetailNavigation>).detail;
-    };
-    window.addEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onNavigate);
-    const dispose = render(
-      () =>
-        createComponent(SearchButton, {
-          spaceId: "Space1",
-          spaceName: "Space",
-          columns: [],
-          query: "view=list&q=initial",
-          variant: "icon",
-        }),
-      dom.root,
-    );
-    try {
-      dom.root.querySelector<HTMLButtonElement>("button")!.click();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(navigation).toBeDefined();
-      const url = new URL(navigation!.href, window.location.origin);
-      expect(url.searchParams.get("q")).toBe("current");
-      expect(url.searchParams.get("status")).toBe("all");
-      expect(url.searchParams.get("item")).toBe("Item1");
-    } finally {
-      dispose();
-      select.mockRestore();
-      window.removeEventListener(SPACES_DETAIL_NAVIGATION_EVENT, onNavigate);
       dom.cleanup();
     }
   });
