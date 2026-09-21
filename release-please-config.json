@@ -30,7 +30,5 @@
     }
   },
   "last-release-sha": "f38cd47486eacf64524be6d4c36524967f0916fd",
-  "plugins": [
-    "node-workspace"
-  ]
+  "plugins": ["node-workspace"]
 }
