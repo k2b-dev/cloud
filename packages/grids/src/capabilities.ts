@@ -96,7 +96,14 @@ const pageInput = {
     .describe("Next offset from discovery; zero for the first page."),
   limit: z.number().int().min(1).max(20).default(10).describe("Maximum candidates inspected on this page."),
 };
-const documentData = DocumentCapabilityDataSchema;
+const documentData = DocumentCapabilityDataSchema.safeExtend({
+  downloadUrl: z
+    .string()
+    .describe(
+      "Authenticated same-origin download path for the stored primary artifact. Not a public share; access is checked on every download.",
+    ),
+});
+const documentDownloadUrl = (id: string) => `/api/grids/documents/${encodeURIComponent(id)}/download`;
 const documentContentInput = readInput.extend({
   artifactKey: documentData.shape.artifacts.element.shape.key
     .optional()
@@ -140,9 +147,10 @@ const operationKey = (context: CapabilityExecutionContext, action: string) =>
 const documentResult = async (document: Parameters<typeof projectDocuments>[0][number]) => {
   const [value] = await projectDocuments([document]);
   return {
-    data: documentData.parse(value),
+    data: documentData.parse({ ...value, downloadUrl: documentDownloadUrl(document.shortId) }),
     refs: [{ type: "grids.document", id: document.shortId }],
     links: [
+      { rel: "download" as const, href: documentDownloadUrl(document.shortId) },
       {
         rel: "open" as const,
         href: `/api/grids/documents/${document.shortId}/artifacts/${encodeURIComponent(document.primaryArtifactKey)}`,
@@ -235,7 +243,9 @@ export const dailyCapabilities = defineCapabilities({
           limit: input.limit,
           cursor: input.cursor ?? null,
         });
-        const data = (await projectDocuments(page.items)).map((item) => documentData.parse(item));
+        const data = (await projectDocuments(page.items)).map((item) =>
+          documentData.parse({ ...item, downloadUrl: documentDownloadUrl(item.id) }),
+        );
         if (Buffer.byteLength(JSON.stringify(data)) > CAPABILITY_MAX_RESULT_BYTES - 32768)
           return fail(err.badInput(capabilityMessagesFor(context.locale).fewerDocuments));
         return ok({

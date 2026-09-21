@@ -58,6 +58,8 @@ the operation's advertised maximum still applies. Interrupted writes are not
 automatically retried: inspect status and preserve a completed receipt.
 
 Filesv2 offers `bases.list`, `entry.list`, `entry.search-in-base`, `trash.list`,
-`content.read`, `content.create`, `folder.create`, `entry.rename`, `entry.move`,
+`content.read`, `content.download`, `content.create`, `folder.create`, `entry.rename`, `entry.move`,
 `entry.copy`, `entry.trash` and `trash.restore`. Read the live input schemas.
 These calls use the same storage permissions and conflict checks as the GUI.
+
+For on-demand user downloads, see [Filesv2 leases](filesv2.md#capability-lists-and-on-demand-download-links). Lease URLs are private, expire after 60 seconds, and belong in neither lists nor logs.

@@ -367,3 +367,10 @@ Keep the existing database's storage and major version unchanged when testing
 BM25 in a separate environment. Verify both search modes with real application
 articles and the required language; a healthy Postgres container alone does
 not prove that the optional indexes are usable.
+
+
+### Filesv2 capability downloads
+
+The Filegate public origin must be reachable from the requesting user's browser
+or CLI. See [private file lists and downloads](/en/apps/filesv2#compose-private-file-lists-and-downloads)
+for the capability flow, lease expiry, and access checks.

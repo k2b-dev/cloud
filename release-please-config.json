@@ -12,7 +12,13 @@
       "component": "cloud",
       "package-name": "cloud",
       "changelog-path": "CHANGELOG.md",
-      "extra-files": [{ "type": "json", "path": "packages/cloud-cli/package.json", "jsonpath": "$.version" }]
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "packages/cloud-cli/package.json",
+          "jsonpath": "$.version"
+        }
+      ]
     },
     "packages/cloud": {
       "component": "npm-cloud",
@@ -22,5 +28,6 @@
       "component": "npm-ui",
       "package-name": "@k2b/ui"
     }
-  }
+  },
+  "last-release-sha": "f38cd47486eacf64524be6d4c36524967f0916fd"
 }

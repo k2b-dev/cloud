@@ -527,3 +527,44 @@ Use `cld capabilities catalog --json` for current schemas and the generic
 binary transfers. The existing Filesv2 CLI remains available for direct tasks.
 
 The canonical `entry.read` capability returns a stable `open` link and a resource reference with the current name. Consumers can open a Filesv2 entry through this shared contract without constructing file paths. Reading and opening still require the current user's access.
+
+## Compose private file lists and downloads
+
+Studio Apps can combine Filesv2 entries and stored Grids documents without
+copying their bytes or creating public shares. Discover the installed
+capabilities, list accessible bases with `filesv2.bases.list`, and browse with
+`filesv2.entry.list` or search a known base with `filesv2.entry.search-in-base`.
+Keep the path and filters unchanged while passing `data.next` as `after` until
+null, including empty filtered pages.
+
+Every Filesv2 item carries `{type:"filesv2.entry",id}` beside its metadata.
+Keep this ref with the row, alongside `grids.document` refs from Grids. Use
+both fields as the identity and each type's own reader/download operation.
+Filesv2 refs remain stable for a base/path, including long paths, but do not
+pin bytes or grant permissions. A rename or move changes the ref; replacing
+the file at the same path does not. Refresh stale rows before acting on them.
+
+Listing never issues a download URL. When a user requests a file download,
+call `filesv2.content.download` with `{id: selectedRef.id}`. The capability
+calls the existing permission-aware download service and returns
+`data: {url, method:"GET", expires}`. Use the exact URL without Cloud cookies
+or authorization headers. It is a bearer credential valid for 60 seconds;
+use the storage-supplied `expires` timestamp. Keep it out of persisted App
+state, shared lists, logs, and public shares. No storage URL construction is
+needed. Grids documents retain their own authenticated download links.
+
+A new lease request checks current storage membership and FreeIPA Unix
+permissions. A 403 is denied access; a 404 is a missing reference/file or a
+base no longer visible to the caller; `not_file` (400) rejects directories.
+`identity_changed` (409) requires refreshing access/identity state.
+Storage failure must remain an error rather than an empty list. After expiry
+or a failed transfer, discard the URL and request a fresh lease through the
+same capability. Stop if access is denied. An existing lease may remain usable
+until expiry, subject to storage checks, even after Cloud access is revoked.
+
+Use `filesv2.content.read` and the authenticated capability stream mechanism
+when processing bytes inside code. The direct lease is for a user download,
+not a way around the stream budget. `cld filesv2 download ... --out ...` obtains
+a lease and saves the file without printing the private URL; the explicit
+`cld capabilities query filesv2 content.download` command returns the lease.
+See [App capabilities](/en/docs/platform/capabilities) for discovery and consent.

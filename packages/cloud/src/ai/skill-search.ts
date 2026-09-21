@@ -40,12 +40,14 @@ export function aiSkillSearchSql(query: string, bm25: boolean) {
         AND (length(term) < 4 OR greatest(word_similarity(term, skill.name),
           word_similarity(term, skill.description)) < 0.35))
   `;
+  // Rank typos against whole words: a partial-word extent such as "invi…" in a
+  // description must not outscore the typo'd name "invoices" it was meant for.
   const rank = !query
     ? sql`0::real`
     : sql`
     CASE WHEN lower(skill.name) = ${query.toLowerCase()} THEN 100 ELSE 0 END
     + CASE WHEN strpos(lower(skill.name), ${query.toLowerCase()}) > 0 THEN 10 ELSE 0 END
-    + 2 * word_similarity(${query}, skill.name) + word_similarity(${query}, skill.description)
+    + 2 * strict_word_similarity(${query}, skill.name) + strict_word_similarity(${query}, skill.description)
   `;
   const textRank = !query
     ? sql`0::real`

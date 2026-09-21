@@ -312,7 +312,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
       v("json", AdminLoginSchema),
       async (c) => {
         if (!env.ADMIN_LOGIN_TOKEN) {
-          return jsonError(c, "Admin login is not configured.", 500);
+          return jsonError(c, "Admin login is not configured.", 503);
         }
         const { token, restoreLocalLogin } = c.req.valid("json");
         const a = Buffer.from(token);

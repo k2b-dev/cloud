@@ -9,8 +9,7 @@ describe("Spaces overview navigation", () => {
     return;
   }
 
-  // Already failing on main before the release train (unrelated to it). Tracked in #10.
-  test.todo("enhances work links, restores history, and leaves modifier clicks native", async () => {
+  test("enhances work links, restores history, and leaves modifier clicks native", async () => {
     const dom = createDomTestHarness();
     const previousCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
     Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
@@ -22,10 +21,7 @@ describe("Spaces overview navigation", () => {
           spaces: [],
           initialView: "mine",
           initialPinnedSpaceIds: [],
-          mine: [],
-          today: [],
-          upcoming: [],
-          counts: { mine: 0, today: 0, upcoming: 0 },
+          initialWork: { view: "mine", items: [], counts: { mine: 0, today: 0, upcoming: 0 } },
           initialActivity: { items: [], nextCursor: null },
           initialActivityError: null,
           dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },

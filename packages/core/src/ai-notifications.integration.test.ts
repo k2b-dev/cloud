@@ -1,6 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { aiChatTasks, aiConversations, createAiShortId, migrateCloudAi } from "@k2b/cloud/ai";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
+import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
 import { databaseSuite, suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
@@ -165,14 +166,21 @@ suite("Core AI completion notifications", () => {
 const costSuite = suiteFor("database", "valkey");
 
 costSuite("background cost alert recovery", () => {
-  // Counts delivery rows across the whole shared test database and never ran in CI before the release train. Tracked in #8.
-  test.todo("sends only to current local and IPA admins; partial delivery retries do not duplicate events", async () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+    await registerNotificationDefinitions(app.meta.id, app.notifications);
+  });
+  // Recovery scans the whole database: on the shared integration database the two
+  // alerts also fan out to foreign admins and foreign candidates are sent alongside.
+  // Every injection and assertion is therefore scoped to the users this test creates.
+  test("sends only to current local and IPA admins; partial delivery retries do not duplicate events", async () => {
     const { spyOn } = await import("bun:test");
     const cloud = await import("@k2b/cloud");
     const deliveryRuntime = await import("@k2b/cloud/services/notifications/runtime");
+    const platform = await import("@k2b/cloud/services/notifications/platform");
     const enqueue = spyOn(deliveryRuntime, "enqueueNotificationDeliveries").mockResolvedValue();
     const enqueueOne = spyOn(deliveryRuntime, "enqueueNotificationDelivery").mockResolvedValue();
-    const { notifications, getFreeIpaConfig } = await import("@k2b/cloud/services");
+    const { getFreeIpaConfig } = await import("@k2b/cloud/services");
     let recover: ((context: { runId: string }) => Promise<void>) | undefined;
     const scheduler = {
       create: async (input: { process: (context: { runId: string }) => Promise<void> }) => {
@@ -185,25 +193,31 @@ costSuite("background cost alert recovery", () => {
     const service = createAiNotificationService(app.notifications);
     const prefix = `cost-notification-${crypto.randomUUID()}`;
     const alerts = [crypto.randomUUID(), crypto.randomUUID()];
+    const ownKeys = new Set<string>();
     const users = await sql<{ id: string; uid: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name,admin)
       VALUES(${`${prefix}-local-admin`},'local','user','Cost local admin',true),
         (${`${prefix}-local-user`},'local','user','Cost local user',false),
         (${`${prefix}-ipa-admin`},'ipa','user','Cost IPA admin',false),
         (${`${prefix}-ipa-not-admin`},'ipa','user','Cost IPA member',false)
       RETURNING id,uid`;
+    const userIds = toPgUuidArray(users.map((user) => user.id));
     const localAdmin = users.find((user) => user.uid.endsWith("-local-admin"))!;
     const ipaAdmin = users.find((user) => user.uid.endsWith("-ipa-admin"))!;
     const adminGroup = (await getFreeIpaConfig()).groupsAdmin[0]!;
     await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${ipaAdmin.id}::uuid,${adminGroup})`;
     await sql`INSERT INTO ai.cost_alerts(id,kind,cost,unit) VALUES(${alerts[0]!}::uuid,'warning',2.5,'EUR'),(${alerts[1]!}::uuid,'stop',5,'EUR')`;
-    let sendFailure: ReturnType<typeof spyOn<typeof notifications, "send">> | undefined;
+    for (const alert of alerts) for (const admin of [localAdmin, ipaAdmin]) ownKeys.add(`cost:${alert}:${admin.id}`);
+    let sendFailure: ReturnType<typeof spyOn<typeof platform, "sendTypedNotification">> | undefined;
     try {
       await service.start();
       if (!recover) throw new Error("Recovery scheduler callback was not registered.");
-      const send = notifications.send;
-      sendFailure = spyOn(notifications, "send")
-        .mockImplementationOnce(send)
-        .mockRejectedValueOnce(new Error("Injected recoverable notification failure"));
+      const send = platform.sendTypedNotification;
+      let injected = false;
+      sendFailure = spyOn(platform, "sendTypedNotification").mockImplementation((definition, input) => {
+        if (injected || !ownKeys.has(input.idempotencyKey)) return send(definition, input);
+        injected = true;
+        return Promise.reject(new Error("Injected recoverable notification failure"));
+      });
       await expect(recover({ runId: crypto.randomUUID() })).rejects.toThrow("Injected recoverable notification failure");
       sendFailure.mockRestore();
       sendFailure = undefined;
@@ -212,6 +226,7 @@ costSuite("background cost alert recovery", () => {
       const events = await sql<{ recipient_user_id: string; idempotency_key: string; title: string; target_href: string }[]>`
         SELECT recipient_user_id,idempotency_key,title,target_href FROM notifications.events
         WHERE definition_id=${app.notifications.backgroundCosts.id}
+          AND recipient_user_id=ANY(${userIds}::uuid[])
           AND (idempotency_key LIKE ${`cost:${alerts[0]}:%`} OR idempotency_key LIKE ${`cost:${alerts[1]}:%`})`;
       expect(events).toHaveLength(4);
       expect(events.map((event) => event.recipient_user_id).sort()).toEqual(
@@ -225,6 +240,7 @@ costSuite("background cost alert recovery", () => {
       const deliveries = await sql<{ channel: string; status: string; error_code: string | null }[]>`
         SELECT d.channel,d.status,d.error_code FROM notifications.deliveries d
         JOIN notifications.events e ON e.id=d.event_id WHERE e.definition_id=${app.notifications.backgroundCosts.id}
+          AND e.recipient_user_id=ANY(${userIds}::uuid[])
           AND (e.idempotency_key LIKE ${`cost:${alerts[0]}:%`} OR e.idempotency_key LIKE ${`cost:${alerts[1]}:%`})`;
       expect(deliveries).toHaveLength(4);
       expect(

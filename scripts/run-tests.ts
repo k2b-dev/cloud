@@ -50,6 +50,8 @@ export const hasIntegrationTarget = (env: Record<string, string | undefined> = p
 
 export const discoverTestSuites = async (workspaceRoot: string, options: Options = { integration: false }): Promise<TestSuite[]> => {
   const preload = ["--preload", join(workspaceRoot, "scripts", "fixtures", "test-infra.ts")];
+  // Integration files migrate schemas and wait on brokers in their hooks; 5 s is too short on a slow runner.
+  const integrationTimeout = "30000";
   const rootPackage = readPackageJson(join(workspaceRoot, "package.json"));
   const workspaces = rootPackage.workspaces?.packages ?? [];
   const suites: TestSuite[] = [];
@@ -64,7 +66,7 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
       // Bun's default sql/redis handles and the process-wide Sync binding are shared by every file in
       // one process, so each integration file runs in a process of its own.
       for (const file of await listIntegrationFiles(cwd)) {
-        suites.push({ name: `${name} ${file}`, cwd, command: ["bun", "test", ...preload, file] });
+        suites.push({ name: `${name} ${file}`, cwd, command: ["bun", "test", ...preload, "--timeout", integrationTimeout, file] });
       }
       return;
     }

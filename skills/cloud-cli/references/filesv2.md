@@ -126,6 +126,41 @@ without a conversion endpoint. `thumbnail` saves an image thumbnail; `--size` ac
 transfer and safe output-file rules as `download`. Unsupported images return an
 error rather than an invented preview.
 
+## Capability lists and on-demand download links
+
+Read the live capability catalog before composing a Studio list or CLI workflow:
+
+```bash
+cld capabilities query filesv2 bases.list --input '{}' --json
+cld capabilities query filesv2 entry.list --input '{"baseId":"<returned-base-id>","path":"Documents"}' --json
+cld capabilities query filesv2 content.download --input '{"id":"<filesv2.entry-ref-id>"}' --json
+```
+
+`entry.list` and `entry.search-in-base` return `data.items` with a qualified
+`filesv2.entry` ref next to each entry. Continue with `data.next` as `after`
+until null, keeping filters unchanged. Lists do not issue download leases.
+Refs are stable for a base/path, including long paths; rename/move changes
+them, and replacing content at the same path does not. They grant no access.
+Keep these refs alongside `grids.document` refs and dispatch by type.
+
+Only request `content.download` when downloading a selected file. The result's
+`data` is `{url,method:"GET",expires}` from the existing download service.
+The bearer URL is valid for 60 seconds; use `expires` as the deadline. This
+explicit capability command prints the private URL, unlike `cld filesv2
+download`; do not log it or save it in shared state. Use the returned URL
+unchanged without Cloud credentials. For a local file, prefer `cld filesv2
+download ... --out ...`, which handles the lease and output safely. For code
+analysis, use `content.read` with the capability stream commands.
+
+Each new lease rechecks current access, including FreeIPA Unix permissions.
+403 is denied; 404 is missing or no longer visible; `not_file` (400) rejects
+folders. `identity_changed` (409) requires refreshing access/identity state.
+Unavailable storage is an error, not an empty list. After expiry or a
+failed transfer, discard the URL and request a fresh lease through Cloud. If
+access is denied, stop. Already issued leases may remain usable until expiry,
+subject to storage checks. Do not create public shares or construct storage
+URLs. Grids documents use their own authenticated download links.
+
 ## Shares, inboxes, and trash
 
 Add `--password-file /path/to/password.txt` to `shares create` for either kind
