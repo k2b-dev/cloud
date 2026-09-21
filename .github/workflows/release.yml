@@ -266,7 +266,10 @@ jobs:
             --env APP_SECRET="$APP_SECRET"
             --env CLOUD_IDENTITY_JWKS_ORIGIN=http://app-core:3000
             --env CLOUD_OAUTH_JWKS_ORIGIN=http://app-oauth:3000
-            --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
+            --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000
+            --env CLOUD_IDENTITY_KEY_ENCRYPTION_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+            --env CLOUD_OAUTH_BROKER_SECRET=abababababababababababababababababababababababababababababababab
+            --env ADMIN_LOGIN_TOKEN=release-smoke)
           docker run --detach --name app-core "${common[@]}" --publish 127.0.0.1:3001:3000 "$registry/cloud-core@$(ref cloud-core)"
           docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 "$registry/cloud-gateway@$(ref cloud-gateway)"
           docker run --detach --name app-faq "${common[@]}" --publish 127.0.0.1:3002:3000 "$registry/cloud-app-faq@$(ref cloud-app-faq)"
@@ -335,8 +338,15 @@ jobs:
           git fetch --quiet origin "refs/tags/npm-cloud-v$version:refs/tags/npm-cloud-v$version"
           [[ "$(git rev-list -n1 "npm-cloud-v$version")" == "$SHA" ]] || { echo "npm-cloud-v$version is not at $SHA." >&2; exit 1; }
           echo "NPM_TAG=$([[ "$version" == *-* ]] && echo next || echo latest)" >> "$GITHUB_ENV"
-      - working-directory: packages/cloud
-        run: npm publish --provenance --access public --tag "$NPM_TAG"
+      - name: Publish unless this version is already on npm (a finished release may run again)
+        working-directory: packages/cloud
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version package.json)
+          if [[ "$(npm view "@k2b/cloud@$version" version 2>/dev/null || true)" == "$version" ]]; then
+            echo "@k2b/cloud@$version is already published."; exit 0
+          fi
+          npm publish --provenance --access public --tag "$NPM_TAG"
 
   npm-ui:
     if: inputs.npm_ui_released
@@ -368,5 +378,12 @@ jobs:
           git fetch --quiet origin "refs/tags/npm-ui-v$version:refs/tags/npm-ui-v$version"
           [[ "$(git rev-list -n1 "npm-ui-v$version")" == "$SHA" ]] || { echo "npm-ui-v$version is not at $SHA." >&2; exit 1; }
           echo "NPM_TAG=$([[ "$version" == *-* ]] && echo next || echo latest)" >> "$GITHUB_ENV"
-      - working-directory: packages/ui
-        run: npm publish --provenance --access public --tag "$NPM_TAG"
+      - name: Publish unless this version is already on npm (a finished release may run again)
+        working-directory: packages/ui
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version package.json)
+          if [[ "$(npm view "@k2b/ui@$version" version 2>/dev/null || true)" == "$version" ]]; then
+            echo "@k2b/ui@$version is already published."; exit 0
+          fi
+          npm publish --provenance --access public --tag "$NPM_TAG"
