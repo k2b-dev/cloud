@@ -1741,6 +1741,10 @@ suite("Files service and durable bindings", () => {
   test("a disabled Cloud area is hidden from users while enabled FreeIPA storage works and real failures still surface", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
+    const [team] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','local',200003) RETURNING id`;
+    await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${team!.id})`;
     config.cloud.enabled = false;
     const disabled = await service.bases(actor);
     expect(disabled.issues).toEqual([]);
@@ -1753,6 +1757,24 @@ suite("Files service and durable bindings", () => {
     const failing = await service.bases(actor);
     expect(failing.issues).toEqual([{ area: "cloud", code: "local_linux_disabled" }]);
     expect(failing.items.map((item) => item.area)).toEqual(["freeipa"]);
+  });
+  test("storage areas follow the account provider: a local account never sees FreeIPA bases or notices, an IPA account never Cloud ones", async () => {
+    const local = await user("bob");
+    directory("cloud", "users/bob", 200001, 200001);
+    await set("freeipa.enable", false);
+    const bob = await service.bases(local);
+    expect(bob.issues).toEqual([]);
+    expect(bob.items.map((item) => [item.area, item.kind, item.name])).toEqual([["cloud", "users", "bob"]]);
+    await set("freeipa.enable", true);
+    const ipa = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    await set(
+      "linux.identity_config",
+      JSON.stringify({ enabled: false, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
+    );
+    const alice = await service.bases(ipa);
+    expect(alice.issues).toEqual([]);
+    expect(alice.items.map((item) => [item.area, item.kind, item.name])).toEqual([["freeipa", "users", "alice"]]);
   });
   test("guest and global Cloud prerequisite denial occurs before leases", async () => {
     const guest = await user("guest", "local", false, "guest");

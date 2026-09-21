@@ -5,6 +5,7 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EntryResult, FileEntry, FileVersion } from "../contracts";
 import { ENTRY_TYPE, entryRefId } from "../resource-ref";
+import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
@@ -291,7 +292,14 @@ export default function FileInspector(props: {
                       layout="rows"
                       size="sm"
                       items={[
-                        { term: t().location, description: <span class="break-all">{`${props.base.name} / ${item().path}`}</span> },
+                        {
+                          term: t().location,
+                          description: (
+                            <span class="break-all" title={`${props.base.name} / ${item().path}`}>
+                              {`${baseLabel(props.base, t())} / ${item().path}`}
+                            </span>
+                          ),
+                        },
                         { term: t().kind, description: kindLabel(item()) },
                         { term: f().modified, description: <Format.DateTime value={item().modified} /> },
                         ...(!item().directory ? [{ term: f().size, description: <Format.Bytes value={item().size} /> }] : []),

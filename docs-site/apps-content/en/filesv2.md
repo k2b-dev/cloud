@@ -32,7 +32,13 @@ when the description overflows, a fade and **Show all** action appear at the bot
 The action opens its full preview with normal-sized headings.
 
 Open `/app/filesv2` to choose an accessible home or group directory from the
-workspace sidebar. On mobile, the Cloud menu contains the same storage choices.
+workspace sidebar. Your home directory is listed as **My files** with its
+technical name as secondary text; group directories carry the group's name.
+Breadcrumbs, the details panel, Recent, Favorites, and your share list use
+the same labels, while the API and CLI keep the technical `name`. Only
+storage areas that apply to your account provider are listed or reported:
+a local account never sees FreeIPA storage and a FreeIPA account never sees
+local Cloud storage. On mobile, the Cloud menu contains the same storage choices.
 Switching storage, opening folders, and changing pages update the workspace
 without reloading the whole page. Navigation and pagination stay in the URL,
 so reloads and browser Back and Forward preserve your location.

@@ -16,7 +16,7 @@ The details panel shows five lines of text or five CSV records plus the header. 
 
 ## Find your way around {icon="folders"}
 
-The sidebar lists your storage locations and their folders as a tree; the current folder is highlighted and a folder you open shows a spinner in place of its icon. Click a folder in the list to open it; the first row **..** leads back to the parent folder. Click a file to open its details panel on the right, or use the small info button at the end of any row for folders too. Close the panel with the X; that also clears the selection.
+The sidebar lists your storage locations and their folders as a tree. Your own storage appears as **My files** with your username beneath it; group storage carries the group name. The current folder is highlighted and a folder you open shows a spinner in place of its icon. Click a folder in the list to open it; the first row **..** leads back to the parent folder. Click a file to open its details panel on the right, or use the small info button at the end of any row for folders too. Close the panel with the X; that also clears the selection.
 
 Choose **List**, **Grid**, or **Tree** above the list. Tree shows the whole storage location from its root with the current folder highlighted; click a folder name to make it the current folder, click its icon to expand or collapse it, several at once. New entries and uploads always go into the current folder, which every name dialog shows. Grid adds a tile size control. The browser remembers view and size per storage location. **Next page** and **First page** move through long folders; storage, folder, page, and a single selected file stay in the address bar so you can reload or bookmark.
 

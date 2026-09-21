@@ -7,6 +7,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry, type MarkedEntry } from "../contracts";
 import Browser from "./Browser";
+import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { browseOptions, browseQuery, parsePreferences, type ViewPreference, viewFor } from "./browser-preferences";
 import Editor from "./Editor";
@@ -169,7 +170,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     items: () => [
       ...snapshot().bases.items.map((base) => ({
         id: base.id,
-        label: base.name,
+        label: baseLabel(base, b()),
         icon: base.kind === "users" ? "ti ti-home" : "ti ti-users",
         href: filesUrl(base.id),
         active: snapshot().selectedId === base.id,
@@ -574,11 +575,12 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                   {(base) => (
                     <AppWorkspace.NavTree.Item
                       id={treeId(base.id, "")}
-                      label={treeLabel(treeId(base.id, ""), base.name)}
+                      label={treeLabel(treeId(base.id, ""), baseLabel(base, b()))}
                       icon={base.kind === "users" ? "ti ti-home" : "ti ti-users"}
                       href={filesUrl(base.id)}
                       navigation="enhanced"
-                      title={`${base.name} (${t()[base.area]})`}
+                      meta={baseLabel(base, b()) === base.name ? undefined : <span class="text-xs text-dimmed">{base.name}</span>}
+                      title={`${baseLabel(base, b()) === base.name ? base.name : `${baseLabel(base, b())} · ${base.name}`} (${t()[base.area]})`}
                       onNavigate={(event) => withSpinner(treeId(base.id, ""), () => onNavigate(event))}
                     >
                       <Show when={base.status === "existing"}>
@@ -780,7 +782,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                           defaultTitle:
                             paths.length === 1
                               ? paths[0]!.split("/").at(-1)!
-                              : `${directory().path.split("/").at(-1) || directory().base.name} (${paths.length})`,
+                              : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b())} (${paths.length})`,
                         })
                       }
                       onShareInbox={(folder) =>
@@ -788,7 +790,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                           baseId: directory().base.id,
                           kind: "inbox",
                           folder,
-                          defaultTitle: folder.split("/").at(-1) || directory().base.name,
+                          defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b()),
                         })
                       }
                       editor={snapshot().bases.editor}

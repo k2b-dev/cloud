@@ -201,7 +201,7 @@ describe("Filesv2 progressive navigation", () => {
       indexEnabled: false,
       versioningEnabled: false,
     };
-    const missing = { ...base, id: "missing", name: "Missing group", status: "missing" as const };
+    const missing = { ...base, id: "missing", kind: "groups" as const, name: "Missing group", status: "missing" as const };
     const bases = { items: [base, missing], issues: [], editor: null };
     const directory = {
       base,
@@ -220,8 +220,21 @@ describe("Filesv2 progressive navigation", () => {
       [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find(
         (entry) => entry.textContent?.includes(text) || entry.getAttribute("aria-label")?.includes(text),
       )!;
+    // The personal base reads "My files" and keeps its technical name as meta and tooltip; groups keep their name.
+    const home = link("My files");
+    expect(home.getAttribute("href")).toBe("/app/filesv2?base=home");
+    expect(
+      home.closest(".k2b-app-workspace__sidebar-item, [role=treeitem]")?.querySelector(".k2b-app-workspace__sidebar-item-meta")
+        ?.textContent,
+    ).toBe("Alice");
+    expect(home.closest("[title]")?.getAttribute("title")).toBe("My files · Alice (Cloud)");
+    expect(link("Alice")).toBe(home);
     const missingLink = link("Missing group");
     expect(missingLink.getAttribute("href")).toBe("/app/filesv2?base=missing");
+    expect(missingLink.closest("[title]")?.getAttribute("title")).toBe("Missing group (Cloud)");
+    expect(
+      missingLink.closest(".k2b-app-workspace__sidebar-item, [role=treeitem]")?.querySelector(".k2b-app-workspace__sidebar-item-meta"),
+    ).toBeNull();
     missingLink.click();
     await flush();
     expect(dom.window.location.search).toBe("?base=home");
@@ -326,7 +339,7 @@ describe("Filesv2 progressive navigation", () => {
     setOpen(true);
     await flush();
     const make = (path: string, at: string) => ({
-      base: { id: "home", name: "Home", area: "cloud" },
+      base: { id: "home", name: "Home", kind: "users", area: "cloud" },
       entry: { path, name: "Notes", directory: false, size: 1, modified: at },
       markedAt: at,
     });
@@ -336,7 +349,8 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     const entries = [...dom.root.querySelectorAll<HTMLButtonElement>("button")];
     expect(entries).toHaveLength(2);
-    expect(entries[0]!.textContent).toContain("new/Notes");
+    expect(entries[0]!.textContent).toContain("My files / new/Notes");
+    expect(entries[0]!.textContent).not.toContain("Home /");
     expect(entries[0]!.querySelector("time")).not.toBeNull();
     entries[0]!.click();
     await flush();
