@@ -3,6 +3,7 @@ import { AppWorkspace, Button, ButtonLink, DataTable, Format, Placeholder, promp
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { SharePage, ShareView } from "../contracts";
+import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
@@ -142,7 +143,7 @@ export default function SharesOverview(props: {
                   navigation="enhanced"
                   onNavigate={props.onNavigate}
                 >
-                  {row.base.name}
+                  {baseLabel(row.base, b())}
                   {row.scope ? ` / ${row.scope}` : ""}
                 </ButtonLink>
               );

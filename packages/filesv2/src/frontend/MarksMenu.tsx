@@ -2,6 +2,7 @@ import { AppWorkspace, Button, Format, IconButton, Placeholder, prompts, ScrollA
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkedEntry } from "../contracts";
+import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure, fileIcon } from "./file-preview";
 
@@ -50,7 +51,7 @@ export function MarksMenu(props: MarksOptions & { open: boolean; close: () => vo
       props.kind === "recent"
         ? c.markedAt.localeCompare(a.markedAt)
         : a.entry.name.localeCompare(c.entry.name, undefined, { numeric: true, sensitivity: "base" }) ||
-          a.base.name.localeCompare(c.base.name),
+          baseLabel(a.base, b()).localeCompare(baseLabel(c.base, b())),
     ),
   );
   const duplicates = createMemo(() => {
@@ -95,7 +96,7 @@ export function MarksMenu(props: MarksOptions & { open: boolean; close: () => vo
                   props.close();
                   props.onOpen(item);
                 }}
-                description={(duplicates().get(item.entry.name) ?? 0) > 1 ? `${item.base.name} / ${item.entry.path}` : undefined}
+                description={(duplicates().get(item.entry.name) ?? 0) > 1 ? `${baseLabel(item.base, b())} / ${item.entry.path}` : undefined}
                 meta={
                   props.kind === "recent" ? (
                     <Format.RelativeTime value={item.markedAt} base={now()} title={new Date(item.markedAt).toLocaleString()} />

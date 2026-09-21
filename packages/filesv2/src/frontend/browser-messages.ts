@@ -5,6 +5,7 @@ export const browserMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      myFiles: "My files",
       folderReadme: "Folder description",
       showAll: "Show all",
       list: "List",
@@ -290,6 +291,7 @@ export const browserMessages = i18n.define({
       uploadUnavailable: "Uploads wait until the current action or search is finished.",
     },
     de: {
+      myFiles: "Meine Dateien",
       folderReadme: "Ordnerbeschreibung",
       showAll: "Alles anzeigen",
       list: "Liste",

@@ -85,6 +85,8 @@ test("view changes preserve selection; superseded details cannot replace current
   await flush();
   expect(dom.root.querySelector("h2")?.textContent).toBe("B.txt");
   expect(dom.window.location.search).toContain("file=B.txt");
+  // The details panel labels the personal base and keeps the technical location as tooltip.
+  expect(dom.root.querySelector<HTMLElement>('[title="Home / B.txt"]')?.textContent).toBe("My files / B.txt");
   [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Grid"))!.click();
   await flush();
   expect(dom.root.querySelector('.k2b-file-grid__item[aria-selected="true"]')?.textContent).toContain("B.txt");

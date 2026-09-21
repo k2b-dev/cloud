@@ -524,7 +524,7 @@ export function createFilesService(
         const current = await authorized(actor, id, row.path, undefined, state);
         if (current.inspection.binding?.id !== row.base_id) continue;
         output.push({
-          base: { id, name: item.name, area: item.area },
+          base: { id, name: item.name, kind: item.kind, area: item.area },
           entry: fileEntry(current.relative, current.node),
           markedAt: row.marked_at.toISOString(),
         });
@@ -779,6 +779,9 @@ export function createFilesService(
       for (const area of ["cloud", "freeipa"] as const) {
         // An area the operator switched off is not a failure; only enabled areas report issues to users.
         if (!state.config[area].enabled) continue;
+        // Candidates follow the account provider; an area without any is not this user's storage and stays silent.
+        const items = state.candidates.filter((item) => item.area === area);
+        if (!items.length) continue;
         const issue = issueFor(state.config, area, state.self.availability);
         if (issue) {
           output.issues.push({ area, code: issue });
@@ -787,7 +790,7 @@ export function createFilesService(
         try {
           const root = deps.connect(state.config).root(state.config[area].root);
           const info = await root.info();
-          for (const item of state.candidates.filter((item) => item.area === area)) {
+          for (const item of items) {
             let entry = await inspect(root, item, info, state.config.url);
             if (entry.summary.status === "missing" && area === "cloud" && state.config.cloud.autoCreate) {
               await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
