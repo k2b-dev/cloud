@@ -15,10 +15,7 @@ const build = await Bun.build({
             filename: path,
             babelrc: false,
             configFile: false,
-            presets: [
-              [typescript, { allowDeclareFields: true }],
-              [solid, { generate: "dom", hydratable: false }],
-            ],
+            presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
           });
           return { contents: result.code, loader: "js" };
         });
