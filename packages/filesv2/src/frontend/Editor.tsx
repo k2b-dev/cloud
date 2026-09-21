@@ -1,4 +1,4 @@
-import { AppWorkspace, Button, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { OfficeEditorLaunch } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
@@ -39,6 +39,22 @@ function cloudTheme(): string {
 }
 const isDark = () => document.documentElement.classList.contains("dark");
 const EDITOR_LOAD_TIMEOUT_MS = 60_000;
+/** Writable files outside managed bases get one notice per browser; unavailable storage only repeats it. */
+const EXTERNAL_WRITES_NOTICE_KEY = "filesv2-editor-external-writes";
+const externalWritesAcknowledged = () => {
+  try {
+    return localStorage.getItem(EXTERNAL_WRITES_NOTICE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const acknowledgeExternalWrites = () => {
+  try {
+    localStorage.setItem(EXTERNAL_WRITES_NOTICE_KEY, "1");
+  } catch {
+    /* Storage may be disabled; the notice appears again next time. */
+  }
+};
 
 export default function Editor(props: { launch: OfficeEditorLaunch; onBack: () => void }) {
   const b = useBrowserMessages();
@@ -81,18 +97,15 @@ export default function Editor(props: { launch: OfficeEditorLaunch; onBack: () =
     const timer = setTimeout(() => setFailed(!loaded()), EDITOR_LOAD_TIMEOUT_MS);
     onCleanup(() => clearTimeout(timer));
     queueMicrotask(() => form.submit());
+    if (props.launch.managed === false && props.launch.canWrite && !externalWritesAcknowledged())
+      void prompts
+        .alert(b().editorExternalWrites, { title: b().editorExternalWritesTitle, icon: "ti ti-alert-triangle" })
+        .then(acknowledgeExternalWrites);
   });
   // Collabora shows its own close button for this parameter and reports the click as UI_Close.
   const action = () => `${props.launch.action}&closebutton=1`;
   return (
     <AppWorkspace.Main scroll={false} class="filesv2-editor" aria-busy={!loaded()}>
-      <Show when={props.launch.managed === false && props.launch.canWrite}>
-        <div class="shrink-0 p-3">
-          <InlineGuidance tone="warning" icon="ti ti-alert-triangle">
-            {b().editorExternalWrites}
-          </InlineGuidance>
-        </div>
-      </Show>
       <div class="filesv2-editor__frame">
         <iframe ref={frame} name={frameName} title={props.launch.entry.name} allow="clipboard-read; clipboard-write" />
         <Show when={!loaded()}>
