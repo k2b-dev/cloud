@@ -473,7 +473,8 @@ describe("cloud CLI OAuth session handling", () => {
             manifestHash: "1".repeat(64),
             types: [],
             queries,
-            actions: [], commands: [],
+            actions: [],
+            commands: [],
           },
         },
       ],
@@ -1001,6 +1002,7 @@ if [ "$1" = "get" ]; then
   exit 0
 fi
 if [ "$1" = "set" ]; then
+  cat >/dev/null
   echo "fd0 write failed" >&2
   exit 1
 fi

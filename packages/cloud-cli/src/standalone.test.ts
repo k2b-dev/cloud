@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { cliHostBundle } from "../../assistant/src/artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../../assistant/src/artifacts/runtime/compile";
-import { join, resolve } from "node:path";
 
 test("standalone CLI starts and runs offline without Cloud server configuration", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-standalone-test-"));
@@ -67,26 +67,51 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
 
     // Exercise the compiled parent AND its internal browser subprocess, from
     // outside the checkout. No installation or user Cloud data is contacted.
+    const chromium = process.env.CLOUD_CLI_CHROMIUM ?? Bun.which("google-chrome") ?? Bun.which("chromium");
     const bundle = await cliHostBundle();
     const code = "export default () => 42";
-    const compiled = await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:code}]});
+    const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
     const conversationId = crypto.randomUUID();
-    const server = Bun.serve({hostname:"127.0.0.1",port:0,fetch(request) {
-      const path = new URL(request.url).pathname;
-      if (path === `/api/ai/conversations/${conversationId}`) return Response.json({conversation:{id:conversationId}});
-      if (path.endsWith("/runtime/host.js")) return new Response(bundle);
-      if (path.endsWith("/compile")) return Response.json(compiled);
-      return new Response("Unexpected test request", {status:404});
-    }});
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const path = new URL(request.url).pathname;
+        if (path === `/api/ai/conversations/${conversationId}`) return Response.json({ conversation: { id: conversationId } });
+        if (path.endsWith("/runtime/host.js")) return new Response(bundle);
+        if (path.endsWith("/compile")) return Response.json(compiled);
+        return new Response("Unexpected test request", { status: 404 });
+      },
+    });
     try {
       const input = join(directory, "run.json");
-      await Bun.write(input, JSON.stringify({code}));
-      const executed = await run(["--server", server.url.origin, "--token", "test-token", "--json",
-        "assistant", "code", "run", "--chat", conversationId, "--input-file", input], {HOME:homedir()});
+      await Bun.write(input, JSON.stringify({ code }));
+      const executed = await run(
+        [
+          "--server",
+          server.url.origin,
+          "--token",
+          "test-token",
+          "--json",
+          "assistant",
+          "code",
+          "run",
+          "--chat",
+          conversationId,
+          "--input-file",
+          input,
+        ],
+        {
+          HOME: homedir(),
+          ...(chromium ? { CLOUD_CLI_CHROMIUM: chromium } : {}),
+        },
+      );
       expect(executed.exitCode, executed.stderr).toBe(0);
       expect(executed.stderr).toBe("");
-      expect(JSON.parse(executed.stdout)).toMatchObject({status:"ready",output:"42"});
-    } finally { await server.stop(true); }
+      expect(JSON.parse(executed.stdout)).toMatchObject({ status: "ready", output: "42" });
+    } finally {
+      await server.stop(true);
+    }
 
     const offline = await run(["--json", "grids", "evidence", "verify", join(directory, "missing.tar")]);
     expect(offline.exitCode).toBe(1);
