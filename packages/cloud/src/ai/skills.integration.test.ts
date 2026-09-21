@@ -454,6 +454,42 @@ databaseSuite()("aiSkills (integration)", () => {
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${rescuerId}::uuid)`;
     }
   });
+
+  test("search ranks a typo'd name above a description word that shares a prefix", async () => {
+    const userId = await insertUser("typo-rank");
+    const owner = { type: "user" as const, userId };
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const skills: Awaited<ReturnType<typeof aiSkills.create>>[] = [];
+    try {
+      skills.push(
+        await aiSkills.create({
+          subject: owner,
+          name: `zz-invoices-${suffix}`,
+          description: "Match receipts to bank transactions.",
+          instructions: "Do the work.",
+        }),
+      );
+      // "invioces" is closer to the partial extent "invi…" of "invitations" than to the whole word "invoices",
+      // and "spaces" adds a small name hit; the typo'd name must still win.
+      skills.push(
+        await aiSkills.create({
+          subject: owner,
+          name: `aa-spaces-${suffix}`,
+          description: "Send calendar invitations for events.",
+          instructions: "Do the work.",
+        }),
+      );
+      const result = await aiSkills.search(owner, "invioces");
+      expect(result.skills[0]?.id).toBe(skills[0]!.id);
+      expect(result.skills.map((skill) => skill.id).filter((id) => skills.some((skill) => skill.id === id))).toEqual([
+        skills[0]!.id,
+        skills[1]!.id,
+      ]);
+    } finally {
+      for (const skill of skills) await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
 });
 
 databaseSuite()("versioned Skill templates (integration)", () => {
