@@ -677,6 +677,8 @@ const fieldValueHint = (field: Field, locale?: string): string | null => {
       return t.selectValueHint;
     case "principal":
       return t.principalValueHint;
+    case "resource":
+      return t.resourceValueHint;
     case "json":
       return t.jsonValueHint;
     case "relation":

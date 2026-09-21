@@ -70,6 +70,7 @@ export const TYPE_OPTIONS = [
   { value: "date", label: "Date" },
   { value: "select", label: "Select" },
   { value: "principal", label: "People and groups" },
+  { value: "resource", label: "Cloud resource" },
   { value: "id", label: "ID" },
   // Tier 2
   { value: "percent", label: "Percent" },
@@ -130,8 +131,19 @@ type EditorProps = {
 /** Field types that can't sensibly serve as a presentable label. Lookup
  *  can target formula fields because the read pipeline resolves them;
  *  rollup stays stricter because aggregation must stay SQL-native. */
-const NON_LOOKUP_TARGET_TYPES = new Set(["relation", "lookup", "rollup", "html_template", "file"]);
-const NON_ROLLUP_TARGET_TYPES = new Set(["relation", "lookup", "rollup", "formula", "html_template", "file", "select", "json", "longtext"]);
+const NON_LOOKUP_TARGET_TYPES = new Set(["resource", "relation", "lookup", "rollup", "html_template", "file"]);
+const NON_ROLLUP_TARGET_TYPES = new Set([
+  "resource",
+  "relation",
+  "lookup",
+  "rollup",
+  "formula",
+  "html_template",
+  "file",
+  "select",
+  "json",
+  "longtext",
+]);
 
 // Set of types we know how to show a constraint form for. Anything outside
 // this set falls into the "no extra configuration" hint.

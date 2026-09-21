@@ -4,6 +4,8 @@ export const gridsFormMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      chooseResource: "Choose resource",
+      resourceUnavailable: "This resource is unavailable or you do not have access.",
       sectionTitle: "Start section (optional)",
       sectionDescription: "This field and following fields form a section, until the next section starts.",
       sectionHelp: "Section description",
@@ -184,6 +186,8 @@ export const gridsFormMessages = i18n.define({
       removeDraft: "Remove draft",
     },
     de: {
+      chooseResource: "Ressource auswählen",
+      resourceUnavailable: "Diese Ressource ist nicht verfügbar oder du hast keinen Zugriff.",
       sectionTitle: "Abschnitt beginnen (optional)",
       sectionDescription: "Dieses Feld und die folgenden Felder bilden einen Abschnitt, bis ein neuer beginnt.",
       sectionHelp: "Abschnittsbeschreibung",

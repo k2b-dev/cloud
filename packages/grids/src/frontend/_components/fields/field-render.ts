@@ -25,6 +25,7 @@ const USER_EDITABLE_FIELD_TYPES = new Set([
   "json",
   "object_list",
   "principal",
+  "resource",
 ]);
 export const RECORD_INPUT_FIELD_TYPES = new Set([...USER_EDITABLE_FIELD_TYPES, "relation"]);
 

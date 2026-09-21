@@ -43,6 +43,17 @@ Use **Field configuration reference** for field types and ID strategies,
 workflow, CLI, and API contracts. Agents should discover and read those Help
 pages rather than infer options from a UI label.
 
+The **Cloud resource** field (`resource`) links one resource from another Cloud
+application, for example a Filesv2 entry. Its config is `{}`. Values contain
+`type`, `id`, and optionally `title`; discover these through Cloud search or the
+owning application's capabilities. The retained title is a label, not a live
+snapshot. Opening resolves the current canonical reader and checks access in
+the owning app. Grids stores no URL, token or permission grant, copies no bytes,
+and does not recursively finalize the external resource. Use the File field
+for uploads owned by Grids. Resource values can be read as JSON; scalar sorting,
+grouping, indexes and joins into the external app are not supported.
+
+
 ### Choose a template for daily work
 
 Templates create a new Base with tables, Forms, Workflows, Documents, and published

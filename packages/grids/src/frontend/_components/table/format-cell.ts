@@ -1,6 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import Decimal from "decimal.js";
 import type { FormatSpec } from "../../../contracts";
+import { ResourceValueSchema } from "../../../field-types/resource";
 import { tableMessages } from "./messages";
 
 /**
@@ -69,6 +70,10 @@ const canUseDecimalFormat = (type: string, value: unknown): value is number | st
 const canUsePercentFormat = (type: string): boolean => type === "percent" || type === "formula";
 
 const DEFAULT_RENDERERS: Record<string, CellRenderer> = {
+  resource: (value) => {
+    const parsed = ResourceValueSchema.safeParse(value);
+    return parsed.success ? (parsed.data.title ?? `${parsed.data.type} · ${parsed.data.id}`) : "";
+  },
   date: (value, fieldConfig, dateConfig) =>
     typeof value === "string" ? formatDateDefault(value, fieldConfig, dateConfig) : fallbackValue(value),
   boolean: (value, _fieldConfig, _dateConfig, locale) => {
