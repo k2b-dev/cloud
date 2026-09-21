@@ -14,5 +14,7 @@ updates:
       interval: weekly
     labels: [dependencies]
     groups:
+      toolchain:
+        patterns: ["@babel/*", "typescript", "@biomejs/*", "bun-plugin-tailwind", "tailwindcss", "postcss"]
       workspace:
         patterns: ["*"]

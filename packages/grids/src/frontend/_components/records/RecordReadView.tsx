@@ -279,11 +279,11 @@ export default function RecordReadView(props: RecordReadViewProps) {
                 >
                   <For each={relationFields()}>
                     {(field) => {
-                      const items = relationItems(field);
+                      const items = () => relationItems(field);
                       const targetTableId = relationTargetTableId(field);
                       return (
                         <Show
-                          when={items.length > 0 && targetTableId ? targetTableId : undefined}
+                          when={items().length > 0 && targetTableId ? targetTableId : undefined}
                           fallback={
                             <DetailPanel.Action
                               type="button"
@@ -295,7 +295,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
                           }
                         >
                           {(resolvedTableId) => (
-                            <For each={items}>
+                            <For each={items()}>
                               {(item) => (
                                 <DetailPanel.Action
                                   href={`/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(

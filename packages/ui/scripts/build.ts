@@ -49,7 +49,7 @@ const compileModules = async (mode: "dom" | "ssr", outputRoot: string): Promise<
       babelrc: false,
       configFile: false,
       presets: [
-        [tsPreset, { allowDeclareFields: true }],
+        [tsPreset, {}],
         [solidPreset, { generate: mode, hydratable: mode === "dom" }],
       ],
     });

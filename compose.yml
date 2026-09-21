@@ -34,7 +34,9 @@ services:
     image: postgres:15-alpine
     container_name: ipa_postgres
     restart: unless-stopped
-    command: postgres -c max_connections=300
+    # Each running application holds a small pool and parallel agents run integration
+    # suites against this server; 300 was exhausted with four agents working at once.
+    command: postgres -c max_connections=600
     environment:
       POSTGRES_DB: ipa
       POSTGRES_USER: ipa

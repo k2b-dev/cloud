@@ -100,7 +100,7 @@ export default function WorkspaceMetadataRefresh(props: {
 
   return (
     <Show when={changed() || failed() || workspaceLiveStatus().revoked}>
-      <div class="p-3" role="status">
+      <div class="mb-[var(--ui-space-shell)] shrink-0" role="status">
         <NoticeCard
           icon="ti ti-refresh"
           title={workspaceLiveStatus().revoked ? t().accessDenied : failed() && !changed() ? t().liveMetadataFailed : t().workspaceChanged}
