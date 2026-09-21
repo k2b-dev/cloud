@@ -202,7 +202,7 @@ suite("isolated account category policy", () => {
     expect(await resolveInvocationAuthority(claims, sql, [])).toBeNull();
   });
 
-  // Never ran in CI before the release train: the recovery route answers 500 instead of 401 for an invalid token. Tracked in the release-train PR.
+  // Never ran in CI before the release train: the recovery route answers 500 instead of 401 for an invalid token. Tracked in #4.
   test.todo("emergency recovery requires a valid token and explicit restoration", async () => {
     const [before] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM audit.events WHERE action = 'auth.admin-recovery'`;
     await settings.set("user.category.login.enabled", false);

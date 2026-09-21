@@ -34,7 +34,7 @@ describe("Assistant frontend contracts", () => {
     }
   });
 
-  // Already failing on main before the release train (unrelated to it). Tracked in the release-train PR.
+  // Already failing on main before the release train (unrelated to it). Tracked in #10.
   test.todo("keeps Projects and chat context inside the Assistant workspace", async () => {
     const [workspace, sidebar, projectsDialog, project, context, tasks, projectSettings] = await Promise.all([
       read("./AssistantWorkspace.island.tsx"),

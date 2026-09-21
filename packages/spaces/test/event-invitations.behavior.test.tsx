@@ -36,7 +36,7 @@ describe("Spaces event invitations", () => {
     return;
   }
 
-  // Already failing on main before the release train (unrelated to it). Tracked in the release-train PR.
+  // Already failing on main before the release train (unrelated to it). Tracked in #10.
   test.todo("closes with Escape and opens again", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { suiteFor, testInfra } from "../../../../../scripts/fixtures/test-infra";
 
 suiteFor("database", "valkey")("request cache outage", () => {
-  // Moved from the Docker-based runner; against a shared Valkey the probe records "Connection is closed" instead of the Postgres fallback. Needs a dedicated look. Tracked in the release-train PR.
+  // Moved from the Docker-based runner; against a shared Valkey the probe records "Connection is closed" instead of the Postgres fallback. Needs a dedicated look. Tracked in #9.
   test.todo("reads fall back to Postgres while Valkey is unreachable and the cache refills after reconnect", async () => {
     const child = Bun.spawn([process.execPath, "--no-env-file", new URL("./outage-probe.ts", import.meta.url).pathname], {
       env: {

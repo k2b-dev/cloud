@@ -146,7 +146,7 @@ describe("Contacts detail query behavior", () => {
     dom.cleanup();
   });
 
-  // Already failing on main before the release train (unrelated to it). Tracked in the release-train PR.
+  // Already failing on main before the release train (unrelated to it). Tracked in #10.
   test.todo("keeps a confirmed note deletion bound to the source that opened the prompt", async () => {
     const dom = createDomTestHarness();
     const { default: ContactNotesSection } = await import("../src/frontend/_components/ContactNotesSection.tsx");

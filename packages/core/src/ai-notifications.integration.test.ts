@@ -165,7 +165,7 @@ suite("Core AI completion notifications", () => {
 const costSuite = suiteFor("database", "valkey");
 
 costSuite("background cost alert recovery", () => {
-  // Counts delivery rows across the whole shared test database and never ran in CI before the release train. Tracked in the release-train PR.
+  // Counts delivery rows across the whole shared test database and never ran in CI before the release train. Tracked in #8.
   test.todo("sends only to current local and IPA admins; partial delivery retries do not duplicate events", async () => {
     const { spyOn } = await import("bun:test");
     const cloud = await import("@k2b/cloud");

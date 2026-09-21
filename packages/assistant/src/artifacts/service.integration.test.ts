@@ -1219,7 +1219,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in the release-train PR.
+  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
   test.todo("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
     const resource = await artifacts.create({ title: "Excel import", kind: "app", source }, owner);
     const settings = spyOn(app.settings, "get").mockImplementation(
@@ -1273,7 +1273,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in the release-train PR.
+  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
   test.todo("database clear preserves schema and every attempted write invalidates reviewed state", async () => {
     const settings = spyOn(app.settings, "get").mockImplementation(
       async (key) =>
@@ -1332,7 +1332,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in the release-train PR.
+  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
   test.todo("partial clear reports progress and releases serialization after cancellation", async () => {
     const controller = new AbortController();
     let deletes = 0;
@@ -1449,7 +1449,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect((await artifacts.get(resource.id, owner)).publishedRevision).toBe(1);
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in the release-train PR.
+  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
   test.todo("Studio database backup and reset preserve source and rotate namespace generations", async () => {
     const resource = await artifacts.create({ title: "Reset lifecycle", source }, owner);
     const settings = spyOn(app.settings, "get").mockImplementation(
@@ -1946,7 +1946,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       conversation.mockRestore();
     }
   });
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in the release-train PR.
+  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
   test.todo("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
     const conversationId = crypto.randomUUID(),
       turnId = crypto.randomUUID();

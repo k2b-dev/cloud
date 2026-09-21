@@ -262,7 +262,7 @@ suite("aiFileStore integration", () => {
     }
   });
 
-  // Never ran in CI before the release train; the stored message shape moved on. Tracked in the release-train PR.
+  // Never ran in CI before the release train; the stored message shape moved on. Tracked in #5.
 
   test.todo("migrates historical inline images into referenced user files", async () => {
     const userId = await insertUser();

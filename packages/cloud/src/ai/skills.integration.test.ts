@@ -80,7 +80,7 @@ databaseSuite()("aiSkills (integration)", () => {
     }
   });
 
-  // Never ran in CI before the release train; expectations drifted from the current ranking and id set. Tracked in the release-train PR.
+  // Never ran in CI before the release train; expectations drifted from the current ranking and id set. Tracked in #5.
   test.todo("Project links grant read/use and survive their creator losing access", async () => {
     const ownerId = await insertUser("project-owner"),
       memberId = await insertUser("project-member"),

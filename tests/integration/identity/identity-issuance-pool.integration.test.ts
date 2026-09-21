@@ -85,7 +85,7 @@ if (!testInfra.database) {
       { pool },
     );
 
-  // Never ran in CI before the release train: the suite migrates auth/audit/settings in an order that leaves settings.entries missing. Tracked in the release-train PR.
+  // Never ran in CI before the release train: the suite migrates auth/audit/settings in an order that leaves settings.entries missing. Tracked in #6.
   describe.todo("identity issuance with one real Postgres connection", () => {
     beforeAll(async () => {
       bindProcessApplicationId("core");

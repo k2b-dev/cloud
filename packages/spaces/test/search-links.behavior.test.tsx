@@ -60,7 +60,7 @@ describe("Spaces search navigation links", () => {
     }
   });
 
-  // Already failing on main before the release train (unrelated to it). Tracked in the release-train PR.
+  // Already failing on main before the release train (unrelated to it). Tracked in #10.
   test.todo("Spotlight selection preserves the current list search instead of its SSR query", async () => {
     const dom = createDomTestHarness();
     const ui = await import("@k2b/ui");

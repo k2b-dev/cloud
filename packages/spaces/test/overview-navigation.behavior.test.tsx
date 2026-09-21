@@ -9,7 +9,7 @@ describe("Spaces overview navigation", () => {
     return;
   }
 
-  // Already failing on main before the release train (unrelated to it). Tracked in the release-train PR.
+  // Already failing on main before the release train (unrelated to it). Tracked in #10.
   test.todo("enhances work links, restores history, and leaves modifier clicks native", async () => {
     const dom = createDomTestHarness();
     const previousCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
