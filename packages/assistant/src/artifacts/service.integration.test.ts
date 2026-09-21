@@ -10,7 +10,7 @@ import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
-import { databaseSuite, requireInfraUrl, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, requireInfraUrl, testFor } from "../../../../scripts/fixtures/test-infra";
 import { importRows } from "../../examples/accounting/import-rows";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { app } from "../config";
@@ -37,13 +37,18 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   const stranger = testIdentity("00000000-0000-4000-8000-000000000004");
   const source = { entry: "main.js", files: [{ path: "main.js", content: "export default () => 1" }] };
   let id = "";
-  let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   afterAll(async () => {
     await sql.close();
-    await fresh?.drop();
   });
   beforeAll(async () => {
-    fresh = await useFreshDatabase("assistant_artifacts");
+    // scripts/test-artifacts.ts provides an empty database in a disposable
+    // container. database.ts binds its own pool to DATABASE_URL at import
+    // time, so this suite cannot move to a fresh database in beforeAll; it
+    // builds the stand-in schema in the runner's database instead.
+    const [existing] = await sql<
+      { name: string }[]
+    >`SELECT nspname AS name FROM pg_namespace WHERE nspname IN ('ai','auth','settings','assistant') LIMIT 1`;
+    if (existing) throw new Error(`schema "${existing.name}" already exists; run this file through bun run test:integration`);
     await sql`CREATE SCHEMA settings`;
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text,updated_at timestamptz DEFAULT now())`;
     await sql`CREATE SCHEMA ai`;
@@ -1219,8 +1224,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
+  testFor("rsql")("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
     const resource = await artifacts.create({ title: "Excel import", kind: "app", source }, owner);
     const settings = spyOn(app.settings, "get").mockImplementation(
       async (key) =>
@@ -1273,8 +1277,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("database clear preserves schema and every attempted write invalidates reviewed state", async () => {
+  testFor("rsql")("database clear preserves schema and every attempted write invalidates reviewed state", async () => {
     const settings = spyOn(app.settings, "get").mockImplementation(
       async (key) =>
         ({
@@ -1332,8 +1335,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("partial clear reports progress and releases serialization after cancellation", async () => {
+  testFor("rsql")("partial clear reports progress and releases serialization after cancellation", async () => {
     const controller = new AbortController();
     let deletes = 0;
     const proxy = Bun.serve({
@@ -1449,8 +1451,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect((await artifacts.get(resource.id, owner)).publishedRevision).toBe(1);
   });
 
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("Studio database backup and reset preserve source and rotate namespace generations", async () => {
+  testFor("rsql")("Studio database backup and reset preserve source and rotate namespace generations", async () => {
     const resource = await artifacts.create({ title: "Reset lifecycle", source }, owner);
     const settings = spyOn(app.settings, "get").mockImplementation(
       async (key) =>
@@ -1946,8 +1947,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       conversation.mockRestore();
     }
   });
-  // Never ran in CI before the release train: the stand-in schema lacks assistant.artifact_databases for these paths. Tracked in #7.
-  test.todo("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
+  test("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
     const conversationId = crypto.randomUUID(),
       turnId = crypto.randomUUID();
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
