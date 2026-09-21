@@ -9,6 +9,7 @@ export {
   type MinimalLayoutPreferencePosition,
   type MinimalLayoutProps,
 } from "./MinimalLayout";
+export { requestPath } from "./request-path";
 export { getLocalizedRuntimeContext, getRuntimeContext, type RuntimeContext } from "./runtime";
 export type { UrlFilterField } from "./url-filter";
 export { createUrlFilter, flag, list, oneOf, page, text } from "./url-filter";

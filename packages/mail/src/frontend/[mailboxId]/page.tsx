@@ -1,6 +1,6 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import type { MailRequestContext } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
@@ -48,7 +48,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <MailWorkspace
         data={data}
-        requestUrl={requestUrl.toString()}
+        requestPath={requestPath(c)}
         currentUserId={user.id}
         currentUserEmail={user.mail}
         dateConfig={dateConfig}

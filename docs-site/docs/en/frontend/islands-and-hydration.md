@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-08-10
+updated: 2026-09-22
 ---
 
 # Islands and hydration
@@ -43,6 +43,25 @@ objects, dates, maps, and sets.
 
 Do not pass functions, event handlers, Solid signals, DOM nodes, or arbitrary
 class instances.
+
+Pass the current route as a path, never as the absolute request URL. Behind
+the gateway `c.req.raw.url` carries the internal upstream origin, such as
+`http://app-mail:3000`, which the browser never sees. `requestPath(c)` from
+`@k2b/cloud/ssr` returns `pathname + search`; the island resolves it with
+`new URL(props.requestPath, window.location.origin)` when it needs an absolute
+URL. The `boundaries` repository check rejects `c.req.url`, `c.req.raw.url`,
+and `url.toString()` or `url.href` as JSX attribute values.
+
+```tsx
+// page.tsx
+import { Layout, requestPath } from "@k2b/cloud/ssr";
+
+return () => (
+  <Layout c={c} title="Inventory">
+    <InventoryWorkspace items={items} requestPath={requestPath(c)} />
+  </Layout>
+);
+```
 
 An island calls a typed API when it needs a server effect. It does not receive
 a server callback as a prop.
