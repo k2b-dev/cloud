@@ -36,9 +36,9 @@ describe("root test orchestration", () => {
         expect(suite.command).toEqual(["bun", "run", "test:integration"]);
         continue;
       }
-      expect(suite.command.slice(0, 4)).toEqual(["bun", "test", "--preload", preload]);
-      expect(suite.command).toHaveLength(5);
-      expect(await Bun.file(join(suite.cwd, suite.command[4]!)).text()).toContain("scripts/fixtures/test-infra");
+      expect(suite.command.slice(0, 6)).toEqual(["bun", "test", "--preload", preload, "--timeout", "30000"]);
+      expect(suite.command).toHaveLength(7);
+      expect(await Bun.file(join(suite.cwd, suite.command[6]!)).text()).toContain("scripts/fixtures/test-infra");
     }
   });
 
