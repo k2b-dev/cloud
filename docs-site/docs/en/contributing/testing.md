@@ -49,9 +49,20 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 
 A suite runs when its variables are present and fails loudly when the target
 is unreachable. When a variable is absent, the suite is skipped and the
-matching runtime variable (`DATABASE_URL`, `NATS_SERVERS`, `REDIS_URL`, and so
-on) is removed from the process, so a test can never reach the infrastructure
+matching runtime variables (`NATS_SERVERS`, `GOTENBERG_URL`, and so on) are
+removed, because unset is the off switch for those clients. `DATABASE_URL` and
+`REDIS_URL` instead point at a closed loopback port
+(`postgres://127.0.0.1:1/unset`, `redis://127.0.0.1:1`): Bun's default `sql`
+and `redis` handles would otherwise dial `localhost`, so an ungated test that
+reaches for them fails with a connection error instead of touching the stack
 configured in `.env`.
+
+Run integration tests through `bun run test`: it exports those runtime
+variables into every test process before Bun starts, which is the only moment
+Bun's default `redis` handle reads `REDIS_URL`. A direct `bun test` applies
+them from the preload, too late for that handle; export `REDIS_URL` yourself
+before running it. `tests/integration/test-infra-redis-binding.integration.test.ts`
+proves the binding against a disposable Valkey on a non-default port.
 
 The database name must end in `_test`. Integration tests create and delete
 rows; the fixture refuses any other name. Never point them at the development
