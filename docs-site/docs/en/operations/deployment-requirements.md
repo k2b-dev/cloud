@@ -367,3 +367,15 @@ Keep the existing database's storage and major version unchanged when testing
 BM25 in a separate environment. Verify both search modes with real application
 articles and the required language; a healthy Postgres container alone does
 not prove that the optional indexes are usable.
+
+
+### Filesv2 capability downloads
+
+Filesv2 now exposes the existing single-file lease through `content.download`.
+Update Filesv2 to publish this query in the capability catalog; existing list
+and binary-stream contracts continue to work. No new storage service or public
+share is required. The Filegate public origin must be reachable from the
+requesting user's browser or CLI. Returned bearer links expire after 60 seconds;
+new requests recheck current access, while already issued leases can remain
+usable until expiry. Verify a permitted download and a denied new lease after
+access is removed. See [private file lists and downloads](/en/apps/filesv2#compose-private-file-lists-and-downloads).

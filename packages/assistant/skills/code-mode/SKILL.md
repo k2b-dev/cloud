@@ -69,7 +69,7 @@ supported surface; links within references add related workflows when needed.
 | Chart types, series and axes | [Charts](references/charts.md) |
 | Long processing, progress, cancellation | [Background work](references/work.md) |
 | Persist JSON or files locally/shared | [Storage](references/storage.md) |
-| Copy files between chats, Projects and Apps | [File transfers](references/files.md) |
+| Copy files between stores; list and download Filesv2 beside Grids documents | [File transfers](references/files.md) |
 | Resource SQL, schema, row CRUD, imports | [Database](references/database.md) |
 | Generate text, classify data or extract structured fields | [AI calculations](references/ai.md) |
 | Discovered Cloud queries/actions | [Capability calls](references/capabilities.md) |

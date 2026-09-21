@@ -44,3 +44,44 @@ runtime data in shared files or the database instead of embedding it in source.
 Known rejections return `CONFLICT` for an occupied or changed destination and
 `STORAGE_FULL` for a destination byte limit. No destination bytes were written.
 Choose another path or reduce the file size, then prepare a new review.
+
+
+## List Filesv2 files beside Grids documents
+
+Discover the installed contracts first. Call `filesv2.bases.list`, then
+`filesv2.entry.list` for a folder or `filesv2.entry.search-in-base` for names
+below a known path. Keep the filters unchanged and follow `data.next` as
+`after` until null, even after an empty page. Each `data.items` entry includes
+its own `{type:"filesv2.entry",id}` ref and file metadata. Keep that ref in the
+Studio list, alongside the `grids.document` refs from `grids.document.list`.
+Use both `type` and `id` as the identity; dispatch each type to its own
+operations. Grids uses its own `page` cursor, not Filesv2's `data.next`.
+
+Filesv2 refs identify a base and path, including long paths; they do not grant
+access or pin a content version. Moving or renaming changes the ref, and
+replacing bytes at the same path keeps it. Refresh metadata when needed.
+Never construct storage URLs or turn files into public shares for this flow.
+
+Only on a user's download request, call `filesv2.content.download` with the
+selected Filesv2 ref's exact `id`. Its `data` is `{url,method:"GET",expires}`.
+Offer that returned URL unchanged to the requesting user; it is a private
+bearer credential, not a stable resource link. It expires after 60 seconds;
+use the returned `expires` timestamp and request a fresh lease when needed.
+Do not prefetch leases for list rows, persist them in App/shared data, or
+include them in logs. Do not send Cloud cookies or authorization headers to
+the storage host. Grids documents keep their authenticated download path from
+their canonical reader; never send a `grids.document` ID to Filesv2.
+
+Each lease request checks the current user's storage and Unix permissions.
+A 403 means access is denied; a 404 means the ref or file is missing or the
+base is no longer visible. Refresh the list and do not bypass the denial.
+`not_file` (400) means a folder was selected. `identity_changed` (409) requires
+refreshing access/identity state before trying again. Storage unavailability is an
+error, not an empty list. If a lease expires or a transfer fails, discard the
+URL and request a fresh lease through the same capability; if that is denied,
+stop. Revoking Cloud access prevents new leases; an already issued bearer
+lease can remain usable until expiry, subject to storage checks.
+
+For analysis inside code, use `filesv2.content.read` and
+`capabilities.streams.read` instead of fetching a bearer URL. See
+[Capability calls](capabilities.md) for binary budgets and consent rules.

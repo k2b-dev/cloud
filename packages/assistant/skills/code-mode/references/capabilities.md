@@ -50,7 +50,7 @@ Denial must leave a useful message; do not retry unchanged or bypass consent.
 ## Binary content
 
 Some discovered operations return a `stream` beside `data`. This is the one
-binary path for any app: files, invoice PDFs, audio, and imports use the same
+binary processing path for any app: files, invoice PDFs, audio, and imports use the same
 mechanism. Never invent a download URL or put file bytes in capability JSON.
 
 ```ts
@@ -89,3 +89,9 @@ exact returned base IDs and entry references. Overwriting requires current
 `expectedRevision`; default to creating a new output name. Follow `next` until
 null when an analysis needs every entry. Trash remains recoverable; no permanent
 delete capability is exposed.
+
+
+For a user download from a Studio list, Filesv2 also provides an on-demand
+`content.download` lease. Keep resource refs in lists and request the URL only
+when selected; follow [Filesv2 and Grids downloads](files.md#list-filesv2-files-beside-grids-documents)
+for expiry, permissions and error recovery.

@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import type { CapabilityActionDefinition, CapabilityExecutionContext, CapabilityResult, CapabilityStream } from "@k2b/cloud/contracts";
+import { FilegateError } from "@k2b/filegate";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { filegateErrorCode } from "./api/filegate-error";
 import { BrowseQuerySchema } from "./contracts";
 import { persistedEntryRefId, resolveEntryRefId } from "./data/references";
 import { markdownRevision } from "./document-assets";
@@ -194,6 +196,34 @@ export const fileQueries = {
             expiresAt: new Date(Date.now() + 3600_000).toISOString(),
           },
         });
+      }),
+  },
+  "content.download": {
+    title: "Get file download link",
+    description:
+      "Request a direct single-file download lease only when the user downloads a filesv2.entry from listing or search. Rechecks current access. Returns a bearer URL valid for 60 seconds; never store it in a list or shared data. Use content.read for processing bytes in code.",
+    input: z
+      .object({ id: z.string().min(1).max(512).describe("Exact ID from a filesv2.entry ref returned by listing or search.") })
+      .strict(),
+    data: z.object({
+      url: z.string().describe("Private bearer URL from the download service. Use unchanged without Cloud credentials."),
+      method: z.literal("GET"),
+      expires: z.string().describe("Lease expiry timestamp returned by storage. Request a fresh lease after expiry."),
+    }),
+    openWorld: false,
+    run: async (input: { id: string }, c: CapabilityExecutionContext) =>
+      domain(async () => {
+        const actor = readActor(c);
+        const ref = await resolveEntryRefId(input.id);
+        if (!ref) return fail(err.notFound("File"));
+        try {
+          return ok({ data: await filesService.download(actor, ref) });
+        } catch (error) {
+          if (!(error instanceof FilegateError)) throw error;
+          const code = filegateErrorCode(error);
+          const status = code === "forbidden" ? 403 : code === "not_found" ? 404 : code === "unavailable" ? 503 : 409;
+          throw new FilesError(code, status);
+        }
       }),
   },
 };
