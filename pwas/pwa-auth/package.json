@@ -25,7 +25,7 @@
     "@types/babel__core": "7.20.5",
     "@types/bun": "catalog:",
     "@types/subset-font": "2.3.0",
-    "babel-preset-solid": "1.9.12",
+    "babel-preset-solid": "1.9.15",
     "subset-font": "2.7.0",
     "typescript": "catalog:"
   }

@@ -104,13 +104,13 @@
   },
   "devDependencies": {
     "@k2b/stdlib": "0.25.0",
-    "jose": "6.2.5",
-    "zod": "4.6.2",
+    "jose": "6.2.12",
+    "zod": "4.6.5",
     "@biomejs/biome": "2.5.6",
     "@types/bun": "1.4.2",
-    "@types/node": "25.9.5",
-    "seroval": "1.6.0",
-    "solid-js": "1.9.14",
+    "@types/node": "26.6.1",
+    "seroval": "1.6.7",
+    "solid-js": "1.9.15",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3"
   },
