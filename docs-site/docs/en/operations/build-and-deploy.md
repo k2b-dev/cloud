@@ -29,6 +29,7 @@ The output is written to `dist/`:
 dist/
 ├── server.js
 ├── _ssr/
+├── assets/
 └── public/
     └── inventory/
         └── app.css
@@ -55,8 +56,23 @@ the script shipped by their pinned package version.
 
 ## Add build output
 
-Place application assets in `public/`. The build copies them to
+Place browser assets in `public/`. The build copies them to
 `dist/public/<app-id>/`.
+
+Keep files the server reads at runtime, such as document templates or seed
+data, in `src/assets/`. The build copies that directory to `dist/assets/`, and
+`appAssetPath` from `@k2b/cloud/server` resolves a file inside it from the
+source tree and from the bundle alike:
+
+```ts
+import { appAssetPath } from "@k2b/cloud/server";
+
+const template = Bun.file(appAssetPath("templates", "empty.odt"));
+```
+
+Do not locate server-side files relative to `import.meta.url`: the bundle
+flattens every module into `dist/server.js`, so such paths only work from the
+source tree.
 
 Add `scripts/build-extras.ts` only when the application must generate another
 artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.
