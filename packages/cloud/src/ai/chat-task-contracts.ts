@@ -1,6 +1,6 @@
-import { type CapabilityGrant, CapabilityGrantsSchema } from "../services/mandates";
+import { type TaskGrant, TaskGrantsSchema } from "../services/mandates";
 
-export { CapabilityGrantsSchema as ChatTaskGrantsSchema };
+export { TaskGrantsSchema as ChatTaskGrantsSchema };
 
 import { dates } from "@k2b/stdlib";
 import { z } from "zod";
@@ -18,7 +18,7 @@ export type AiChatTaskView = {
   id: string;
   chatId: string;
   chatTitle: string;
-  grants: CapabilityGrant[];
+  grants: TaskGrant[];
   prompt: string;
   schedule: AiChatTaskSchedule;
   timezone: string;
@@ -95,7 +95,7 @@ export const chatTaskCreateFingerprint = (input: {
   prompt: string;
   schedule: z.infer<typeof ChatTaskScheduleInputSchema>;
   timezone?: string;
-  grants?: CapabilityGrant[];
+  grants?: TaskGrant[];
 }): string =>
   new Bun.CryptoHasher("sha256")
     .update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone ?? null, input.grants ?? []]))

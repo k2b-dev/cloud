@@ -3,8 +3,6 @@ import { type SQL, sql } from "bun";
 import { getCapability } from "../_internal/registry";
 import { logger } from "../services/logging";
 import {
-  type CapabilityGrant,
-  CapabilityGrantsSchema,
   createMandate,
   type Mandate,
   type MandatePolicyV1,
@@ -12,6 +10,8 @@ import {
   pauseMandate,
   resumeMandate,
   revokeMandate,
+  type TaskGrant,
+  TaskGrantsSchema,
   updateMandatePolicy,
   validateMandateIssueAuthority,
 } from "../services/mandates";
@@ -31,7 +31,7 @@ export type AiChatTask = {
   sponsorUserId: string;
   mandateId: string | null;
   mandateRevision: number | null;
-  grants: CapabilityGrant[];
+  grants: TaskGrant[];
   prompt: string;
   schedule: AiChatTaskSchedule;
   timezone: string;
@@ -110,24 +110,27 @@ type OccurrenceRow = {
 const iso = (value: Date | string): string => new Date(value).toISOString();
 const nullableIso = (value: Date | string | null): string | null => (value === null ? null : iso(value));
 const taskIdempotencyKey = (key: string): string => `task.create:${key}`;
-const chatTaskMandatePolicy = (grants: CapabilityGrant[]): MandatePolicyV1 => ({
+const chatTaskMandatePolicy = (grants: TaskGrant[]): MandatePolicyV1 => ({
   version: 1,
-  apps: [...new Set(grants.map((grant) => grant.appId))],
+  apps: [...new Set(grants.map((grant) => ("appId" in grant ? grant.appId : "assistant")))],
   operations: [
     ...new Set(
       grants.flatMap((grant) =>
-        grant.kind === "query"
-          ? [`capability.query:${grant.capabilityId}`]
-          : [`capability.action.review:${grant.capabilityId}`, `capability.action.run:${grant.capabilityId}`],
+        !("appId" in grant)
+          ? [`runtime.${grant.kind}`]
+          : grant.kind === "query"
+            ? [`capability.query:${grant.capabilityId}`]
+            : [`capability.action.review:${grant.capabilityId}`, `capability.action.run:${grant.capabilityId}`],
       ),
     ),
   ],
   actions: grants.length ? "preapproved" : "deny",
   grants,
 });
-const validateTaskGrants = async (input: unknown): Promise<CapabilityGrant[]> => {
-  const grants = CapabilityGrantsSchema.parse(input);
+const validateTaskGrants = async (input: unknown): Promise<TaskGrant[]> => {
+  const grants = TaskGrantsSchema.parse(input);
   for (const grant of grants) {
+    if (!("appId" in grant)) continue;
     const entry = await getCapability(grant.appId);
     const operation = (grant.kind === "query" ? entry?.manifest.queries : entry?.manifest.actions)?.find(
       (item) => item.localId === grant.capabilityId,
@@ -290,7 +293,7 @@ const taskFingerprint = (input: {
   prompt: string;
   schedule: AiChatTaskSchedule;
   timezone: string;
-  grants?: CapabilityGrant[];
+  grants?: TaskGrant[];
 }): string =>
   new Bun.CryptoHasher("sha256")
     .update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone, input.grants ?? []]))
@@ -301,7 +304,7 @@ const taskSelect = () => sql`
   JOIN ai.conversations conversation ON conversation.id = task.conversation_id
 `;
 
-const taskGrants = (row: TaskRow): CapabilityGrant[] => {
+const taskGrants = (row: TaskRow): TaskGrant[] => {
   try {
     const policy = MandatePolicyV1Schema.safeParse(parsePgJsonValue(row.mandate_policy));
     return policy.success ? (policy.data.grants ?? []) : [];
@@ -459,6 +462,24 @@ export const aiChatTasks = {
   },
 
   validateGrants: validateTaskGrants,
+  authorizeRuntime: async (input: {
+    mandate: { id: string; revision: number };
+    kind: "http" | "database";
+    input: unknown;
+  }): Promise<void> => {
+    const result = await validateMandateIssueAuthority({
+      mandateId: input.mandate.id,
+      expectedRevision: input.mandate.revision,
+      ownerAppId: "core",
+      targetAppId: "assistant",
+      operation: `runtime.${input.kind}`,
+      input: input.input,
+    });
+    if (!result.ok)
+      throw new AiChatTaskAuthorityError(
+        `Background ${input.kind} access denied: ${result.error.message}. Update this task's grants in the normal chat.`,
+      );
+  },
   authorizeCapability: async (input: {
     mandate: { id: string; revision: number };
     appId: string;
@@ -516,7 +537,7 @@ export const aiChatTasks = {
     prompt: string;
     schedule: AiChatTaskSchedule;
     timezone: string;
-    grants?: CapabilityGrant[];
+    grants?: TaskGrant[];
     idempotencyKey?: string;
     idempotencyFingerprint?: string;
   }): Promise<AiChatTask | null> => {
@@ -620,7 +641,7 @@ export const aiChatTasks = {
     userId: string;
     taskId: string;
     prompt?: string;
-    grants?: CapabilityGrant[];
+    grants?: TaskGrant[];
     schedule?: AiChatTaskSchedule;
     timezone?: string;
   }): Promise<AiChatTask | null> =>

@@ -85,7 +85,7 @@ test("two managed approvals retain their Nessi action IDs across two suspended a
   ).toBe(true);
 });
 
-test("managed code rejects background authority before resolving a user or contacting a host", async () => {
+test("managed code rejects incomplete background authority before contacting a host", async () => {
   const actor = {
     kind: "user" as const,
     user: {
@@ -132,7 +132,7 @@ test("managed code rejects background authority before resolving a user or conta
             },
           },
         ),
-      ).rejects.toThrow("task-scoped authority");
+      ).rejects.toThrow("task-scoped background authority");
     }
   } finally {
     config.mockRestore();

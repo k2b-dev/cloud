@@ -116,6 +116,9 @@ services:
 
   app-assistant:
     <<: *app
+    user: bun
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     build:
       context: .
       dockerfile: Dockerfile.dev

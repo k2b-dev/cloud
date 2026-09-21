@@ -42,3 +42,28 @@ test("Code AI uses the caller's model access and allowance and propagates cancel
     execute.mockRestore();
   }
 });
+
+test("scheduled Code AI uses background accounting with task-turn attribution", async () => {
+  const authorize = spyOn(scope, "authorizeRuntimeScope").mockResolvedValue({ scope: { conversationId: "chat" }, actor: user(identity) });
+  const select = spyOn(ai, "selectAssistantAiModelId").mockResolvedValue("allowed-model");
+  const execute = spyOn(ai, "executeAiTask").mockResolvedValue({ output: "yes", usage: null });
+  try {
+    expect(
+      await runCodeAi(
+        { kind: "generate_text", prompt: "Summarize" },
+        { conversationId: "chat" },
+        identity,
+        new AbortController().signal,
+        "scheduled-turn",
+      ),
+    ).toBe("yes");
+    expect(execute.mock.calls[0]?.[1]).toMatchObject({
+      usageSubject: undefined,
+      attribution: { userId: user(identity).id, conversationId: "chat", turnId: "scheduled-turn" },
+    });
+  } finally {
+    authorize.mockRestore();
+    select.mockRestore();
+    execute.mockRestore();
+  }
+});

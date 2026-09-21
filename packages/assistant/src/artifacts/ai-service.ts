@@ -2,7 +2,13 @@ import { AiTaskRequestSchema, executeAiTask, personalAiModelPolicy, resolveAiMod
 import { authorizeRuntimeScope } from "./runtime-scope";
 import type { ArtifactIdentity } from "./service";
 
-export async function runCodeAi(input: unknown, scopeInput: unknown, identity: ArtifactIdentity, signal: AbortSignal) {
+export async function runCodeAi(
+  input: unknown,
+  scopeInput: unknown,
+  identity: ArtifactIdentity,
+  signal: AbortSignal,
+  backgroundTurnId?: string,
+) {
   const request = AiTaskRequestSchema.parse(input);
   const { scope, actor } = await authorizeRuntimeScope(scopeInput, identity);
   signal.throwIfAborted();
@@ -13,8 +19,8 @@ export async function runCodeAi(input: unknown, scopeInput: unknown, identity: A
     signal,
     requestedModelId: modelId,
     resolveModel: (id) => resolveAiModel(personalAiModelPolicy, id),
-    usageSubject: identity.accessSubject,
-    attribution: { userId: actor.id, conversationId: scope.conversationId },
+    usageSubject: backgroundTurnId ? undefined : identity.accessSubject,
+    attribution: { userId: actor.id, conversationId: scope.conversationId, turnId: backgroundTurnId },
   });
   signal.throwIfAborted();
   return result.output;

@@ -92,7 +92,7 @@ export const runtimeCapabilities = {
     if (stream.size > LIMITS.inputFileBytes) throw new ArtifactError("INVALID_INPUT");
     return transferCapabilityStream(stream, verb, caller, verb === "write" ? (body ?? undefined) : undefined);
   },
-  async prepare(input: unknown, identity: ArtifactIdentity, caller: CapabilityCaller) {
+  async prepare(input: unknown, identity: ArtifactIdentity, caller: CapabilityCaller, taskScoped = false) {
     const request = RuntimeCapabilityRequest.parse(input),
       actor = user(identity);
     const resource = await authorize(request, identity);
@@ -135,6 +135,8 @@ export const runtimeCapabilities = {
       await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls
         WHERE user_id=${actor.id}::uuid AND status IN ('completed','denied','abandoned') ORDER BY created_at DESC OFFSET ${LIMITS.logs})`;
     });
+    // Only the managed host sets taskScoped. Core checks the persisted mandate on every dispatch.
+    if (taskScoped) return runtimeCapabilities.resolve(request.id, { approved: true }, identity, caller);
     const remembered =
       !untrusted &&
       scope !== null &&

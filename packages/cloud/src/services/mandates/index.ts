@@ -20,6 +20,9 @@ export {
   MandatePolicyV1Schema,
   mandatePolicyAllows,
   parseMandatePolicy,
+  type TaskGrant,
+  TaskGrantSchema,
+  TaskGrantsSchema,
 } from "./policy";
 
 export type MandateState = "active" | "paused" | "revoked";

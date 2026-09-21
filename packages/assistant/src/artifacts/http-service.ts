@@ -141,7 +141,14 @@ export const httpService = {
     });
     return review;
   },
-  async execute(id: string, approved: boolean, identity: ArtifactIdentity, signal: AbortSignal, send = requestPublicHttps) {
+  async execute(
+    id: string,
+    approved: boolean,
+    identity: ArtifactIdentity,
+    signal: AbortSignal,
+    send = requestPublicHttps,
+    authorize?: (request: HttpPrepare) => Promise<void>,
+  ) {
     const userId = user(identity).id;
     const [row] = await sql<
       { encrypted: string; status: string }[]
@@ -154,6 +161,7 @@ export const httpService = {
       await sql`UPDATE assistant.http_calls SET status='denied',encrypted='' WHERE id=${id}::uuid AND user_id=${userId}::uuid AND status='pending'`;
       throw new HttpError("HTTP_DENIED");
     }
+    await authorize?.(stored);
     const { available, used } = await bindings(stored.request, stored.scope, identity);
     if (digest(used) !== digest(stored.used)) throw new HttpError("HTTP_CONFLICT");
     const headers: Record<string, string> = {};

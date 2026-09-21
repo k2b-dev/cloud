@@ -8,6 +8,7 @@ import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
 import { resolveAiCapabilityActor } from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
+import { authorizeCodeExecution } from "./code-execution";
 import { aiConversations } from "./store";
 
 const Reply = z.object({
@@ -33,20 +34,22 @@ export const runManagedCodeTool =
   async (args: unknown, context: Context): Promise<z.infer<ReturnType<typeof z.json>>> => {
     if (!context.conversationId || !context.turnId) throw new Error("Code execution requires an active Assistant turn");
     const runConfig = await aiConversations.getTurnRunConfig({ conversationId: context.conversationId, turnId: context.turnId });
-    if (!runConfig || (runConfig.kind !== "compact" && (runConfig.background || runConfig.mandate))) {
-      throw new Error("Code execution is unavailable for background tasks until the code host supports task-scoped authority.");
+    if (!runConfig || runConfig.kind === "compact" || Boolean(runConfig.background) !== Boolean(runConfig.mandate)) {
+      throw new Error("Code execution requires a valid turn and task-scoped background authority.");
     }
     const { actor } = await resolveAiCapabilityActor({
       conversationId: context.conversationId,
       persistedActor: context.actor,
       store: aiConversations,
     });
+    await authorizeCodeExecution(context.conversationId, context.turnId, actor.user.id);
     await context.reportProgress?.(context.locale?.startsWith("de") ? "Ausführungshost verbinden" : "Connecting execution host");
     const app = await getApp("assistant");
     if (!app) throw new Error("Assistant code host is unavailable");
     let callback: Awaited<ReturnType<typeof signInvocationToken>> | undefined;
     const request = async (decision?: { id: string; approved: boolean }) => {
       context.signal.throwIfAborted();
+      await authorizeCodeExecution(context.conversationId!, context.turnId!, actor.user.id);
       const signed = await withActiveIdentitySigner(
         "invocation",
         (signer) =>
@@ -109,7 +112,17 @@ export const runManagedCodeTool =
         throw new Error("Code host request failed; inspect the existing call before starting another execution");
       return Reply.parse(body.data).data;
     };
-    return waitForManagedCodeCall(request, context);
+    return waitForManagedCodeCall(
+      request,
+      runConfig.background
+        ? {
+            ...context,
+            requestApproval: async () => {
+              throw new Error("Background code cannot request interactive approval. Update task grants in the normal chat.");
+            },
+          }
+        : context,
+    );
   };
 
 /** Ordered reviews are replayed through Nessi before consuming a durable result. */

@@ -12,6 +12,8 @@ const identifierList = <T extends z.ZodType<string>>(schema: T) =>
 
 const operationSchema = z.union([
   z.literal("search.query"),
+  z.literal("runtime.http"),
+  z.literal("runtime.database"),
   z.string().refine((value) => {
     const [prefix, localId, extra] = value.split(":");
     return (
@@ -35,6 +37,79 @@ export const CapabilityGrantSchema = z
   .strict();
 export const CapabilityGrantsSchema = z.array(CapabilityGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
 export type CapabilityGrant = z.output<typeof CapabilityGrantSchema>;
+
+const httpsUrl = z
+  .string()
+  .url()
+  .max(2000)
+  .refine((value) => {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && !url.hash;
+  }, "Use HTTPS without credentials or fragment");
+export const TaskGrantSchema = z.union([
+  CapabilityGrantSchema,
+  z
+    .object({
+      kind: z.literal("http").describe("Authorize scheduled Code Mode HTTP requests."),
+      fixedInput: z
+        .object({
+          origin: httpsUrl
+            .refine((value) => new URL(value).origin === value, "Use an exact origin without path")
+            .optional()
+            .describe("Exact HTTPS origin, without path, wildcard or trailing slash."),
+          url: httpsUrl.optional().describe("Exact full URL, including query parameters."),
+          method: z
+            .enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+            .optional()
+            .describe("Exact HTTP method; omit to permit every supported method."),
+        })
+        .strict()
+        .default({})
+        .describe("Fixed input values. Omitted fields are unrestricted; empty input permits every supported target and operation."),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("database").describe("Authorize scheduled Code Mode RSQL operations."),
+      fixedInput: z
+        .object({
+          resourceId: z.string().min(1).max(80).optional().describe("Exact Studio app ID whose database may be used."),
+          operation: z
+            .enum([
+              "connect",
+              "status",
+              "export",
+              "clear",
+              "reset",
+              "tables.list",
+              "tables.create",
+              "tables.update",
+              "tables.delete",
+              "schema.get",
+              "rows.list",
+              "rows.get",
+              "rows.insert",
+              "rows.update",
+              "rows.delete",
+              "query",
+            ])
+            .optional()
+            .describe("Exact database operation; connect needs its own grant when operation is fixed."),
+          table: z
+            .string()
+            .min(1)
+            .max(63)
+            .optional()
+            .describe("Exact table; applies to row and schema operations, not arbitrary SQL queries."),
+        })
+        .strict()
+        .default({})
+        .describe("Fixed input values. Omitted fields are unrestricted; empty input permits every supported target and operation."),
+    })
+    .strict(),
+]);
+export const TaskGrantsSchema = z.array(TaskGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
+export type TaskGrant = z.output<typeof TaskGrantSchema>;
 
 const equalJson = (a: unknown, b: unknown): boolean => {
   if (a === b) return true;
@@ -66,7 +141,7 @@ export const MandatePolicyV1Schema = z
     apps: z.union([z.literal("*"), identifierList(CapabilityAppIdSchema)]),
     operations: z.union([z.literal("*"), identifierList(operationSchema)]),
     actions: z.enum(["deny", "require_approval", "preapproved"]),
-    grants: CapabilityGrantsSchema.optional(),
+    grants: TaskGrantsSchema.optional(),
   })
   .strict()
   .superRefine((policy, context) => {
@@ -107,11 +182,17 @@ export const isMandatePolicyNarrowing = (current: MandatePolicyV1, next: Mandate
   setAllows(current.apps, next.apps) &&
   setAllows(current.operations, next.operations) &&
   ACTION_AUTHORITY[next.actions] <= ACTION_AUTHORITY[current.actions] &&
-  (current.grants === undefined ||
-    (next.grants !== undefined &&
+  (current.grants === undefined
+    ? !next.grants?.some((grant) => grant.kind === "http" || grant.kind === "database")
+    : next.grants !== undefined &&
       next.grants.every((grant) =>
-        current.grants!.some((existing) => capabilityGrantAllows(existing, { ...grant, input: grant.fixedInput })),
-      )));
+        current.grants!.some((existing) => {
+          if (existing.kind !== grant.kind) return false;
+          if ("appId" in existing && "appId" in grant && (existing.appId !== grant.appId || existing.capabilityId !== grant.capabilityId))
+            return false;
+          return Object.entries(existing.fixedInput).every(([key, value]) => equalJson(value, Reflect.get(grant.fixedInput, key)));
+        }),
+      ));
 
 export const mandatePolicyAllows = (
   policy: MandatePolicyV1,
@@ -125,6 +206,23 @@ export const mandatePolicyAllows = (
 ): boolean => {
   if (policy.apps !== "*" && !policy.apps.includes(input.appId)) return false;
   if (policy.operations !== "*" && !policy.operations.includes(input.operation)) return false;
+  if (input.operation === "runtime.http" || input.operation === "runtime.database") {
+    const kind = input.operation === "runtime.http" ? "http" : "database";
+    return (
+      input.appId === "assistant" &&
+      !!policy.grants?.some(
+        (grant) =>
+          grant.kind === kind &&
+          Object.entries(grant.fixedInput).every(
+            ([key, value]) =>
+              input.input !== null &&
+              typeof input.input === "object" &&
+              Object.hasOwn(input.input, key) &&
+              equalJson(value, Reflect.get(input.input, key)),
+          ),
+      )
+    );
+  }
   if (policy.grants !== undefined) {
     const [operation, capabilityId] = input.operation.split(":");
     const kind =
@@ -136,7 +234,9 @@ export const mandatePolicyAllows = (
     if (
       !kind ||
       !capabilityId ||
-      !policy.grants.some((grant) => capabilityGrantAllows(grant, { appId: input.appId, capabilityId, kind, input: input.input }))
+      !policy.grants.some(
+        (grant) => "appId" in grant && capabilityGrantAllows(grant, { appId: input.appId, capabilityId, kind, input: input.input }),
+      )
     )
       return false;
     if (kind === "action" && input.capabilityApproval !== "none" && input.capabilityApproval !== "rememberable") return false;

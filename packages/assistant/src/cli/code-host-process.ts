@@ -11,8 +11,10 @@ export function startCliCodeHostProcess() {
     async (request) => {
       if (request.operation === "start") {
         if (starting) throw new Error("CLI browser host already started");
-        starting = createBrowserCodeHost({ origin: request.origin, token: request.token }, async (approval) =>
-          Decision.parse(await ipc.request({ operation: "approve", approval })),
+        starting = createBrowserCodeHost(
+          { origin: request.origin, token: request.token },
+          async (approval) => Decision.parse(await ipc.request({ operation: "approve", approval })),
+          request.unattended,
         );
         host = await starting;
         return null;

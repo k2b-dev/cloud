@@ -14,7 +14,7 @@ describe("Cloud AI Skill seeds", () => {
     expect(seedOnce).toHaveBeenCalledTimes(11);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 49 });
+    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 50 });
     expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
     expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")).toMatchObject({
       key: "assistant:data-analysis",
@@ -43,7 +43,7 @@ describe("Cloud AI Skill seeds", () => {
       expect(assistant?.instructions).toContain(text);
     }
     const scheduled = inputs.find((candidate) => candidate.name === "scheduled-tasks");
-    expect(scheduled).toMatchObject({ key: "assistant:scheduled-tasks", version: 1 });
+    expect(scheduled).toMatchObject({ key: "assistant:scheduled-tasks", version: 2 });
     expect(scheduled?.description).toContain("one-time reminders");
     expect(scheduled?.instructions).toContain("fixedInput");
     expect(scheduled?.instructions).toContain("core.ai.task.run.read");

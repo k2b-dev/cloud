@@ -29,4 +29,6 @@ COPY styles.css ./
 
 RUN bun run --cwd packages/ui build
 
+RUN mkdir -p /app/public && chown bun:bun /app/public
+
 EXPOSE 3000

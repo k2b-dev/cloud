@@ -43,6 +43,7 @@ export {
 export { parseAiSse } from "./client/transport";
 // Framework-owned managed execution host transport.
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";
+export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
 export { listAiCredentialProfileIds } from "./credentials";
 export {

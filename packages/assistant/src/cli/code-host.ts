@@ -15,7 +15,7 @@ type Call = Parameters<AiFrontendToolHandler>[0];
 export async function createCliCodeHost(
   ctx: Pick<CloudCliContext, "fetch">,
   approve?: (request: CodeApproval) => Promise<CapabilityDecision>,
-  options?: { entry?: string },
+  options?: { entry?: string; unattended?: boolean },
 ) {
   const http = createCodeHostHttp(ctx);
   const ipc = hostIpc(
@@ -74,7 +74,7 @@ export async function createCliCodeHost(
     child.kill();
   }, 45_000);
   try {
-    await ipc.request({ operation: "start", origin: http.origin, token: http.token });
+    await ipc.request({ operation: "start", origin: http.origin, token: http.token, unattended: options?.unattended });
     return {
       health: async () => {
         // Match the host bridge's network deadline. Check the browser event

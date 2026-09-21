@@ -407,6 +407,32 @@ audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictatio
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
 
+### Scheduled Code Mode
+
+Scheduled turns can run Code Mode without a user tab. Core binds each call and
+capability callback to the persisted turn and its confirmed task mandate.
+Foreground activity in the same chat does not share the scheduled host. Task
+revocation, expiry, revision changes and cancellation deny subsequent requests.
+The normal capability dispatcher still checks current user access, fixed inputs
+and action approval policy; remembered foreground approvals never authorize a
+scheduled action. Always-approval actions remain unavailable.
+
+Scheduled code supports computation, chat files, AI helpers, presentations and
+exports, shared app storage, HTTP and RSQL. A task has one reviewed `grants` list:
+capability query/action entries, `{kind:"http",fixedInput:{origin,url,method}}`
+and `{kind:"database",fixedInput:{resourceId,operation,table}}`. All fixed fields
+are optional; omitted fields remain unrestricted. HTTP origins match exactly,
+not by suffix; URL restrictions match the full URL. Database operations match
+exactly, so an operation-specific grant also needs a `connect` grant. Resource
+permissions and the HTTP service's public-HTTPS/secret-binding checks still apply.
+HTTP authority is rechecked against the stored request immediately before sending.
+The same access review and task-detail presentation show all three grant types.
+
+Tasks cannot open interactive dialogs, collect new secrets or use capability
+binary streams. Missing grants return an error for repair in the normal chat.
+AI helper usage is charged as background
+work and attributed to the scheduled turn.
+
 ### Background Assistant tabs
 
 The Assistant live connection uses `activity: "always"`. Hiding the browser tab

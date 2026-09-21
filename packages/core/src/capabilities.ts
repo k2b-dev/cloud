@@ -95,7 +95,7 @@ const ChatTaskCreateInputSchema = z
     chatId: ChatIdSchema,
     prompt: z.string().trim().min(1).max(10_000).describe("Exact prompt to deliver to this chat when the task runs."),
     grants: ChatTaskGrantsSchema.default([]).describe(
-      "Exact capabilities authorized for this task. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval actions cannot be granted.",
+      "Task grants: capability query/action, HTTP requests or Studio RSQL database operations. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval capabilities cannot be granted.",
     ),
     schedule: ChatTaskScheduleInputSchema.describe("When this task should run."),
     timezone: z.string().min(1).max(100).describe("Exact IANA timezone from the current runtime context."),
@@ -1310,7 +1310,7 @@ export const aiCapabilities = defineCapabilities({
     "ai.task.create": {
       title: "Create a scheduled AI task",
       description:
-        "Create one reviewed autonomous task in an owned AI conversation. Discover the capabilities needed for the whole task first and propose their grants. Fix input fields such as a note or notebook ID where the user's task permits; leave them unrestricted when broader scope is needed. Always-approval capabilities and interactive browser/Code Mode are unavailable in background runs. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
+        "Create one reviewed autonomous task in an owned AI conversation. Discover the capabilities needed for the whole task first and propose their grants. Fix input fields such as a note or notebook ID where the user's task permits; leave them unrestricted when broader scope is needed. Code Mode works unattended with confirmed capability, HTTP and database grants; always-approval capabilities and interactive dialogs remain unavailable. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
       input: ChatTaskCreateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
