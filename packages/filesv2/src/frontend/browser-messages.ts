@@ -247,6 +247,7 @@ export const browserMessages = i18n.define({
       documentName: (extension: string) => `Name (.${extension} is added)`,
       documentCreated: (name: string) => `${name} created.`,
       editorLoading: "Loading editor…",
+      editorExternalWritesTitle: "Editing outside this editor",
       editorExternalWrites:
         "Changes made outside this editor cannot be protected by atomic conflict checks here. Avoid editing this file in other applications at the same time.",
       editorFailed: "The editor could not be opened.",
@@ -536,6 +537,7 @@ export const browserMessages = i18n.define({
       documentName: (extension: string) => `Name (.${extension} wird ergänzt)`,
       documentCreated: (name: string) => `${name} angelegt.`,
       editorLoading: "Editor wird geladen…",
+      editorExternalWritesTitle: "Bearbeitung außerhalb dieses Editors",
       editorExternalWrites:
         "Änderungen außerhalb dieses Editors können hier nicht atomar vor Überschreiben geschützt werden. Bearbeite diese Datei nicht gleichzeitig in anderen Anwendungen.",
       editorFailed: "Der Editor konnte nicht geöffnet werden.",
