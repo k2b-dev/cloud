@@ -41,8 +41,9 @@ empty directory.
 
 ## Browse, select, and preview
 
-The sidebar is a folder tree per storage location with global file search and
-**Shares** at the top; after every navigation exactly the current path is
+The sidebar is a folder tree per storage location; its footer offers **Search**
+(the global Cloud search restricted to files), **Recent**, **Favorites**, and
+**Shares**. After every navigation exactly the current path is
 expanded and each storage location ends with its **Trash** entry. The list is a flat striped list;
 folders open on click (the opened folder's icon becomes a spinner, a leading
 `..` row goes up), files open the details panel, and every row ends with an

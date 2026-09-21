@@ -30,7 +30,7 @@ Files you open or download appear under **Recent** in the sidebar; **Favorites**
 
 ## Search {icon="search"}
 
-The search field at the top searches names everywhere below the current folder; results show each hit with its path relative to the folder. Press Enter to search and clear the field to return to the listing. FreeIPA searches always read the current filesystem, even with an index. An unreadable subfolder stops the search; narrow the search to an accessible folder. If access changes or a result disappears while paging, start the search again. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search in a smaller folder. The magnifier at the top of the sidebar opens the global Cloud search restricted to files across all your storage locations; opening a result jumps to its folder with the file selected.
+The search field at the top searches names everywhere below the current folder; results show each hit with its path relative to the folder. Press Enter to search and clear the field to return to the listing. FreeIPA searches always read the current filesystem, even with an index. An unreadable subfolder stops the search; narrow the search to an accessible folder. If access changes or a result disappears while paging, start the search again. Storage without a search index is scanned on demand; if a folder holds too many entries for that, search in a smaller folder. **Search** at the bottom of the sidebar, above Recent, opens the global Cloud search restricted to files across all your storage locations; opening a result jumps to its folder with the file selected.
 
 ## Select and act {icon="checkbox"}
 
