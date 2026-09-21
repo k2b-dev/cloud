@@ -508,6 +508,6 @@ Keep filtering, sorting, joins, and grouping in GQL. Keep Liquid focused on loop
 
 Agents use `document.content.read` for stored PDF, XML or CSV bytes. Choose an artifact key from `document.read`, or omit it for the primary file. Code mode reads the returned stream as a File, with a 50 MiB per-file limit. Downloading does not extract PDF text, issue or send a document. Current read permission is checked again at download.
 
-## Download a folder
+## Download a folder {icon="download"}
 
 In the folder view, choose **Download folder as ZIP** next to a template, year or month. The archive contains each document's stored primary file, including subfolders. You can cancel while files are being collected. The limit is 1,000 documents and 100 MiB; use smaller subfolders for larger collections. A failed transfer saves no partial archive. Additional artifacts remain individual downloads. This reads the current folder contents and is not a frozen backup.
