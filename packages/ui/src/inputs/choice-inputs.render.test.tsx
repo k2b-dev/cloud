@@ -43,6 +43,17 @@ test("choice controls keep descenders inside clipped single-line labels", () => 
   expect(cssRule(".k2b-ui .k2b-choice-pill")).toContain("line-height: 1rem");
 });
 
+test("check and switch labels contain their visually hidden input", () => {
+  // The input is absolutely positioned so it can stay focusable without
+  // taking space. Its containing block must be the label: otherwise it
+  // resolves against the nearest positioned ancestor (in Cloud the
+  // overflow-hidden workspace main), stops scrolling with the real scroll
+  // container, and a label click that focuses it scrolls that clipped
+  // ancestor instead (k2b-dev/cloud#63).
+  expect(cssRule(".k2b-ui .k2b-check,\n.k2b-ui .k2b-switch")).toContain("position: relative");
+  expect(cssRule(".k2b-ui .k2b-check > input,\n.k2b-ui .k2b-switch > input")).toContain("position: absolute");
+});
+
 test("input clear actions stay minimal and use danger text on hover", () => {
   expect(cssRule(".k2b-ui .k2b-input-clear-action")).toContain("background: transparent");
   const hover = cssRule(".k2b-ui .k2b-input-clear-action:hover");

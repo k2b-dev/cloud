@@ -1648,6 +1648,12 @@
 .k2b-ui .k2b-check,
 .k2b-ui .k2b-switch {
   @apply flex items-start;
+  /* Containing block for the visually hidden input below. Without it the
+     absolute input resolves against the nearest positioned ancestor, which
+     in Cloud is the overflow-hidden workspace main: it then no longer scrolls
+     with the settings body and a label click that focuses it scrolls the
+     clipped ancestor instead of the real scroll container. */
+  position: relative;
   gap: 0.625rem;
   cursor: pointer;
 }
