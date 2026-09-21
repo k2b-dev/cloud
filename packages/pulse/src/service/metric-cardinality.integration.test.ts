@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { PulseMetric } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { ingestBatch } from "./ingest-writer";
 import { PULSE_METRIC_SERIES_LIMIT } from "./metric-cardinality";
 
-const runDbSmoke = process.env.PULSE_METRIC_CARDINALITY_DB_TEST === "1";
+const runDbSmoke = testInfra.database !== undefined;
 const postgresTest = runDbSmoke ? test : test.skip;
 
 beforeAll(async () => {

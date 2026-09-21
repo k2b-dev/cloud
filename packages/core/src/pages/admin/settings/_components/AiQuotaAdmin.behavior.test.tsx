@@ -1,8 +1,9 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import { quotaFixture } from "./ai-quota-fixture";
+
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 if (isServer) test.skip("requires browser conditions", () => {});
 else

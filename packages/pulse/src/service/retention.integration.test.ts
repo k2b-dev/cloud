@@ -1,22 +1,14 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { runRetentionBatch } from "./runtime";
 
-const dbTest = process.env.PULSE_RETENTION_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest(
   "retention respects each base policy, lifecycle, sealed hours and sensitive fields",
   async () => {
-    const target = new URL(process.env.DATABASE_URL ?? "");
-    if (
-      !["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) ||
-      !["/pulse_analytics_test", "/pulse_schema_test"].includes(target.pathname)
-    ) {
-      throw Error("Retention tests require a loopback disposable database");
-    }
-    const [database] = await sql`SELECT current_database() AS name`;
-    if (!["pulse_analytics_test", "pulse_schema_test"].includes(database.name)) throw Error("Wrong disposable database");
     const bases = Array.from({ length: 4 }, () => crypto.randomUUID());
     const [times] = await sql`SELECT date_bin('1 hour',now()-interval '3 days','1970-01-01'::timestamptz) AS old,
     date_bin('1 hour',now()-interval '1 day','1970-01-01'::timestamptz) AS boundary,

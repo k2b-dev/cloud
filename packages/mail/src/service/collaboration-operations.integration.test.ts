@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { encryptSecret } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -19,8 +20,7 @@ import {
   updateSavedConversationView,
 } from "./saved-views";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 type TestUser = { id: string; uid: string; displayName: string };
 

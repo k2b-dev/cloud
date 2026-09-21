@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { listDuplicateEmails } from "./duplicate-emails";
 
 // Minimal schema in a dedicated disposable database; never touch the development database.
-const isolated = /\/cloud_duplicate_accounts_test(?:\?|$)/.test(process.env.DATABASE_URL ?? "");
 const admin = { userId: "admin", uid: "admin", roles: ["admin"] };
 
 test("duplicate email reads reject non-administrators before database access", async () => {
@@ -12,8 +12,10 @@ test("duplicate email reads reject non-administrators before database access", a
   if (!result.ok) expect(result.error.message).toBe("Admin access required");
 });
 
-(isolated ? describe : describe.skip)("duplicate email groups in Postgres", () => {
+databaseSuite()("duplicate email groups in Postgres", () => {
+  let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   beforeAll(async () => {
+    fresh = await useFreshDatabase("duplicate_emails");
     await sql`CREATE SCHEMA auth`;
     await sql`CREATE TABLE auth.users (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), uid text NOT NULL, provider text NOT NULL,
@@ -32,7 +34,8 @@ test("duplicate email reads reject non-administrators before database access", a
       SELECT id, '2026-09-07T09:00:00Z', '2026-09-08T09:00:00Z' FROM auth.users WHERE uid = 'alpha-ipa'`;
   });
   afterAll(async () => {
-    await sql`DROP SCHEMA auth CASCADE`;
+    await sql.close();
+    await fresh?.drop();
   });
 
   test("normalizes addresses, excludes empty and unique addresses and keeps all three matches on one page", async () => {

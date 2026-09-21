@@ -1,15 +1,14 @@
 import { expect, spyOn, test } from "bun:test";
 import { SQL } from "bun";
+import { natsServers, requireDatabaseUrl, testFor } from "../../../../scripts/fixtures/test-infra";
 
-const enabled = process.env.NOTEBOOKS_SNAPSHOT_DB_TEST === "1";
 const databaseName = process.env.NOTEBOOKS_SNAPSHOT_DB_CHILD;
 if (!databaseName) {
-  (enabled ? test : test.skip)(
+  testFor("database", "nats")(
     "snapshot SQL preserves metadata edits and rejects snapshots older than a restore",
     async () => {
-      const url = new URL(process.env.DATABASE_URL!);
-      if (!["localhost", "127.0.0.1", "ipa_postgres"].includes(url.hostname)) throw new Error("Requires local Postgres");
-      const database = `notebook_snapshot_${crypto.randomUUID().replaceAll("-", "")}`;
+      const url = new URL(requireDatabaseUrl());
+      const database = `notebook_snapshot_${crypto.randomUUID().replaceAll("-", "")}_test`;
       const target = new URL(url);
       target.pathname = `/${database}`;
       url.pathname = "/postgres";
@@ -19,7 +18,12 @@ if (!databaseName) {
         await admin.unsafe(`CREATE DATABASE "${database}"`);
         created = true;
         const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-          env: { ...process.env, DATABASE_URL: target.toString(), NOTEBOOKS_SNAPSHOT_DB_CHILD: database },
+          env: {
+            ...process.env,
+            DATABASE_URL: target.toString(),
+            CLOUD_TEST_DATABASE_URL: target.toString(),
+            NOTEBOOKS_SNAPSHOT_DB_CHILD: database,
+          },
           stdout: "pipe",
           stderr: "pipe",
         });
@@ -38,16 +42,16 @@ if (!databaseName) {
   );
 } else {
   test("real note save uses snapshot timestamps and sequence guards", async () => {
-    if (!enabled || !/^notebook_snapshot_[a-f0-9]{32}$/.test(databaseName)) throw new Error("Unexpected isolated database");
+    if (!/^notebook_snapshot_[a-f0-9]{32}_test$/.test(databaseName)) throw new Error("Unexpected isolated database");
     const { sql } = await import("bun");
     const [database] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
     expect(database?.name).toBe(databaseName);
     const { createSync } = await import("@k2b/sync");
     const { connect } = await import("@nats-io/transport-node");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
-    const connection = await connect({ servers: (process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222").split(",") });
+    const connection = await connect({ servers: natsServers() });
     const namespace = `snapshot-${crypto.randomUUID()}`;
-    const sync = createSync({ connection, namespace, application: "notebooks" });
+    const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     try {
       await sql`CREATE SCHEMA auth`.simple();

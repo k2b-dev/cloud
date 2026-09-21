@@ -1,11 +1,12 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { requireBaseActive } from "./access-control";
 import { prepareIngestBatch, writePreparedIngestBatchInTransaction } from "./ingest-bulk";
 import { ingestBatch } from "./ingest-writer";
 
-const dbTest = process.env.PULSE_METRIC_CARDINALITY_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest(
   "different sources can update existing shared metric definitions before another writer commits",
@@ -55,7 +56,9 @@ dbTest(
       expect(result?.ok).toBe(true);
       release();
       await first;
-      const values = await sql<{ value: number }[]>`SELECT s.value FROM pulse.metric_samples s JOIN pulse.metric_series series ON series.id=s.series_id
+      const values = await sql<
+        { value: number }[]
+      >`SELECT s.value FROM pulse.metric_samples s JOIN pulse.metric_series series ON series.id=s.series_id
       WHERE s.base_id=${baseId}::uuid ORDER BY series.resource_key`;
       expect(values.map((row) => row.value)).toEqual([2, 3]);
     } finally {

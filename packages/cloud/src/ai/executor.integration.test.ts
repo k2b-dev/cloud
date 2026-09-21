@@ -1,17 +1,19 @@
-import { visionPdfFixture } from "./pdf-render.fixture";
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent } from "@k2b/nessi";
 import { sql } from "bun";
+import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import type { User } from "../contracts";
 import { aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
 import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
+import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import type { AiWireEvent } from "./protocol";
 import { createAiProvider } from "./provider";
-import { listPendingAiTurnActions, submitAiTurnAction } from "./runtime";
+import { listPendingAiTurnActions } from "./runtime";
 import { aiConversations } from "./store";
 import { aiStreamTopic } from "./stream";
 import type { PreparedAiTools } from "./tools";
@@ -143,21 +145,11 @@ const toolCallCompletion = (id: string, name: string, args: unknown): string[] =
   "data: [DONE]\n\n",
 ];
 
-const canRun = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!row?.users) return false;
-    await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canRun()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 beforeAll(() => {
+  if (!testInfra.database) return;
   mockServer = Bun.serve({
     port: 0,
     async fetch(req) {
@@ -258,6 +250,9 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("a stored scope excludes runtime-added tools even with a supplied chatId and persisted preload", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId, allowedTools: [], preloadTools: ["write_file"] });
@@ -387,18 +382,31 @@ suite("AI executor integration", () => {
             expect(pushed).toEqual([{ type: "approval_response", callId: "approval-1", approved: true }]);
             expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
           } else {
-            expect(pushed).toEqual([{type: "approval_response", callId: "approval-1", approved: false}]);
-            expect(await listPendingAiTurnActions({conversationId: conversation.id, turnId: turn.id})).toHaveLength(0);
+            expect(pushed).toEqual([{ type: "approval_response", callId: "approval-1", approved: false }]);
+            expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
             let blocked = "";
             const clientSuspended = await createExecutor("approval-test")["handleActionRequest"]({
-              event: {...event, kind: "client_tool"}, loop: {push: (value: InboundEvent) => pushed.push(value)} as never,
-              pipeline, conversationId: conversation.id, turnId: turn.id, prepared, approvalContext, allowRememberedApprovals,
-              rememberableCapabilityApprovals: new Map(), capabilityActionReviews: new Map(), onBackgroundBlocked: message => {blocked = message;},
+              event: { ...event, kind: "client_tool" },
+              loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+              pipeline,
+              conversationId: conversation.id,
+              turnId: turn.id,
+              prepared,
+              approvalContext,
+              allowRememberedApprovals,
+              rememberableCapabilityApprovals: new Map(),
+              capabilityActionReviews: new Map(),
+              onBackgroundBlocked: (message) => {
+                blocked = message;
+              },
             });
             expect(clientSuspended).toBe(false);
             expect(blocked).toContain("interactive browser");
-            expect(pushed.at(-1)).toMatchObject({type: "tool_result", result: {error: expect.stringContaining("unavailable in a background run")}});
-            expect(await listPendingAiTurnActions({conversationId: conversation.id, turnId: turn.id})).toHaveLength(0);
+            expect(pushed.at(-1)).toMatchObject({
+              type: "tool_result",
+              result: { error: expect.stringContaining("unavailable in a background run") },
+            });
+            expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
           }
         } finally {
           await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
@@ -654,7 +662,13 @@ suite("AI executor integration", () => {
       expect(result).toEqual({ path: "/label.png", mediaType: "image/png", description: "The label reads Cloud." });
       expect(JSON.stringify(requestBody)).toContain("Read only the label.");
       expect(JSON.stringify(requestBody)).toContain("data:image/png;base64,AQID");
-      await expect(tool.run({ path: "/label.png", pages: [1] }, { actor: { kind: "user", user: actorUser(userId) }, conversationId: conversation.id, signal: new AbortController().signal } as never)).rejects.toThrow("pages can only be used with a PDF");
+      await expect(
+        tool.run({ path: "/label.png", pages: [1] }, {
+          actor: { kind: "user", user: actorUser(userId) },
+          conversationId: conversation.id,
+          signal: new AbortController().signal,
+        } as never),
+      ).rejects.toThrow("pages can only be used with a PDF");
     } finally {
       onCompletionRequest = null;
       nextJsonCompletion = null;
@@ -706,34 +720,50 @@ suite("AI executor integration", () => {
     }
   });
 
-  test.skipIf(process.platform !== "linux")("view_image renders only selected PDF pages before calling the authorized vision model", async () => {
-    const userId = await insertUser();
-    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
-    const profile: AiModelProfile = { ...mockProfile(), capabilities: ["vision"] };
-    const bytes = visionPdfFixture();
-    try {
-      await aiFileStore.write({ conversationId: conversation.id, path: "/invoice.pdf", bytes, mediaType: "application/pdf", origin: "user" });
-      let requestBody: unknown;
-      onCompletionRequest = body => { requestBody = body; };
-      nextJsonCompletion = '{"pages":[{"page":2,"description":"Total 42.00 EUR"}]}';
-      const tool = createCloudAiViewImageTool({ resolveModel: async () => ({ profile, provider: createAiProvider(profile, "test") }) });
-      if (tool.location !== "server") throw new Error("Expected server tool");
-      const context = { actor: { kind: "user", user: actorUser(userId) }, conversationId: conversation.id, signal: new AbortController().signal } as never;
-      const result = await tool.run({ path: "/invoice.pdf", pages: [2], prompt: "Read the total." }, context);
-      expect(result).toMatchObject({ totalPages: 2, pages: [{ page: 2, description: "Total 42.00 EUR" }] });
-      expect(result.sourceVersion).toHaveLength(64);
-      expect(JSON.stringify(requestBody)).toContain("PDF page 2 of 2.");
-      expect(JSON.stringify(requestBody)).toContain("data:image/png;base64,");
-      expect(JSON.stringify(requestBody)).not.toContain("data:application/pdf");
-      requestBody = undefined;
-      await expect(tool.run({ path: "/invoice.pdf", pages: [3] }, context)).rejects.toThrow("PDF has 2 pages");
-      expect(requestBody).toBeUndefined();
-    } finally {
-      onCompletionRequest = null; nextJsonCompletion = null;
-      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
+  test.skipIf(process.platform !== "linux")(
+    "view_image renders only selected PDF pages before calling the authorized vision model",
+    async () => {
+      const userId = await insertUser();
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      const profile: AiModelProfile = { ...mockProfile(), capabilities: ["vision"] };
+      const bytes = visionPdfFixture();
+      try {
+        await aiFileStore.write({
+          conversationId: conversation.id,
+          path: "/invoice.pdf",
+          bytes,
+          mediaType: "application/pdf",
+          origin: "user",
+        });
+        let requestBody: unknown;
+        onCompletionRequest = (body) => {
+          requestBody = body;
+        };
+        nextJsonCompletion = '{"pages":[{"page":2,"description":"Total 42.00 EUR"}]}';
+        const tool = createCloudAiViewImageTool({ resolveModel: async () => ({ profile, provider: createAiProvider(profile, "test") }) });
+        if (tool.location !== "server") throw new Error("Expected server tool");
+        const context = {
+          actor: { kind: "user", user: actorUser(userId) },
+          conversationId: conversation.id,
+          signal: new AbortController().signal,
+        } as never;
+        const result = await tool.run({ path: "/invoice.pdf", pages: [2], prompt: "Read the total." }, context);
+        expect(result).toMatchObject({ totalPages: 2, pages: [{ page: 2, description: "Total 42.00 EUR" }] });
+        expect(result.sourceVersion).toHaveLength(64);
+        expect(JSON.stringify(requestBody)).toContain("PDF page 2 of 2.");
+        expect(JSON.stringify(requestBody)).toContain("data:image/png;base64,");
+        expect(JSON.stringify(requestBody)).not.toContain("data:application/pdf");
+        requestBody = undefined;
+        await expect(tool.run({ path: "/invoice.pdf", pages: [3] }, context)).rejects.toThrow("PDF has 2 pages");
+        expect(requestBody).toBeUndefined();
+      } finally {
+        onCompletionRequest = null;
+        nextJsonCompletion = null;
+        await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      }
+    },
+  );
 
   test("keeps mounted Project files available when dynamic discovery reprepares the tools", async () => {
     const userId = await insertUser();

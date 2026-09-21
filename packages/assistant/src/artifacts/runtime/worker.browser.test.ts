@@ -1,23 +1,38 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
-import { compileArtifact } from "./compile";
-import type {} from "./browser-harness";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { chromium } from "playwright";
+import type {} from "./browser-harness";
+import { compileArtifact } from "./compile";
 
 test("real opaque worker returns data, reuses table selection callbacks and remains terminable", async () => {
-  const directory = await mkdtemp(join(tmpdir(),"assistant-worker-test-"));
-  const output = join(directory,"harness.js");
-  const build = Bun.spawn(["bun","build",new URL("./browser-harness.ts",import.meta.url).pathname,"--target","browser","--format","iife","--outfile",output],{ stdout: "pipe",stderr: "pipe" });
+  const directory = await mkdtemp(join(tmpdir(), "assistant-worker-test-"));
+  const output = join(directory, "harness.js");
+  const build = Bun.spawn(
+    [
+      "bun",
+      "build",
+      new URL("./browser-harness.ts", import.meta.url).pathname,
+      "--target",
+      "browser",
+      "--format",
+      "iife",
+      "--outfile",
+      output,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
   if (await build.exited) throw new Error(await new Response(build.stderr).text());
   const harness = await Bun.file(output).text();
-  await rm(directory,{ recursive: true });
-  const compile = (content: string) => compileArtifact({ entry: "main.js", files: [{ path: "main.js",content }] });
-  const invalidLayoutSource = await compile('export default () => { const text=ui.text({value:"Input"}); ui.column({children:[text,text]}); };');
+  await rm(directory, { recursive: true });
+  const compile = (content: string) => compileArtifact({ entry: "main.js", files: [{ path: "main.js", content }] });
+  const invalidLayoutSource = await compile(
+    'export default () => { const text=ui.text({value:"Input"}); ui.column({children:[text,text]}); };',
+  );
   const invalidOutputSource = await compile('export default () => ui.text({value:"Output"});');
-  const invalidEntrySource = await compile('export default { answer: 42 };');
-  const undefinedOutputSource = await compile('export default () => ({missingColumn:undefined});');
+  const invalidEntrySource = await compile("export default { answer: 42 };");
+  const undefinedOutputSource = await compile("export default () => ({missingColumn:undefined});");
   const headlessSource = await compile("export default () => ({ answer: 42 });");
   const csvSource = await compile(`export default async () => {
     for(let i=0;i<250;i++) console.info("row",i);
@@ -85,32 +100,41 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
     catch (error) { failures.push(error.message); }
     return {page, names, rows, failures};
   };`);
-  const folderSource=await compile(`export default async()=>{
+  const folderSource = await compile(`export default async()=>{
     const selected=await files.openFolder();
     const hidden=await files.list();
     await files.save("done","result.csv");
     return {count:selected.length,total:selected.reduce((sum,file)=>sum+file.size,0),paths:[files.path(selected[0]),files.path(selected[2999])],hidden:hidden.length};
   };`);
-  const workSource=await compile(`export default()=>{
+  const workSource = await compile(`export default()=>{
     ui.button({label:"Start",id:"start",onClick:()=>{work.run(async job=>{for(let i=0;i<17;i++){await new Promise(resolve=>setTimeout(resolve,1000));await job.checkpoint();job.progress(i+1,17);}return "finished";});}});
     ui.button({label:"Cancel",id:"cancel",onClick:()=>work.cancel()});
   };`);
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
-  const server = Bun.serve({ hostname: "127.0.0.1",port: 0,fetch: () => new Response("<!doctype html><body></body>",{ headers: { "Content-Type": "text/html" } }) });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response("<!doctype html><body></body>", { headers: { "Content-Type": "text/html" } }),
+  });
   try {
     const page = await browser.newPage();
     await page.goto(server.url.href);
     await page.addScriptTag({ content: harness });
-    expect(await page.evaluate(()=>runArtifactStoragePages())).toEqual({counts:[500,500,5],unique:1005,first:"file-00000.txt",last:"file-01004.txt"});
-    const encoded=await compile(`export default async()=>{
+    expect(await page.evaluate(() => runArtifactStoragePages())).toEqual({
+      counts: [500, 500, 5],
+      unique: 1005,
+      first: "file-00000.txt",
+      last: "file-01004.txt",
+    });
+    const encoded = await compile(`export default async()=>{
       const file=new File([new Uint8Array([110,97,109,101,59,97,109,111,117,110,116,10,77,252,108,108,101,114,59,52,50])],"legacy.csv");
       let rejected=false;try{await sheet.fromCsv(file);}catch{rejected=true;}
       return {rejected,rows:await sheet.fromCsv(file,{encoding:"windows-1252"}),single:await sheet.fromCsv("amount\\n42")};
     }`);
-    const decoded=await page.evaluate(source=>runArtifactScenario({source}),encoded);
+    const decoded = await page.evaluate((source) => runArtifactScenario({ source }), encoded);
     expect(decoded.errors).toEqual([]);
-    expect(decoded.output).toEqual({rejected:true,rows:[{name:"Müller",amount:"42"}],single:[{amount:"42"}]});
-    const largeCsv=await compile(`export default async()=>{
+    expect(decoded.output).toEqual({ rejected: true, rows: [{ name: "Müller", amount: "42" }], single: [{ amount: "42" }] });
+    const largeCsv = await compile(`export default async()=>{
       const job=work.run(async job=>{
         const text="month;amount;description\\n"+("2026-01;42;"+"x".repeat(70)+"\\n").repeat(500000);
         const start=performance.now();const rows=await sheet.fromCsv(text);let sum=0;
@@ -118,53 +142,79 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
         return {bytes:text.length,rows:rows.length,sum,elapsedMs:performance.now()-start};
       });return await job.done;
     }`);
-    const large=await page.evaluate(source=>runArtifactScenario({source}),largeCsv);
+    const large = await page.evaluate((source) => runArtifactScenario({ source }), largeCsv);
     expect(large.errors).toEqual([]);
-    expect(large.output).toMatchObject({rows:500000,sum:21000000});
-    console.info("Large CSV browser measurement",large.output);
-    const headless = await page.evaluate((source) => runArtifactScenario({ source }),headlessSource);
+    expect(large.output).toMatchObject({ rows: 500000, sum: 21000000 });
+    console.info("Large CSV browser measurement", large.output);
+    const headless = await page.evaluate((source) => runArtifactScenario({ source }), headlessSource);
     expect(headless.errors).toEqual([]);
     expect(headless.output).toEqual({ answer: 42 });
     expect(headless.nodes).toHaveLength(0);
     expect(headless.errors).toEqual([]);
-    const documents = await page.evaluate(source => runArtifactScenario({source}), documentsSource);
+    const documents = await page.evaluate((source) => runArtifactScenario({ source }), documentsSource);
     expect(documents.errors).toEqual([]);
-    expect(documents.output).toMatchObject({page:{page:1,width:612,height:792},names:["Ledger"],rows:[["Reference","Amount"],["DHL-001","12.34"],["Cached formula","24.68"]]});
+    expect(documents.output).toMatchObject({
+      page: { page: 1, width: 612, height: 792 },
+      names: ["Ledger"],
+      rows: [
+        ["Reference", "Amount"],
+        ["DHL-001", "12.34"],
+        ["Cached formula", "24.68"],
+      ],
+    });
     expect(JSON.stringify(documents.output)).toContain("DHL-001 EUR 12.34");
-    expect(documents.output).toMatchObject({failures:["PDF is closed","Workbook is closed",expect.any(String),expect.stringContaining("XLSX ZIP"),expect.stringContaining("128 MiB")]});
+    expect(documents.output).toMatchObject({
+      failures: [
+        "PDF is closed",
+        "Workbook is closed",
+        expect.any(String),
+        expect.stringContaining("XLSX ZIP"),
+        expect.stringContaining("128 MiB"),
+      ],
+    });
     expect(JSON.stringify(documents.output)).not.toContain("unexpected success");
-    for(const mode of ["user","test"] as const){
-      const folder=await page.evaluate(({source,mode})=>runArtifactFolderScenario(source,mode),{source:folderSource,mode});
-      expect(folder.output).toEqual({count:3000,total:3000*8192,paths:["folder-0/ledger.csv","folder-2999/ledger.csv"],hidden:0});
-      expect(folder.files).toHaveLength(mode==="user"?0:1);
+    for (const mode of ["user", "test"] as const) {
+      const folder = await page.evaluate(({ source, mode }) => runArtifactFolderScenario(source, mode), { source: folderSource, mode });
+      expect(folder.output).toEqual({
+        count: 3000,
+        total: 3000 * 8192,
+        paths: ["folder-0/ledger.csv", "folder-2999/ledger.csv"],
+        hidden: 0,
+      });
+      expect(folder.files).toHaveLength(mode === "user" ? 0 : 1);
     }
-    const jobs=await page.evaluate(source=>runArtifactWorkScenario(source),workSource);
+    const jobs = await page.evaluate((source) => runArtifactWorkScenario(source), workSource);
     expect(jobs.finished.work?.status).toBe("completed");
     expect(jobs.finished.output).toBe("finished");
     expect(jobs.cancelled.work?.status).toBe("cancelled");
     expect(jobs.cancelled.busy).toBe(false);
-    const csv = await page.evaluate(source => runArtifactCsvScenario(source), csvSource);
-    expect(csv.state.output).toEqual({people:2,total:25});
+    const csv = await page.evaluate((source) => runArtifactCsvScenario(source), csvSource);
+    expect(csv.state.output).toEqual({ people: 2, total: 25 });
     expect(csv.state.logs).toHaveLength(200);
     expect(csv.state.logs.at(-1)?.text).toBe("late diagnostic");
     expect(csv.state.nodes).toHaveLength(0);
     expect(csv.content).toContain("Alice;17");
     expect(csv.content).toContain("Bob;8");
-    const list = await page.evaluate((source) => runArtifactScenario({ source,
-      events: Array.from({ length: 320 },() => ({ id: "tasks",event: {type:"select" as const,key:"one"} })),
-    }),listSource);
+    const list = await page.evaluate(
+      (source) =>
+        runArtifactScenario({
+          source,
+          events: Array.from({ length: 320 }, () => ({ id: "tasks", event: { type: "select" as const, key: "one" } })),
+        }),
+      listSource,
+    );
     expect(list.nodes).toHaveLength(1);
-    expect(list.nodes[0]).toMatchObject({type:"table",rows:[{id:"one",title:"320"}]});
+    expect(list.nodes[0]).toMatchObject({ type: "table", rows: [{ id: "one", title: "320" }] });
     expect(list.errors).toEqual([]);
-    const failure = await page.evaluate((source) => runArtifactScenario({ source }),errorSource);
+    const failure = await page.evaluate((source) => runArtifactScenario({ source }), errorSource);
     expect(failure.errors.join(" ")).toContain("deliberate");
-    const invalidLayout = await page.evaluate(source => runArtifactScenario({ source }), invalidLayoutSource);
+    const invalidLayout = await page.evaluate((source) => runArtifactScenario({ source }), invalidLayoutSource);
     expect(invalidLayout.errors.join(" ")).toContain("exactly one layout");
-    const invalidOutput = await page.evaluate(source => runArtifactScenario({ source }), invalidOutputSource);
+    const invalidOutput = await page.evaluate((source) => runArtifactScenario({ source }), invalidOutputSource);
     expect(invalidOutput.errors.join(" ")).toContain("Do not return UI handles");
-    const invalidEntry = await page.evaluate(source => runArtifactScenario({ source }), invalidEntrySource);
+    const invalidEntry = await page.evaluate((source) => runArtifactScenario({ source }), invalidEntrySource);
     expect(invalidEntry.errors.join(" ")).toContain("must default-export a function");
-    const undefinedOutput = await page.evaluate(source => runArtifactScenario({source}),undefinedOutputSource);
+    const undefinedOutput = await page.evaluate((source) => runArtifactScenario({ source }), undefinedOutputSource);
     expect(undefinedOutput.errors.join(" ")).toContain("Replace undefined values with null");
     const recovery = await page.evaluate((source) => runArtifactRecoveryScenario(source), recoverySource);
     expect(recovery.failed.status).toBe("error");
@@ -172,7 +222,7 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
     expect(recovery.recovered.error).toBeUndefined();
     expect(recovery.recovered.logs.some((log) => log.text.includes("First attempt failed"))).toBe(true);
     expect(recovery.recovered.nodes.some((node) => node.type === "text" && node.value === "Recovered")).toBe(true);
-    const infinite = await page.evaluate((source) => runArtifactScenario({ source,stopAfterMs: 150 }),infiniteSource);
+    const infinite = await page.evaluate((source) => runArtifactScenario({ source, stopAfterMs: 150 }), infiniteSource);
     expect(infinite.responsive).toBe(true);
     expect(infinite.stopped).toBe(true);
     for (let iteration = 0; iteration < 2; iteration++) {
@@ -190,17 +240,22 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
     expect(agent[4]).toMatchObject({ nodes: [{ id: "tasks", totalRows: 1, rows: [{ title: "Example" }] }] });
     expect(agent[5]).toEqual({ runId: "start", stopped: true });
     expect(agent[6]).toHaveLength(1);
-    const pickerSource=await compile('export default async()=>{const file=await files.open();return {name:file.name,text:await file.text()};}');
-    await page.evaluate(source=>prepareLocalScriptPicker(source),pickerSource);
-    const chooserPromise=page.waitForEvent("filechooser");
+    const pickerSource = await compile(
+      "export default async()=>{const file=await files.open();return {name:file.name,text:await file.text()};}",
+    );
+    await page.evaluate((source) => prepareLocalScriptPicker(source), pickerSource);
+    const chooserPromise = page.waitForEvent("filechooser");
     await page.click("#start-local-script");
-    const chooser=await chooserPromise;
+    const chooser = await chooserPromise;
     // Choosing a local file is human waiting time, not a 15-second startup budget.
-    await new Promise(resolve=>setTimeout(resolve,16000));
-    expect(await page.evaluate(()=>localScriptPickerResult?.status)).toBe("waiting");
-    await chooser.setFiles({name:"local.csv",mimeType:"text/csv",buffer:Buffer.from("amount\n42")});
-    await page.waitForFunction(()=>localScriptPickerResult?.status==="ready");
-    expect(await page.evaluate(()=>localScriptPickerResult?.output)).toEqual({name:"local.csv",text:"amount\n42"});
-  } finally { await browser.close(); await server.stop(true); }
-// Includes 3,000-file storage fixtures and deliberate 17s job / 16s picker waits.
-},180000);
+    await new Promise((resolve) => setTimeout(resolve, 16000));
+    expect(await page.evaluate(() => localScriptPickerResult?.status)).toBe("waiting");
+    await chooser.setFiles({ name: "local.csv", mimeType: "text/csv", buffer: Buffer.from("amount\n42") });
+    await page.waitForFunction(() => localScriptPickerResult?.status === "ready");
+    expect(await page.evaluate(() => localScriptPickerResult?.output)).toEqual({ name: "local.csv", text: "amount\n42" });
+  } finally {
+    await browser.close();
+    await server.stop(true);
+  }
+  // Includes 3,000-file storage fixtures and deliberate 17s job / 16s picker waits.
+}, 180000);

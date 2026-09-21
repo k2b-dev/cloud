@@ -3,10 +3,9 @@ import type { AuthContext } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import type { DslQueryPreviewResponse } from "../contracts";
 import type { DslResolvedSqlQueryPlan } from "../query-dsl/resolver";
+import * as querySettings from "../service/query-settings";
 import { type GqlRuntimeTraceEnd, type GqlRuntimeTraceStart, gqlRuntimeTraceAttributes, gqlRuntimeTraceSummary } from "./gql-observability";
 import { executeGqlSource } from "./gql-runtime";
-
-import * as querySettings from "../service/query-settings";
 
 // Exercise real admission and runtime logic with process configuration supplied locally.
 let restoreQuerySettings: () => void;

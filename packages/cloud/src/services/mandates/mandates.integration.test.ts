@@ -1,18 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { MANDATE_MAX_PENDING_PER_USER, mandates } from ".";
 
-const canUseDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<{ mandates: string | null }[]>`SELECT to_regclass('auth.mandates')::text AS mandates`;
-    return row?.mandates === "auth.mandates";
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("mandates", () => {
   const suffix = crypto.randomUUID();

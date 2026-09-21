@@ -2,8 +2,8 @@ import { describe, expect, spyOn, test } from "bun:test";
 import type { OutboundEvent, Provider, Tool } from "@k2b/nessi";
 import { aiTurnAllowsRememberedApprovals } from "./approvals";
 import { __aiExecutorTest } from "./executor";
-import { aiConversations } from "./store";
 import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
+import { aiConversations } from "./store";
 
 const { applyToolRoundPolicy, createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
@@ -544,11 +544,18 @@ test("web search sources retain the query above the activity description", async
   const index = spyOn(aiConversations, "indexConversationSource").mockResolvedValue(undefined);
   try {
     await __aiExecutorTest.indexConversationToolSource({
-      conversationId: "conversation", turnId: "turn", callId: "search", name: "web_search",
-      args: { query: "  Wetter Ulm  " }, result: [], isError: false,
+      conversationId: "conversation",
+      turnId: "turn",
+      callId: "search",
+      name: "web_search",
+      args: { query: "  Wetter Ulm  " },
+      result: [],
+      isError: false,
     });
     expect(index).toHaveBeenCalledWith({
-      conversationId: "conversation", turnId: "turn", callId: "search",
+      conversationId: "conversation",
+      turnId: "turn",
+      callId: "search",
       source: { kind: "activity", key: "web_search", title: "Wetter Ulm", preview: "Searched the web", icon: "ti ti-world" },
     });
   } finally {
@@ -559,17 +566,26 @@ test("web search sources retain the query above the activity description", async
 test("direct code tools index returned Studio references without a capability wrapper", async () => {
   const index = spyOn(aiConversations, "indexConversationResources").mockResolvedValue(undefined);
   const call = {
-    conversationId: "conversation", turnId: "turn", callId: "create", name: "code_create",
-    args: {}, result: { refs: [{ type: "assistant.artifact", id: "app-id", title: "Dashboard" }] }, isError: false,
+    conversationId: "conversation",
+    turnId: "turn",
+    callId: "create",
+    name: "code_create",
+    args: {},
+    result: { refs: [{ type: "assistant.artifact", id: "app-id", title: "Dashboard" }] },
+    isError: false,
   };
   try {
     await __aiExecutorTest.indexConversationToolSource(call);
     expect(index).toHaveBeenCalledWith({
-      conversationId: "conversation", turnId: "turn", callId: "create",
+      conversationId: "conversation",
+      turnId: "turn",
+      callId: "create",
       resources: [{ ref: { type: "assistant.artifact", id: "app-id" }, title: "Dashboard" }],
     });
     index.mockClear();
     await __aiExecutorTest.indexConversationToolSource({ ...call, isError: true });
     expect(index).not.toHaveBeenCalled();
-  } finally { index.mockRestore(); }
+  } finally {
+    index.mockRestore();
+  }
 });

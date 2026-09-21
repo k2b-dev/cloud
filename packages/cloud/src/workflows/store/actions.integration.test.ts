@@ -5,8 +5,9 @@
  * it acts, settled after. Each of those was hand-written per app before, and
  * the app that got the budget wrong got it wrong by leaving one out.
  */
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import type { WorkflowBoundPlan, WorkflowIrStep } from "../contracts";
@@ -110,7 +111,7 @@ const effectRow = async (runId: string) => {
   return row;
 };
 
-(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("declared actions", () => {
+suiteFor("database")("declared actions", () => {
   test("transactional heartbeat rejects cancellation before application writes", async () => {
     expect(await ready()).toBe(true);
     const { runId } = await queued("probe.cancelFence");

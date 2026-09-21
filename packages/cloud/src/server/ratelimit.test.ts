@@ -1,18 +1,9 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, expect, test } from "bun:test";
 import { redis } from "bun";
+import { valkeySuite } from "../../../../scripts/fixtures/test-infra";
 import { RateLimitError, ratelimit } from "./ratelimit";
 
-const canUseRedis = async (): Promise<boolean> => {
-  try {
-    await redis.send("PING", []);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseRedis()) ? describe : describe.skip;
+const suite = valkeySuite();
 
 suite("server.ratelimit", () => {
   beforeEach(async () => {

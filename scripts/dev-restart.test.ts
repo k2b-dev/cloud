@@ -11,7 +11,7 @@ describe("development restart contract", () => {
   });
 
   test("exposes a no-build restart command", () => {
-    expect(packageJson.scripts["dev:restart"]).toBe("bun run scripts/dev-restart.ts");
+    expect(packageJson.scripts["dev:restart"]).toMatch(/^bun (run )?scripts\/dev-restart\.ts$/);
     expect(restartScript).toContain('["--no-build", "--force-recreate"]');
     expect(restartScript).toContain('const restartRunning = inputs[0] === "--running"');
     expect(restartScript).toContain("services.map((service) => [service])");

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { SQL } from "bun";
 import type { LoopAggregate } from "@k2b/nessi";
+import { SQL } from "bun";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 
 test.skipIf(process.env.ASSISTANT_TIMING_INTEGRATION !== "1")(
@@ -62,7 +62,7 @@ test.skipIf(process.env.ASSISTANT_TIMING_INTEGRATION !== "1")(
       await resumed.finishGeneration();
       await resumed.event(start("request-2"));
       await resumed.finishGeneration();
-      const rows = await db<{request_id:string}[]>`SELECT request_id FROM ai.turn_generation_timings ORDER BY request_id`;
+      const rows = await db<{ request_id: string }[]>`SELECT request_id FROM ai.turn_generation_timings ORDER BY request_id`;
       expect(rows.map((row) => row.request_id)).toEqual(["request-1", "request-2"]);
       await db`UPDATE ai.turn_generation_timings SET started_at='2026-01-01 00:00:00Z',ended_at='2026-01-01 00:00:10Z' WHERE request_id='request-1'`;
       await db`UPDATE ai.turn_generation_timings SET started_at='2026-01-01 00:00:50Z',ended_at='2026-01-01 00:01:00Z' WHERE request_id='request-2'`;

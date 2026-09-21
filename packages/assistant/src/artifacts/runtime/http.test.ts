@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { HTTP_BYTES, HttpRequest, SecretSave } from "../http-contracts";
 import { createHttp, secret } from "./http";
-import { HttpRequest, SecretSave, HTTP_BYTES } from "../http-contracts";
 
 test("secret references clone as data, cannot concatenate, and never resolve in the worker", async () => {
   const reference = secret("crm", { prefix: "Bearer " });

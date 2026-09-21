@@ -122,6 +122,10 @@ steps:
         );
       return ids;
     };
+    const states = async (ids: string[]) =>
+      (await sql<Array<{ state: string }>>`SELECT state FROM workflows.run WHERE id = ANY(${sql.array(ids, "UUID")})`).map(
+        (row) => row.state,
+      );
     const completed = async (ids: string[]) => {
       const rows = await sql<
         Array<{ state: string; error: unknown }>
@@ -141,8 +145,9 @@ steps:
       await until(() => active === 10);
       expect(entered.size).toBe(10);
       await app.settings.set("grids.workflow_concurrency", 3);
-      await Bun.sleep(50);
-      expect(active).toBe(10); // Saving never interrupts accepted work.
+      // Saving never interrupts accepted work: every claimed run is still running.
+      expect(await states([...entered])).toEqual(Array.from({ length: 10 }, () => "running"));
+      expect(active).toBe(10);
       release.resolve();
       await until(() => completed(first));
       expect(peak).toBe(10);
@@ -156,7 +161,10 @@ steps:
       const second = await enqueue(4);
       await startWorkflowRuntime();
       await until(() => active === 3);
-      await Bun.sleep(50);
+      // The fourth run waits in the store instead of being claimed.
+      const waiting = second.filter((id) => !entered.has(id));
+      expect(waiting).toHaveLength(1);
+      expect(await states(waiting)).toEqual(["queued"]);
       expect(entered.size).toBe(3);
       release.resolve();
       await until(() => completed(second));

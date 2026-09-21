@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { request } from "node:http";
-import { requestPublicHttps, type PublicHttpInput } from "./public-http";
+import { type PublicHttpInput, requestPublicHttps } from "./public-http";
 
 const base = { method: "GET", headers: { authorization: "fixture-token" }, maxBytes: 1024, signal: new AbortController().signal };
 test("public HTTP blocks local addresses and credentials before opening a connection", async () => {

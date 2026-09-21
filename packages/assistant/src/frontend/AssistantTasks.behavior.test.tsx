@@ -1,8 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
+import type { AiChatTaskOccurrenceView, AiChatTaskView } from "@k2b/cloud/ai";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { AssistantLiveProvider, createAssistantLiveInvalidationHub } from "./assistant-live";
-import type { AiChatTaskView, AiChatTaskOccurrenceView } from "@k2b/cloud/ai";
+
 const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
 const task: AiChatTaskView = {
   id: "task01",
@@ -123,9 +124,14 @@ test("task list opens the selected task without a manual form; details expose ac
     expect(edit).toEqual({ id: "task01", repair: false });
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click();
     await tick();
-    Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((item) => item.textContent?.includes("Run now"))!.click();
-    await tick(); await tick();
-    expect(confirmation).toHaveBeenCalledWith("Task queued. The result will appear here and in the chat when it is ready.", { title: "Scheduled task" });
+    Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.includes("Run now"))!
+      .click();
+    await tick();
+    await tick();
+    expect(confirmation).toHaveBeenCalledWith("Task queued. The result will appear here and in the chat when it is ready.", {
+      title: "Scheduled task",
+    });
   } finally {
     dispose();
     fetchMock.mockRestore();

@@ -9,26 +9,57 @@ for (const savedDate of ["2026-08-01", null]) {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     let submitted: unknown;
-    globalThis.fetch = Object.assign(async (_input: string | URL | Request, init?: RequestInit) => {
-      submitted = JSON.parse(String(init?.body));
-      return Response.json({});
-    }, { preconnect: originalFetch.preconnect });
+    globalThis.fetch = Object.assign(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        submitted = JSON.parse(String(init?.body));
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
     const { default: FormSubmit } = await import("./PublicFormSubmit.island");
-    const dispose = render(() => <FormSubmit
-      submitUrl="/save"
-      form={{ id: "FORM01", name: "Payment", config: { fields: [{ kind: "user_input", fieldId: "Date01", defaultValue: "2026-09-15" }] } }}
-      initialRecord={{ values: { Date01: savedDate }, version: 1, inlineCreates: {} }}
-      fields={[{
-        id: "Date01", tableId: "TABLE1", name: "Date", type: "date", config: {}, required: false,
-        description: null, deletedAt: null, createdAt: "2026-09-14T12:00:00Z", updatedAt: "2026-09-14T12:00:00Z",
-        position: 0, presentable: false, hideInTable: false, defaultValue: null, indexed: false, uniqueConstraint: false,
-      }]}
-    />, dom.root);
+    const dispose = render(
+      () => (
+        <FormSubmit
+          submitUrl="/save"
+          form={{
+            id: "FORM01",
+            name: "Payment",
+            config: { fields: [{ kind: "user_input", fieldId: "Date01", defaultValue: "2026-09-15" }] },
+          }}
+          initialRecord={{ values: { Date01: savedDate }, version: 1, inlineCreates: {} }}
+          fields={[
+            {
+              id: "Date01",
+              tableId: "TABLE1",
+              name: "Date",
+              type: "date",
+              config: {},
+              required: false,
+              description: null,
+              deletedAt: null,
+              createdAt: "2026-09-14T12:00:00Z",
+              updatedAt: "2026-09-14T12:00:00Z",
+              position: 0,
+              presentable: false,
+              hideInTable: false,
+              defaultValue: null,
+              indexed: false,
+              uniqueConstraint: false,
+            },
+          ]}
+        />
+      ),
+      dom.root,
+    );
     try {
       dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await Bun.sleep(10);
       expect(submitted).toMatchObject({ data: { Date01: savedDate }, version: 1 });
-    } finally { dispose(); globalThis.fetch = originalFetch; dom.cleanup(); }
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
   });
 }
 

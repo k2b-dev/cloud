@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import type { User } from "../contracts/shared";
-import { auth, type AuthContext } from "../server/middleware/auth";
+import { type AuthContext, auth } from "../server/middleware/auth";
 import { announcements } from "../services/announcements";
-import { session } from "../services/session";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
+import { session } from "../services/session";
 import { pageErrorMessages } from "./page-error-messages";
 import type { RuntimeContext } from "./runtime";
 

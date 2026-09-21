@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { chartSnapshot, explorerChart } from "./analytics-chart";
-import { ChartOptions } from "./runtime/chart-schema";
 import { ExplorerData } from "./runtime/analytics-contracts";
+import { ChartOptions } from "./runtime/chart-schema";
 
 const examples = [
   { kind: "bar", data: [{ label: "A", value: 2 }] },
@@ -62,13 +62,20 @@ test("declarative mapping shares exact values and rejects silent missing numeric
 });
 
 test("monthly line labels render in source order and invalid mappings fail before a browser mounts", () => {
-  const input = {rowKey:"id",rows:[{id:"jan",month:"January",amount:10},{id:"feb",month:"February",amount:20}],chart:{kind:"line",x:"month",y:"amount"}};
+  const input = {
+    rowKey: "id",
+    rows: [
+      { id: "jan", month: "January", amount: 10 },
+      { id: "feb", month: "February", amount: 20 },
+    ],
+    chart: { kind: "line", x: "month", y: "amount" },
+  };
   const data = ExplorerData.parse(input);
-  const result = explorerChart(data,[{key:"month",label:"Month",sortable:false}],"en-US");
+  const result = explorerChart(data, [{ key: "month", label: "Month", sortable: false }], "en-US");
   expect(result.chart.svg).toContain("January");
   expect(result.chart.svg).toContain("February");
-  expect(result.chart.marks.map(mark=>mark.rowKey)).toEqual(["jan","feb"]);
-  expect(() => ExplorerData.parse({...input,chart:{...input.chart,kind:"scatter"}})).toThrow("finite numbers");
-  expect(() => ExplorerData.parse({...input,rows:[{id:"bad",month:"January",amount:null}]})).toThrow("finite numbers");
-  expect(() => ExplorerData.parse({...input,rows:[...input.rows,{id:"mixed",month:3,amount:30}]})).toThrow("without mixing");
+  expect(result.chart.marks.map((mark) => mark.rowKey)).toEqual(["jan", "feb"]);
+  expect(() => ExplorerData.parse({ ...input, chart: { ...input.chart, kind: "scatter" } })).toThrow("finite numbers");
+  expect(() => ExplorerData.parse({ ...input, rows: [{ id: "bad", month: "January", amount: null }] })).toThrow("finite numbers");
+  expect(() => ExplorerData.parse({ ...input, rows: [...input.rows, { id: "mixed", month: 3, amount: 30 }] })).toThrow("without mixing");
 });

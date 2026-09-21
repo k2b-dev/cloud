@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { type Form, normalizeFormConfig, toPublicRenderableForm, toRenderableForm } from "./forms";
 import { materializeFormRenderDefaults } from "./form-render-defaults";
+import { type Form, normalizeFormConfig, toPublicRenderableForm, toRenderableForm } from "./forms";
 import type { Field } from "./types";
 
 const form = (): Form => ({
@@ -38,23 +38,41 @@ const form = (): Form => ({
 describe("form render DTOs", () => {
   test("renders date defaults once in request timezone without changing authored values", () => {
     const source = form();
-    const field: Field = { id: "Date01", shortId: "Date01", tableId: source.tableId, name: "Date", type: "date",
-      config: {}, description: null, position: 0, required: false, defaultValue: null,
-      presentable: false, hideInTable: false, indexed: false, uniqueConstraint: false,
-      createdAt: source.createdAt, updatedAt: source.updatedAt, deletedAt: null };
+    const field: Field = {
+      id: "Date01",
+      shortId: "Date01",
+      tableId: source.tableId,
+      name: "Date",
+      type: "date",
+      config: {},
+      description: null,
+      position: 0,
+      required: false,
+      defaultValue: null,
+      presentable: false,
+      hideInTable: false,
+      indexed: false,
+      uniqueConstraint: false,
+      createdAt: source.createdAt,
+      updatedAt: source.updatedAt,
+      deletedAt: null,
+    };
     source.config.fields = [
       { kind: "user_input", fieldId: field.id, defaultValue: { kind: "now" } },
       { kind: "form_value", fieldId: field.id, value: { kind: "now" } },
     ];
     const rendered = materializeFormRenderDefaults(source, [field], {
-      dateConfig: { timeZone: "Europe/Berlin" }, now: new Date("2026-09-14T23:30:00Z"),
+      dateConfig: { timeZone: "Europe/Berlin" },
+      now: new Date("2026-09-14T23:30:00Z"),
     });
     expect(rendered.config.fields[0]).toMatchObject({ defaultValue: "2026-09-15" });
     expect(source.config.fields[0]).toMatchObject({ defaultValue: { kind: "now" } });
     expect(rendered.config.fields[1]).toBe(source.config.fields[1]);
-    expect(materializeFormRenderDefaults(rendered, [field], {
-      now: new Date("2026-09-20T23:30:00Z"),
-    }).config.fields[0]).toEqual(rendered.config.fields[0]);
+    expect(
+      materializeFormRenderDefaults(rendered, [field], {
+        now: new Date("2026-09-20T23:30:00Z"),
+      }).config.fields[0],
+    ).toEqual(rendered.config.fields[0]);
   });
   test("raw config normalization preserves valid cross-field rules and ignores malformed ones", () => {
     expect(

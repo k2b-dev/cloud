@@ -1,7 +1,5 @@
-import { clearProcessApplicationId, getProcessApplicationId } from "./process-identity";
 import { expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
-
 import { env } from "../config/env";
 import type { User } from "../contracts/shared";
 import { auth } from "../server/middleware/auth";
@@ -13,6 +11,7 @@ import * as settingsService from "../services/settings";
 import * as settingsSnapshot from "../services/settings/snapshot";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
+import { clearProcessApplicationId, getProcessApplicationId } from "./process-identity";
 import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 

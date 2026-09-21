@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canMutateComment, COMMENT_MUTATION_WINDOW_MS } from "./comments";
+import { COMMENT_MUTATION_WINDOW_MS, canMutateComment } from "./comments";
 
 const authorUserId = "11111111-1111-4111-8111-111111111111";
 const now = Date.parse("2026-08-30T12:00:00.000Z");

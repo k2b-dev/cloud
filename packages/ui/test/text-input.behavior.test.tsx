@@ -8,10 +8,7 @@ test("Enter submits a single-line TextInput without submitting a surrounding for
   const { TextInput } = await import("../src");
   const [value, setValue] = createSignal("");
   let submitted = 0;
-  const dispose = render(
-    () => <TextInput label="Search" value={value} onValueChange={setValue} onSubmit={() => submitted++} />,
-    dom.root,
-  );
+  const dispose = render(() => <TextInput label="Search" value={value} onValueChange={setValue} onSubmit={() => submitted++} />, dom.root);
   const input = dom.root.querySelector("input")!;
   input.value = "report";
   input.dispatchEvent(new Event("input", { bubbles: true }));

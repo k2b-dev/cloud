@@ -1,14 +1,15 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { redis, sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import "../../../../../scripts/fixtures/authorization-preload";
 import { migrateBrowserSessionCutover } from "../../../../core/src/migrate/core/auth";
 import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";
 import * as settings from "../settings";
 import { session } from "./index";
-import { createTestSession } from "./test-fixture";
+import { createTestSession } from "./session.test-fixture";
 
 // Changes the migration marker: never run against a developer or live database.
-const isolated = /\/cloud_oauth_verify_[a-z0-9_]+(?:\?|$)/.test(process.env.DATABASE_URL ?? "");
-const suite = isolated ? describe : describe.skip;
+const suite = databaseSuite();
 const fixture = async () => {
   const userId = crypto.randomUUID();
   await sql`INSERT INTO auth.users (id, uid, provider, profile)

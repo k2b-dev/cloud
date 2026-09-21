@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, spyOn } from "bun:test";
 import { err } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { z } from "zod";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { PublicDocumentSchema } from "../api/document-public-contracts";
 import { projectDocuments } from "../api/documents-api-shared";
 import { financialQueryProfiles } from "../document-profiles/financial";
@@ -23,7 +24,7 @@ import { persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun, publishTestWorkflowVersion } from "./workflow-test-fixture";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 const output: FinancialDocumentOutput = {

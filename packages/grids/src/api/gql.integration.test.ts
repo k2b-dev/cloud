@@ -1,16 +1,17 @@
-import { beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { beforeAll, describe, expect, setDefaultTimeout } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { DslQueryExecuteResponse } from "../contracts";
 import { migrate } from "../migrate";
 import { createGqlApi } from "./gql";
 import { compileGqlViewWrite } from "./gql-runtime";
 import apiRoutes from "./index";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
-if (process.env.GRIDS_DB_TEST === "1") setDefaultTimeout(60_000);
+const postgresTest = testFor("database");
+if (testInfra.database) setDefaultTimeout(60_000);
 
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
@@ -321,7 +322,7 @@ const cleanupFixture = async (baseId: string, accessId?: string): Promise<void> 
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") {
+  if (testInfra.database) {
     process.env.APP_SECRET ??= "grids-gql-integration-cursor-secret";
     await migrate();
   }

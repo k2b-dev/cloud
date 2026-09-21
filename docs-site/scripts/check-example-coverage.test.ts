@@ -11,12 +11,9 @@ test("extracts static and dynamic package imports", () => {
 });
 
 test("reports documented imports without a compile fixture", () => {
-  expect(
-    missingExampleImports(
-      ["@k2b/cloud", "@k2b/cloud/ai/ui", "@k2b/cloud/src/internal"],
-      ["@k2b/cloud"],
-    ),
-  ).toEqual(["@k2b/cloud/ai/ui"]);
+  expect(missingExampleImports(["@k2b/cloud", "@k2b/cloud/ai/ui", "@k2b/cloud/src/internal"], ["@k2b/cloud"])).toEqual([
+    "@k2b/cloud/ai/ui",
+  ]);
 });
 
 test("requires canonical recipe pages and compile fixtures", () => {
@@ -39,10 +36,7 @@ test("requires canonical recipe pages and compile fixtures", () => {
     recipeFixtureErrors(
       recipes,
       new Map([
-        [
-          "server/http.md",
-          ['import { respond } from "@k2b/cloud/server";', 'import { api } from "@k2b/cloud/browser";'].join("\n"),
-        ],
+        ["server/http.md", ['import { respond } from "@k2b/cloud/server";', 'import { api } from "@k2b/cloud/browser";'].join("\n")],
       ]),
       new Map([["server-api.ts", 'import { respond } from "@k2b/cloud/server";']]),
     ),

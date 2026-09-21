@@ -1,25 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { mandates } from "../services/mandates";
 import { AiChatTaskIdempotencyConflictError, aiChatTasks } from "./chat-tasks";
 import { migrateCloudAi } from "./migrate";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 
-const canUseAiDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!row?.users) return false;
-    await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseAiDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("AI chat tasks", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("uses current mandate revisions for explicit lifecycle changes without restoring changed authority", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`

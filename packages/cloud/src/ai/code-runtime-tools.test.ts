@@ -1,8 +1,8 @@
-import { expect, test, spyOn } from "bun:test";
-import { defineTool, nessi, type Provider, type StoreEntry, type InboundEvent } from "@k2b/nessi";
+import { expect, spyOn, test } from "bun:test";
+import { defineTool, type InboundEvent, nessi, type Provider, type StoreEntry } from "@k2b/nessi";
 import { z } from "zod";
-import { aiConversations } from "./store";
 import { runManagedCodeTool, waitForManagedCodeCall } from "./code-runtime-tools";
+import { aiConversations } from "./store";
 
 test("two managed approvals retain their Nessi action IDs across two suspended attempts", async () => {
   const entries: StoreEntry[] = [];

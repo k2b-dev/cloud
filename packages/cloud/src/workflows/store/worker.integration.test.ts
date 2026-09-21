@@ -8,8 +8,9 @@
  * from outside is a bag of action handlers, which is exactly what an app is
  * meant to bring.
  */
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import type { WorkflowBoundPlan, WorkflowIrStep } from "../contracts";
@@ -93,7 +94,7 @@ const workflowListening = async (eventType: string, plan: WorkflowBoundPlan) => 
   return { appId, scopeId, workflowId: workflow.id };
 };
 
-(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow worker", () => {
+suiteFor("database")("workflow worker", () => {
   test("an event becomes a finished run in one tick", async () => {
     expect(await ready()).toBe(true);
     const plan = planWith([actionStep(0, "probe.record")], ["probe.record"]);

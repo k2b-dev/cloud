@@ -127,7 +127,13 @@ describe("Files v2 interactions", () => {
     await flush();
     expect(requests).toHaveLength(2);
     expect(requests[1]!.input).toEqual({
-      json: { url: "http://filegate:4001", cloud: configuration.cloud, freeipa: configuration.freeipa, collabora: configuration.collabora, token: "replacement-test-token" },
+      json: {
+        url: "http://filegate:4001",
+        cloud: configuration.cloud,
+        freeipa: configuration.freeipa,
+        collabora: configuration.collabora,
+        token: "replacement-test-token",
+      },
     });
     requests[1]!.resolve(Response.json({}));
     await flush();
@@ -161,7 +167,9 @@ describe("Files v2 interactions", () => {
     expect(new URL(next.href, "https://cloud.test").searchParams.get("after")).toBe("next/+=");
     rows[1]!.click();
     await flush();
-    const download = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Download")!;
+    const download = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Download",
+    )!;
     // The inspector preview already asked for a lease; only the explicit download is counted here.
     const before = requests.length;
     download.click();

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TEST_CA_CERT } from "../server/services/freeipa/test-certificates";
+import { TEST_CA_CERT } from "../server/services/freeipa/test-certificates.test-fixture";
 import { resolveFreeIpaTlsOptions, validateFreeIpaCaCert } from "./freeipa-config";
 
 describe("validateFreeIpaCaCert", () => {

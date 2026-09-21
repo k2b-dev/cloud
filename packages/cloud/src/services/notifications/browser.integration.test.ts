@@ -1,24 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { browserNotifications } from "./browser";
 import { getNotificationChannel } from "./channels";
 
-const canUseNotificationDatabase = async (): Promise<boolean> => {
-  if (!process.env.APP_SECRET) return false;
-  try {
-    const rows = await sql<Array<{ users: string | null; endpoints: string | null }>>`
-      SELECT
-        to_regclass('auth.users')::text AS users,
-        to_regclass('notifications.endpoints')::text AS endpoints
-    `;
-    return Boolean(rows[0]?.users && rows[0].endpoints);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseNotificationDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("browser notification endpoints", () => {
   test("rejects private push endpoints before persistence", async () => {

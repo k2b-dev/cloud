@@ -117,8 +117,23 @@ test("collapsed groups disclose with a chevron without dismissing the host and p
   const { default: Navigation } = await import("../src/layout/Navigation");
   const [name, setName] = createSignal("Projects");
   let dismissed = 0;
-  const navigation = createNavigation({ items: () => [{ id: "projects", label: name(), defaultExpanded: false, children: [{ id: "one", label: "Work", href: "/project/one" }] }] });
-  const dispose = render(() => <Navigation navigation={navigation} label="Assistant" beforeSelect={() => { dismissed++; }} />, dom.root);
+  const navigation = createNavigation({
+    items: () => [
+      { id: "projects", label: name(), defaultExpanded: false, children: [{ id: "one", label: "Work", href: "/project/one" }] },
+    ],
+  });
+  const dispose = render(
+    () => (
+      <Navigation
+        navigation={navigation}
+        label="Assistant"
+        beforeSelect={() => {
+          dismissed++;
+        }}
+      />
+    ),
+    dom.root,
+  );
   try {
     const toggle = dom.root.querySelector<HTMLButtonElement>("button")!;
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -134,5 +149,8 @@ test("collapsed groups disclose with a chevron without dismissing the host and p
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     toggle.click();
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  } finally { dispose(); dom.cleanup(); }
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
 });

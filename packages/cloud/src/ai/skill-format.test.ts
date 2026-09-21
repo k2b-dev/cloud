@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  parseAiSkillMarkdown,
-  serializeAiSkillMarkdown,
-  validateAiSkillReferences,
-} from "./skill-format";
+import { parseAiSkillMarkdown, serializeAiSkillMarkdown, validateAiSkillReferences } from "./skill-format";
 
 describe("Agent Skill format", () => {
   test("round-trips required and optional SKILL.md frontmatter", () => {
@@ -30,15 +26,11 @@ List wins, blockers, and next steps.
   });
 
   test("rejects invalid names, unsupported metadata, missing bodies, and oversized instruction files", () => {
-    expect(() =>
-      parseAiSkillMarkdown(`---\nname: Weekly Status\ndescription: Useful.\n---\n\nDo it.\n`),
-    ).toThrow("lowercase");
-    expect(() =>
-      parseAiSkillMarkdown(`---\nname: weekly-status\ndescription: Useful.\nsurprise: true\n---\n\nDo it.\n`),
-    ).toThrow('Unsupported SKILL.md frontmatter field "surprise"');
-    expect(() => parseAiSkillMarkdown(`---\nname: weekly-status\ndescription: Useful.\n---\n\n`)).toThrow(
-      "instructions are required",
+    expect(() => parseAiSkillMarkdown(`---\nname: Weekly Status\ndescription: Useful.\n---\n\nDo it.\n`)).toThrow("lowercase");
+    expect(() => parseAiSkillMarkdown(`---\nname: weekly-status\ndescription: Useful.\nsurprise: true\n---\n\nDo it.\n`)).toThrow(
+      'Unsupported SKILL.md frontmatter field "surprise"',
     );
+    expect(() => parseAiSkillMarkdown(`---\nname: weekly-status\ndescription: Useful.\n---\n\n`)).toThrow("instructions are required");
     expect(() =>
       parseAiSkillMarkdown(
         `---\nname: weekly-status\ndescription: Useful.\n---\n\n${Array.from({ length: 501 }, () => "line").join("\n")}`,
@@ -51,9 +43,7 @@ List wins, blockers, and next steps.
       { path: "references/style-guide.md", content: "# Style" },
     ]);
     expect(() => validateAiSkillReferences([{ path: "../secret.md", content: "no" }])).toThrow("references/<name>.md");
-    expect(() => validateAiSkillReferences([{ path: "references/nested/example.md", content: "no" }])).toThrow(
-      "references/<name>.md",
-    );
+    expect(() => validateAiSkillReferences([{ path: "references/nested/example.md", content: "no" }])).toThrow("references/<name>.md");
     expect(() =>
       validateAiSkillReferences([
         { path: "references/a.md", content: "a" },

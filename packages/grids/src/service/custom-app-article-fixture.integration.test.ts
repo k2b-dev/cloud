@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { customAppFormFieldHash, customAppFormSecurityHash } from "../custom-apps/form-capability";
 import { customAppViewSourceHash } from "../custom-apps/insight-source";
@@ -106,7 +107,7 @@ const insertArticleResources = async (): Promise<void> => {
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("Article Grids App Golden fixture", () => {

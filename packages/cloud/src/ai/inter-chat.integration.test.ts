@@ -1,20 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilityId } from "./capabilities";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 import { aiToolAudit } from "./tool-audit";
-
-const canUseAiDatabase = async () => {
-  try {
-    const [row] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!row?.users) return false;
-    await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 const insertUser = async (label: string) => {
   const suffix = crypto.randomUUID();
@@ -26,7 +16,10 @@ const insertUser = async (label: string) => {
   return row!.id;
 };
 
-describe.skipIf(!(await canUseAiDatabase()))("AI conversation resources and inter-chat messages (integration)", () => {
+databaseSuite()("AI conversation resources and inter-chat messages (integration)", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("indexes structured refs and searches their owned chat occurrences", async () => {
     const userId = await insertUser("resources");
     const first = await aiConversations.createConversation({ ownerUserId: userId, title: "Release" });

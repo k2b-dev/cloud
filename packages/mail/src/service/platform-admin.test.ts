@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { UserSchema, type User } from "@k2b/cloud/contracts";
-import type { MailRequestContext } from "./auth";
+import { type User, UserSchema } from "@k2b/cloud/contracts";
 import { isCurrentPlatformAdmin } from "./access";
+import type { MailRequestContext } from "./auth";
 
 const user = (roles: User["roles"], provider: User["provider"] = "ipa"): User =>
   UserSchema.parse({

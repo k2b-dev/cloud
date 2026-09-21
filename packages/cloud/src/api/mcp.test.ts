@@ -1,4 +1,3 @@
-import { fixtureHelpReader, type FixtureCorpus } from "../../test/help-reader";
 import { describe, expect, mock, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -8,6 +7,7 @@ import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
+import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";

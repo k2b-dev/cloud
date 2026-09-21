@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
-import { sql } from "bun";
 import { createConfig } from "@k2b/ssr";
+import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
@@ -27,7 +28,7 @@ process.once("exit", () => rmSync(ssrRoot, { recursive: true, force: true }));
 
 const { publicAttachmentRoutes } = await import("../frontend/public-attachments");
 
-const suite = process.env.MAIL_INTEGRATION_TESTS === "1" ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 const contextFor = (user: { id: string; uid: string; admin: boolean }): MailRequestContext => ({
   actor: {
@@ -323,12 +324,12 @@ suite("public attachment links", () => {
       WHERE id = ${expired.data.link.id}::uuid
     `;
     expect((await revokePublicAttachmentLink({ context: adminContext, mailboxId, linkId: revoked.data.link.id })).ok).toBe(true);
-    expect((await claimPublicAttachmentDownload({ publicToken: tokenOf(expired.data.url), grantToken: expiredGrant.data.grantToken })).ok).toBe(
-      false,
-    );
-    expect((await claimPublicAttachmentDownload({ publicToken: tokenOf(revoked.data.url), grantToken: revokedGrant.data.grantToken })).ok).toBe(
-      false,
-    );
+    expect(
+      (await claimPublicAttachmentDownload({ publicToken: tokenOf(expired.data.url), grantToken: expiredGrant.data.grantToken })).ok,
+    ).toBe(false);
+    expect(
+      (await claimPublicAttachmentDownload({ publicToken: tokenOf(revoked.data.url), grantToken: revokedGrant.data.grantToken })).ok,
+    ).toBe(false);
 
     // Losing the source attachment must make the link behave exactly like a revoked one.
     expect(

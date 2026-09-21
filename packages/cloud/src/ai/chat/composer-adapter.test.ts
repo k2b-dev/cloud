@@ -6,9 +6,9 @@ import {
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
+  aiComposerDraft,
   aiComposerFileAccept,
   aiComposerSendInput,
-  aiComposerDraft,
   createAiPastedTextFile,
   readAiComposerFiles,
   shouldAttachAiPastedText,
@@ -27,7 +27,12 @@ describe("Cloud chat composer adapter", () => {
     const draft = aiComposerDraft(content);
     expect(draft.text).toBe("Use Invoices with bill.pdf and /project/rules.md");
     expect(draft.mentions).toHaveLength(3);
-    const serialized = aiComposerSendInput({ intent: "queue", text: draft.text, mentions: draft.mentions, attachments: aiChatAttachments(draft.attachments) });
+    const serialized = aiComposerSendInput({
+      intent: "queue",
+      text: draft.text,
+      mentions: draft.mentions,
+      attachments: aiChatAttachments(draft.attachments),
+    });
     expect(serialized.draftContent).toEqual(content);
     expect(serialized.resources).toBeUndefined();
   });

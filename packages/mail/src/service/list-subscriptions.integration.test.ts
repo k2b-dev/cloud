@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -31,7 +32,11 @@ const remoteFolder = (path: string, uidValidity: string, role: "inbox" | "sent" 
   rightsSource: "acl" as const,
 });
 
-const fixtureFolders = () => [remoteFolder("INBOX", "10", "inbox"), remoteFolder("Sent", "20", "sent"), remoteFolder("Archive", "30", "archive")];
+const fixtureFolders = () => [
+  remoteFolder("INBOX", "10", "inbox"),
+  remoteFolder("Sent", "20", "sent"),
+  remoteFolder("Archive", "30", "archive"),
+];
 
 const fixtureVerification = (): ConnectorVerification => ({
   authenticatedPrincipal: "lists@example.test",
@@ -51,11 +56,12 @@ const fixtureVerification = (): ConnectorVerification => ({
     gmailExtensions: false,
   },
   limits: unavailableProviderLimitSnapshot(),
-  accounts: [{ id: "lists@example.test", name: "Lists fixture", locator: {}, namespaces: [{ kind: "personal", prefix: "", delimiter: "/" }] }],
+  accounts: [
+    { id: "lists@example.test", name: "Lists fixture", locator: {}, namespaces: [{ kind: "personal", prefix: "", delimiter: "/" }] },
+  ],
 });
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 const contextFor = (user: { id: string; uid: string }): MailRequestContext => ({
   actor: {

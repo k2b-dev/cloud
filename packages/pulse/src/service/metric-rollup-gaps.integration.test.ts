@@ -1,11 +1,12 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { ingestBatch } from "./ingest-writer";
 import { runHourlyRollup } from "./metric-rollups";
 import { queryMetricData } from "./query-execution";
 
-const dbTest = process.env.PULSE_METRIC_QUERY_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest(
   "rollup gaps preserve partial hours, disjoint dirty hours, and missing per-series rollups",

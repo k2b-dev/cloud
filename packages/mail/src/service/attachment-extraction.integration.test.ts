@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import {
@@ -11,7 +12,7 @@ import {
 } from "./attachment-extraction";
 import { storeReadableBlob } from "./message-blobs";
 
-const suite = process.env.MAIL_INTEGRATION_TESTS === "1" ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 suite("Mail attachment document extraction", () => {
   const mailboxId = crypto.randomUUID();

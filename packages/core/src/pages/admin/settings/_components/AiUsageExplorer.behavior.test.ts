@@ -22,7 +22,9 @@ describe("AI usage drill-down", () => {
       try {
         const tabs = Array.from(dom.root.querySelectorAll('[role="tab"]'));
         expect(tabs.find((tab) => tab.textContent === "Users & models")).toBeDefined();
-        expect(tabs.find((tab) => tab.getAttribute("aria-selected") === "true")?.textContent).toBe(view === "runs" ? "Errors & runs" : "Feedback");
+        expect(tabs.find((tab) => tab.getAttribute("aria-selected") === "true")?.textContent).toBe(
+          view === "runs" ? "Errors & runs" : "Feedback",
+        );
         const button = Array.from(dom.root.querySelectorAll("button")).find(
           (button) => button.textContent === (view === "runs" ? "Show error" : "Details"),
         );

@@ -3,6 +3,7 @@ import { defineCliCommands } from "../commands";
 import type { CloudCliContext, CloudCliFlags } from "../index";
 import { instanceCommands } from "./instance";
 import { syncCommands } from "./sync";
+
 const module = defineCliCommands({ name: "admin", summary: "Sync", commands: [...syncCommands, ...instanceCommands] });
 const snapshot = {
   sampledAt: "2026-09-08T12:00:00Z",
@@ -103,7 +104,12 @@ test("recovery and schedule commands require explicit confirmation and preserve 
 });
 
 test("diagnose includes both snapshots and removes payload previews from support output", async () => {
-  const response = { ...snapshot, deadLetters: [{ messageId: "failure", reason: "failed", dataPreview: "user payload" }], cluster: { status: "available" }, inventory: { status: "partial", matchedTotal: null } };
+  const response = {
+    ...snapshot,
+    deadLetters: [{ messageId: "failure", reason: "failed", dataPreview: "user payload" }],
+    cluster: { status: "available" },
+    inventory: { status: "partial", matchedTotal: null },
+  };
   const result = await invoke(["diagnose"], { include: "sync,nats" }, "json", response);
   expect(result.paths).toEqual(["/api/gateway/sync?problems=true", "/api/gateway/nats?problems=true&limit=20"]);
   const bundle = JSON.parse(result.lines[0]!);

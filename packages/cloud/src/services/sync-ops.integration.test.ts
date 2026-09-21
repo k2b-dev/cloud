@@ -1,16 +1,22 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
 import { Hono } from "hono";
+import { natsServers, testFor } from "../../../../scripts/fixtures/test-infra";
 import type { AuthContext } from "../server/middleware/auth";
 import { createSyncOpsRoutes } from "./sync-ops";
 
-const integration = process.env.CLOUD_SYNC_NATS_TEST === "1" ? test : test.skip;
+const integration = testFor("nats");
 integration(
   "installed Sync recovers a topic failure through the audited Cloud route without republishing",
   async () => {
-    const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS ?? "nats://localhost:4222", ignoreClusterUpdates: true });
-    const sync = createSync({ connection, namespace: `cloud-topic-ops-${crypto.randomUUID()}`, application: "test" });
+    const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
+    const sync = createSync({
+      connection,
+      namespace: `cloud-topic-ops-${crypto.randomUUID()}`,
+      application: "test",
+      defaults: { replicas: 1 },
+    });
     const topic = sync.topic<{ value: number }>({
       id: "events",
       dedupeWindowMs: 10_000,
@@ -84,8 +90,13 @@ integration(
 integration(
   "installed Sync paginates queue failures after cursor deletion and reads exact details",
   async () => {
-    const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS ?? "nats://localhost:4222", ignoreClusterUpdates: true });
-    const sync = createSync({ connection, namespace: `cloud-dlq-pages-${crypto.randomUUID()}`, application: "test" });
+    const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
+    const sync = createSync({
+      connection,
+      namespace: `cloud-dlq-pages-${crypto.randomUUID()}`,
+      application: "test",
+      defaults: { replicas: 1 },
+    });
     const queue = sync.queue<{ value: number }>({ id: "work" });
     const app = createSyncOpsRoutes(() => sync);
     try {

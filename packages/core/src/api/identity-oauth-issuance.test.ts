@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { generateKeyPair, jwtVerify } from "jose";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { createIdentityOAuthIssuanceRoutes } from "./identity-oauth-issuance";
 
 const USER_ID = "68df7d96-aaab-420a-ab1e-62a67e44d3be";
@@ -295,22 +296,9 @@ describe("Core OAuth issuance authority", () => {
   });
 });
 
-const canUseDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<{ users: string | null; clients: string | null; groups: string | null }[]>`
-      SELECT to_regclass('auth.users')::text AS users,
-        to_regclass('oauth.clients')::text AS clients,
-        to_regclass('auth.groups')::text AS groups
-    `;
-    return Boolean(row?.users && row.clients && row.groups);
-  } catch {
-    return false;
-  }
-};
+const withDatabase = databaseSuite();
 
-const databaseSuite = (await canUseDatabase()) ? describe : describe.skip;
-
-databaseSuite("Core OAuth issuance authority database resolution", () => {
+withDatabase("Core OAuth issuance authority database resolution", () => {
   test("loads current principal and client authority in the issuance request", async () => {
     const userId = crypto.randomUUID();
     const clientId = `core-authority-${crypto.randomUUID()}`;

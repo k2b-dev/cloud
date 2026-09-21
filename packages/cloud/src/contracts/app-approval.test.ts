@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
+  APP_APPROVAL_PROTOCOL,
+  type AppDeviceProof,
   AppDevicePublicKeySchema,
   AppDeviceRequestSchema,
   AppPairingClaimSchema,
   appDeviceProofMessage,
-  appPairingProofMessage,
   appPairingLink,
+  appPairingProofMessage,
   parseAppPairingLink,
-  APP_APPROVAL_PROTOCOL,
-  type AppDeviceProof,
 } from "./app-approval";
 
 const coordinate = "A".repeat(43);

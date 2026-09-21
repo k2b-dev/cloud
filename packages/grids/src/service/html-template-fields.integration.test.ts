@@ -1,15 +1,16 @@
-import { lockFinalizedSchema } from "./finalized-schema";
-import { refreshLocalCalculations } from "./local-calculation-storage";
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { exportRecords } from "./export";
+import { lockFinalizedSchema } from "./finalized-schema";
 import { enrichRecordsWithHtmlTemplates } from "./html-template-fields";
 import { checkHtmlTemplate } from "./html-template-preview";
+import { refreshLocalCalculations } from "./local-calculation-storage";
 import { createReader } from "./record-read";
 import { list } from "./records";
 
@@ -21,7 +22,7 @@ const materialize = (tableId: string) =>
   });
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("HTML template field integration", () => {

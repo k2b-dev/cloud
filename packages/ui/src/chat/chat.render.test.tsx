@@ -678,10 +678,22 @@ test("keeps context actions available without usage and out of the Plus menu", (
   expect(html).not.toContain('role="tooltip"');
 });
 
-
 test("working plan shows one semantic segment per step and bounded disclosure", () => {
-  const items = [{id:"done",content:"Read inputs",status:"completed" as const},{id:"active",content:"Verify",status:"in_progress" as const},{id:"removed",content:"Export",status:"cancelled" as const}];
-  const html = renderToString(() => createComponent(Chat.Tasks, { items, label:"Tasks", progressLabel:"1/2 complete · 1 cancelled", open:true, onOpenChange:()=>{}, statusLabels:{pending:"Pending",in_progress:"Current step",completed:"Completed",cancelled:"Cancelled"} }));
+  const items = [
+    { id: "done", content: "Read inputs", status: "completed" as const },
+    { id: "active", content: "Verify", status: "in_progress" as const },
+    { id: "removed", content: "Export", status: "cancelled" as const },
+  ];
+  const html = renderToString(() =>
+    createComponent(Chat.Tasks, {
+      items,
+      label: "Tasks",
+      progressLabel: "1/2 complete · 1 cancelled",
+      open: true,
+      onOpenChange: () => {},
+      statusLabels: { pending: "Pending", in_progress: "Current step", completed: "Completed", cancelled: "Cancelled" },
+    }),
+  );
   expect(html).toContain('aria-expanded="true"');
   expect(html).toContain("1/2 complete");
   expect(html).toContain('data-status="cancelled"');
@@ -690,10 +702,14 @@ test("working plan shows one semantic segment per step and bounded disclosure", 
 });
 
 test("composer context actions expose their toggle state", () => {
-  const html = renderToString(() => createComponent(Chat.Composer, {
-    value: "", onValueChange: () => {}, onSubmit: () => {},
-    contextActions: [{ id: "tasks", label: "Hide tasks", icon: "ti ti-list-check", pressed: true, onSelect: () => {} }],
-  }));
+  const html = renderToString(() =>
+    createComponent(Chat.Composer, {
+      value: "",
+      onValueChange: () => {},
+      onSubmit: () => {},
+      contextActions: [{ id: "tasks", label: "Hide tasks", icon: "ti ti-list-check", pressed: true, onSelect: () => {} }],
+    }),
+  );
   expect(html).toContain('aria-label="Hide tasks"');
   expect(html).toContain('title="Hide tasks"');
   expect(html).toContain('aria-pressed="true"');

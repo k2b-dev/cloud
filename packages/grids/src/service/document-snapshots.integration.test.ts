@@ -1,13 +1,14 @@
-import { lockFinalizedSchema } from "./finalized-schema";
-import { refreshLocalCalculations } from "./local-calculation-storage";
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { toPublicRecord } from "../api/public-dto";
 import { migrate } from "../migrate";
 import { createRecordSnapshot, filterSnapshotRelatedRecords } from "./document-snapshots";
+import { lockFinalizedSchema } from "./finalized-schema";
+import { refreshLocalCalculations } from "./local-calculation-storage";
 import { createReader } from "./record-read";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
@@ -19,7 +20,7 @@ const materialize = (tableId: string) =>
   });
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("record snapshot relation access", () => {

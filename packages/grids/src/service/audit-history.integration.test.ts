@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { projectPublicWorkspaceRecordDetail } from "../frontend/_components/workspace/workspace-public-state";
 import { loadRecordDetailData } from "../frontend/_components/workspace/workspace-record-detail-state";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
@@ -8,7 +9,7 @@ import { listByTable as listFields } from "./fields";
 import { get as getRecord } from "./record-read";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("record history storage boundary", () => {

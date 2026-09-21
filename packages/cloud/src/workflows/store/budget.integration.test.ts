@@ -5,6 +5,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import type { WorkflowBoundPlan } from "../contracts";
@@ -85,7 +86,7 @@ describe("effect budget validation", () => {
   });
 });
 
-(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("effect budgets", () => {
+suiteFor("database")("effect budgets", () => {
   test("a dimension the budget does not mention is uncapped but still counted", async () => {
     expect(await ready()).toBe(true);
     const { base } = await budgeted({ emails: 1 });

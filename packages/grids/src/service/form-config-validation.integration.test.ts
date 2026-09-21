@@ -1,18 +1,19 @@
-import { beforeAll, describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { beforeAll, describe, expect } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
-import { createPublicFormRoutes } from "../api/form-public-routes";
-import { createAuthenticatedFormRoutes } from "../api/form-authenticated-routes";
-import * as forms from "./forms";
+import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { fromPublicFormConfig } from "../api/form-api-shared";
+import { createAuthenticatedFormRoutes } from "../api/form-authenticated-routes";
+import { createPublicFormRoutes } from "../api/form-public-routes";
 import { toPublicFields } from "../api/public-dto";
 import { planFormComputedFields, previewFormComputedFields } from "../form-computed-fields";
 import { migrate } from "../migrate";
-import { listByTable } from "./fields";
 import { customAppFormRelationScope } from "./custom-app-form-relations";
+import { listByTable } from "./fields";
 import { validateFormConfig } from "./form-config-validation";
+import * as forms from "./forms";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const createFixture = async () => {
@@ -52,7 +53,7 @@ const createFixture = async () => {
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("form config validation", () => {

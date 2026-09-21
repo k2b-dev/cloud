@@ -46,8 +46,8 @@ describe("Assistant frontend contracts", () => {
     ]);
 
     expect(sidebar).toContain("AppWorkspace.SidebarSection");
-    expect(sidebar).toContain('title={t().projects}');
-    expect(sidebar).toContain('label={t().createProject}');
+    expect(sidebar).toContain("title={t().projects}");
+    expect(sidebar).toContain("label={t().createProject}");
     expect(sidebar).not.toContain("onOpenProjects");
     expect(sidebar).toContain("t().noProjects");
     expect(projectsDialog).toContain("prompts.form");
@@ -93,7 +93,7 @@ describe("Assistant frontend contracts", () => {
 
     expect(workspace).not.toContain("type ChatCommand");
     expect(workspace).not.toContain("const slashCommands");
-    expect(workspace).toContain("searchCommands={(query, signal) => assistantComposerCommands(");
+    expect(workspace).toMatch(/searchCommands=\{\(query, signal\) =>\s*assistantComposerCommands\(/);
     expect(workspace).not.toContain("type / ...");
     expect(workspace).toContain('id: "attach-resource"');
     expect(workspace).toContain("onPaste={(event) => pasteComposerContent");

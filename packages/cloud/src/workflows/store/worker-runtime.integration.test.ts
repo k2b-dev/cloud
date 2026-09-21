@@ -1,12 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
+import { natsServers, suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import { createWorkflowWorker, notifyWorkflowWorker } from "./worker-runtime";
 
-(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow worker wake transport", () => {
+suiteFor("nats")("workflow worker wake transport", () => {
   test("local and remote hints wake workers; lost hints recover and stop drains", async () => {
-    const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222", ignoreClusterUpdates: true });
+    const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
     const namespace = `test-workflow-wake-${crypto.randomUUID()}`;
     const sync = createSync({ connection, namespace, application: "worker-test", defaults: { replicas: 1 } });
     const remote = createSync({ connection, namespace, application: "publisher-test", defaults: { replicas: 1 } });

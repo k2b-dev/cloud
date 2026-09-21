@@ -1,30 +1,11 @@
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
-import { describe, expect, test } from "bun:test";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { proxyAuthService } from "./index";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<
-      {
-        users: string | null;
-        groups: string | null;
-      }[]
-    >`
-      SELECT
-        to_regclass('auth.users')::text AS users,
-        to_regclass('auth.groups')::text AS groups
-    `;
-    if (!row?.users || !row.groups) return false;
-    await migrate();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async () => {
   const suffix = crypto.randomUUID();
@@ -47,6 +28,9 @@ const insertGroup = async () => {
 };
 
 suite("Proxy Auth service", () => {
+  beforeAll(async () => {
+    await migrate();
+  });
   test("does not persist a new client when allowed groups are invalid", async () => {
     const userId = await insertUser();
     const name = `Invalid proxy client ${crypto.randomUUID()}`;

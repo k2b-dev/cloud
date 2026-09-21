@@ -1,5 +1,6 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { cleanupFixture, ctx, insertDslDbFixture, postgresTest } from "../query-dsl/sql-compiler.integration-fixtures";
 import { workflowQueryParameterSamples } from "../workflows/query-parameters";
@@ -43,7 +44,7 @@ postgresTest("summary workflow bindings capture real rows and reject a changed u
 });
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 postgresTest("refuses to capture an incomplete formula result and preserves an explicit fallback", async () => {

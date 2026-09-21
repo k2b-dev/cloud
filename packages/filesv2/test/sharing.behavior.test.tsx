@@ -101,20 +101,36 @@ describe("public folder navigation", () => {
   test("an expired public cursor discards old pages and retries the first page only once", async () => {
     const dom = createDomTestHarness();
     const { default: PublicShareList } = await import("../src/frontend/PublicShare.island");
-    const dispose = render(() => createComponent(PublicShareList, { token: "test-token", share: { ...initial, path: "Docs", next: "expired", items: [{ path: "Docs/old.txt", name: "old.txt", directory: false, size: 1 }] } }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
-    [...dom.root.querySelectorAll("button")].find(button => button.textContent?.includes("Load more"))!.click();
+    const dispose = render(
+      () =>
+        createComponent(PublicShareList, {
+          token: "test-token",
+          share: {
+            ...initial,
+            path: "Docs",
+            next: "expired",
+            items: [{ path: "Docs/old.txt", name: "old.txt", directory: false, size: 1 }],
+          },
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    [...dom.root.querySelectorAll("button")].find((button) => button.textContent?.includes("Load more"))!.click();
     await flush();
     requests[0]!.resolve(Response.json({ code: "cursor_invalid", message: "Changed" }, { status: 409 }));
     await flush();
     expect(requests[1]?.after).toBeUndefined();
     expect(requests[1]?.path).toBe("Docs");
     expect(dom.root.textContent).not.toContain("old.txt");
-    requests[1]!.resolve(Response.json({ ...initial, path: "Docs", items: [{ path: "Docs/new.txt", name: "new.txt", directory: false, size: 2 }] }));
+    requests[1]!.resolve(
+      Response.json({ ...initial, path: "Docs", items: [{ path: "Docs/new.txt", name: "new.txt", directory: false, size: 2 }] }),
+    );
     await flush();
     expect(dom.root.textContent).toContain("new.txt");
     expect(dom.root.textContent).toContain("This folder changed");
     expect(requests).toHaveLength(2);
   });
-
 });

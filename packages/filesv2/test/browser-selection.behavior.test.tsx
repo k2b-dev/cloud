@@ -11,8 +11,11 @@ mock.module("../src/api/client", () => ({
   apiClient: {
     bases: {
       ":baseId": {
-        entries: { $get: (input: unknown, options: { init: { signal: AbortSignal } }) => new Promise<Response>(resolve => branchRequests.push({ input, signal: options.init.signal, resolve })) },
-        favorite: { $post: (input: unknown) => new Promise<Response>(resolve => favoriteRequests.push({ input, resolve })) },
+        entries: {
+          $get: (input: unknown, options: { init: { signal: AbortSignal } }) =>
+            new Promise<Response>((resolve) => branchRequests.push({ input, signal: options.init.signal, resolve })),
+        },
+        favorite: { $post: (input: unknown) => new Promise<Response>((resolve) => favoriteRequests.push({ input, resolve })) },
         entry: {
           $get: (input: unknown, options: { init: { signal: AbortSignal } }) =>
             new Promise<Response>((resolve) => requests.push({ input, signal: options.init.signal, resolve })),
@@ -52,7 +55,12 @@ test("view changes preserve selection; superseded details cannot replace current
   const { default: Browser } = await import("../src/frontend/Browser");
   const [directory, setDirectory] = createSignal(initial);
   const [source, setSource] = createSignal("/app/filesv2?base=home");
-  const dispose = render(() => <Browser directory={directory()} bases={[initial.base]} cloudUrl="https://cloud.test" source={source()} onNavigate={async () => {}} />, dom.root);
+  const dispose = render(
+    () => (
+      <Browser directory={directory()} bases={[initial.base]} cloudUrl="https://cloud.test" source={source()} onNavigate={async () => {}} />
+    ),
+    dom.root,
+  );
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -89,22 +97,43 @@ test("view changes preserve selection; superseded details cannot replace current
   expect(dom.root.textContent).toContain("This folder is empty");
 });
 
-
 test("favorite action is beside primary actions, suppresses duplicate requests and cannot leak across bases", async () => {
   const dom = createDomTestHarness();
   const { default: FileInspector } = await import("../src/frontend/FileInspector");
   const [base, setBase] = createSignal(initial.base);
   const entry = initial.items[0]!;
   const noop = () => {};
-  const dispose = render(() => <FileInspector base={base()} cloudUrl="https://cloud.test" selected={[entry]} paths={[entry.path]}
-    initial={{ base: initial.base, entry, favorite: false }} onClose={noop} onOpen={noop} onDownload={noop} onRename={noop}
-    onDuplicate={noop} onMove={noop} onCopy={noop} onTrash={noop} onChanged={noop} />, dom.root);
-  cleanup = () => { dispose(); dom.cleanup(); };
+  const dispose = render(
+    () => (
+      <FileInspector
+        base={base()}
+        cloudUrl="https://cloud.test"
+        selected={[entry]}
+        paths={[entry.path]}
+        initial={{ base: initial.base, entry, favorite: false }}
+        onClose={noop}
+        onOpen={noop}
+        onDownload={noop}
+        onRename={noop}
+        onDuplicate={noop}
+        onMove={noop}
+        onCopy={noop}
+        onTrash={noop}
+        onChanged={noop}
+      />
+    ),
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
   await flush();
   const button = () => dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")!;
   expect(button().getAttribute("aria-pressed")).toBe("false");
   expect(button().parentElement?.parentElement?.textContent).toContain("Download");
-  button().click(); button().click();
+  button().click();
+  button().click();
   await flush();
   expect(favoriteRequests).toHaveLength(1);
   expect(button().disabled).toBe(true);
@@ -131,17 +160,22 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   expect(button().getAttribute("aria-pressed")).toBe("true");
 });
 
-
 test("tree branches cannot cross full cloud base identities or accept a superseded branch response", async () => {
   const dom = createDomTestHarness();
   const { default: Browser } = await import("../src/frontend/Browser");
   const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
   const first = { ...initial, base: { ...initial.base, id: "cloud:groups:first" }, items: [folder] };
   const [directory, setDirectory] = createSignal(first);
-  const dispose = render(() => <Browser directory={directory()} bases={[directory().base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />, dom.root);
-  cleanup = () => { dispose(); dom.cleanup(); };
+  const dispose = render(
+    () => <Browser directory={directory()} bases={[directory().base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
   await flush();
-  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
   await flush();
   dom.root.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.click();
   await flush();
@@ -149,15 +183,19 @@ test("tree branches cannot cross full cloud base identities or accept a supersed
   setDirectory({ ...first, base: { ...first.base, id: "cloud:groups:second" } });
   await flush();
   expect(branchRequests[0]!.signal.aborted).toBe(true);
-  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
   await flush();
   dom.root.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.click();
   await flush();
   expect(branchRequests.length).toBeGreaterThanOrEqual(2);
   const current = branchRequests.at(-1)!;
-  current.resolve(Response.json({ ...directory(), path: "Docs", items: [{ ...folder, name: "Current", path: "Docs/Current" }], next: null }));
+  current.resolve(
+    Response.json({ ...directory(), path: "Docs", items: [{ ...folder, name: "Current", path: "Docs/Current" }], next: null }),
+  );
   await flush();
-  branchRequests[0]!.resolve(Response.json({ ...first, path: "Docs", items: [{ ...folder, name: "Old private file", path: "Docs/Old" }], next: null }));
+  branchRequests[0]!.resolve(
+    Response.json({ ...first, path: "Docs", items: [{ ...folder, name: "Old private file", path: "Docs/Old" }], next: null }),
+  );
   await flush();
   expect(dom.root.textContent).toContain("Current");
   expect(dom.root.textContent).not.toContain("Old private file");
@@ -172,16 +210,29 @@ test("tree branches cannot cross full cloud base identities or accept a supersed
 test("tree navigation keeps loaded ancestors and current files through folder changes and refreshes", async () => {
   const dom = createDomTestHarness();
   const { default: Browser } = await import("../src/frontend/Browser");
-  const folders = ["Bilder", "Finanzen"].map(name => ({ name, path: name, directory: true, size: 0, modified: "2026-01-01T00:00:00Z" }));
+  const folders = ["Bilder", "Finanzen"].map((name) => ({ name, path: name, directory: true, size: 0, modified: "2026-01-01T00:00:00Z" }));
   const root = { ...initial, items: folders };
   const [directory, setDirectory] = createSignal<DirectoryResult>(root);
-  const dispose = render(() => <Browser directory={directory()} bases={[initial.base]} cloudUrl="https://cloud.test"
-    source={`/app/filesv2?base=home&path=${directory().path}`} onNavigate={async () => {}} />, dom.root);
-  cleanup = () => { dispose(); dom.cleanup(); };
+  const dispose = render(
+    () => (
+      <Browser
+        directory={directory()}
+        bases={[initial.base]}
+        cloudUrl="https://cloud.test"
+        source={`/app/filesv2?base=home&path=${directory().path}`}
+        onNavigate={async () => {}}
+      />
+    ),
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
   await flush();
-  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
   await flush();
-  const names = () => [...dom.root.querySelectorAll(".filesv2-list__name")].map(node => node.textContent);
+  const names = () => [...dom.root.querySelectorAll(".filesv2-list__name")].map((node) => node.textContent);
   for (const path of ["Bilder", "Finanzen", "Bilder"]) {
     setDirectory({ ...initial, path, items: [{ ...initial.items[0]!, name: `${path}.txt`, path: `${path}/${path}.txt` }] });
     await flush();
@@ -201,10 +252,16 @@ test("a slow or failed tree root never hides the loaded folder and can be retrie
   const dom = createDomTestHarness();
   const { default: Browser } = await import("../src/frontend/Browser");
   const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
-  const dispose = render(() => <Browser directory={current} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />, dom.root);
-  cleanup = () => { dispose(); dom.cleanup(); };
+  const dispose = render(
+    () => <Browser directory={current} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
   await flush();
-  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
   await flush();
   expect(dom.root.querySelector(".filesv2-list__name")?.textContent).toBe("A.txt");
   expect(dom.root.textContent).toContain("Loading files");
@@ -212,7 +269,7 @@ test("a slow or failed tree root never hides the loaded folder and can be retrie
   await flush();
   expect(dom.root.textContent).toContain("The folder tree could not be loaded");
   expect(dom.root.querySelector(".filesv2-list__name")?.textContent).toBe("A.txt");
-  [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Try again")!.click();
+  [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Try again")!.click();
   await flush();
   // The current folder can also be absent from a filtered or paginated root page.
   branchRequests[1]!.resolve(Response.json({ ...initial, items: [], next: "root-page-2" }));
@@ -229,10 +286,18 @@ test("tree query changes reject late ancestor replies and navigation supersedes 
   const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
   const [directory, setDirectory] = createSignal<DirectoryResult>(current);
   const [source, setSource] = createSignal("/app/filesv2?base=home&path=Bilder&sort=name");
-  const dispose = render(() => <Browser directory={directory()} source={source()} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />, dom.root);
-  cleanup = () => { dispose(); dom.cleanup(); };
+  const dispose = render(
+    () => (
+      <Browser directory={directory()} source={source()} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />
+    ),
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
   await flush();
-  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
   await flush();
   const old = branchRequests[0]!;
   setSource("/app/filesv2?base=home&path=Bilder&sort=modified&order=desc");
@@ -248,7 +313,9 @@ test("tree query changes reject late ancestor replies and navigation supersedes 
   const other = { ...folder, name: "Finanzen", path: "Finanzen" };
   setDirectory({ ...initial, items: [folder, other] });
   await flush();
-  const row = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find(node => node.querySelector(".filesv2-list__name")?.textContent === "Finanzen")!;
+  const row = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find(
+    (node) => node.querySelector(".filesv2-list__name")?.textContent === "Finanzen",
+  )!;
   row.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.click();
   await flush();
   const child = branchRequests.at(-1)!;

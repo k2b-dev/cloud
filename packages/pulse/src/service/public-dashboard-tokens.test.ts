@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 
 process.env.APP_SECRET ||= "pulse-public-dashboard-token-test-secret";
 

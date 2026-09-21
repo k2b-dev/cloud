@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { postgresTest } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -171,7 +172,7 @@ const insertResources = async (): Promise<void> => {
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("Reimbursement Grids App Golden fixtures", () => {

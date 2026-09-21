@@ -7,6 +7,11 @@ test("queue edits retain untouched identities and remove an edited mention", () 
   const file: AiDraftContentPart = { type: "file", path: "/bill.pdf", mediaType: "application/pdf", version: 2, size: 10 };
   const content: AiDraftContentPart[] = [{ type: "text", text: "Use " }, skill, { type: "text", text: " now" }, file];
   expect(aiDraftText(content)).toBe("Use Invoices now");
-  expect(editAiDraftText(content, "Please use Invoices now")).toEqual([{ type: "text", text: "Please use " }, skill, { type: "text", text: " now" }, file]);
+  expect(editAiDraftText(content, "Please use Invoices now")).toEqual([
+    { type: "text", text: "Please use " },
+    skill,
+    { type: "text", text: " now" },
+    file,
+  ]);
   expect(editAiDraftText(content, "Use something else")).toEqual([{ type: "text", text: "Use something else" }, file]);
 });

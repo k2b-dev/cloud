@@ -415,10 +415,18 @@ test("dependent publication precedes every app lease and failure prevents advert
   let fail = true;
   const heartbeat = createHeartbeat("test", entry, {
     intervalMs: 2,
-    beforeWrite: async () => { if (fail) throw new Error("publication unavailable"); events.push("publish"); },
+    beforeWrite: async () => {
+      if (fail) throw new Error("publication unavailable");
+      events.push("publish");
+    },
     registry: {
-      upsert: async () => { events.push("advertise"); },
-      touch: async () => { events.push("touch"); return true; },
+      upsert: async () => {
+        events.push("advertise");
+      },
+      touch: async () => {
+        events.push("touch");
+        return true;
+      },
       delete: async () => {},
     },
   });
@@ -428,6 +436,8 @@ test("dependent publication precedes every app lease and failure prevents advert
   try {
     await heartbeat.start();
     await waitUntil(() => events.includes("touch"));
-    expect(events.slice(0,4)).toEqual(["publish","advertise","publish","touch"]);
-  } finally { await heartbeat.stop(); }
+    expect(events.slice(0, 4)).toEqual(["publish", "advertise", "publish", "touch"]);
+  } finally {
+    await heartbeat.stop();
+  }
 });

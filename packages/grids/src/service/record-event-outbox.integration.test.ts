@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect } from "bun:test";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { startGridsTestSync } from "../sync-test-utils";
@@ -74,7 +75,7 @@ const insertRecordAndEvent = async (client: SqlClient, fixture: Fixture, name: s
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("record event outbox integration", () => {
@@ -370,7 +371,7 @@ describe("record event outbox integration", () => {
     }
   });
 
-  (process.env.GRIDS_DB_TEST === "1" && process.env.GRIDS_SYNC_TEST === "1" ? test : test.skip)(
+  testFor("database", "nats")(
     "drains same-record bursts without waiting for the reconcile interval",
     async () => {
       const fixture = createFixture();

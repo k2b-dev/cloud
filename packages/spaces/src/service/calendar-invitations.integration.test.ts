@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import { crypto as stdCrypto } from "@k2b/stdlib";
+import { expect, test } from "bun:test";
 import type { AccessSubject } from "@k2b/cloud/server";
+import { crypto as stdCrypto } from "@k2b/stdlib";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import type { User } from "../contracts";
 import {
   getCalendarResponseCommitContext,
@@ -10,21 +11,8 @@ import {
   prepareEventInvitationAttachment,
 } from "./calendar-invitations";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ sources: string | null; users: string | null }[]>`
-      SELECT
-        to_regclass('spaces.calendar_invitation_sources')::text AS sources,
-        to_regclass('auth.users')::text AS users
-    `;
-    return Boolean(row?.sources && row.users);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const advisoryWaiterCount = async (blockerPid: number) => {
   const [row] = await sql<{ count: number }[]>`

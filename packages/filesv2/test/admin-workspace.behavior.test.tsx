@@ -149,13 +149,39 @@ describe("Files v2 admin workspace", () => {
     expect(dom.root.textContent).not.toContain("Storage could not be loaded");
   });
   test.each([
-    { complete: false, freshness: "observed" as const, source: "filesystem" as const, notice: "The last scan was incomplete", showDate: false },
-    { complete: true, freshness: "unknown" as const, source: "index" as const, notice: "Cached index statistics do not confirm", showDate: false },
-    { complete: true, freshness: "observed" as const, source: "filesystem" as const, notice: "Totals reflect the last completed filesystem scan", showDate: true },
+    {
+      complete: false,
+      freshness: "observed" as const,
+      source: "filesystem" as const,
+      notice: "The last scan was incomplete",
+      showDate: false,
+    },
+    {
+      complete: true,
+      freshness: "unknown" as const,
+      source: "index" as const,
+      notice: "Cached index statistics do not confirm",
+      showDate: false,
+    },
+    {
+      complete: true,
+      freshness: "observed" as const,
+      source: "filesystem" as const,
+      notice: "Totals reflect the last completed filesystem scan",
+      showDate: true,
+    },
   ])("overview explains observed statistics: $notice", async (state) => {
     const { dom } = await setup("overview", {
-      ...result.root!, managed: true, executionEnabled: false,
-      observation: { complete: state.complete, freshness: state.freshness, source: state.source, started: "2026-09-19T10:00:00Z", completed: "2026-09-19T10:01:00Z" },
+      ...result.root!,
+      managed: true,
+      executionEnabled: false,
+      observation: {
+        complete: state.complete,
+        freshness: state.freshness,
+        source: state.source,
+        started: "2026-09-19T10:00:00Z",
+        completed: "2026-09-19T10:01:00Z",
+      },
     });
     await flush();
     expect(dom.root.textContent).toContain("Atomic conflict checks: On");
@@ -416,16 +442,31 @@ describe("Files v2 admin workspace", () => {
     delegateEvents(["click"]);
     const { default: AdminVersions } = await import("../src/frontend/AdminVersions");
     const locator = { area: "cloud" as const, kind: "users" as const, name: "alice", path: "report.txt" };
-    const dispose = render(() => createComponent(AdminVersions, {
-      locator, name: "report.txt", fullPath: "home/alice/report.txt", onClose: () => {},
-    }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(AdminVersions, {
+          locator,
+          name: "report.txt",
+          fullPath: "home/alice/report.txt",
+          onClose: () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     expect(requests[0]!.input).toEqual({ query: locator });
-    requests[0]!.resolve(Response.json([{ id: "v1", created: "2026-09-19T12:00:00Z", size: 42, pinned: false, comment: "Old draft", author: "Alice" }]));
+    requests[0]!.resolve(
+      Response.json([{ id: "v1", created: "2026-09-19T12:00:00Z", size: 42, pinned: false, comment: "Old draft", author: "Alice" }]),
+    );
     await flush();
     expect(dom.root.textContent).toContain("Old draft");
-    const remove = () => [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Delete version permanently"))!;
+    const remove = () =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("Delete version permanently"),
+      )!;
     remove().click();
     await flush();
     const form = dom.document.querySelector<HTMLFormElement>(".k2b-dialog__panel")!;
@@ -457,11 +498,20 @@ describe("Files v2 admin workspace", () => {
     dom.root.className = "k2b-ui";
     delegateEvents(["click"]);
     const { default: AdminVersions } = await import("../src/frontend/AdminVersions");
-    const dispose = render(() => createComponent(AdminVersions, {
-      locator: { area: "cloud", kind: "users", name: "alice", path: "report.txt" },
-      name: "report.txt", fullPath: "home/alice/report.txt", onClose: () => {},
-    }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(AdminVersions, {
+          locator: { area: "cloud", kind: "users", name: "alice", path: "report.txt" },
+          name: "report.txt",
+          fullPath: "home/alice/report.txt",
+          onClose: () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     requests[0]!.resolve(Response.json({ code: "unavailable", message: "private backend detail" }, { status: 503 }));
     await flush();
@@ -481,19 +531,36 @@ describe("Files v2 admin workspace", () => {
     delegateEvents(["click"]);
     const { default: AdminBrowser } = await import("../src/frontend/AdminBrowser");
     const [enabled, setEnabled] = createSignal<boolean | undefined>();
-    const dispose = render(() => createComponent(AdminBrowser, {
-      get versioningEnabled() { return enabled(); },
-      browse: {
-        area: "cloud", kind: "users", name: "alice", archiveId: null, basePath: "home/alice", path: "", next: null,
-        items: [
-          { path: "report.txt", name: "report.txt", directory: false, size: 42, modified: "2026-09-19T12:00:00Z" },
-          { path: "notes", name: "notes", directory: true, size: 0, modified: "2026-09-19T12:00:00Z" },
-        ],
-      },
-      location: parseAdminLocation("/admin/filesv2?view=directories&area=cloud&kind=users&name=alice"),
-      busy: false, onNavigate: async () => {}, onDelete: () => {},
-    }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(AdminBrowser, {
+          get versioningEnabled() {
+            return enabled();
+          },
+          browse: {
+            area: "cloud",
+            kind: "users",
+            name: "alice",
+            archiveId: null,
+            basePath: "home/alice",
+            path: "",
+            next: null,
+            items: [
+              { path: "report.txt", name: "report.txt", directory: false, size: 42, modified: "2026-09-19T12:00:00Z" },
+              { path: "notes", name: "notes", directory: true, size: 0, modified: "2026-09-19T12:00:00Z" },
+            ],
+          },
+          location: parseAdminLocation("/admin/filesv2?view=directories&area=cloud&kind=users&name=alice"),
+          busy: false,
+          onNavigate: async () => {},
+          onDelete: () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     expect(requests).toHaveLength(0);
     expect(dom.root.textContent).not.toContain("Versions");
@@ -502,16 +569,19 @@ describe("Files v2 admin workspace", () => {
     expect(dom.root.textContent).not.toContain("Versions");
     setEnabled(true);
     await flush();
-    const versions = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].filter((button) => button.textContent?.includes("Versions"));
+    const versions = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].filter((button) =>
+      button.textContent?.includes("Versions"),
+    );
     expect(versions).toHaveLength(1);
     versions[0]!.click();
     await flush();
-    expect(requests[0]!.input).toEqual({ query: { area: "cloud", kind: "users", name: "alice", path: "report.txt", archiveId: undefined } });
+    expect(requests[0]!.input).toEqual({
+      query: { area: "cloud", kind: "users", name: "alice", path: "report.txt", archiveId: undefined },
+    });
     expect(dom.document.querySelector(".k2b-dialog__panel")?.textContent).toContain("home/alice/report.txt");
     dispose();
     await flush();
     expect(requests[0]!.signal.aborted).toBe(true);
     expect(dom.document.querySelector(".k2b-dialog__panel")).toBeNull();
   });
-
 });

@@ -2,6 +2,7 @@ import { beforeAll, expect } from "bun:test";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createWorkflowRun } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { objectListRecordInputValues } from "../field-types/object-list";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -21,7 +22,7 @@ import { deleteTestWorkflowScope, publishTestWorkflowVersion } from "../service/
 import { createBillingTemplate } from "./billing";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   const [db] = await sql`SELECT current_database() AS name`;
   if (!db.name.startsWith("grids_verify_")) throw new Error("Billing integration requires an isolated grids_verify_ database");
   await migrate();
@@ -51,12 +52,20 @@ for (const locale of ["en", "de"]) {
             WHERE base_id = ${baseId}::uuid AND published_definition IS NOT NULL`;
           expect(apps).toHaveLength(1);
           expect(apps[0].published_definition.pages.map((page: { id: string }) => page.id)).toEqual([
-            "invoices", "bill", "balances", "partners", "partner", "partner-new", "payment",
+            "invoices",
+            "bill",
+            "balances",
+            "partners",
+            "partner",
+            "partner-new",
+            "payment",
           ]);
           const workflows = await sql<Array<{ name: string }>>`SELECT w.name FROM grids.workflow_profile p
             JOIN workflows.workflow w ON w.id = p.id
             WHERE p.base_id = ${baseId}::uuid AND w.active_version_id IS NOT NULL`;
-          expect(workflows.map((workflow) => workflow.name).sort()).toEqual((definition.workflows ?? []).map((workflow) => workflow.name).sort());
+          expect(workflows.map((workflow) => workflow.name).sort()).toEqual(
+            (definition.workflows ?? []).map((workflow) => workflow.name).sort(),
+          );
           const navigation = await getBaseNavigation(baseId);
           expect(navigation?.groups).toHaveLength(3);
           expect(navigation?.revision).toBe(1);

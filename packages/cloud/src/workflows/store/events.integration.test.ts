@@ -6,8 +6,9 @@
  * stops firing with no error anywhere is the bug this whole slice exists to
  * make impossible.
  */
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "../contracts";
@@ -62,7 +63,7 @@ const listeningInScope = async (scopeId: string, eventType: string, options: { a
 
 const listening = (eventType: string, options: { activations?: number } = {}) => listeningInScope(testData.scope(), eventType, options);
 
-(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow events", () => {
+suiteFor("database")("workflow events", () => {
   test("current workflow schema setup is idempotent and includes runtime columns", async () => {
     expect(await ready()).toBe(true);
     await migrate();

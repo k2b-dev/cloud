@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import "../../../../../scripts/fixtures/authorization-preload";
 import {
   createAccess,
   deleteAccess,
@@ -27,26 +29,7 @@ type Fixture = {
   serviceAccountId: string;
 };
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ users: string | null; groups: string | null; access: string | null }[]>`
-      SELECT
-        to_regclass('auth.users')::text AS users,
-        to_regclass('auth.groups')::text AS groups,
-        to_regclass('auth.access')::text AS access
-    `;
-    return Boolean(row?.users && row.groups && row.access);
-  } catch {
-    return false;
-  }
-};
-
-/** Reported as skipped rather than silently passing when the backing service is absent. */
-const databaseAvailable = await canUseDatabase();
-if (process.env.CLOUD_DATABASE_TEST === "1" && !databaseAvailable) {
-  throw new Error("Required authorization test database is unavailable or not migrated");
-}
-const suite = databaseAvailable ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async (suffix: string, label: string) => {
   const [row] = await sql<{ id: string }[]>`

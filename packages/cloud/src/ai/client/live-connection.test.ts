@@ -82,7 +82,10 @@ const conversation = (id: string): AiConversation => ({
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: "2026-09-14T00:00:00.000Z",
+  archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -114,7 +117,7 @@ describe("AI live connection multiplexing", () => {
     installBrowser();
     const received: AiStreamEvent[] = [];
     const connection = createAiLiveConnection({ initialCursor: "s6t.test.0", onLiveMessage: () => {} });
-    connection.streamTransport.subscribe({ conversationId: "Chat01", url: "/unused", onEvent: event => received.push(event) });
+    connection.streamTransport.subscribe({ conversationId: "Chat01", url: "/unused", onEvent: (event) => received.push(event) });
     connection.connect();
     const socket = FakeWebSocket.instances[0]!;
     socket.open();

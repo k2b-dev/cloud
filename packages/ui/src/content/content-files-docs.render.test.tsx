@@ -235,9 +235,12 @@ describe("@k2b/ui content behaviour", () => {
   });
 
   test("FileTree displays a label without replacing file identity", () => {
-    const html = renderToString(() => createComponent(FileTree, {
-      entries: [{ path: "/recording.wav", displayName: "11.09.26, 13:42:00" }], selectedPath: "/recording.wav",
-    }));
+    const html = renderToString(() =>
+      createComponent(FileTree, {
+        entries: [{ path: "/recording.wav", displayName: "11.09.26, 13:42:00" }],
+        selectedPath: "/recording.wav",
+      }),
+    );
     expect(html).toContain('aria-label="11.09.26, 13:42:00"');
     expect(html).toContain('data-state="selected"');
     expect(html).toContain('k2b-content-file-tree__name">11.09.26, 13:42:00');

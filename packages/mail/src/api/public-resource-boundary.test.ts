@@ -94,7 +94,9 @@ describe("Mail public response projection", () => {
           : new Map([[deliveryId, "dlv123"]]),
     );
 
-    expect(await projectPublicRelations({ result: { conversationId, outboundMessageId: messageId, outboxSubmissionId: deliveryId } })).toEqual({
+    expect(
+      await projectPublicRelations({ result: { conversationId, outboundMessageId: messageId, outboxSubmissionId: deliveryId } }),
+    ).toEqual({
       result: { conversationId: "cnv123", outboundMessageId: "msg123", outboxSubmissionId: "dlv123" },
     });
   });

@@ -53,9 +53,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "noteId"
-        ],
+        "required": ["noteId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -78,10 +76,7 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "authorDisplayName": {
@@ -106,15 +101,7 @@
               "type": "boolean"
             }
           },
-          "required": [
-            "ref",
-            "authorDisplayName",
-            "createdAt",
-            "preview",
-            "previewTruncated",
-            "canEdit",
-            "canDelete"
-          ],
+          "required": ["ref", "authorDisplayName", "createdAt", "preview", "previewTruncated", "canEdit", "canDelete"],
           "additionalProperties": false
         }
       },
@@ -148,9 +135,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "noteId"
-        ],
+        "required": ["noteId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -224,24 +209,11 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "notebookId",
-            "noteId",
-            "authorUserId",
-            "authorDisplayName",
-            "content",
-            "createdAt",
-            "updatedAt",
-            "ref"
-          ],
+          "required": ["id", "notebookId", "noteId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
@@ -262,9 +234,7 @@
             "description": "Comment ID returned by comment.list or a notebooks.comment ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -323,16 +293,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "notebookId",
-          "noteId",
-          "authorUserId",
-          "authorDisplayName",
-          "content",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "notebookId", "noteId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "1e96a8836bbf9d0573332df7687f097f2180dd544ff67c46a40c02a660cf7459",
@@ -370,9 +331,7 @@
             "pattern": "^[A-Za-z0-9]{6}$"
           }
         },
-        "required": [
-          "notebookId"
-        ],
+        "required": ["notebookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -400,10 +359,7 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "parentId": {
@@ -438,13 +394,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -461,22 +411,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "id",
-            "ref",
-            "parentId",
-            "title",
-            "position",
-            "hasChildren"
-          ],
+          "required": ["id", "ref", "parentId", "title", "position", "hasChildren"],
           "additionalProperties": false
         }
       },
@@ -500,11 +440,7 @@
             "default": "all",
             "description": "Link direction relative to the selected note.",
             "type": "string",
-            "enum": [
-              "incoming",
-              "outgoing",
-              "all"
-            ]
+            "enum": ["incoming", "outgoing", "all"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -520,9 +456,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "noteId"
-        ],
+        "required": ["noteId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -534,10 +468,7 @@
           "properties": {
             "direction": {
               "type": "string",
-              "enum": [
-                "incoming",
-                "outgoing"
-              ]
+              "enum": ["incoming", "outgoing"]
             },
             "ref": {
               "type": "object",
@@ -552,10 +483,7 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "noteId": {
@@ -588,13 +516,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -611,23 +533,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "direction",
-            "ref",
-            "noteId",
-            "title",
-            "notebookId",
-            "notebookName",
-            "updatedAt"
-          ],
+          "required": ["direction", "ref", "noteId", "title", "notebookId", "notebookName", "updatedAt"],
           "additionalProperties": false
         }
       },
@@ -653,9 +564,7 @@
             "maxLength": 200000
           }
         },
-        "required": [
-          "noteId"
-        ],
+        "required": ["noteId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -695,10 +604,7 @@
                   "maxLength": 500
                 }
               },
-              "required": [
-                "line",
-                "message"
-              ],
+              "required": ["line", "message"],
               "additionalProperties": false
             }
           },
@@ -706,14 +612,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "valid",
-          "contentHash",
-          "blockCount",
-          "headingCount",
-          "diagnostics",
-          "diagnosticsTruncated"
-        ],
+        "required": ["valid", "contentHash", "blockCount", "headingCount", "diagnostics", "diagnosticsTruncated"],
         "additionalProperties": false
       },
       "schemaHash": "6765dc53abbf5ed732f7f9ed2d4ba0ecc0d4437da05fb530bfb0e3cda6b461d2",
@@ -747,9 +646,7 @@
             "maximum": 50000
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -867,13 +764,7 @@
                 },
                 "type": {
                   "type": "string",
-                  "enum": [
-                    "table",
-                    "list",
-                    "data",
-                    "section",
-                    "unknown"
-                  ]
+                  "enum": ["table", "list", "data", "section", "unknown"]
                 },
                 "line": {
                   "type": "integer",
@@ -895,14 +786,7 @@
                   "pattern": "^sha256:[a-f0-9]{64}$"
                 }
               },
-              "required": [
-                "name",
-                "type",
-                "line",
-                "startLine",
-                "endLine",
-                "hash"
-              ],
+              "required": ["name", "type", "line", "startLine", "endLine", "hash"],
               "additionalProperties": false
             }
           },
@@ -979,10 +863,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -992,11 +873,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1023,10 +900,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -1070,10 +944,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -1086,13 +957,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1109,20 +974,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -1134,15 +992,10 @@
             "tag": "note",
             "title": "Notes",
             "description": "Show notes only.",
-            "aliases": [
-              "notes",
-              "markdown"
-            ]
+            "aliases": ["notes", "markdown"]
           }
         ],
-        "scopeTypes": [
-          "notebook"
-        ]
+        "scopeTypes": ["notebook"]
       }
     },
     {
@@ -1172,9 +1025,7 @@
             "maximum": 2000
           }
         },
-        "required": [
-          "notebookId"
-        ],
+        "required": ["notebookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1202,10 +1053,7 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "parentId": {
@@ -1240,13 +1088,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1263,22 +1105,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "id",
-            "ref",
-            "parentId",
-            "title",
-            "position",
-            "hasChildren"
-          ],
+          "required": ["id", "ref", "parentId", "title", "position", "hasChildren"],
           "additionalProperties": false
         }
       },
@@ -1302,11 +1134,7 @@
             "default": "read",
             "description": "Minimum effective permission required for returned notebooks.",
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -1344,28 +1172,18 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
               "type": "string"
             },
             "preview": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "permission": {
               "type": "string",
-              "enum": [
-                "read",
-                "write",
-                "admin"
-              ]
+              "enum": ["read", "write", "admin"]
             },
             "homepageNoteId": {
               "anyOf": [
@@ -1388,13 +1206,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1411,21 +1223,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "preview",
-            "permission",
-            "homepageNoteId"
-          ],
+          "required": ["ref", "title", "preview", "permission", "homepageNoteId"],
           "additionalProperties": false
         }
       },
@@ -1449,11 +1252,7 @@
             "default": "read",
             "description": "Minimum effective permission required for returned notebooks.",
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -1488,16 +1287,10 @@
               "minLength": 1
             },
             "description": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "icon": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "homepageNoteId": {
               "anyOf": [
@@ -1513,11 +1306,7 @@
             },
             "permission": {
               "type": "string",
-              "enum": [
-                "read",
-                "write",
-                "admin"
-              ]
+              "enum": ["read", "write", "admin"]
             },
             "createdAt": {
               "type": "string",
@@ -1538,13 +1327,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1561,10 +1344,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             },
@@ -1581,24 +1361,11 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "name",
-            "description",
-            "icon",
-            "homepageNoteId",
-            "permission",
-            "createdAt",
-            "updatedAt",
-            "ref"
-          ],
+          "required": ["id", "name", "description", "icon", "homepageNoteId", "permission", "createdAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
@@ -1619,9 +1386,7 @@
             "description": "Notebook ID returned by notebook search/list or a notebooks.notebook ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1638,16 +1403,10 @@
             "minLength": 1
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "icon": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "homepageNoteId": {
             "anyOf": [
@@ -1663,11 +1422,7 @@
           },
           "permission": {
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "createdAt": {
             "type": "string",
@@ -1688,13 +1443,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -1711,24 +1460,12 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "id",
-          "name",
-          "description",
-          "icon",
-          "homepageNoteId",
-          "permission",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "name", "description", "icon", "homepageNoteId", "permission", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "a68afa24065394d04aef05c24840be79e66003f2839ae64c87118bc99c590d10",
@@ -1775,10 +1512,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -1788,11 +1522,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1819,10 +1549,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -1866,10 +1593,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -1882,13 +1606,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1905,20 +1623,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -1930,9 +1641,7 @@
             "tag": "notebook",
             "title": "Notebooks",
             "description": "Show notebooks only.",
-            "aliases": [
-              "notebooks"
-            ]
+            "aliases": ["notebooks"]
           }
         ]
       }
@@ -1964,9 +1673,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "notebookId"
-        ],
+        "required": ["notebookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1994,13 +1701,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -2017,18 +1718,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "tag",
-            "count"
-          ],
+          "required": ["tag", "count"],
           "additionalProperties": false
         }
       },
@@ -2074,10 +1769,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "notebookId",
-          "tag"
-        ],
+        "required": ["notebookId", "tag"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2105,20 +1797,14 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "title": {
               "type": "string"
             },
             "preview": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "updatedAt": {
               "type": "string",
@@ -2134,13 +1820,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -2157,21 +1837,12 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
           },
-          "required": [
-            "id",
-            "ref",
-            "title",
-            "preview",
-            "updatedAt"
-          ],
+          "required": ["id", "ref", "title", "preview", "updatedAt"],
           "additionalProperties": false
         }
       },
@@ -2200,10 +1871,7 @@
             "description": "Markdown comment, limited to 5,000 characters."
           }
         },
-        "required": [
-          "noteId",
-          "content"
-        ],
+        "required": ["noteId", "content"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2262,16 +1930,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "notebookId",
-          "noteId",
-          "authorUserId",
-          "authorDisplayName",
-          "content",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "notebookId", "noteId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "01a3b67a603a17f309d61f6b97eb6421e9fc88d91c6af4b01700a4d1bf5871b7",
@@ -2295,9 +1954,7 @@
             "description": "Own comment ID returned by comment.list or comment.read; deletable for ten minutes after creation."
           }
         },
-        "required": [
-          "commentId"
-        ],
+        "required": ["commentId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2314,10 +1971,7 @@
             "const": true
           }
         },
-        "required": [
-          "id",
-          "deleted"
-        ],
+        "required": ["id", "deleted"],
         "additionalProperties": false
       },
       "schemaHash": "2d45ac01e61be19cb444cd0520ff7074251070d6ef963bcac598d8bb54ad33e3",
@@ -2346,10 +2000,7 @@
             "description": "Replacement Markdown comment, limited to 5,000 characters."
           }
         },
-        "required": [
-          "commentId",
-          "content"
-        ],
+        "required": ["commentId", "content"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2408,16 +2059,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "notebookId",
-          "noteId",
-          "authorUserId",
-          "authorDisplayName",
-          "content",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "notebookId", "noteId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "77ee88236e0251db97af0d2a897380d3a6686045b452c2c0acb23e37d8603b9f",
@@ -2456,9 +2098,7 @@
             "maxLength": 200000
           }
         },
-        "required": [
-          "notebookId"
-        ],
+        "required": ["notebookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2569,10 +2209,7 @@
                         "description": "Complete Markdown replacement, limited to 200,000 characters."
                       }
                     },
-                    "required": [
-                      "kind",
-                      "content"
-                    ],
+                    "required": ["kind", "content"],
                     "additionalProperties": false
                   }
                 ],
@@ -2600,10 +2237,7 @@
                           "description": "Markdown fragment used by this structural edit."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "content"
-                      ],
+                      "required": ["kind", "content"],
                       "additionalProperties": false
                     },
                     {
@@ -2620,10 +2254,7 @@
                           "description": "Markdown fragment used by this structural edit."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "content"
-                      ],
+                      "required": ["kind", "content"],
                       "additionalProperties": false
                     },
                     {
@@ -2646,11 +2277,7 @@
                           "description": "Markdown fragment used by this structural edit."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "line",
-                        "content"
-                      ],
+                      "required": ["kind", "line", "content"],
                       "additionalProperties": false
                     },
                     {
@@ -2673,11 +2300,7 @@
                           "description": "Markdown fragment used by this structural edit."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "line",
-                        "content"
-                      ],
+                      "required": ["kind", "line", "content"],
                       "additionalProperties": false
                     },
                     {
@@ -2706,12 +2329,7 @@
                           "description": "Markdown fragment used by this structural edit."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "startLine",
-                        "endLine",
-                        "content"
-                      ],
+                      "required": ["kind", "startLine", "endLine", "content"],
                       "additionalProperties": false
                     },
                     {
@@ -2735,11 +2353,7 @@
                           "description": "Last one-based line to delete."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "startLine",
-                        "endLine"
-                      ],
+                      "required": ["kind", "startLine", "endLine"],
                       "additionalProperties": false
                     },
                     {
@@ -2759,13 +2373,7 @@
                         "type": {
                           "description": "Optional block type disambiguation.",
                           "type": "string",
-                          "enum": [
-                            "table",
-                            "list",
-                            "data",
-                            "section",
-                            "unknown"
-                          ]
+                          "enum": ["table", "list", "data", "section", "unknown"]
                         },
                         "index": {
                           "description": "Zero-based match index when names repeat.",
@@ -2783,11 +2391,7 @@
                           "description": "Markdown fragment used by this structural edit."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "name",
-                        "content"
-                      ],
+                      "required": ["kind", "name", "content"],
                       "additionalProperties": false
                     },
                     {
@@ -2807,13 +2411,7 @@
                         "type": {
                           "description": "Optional block type disambiguation.",
                           "type": "string",
-                          "enum": [
-                            "table",
-                            "list",
-                            "data",
-                            "section",
-                            "unknown"
-                          ]
+                          "enum": ["table", "list", "data", "section", "unknown"]
                         },
                         "index": {
                           "description": "Zero-based match index when names repeat.",
@@ -2827,11 +2425,7 @@
                           "description": "Markdown fragment used by this structural edit."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "name",
-                        "content"
-                      ],
+                      "required": ["kind", "name", "content"],
                       "additionalProperties": false
                     },
                     {
@@ -2851,13 +2445,7 @@
                         "type": {
                           "description": "Optional block type disambiguation.",
                           "type": "string",
-                          "enum": [
-                            "table",
-                            "list",
-                            "data",
-                            "section",
-                            "unknown"
-                          ]
+                          "enum": ["table", "list", "data", "section", "unknown"]
                         },
                         "index": {
                           "description": "Zero-based match index when names repeat.",
@@ -2871,11 +2459,7 @@
                           "description": "Markdown fragment used by this structural edit."
                         }
                       },
-                      "required": [
-                        "kind",
-                        "name",
-                        "content"
-                      ],
+                      "required": ["kind", "name", "content"],
                       "additionalProperties": false
                     }
                   ]
@@ -2907,10 +2491,7 @@
             "maximum": 500
           }
         },
-        "required": [
-          "noteId",
-          "operations"
-        ],
+        "required": ["noteId", "operations"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3007,13 +2588,7 @@
                 },
                 "type": {
                   "type": "string",
-                  "enum": [
-                    "table",
-                    "list",
-                    "data",
-                    "section",
-                    "unknown"
-                  ]
+                  "enum": ["table", "list", "data", "section", "unknown"]
                 },
                 "line": {
                   "type": "integer",
@@ -3035,14 +2610,7 @@
                   "pattern": "^sha256:[a-f0-9]{64}$"
                 }
               },
-              "required": [
-                "name",
-                "type",
-                "line",
-                "startLine",
-                "endLine",
-                "hash"
-              ],
+              "required": ["name", "type", "line", "startLine", "endLine", "hash"],
               "additionalProperties": false
             }
           },
@@ -3050,14 +2618,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "note",
-          "changed",
-          "beforeHash",
-          "afterHash",
-          "blocks",
-          "blocksTruncated"
-        ],
+        "required": ["note", "changed", "beforeHash", "afterHash", "blocks", "blocksTruncated"],
         "additionalProperties": false
       },
       "schemaHash": "3a6b004abbf6916c3753e9930378a9fbd7065422e1c6952783c32383a38766b2",
@@ -3100,11 +2661,7 @@
             "description": "New sibling position."
           }
         },
-        "required": [
-          "noteId",
-          "parentId",
-          "position"
-        ],
+        "required": ["noteId", "parentId", "position"],
         "additionalProperties": false
       },
       "dataSchema": {

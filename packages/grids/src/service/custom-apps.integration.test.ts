@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import { projectPublishedRecords } from "../api/custom-app-public-dto";
 import { type CustomAppDefinition, CustomAppDefinitionSchema } from "../custom-apps/contracts";
@@ -33,7 +34,7 @@ import { createLauncher } from "./workflow-launchers";
 import { deleteTestWorkflowScope, insertTestWorkflow } from "./workflow-test-fixture";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") {
+  if (testInfra.database) {
     await migrateCoreWorkflows();
     await migrate();
   }

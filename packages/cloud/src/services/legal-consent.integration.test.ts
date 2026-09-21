@@ -1,6 +1,8 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "bun";
 import { Hono } from "hono";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import { createAppApprovalRoutes } from "../api/app-approval";
 import { createAuthRoutes } from "../api/auth";
 import { type AuthContext, auth } from "../server";
@@ -13,8 +15,7 @@ import { loadCurrentUser } from "./session/user";
 import * as settings from "./settings";
 import { webauthn } from "./webauthn";
 
-const isolated = /^\/cloud_legal_verify_[a-z0-9_]+$/.test(new URL(process.env.DATABASE_URL || "postgres://localhost/none").pathname);
-const suite = isolated ? describe : describe.skip;
+const suite = databaseSuite();
 const issuer = "http://localhost:3000";
 let server: ReturnType<typeof Bun.serve>;
 let router: Hono<AuthContext>;
@@ -55,8 +56,6 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
   });
   afterAll(async () => {
     await server?.stop(true);
-    await sql.close();
-    redis.close();
   });
 
   test("all categories: new session cannot authorize until explicit acceptance; a later login is unrestricted", async () => {

@@ -1,27 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { migrateCloudAi } from "./migrate";
 import { publicAiStoredMessages } from "./public-projection";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
-
-const canUseAiDatabase = async () => {
-  try {
-    const [authRow] = await sql<{ users: string | null }[]>`
-      SELECT to_regclass('auth.users')::text AS users
-    `;
-    if (!authRow?.users) return false;
-
-    await migrateCloudAi();
-
-    const [aiRow] = await sql<{ messages: string | null }[]>`
-      SELECT to_regclass('ai.messages')::text AS messages
-    `;
-    return Boolean(aiRow?.messages);
-  } catch {
-    return false;
-  }
-};
 
 const insertUser = async () => {
   const suffix = crypto.randomUUID();
@@ -68,7 +51,10 @@ const insertMessage = async (input: {
   `;
 };
 
-describe.skipIf(!(await canUseAiDatabase()))("listMessagesPage (integration)", () => {
+databaseSuite()("listMessagesPage (integration)", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("projects internal message loop ids to the public Turn id", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];

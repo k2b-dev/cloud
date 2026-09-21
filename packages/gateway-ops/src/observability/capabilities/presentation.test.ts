@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { capabilityOpsMessages } from "./ops-messages";
 import { statusLabel } from "./labels";
+import { capabilityOpsMessages } from "./ops-messages";
 import { ORIGIN_ICON, STATUS_TONE, valueShape } from "./presentation";
 
 describe("capability execution presentation", () => {

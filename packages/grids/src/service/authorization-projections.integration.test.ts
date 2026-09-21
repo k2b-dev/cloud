@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { listForBase as listBaseCatalog } from "./base-catalog";
@@ -8,7 +9,7 @@ import { loadBaseGrantsForSubject, loadCustomAppGrantsForSubject, resolveEffecti
 import { listForTable as listViewsForTable } from "./views";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("authorization projections", () => {

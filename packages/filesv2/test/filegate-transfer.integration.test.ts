@@ -1,11 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
 import { Filegate, FilegateError, type RootClient } from "@k2b/filegate";
 import { DirectSession, putDirect } from "@k2b/filegate/utils";
+import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
+import { localFilegateToken } from "./private-database";
 
-// Deliberately opt-in and pinned to local development. Never use application fixtures or a remote target.
-const enabled = process.env.FILESV2_FILEGATE_CONTRACT === "1";
+// Runs against the configured test Filegate in its own prefix. Never use application fixtures.
+const suite = suiteFor("filegate");
 const prefix = `filesv2-slice-${randomUUID()}`;
 const transfer = Object.assign(
   (input: RequestInfo | URL, init?: RequestInit) => fetch(input, { ...init, credentials: "omit", signal: AbortSignal.timeout(10_000) }),
@@ -29,10 +30,9 @@ async function failureCode(run: () => Promise<unknown>) {
   }
 }
 
-(enabled ? describe : describe.skip)("actual Filegate 6.1.0 transfer contract (isolated local prefix)", () => {
+suite("actual Filegate 6.1.0 transfer contract (isolated local prefix)", () => {
   beforeAll(async () => {
-    const token = (await Bun.file(resolve(import.meta.dir, "../../../.local/filegate/token")).text()).trim();
-    client = new Filegate({ baseUrl: "http://localhost:4000", token, fetch: transfer });
+    client = new Filegate({ baseUrl: testInfra.filegate!, token: await localFilegateToken(), fetch: transfer });
     const system = await client.system();
     expect(system.version).toBe("6.1.0");
     root = client.root("cloud");
@@ -73,7 +73,7 @@ async function failureCode(run: () => Promise<unknown>) {
     expect(terminalReplay.session.state).toBe("committed");
     expect(terminalReplay.lease).toBeUndefined();
     const changed = await failureCode(() => root.createSession(path, 4, { onConflict: "error", allowAbort: true, idempotencyKey: key }));
-    expect(changed).toEqual({ status:409, code:"idempotency_conflict" });
+    expect(changed).toEqual({ status: 409, code: "idempotency_conflict" });
     const committed = await root.session(opened.session.id);
     expect(committed.state).toBe("committed");
     expect(committed.result).toMatchObject({ path, size: 3 });
@@ -137,7 +137,7 @@ async function failureCode(run: () => Promise<unknown>) {
     const lease = await root.directUpload(path, 3, { onConflict: "error" });
     await root.put(path, new Blob(["old"]), { onConflict: "error" });
     const collision = await failureCode(() => putDirect(lease.url, new Blob(["new"]), { fetch: transfer }));
-    expect(collision).toEqual({ status:409, code:"path_conflict" });
+    expect(collision).toEqual({ status: 409, code: "path_conflict" });
     expect(await (await root.contentRaw(path)).text()).toBe("old");
     let renamedPath: string | null = null;
     const renameFailure = await failureCode(async () => {
@@ -199,12 +199,16 @@ async function failureCode(run: () => Promise<unknown>) {
   test("concurrent managed writers admit exactly one save of the same revision", async () => {
     const path = `${prefix}/parallel.md`;
     const original = await root.put(path, new Blob(["original"]), { onConflict: "error" });
-    const results = await Promise.all(Array.from({ length: 8 }, (_, index) => failureCode(() =>
-      root.put(path, new Blob([`writer-${index}`]), { onConflict: "overwrite", precondition: { ifMatch: original.revision! } }),
-    )));
-    expect(results.filter(result => result === null)).toHaveLength(1);
-    expect(results.filter(result => result?.code === "precondition_failed")).toHaveLength(7);
-    const winner = results.findIndex(result => result === null);
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        failureCode(() =>
+          root.put(path, new Blob([`writer-${index}`]), { onConflict: "overwrite", precondition: { ifMatch: original.revision! } }),
+        ),
+      ),
+    );
+    expect(results.filter((result) => result === null)).toHaveLength(1);
+    expect(results.filter((result) => result?.code === "precondition_failed")).toHaveLength(7);
+    const winner = results.findIndex((result) => result === null);
     expect(await (await root.contentRaw(path)).text()).toBe(`writer-${winner}`);
     statuses.concurrent = { accepted: 1, conflicts: 7, preservedWinner: true };
   });

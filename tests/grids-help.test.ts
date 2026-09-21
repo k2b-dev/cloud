@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { compileHelp } from "../packages/cloud/src/_internal/help";
-import { gridsHelp } from "../packages/grids/src/help";
 import { selectHelpMarkdown } from "../packages/cloud/src/_internal/help-catalog";
+import { gridsHelp } from "../packages/grids/src/help";
 
 test("the full bilingual Grids help fits the startup registry contract", () => {
   const compiled = compileHelp({

@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { get } from "@k2b/cloud/services/settings";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { redis, sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "./settings";
 
-const suite = process.env.CLOUD_CACHE_TEST === "1" && process.env.DATABASE_URL?.endsWith("/cloud_cache_test") ? describe : describe.skip;
+const suite = suiteFor("database", "valkey");
 const key = "user.account_requests.enabled";
 suite("settings migration cache coherence", () => {
   test("fresh installations retain the opt-in default across concurrent starts", async () => {

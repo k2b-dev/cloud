@@ -2,6 +2,7 @@ import { beforeAll, describe, expect } from "bun:test";
 import { err, fail } from "@k2b/stdlib";
 import { SQL, sql } from "bun";
 import { z } from "zod";
+import { createDisposableDatabase, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import type { DocumentTemplate } from "../contracts";
 import type { DocumentProfile } from "../document-profiles";
@@ -32,7 +33,7 @@ import { insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixtu
 const pdf = (label: string) => new TextEncoder().encode(`%PDF-1.7\n${label}`);
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 }, 30_000);
 
 const createScope = async (database: SQL = sql) => {
@@ -700,13 +701,8 @@ describe("Document issuance", () => {
   postgresTest(
     "retries current pending HTML and profile receipts across restarts and rejects old provenance fields",
     async () => {
-      const sourceUrl = process.env.DATABASE_URL;
-      if (!sourceUrl) throw new Error("DATABASE_URL is required for issuance integration tests");
-      const databaseName = `grids_issuance_${testUuid().replaceAll("-", "")}`;
-      const databaseUrl = new URL(sourceUrl);
-      databaseUrl.pathname = `/${databaseName}`;
-      await sql.unsafe(`CREATE DATABASE "${databaseName}"`);
-      const database = new SQL(databaseUrl);
+      const isolated = await createDisposableDatabase("grids_issuance");
+      const database = new SQL(isolated.url);
       try {
         await database`CREATE SCHEMA auth`.simple();
         await database`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
@@ -834,8 +830,11 @@ describe("Document issuance", () => {
           expect(renderCalls).toBe(3);
         }
       } finally {
-        await database.close({ timeout: 5 });
-        await sql.unsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
+        try {
+          await database.close({ timeout: 5 });
+        } finally {
+          await isolated.drop();
+        }
       }
     },
     // This case migrates an isolated database repeatedly.

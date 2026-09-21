@@ -1,33 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { accountsAppService } from "./app";
 import type { AccountsActor } from "./authz";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<
-      {
-        users: string | null;
-        groups: string | null;
-        userGroups: string | null;
-        groupGroups: string | null;
-        serviceAccounts: string | null;
-      }[]
-    >`
-      SELECT
-        to_regclass('auth.users')::text AS users,
-        to_regclass('auth.groups')::text AS groups,
-        to_regclass('auth.user_groups_v2')::text AS "userGroups",
-        to_regclass('auth.group_groups_v2')::text AS "groupGroups",
-        to_regclass('auth.service_accounts')::text AS "serviceAccounts"
-    `;
-    return Boolean(row?.users && row.groups && row.userGroups && row.groupGroups && row.serviceAccounts);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async (suffix: string, label: string, profile: "user" | "guest") => {
   const [row] = await sql<{ id: string }[]>`

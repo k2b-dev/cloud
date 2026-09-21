@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { render } from "solid-js/web";
 import { createSignal } from "solid-js";
+import { render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
 test("hands SSR bottom alignment to normal scrolling before the first client paint", async () => {

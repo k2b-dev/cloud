@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { SQL } from "bun";
+import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
 import { migratePosix } from "../../../../core/src/migrate/core/posix";
 import { mirrorIpaPosix } from "../ipa/posix";
@@ -9,14 +10,14 @@ import { accountsAppService } from "./app";
 import * as localGroups from "./local-groups";
 import { createPosixRuntime, createPosixService, PosixError } from "./posix";
 
-const url = process.env.CLOUD_POSIX_TEST_DATABASE_URL;
 const localUsers = providers.local.users;
-const suite = url ? describe : describe.skip;
+const suite = databaseSuite();
 const admin = { id: "11111111-1111-4111-8111-111111111111", roles: ["admin"] };
 const config = { enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" };
 
 suite("isolated Linux identity migration and provisioning", () => {
   let db: SQL;
+  let disposable: Awaited<ReturnType<typeof useFreshDatabase>>;
   let service: ReturnType<typeof createPosixService>;
   const createUser = async (uid: string, provider = "local", profile = "user") => {
     const [row] = await db<
@@ -25,9 +26,8 @@ suite("isolated Linux identity migration and provisioning", () => {
     return row!.id;
   };
   beforeAll(async () => {
-    if (!url || process.env.DATABASE_URL !== url || !new URL(url).pathname.startsWith("/cloud_posix_test"))
-      throw new Error("Both database URLs must point to the same dedicated cloud_posix_test database");
-    db = new SQL(url);
+    disposable = await useFreshDatabase("posix");
+    db = new SQL(disposable.url);
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.users(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), uid TEXT UNIQUE NOT NULL, provider TEXT NOT NULL, profile TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '')`.simple();
@@ -47,6 +47,7 @@ suite("isolated Linux identity migration and provisioning", () => {
   });
   afterAll(async () => {
     await db?.close();
+    await disposable?.drop();
   });
 
   test("local creation and guest promotion assign attributes through the real provider", async () => {

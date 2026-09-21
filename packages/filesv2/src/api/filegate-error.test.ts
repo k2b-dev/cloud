@@ -11,5 +11,6 @@ test("only a confirmed path conflict offers overwrite; identity and concurrency 
     [412, "precondition_failed", "write_conflict"],
     [403, "permission_denied", "forbidden"],
     [404, "not_found", "not_found"],
-  ] as const) expect(filegateErrorCode(new FilegateError(status, code, "private upstream message"))).toBe(expected);
+  ] as const)
+    expect(filegateErrorCode(new FilegateError(status, code, "private upstream message"))).toBe(expected);
 });

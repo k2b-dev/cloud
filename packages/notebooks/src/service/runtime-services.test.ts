@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { ok } from "@k2b/stdlib";
 import type { PermissionLevel, User } from "@k2b/cloud/contracts";
 import type { ServiceAccount } from "@k2b/cloud/services";
+import { ok } from "@k2b/stdlib";
 
 const cloudServices = await import("@k2b/cloud/services");
 const cloud = await import("@k2b/cloud");

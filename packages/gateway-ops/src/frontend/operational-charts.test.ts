@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { prepareOperationalCharts, alignCountSeries } from "./operational-charts";
+import { alignCountSeries, prepareOperationalCharts } from "./operational-charts";
 
 test("comparison counts align to shared intervals without filling gaps", () => {
   expect(

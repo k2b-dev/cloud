@@ -1,10 +1,11 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
+import type { EventQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { queryEventAggregateData } from "./query-execution";
-import type { EventQuery } from "../contracts";
 
-const dbTest = process.env.PULSE_EVENT_AGGREGATION_DB_TEST === "1" ? test : test.skip;
+const dbTest = testFor("database");
 
 dbTest(
   "unique events retain null-only groups and count source-local identities across calendar buckets",
@@ -53,7 +54,14 @@ dbTest(
         const total = await queryEventAggregateData({ ...query, aggregation, bucket: "all", timeZone: undefined, groupBy: [] });
         if (!total.ok) throw Error(total.error.message);
         expect(total.data.map((point) => point.value)).toEqual([aggregation === "unique_actor" ? 2 : 3]);
-        const empty = await queryEventAggregateData({ ...query, aggregation, bucket: "all", timeZone: undefined, groupBy: [], event: "absent" });
+        const empty = await queryEventAggregateData({
+          ...query,
+          aggregation,
+          bucket: "all",
+          timeZone: undefined,
+          groupBy: [],
+          event: "absent",
+        });
         if (!empty.ok) throw Error(empty.error.message);
         expect(empty.data.map((point) => point.value)).toEqual([0]);
       }

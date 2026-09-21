@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { ImageConverterView, type ImageConverterEntry } from "./ImageConverter.island";
+import { type ImageConverterEntry, ImageConverterView } from "./ImageConverter.island";
 
 const image = (selected = false): ImageConverterEntry => ({
   id: "image-1",

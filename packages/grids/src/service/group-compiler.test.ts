@@ -73,7 +73,13 @@ describe("isAggregatable", () => {
 describe("compileGroupQuery — basic shape", () => {
   test("internal summaries omit sort and cursor work without changing ordinary unlimited queries", async () => {
     const field = mkField("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "text");
-    const params = { tableId: field.tableId, fields: [field], groupBy: [{ fieldId: field.id }], aggregations: [{ agg: "count" as const, fieldId: "*" }], limit: null };
+    const params = {
+      tableId: field.tableId,
+      fields: [field],
+      groupBy: [{ fieldId: field.id }],
+      aggregations: [{ agg: "count" as const, fieldId: "*" }],
+      limit: null,
+    };
     const summary = compileGroupQuery({ ...params, summaryOnly: true });
     const ordinary = compileGroupQuery(params);
     expect(summary.ok).toBe(true);

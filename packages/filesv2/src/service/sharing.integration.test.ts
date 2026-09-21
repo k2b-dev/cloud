@@ -1,9 +1,11 @@
-import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { beforeAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { RequestActor } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
 import { type ExecutionIdentity, Filegate, type Node, type Session, type WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { assertPrivateDatabase } from "../../test/private-database";
 import type { BaseSummary } from "../contracts";
 import { type Binding, bindings } from "../data/bases";
 import { shares, shareTokenHash } from "../data/shares";
@@ -13,7 +15,7 @@ import { migrate } from "../migrate";
 import { FilesError } from "./errors";
 import { createSharingService, type SharingAccess } from "./sharing";
 
-const suite = process.env.FILESV2_SHARING_DATABASE_URL ? describe : describe.skip;
+const suite = suiteFor("database");
 const actor: RequestActor = {
   kind: "user",
   user: {
@@ -250,11 +252,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     });
   const token = (share: { url: string | null }) => share.url!.split("/").at(-1)!;
   beforeAll(async () => {
-    if (
-      process.env.DATABASE_URL !== process.env.FILESV2_SHARING_DATABASE_URL ||
-      !process.env.DATABASE_URL?.endsWith("/cloud_filesv2_sharing_test")
-    )
-      throw new Error("Use the isolated sharing test database");
+    await assertPrivateDatabase();
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
     await migrate();

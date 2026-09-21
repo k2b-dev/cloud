@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { ingestBatch } from "./ingest-writer";
 import { queryMetricData } from "./query-execution";
 
-const enabled = process.env.PULSE_METRIC_QUERY_DB_TEST === "1";
+const enabled = testInfra.database !== undefined;
 const postgresTest = enabled ? test : test.skip;
 beforeAll(async () => {
   if (enabled) await (await import("../schema")).initializeSchema();

@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 
-const runDbSmoke = process.env.PULSE_LIFECYCLE_DB_TEST === "1";
+const runDbSmoke = testInfra.database !== undefined;
 const postgresTest = runDbSmoke ? test : test.skip;
 
 const uuid = () => crypto.randomUUID();

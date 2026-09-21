@@ -1,14 +1,14 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { SQL } from "bun";
-import { RailAdminSchema, type RailAdminEntry } from "../contracts/rail-admin";
+import { databaseSuite, requireDatabaseUrl } from "../../../../scripts/fixtures/test-infra";
+import { type RailAdminEntry, RailAdminSchema } from "../contracts/rail-admin";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
-import { buildProjectedUser, loadCurrentUser } from "./session/user";
 import { createRailPreferencesService } from "./rail-preferences";
 import { createRailShortcutsService, RailAdminError } from "./rail-shortcuts";
 import { createRailSnapshotReader } from "./rail-snapshot";
+import { buildProjectedUser, loadCurrentUser } from "./session/user";
 
-const url = process.env.CLOUD_RAIL_TEST_DATABASE_URL;
-const suite = url ? describe : describe.skip;
+const suite = databaseSuite();
 suite("managed rail persistence and transactional invalidation", () => {
   let db: SQL;
   let service: ReturnType<typeof createRailShortcutsService>;
@@ -23,10 +23,7 @@ suite("managed rail persistence and transactional invalidation", () => {
     access: principal ? [{ id: crypto.randomUUID(), principal, permission: "read", createdAt: new Date().toISOString() }] : [],
   });
   beforeAll(async () => {
-    const parsed = new URL(url!);
-    if (parsed.pathname !== "/cloud_rail_test" || !["localhost", "127.0.0.1"].includes(parsed.hostname) || process.env.DATABASE_URL !== url)
-      throw new Error("Dedicated local cloud_rail_test database and matching DATABASE_URL required");
-    db = new SQL(url!);
+    db = new SQL(requireDatabaseUrl());
     await (await import("../../../core/src/migrate/core/auth")).migrate();
     await (await import("../../../core/src/migrate/core/rail-preferences")).migrate(db);
     const { migrate } = await import("../../../core/src/migrate/core/rail-shortcuts");

@@ -3,8 +3,9 @@
  * stuck, and how far behind. These are the findings that stayed invisible while
  * each app kept its own runs.
  */
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import type { WorkflowBoundPlan } from "../contracts";
@@ -75,7 +76,7 @@ const step = (runId: string, generation: number, key: string) => ({
   action: "probe.send",
 });
 
-(process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip)("workflow observability", () => {
+suiteFor("database")("workflow observability", () => {
   test("a run detail says what caused it, what it did and what it spent", async () => {
     expect(await ready()).toBe(true);
     const { scopeId } = await listening("probe", "probe.detail");

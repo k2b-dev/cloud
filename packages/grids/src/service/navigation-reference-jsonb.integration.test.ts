@@ -1,14 +1,15 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { updateBaseNavigation } from "./base-navigation";
 import { rewriteFieldNameReferences } from "./reference-renames";
 import { newShortId } from "./short-id";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 const fixture = async () => {

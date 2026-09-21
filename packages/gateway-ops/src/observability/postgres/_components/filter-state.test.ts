@@ -3,8 +3,8 @@ import {
   buildPostgresFilterUrl,
   defaultPostgresFilter,
   hasActivePostgresFilters,
-  parsePostgresFilterFromUrl,
   type PostgresFilter,
+  parsePostgresFilterFromUrl,
 } from "./filter-state";
 
 const parse = (path: string) => parsePostgresFilterFromUrl(new URL(path, "https://cloud.test"));

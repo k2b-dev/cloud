@@ -1,17 +1,26 @@
 import { expect, test } from "bun:test";
-import { ModalRequest } from "./modal-schema";
 import { validateModalResponse } from "./modal-response";
+import { ModalRequest } from "./modal-schema";
 
 test("agent dialog answers enforce the same field constraints and cancellation", () => {
-  const request = ModalRequest.parse({ kind: "dialog", title: "Add", fields: {
-    name: { type: "text", label: "Name", required: true, maxLength: 8 },
-    count: { type: "number", label: "Count", min: 1 },
-    choice: { type: "select", label: "Choice", options: [{ value: "one", label: "One" }] },
-  } });
+  const request = ModalRequest.parse({
+    kind: "dialog",
+    title: "Add",
+    fields: {
+      name: { type: "text", label: "Name", required: true, maxLength: 8 },
+      count: { type: "number", label: "Count", min: 1 },
+      choice: { type: "select", label: "Choice", options: [{ value: "one", label: "One" }] },
+    },
+  });
   expect(validateModalResponse(request, null)).toBeNull();
   const valid = { name: "Test", count: 2, choice: "one" };
   expect(structuredClone(validateModalResponse(request, valid))).toEqual(valid);
-  for (const value of [{ ...valid, count: -1 }, { ...valid, name: " " }, { ...valid, choice: "absent" }, { ...valid, extra: true }])
+  for (const value of [
+    { ...valid, count: -1 },
+    { ...valid, name: " " },
+    { ...valid, choice: "absent" },
+    { ...valid, extra: true },
+  ])
     expect(() => validateModalResponse(request, value)).toThrow();
 });
 

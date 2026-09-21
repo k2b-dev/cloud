@@ -59,7 +59,6 @@ describe("buildRuntimeFromRegistry", () => {
       manifestHash: "sha256",
       pageBase: "/app/example/help",
       baseLocale: "en",
-
     };
 
     const projected = buildRuntimeFromRegistry([app]).apps[0]?.help;

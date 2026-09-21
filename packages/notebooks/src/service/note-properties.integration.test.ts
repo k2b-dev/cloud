@@ -1,15 +1,16 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { repairNoteDataProperties } from "./note-properties";
 import { reindexNotebook } from "./note-refs";
 
-const postgresTest = process.env.NOTEBOOKS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 const notebookId = crypto.randomUUID();
 const noteId = crypto.randomUUID();
 
 beforeAll(async () => {
-  if (process.env.NOTEBOOKS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   await migrate();
   await migrate();
   await sql`
@@ -23,7 +24,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (process.env.NOTEBOOKS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebookId}::uuid`;
 });
 

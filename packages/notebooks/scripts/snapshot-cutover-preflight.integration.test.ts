@@ -1,28 +1,28 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
 import { SQL } from "bun";
+import { natsServers, requireDatabaseUrl, testFor } from "../../../scripts/fixtures/test-infra";
 
-(process.env.NOTEBOOKS_SNAPSHOT_DB_TEST === "1" ? test : test.skip)(
+testFor("database", "nats")(
   "cutover preflight reads coverage and old backlog without provisioning resources",
   async () => {
-    const url = new URL(process.env.DATABASE_URL!);
-    if (!["localhost", "127.0.0.1", "ipa_postgres"].includes(url.hostname)) throw new Error("Requires local Postgres");
+    const url = new URL(requireDatabaseUrl());
     const databaseName = `notebook_cutover_${crypto.randomUUID().replaceAll("-", "")}`;
     const target = new URL(url);
     target.pathname = `/${databaseName}`;
     url.pathname = "/postgres";
     const admin = new SQL(url);
     const database = new SQL(target);
-    const connection = await connect({ servers: (process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222").split(",") });
+    const connection = await connect({ servers: natsServers() });
     const namespace = `snapshot-cutover-${crypto.randomUUID()}`;
-    const sync = createSync({ connection, namespace, application: "notebooks" });
+    const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     const manager = await jetstreamManager(connection);
     let created = false;
     const run = async () => {
       const child = Bun.spawn([process.execPath, new URL("./snapshot-cutover-preflight.ts", import.meta.url).pathname], {
-        env: { ...process.env, DATABASE_URL: target.toString(), NATS_SERVERS: process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222", SYNC_NAMESPACE: namespace },
+        env: { ...process.env, DATABASE_URL: target.toString(), NATS_SERVERS: natsServers(), SYNC_NAMESPACE: namespace },
         stdout: "pipe",
         stderr: "pipe",
       });

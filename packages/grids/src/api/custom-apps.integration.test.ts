@@ -4,6 +4,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { DslQueryPreviewResponse } from "../contracts";
 import { CustomAppCapabilitiesSchema, type CustomAppDefinition, type CustomAppReferencedRecordsBlock } from "../custom-apps/contracts";
 import { customAppViewSourceHash } from "../custom-apps/insight-source";
@@ -20,13 +21,13 @@ import { resolvePublicId } from "../service/public-resources";
 import type { CustomAppLauncherInvocation, ScannerLauncherInvocation } from "../service/workflow-launcher-invocations";
 import {
   findCustomAppActionRun,
-  startWorkflowRun,
   type GridsWorkflowAuthorization,
   type GridsWorkflowRunScope,
+  startWorkflowRun,
 } from "../service/workflow-runs";
-import { GRIDS_EVENT } from "../workflows/events";
 import { insertTestWorkflow } from "../service/workflow-test-fixture";
 import type { GridsWorkflowPrincipal, GridsWorkflowRun } from "../workflows/contracts";
+import { GRIDS_EVENT } from "../workflows/events";
 import { createCustomAppsApi } from "./custom-apps";
 import { apiMessagesForLocale } from "./messages";
 
@@ -91,7 +92,7 @@ const userFor = (id: string): User => ({
 });
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("Grids App credential scope", () => {

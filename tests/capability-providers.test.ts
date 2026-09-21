@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import {
-  assertCapabilityManifestEvolution,
-  compileCapabilityManifest,
-} from "../packages/cloud/src/capabilities/testing";
 import { buildAiCapabilityCatalog, buildAiToolCatalog, searchAiTools } from "../packages/cloud/src/ai/capabilities";
+import { assertCapabilityManifestEvolution, compileCapabilityManifest } from "../packages/cloud/src/capabilities/testing";
 import {
   type CapabilityDefinitions,
   type CapabilityManifest,
@@ -55,7 +52,12 @@ const providers: ReadonlyArray<{
     ],
     searches: ["search"],
   },
-  { appId: "notebooks", definitions: notebooksCapabilities, types: ["comment", "note", "notebook"], searches: ["note.search", "notebook.search"] },
+  {
+    appId: "notebooks",
+    definitions: notebooksCapabilities,
+    types: ["comment", "note", "notebook"],
+    searches: ["note.search", "notebook.search"],
+  },
   {
     appId: "pulse",
     definitions: pulseCapabilities,
@@ -74,12 +76,13 @@ const providers: ReadonlyArray<{
 
 const frozenManifests = new Map<string, CapabilityManifest>(
   await Promise.all(
-    providers.map(async ({ appId }) => [
-      appId,
-      CapabilityManifestSchema.parse(
-        await Bun.file(new URL(`./fixtures/capabilities/v2/${appId}.json`, import.meta.url)).json(),
-      ),
-    ] as const),
+    providers.map(
+      async ({ appId }) =>
+        [
+          appId,
+          CapabilityManifestSchema.parse(await Bun.file(new URL(`./fixtures/capabilities/v2/${appId}.json`, import.meta.url)).json()),
+        ] as const,
+    ),
   ),
 );
 
@@ -107,9 +110,9 @@ describe("Capability v2 provider conformance", () => {
       expect(manifest.protocolVersion).toBe(2);
       expect(manifest.types.map((type) => type.localId)).toEqual(provider.types);
       expect(manifest.queries.filter((query) => query.universalSearch).map((query) => query.localId)).toEqual(provider.searches);
-      expect(new Set([...manifest.types, ...manifest.queries, ...manifest.actions, ...manifest.commands].map((entry) => entry.localId)).size).toBe(
-        manifest.types.length + manifest.queries.length + manifest.actions.length + manifest.commands.length,
-      );
+      expect(
+        new Set([...manifest.types, ...manifest.queries, ...manifest.actions, ...manifest.commands].map((entry) => entry.localId)).size,
+      ).toBe(manifest.types.length + manifest.queries.length + manifest.actions.length + manifest.commands.length);
       for (const action of manifest.actions) {
         if (action.destructive || action.openWorld) {
           expect(action.review, `${provider.appId}.${action.localId} review`).toBe(true);

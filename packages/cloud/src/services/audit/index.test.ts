@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../../scripts/fixtures/test-infra";
 import { audit, sanitizeAuditMetadata, sanitizeAuditText } from "./index";
 
 describe("sanitizeAuditMetadata", () => {
-  (process.env.CLOUD_DATABASE_TEST === "1" ? test : test.skip)("stores searchable JSON objects rather than encoded strings", async () => {
+  testFor("database")("stores searchable JSON objects rather than encoded strings", async () => {
     const requestId = `audit-json-${crypto.randomUUID()}`;
     try {
       await audit.record({
@@ -63,7 +64,7 @@ describe("sanitizeAuditMetadata", () => {
     expect(sanitizeAuditText("Access denied")).toBe("Access denied");
   });
 
-  (process.env.CLOUD_DATABASE_TEST === "1" ? test : test.skip)("lists only safe actor-owned self-service activity", async () => {
+  testFor("database")("lists only safe actor-owned self-service activity", async () => {
     const userId = crypto.randomUUID();
     const otherUserId = crypto.randomUUID();
     const requestId = `self-service-activity-${crypto.randomUUID()}`;

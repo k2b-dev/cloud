@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
+
 const root = mkdtempSync(join(tmpdir(), "kit-markdown-policy-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
@@ -24,7 +25,6 @@ test("Markdown resource policy suppresses images and limits link navigation with
   expect(isolated).toContain('target="_blank" rel="noopener noreferrer"');
   expect(isolated).toContain("&lt;img");
 });
-
 
 test("empty Markdown table headers are omitted while alignment and emphasis survive", () => {
   const html = renderSafeMarkdown("| | |\n| --- | ---: |\n| Tip | **12,30 €** |\n| Total | **135,30 €** |");

@@ -3,6 +3,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { err, fail, ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { snapshotTableReadAuthorizer } from "../api/documents-api-shared";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -18,7 +19,7 @@ type CreateDocumentInput = Parameters<typeof createDocumentForRecord>[0];
 const renderedPdf = async () => ok({ pdf: new TextEncoder().encode("%PDF-1.7\npublic capture"), contentType: "application/pdf" });
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 const fixture = async () => {

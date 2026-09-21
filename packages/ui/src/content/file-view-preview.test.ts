@@ -47,11 +47,11 @@ describe("parseDelimitedText", () => {
 });
 
 test("counts CSV records beyond the retained page, including quoted newlines", () => {
-  const csv = 'name,note\n' + Array.from({length: 9000}, (_, i) => `${i},"two\nlines"`).join("\n");
-  const first = parseDelimitedText(csv, ",", {rows: 6});
+  const csv = "name,note\n" + Array.from({ length: 9000 }, (_, i) => `${i},"two\nlines"`).join("\n");
+  const first = parseDelimitedText(csv, ",", { rows: 6 });
   expect(first.rows).toHaveLength(6);
   expect(first.totalRows).toBe(9001);
-  const last = parseDelimitedText(csv, ",", {rows: 201, offset: 8800});
+  const last = parseDelimitedText(csv, ",", { rows: 201, offset: 8800 });
   expect(last.rows).toHaveLength(201);
   expect(last.rows[1]).toEqual(["8800", "two\nlines"]);
   expect(last.rows.at(-1)).toEqual(["8999", "two\nlines"]);

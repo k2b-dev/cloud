@@ -162,48 +162,73 @@ describe("AI controller draft submission", () => {
     dispose();
   });
 
-  for (const finishBeforeAck of [false, true]) test.skipIf(isServer)(`keeps a first send visible through upload and confirmation (early finish: ${finishBeforeAck})`, async () => {
-    const current = conversation("new-chat");
-    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
-    let finishUpload!: (response: Response) => void;
-    let finishTurn!: (response: Response) => void;
-    const upload = new Promise<Response>(resolve => { finishUpload = resolve; });
-    const turn = new Promise<Response>(resolve => { finishTurn = resolve; });
-    globalThis.fetch = Object.assign(async (request: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(request);
-      if (path.endsWith("/files") && init?.method === "POST") return upload;
-      if (path.endsWith("/draft") && init?.method === "PUT") return Response.json({ content: [], revision: 1, updatedAt: null });
-      if (path.endsWith("/turns") && init?.method === "POST") return turn;
-      if (path.endsWith("/timeline")) return Response.json([]);
-      return Response.json({});
-    }, { preconnect: originalFetch.preconnect });
-    let dispose!: () => void;
-    const controller = createRoot(cleanup => {
-      dispose = cleanup;
-      return createAiChatController({ baseUrl: "/api/ai", initialConversationId: current.id,
-        initialDetail: { conversation: current, messages: [], activeTurn: null },
-        streamTransport: { subscribe: input => { emit = input.onEvent; return { close() {} }; } },
+  for (const finishBeforeAck of [false, true])
+    test.skipIf(isServer)(`keeps a first send visible through upload and confirmation (early finish: ${finishBeforeAck})`, async () => {
+      const current = conversation("new-chat");
+      let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+      let finishUpload!: (response: Response) => void;
+      let finishTurn!: (response: Response) => void;
+      const upload = new Promise<Response>((resolve) => {
+        finishUpload = resolve;
       });
+      const turn = new Promise<Response>((resolve) => {
+        finishTurn = resolve;
+      });
+      globalThis.fetch = Object.assign(
+        async (request: RequestInfo | URL, init?: RequestInit) => {
+          const path = String(request);
+          if (path.endsWith("/files") && init?.method === "POST") return upload;
+          if (path.endsWith("/draft") && init?.method === "PUT") return Response.json({ content: [], revision: 1, updatedAt: null });
+          if (path.endsWith("/turns") && init?.method === "POST") return turn;
+          if (path.endsWith("/timeline")) return Response.json([]);
+          return Response.json({});
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      let dispose!: () => void;
+      const controller = createRoot((cleanup) => {
+        dispose = cleanup;
+        return createAiChatController({
+          baseUrl: "/api/ai",
+          initialConversationId: current.id,
+          initialDetail: { conversation: current, messages: [], activeTurn: null },
+          streamTransport: {
+            subscribe: (input) => {
+              emit = input.onEvent;
+              return { close() {} };
+            },
+          },
+        });
+      });
+      const sending = controller.send({ message: "Analyze", files: [new File(["a,b"], "demo.csv", { type: "text/csv" })] });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(controller.messages()).toHaveLength(1);
+      emit({ type: "state", conversation: current, messages: [], activeTurn: null });
+      expect(controller.messages()).toHaveLength(1);
+      finishUpload(Response.json({ file: { path: "/demo.csv", size: 3, mediaType: "text/csv", version: 1 } }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const pending = controller.messages()[0]!;
+      const saved = { ...pending, id: "saved", shortId: "saved", loopId: "turn-1", meta: { submittedDraftRevision: 1 } };
+      emit({ type: "state", conversation: current, messages: [saved], activeTurn: null });
+      expect(controller.messages()).toHaveLength(1);
+      if (finishBeforeAck)
+        emit({
+          v: 1,
+          type: "turn_finished",
+          conversationId: current.id,
+          turnId: "turn-1",
+          attempt: 1,
+          seq: 1,
+          status: "completed",
+          error: null,
+        });
+      finishTurn(Response.json({ message: saved, turn: { id: "turn-1", modelProfileId: null } }));
+      expect(await sending).toBe(true);
+      expect(controller.activeTurn()?.status ?? null).toBe(finishBeforeAck ? null : "running");
+      emit({ type: "state", conversation: current, messages: finishBeforeAck ? [saved] : [], activeTurn: null });
+      expect(controller.messages().map((message) => message.id)).toEqual(["saved"]);
+      dispose();
     });
-    const sending = controller.send({ message: "Analyze", files: [new File(["a,b"], "demo.csv", { type: "text/csv" })] });
-    await new Promise(resolve => setTimeout(resolve, 0));
-    expect(controller.messages()).toHaveLength(1);
-    emit({ type: "state", conversation: current, messages: [], activeTurn: null });
-    expect(controller.messages()).toHaveLength(1);
-    finishUpload(Response.json({ file: { path: "/demo.csv", size: 3, mediaType: "text/csv", version: 1 } }));
-    await new Promise(resolve => setTimeout(resolve, 0));
-    const pending = controller.messages()[0]!;
-    const saved = { ...pending, id: "saved", shortId: "saved", loopId: "turn-1", meta: { submittedDraftRevision: 1 } };
-    emit({ type: "state", conversation: current, messages: [saved], activeTurn: null });
-    expect(controller.messages()).toHaveLength(1);
-    if (finishBeforeAck) emit({v:1,type:"turn_finished",conversationId:current.id,turnId:"turn-1",attempt:1,seq:1,status:"completed",error:null});
-    finishTurn(Response.json({ message: saved, turn: { id: "turn-1", modelProfileId: null } }));
-    expect(await sending).toBe(true);
-    expect(controller.activeTurn()?.status ?? null).toBe(finishBeforeAck ? null : "running");
-    emit({ type: "state", conversation: current, messages: finishBeforeAck ? [saved] : [], activeTurn: null });
-    expect(controller.messages().map(message => message.id)).toEqual(["saved"]);
-    dispose();
-  });
 
   test("submits a Cloud resource without leaking the draft discriminator into its marker", async () => {
     let savedContent: AiConversation["draft"]["content"] = [];
@@ -302,7 +327,10 @@ const conversation = (id: string): AiConversation => ({
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: "2026-09-14T00:00:00.000Z",
+  archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -315,35 +343,64 @@ const conversation = (id: string): AiConversation => ({
 
 describe("AI controller conversation transitions", () => {
   test("queues full content during a run and reuses the receipt after a lost response", async () => {
-    const requests:Array<{path:string;body:Record<string,unknown>}>=[];
-    let fail=true;
-    globalThis.fetch = Object.assign(async (request:RequestInfo | URL, init?:RequestInit) => {
-      const path=String(request);
-      const body=typeof init?.body === "string" ? JSON.parse(init.body) : {};
-      requests.push({path,body});
-      if (path.endsWith("/draft")) return Response.json({content:body.content,revision:1,updatedAt:null});
-      if (path.endsWith("/turns")) {
-        if (fail) { fail=false; throw new Error("lost response"); }
-        return Response.json({queued:true});
-      }
-      return Response.json([]);
-    }, {preconnect:originalFetch.preconnect});
-    let dispose!:()=>void;
-    const current=conversation("queued-chat");
-    const controller=createRoot(cleanup=>{dispose=cleanup;return createAiChatController({
-      baseUrl:"/api/ai",initialConversationId:current.id,
-      initialDetail:{conversation:current,messages:[],activeTurn:{turnId:"running",attempt:1,seq:1,status:"running",blocks:[],modelProfileId:null,createdAt:"2026-09-14T00:00:00.000Z"}},
-    });});
-    const input={conversationId:current.id,message:"Follow up",storedFiles:[{path:"/source.csv",mediaType:"text/csv",size:12,version:3}]};
+    const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
+    let fail = true;
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+        requests.push({ path, body });
+        if (path.endsWith("/draft")) return Response.json({ content: body.content, revision: 1, updatedAt: null });
+        if (path.endsWith("/turns")) {
+          if (fail) {
+            fail = false;
+            throw new Error("lost response");
+          }
+          return Response.json({ queued: true });
+        }
+        return Response.json([]);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const current = conversation("queued-chat");
+    const controller = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: {
+          conversation: current,
+          messages: [],
+          activeTurn: {
+            turnId: "running",
+            attempt: 1,
+            seq: 1,
+            status: "running",
+            blocks: [],
+            modelProfileId: null,
+            createdAt: "2026-09-14T00:00:00.000Z",
+          },
+        },
+      });
+    });
+    const input = {
+      conversationId: current.id,
+      message: "Follow up",
+      storedFiles: [{ path: "/source.csv", mediaType: "text/csv", size: 12, version: 3 }],
+    };
     expect(await controller.queueMessage(input)).toBe(false);
     expect(await controller.queueMessage(input)).toBe(true);
     expect(controller.error()).toBeNull();
-    const submissions=requests.filter(request=>request.path.endsWith("/turns"));
+    const submissions = requests.filter((request) => request.path.endsWith("/turns"));
     expect(submissions).toHaveLength(2);
     expect(submissions[0]!.body.queueId).toBe(submissions[1]!.body.queueId);
-    const drafts=requests.filter(request=>request.path.endsWith("/draft"));
+    const drafts = requests.filter((request) => request.path.endsWith("/draft"));
     expect(drafts).toHaveLength(1);
-    expect(drafts[0]!.body.content).toEqual([{type:"text",text:"Follow up"},{type:"file",path:"/source.csv",mediaType:"text/csv",size:12,version:3}]);
+    expect(drafts[0]!.body.content).toEqual([
+      { type: "text", text: "Follow up" },
+      { type: "file", path: "/source.csv", mediaType: "text/csv", size: 12, version: 3 },
+    ]);
     expect(controller.messages()).toHaveLength(0);
     expect(controller.activeTurn()?.turnId).toBe("running");
     dispose();
@@ -708,37 +765,48 @@ describe("AI controller steering reconciliation", () => {
   });
 });
 
-for (const recovery of ["snapshot", "refresh"] as const) test.skipIf(isServer)(`unlocks the composer after abort completes through ${recovery}`, async () => {
-  const current = conversation("Chat01");
-  const runningTurn: AiTurnSnapshot = {
-    turnId: "running",
-    attempt: 1,
-    seq: 1,
-    status: "waiting_for_action",
-    blocks: [],
-    modelProfileId: null,
-    createdAt: "2026-09-20T00:00:00Z",
-  };
-  let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
-  globalThis.fetch = Object.assign(async () => Response.json({ conversation: current, messages: [], activeTurn: null }), { preconnect: originalFetch.preconnect });
-  let dispose!: () => void;
-  const controller = createRoot(cleanup => {
-    dispose = cleanup;
-    return createAiChatController({
-      baseUrl: "/api/ai", initialConversationId: current.id,
-      initialDetail: { conversation: current, messages: [], activeTurn: runningTurn },
-      streamTransport: { subscribe: input => { emit = input.onEvent; return { close() {} }; } },
+for (const recovery of ["snapshot", "refresh"] as const)
+  test.skipIf(isServer)(`unlocks the composer after abort completes through ${recovery}`, async () => {
+    const current = conversation("Chat01");
+    const runningTurn: AiTurnSnapshot = {
+      turnId: "running",
+      attempt: 1,
+      seq: 1,
+      status: "waiting_for_action",
+      blocks: [],
+      modelProfileId: null,
+      createdAt: "2026-09-20T00:00:00Z",
+    };
+    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+    globalThis.fetch = Object.assign(async () => Response.json({ conversation: current, messages: [], activeTurn: null }), {
+      preconnect: originalFetch.preconnect,
     });
+    let dispose!: () => void;
+    const controller = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: runningTurn },
+        streamTransport: {
+          subscribe: (input) => {
+            emit = input.onEvent;
+            return { close() {} };
+          },
+        },
+      });
+    });
+    try {
+      expect(await controller.abort()).toBe(true);
+      expect(controller.runStatus()).toBe("stopping");
+      emit({ type: "state", conversation: current, messages: [], activeTurn: runningTurn });
+      expect(controller.runStatus()).toBe("stopping");
+      if (recovery === "snapshot") emit({ type: "state", conversation: current, messages: [], activeTurn: null });
+      else await controller.refreshActiveConversation();
+      expect(controller.activeTurn()).toBeNull();
+      expect(controller.runStatus()).toBe("idle");
+      expect(controller.running()).toBe(false);
+    } finally {
+      dispose();
+    }
   });
-  try {
-    expect(await controller.abort()).toBe(true);
-    expect(controller.runStatus()).toBe("stopping");
-    emit({ type: "state", conversation: current, messages: [], activeTurn: runningTurn });
-    expect(controller.runStatus()).toBe("stopping");
-    if (recovery === "snapshot") emit({ type: "state", conversation: current, messages: [], activeTurn: null });
-    else await controller.refreshActiveConversation();
-    expect(controller.activeTurn()).toBeNull();
-    expect(controller.runStatus()).toBe("idle");
-    expect(controller.running()).toBe(false);
-  } finally { dispose(); }
-});

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { ok } from "@k2b/stdlib";
 import { CAPABILITY_MAX_REQUEST_BYTES } from "@k2b/cloud/contracts";
 import type { Mandate } from "@k2b/cloud/services/mandates";
+import { ok } from "@k2b/stdlib";
 import { createIdentityMandateRoutes } from "./identity-mandates";
 
 const MANDATE_ID = "11111111-1111-4111-8111-111111111111";

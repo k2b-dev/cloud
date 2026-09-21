@@ -1,9 +1,10 @@
-import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { beforeAll, expect, spyOn } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
+import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { createCustomAppsApi } from "../api/custom-apps";
 import { buildCustomAppQueryContext } from "../custom-apps/query-context";
 import { createGermanBillingProfile, germanBillingProfile } from "../document-profiles/einvoice-de";
@@ -22,7 +23,7 @@ import { runGridsWorkflowRun } from "../service/workflow-runtime";
 import { createBillingTemplate } from "./billing";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST !== "1") return;
+  if (!testInfra.database) return;
   const [db] = await sql`SELECT current_database() AS name`;
   if (!db.name.startsWith("grids_verify_")) throw new Error("Billing lifecycle requires an isolated grids_verify_ database");
   await migrate();

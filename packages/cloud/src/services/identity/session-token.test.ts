@@ -1,6 +1,6 @@
-import { bindProcessApplicationId, clearProcessApplicationId } from "../../_internal/process-identity";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, type JWTVerifyGetKey, SignJWT } from "jose";
+import { bindProcessApplicationId, clearProcessApplicationId } from "../../_internal/process-identity";
 import { CLOUD_IDENTITY_ALGORITHM, CLOUD_SESSION_AUDIENCE, CLOUD_SESSION_TOKEN_TYPE, IDENTITY_MAX_COMPACT_TOKEN_BYTES } from "./constants";
 import { readIdentityKeyEncryptionConfig } from "./key-config";
 import { clearSessionVerifierCachesForTest, verifySessionToken } from "./session-token";

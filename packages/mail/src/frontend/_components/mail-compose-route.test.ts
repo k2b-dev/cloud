@@ -1,5 +1,5 @@
-import { commandPath, readCommand } from "@k2b/cloud/contracts";
 import { describe, expect, test } from "bun:test";
+import { commandPath, readCommand } from "@k2b/cloud/contracts";
 import {
   mailCalendarCommandHref,
   mailConversationHref,

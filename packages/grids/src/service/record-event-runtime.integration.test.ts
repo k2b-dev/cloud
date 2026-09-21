@@ -1,34 +1,25 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL } from "bun";
+import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 
-const enabled = process.env.GRIDS_RECORD_EVENTS_DB_TEST === "1";
 const databaseName = process.env.GRIDS_RECORD_EVENTS_DB_CHILD;
 
 if (!databaseName) {
-  (enabled ? test : test.skip)(
+  testFor("database")(
     "record-event dispatcher preserves PostgreSQL recovery in an isolated database",
     async () => {
-      const url = new URL(process.env.DATABASE_URL!);
+      const url = new URL(testInfra.database ?? "");
       if (!["localhost", "127.0.0.1", "ipa_postgres"].includes(url.hostname)) throw new Error("Requires local Postgres");
-      const database = `grids_events_${crypto.randomUUID().replaceAll("-", "")}`;
-      const target = new URL(url);
-      target.pathname = `/${database}`;
-      url.pathname = "/postgres";
-      const admin = new SQL(url);
-      let created = false;
+      const isolated = await createDisposableDatabase("grids_events");
       try {
-        await admin.unsafe(`CREATE DATABASE "${database}"`);
-        created = true;
         const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-          env: { ...process.env, DATABASE_URL: target.toString(), GRIDS_RECORD_EVENTS_DB_CHILD: database },
+          env: { ...process.env, CLOUD_TEST_DATABASE_URL: isolated.url, GRIDS_RECORD_EVENTS_DB_CHILD: isolated.name },
           // Preserve progress and failures even when the child times out.
           stdout: "inherit",
           stderr: "inherit",
         });
         expect(await child.exited).toBe(0);
       } finally {
-        if (created) await admin.unsafe(`DROP DATABASE "${database}"`);
-        await admin.close({ timeout: 5 });
+        await isolated.drop();
       }
     },
     // Child journey budget plus database creation and cleanup.
@@ -36,7 +27,7 @@ if (!databaseName) {
   );
 } else {
   test("PG dispatcher retries once, preserves record order, and drains publication on shutdown", async () => {
-    if (!enabled || !/^grids_events_[a-f0-9]{32}$/.test(databaseName)) throw new Error("Unexpected isolated database");
+    if (!testInfra.database || !/^grids_events_[a-f0-9]{16}_test$/.test(databaseName)) throw new Error("Unexpected isolated database");
     const started = performance.now();
     const checkpoint = (phase: string) => console.info(`[record-event recovery] ${phase}: ${Math.round(performance.now() - started)}ms`);
     const { sql } = await import("bun");
@@ -125,12 +116,13 @@ if (!databaseName) {
         const starting = startRecordEventOutbox();
         expect(await Promise.race([starting.then(() => "started"), entered.promise.then(() => "publication")])).toBe("started");
         await entered.promise;
-        let stopped = false;
-        const stopping = stopRecordEventOutbox().then(() => {
-          stopped = true;
-        });
-        await Bun.sleep(25);
-        expect(stopped).toBe(false);
+        const stopping = stopRecordEventOutbox();
+        // Shutdown must wait for the held publication: after a real database
+        // round trip the row is still undelivered and stop has not settled.
+        const [held] = await sql<{ status: string }[]>`
+          SELECT status FROM grids.record_event_outbox WHERE record_id = ${recordId}::uuid AND (payload->>'version')::int = 3`;
+        expect(held?.status).toBe("pending");
+        expect(Bun.peek.status(stopping)).toBe("pending");
         release.resolve();
         await stopping;
         expect(publish).toHaveBeenCalledTimes(1);

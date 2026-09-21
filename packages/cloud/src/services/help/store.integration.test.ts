@@ -1,7 +1,7 @@
-// HELP_TEST_DATABASE_URL must point to a disposable database.
 // Set HELP_TEST_BM25=1 only with pg_textsearch installed and preloaded.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { SQL } from "bun";
+import { createDisposableDatabase, databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { createHeartbeat } from "../../_internal/heartbeat";
 import { compileHelp } from "../../_internal/help";
 import { createAiHelpTools } from "../../ai/capabilities";
@@ -36,8 +36,7 @@ const actor = {
   },
 };
 
-const url = process.env.HELP_TEST_DATABASE_URL;
-const suite = url ? describe : describe.skip;
+const suite = databaseSuite();
 const source = (id: string, title: string, body: string) => `---\nid: ${id}\ntitle: ${title}\n---\n${body}`;
 const corpus = (body = "Editors can update inventory records.") =>
   compileHelp({
@@ -59,6 +58,7 @@ const corpus = (body = "Editors can update inventory records.") =>
 
 suite("Postgres Help publication and retrieval", () => {
   let db: SQL;
+  let disposable: Awaited<ReturnType<typeof createDisposableDatabase>>;
   let published = corpus();
   let active: AppRegistryEntry[];
   const resetApp = () => {
@@ -77,7 +77,8 @@ suite("Postgres Help publication and retrieval", () => {
   const reader = (locale = "en") =>
     createHelpReader(locale, { db, listApps: async () => active, getApp: async (id) => active.find((a) => a.id === id) ?? null });
   beforeAll(async () => {
-    db = new SQL(url!, { max: 5 });
+    disposable = await createDisposableDatabase("help");
+    db = new SQL(disposable.url, { max: 5 });
     await migrateHelp(db);
     await migrateHelp(db);
     await registerHelp(published.corpus, db);
@@ -86,6 +87,7 @@ suite("Postgres Help publication and retrieval", () => {
   afterAll(async () => {
     await db`DELETE FROM help.corpora WHERE app_id='help-integration'`;
     await db.close();
+    await disposable.drop();
   });
 
   test("registers once under concurrent starts and keeps only small discovery data", async () => {

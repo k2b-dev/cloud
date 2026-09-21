@@ -1,13 +1,14 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { insertTestDocumentArtifact } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createDocumentsApi } from "./documents";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
@@ -160,7 +161,7 @@ const jsonRequest = (body: unknown): RequestInit => ({
 });
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("document link API permissions", () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { ok } from "@k2b/stdlib";
 import type { AuthContext } from "@k2b/cloud/server";
+import { ok } from "@k2b/stdlib";
 import type { Context } from "hono";
 import type { Table } from "../contracts";
 import * as parser from "../query-dsl/parser";
@@ -8,10 +8,9 @@ import * as preview from "../query-dsl/preview";
 import { field } from "../query-dsl/resolver-fixtures";
 import { encodeDslResultCursor } from "../query-dsl/result-cursor";
 import { gridsService } from "../service";
+import * as querySettings from "../service/query-settings";
 import type { GqlRuntimeTraceEnd } from "./gql-observability";
 import { executeRecordQuery } from "./gql-runtime";
-
-import * as querySettings from "../service/query-settings";
 
 // Exercise real admission and runtime logic with process configuration supplied locally.
 let restoreQuerySettings: () => void;

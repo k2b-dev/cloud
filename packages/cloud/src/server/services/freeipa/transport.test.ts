@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { TEST_CA_CERT, TEST_SERVER_CERT, TEST_SERVER_KEY, TEST_WRONG_CA_CERT } from "./test-certificates";
+import { TEST_CA_CERT, TEST_SERVER_CERT, TEST_SERVER_KEY, TEST_WRONG_CA_CERT } from "./test-certificates.test-fixture";
 import { FreeIpaTransportError, isFreeIpaUpstreamStatus, readFreeIpaErrorBody, withFreeIpaResponse } from "./transport";
 
 let server: ReturnType<typeof Bun.serve> | null = null;

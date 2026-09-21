@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { assistantApi } from "../api/client";
+
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 test("seeded refresh shows pending state, coalesces requests and cleans up focus listener", async () => {
   const dom = createDomTestHarness();

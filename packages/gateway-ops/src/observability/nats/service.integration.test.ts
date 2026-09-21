@@ -1,36 +1,33 @@
 import { expect, test } from "bun:test";
-import { nodeReplicaStatus } from "./replica-status";
-import { natsMetricSamples } from "./metrics";
 import { connect } from "@nats-io/transport-node";
+import { natsServers, testFor } from "../../../../../scripts/fixtures/test-infra";
+import { natsMetricSamples } from "./metrics";
+import { nodeReplicaStatus } from "./replica-status";
 import { getNatsClusterDiagnostics, getNatsDiagnostics, getNatsInventorySummary, natsDiagnosticsConfig } from "./service";
 
-const systemIntegration = process.env.NATS_DIAGNOSTICS_TEST === "1" && process.env.NATS_ADMIN_SERVERS ? test : test.skip;
-systemIntegration(
-  "dedicated system identity sees the cluster while the application identity cannot",
-  async () => {
-    const config = natsDiagnosticsConfig();
-    const cluster = await getNatsClusterDiagnostics(config);
-    expect(cluster.status).toBe("available");
-    expect(cluster.nodes.every((node) => node.processMemory !== null && node.processMemory > 0)).toBe(true);
-    expect(cluster.nodes.length).toBeGreaterThanOrEqual(3);
-    expect(cluster.nodes.every((node) => node.jetstreamEnabled && node.meta?.leader)).toBe(true);
-    expect(cluster.nodes.map((node) => nodeReplicaStatus(node, cluster.nodes))).toEqual(Array(cluster.nodes.length).fill("synchronized"));
-    const metrics = natsMetricSamples(cluster, { status: "not_configured", streams: [], total: null, sampledAt: new Date().toISOString() });
-    const replicaMetrics = metrics.filter((metric) => metric.name === "cloud_nats_meta_replicas_unhealthy");
-    expect(replicaMetrics).toHaveLength(cluster.nodes.length);
-    expect(replicaMetrics.every((metric) => metric.value === 0)).toBe(true);
-    const unprivileged = await getNatsClusterDiagnostics({ ...config, admin: config.application });
-    expect(unprivileged.status).toBe("unavailable");
-    expect(unprivileged.nodes).toEqual([]);
-  },
-  10_000,
-);
+// A dedicated NATS system account is not part of the shared test infrastructure.
+test.skip("dedicated system identity sees the cluster while the application identity cannot", async () => {
+  const config = natsDiagnosticsConfig();
+  const cluster = await getNatsClusterDiagnostics(config);
+  expect(cluster.status).toBe("available");
+  expect(cluster.nodes.every((node) => node.processMemory !== null && node.processMemory > 0)).toBe(true);
+  expect(cluster.nodes.length).toBeGreaterThanOrEqual(3);
+  expect(cluster.nodes.every((node) => node.jetstreamEnabled && node.meta?.leader)).toBe(true);
+  expect(cluster.nodes.map((node) => nodeReplicaStatus(node, cluster.nodes))).toEqual(Array(cluster.nodes.length).fill("synchronized"));
+  const metrics = natsMetricSamples(cluster, { status: "not_configured", streams: [], total: null, sampledAt: new Date().toISOString() });
+  const replicaMetrics = metrics.filter((metric) => metric.name === "cloud_nats_meta_replicas_unhealthy");
+  expect(replicaMetrics).toHaveLength(cluster.nodes.length);
+  expect(replicaMetrics.every((metric) => metric.value === 0)).toBe(true);
+  const unprivileged = await getNatsClusterDiagnostics({ ...config, admin: config.application });
+  expect(unprivileged.status).toBe("unavailable");
+  expect(unprivileged.nodes).toEqual([]);
+}, 10_000);
 
-const integration = process.env.NATS_DIAGNOSTICS_TEST === "1" ? test : test.skip;
+const integration = testFor("nats");
 integration(
   "real account inventory exposes only metadata and consumer counters, preserving existing streams",
   async () => {
-    const servers = (process.env.SYNC_TEST_SERVERS ?? "nats://localhost:4222").split(",");
+    const servers = natsServers();
     const namespace = `nats-diagnostics-${crypto.randomUUID()}`;
     const name = `S6_QD_${crypto.randomUUID().replaceAll("-", "")}`;
     const subject = `${namespace}.work`;

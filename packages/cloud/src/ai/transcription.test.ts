@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createAiProvider } from "./provider";
 import { parseAiModelProfiles, resolveAiSettingsStateFromRaw, selectAiModelProfile, validateAiSettingsConfiguration } from "./settings";
-import { describeTranscriptionFailure, createAiTranscriptionProvider } from "./transcription";
+import { createAiTranscriptionProvider, describeTranscriptionFailure } from "./transcription";
 import type { AiModelProfile } from "./types";
 
 const audio: AiModelProfile = {

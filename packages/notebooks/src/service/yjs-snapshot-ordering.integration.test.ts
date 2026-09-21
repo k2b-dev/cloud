@@ -1,17 +1,18 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync, type Worker } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
+import { natsServers, testFor } from "../../../../scripts/fixtures/test-infra";
 import { SNAPSHOT_JOB_CONFIG, yjsSnapshotWorker } from "./yjs-snapshot-worker";
 import { createYjsTopic } from "./yjs-sync";
 
-(process.env.NOTEBOOKS_NATS_TEST === "1" ? test : test.skip)(
+testFor("nats")(
   "snapshot ordering serializes the same note across competing workers while other notes proceed",
   async () => {
-    const connection = await connect({ servers: (process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222").split(",") });
+    const connection = await connect({ servers: natsServers() });
     const namespace = `snapshot-ordering-${crypto.randomUUID()}`;
-    const sync = createSync({ connection, namespace, application: "notebooks" });
+    const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     const workers: Worker[] = [];
     const releaseFirst = Promise.withResolvers<void>();
@@ -19,12 +20,14 @@ import { createYjsTopic } from "./yjs-sync";
       const job = sync.job<{ noteId: string; targetCursor: string; reason: "unload" }>(SNAPSHOT_JOB_CONFIG);
       const firstEntered = Promise.withResolvers<void>();
       const complete = Promise.withResolvers<void>();
+      const secondStarted = Promise.withResolvers<void>();
       const firstNote = crypto.randomUUID();
       const secondNote = crypto.randomUUID();
       const seen: string[] = [];
       const finished: string[] = [];
       const handler = async ({ input }: { input: { noteId: string } }) => {
         seen.push(input.noteId);
+        if (input.noteId === secondNote) secondStarted.resolve();
         try {
           if (seen.length === 1) {
             firstEntered.resolve();
@@ -55,9 +58,9 @@ import { createYjsTopic } from "./yjs-sync";
         targetCursor: createYjsTopic(secondNote).cursorAt(1),
         reason: "unload",
       });
-      // Give the idle worker time to pick up anything the broker offers: the
-      // other note may start, the same note's newer cursor must not.
-      await Bun.sleep(2_000);
+      // The idle worker was offered the same note's newer cursor before the
+      // other note; once it starts the other note, it must have skipped the first.
+      await secondStarted.promise;
       const manager = await jetstreamManager(connection);
       let partitionConsumers = 0;
       for await (const stream of manager.streams.list()) {

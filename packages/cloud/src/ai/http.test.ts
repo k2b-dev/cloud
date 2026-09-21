@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
-  AiCreateConversationInputSchema,
   AiConversationDraftInputSchema,
-  AiMessageRetryInputSchema,
+  AiCreateConversationInputSchema,
   AiMessageFeedbackInputSchema,
+  AiMessageRetryInputSchema,
   AiSteerInputSchema,
   AiTurnInputSchema,
   aiTurnInputToContent,
@@ -19,7 +19,7 @@ describe("AI HTTP input helpers", () => {
     ]).flat();
     content.push({ type: "text", text: " please" });
     expect(AiConversationDraftInputSchema.safeParse({ content }).success).toBe(true);
-    expect(AiConversationDraftInputSchema.safeParse({ content: content.slice(0,-1).concat(content[1]!) }).success).toBe(false);
+    expect(AiConversationDraftInputSchema.safeParse({ content: content.slice(0, -1).concat(content[1]!) }).success).toBe(false);
     expect(AiMessageRetryInputSchema.safeParse({ content: content.map(() => ({ type: "text", text: "part" })) }).success).toBe(true);
   });
   test("keeps the message when content contains only file references", () => {

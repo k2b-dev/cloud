@@ -1,4 +1,3 @@
-import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { describe, expect, it } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import type { z } from "zod";
@@ -9,6 +8,7 @@ import {
   shouldApplyEnrichedDescription,
   shouldApplyEnrichedTitle,
 } from "./enrich";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "./structured";
 import type { AiEnrichmentCandidate, AiResolvedModel, AiStoredMessage } from "./types";
 

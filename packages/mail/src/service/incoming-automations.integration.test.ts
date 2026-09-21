@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { getProcessSync } from "@k2b/cloud";
 import { mandates, toPgUuidArray } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
@@ -9,10 +9,12 @@ import {
   wakeWorkflowRunsWaitingOn,
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-workload";
 import {
   createIncomingAutomation,
   deleteIncomingAutomation,
@@ -24,13 +26,11 @@ import {
   stopIncomingAutomationBackfillRuntime,
   updateIncomingAutomation,
 } from "./incoming-automations";
-import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-workload";
 import { createMailbox } from "./mailboxes";
 import { ingestEnvelope } from "./sync-runtime";
 import { runMailWorkflow } from "./workflow-runtime";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 type TestUser = { id: string; uid: string; displayName: string };
 
 const contextFor = (user: TestUser): MailRequestContext => ({
@@ -739,9 +739,7 @@ suite("incoming automations", () => {
         name: `Ordered move ${suffix}`,
         enabled: true,
         scope,
-        steps: [
-          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: archive.short_id } },
-        ],
+        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: archive.short_id } }],
       },
     });
     if (!older.ok) throw new Error(older.error.message);

@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
 import { BoundedQueryTimeoutError } from "../service/bounded-query";
-import { createTableQueryRoutes } from "./table-query-routes";
-
 import * as querySettings from "../service/query-settings";
+import { createTableQueryRoutes } from "./table-query-routes";
 
 // Exercise real admission and runtime logic with process configuration supplied locally.
 let restoreQuerySettings: () => void;

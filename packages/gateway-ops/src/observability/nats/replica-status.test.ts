@@ -1,5 +1,5 @@
-import { natsMetricSamples } from "./metrics";
 import { expect, test } from "bun:test";
+import { natsMetricSamples } from "./metrics";
 import { nodeReplicaStatus, replicaStatus, replicaTone } from "./replica-status";
 import type { NatsNode, NatsReplica } from "./service";
 

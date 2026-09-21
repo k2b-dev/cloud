@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
 import { compileCapabilities, parseCapabilityManifest, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
-import { CommandPathSchema, commandPath, readCommand, clearCommand } from "../contracts/commands";
+import { CommandPathSchema, clearCommand, commandPath, readCommand } from "../contracts/commands";
 import { resolveCommandLink } from "./command-link";
 
 const compiled = compileCapabilities("demo", {

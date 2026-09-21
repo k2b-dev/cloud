@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect } from "bun:test";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { decodeDslResultCursor } from "./result-cursor";
 import {
@@ -13,7 +14,7 @@ import {
 } from "./sql-compiler.integration-fixtures";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("Query DSL Postgres smoke — derived saved-view sources", () => {

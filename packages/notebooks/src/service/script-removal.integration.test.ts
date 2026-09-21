@@ -1,25 +1,20 @@
 import { expect, test } from "bun:test";
 import { SQL } from "bun";
+import { requireDatabaseUrl, testFor } from "../../../../scripts/fixtures/test-infra";
 
 // This suite never migrates the configured development database. The parent
 // creates a unique database and runs the real global Bun.sql migration there.
-const enabled = process.env.NOTEBOOKS_SCRIPT_REMOVAL_DB_TEST === "1";
 const scenario = process.env.NOTEBOOKS_SCRIPT_REMOVAL_SCENARIO;
 const databasePrefix = "notebooks_script_removal_";
 
 if (!scenario) {
-  const postgresTest = enabled ? test : test.skip;
+  const postgresTest = testFor("database");
   for (const mode of ["fresh", "upgrade"] as const) {
     postgresTest(
       `script removal migration: isolated ${mode} schema`,
       async () => {
-        const source = process.env.DATABASE_URL;
-        if (!source) throw new Error("DATABASE_URL is required");
-        const url = new URL(source);
-        if (!["localhost", "127.0.0.1", "ipa_postgres"].includes(url.hostname)) {
-          throw new Error("Migration regression requires the local development Postgres server");
-        }
-        const databaseName = `${databasePrefix}${crypto.randomUUID().replaceAll("-", "")}`;
+        const url = new URL(requireDatabaseUrl());
+        const databaseName = `${databasePrefix}${crypto.randomUUID().replaceAll("-", "")}_test`;
         const databaseUrl = new URL(url);
         databaseUrl.pathname = `/${databaseName}`;
         url.pathname = "/postgres";
@@ -32,6 +27,7 @@ if (!scenario) {
             env: {
               ...process.env,
               DATABASE_URL: databaseUrl.toString(),
+              CLOUD_TEST_DATABASE_URL: databaseUrl.toString(),
               NOTEBOOKS_SCRIPT_REMOVAL_SCENARIO: mode,
               NOTEBOOKS_SCRIPT_REMOVAL_DATABASE: databaseName,
             },
@@ -61,7 +57,7 @@ if (!scenario) {
   test(`${scenario}: removes only the execution flag and is repeatable`, async () => {
     const { sql } = await import("bun");
     const databaseName = process.env.NOTEBOOKS_SCRIPT_REMOVAL_DATABASE;
-    if (!enabled || !databaseName || !new RegExp(`^${databasePrefix}[a-f0-9]{32}$`).test(databaseName)) {
+    if (!databaseName || !new RegExp(`^${databasePrefix}[a-f0-9]{32}_test$`).test(databaseName)) {
       throw new Error("Isolated migration child requires an exact generated database name");
     }
     const [database] = await sql<{ name: string }[]>`SELECT current_database() AS name`;

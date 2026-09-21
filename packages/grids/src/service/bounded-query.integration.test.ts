@@ -1,8 +1,9 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { runBoundedQuery, stopBoundedQueryPool } from "./bounded-query";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 afterAll(stopBoundedQueryPool);
 

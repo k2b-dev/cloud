@@ -10,6 +10,6 @@ describe("application readiness", () => {
     const response = appReadinessResponse("inventory");
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ready", appId: "inventory" });
+    expect(await response.json()).toEqual({ status: "ready", appId: "inventory", version: "0.0.0-local", release: "development" });
   });
 });

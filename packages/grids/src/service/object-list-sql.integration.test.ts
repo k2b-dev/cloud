@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { validateObjectList } from "../field-types/object-list";
 import { FORMULA_LIMITS } from "../formula/parser";
 import { postgresTest } from "../integration-test-utils";
@@ -11,7 +12,7 @@ import { compileObjectListRow, compileObjectListValue } from "./object-list-sql"
 import type { Field, GridRecord } from "./types";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 const rowPlan = (fields: unknown[]) =>
@@ -21,12 +22,18 @@ const rowPlan = (fields: unknown[]) =>
 
 describe("object-list SQL calculation", () => {
   postgresTest("collects list values and errors in one value pass without dropping invalid rows", async () => {
-    const field = { id: "Items1", config: { fields: [
-      { id: "Amount", name: "Amount", type: "number", required: true },
-      { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount / 2" } },
-    ] } };
+    const field = {
+      id: "Items1",
+      config: {
+        fields: [
+          { id: "Amount", name: "Amount", type: "number", required: true },
+          { id: "Total1", name: "Total", type: "number", formula: { expression: "Amount / 2" } },
+        ],
+      },
+    };
     const compiled = compileObjectListValue(field, "r", (ast, resolveField, recordAlias) =>
-      compileFormulaAstToSql(ast, { fields: [], resolveField, recordAlias }));
+      compileFormulaAstToSql(ast, { fields: [], resolveField, recordAlias }),
+    );
     if (!compiled.ok) throw new Error(compiled.error);
     const valueQuery = normalizedSqlParts(sql`SELECT ${compiled.expression.sql}`);
     expect(valueQuery.text.match(/jsonb_array_elements\(/g)).toHaveLength(1);
@@ -35,15 +42,34 @@ describe("object-list SQL calculation", () => {
       const [result] = await sql`SELECT ${compiled.expression.sql} AS value, ${compiled.expression.errorSql} AS error
         FROM (SELECT ${{ Items1: values }}::jsonb AS data, NULL::timestamptz AS finalized_at) r`;
       expect(result.error).toBe(invalid);
-      expect(result.value).toEqual(invalid ? null : [{ Amount: "2", Total1: "1" }, { Amount: "4", Total1: "2" }]);
+      expect(result.value).toEqual(
+        invalid
+          ? null
+          : [
+              { Amount: "2", Total1: "1" },
+              { Amount: "4", Total1: "2" },
+            ],
+      );
     }
   });
   test("stages select normalization once for value and cardinality checks", () => {
-    const compiled = rowPlan([{
-      id: "Choice", name: "Choice", type: "select", required: true,
-      config: { multiple: true, minSelected: 1, maxSelected: 2,
-        options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] },
-    }]);
+    const compiled = rowPlan([
+      {
+        id: "Choice",
+        name: "Choice",
+        type: "select",
+        required: true,
+        config: {
+          multiple: true,
+          minSelected: 1,
+          maxSelected: 2,
+          options: [
+            { id: "a", label: "A" },
+            { id: "b", label: "B" },
+          ],
+        },
+      },
+    ]);
     if (!compiled.ok) throw new Error(compiled.error);
     const query = normalizedSqlParts(sql`SELECT ${compiled.plan.json}, ${compiled.plan.errorSql}
       FROM (SELECT '{}'::jsonb AS data) item ${compiled.plan.joins}`);

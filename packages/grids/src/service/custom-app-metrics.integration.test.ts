@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import type { CustomAppDefinition } from "../custom-apps/contracts";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
@@ -7,7 +8,7 @@ import { migrate } from "../migrate";
 import { compile } from "./custom-apps";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") {
+  if (testInfra.database) {
     await migrateCoreWorkflows();
     await migrate();
   }

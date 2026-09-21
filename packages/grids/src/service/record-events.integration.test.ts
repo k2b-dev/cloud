@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { startGridsTestSync } from "../sync-test-utils";
 import {
   type GridsRecordEvent,
@@ -8,7 +9,7 @@ import {
   recordEventWorkQueue,
 } from "./record-events";
 
-const natsTest = process.env.GRIDS_SYNC_TEST === "1" ? test : test.skip;
+const natsTest = testFor("nats");
 
 natsTest(
   "record events replay from opaque cursors and competing workers preserve per-record order",

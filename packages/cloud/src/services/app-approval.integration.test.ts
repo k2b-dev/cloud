@@ -1,30 +1,32 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { sql, type Server } from "bun";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { type Server, sql } from "bun";
 import { Hono } from "hono";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import { createAppApprovalRoutes } from "../api/app-approval";
 import {
   APP_APPROVAL_PATH,
+  type AppDeviceProof,
   AppDevicePublicKeySchema,
+  type AppDeviceRequest,
   AppDeviceResponseSchema,
   AppDevicesPageSchema,
-  AppPairingPayloadSchema,
-  AppPairingClaimResultSchema,
-  AppPairingResultSchema,
   AppLoginStartResultSchema,
   AppLoginStatusSchema,
+  AppPairingClaimResultSchema,
+  AppPairingPayloadSchema,
+  AppPairingResultSchema,
   appDeviceProofMessage,
   appPairingProofMessage,
-  type AppDeviceProof,
-  type AppDeviceRequest,
 } from "../contracts/app-approval";
-import { createAppApprovalService, readAppApprovalConfig, type AppApprovalActor, type AppApprovalConfig } from "./app-approval";
+import { type AppApprovalActor, type AppApprovalConfig, createAppApprovalService, readAppApprovalConfig } from "./app-approval";
 import { createIdentityPublicRoutes } from "./identity";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
-import { createTestSession } from "./session/test-fixture";
+import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
 
 // Never migrate or mutate the development installation.
-const suite = process.env.CLOUD_APP_APPROVAL_TEST === "1" ? describe : describe.skip;
+const suite = suiteFor("database");
 const sign = async (key: CryptoKey, message: string) =>
   Buffer.from(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(message))).toString("base64url");
 const keys = async () => {
@@ -104,14 +106,6 @@ suite("isolated app approval protocol", () => {
     );
   };
   beforeAll(async () => {
-    const db = new URL(process.env.DATABASE_URL!);
-    if (
-      db.hostname !== "127.0.0.1" ||
-      db.port !== "55449" ||
-      db.pathname !== "/cloud_app_approval_test" ||
-      new URL(process.env.REDIS_URL!).port !== "56399"
-    )
-      throw new Error("Dedicated app-approval test DB/cache required");
     // Public, deterministic fixture material: never used outside the guarded DB.
     process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "a1".repeat(32);
     for (const name of ["auth", "settings", "audit", "logging", "app-approval"])

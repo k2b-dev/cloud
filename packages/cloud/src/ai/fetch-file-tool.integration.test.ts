@@ -1,25 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import type { RequestActor } from "../server";
-import { createCloudAiPresentTool, createCloudAiReadFileTool } from "./file-tools";
 import { runCloudAiFetchFile } from "./fetch-file-tool";
+import { createCloudAiPresentTool, createCloudAiReadFileTool } from "./file-tools";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 
-const canUseAiDatabase = async () => {
-  try {
-    const [authRow] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!authRow?.users) return false;
-    await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseAiDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("fetch_file integration", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("imports, reads, and presents one file in the same turn", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`

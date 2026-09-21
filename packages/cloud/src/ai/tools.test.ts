@@ -6,13 +6,13 @@ import { z } from "zod";
 import type { RequestActor } from "../server";
 import { aiToolAllowsAlways, aiToolApprovalScope, aiToolNeedsApproval } from "./approvals";
 import {
+  CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES,
   CloudAiCardInputSchema,
   CloudAiTextEditorInputSchema,
   CloudAiTextEditorOutputSchema,
-  CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES,
   createCloudAiCardTool,
-  createCloudAiLocalBashTool,
   createCloudAiCodeTools,
+  createCloudAiLocalBashTool,
   createConfiguredDefaultCloudAiTools,
   createDefaultCloudAiTools,
 } from "./default-tools";
@@ -184,8 +184,15 @@ describe("AI tools", () => {
       expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(tool.def.name)).toBe(true);
     }
     expect(browser.tools.map((tool) => tool.def.name)).toEqual([
-      "code_secret", "code_action", "code_run", "code_inspect", "code_interact",
-      "code_stop", "code_open", "code_present", "code_export",
+      "code_secret",
+      "code_action",
+      "code_run",
+      "code_inspect",
+      "code_interact",
+      "code_stop",
+      "code_open",
+      "code_present",
+      "code_export",
     ]);
     const presentation = browser.tools.find((tool) => tool.def.name === "code_present");
     expect(presentation?.kind).toBe("server");
@@ -194,8 +201,8 @@ describe("AI tools", () => {
     expect(browser.frontendModes.get("code_secret")).toBe("client");
     expect(browser.approvalPolicies.get("code_secret")).toBe("never");
     expect(browser.frontendModes.get("code_run")).toBeUndefined();
-    expect(browser.tools.find(tool=>tool.def.name==="code_run")?.kind).toBe("server");
-    expect(browser.tools.find(tool=>tool.def.name==="code_action")?.kind).toBe("server");
+    expect(browser.tools.find((tool) => tool.def.name === "code_run")?.kind).toBe("server");
+    expect(browser.tools.find((tool) => tool.def.name === "code_action")?.kind).toBe("server");
     expect(browser.frontendModes.get("code_open")).toBe("client");
     expect(browser.approvalPolicies.get("code_run")).toBe("never");
   });
@@ -214,9 +221,11 @@ describe("AI tools", () => {
     const withoutWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "" });
     const withWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "fc-secret" });
 
-    expect(withoutWeb.some(tool=>tool.def.name.startsWith("web_"))).toBe(false);
-    expect(withWeb.filter(tool=>tool.def.name.startsWith("web_")).map(tool=>tool.def.name)).toEqual(["web_search","web_extract"]);
-    expect(withWeb.filter(tool=>!tool.def.name.startsWith("web_")).map(tool=>tool.def.name)).toEqual(withoutWeb.map(tool=>tool.def.name));
+    expect(withoutWeb.some((tool) => tool.def.name.startsWith("web_"))).toBe(false);
+    expect(withWeb.filter((tool) => tool.def.name.startsWith("web_")).map((tool) => tool.def.name)).toEqual(["web_search", "web_extract"]);
+    expect(withWeb.filter((tool) => !tool.def.name.startsWith("web_")).map((tool) => tool.def.name)).toEqual(
+      withoutWeb.map((tool) => tool.def.name),
+    );
     expect(aiToolPromptHints(withoutWeb).map((hint) => hint.name)).toEqual([
       "todo_write",
       "survey",

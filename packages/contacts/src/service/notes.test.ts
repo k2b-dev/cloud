@@ -1,18 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { create, list, remove, update } from "./notes";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<{ notes: string | null }[]>`SELECT to_regclass('contacts.contact_notes')::text AS notes`;
-    return Boolean(row?.notes);
-  } catch {
-    return false;
-  }
-};
-
-const suite = (await canUseDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("Contacts note mutation window", () => {
   let bookId = "";

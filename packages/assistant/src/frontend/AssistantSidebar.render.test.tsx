@@ -2,8 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
+import { createConfig } from "@k2b/ssr";
 import { createComponent, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
 
@@ -46,7 +46,10 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: "2026-09-14T00:00:00.000Z",
+  archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -59,10 +62,19 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
 
 describe("Assistant sidebar", () => {
   test("shows compact progress for an unopened running chat", () => {
-    const html = renderToString(() => createComponent(AssistantSidebar, {
-      conversations: () => [{...conversation("working", "Import", null),runStatus:"running",activity:{completed:1,total:3,step:"Check totals",tool:"Read file"}}],
-      activeConversationId: () => null, live,
-    }));
+    const html = renderToString(() =>
+      createComponent(AssistantSidebar, {
+        conversations: () => [
+          {
+            ...conversation("working", "Import", null),
+            runStatus: "running",
+            activity: { completed: 1, total: 3, step: "Check totals", tool: "Read file" },
+          },
+        ],
+        activeConversationId: () => null,
+        live,
+      }),
+    );
     expect(html).toContain("Check totals");
     expect(html).toContain('role="progressbar"');
     expect(html).toContain('aria-valuenow="33"');
@@ -70,16 +82,21 @@ describe("Assistant sidebar", () => {
 
   test("selects only the visible project or Studio despite a retained chat", () => {
     for (const activeView of ["chat", "apps"] as const) {
-      const html = renderToString(() => createComponent(AssistantSidebar, {
-        conversations: () => [conversation("retained", "Retained chat", null)],
-        projects: [project], activeConversationId: () => "retained",
-        activeProjectId: project.id, activeView, live,
-      }));
+      const html = renderToString(() =>
+        createComponent(AssistantSidebar, {
+          conversations: () => [conversation("retained", "Retained chat", null)],
+          projects: [project],
+          activeConversationId: () => "retained",
+          activeProjectId: project.id,
+          activeView,
+          live,
+        }),
+      );
       const selectedRows = html.match(/<(?:a|button|div)\b[^>]*class="[^"]*\bis-active\b[^"]*"[^>]*>/g) ?? [];
       expect(selectedRows.length).toBeGreaterThan(0);
       const selectedTitle = activeView === "apps" ? "Studio" : "Projects";
-      expect(selectedRows.some(row => row.includes(`title="${selectedTitle}"`))).toBe(true);
-      expect(selectedRows.some(row => row.includes("conversation=retained"))).toBe(false);
+      expect(selectedRows.some((row) => row.includes(`title="${selectedTitle}"`))).toBe(true);
+      expect(selectedRows.some((row) => row.includes("conversation=retained"))).toBe(false);
     }
   });
 
@@ -116,10 +133,14 @@ describe("Assistant sidebar", () => {
 
   test("separates Done from pinned and Project chats and offers reopening", () => {
     const done = { ...conversation("finished", "Completed work", project.id), done: true, isDone: true, pinnedAt: null };
-    const html = renderToString(() => createComponent(AssistantSidebar, {
-      conversations: () => [done, { ...conversation("running", "Active work", null), runStatus: "running" }],
-      projects: [project], doneCount: 21, live,
-    }));
+    const html = renderToString(() =>
+      createComponent(AssistantSidebar, {
+        conversations: () => [done, { ...conversation("running", "Active work", null), runStatus: "running" }],
+        projects: [project],
+        doneCount: 21,
+        live,
+      }),
+    );
     expect(html).toContain("Reopen chat");
     expect(html).toContain("Stop the response before marking it done");
     expect(html).toContain('aria-expanded="false"');
@@ -132,9 +153,12 @@ describe("Assistant sidebar", () => {
   });
 
   test("pinned cards expose their status without a Done action or Ready filler", () => {
-    const html = renderToString(() => createComponent(AssistantSidebar, {
-      conversations: () => [{ ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" }], live,
-    }));
+    const html = renderToString(() =>
+      createComponent(AssistantSidebar, {
+        conversations: () => [{ ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" }],
+        live,
+      }),
+    );
     expect(html).toContain('aria-label="Pinned"');
     expect(html).not.toContain("Mark chat done");
     expect(html).not.toContain(">Ready<");

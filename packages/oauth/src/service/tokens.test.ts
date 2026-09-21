@@ -1,11 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { createMcpRoutes } from "@k2b/cloud/api";
 import { type AuthContext, auth, v } from "@k2b/cloud/server";
 import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
-import { createTestSession } from "@k2b/cloud/services/session/test-fixture";
+import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import "../../../../scripts/fixtures/authorization-preload";
 import adminApiRoutes from "../api";
 import type { OAuthClient } from "../contracts";
 import { ConsentDecisionSchema, completeConsent } from "../frontend/consent-action";
@@ -14,40 +16,7 @@ import oauthRoutes from "../oauth";
 import { oauthService } from "../service";
 import { oauth } from "./oauth";
 
-const canUseDatabase = async () => {
-  try {
-    const [row] = await sql<
-      {
-        users: string | null;
-        service_accounts: string | null;
-        groups: string | null;
-        user_groups: string | null;
-        group_groups: string | null;
-        signing_keys: string | null;
-      }[]
-    >`
-      SELECT
-        to_regclass('auth.users')::text AS users,
-        to_regclass('auth.service_accounts')::text AS service_accounts,
-        to_regclass('auth.groups')::text AS groups,
-        to_regclass('auth.user_groups_v2')::text AS user_groups,
-        to_regclass('auth.group_groups_v2')::text AS group_groups,
-        to_regclass('auth.signing_keys')::text AS signing_keys
-    `;
-    if (!row?.users || !row.service_accounts || !row.groups || !row.user_groups || !row.group_groups || !row.signing_keys) return false;
-    await migrate();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/** Reported as skipped rather than silently passing when the backing service is absent. */
-const databaseAvailable = await canUseDatabase();
-if (process.env.CLOUD_DATABASE_TEST === "1" && !databaseAvailable) {
-  throw new Error("Required authorization test database is unavailable or not migrated");
-}
-const suite = databaseAvailable ? describe : describe.skip;
+const suite = databaseSuite();
 
 const insertUser = async (options: { admin?: boolean } = {}) => {
   const suffix = crypto.randomUUID();
@@ -131,6 +100,9 @@ const consentActionRoutes = () =>
   );
 
 suite("OAuth resource access tokens", () => {
+  beforeAll(async () => {
+    await migrate();
+  });
   test("authorization-code access tokens resolve as user actors in Core auth", async () => {
     const userId = await insertUser();
     let clientId: string | null = null;

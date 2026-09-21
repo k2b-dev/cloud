@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect } from "bun:test";
 import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { evaluate } from "../formula/evaluator";
 import { parseFormula } from "../formula/parser";
 import { isFormulaError } from "../formula/types";
@@ -11,7 +12,7 @@ import { compileFormulaSourceToSql, type FormulaSqlType } from "./formula-sql-co
 import { requireValidCalculationSql } from "./formula-sql-values";
 import type { Field } from "./types";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 const normalize = (value: unknown, type: FormulaSqlType): unknown => {
   if (value === null || value === undefined) return null;
@@ -146,7 +147,7 @@ const expectParity = async (
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 describe("formula evaluator and PostgreSQL parity", () => {

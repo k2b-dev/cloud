@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { sql, redis } from "bun";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { redis, sql } from "bun";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { encryptValue } from "../settings/crypto";
 import { loadJwtSessionIdentity, loadJwtSessionUser } from "./user";
 
-const suite = process.env.CLOUD_CACHE_TEST === "1" && process.env.DATABASE_URL?.endsWith("/cloud_cache_test") ? describe : describe.skip;
+const suite = suiteFor("database", "valkey");
 const userId = crypto.randomUUID(),
   sid = crypto.randomUUID(),
   kid = crypto.randomUUID();

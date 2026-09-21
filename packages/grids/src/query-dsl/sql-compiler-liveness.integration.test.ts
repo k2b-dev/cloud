@@ -1,5 +1,6 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "./parser";
 import { resolveDslQueryToQueryPlan } from "./resolver";
@@ -7,7 +8,7 @@ import { compileDslAggregateQueryPlanToSql, compileDslGroupedQueryPlanToSql, com
 import { cleanupFixture, ctx, insertDslDbFixture, postgresTest } from "./sql-compiler.integration-fixtures";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 postgresTest("compiled row, aggregate, grouped and saved-view queries recheck parent liveness in every trash mode", async () => {

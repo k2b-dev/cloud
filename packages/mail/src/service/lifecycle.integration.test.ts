@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { getProcessSync, lazySync } from "@k2b/cloud";
 import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
@@ -11,6 +11,7 @@ import {
   publishWorkflowVersion,
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -56,8 +57,7 @@ import {
 import { claimFence, commitSyncBatch, executeBindingRediscovery, fetchReconcileStep, hydrateMessageBatch } from "./sync-runtime";
 import { createConversationTriageCommands } from "./triage";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 const contextFor = (user: { id: string; uid: string; admin: boolean }): MailRequestContext => ({
   actor: {

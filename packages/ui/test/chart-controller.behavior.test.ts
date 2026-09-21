@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { createChartExplorer, type ChartExplorerRequest, type ChartExplorerSnapshot } from "../src/content/chart-explorer";
+import { type ChartExplorerRequest, createChartExplorer } from "../src/content/chart-explorer";
+
 const make = (request: ChartExplorerRequest = {}, keys = ["a", "b"]) => ({
   request,
   charts: {

@@ -1,17 +1,17 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, spyOn } from "bun:test";
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync, RetentionGapError } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import * as Y from "yjs";
+import { natsServers, testFor } from "../../../../scripts/fixtures/test-infra";
 import { createYjsTopic, MalformedSyncEventError, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
 
-const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
-(enabled ? test : test.skip)(
+testFor("nats")(
   "Yjs replay uses a finite head, rejects retention gaps and preserves subsequent edits",
   async () => {
-    const connection = await connect({ servers: (process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222").split(",") });
+    const connection = await connect({ servers: natsServers() });
     const namespace = `notebook-test-${crypto.randomUUID()}`;
-    const sync = createSync({ connection, namespace, application: "notebooks" });
+    const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     const noteId = crypto.randomUUID();
     const source = new Y.Doc();

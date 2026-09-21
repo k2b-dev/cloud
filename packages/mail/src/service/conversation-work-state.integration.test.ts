@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import { sql } from "bun";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
@@ -12,8 +13,7 @@ import { hydrateMessageFromSource } from "./message-hydration";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "./message-protocol";
 import { ingestEnvelope } from "./sync-runtime";
 
-const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
-const suite = enabled ? describe : describe.skip;
+const suite = suiteFor("database", "nats");
 
 const protocolFacts = (autoSubmitted: string | null): ConnectorProtocolFacts => ({
   ...EMPTY_MESSAGE_PROTOCOL_FACTS,

@@ -1,11 +1,12 @@
 import { beforeAll, expect } from "bun:test";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { cleanupFixture, insertDslDbFixture, postgresTest } from "../query-dsl/sql-compiler.integration-fixtures";
 import { gridsService } from "../service";
 import { projectDocumentPreviewData } from "./documents-api-shared";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 });
 
 postgresTest("live document preview projects real GQL relations and does not resolve its public record ID as a UUID", async () => {

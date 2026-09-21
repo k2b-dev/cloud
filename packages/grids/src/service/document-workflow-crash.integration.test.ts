@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect } from "bun:test";
 import { closeSync, openSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +9,7 @@ import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
 import { type SQL, sql } from "bun";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { localVerificationUrl } from "../../scripts/verification";
 import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -24,7 +25,7 @@ import { insertTestWorkflow } from "./workflow-test-fixture";
 
 // This phase owns Sync and real child processes. Never run it in the standard
 // shared-process suite, or against a development/production application database.
-const crashTest = process.env.GRIDS_CRASH_TEST === "1" ? test : test.skip;
+const crashTest = testFor("database", "nats", "gotenberg");
 const budget = WORKFLOW_RUN_LEASE_MS + 5 * 90_000;
 let active: Promise<void> | undefined;
 afterEach(async () => {
@@ -120,15 +121,16 @@ crashTest(
 );
 
 async function runAcceptance() {
-  const database = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
-  if (!/^\/grids_verify_[a-f0-9]{32}$/.test(database.pathname)) throw new Error("Crash acceptance requires a grids_verify_ database");
-  localVerificationUrl("Gotenberg", process.env.GRIDS_PDF_URL);
+  const database = localVerificationUrl("PostgreSQL", testInfra.database);
+  if (!/^\/grids_verify_[a-f0-9]{16}_test$/.test(database.pathname)) throw new Error("Crash acceptance requires a grids_verify_ database");
+  const gotenberg = localVerificationUrl("Gotenberg", testInfra.gotenberg);
+  const nats = localVerificationUrl("NATS", testInfra.nats);
   await migrate();
   const reports = await mkdtemp(join(process.env.GRIDS_VERIFY_REPORTS_DIR ?? tmpdir(), "grids-crash-"));
   console.info(`Crash acceptance evidence: ${reports}`);
   const namespace = `grids-crash-${testUuid()}`;
   const connection = await connect({
-    servers: localVerificationUrl("NATS", process.env.SYNC_TEST_SERVERS).toString(),
+    servers: nats.toString(),
     ignoreClusterUpdates: true,
   });
   const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
@@ -159,7 +161,7 @@ async function runAcceptance() {
     const child = Bun.spawn(
       [process.execPath, join(import.meta.dir, "document-workflow-crash.worker.ts"), runId, checkpoint, namespace, String(receiver.port)],
       {
-        env: { ...process.env, DATABASE_URL: childUrl.toString() },
+        env: { ...process.env, DATABASE_URL: childUrl.toString(), NATS_SERVERS: nats.toString(), GOTENBERG_URL: gotenberg.toString() },
         stdout: fd,
         stderr: fd,
         ipc: (message) => {

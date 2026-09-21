@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { corePageMessages } from "./messages";
 import { adminMessages } from "./admin/messages";
-import { settingsMessages } from "./admin/settings/_components/messages";
 import { aiSettingsMessages } from "./admin/settings/_components/ai-settings-messages";
 import { aiUsageMessages } from "./admin/settings/_components/ai-usage-messages";
+import { settingsMessages } from "./admin/settings/_components/messages";
 import { authMessages } from "./auth/messages";
+import { corePageMessages } from "./messages";
 
 describe("corePageMessages", () => {
   test("keeps all Core catalogs structurally complete", () => {

@@ -26,7 +26,10 @@ const captureChartSvg = (dom: ReturnType<typeof createDomTestHarness>) => {
   Object.defineProperty(prototype, "innerHTML", {
     ...descriptor,
     set(this: Element, next: string) {
-      if (this.classList.contains("k2b-chart__svg")) { value = next; writes++; }
+      if (this.classList.contains("k2b-chart__svg")) {
+        value = next;
+        writes++;
+      }
       // happy-dom truncates SVG parsing at embedded styles; Chromium checks the complete SVG.
       descriptor.set!.call(this, next.replace(/<style>[\s\S]*?<\/style>/g, ""));
     },
@@ -108,25 +111,58 @@ describe("Chart runtime behavior", () => {
 
   test("shares exact X without redrawing SVG, preserves selection and clears only the active source", async () => {
     const { createChartCursor } = await import("../src/content/chart-cursor");
-    const cursor = createChartCursor({ formatX: x => `Time ${x}` });
+    const cursor = createChartCursor({ formatX: (x) => `Time ${x}` });
     const [series, setSeries] = createSignal([
-      { label: "Traffic", data: [{ x: 1, y: 10 }, { x: 2, y: 20 }, { x: 3, y: 30 }] },
+      {
+        label: "Traffic",
+        data: [
+          { x: 1, y: 10 },
+          { x: 2, y: 20 },
+          { x: 3, y: 30 },
+        ],
+      },
       { label: "Missing", data: [{ x: 1, y: 5 }] },
     ]);
-    const hostA = document.createElement("div"), hostB = document.createElement("div");
+    const hostA = document.createElement("div"),
+      hostB = document.createElement("div");
     dom.root.append(hostA, hostB);
     let selections = 0;
-    const disposeA = render(() => createComponent(Chart, {
-      kind: "line", interactive: true, cursor,
-      series: [{ label: "Latency", data: [{ x: 1, y: 3 }, { x: 2, y: 5 }, { x: 3, y: 4 }] }],
-      onSelect: () => selections++,
-    }), hostA);
-    const disposeB = render(() => createComponent(Chart, {
-      kind: "line", interactive: true, cursor, get series() { return series(); },
-    }), hostB);
+    const disposeA = render(
+      () =>
+        createComponent(Chart, {
+          kind: "line",
+          interactive: true,
+          cursor,
+          series: [
+            {
+              label: "Latency",
+              data: [
+                { x: 1, y: 3 },
+                { x: 2, y: 5 },
+                { x: 3, y: 4 },
+              ],
+            },
+          ],
+          onSelect: () => selections++,
+        }),
+      hostA,
+    );
+    const disposeB = render(
+      () =>
+        createComponent(Chart, {
+          kind: "line",
+          interactive: true,
+          cursor,
+          get series() {
+            return series();
+          },
+        }),
+      hostB,
+    );
     try {
       await nextTurn();
-      const a = hostA.querySelector<HTMLElement>(".k2b-chart")!, b = hostB.querySelector<HTMLElement>(".k2b-chart")!;
+      const a = hostA.querySelector<HTMLElement>(".k2b-chart")!,
+        b = hostB.querySelector<HTMLElement>(".k2b-chart")!;
       const writes = renderedSvg.writes();
       a.dispatchEvent(new dom.window.FocusEvent("focusin", { bubbles: true }) as unknown as FocusEvent);
       expect(cursor.read()?.x).toBe(3);
@@ -135,7 +171,10 @@ describe("Chart runtime behavior", () => {
       expect(selections).toBe(0);
       expect(renderedSvg.writes()).toBe(writes);
       let frame: FrameRequestCallback | undefined;
-      const raf = spyOn(globalThis, "requestAnimationFrame").mockImplementation(callback => { frame = callback; return 1; });
+      const raf = spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+        frame = callback;
+        return 1;
+      });
       const cancel = spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
       try {
         b.dispatchEvent(new dom.window.PointerEvent("pointermove", { clientX: 0, clientY: 0, bubbles: true }) as unknown as PointerEvent);
@@ -143,7 +182,10 @@ describe("Chart runtime behavior", () => {
         frame?.(0);
         expect(cursor.read()?.x).toBe(1);
         expect(a.hasAttribute("aria-describedby")).toBe(true);
-      } finally { raf.mockRestore(); cancel.mockRestore(); }
+      } finally {
+        raf.mockRestore();
+        cancel.mockRestore();
+      }
       b.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Home", bubbles: true }) as unknown as KeyboardEvent);
       expect(cursor.read()?.x).toBe(1);
       a.dispatchEvent(new dom.window.FocusEvent("focusout", { bubbles: true }) as unknown as FocusEvent);
@@ -157,7 +199,12 @@ describe("Chart runtime behavior", () => {
       await nextTurn();
       expect(b.hasAttribute("aria-describedby")).toBe(false);
       expect(cursor.read()?.x).toBe(3);
-    } finally { disposeA(); disposeB(); hostA.remove(); hostB.remove(); }
+    } finally {
+      disposeA();
+      disposeB();
+      hostA.remove();
+      hostB.remove();
+    }
     expect(cursor.read()).toBeNull();
   });
 

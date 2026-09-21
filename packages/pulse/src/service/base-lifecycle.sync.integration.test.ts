@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 
-const syncTest = process.env.PULSE_SYNC_NATS_TEST === "1" ? test : test.skip;
+const syncTest = testFor("database", "nats");
 
 syncTest(
   "a coalesced deletion runs through NATS and keeps one observed span with its summary",

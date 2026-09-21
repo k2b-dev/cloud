@@ -6,10 +6,19 @@ afterEach(() => mock.restore());
 
 test("explicit Skills respect tool scope, deduplicate and fail clearly after revocation", async () => {
   const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
-  const load = spyOn(aiSkills, "loadForTurn").mockResolvedValue({ name: "invoice", description: "Invoice", revision: 2, instructions: "Read rules.", files: [], loadedAt: "2026-09-16" });
+  const load = spyOn(aiSkills, "loadForTurn").mockResolvedValue({
+    name: "invoice",
+    description: "Invoice",
+    revision: 2,
+    instructions: "Read rules.",
+    files: [],
+    loadedAt: "2026-09-16",
+  });
   await expect(loadSelectedAiSkills(["Sk2345"], "turn", subject, false)).rejects.toThrow("tool scope");
   expect(load).not.toHaveBeenCalled();
-  expect(await loadSelectedAiSkills(["Sk2345", "Sk2345"], "turn", subject, true)).toEqual([{ name: "invoice", revision: 2, instructions: "Read rules.", files: [] }]);
+  expect(await loadSelectedAiSkills(["Sk2345", "Sk2345"], "turn", subject, true)).toEqual([
+    { name: "invoice", revision: 2, instructions: "Read rules.", files: [] },
+  ]);
   expect(load).toHaveBeenCalledTimes(1);
   load.mockResolvedValue(null);
   await expect(loadSelectedAiSkills(["Sk2345"], "next-turn", subject, true)).rejects.toThrow("revoked");
@@ -103,9 +112,10 @@ describe("load_skill", () => {
 describe("search_skills", () => {
   test("rechecks access and returns only enabled matching Skills", async () => {
     const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
-    spyOn(aiSkills, "search").mockResolvedValue({ skills: [
-      { name: "cloud-mail", description: "Email and inbox workflows.", enabled: true },
-    ] as never, more: false });
+    spyOn(aiSkills, "search").mockResolvedValue({
+      skills: [{ name: "cloud-mail", description: "Email and inbox workflows.", enabled: true }] as never,
+      more: false,
+    });
     const tool = createCloudAiSearchSkillsTool(subject);
     if (tool.location !== "server") throw new Error("Expected server tool");
 

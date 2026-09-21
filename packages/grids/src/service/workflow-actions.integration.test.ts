@@ -8,6 +8,7 @@
  * plan, the run and the grants are real, the run is carried by the worker's own
  * ports, and the assertions are about rows.
  */
+
 import { beforeAll, describe, expect, spyOn } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
@@ -18,6 +19,7 @@ import { type SQL, sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
+import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { createCustomAppsApi } from "../api/custom-apps";
 import { createDocumentResourceRoutes } from "../api/document-resource-routes";
 import { createWorkflowDocumentConfirmationRoutes, FinancialExportPreviewSchema } from "../api/workflow-document-confirmations";
@@ -47,8 +49,8 @@ import {
   finalize as finalizeRecord,
   setPolicy as setFinalizationPolicy,
 } from "./record-finalization";
-import { listReferencedBy } from "./referenced-by";
 import * as recordReads from "./records";
+import { listReferencedBy } from "./referenced-by";
 import { canAccessWorkflowRunTable, canExecuteRun, documentActorForScope } from "./workflow-action-scope";
 import { loadWorkflowCatalog } from "./workflow-catalog";
 import { captureWorkflowDocumentSource, captureWorkflowRecordSource } from "./workflow-document-sources";
@@ -355,7 +357,7 @@ const reopenForReplay = async (runId: string): Promise<void> => {
 };
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (testInfra.database) await migrate();
 }, 30_000);
 
 describe("declared Grids workflow actions", () => {

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { createServer, connect, type Socket } from "node:net";
+import { connect, createServer, type Socket } from "node:net";
 import { RedisClient, sql } from "bun";
 
-const target = new URL(process.env.REDIS_URL!);
-assert.equal(target.hostname, "127.0.0.1");
-assert.equal(new URL(process.env.DATABASE_URL!).pathname, "/cloud_cache_test");
-assert.equal(process.env.CLOUD_CACHE_TEST, "1");
+// Runs in its own process (see outage.integration.test.ts) because the request
+// cache client is a module singleton that must connect through the proxy below.
+const target = new URL(process.env.VALKEY_URL ?? "");
+assert(new URL(process.env.DATABASE_URL ?? "").pathname.endsWith("_test"), "DATABASE_URL must be a test database");
 const sockets = new Set<Socket>();
 const proxy = createServer((client) => {
   const upstream = connect(Number(target.port), target.hostname);
@@ -34,15 +34,15 @@ const address = proxy.address();
 assert(address && typeof address !== "string");
 process.env.REDIS_URL = process.env.VALKEY_URL = `redis://127.0.0.1:${address.port}`;
 const baseline = new RedisClient(process.env.REDIS_URL);
-const { requestCacheRedis } = await import("../../packages/cloud/src/services/request-cache-redis");
-const { readKey } = await import("../../packages/cloud/src/services/settings/store");
-const { encryptValue } = await import("../../packages/cloud/src/services/settings/crypto");
-const { announcements } = await import("../../packages/cloud/src/services/announcements");
-const { readRailSnapshot } = await import("../../packages/cloud/src/services/rail-snapshot");
-const { buildProjectedUser } = await import("../../packages/cloud/src/services/session/user");
+const { requestCacheRedis } = await import("../../../src/services/request-cache-redis");
+const { readKey } = await import("../../../src/services/settings/store");
+const { encryptValue } = await import("../../../src/services/settings/crypto");
+const { announcements } = await import("../../../src/services/announcements");
+const { readRailSnapshot } = await import("../../../src/services/rail-snapshot");
+const { buildProjectedUser } = await import("../../../src/services/session/user");
 const userId = crypto.randomUUID();
 const user = buildProjectedUser({ id: userId, uid: userId, provider: "local", profile: "user", rail_cache_version: "outage-test" });
-const { migrate } = await import("../../packages/core/src/migrate/core/settings");
+const { migrate } = await import("../../../../core/src/migrate/core/settings");
 const cache = await requestCacheRedis();
 const key = `test.outage.${crypto.randomUUID()}`;
 const state = { seenAnnouncementVersion: 0, dismissedBannerVersions: [] };

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createAnalyticsUi } from "./analytics-ui";
-import { UiNode, RuntimeEvent, WorkerMessage } from "./protocol";
 import { validateTree } from "./host";
+import { RuntimeEvent, UiNode, WorkerMessage } from "./protocol";
 
 test("UI transport accepts only the current node and event contracts", () => {
   expect(WorkerMessage.safeParse({ type: "ui", nodes: [{ id: "text", kind: "text", label: "Old" }] }).success).toBe(false);

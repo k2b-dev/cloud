@@ -23,5 +23,4 @@ describe("Assistant Skill catalog", () => {
     expect(selected.skills.some((skill) => skill.description.endsWith("…"))).toBeFalse();
     expect(aiSkillCatalogChars(selected.skills)).toBeLessThanOrEqual(AI_SKILL_CATALOG_MAX_CHARS);
   });
-
 });

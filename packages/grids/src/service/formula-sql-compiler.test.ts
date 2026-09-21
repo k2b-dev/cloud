@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { FORMULA_LIMITS, parseFormula } from "../formula/parser";
 import { normalizedSqlParts } from "../sql-test-utils";
 import { compileFormulaPredicateAstToSql, compileFormulaSourceToSql } from "./formula-sql-compiler";
@@ -388,7 +389,7 @@ describe("compileFormulaSourceToSql", () => {
   });
 });
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 describe("compileFormulaSourceToSql postgres smoke", () => {
   postgresTest("runs decimal-safe arithmetic in Postgres numeric", async () => {

@@ -6,14 +6,18 @@ import type { DirectoryResult, EditorLaunch } from "../src/contracts";
 
 const requests: Array<{ kind: string; input: unknown; resolve: (response: Response) => void }> = [];
 if (!isServer) {
-  const request = (kind: string) => (input: unknown) => new Promise<Response>((resolve) => requests.push({ kind, input: structuredClone(input), resolve }));
+  const request = (kind: string) => (input: unknown) =>
+    new Promise<Response>((resolve) => requests.push({ kind, input: structuredClone(input), resolve }));
   mock.module("../src/api/client", () => ({
     apiClient: {
       bases: {
         ":baseId": {
           documents: { $post: request("documents") },
           thumbnail: { $post: request("thumbnail") },
-          entry: { $get: async (input: { query: { path: string } }) => Response.json({ base: directory.base, entry: directory.items.find((item) => item.path === input.query.path) }) },
+          entry: {
+            $get: async (input: { query: { path: string } }) =>
+              Response.json({ base: directory.base, entry: directory.items.find((item) => item.path === input.query.path) }),
+          },
         },
       },
     },
@@ -23,7 +27,16 @@ const flush = async () => {
   for (let index = 0; index < 16; index++) await Promise.resolve();
 };
 const directory: DirectoryResult = {
-  base: { id: "cloud:groups:demo", area: "cloud", kind: "groups", name: "Demo", status: "existing", reason: null, indexEnabled: true, versioningEnabled: true },
+  base: {
+    id: "cloud:groups:demo",
+    area: "cloud",
+    kind: "groups",
+    name: "Demo",
+    status: "existing",
+    reason: null,
+    indexEnabled: true,
+    versioningEnabled: true,
+  },
   path: "",
   items: [
     { name: "Minutes.odt", path: "Minutes.odt", directory: false, size: 755, modified: "2026-09-19T10:00:00Z" },
@@ -55,7 +68,13 @@ describe("Files v2 office editing", () => {
     const dom = createDomTestHarness();
     const { default: Browser } = await import("../src/frontend/Browser");
     const edited: string[] = [];
-    const props = { directory, bases: [directory.base], cloudUrl: "https://cloud.test", onNavigate: async () => {}, onEdit: (entry: { path: string }) => edited.push(entry.path) };
+    const props = {
+      directory,
+      bases: [directory.base],
+      cloudUrl: "https://cloud.test",
+      onNavigate: async () => {},
+      onEdit: (entry: { path: string }) => edited.push(entry.path),
+    };
     let dispose = render(() => createComponent(Browser, { ...props, editor: null }), dom.root);
     cleanup = () => {
       dispose();
@@ -78,7 +97,9 @@ describe("Files v2 office editing", () => {
     expect(edited).toEqual(["Minutes.odt"]);
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
     await flush();
-    const item = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent?.includes("New spreadsheet"))!;
+    const item = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) =>
+      node.textContent?.includes("New spreadsheet"),
+    )!;
     item.click();
     await flush();
     const dialog = dom.document.querySelector("dialog")!;
@@ -90,31 +111,50 @@ describe("Files v2 office editing", () => {
     await flush();
     expect(requests.map((request) => request.kind)).toEqual(["documents"]);
     expect(requests[0]!.input).toEqual({ param: { baseId: directory.base.id }, json: { path: "Budget", kind: "spreadsheet" } });
-    requests[0]!.resolve(Response.json({ base: directory.base, entry: { name: "Budget.ods", path: "Budget.ods", directory: false, size: 808, modified: "2026-09-19T11:00:00Z" } }));
+    requests[0]!.resolve(
+      Response.json({
+        base: directory.base,
+        entry: { name: "Budget.ods", path: "Budget.ods", directory: false, size: 808, modified: "2026-09-19T11:00:00Z" },
+      }),
+    );
     await flush();
     expect(edited).toEqual(["Minutes.odt", "Budget.ods"]);
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
     await flush();
-    [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node => node.textContent?.includes("New spreadsheet"))!.click();
+    [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((node) => node.textContent?.includes("New spreadsheet"))!
+      .click();
     await flush();
     const delayedDialog = dom.document.querySelector("dialog")!;
     const delayedName = delayedDialog.querySelector<HTMLInputElement>("input")!;
     delayedName.value = "Delayed";
-    delayedName.dispatchEvent(new Event("input", {bubbles:true}));
-    delayedDialog.querySelector("form")!.dispatchEvent(new Event("submit", {bubbles:true,cancelable:true}));
+    delayedName.dispatchEvent(new Event("input", { bubbles: true }));
+    delayedDialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await flush();
     dispose(); // Leaving the browser must not let a late response navigate the new location.
-    requests[1]!.resolve(Response.json({base:directory.base,entry:{...directory.items[0]!,name:"Delayed.ods",path:"Delayed.ods"}}));
+    requests[1]!.resolve(
+      Response.json({ base: directory.base, entry: { ...directory.items[0]!, name: "Delayed.ods", path: "Delayed.ods" } }),
+    );
     await flush();
     expect(edited).toEqual(["Minutes.odt", "Budget.ods"]);
-
   });
 
   test("office and PDF thumbnails remain icons without network requests", async () => {
     const dom = createDomTestHarness();
     const { default: FileThumbnail } = await import("../src/frontend/FileThumbnail");
-    const dispose = render(() => <><FileThumbnail baseId="test" entry={directory.items[0]!} large /><FileThumbnail baseId="test" entry={{ ...directory.items[0]!, name: "Report.pdf", path: "Report.pdf" }} large /></>, dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    const dispose = render(
+      () => (
+        <>
+          <FileThumbnail baseId="test" entry={directory.items[0]!} large />
+          <FileThumbnail baseId="test" entry={{ ...directory.items[0]!, name: "Report.pdf", path: "Report.pdf" }} large />
+        </>
+      ),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     expect(dom.root.querySelectorAll(".filesv2-thumbnail i")).toHaveLength(2);
     expect(dom.root.querySelectorAll("img")).toHaveLength(0);
@@ -146,9 +186,16 @@ describe("Files v2 office editing", () => {
     expect(dom.root.textContent).toContain("Loading editor");
     const frame = dom.root.querySelector("iframe")!;
     const posted: string[] = [];
-    if (frame.contentWindow) frame.contentWindow.postMessage = ((message: string) => posted.push(JSON.parse(message).MessageId)) as typeof postMessage;
+    if (frame.contentWindow)
+      frame.contentWindow.postMessage = ((message: string) => posted.push(JSON.parse(message).MessageId)) as typeof postMessage;
     const message = (payload: Record<string, unknown>) =>
-      dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data: JSON.stringify(payload), source: frame.contentWindow, origin: new URL(launch.action).origin }));
+      dom.window.dispatchEvent(
+        new dom.window.MessageEvent("message", {
+          data: JSON.stringify(payload),
+          source: frame.contentWindow,
+          origin: new URL(launch.action).origin,
+        }),
+      );
     message({ MessageId: "App_LoadingStatus", Values: { Status: "Frame_Ready" } });
     message({ MessageId: "App_LoadingStatus", Values: { Status: "Document_Loaded" } });
     await flush();
@@ -163,8 +210,21 @@ describe("Files v2 office editing", () => {
     dom.window.HTMLFormElement.prototype.submit = () => {};
     const { default: Editor } = await import("../src/frontend/Editor");
     const [current, setCurrent] = createSignal<EditorLaunch>({ ...launch, managed: false });
-    const dispose = render(() => createComponent(Editor, { get launch() { return current(); }, onBack: () => {} }), dom.root);
-    cleanup = () => { dispose(); dom.window.HTMLFormElement.prototype.submit = submit; dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(Editor, {
+          get launch() {
+            return current();
+          },
+          onBack: () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.window.HTMLFormElement.prototype.submit = submit;
+      dom.cleanup();
+    };
     await flush();
     expect(dom.root.textContent).toContain("Avoid editing this file in other applications at the same time");
     setCurrent({ ...launch, managed: true });

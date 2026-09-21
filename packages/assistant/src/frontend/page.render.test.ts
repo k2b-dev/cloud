@@ -2,13 +2,13 @@ import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import * as ai from "@k2b/cloud/ai";
 import * as live from "@k2b/cloud/ai/live";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
+import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import * as projectContext from "../project-context";
 import * as sidebar from "../sidebar";
@@ -101,7 +101,8 @@ test("missing or revoked selected project returns opaque HTML404 despite a stale
   spies.push(
     spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
       projects: [{ ...project, id: project.shortId }],
-      doneCount: 0, conversations: [],
+      doneCount: 0,
+      conversations: [],
     }),
   );
   spies.push(spyOn(ai.aiProjects, "getByShortId").mockResolvedValue(null));
@@ -133,7 +134,8 @@ test("authorized project omitted by sidebar cap remains in the rendered workspac
       knowledge: [],
       files: [],
       references: [],
-      skills: { items: [], page: 1, hasNext: false }, apps: { items: [], page: 1, hasNext: false },
+      skills: { items: [], page: 1, hasNext: false },
+      apps: { items: [], page: 1, hasNext: false },
     }),
   );
   const response = await request();

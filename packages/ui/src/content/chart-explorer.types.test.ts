@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createChartExplorer, type ChartExplorerSnapshot, type ChartExplorerData } from "./chart-explorer";
+import { type ChartExplorerData, type ChartExplorerSnapshot, createChartExplorer } from "./chart-explorer";
 import { prepareChartSnapshot } from "./chart-snapshot";
 
 /** Checked by tsc; never starts a controller outside a Solid owner. */

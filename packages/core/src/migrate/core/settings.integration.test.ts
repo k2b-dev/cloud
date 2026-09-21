@@ -1,26 +1,24 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { accountRequestsEnabled } from "@k2b/cloud/services/accounts/request-policy";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { SQL } from "bun";
+import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "./settings";
 
-// Explicit opt-in and a fixed, dedicated test database. Never use the app DB.
-const requested = process.env.CLOUD_ADMIN_SLICE_TEST === "1";
-const suite = requested ? describe : describe.skip;
+const suite = databaseSuite();
 suite("account request opt-in migration", () => {
   let db: SQL;
-  beforeAll(() => {
-    const url = new URL(process.env.DATABASE_URL!);
-    if (url.hostname !== "127.0.0.1" || url.port !== "55459" || url.pathname !== "/cloud_admin_slice_test") {
-      throw new Error("Dedicated account-administration test database required");
-    }
-    db = new SQL(url.toString());
+  let disposable: Awaited<ReturnType<typeof useFreshDatabase>>;
+  beforeAll(async () => {
+    disposable = await useFreshDatabase("settings_migration");
+    db = new SQL(disposable.url);
   });
   beforeEach(async () => {
     await db`DROP SCHEMA IF EXISTS settings CASCADE`.simple();
   });
   afterAll(async () => {
     await db?.close();
+    await disposable?.drop();
   });
   const oldInstallation = async () => {
     await db`CREATE SCHEMA settings`.simple();

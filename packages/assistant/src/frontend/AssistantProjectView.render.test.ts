@@ -2,8 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { AiConversation, AiConversationPage, AiProject } from "@k2b/cloud/ai";
+import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 
@@ -52,10 +52,33 @@ const page = {
   hasNext: false,
 } as AiConversationPage;
 
-const initialApps = { items: [{ id: "appSSR1", title: "Project bank reconciliation", icon: "ti ti-app-window", published: true, canManage: true, linked: true }], page: 1, hasNext: false };
+const initialApps = {
+  items: [
+    { id: "appSSR1", title: "Project bank reconciliation", icon: "ti ti-app-window", published: true, canManage: true, linked: true },
+  ],
+  page: 1,
+  hasNext: false,
+};
 const projectContext = {
   apps: initialApps,
-              skills: {items:[{id:"skill123",shortId:"skill123",name:"project-skill",description:"Reconcile statements",permission:"read" as const,enabled:true,revision:1,referenceCount:0,createdAt:"",updatedAt:""}],page:1,hasNext:false},
+  skills: {
+    items: [
+      {
+        id: "skill123",
+        shortId: "skill123",
+        name: "project-skill",
+        description: "Reconcile statements",
+        permission: "read" as const,
+        enabled: true,
+        revision: 1,
+        referenceCount: 0,
+        createdAt: "",
+        updatedAt: "",
+      },
+    ],
+    page: 1,
+    hasNext: false,
+  },
   projectId: project.id,
   knowledge: [
     {
@@ -112,18 +135,37 @@ describe("Assistant Project view", () => {
             initialPage: page,
             initialContext: {
               apps: initialApps,
-              skills: {items:[{id:"skill123",shortId:"skill123",name:"project-skill",description:"Reconcile statements",permission:"read" as const,enabled:true,revision:1,referenceCount:0,createdAt:"",updatedAt:""}],page:1,hasNext:false},
+              skills: {
+                items: [
+                  {
+                    id: "skill123",
+                    shortId: "skill123",
+                    name: "project-skill",
+                    description: "Reconcile statements",
+                    permission: "read" as const,
+                    enabled: true,
+                    revision: 1,
+                    referenceCount: 0,
+                    createdAt: "",
+                    updatedAt: "",
+                  },
+                ],
+                page: 1,
+                hasNext: false,
+              },
               projectId: project.id,
               knowledge: [],
               files: [],
-              references: [{
-                id: "mail-ref",
-                shortId: "MaR123",
-                projectId: project.id,
-                ref: { type: "mail.conversation", id: "MaL123" },
-                label: "Supplier invoice September",
-                createdAt: "2026-09-15T10:00:00.000Z",
-              }],
+              references: [
+                {
+                  id: "mail-ref",
+                  shortId: "MaR123",
+                  projectId: project.id,
+                  ref: { type: "mail.conversation", id: "MaL123" },
+                  label: "Supplier invoice September",
+                  createdAt: "2026-09-15T10:00:00.000Z",
+                },
+              ],
             },
             onOpenConversation: async () => true,
             get composer() {

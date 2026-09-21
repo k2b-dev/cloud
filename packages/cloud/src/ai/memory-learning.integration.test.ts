@@ -1,25 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
-import { aiMemoryLearningRuns } from "./memory-learning-runs";
-import { listAiPendingWorkflowPatterns, recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiMemories } from "./memories";
 import { learnAiMemoriesFromPrivateChats, listAiMemoryLearningCandidates } from "./memory-learning";
+import { aiMemoryLearningRuns } from "./memory-learning-runs";
+import { listAiPendingWorkflowPatterns, recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { migrateCloudAi } from "./migrate";
 import { createAiShortId } from "./short-id";
 import type { AiResolvedModel } from "./types";
 
-const canUseAiDatabase = async () => {
-  try {
-    const [authRow] = await sql<{ users: string | null }[]>`SELECT to_regclass('auth.users')::text AS users`;
-    if (!authRow?.users) return false;
+databaseSuite()("AI memory learning (integration)", () => {
+  beforeAll(async () => {
     await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-describe.skipIf(!(await canUseAiDatabase()))("AI memory learning (integration)", () => {
+  });
   test("stores bounded learned memories with conversation provenance", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`
@@ -265,13 +258,15 @@ describe.skipIf(!(await canUseAiDatabase()))("AI memory learning (integration)",
       const summary = await learnAiMemoriesFromPrivateChats({
         deps: {
           resolveModel: async () => ({ profile: { id: "test-model" } }) as AiResolvedModel,
-          listCandidates: async () => [{
-            conversationId: conversation!.id,
-            turnId: turn!.id,
-            userId: user!.id,
-            completedAsOf: turn!.completed_as_of,
-            failCount: 0,
-          }],
+          listCandidates: async () => [
+            {
+              conversationId: conversation!.id,
+              turnId: turn!.id,
+              userId: user!.id,
+              completedAsOf: turn!.completed_as_of,
+              failCount: 0,
+            },
+          ],
           listWorkflowPatterns: async () => [],
           monthlyTokenBudget: 1,
           readMonthlyAccountedTokens: async () => 0,

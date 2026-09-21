@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { Field } from "../service/types";
 import { hydrateDslViewQueries } from "../service/gql-resolver-context";
+import type { Field } from "../service/types";
 import { buildDslQueryIntelligence } from "./intelligence";
 import { parseGridsQueryDsl } from "./parser";
-import { resolveDslQueryToQueryPlan } from "./resolver";
 import type { DslResolverContext, DslTableSource, DslViewSource } from "./resolver";
+import { resolveDslQueryToQueryPlan } from "./resolver";
 
 const table = (id: string, shortId: string, name: string): DslTableSource => ({
   kind: "table",
@@ -99,18 +99,22 @@ test("summary completions include hydrated formula aggregates but omit inaccessi
   // Hydration validates persisted RecordQuery IDs, unlike token-only fixtures.
   const source = table("00000000-0000-4000-8000-000000000001", "Orders", "Orders");
   const target = table("00000000-0000-4000-8000-000000000002", "Custmr", "Customers");
-  const context = ctx({ tables: [source, target], fieldsByTableId: {
-    [source.id]: [field(source.id, "00000000-0000-4000-8000-000000000003", "Amount", "Amount", "number"),
-      field(source.id, "00000000-0000-4000-8000-000000000004", "Link01", "Customer", "relation", { targetTableId: target.id })],
-    [target.id]: [],
-  } });
+  const context = ctx({
+    tables: [source, target],
+    fieldsByTableId: {
+      [source.id]: [
+        field(source.id, "00000000-0000-4000-8000-000000000003", "Amount", "Amount", "number"),
+        field(source.id, "00000000-0000-4000-8000-000000000004", "Link01", "Customer", "relation", { targetTableId: target.id }),
+      ],
+      [target.id]: [],
+    },
+  });
   const querySource = "from table Orders\ngroup by Customer\naggregate sum(formula(Amount * 2)) as doubled";
   const parsed = parseGridsQueryDsl(querySource);
   if (!parsed.ok) throw new Error(JSON.stringify(parsed));
   const resolved = resolveDslQueryToQueryPlan(parsed.ast, context);
   if (!resolved.ok) throw new Error(JSON.stringify(resolved));
-  context.views = hydrateDslViewQueries({ ...context, views: [{ ...revenueView,
-    tableId: source.id, source: querySource, query: {} }] });
+  context.views = hydrateDslViewQueries({ ...context, views: [{ ...revenueView, tableId: source.id, source: querySource, query: {} }] });
   expect(context.views).toHaveLength(1);
   const query = 'from table Customers as parent\nleft join view "Revenue by customer" as paid on paid.Customer = parent.id\nselect paid.';
   expect(labels(query, context)).toContain("doubled");

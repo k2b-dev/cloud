@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect } from "bun:test";
 import { sql } from "bun";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { CustomAppCapabilitiesSchema, CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { migrate } from "../migrate";
 import { getBaseNavigation } from "../service/base-navigation";
@@ -11,7 +12,7 @@ import { get as getTable } from "../service/tables";
 import { instantiate } from "../service/templates";
 import { deleteTestWorkflowScope } from "../service/workflow-test-fixture";
 
-const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const postgresTest = testFor("database");
 
 type CustomAppRow = { published_definition: unknown; published_capabilities: unknown };
 type DocumentTemplateRow = { id: string; table_id: string; name: string };

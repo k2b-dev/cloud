@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { emptyProjection, messagesWithPendingSend, reconcileActiveTurnActions, reduceProjection, visibleMessages } from "./client/projection";
+import {
+  emptyProjection,
+  messagesWithPendingSend,
+  reconcileActiveTurnActions,
+  reduceProjection,
+  visibleMessages,
+} from "./client/projection";
 import type { AiStreamSseEvent, AiTurnBlock } from "./protocol";
 import { buildBlocksFromMessages, messageBlockId, toolBlockId } from "./protocol";
 import type { AiConversation, AiStoredMessage } from "./types";
@@ -13,7 +19,10 @@ const conversation: AiConversation = {
   descriptionSource: "default",
   keywords: [],
   pinnedAt: null,
-  done: null, isDone: false, lastUsedAt: "2026-09-14T00:00:00.000Z", archivedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: "2026-09-14T00:00:00.000Z",
+  archivedAt: null,
   runStatus: "idle",
   runError: null,
   unreadCompletion: false,
@@ -150,13 +159,19 @@ describe("projection reducer", () => {
       wire({ attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p", blocks: [streamed] }),
     ]);
     const snapshot = (seq: number, blocks: AiTurnBlock[]): AiStreamSseEvent => ({
-      type: "state", conversation, messages: [], activeTurn: { turnId: "turn-1", attempt: 1, seq, blocks, status: "running", modelProfileId: "m", createdAt: conversation.createdAt },
+      type: "state",
+      conversation,
+      messages: [],
+      activeTurn: { turnId: "turn-1", attempt: 1, seq, blocks, status: "running", modelProfileId: "m", createdAt: conversation.createdAt },
     });
     state = reduceProjection(state, snapshot(4, [persisted]));
     expect(state.activeTurn?.blocks).toEqual([persisted]);
     state = reduceProjection(state, snapshot(2, [streamed]));
     expect(state.activeTurn?.blocks).toEqual([persisted]);
-    state = reduceProjection(state, wire({ attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p", blocks: [streamed] }));
+    state = reduceProjection(
+      state,
+      wire({ attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p", blocks: [streamed] }),
+    );
     expect(state.activeTurn?.blocks).toEqual([persisted]);
   });
 
@@ -567,9 +582,32 @@ describe("buildBlocksFromMessages via timeline shape", () => {
 });
 
 test("a saved model round updates usage before loop completion without duplicating its visible blocks", () => {
-  const active = reduceProjection(emptyProjection(conversation), { v: 1, type: "turn_started", conversationId: conversation.id, turnId: "loop", attempt: 1, seq: 1, modelProfileId: "model", providerModel: "provider" });
-  const message = storedMessage({ id: "round", seq: 2, loopId: "loop", message: { role: "assistant", content: [{ type: "text", text: "Working" }] }, usage: { input: 100, output: 10, total: 110 } });
-  const event = { v: 1 as const, type: "message_saved" as const, conversationId: conversation.id, turnId: "loop", attempt: 1, seq: 2, message };
+  const active = reduceProjection(emptyProjection(conversation), {
+    v: 1,
+    type: "turn_started",
+    conversationId: conversation.id,
+    turnId: "loop",
+    attempt: 1,
+    seq: 1,
+    modelProfileId: "model",
+    providerModel: "provider",
+  });
+  const message = storedMessage({
+    id: "round",
+    seq: 2,
+    loopId: "loop",
+    message: { role: "assistant", content: [{ type: "text", text: "Working" }] },
+    usage: { input: 100, output: 10, total: 110 },
+  });
+  const event = {
+    v: 1 as const,
+    type: "message_saved" as const,
+    conversationId: conversation.id,
+    turnId: "loop",
+    attempt: 1,
+    seq: 2,
+    message,
+  };
   const next = reduceProjection(active, event);
   expect(next.messages[0]?.usage?.total).toBe(110);
   expect(next.activeTurn?.turnId).toBe("loop");

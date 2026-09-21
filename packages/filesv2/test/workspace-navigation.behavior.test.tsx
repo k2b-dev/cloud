@@ -6,9 +6,15 @@ import { createWorkspaceState, type WorkspaceSnapshot } from "../src/frontend/wo
 
 const apiRequests: Array<{ kind: string; input?: unknown; signal?: AbortSignal; resolve: (response: Response) => void }> = [];
 if (!isServer) {
-  const request = (kind: string) => (_input?: unknown, options?: { init?: { signal?: AbortSignal } }) => new Promise<Response>((resolve) => apiRequests.push({ kind, input: _input, signal: options?.init?.signal, resolve }));
+  const request = (kind: string) => (_input?: unknown, options?: { init?: { signal?: AbortSignal } }) =>
+    new Promise<Response>((resolve) => apiRequests.push({ kind, input: _input, signal: options?.init?.signal, resolve }));
   mock.module("../src/api/client", () => ({
-    apiClient: { shares: { $get: request("shares") }, recent: { $get: request("recent") }, favorites: { $get: request("favorites") }, bases: { $get: request("bases"), ":baseId": { entries: { $get: request("entries") } } } },
+    apiClient: {
+      shares: { $get: request("shares") },
+      recent: { $get: request("recent") },
+      favorites: { $get: request("favorites") },
+      bases: { $get: request("bases"), ":baseId": { entries: { $get: request("entries") } } },
+    },
   }));
 }
 
@@ -250,8 +256,22 @@ describe("Files v2 progressive navigation", () => {
     const { MarksMenu, openMarksDialog } = await import("../src/frontend/MarksMenu");
     const [open, setOpen] = createSignal(false);
     const opened: string[] = [];
-    const dispose = render(() => createComponent(MarksMenu, { kind: "recent", get open() { return open(); }, close: () => setOpen(false), onOpen: entry => opened.push(entry.entry.path) }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(MarksMenu, {
+          kind: "recent",
+          get open() {
+            return open();
+          },
+          close: () => setOpen(false),
+          onOpen: (entry) => opened.push(entry.entry.path),
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     expect(apiRequests).toHaveLength(0);
     setOpen(true);
@@ -262,7 +282,11 @@ describe("Files v2 progressive navigation", () => {
     expect(apiRequests[0]!.signal?.aborted).toBe(true);
     setOpen(true);
     await flush();
-    const make = (path: string, at: string) => ({ base: { id: "home", name: "Home", area: "cloud" }, entry: { path, name: "Notes", directory: false, size: 1, modified: at }, markedAt: at });
+    const make = (path: string, at: string) => ({
+      base: { id: "home", name: "Home", area: "cloud" },
+      entry: { path, name: "Notes", directory: false, size: 1, modified: at },
+      markedAt: at,
+    });
     apiRequests[1]!.resolve(Response.json([make("old/Notes", "2026-01-01T00:00:00Z"), make("new/Notes", new Date().toISOString())]));
     await flush();
     apiRequests[0]!.resolve(Response.json([]));
@@ -275,7 +299,7 @@ describe("Files v2 progressive navigation", () => {
     await flush();
     expect(open()).toBe(false);
     expect(opened).toEqual(["new/Notes"]);
-    const modal = openMarksDialog({ kind: "favorites", title: "Favorites", onOpen: entry => opened.push(entry.entry.path) });
+    const modal = openMarksDialog({ kind: "favorites", title: "Favorites", onOpen: (entry) => opened.push(entry.entry.path) });
     await flush();
     expect(apiRequests[2]!.kind).toBe("favorites");
     const loadingViewport = dom.document.querySelector("dialog .k2b-scroll-area[data-viewport-size=compact]");
@@ -298,32 +322,66 @@ describe("Files v2 progressive navigation", () => {
       if (delay === 20_000 && typeof handler === "function") poll = handler;
       return interval(handler, delay, ...args);
     });
-    const base = { id: "home", name: "Home", area: "cloud" as const, kind: "users" as const, status: "existing" as const, reason: null, indexEnabled: false, versioningEnabled: false };
+    const base = {
+      id: "home",
+      name: "Home",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
     const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
     const directory = { base, path: "", items: [folder], next: null };
     const { default: Workspace } = await import("../src/frontend/Workspace.island");
-    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }), dom.root);
-    cleanup = () => { dispose(); timerSpy.mockRestore(); dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(Workspace, {
+          initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory },
+          cloudUrl: "https://cloud.test",
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      timerSpy.mockRestore();
+      dom.cleanup();
+    };
     await flush();
-    [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(button => button.textContent?.includes("Tree"))!.click();
+    [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
     await flush();
     dom.root.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.click();
     await flush();
     expect(apiRequests).toHaveLength(1);
-    apiRequests[0]!.resolve(Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "Old.txt", path: "Docs/Old.txt", directory: false }] }));
+    apiRequests[0]!.resolve(
+      Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "Old.txt", path: "Docs/Old.txt", directory: false }] }),
+    );
     await flush();
     expect(dom.root.textContent).toContain("Old.txt");
     poll!();
     await flush();
-    expect(apiRequests[1]!.input).toEqual({ param: { baseId: "home" }, query: { path: "", after: undefined, sort: "name", order: "asc", type: "all", groupFolders: "true" } });
+    expect(apiRequests[1]!.input).toEqual({
+      param: { baseId: "home" },
+      query: { path: "", after: undefined, sort: "name", order: "asc", type: "all", groupFolders: "true" },
+    });
     apiRequests[1]!.resolve(Response.json(directory));
     await flush();
-    expect(apiRequests[2]!.input).toEqual({ param: { baseId: "home" }, query: { path: "Docs", after: undefined, sort: "name", order: "asc", type: "all", groupFolders: "true" } });
-    apiRequests[2]!.resolve(Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "External.txt", path: "Docs/External.txt", directory: false }] }));
+    expect(apiRequests[2]!.input).toEqual({
+      param: { baseId: "home" },
+      query: { path: "Docs", after: undefined, sort: "name", order: "asc", type: "all", groupFolders: "true" },
+    });
+    apiRequests[2]!.resolve(
+      Response.json({
+        ...directory,
+        path: "Docs",
+        items: [{ ...folder, name: "External.txt", path: "Docs/External.txt", directory: false }],
+      }),
+    );
     await flush();
     expect(dom.root.textContent).toContain("External.txt");
     expect(dom.root.textContent).not.toContain("Old.txt");
-    expect(apiRequests.map(item => item.kind)).toEqual(["entries", "entries", "entries"]);
+    expect(apiRequests.map((item) => item.kind)).toEqual(["entries", "entries", "entries"]);
     expect(dom.root.querySelector<HTMLButtonElement>(".filesv2-list__disclosure")!.getAttribute("aria-expanded")).toBe("true");
     poll!();
     await flush();
@@ -336,7 +394,10 @@ describe("Files v2 progressive navigation", () => {
     const dom = createDomTestHarness();
     const { default: Workspace } = await import("../src/frontend/Workspace.island");
     const dispose = render(() => createComponent(Workspace, { initial, cloudUrl: "https://cloud.test" }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     dom.window.history.replaceState(null, "", "/app/filesv2?base=removed-group&view=shares");
     dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
@@ -359,19 +420,37 @@ describe("Files v2 progressive navigation", () => {
       if (delay === 20_000 && typeof handler === "function") poll = handler;
       return interval(handler, delay, ...args);
     });
-    const base = { id: "home", name: "Home", area: "cloud" as const, kind: "users" as const, status: "existing" as const, reason: null, indexEnabled: false, versioningEnabled: false };
+    const base = {
+      id: "home",
+      name: "Home",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
     const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
     const bases = { items: [base], issues: [], editor: null };
     const directory = { base, path: "", items: [folder], next: null };
     const { default: Workspace } = await import("../src/frontend/Workspace.island");
-    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }), dom.root);
-    cleanup = () => { dispose(); timerSpy.mockRestore(); dom.cleanup(); };
+    const dispose = render(
+      () => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      timerSpy.mockRestore();
+      dom.cleanup();
+    };
     await flush();
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=home&path=Docs"]')!.click();
     await flush();
     apiRequests[0]!.resolve(Response.json(bases));
     await flush();
-    apiRequests[1]!.resolve(Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "Old nested folder", path: "Docs/Old" }] }));
+    apiRequests[1]!.resolve(
+      Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "Old nested folder", path: "Docs/Old" }] }),
+    );
     await flush();
     dom.root.querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=home"]')!.click();
     await flush();
@@ -379,7 +458,9 @@ describe("Files v2 progressive navigation", () => {
     await flush();
     apiRequests[3]!.resolve(Response.json(directory));
     await flush();
-    const docs = [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")].find(node => node.getAttribute("data-k2b-nav-tree-id") === JSON.stringify(["home", null, "Docs"]))!;
+    const docs = [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")].find(
+      (node) => node.getAttribute("data-k2b-nav-tree-id") === JSON.stringify(["home", null, "Docs"]),
+    )!;
     docs.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     await flush();
     expect(docs.getAttribute("aria-expanded")).toBe("true");
@@ -388,13 +469,20 @@ describe("Files v2 progressive navigation", () => {
     await flush();
     apiRequests[before]!.resolve(Response.json(directory));
     await flush();
-    expect(apiRequests[before + 1]!.input).toEqual({ param: { baseId: "home" }, query: { path: "Docs", after: undefined, type: "directories" } });
-    apiRequests[before + 1]!.resolve(Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "External nested folder", path: "Docs/External" }] }));
+    expect(apiRequests[before + 1]!.input).toEqual({
+      param: { baseId: "home" },
+      query: { path: "Docs", after: undefined, type: "directories" },
+    });
+    apiRequests[before + 1]!.resolve(
+      Response.json({ ...directory, path: "Docs", items: [{ ...folder, name: "External nested folder", path: "Docs/External" }] }),
+    );
     await flush();
     expect(dom.root.querySelector('[role="tree"]')!.textContent).toContain("External nested folder");
     expect(dom.root.querySelector('[role="tree"]')!.textContent).not.toContain("Old nested folder");
     expect(apiRequests).toHaveLength(before + 2);
-    const root = [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")].find(node => node.getAttribute("data-k2b-nav-tree-id") === JSON.stringify(["home", null, ""]))!;
+    const root = [...dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]")].find(
+      (node) => node.getAttribute("data-k2b-nav-tree-id") === JSON.stringify(["home", null, ""]),
+    )!;
     root.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     await flush();
     poll!();
@@ -406,11 +494,30 @@ describe("Files v2 progressive navigation", () => {
 
   test("expired listing cursors restart once with the exact global query and visible feedback", async () => {
     const dom = createDomTestHarness();
-    const base = { id: "home", name: "Home", area: "cloud" as const, kind: "users" as const, status: "existing" as const, reason: null, indexEnabled: false, versioningEnabled: false };
+    const base = {
+      id: "home",
+      name: "Home",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
     const directory = { base, path: "", items: [], next: null };
     const { default: Workspace } = await import("../src/frontend/Workspace.island");
-    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(Workspace, {
+          initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory },
+          cloudUrl: "https://cloud.test",
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     for (const request of apiRequests) request.resolve(Response.json(directory));
     await flush();
@@ -420,13 +527,19 @@ describe("Files v2 progressive navigation", () => {
     await flush();
     apiRequests[0]!.resolve(Response.json({ items: [base], issues: [], editor: null }));
     await flush();
-    expect(apiRequests[1]!.input).toEqual({ param: { baseId: "home" }, query: { path: "", after: "expired", sort: "size", order: "desc", type: "files", groupFolders: "false" } });
+    expect(apiRequests[1]!.input).toEqual({
+      param: { baseId: "home" },
+      query: { path: "", after: "expired", sort: "size", order: "desc", type: "files", groupFolders: "false" },
+    });
     apiRequests[1]!.resolve(Response.json({ code: "cursor_invalid", message: "Listing changed" }, { status: 409 }));
     await flush();
     expect(apiRequests[2]!.kind).toBe("bases");
     apiRequests[2]!.resolve(Response.json({ items: [base], issues: [], editor: null }));
     await flush();
-    expect(apiRequests[3]!.input).toEqual({ param: { baseId: "home" }, query: { path: "", after: undefined, sort: "size", order: "desc", type: "files", groupFolders: "false" } });
+    expect(apiRequests[3]!.input).toEqual({
+      param: { baseId: "home" },
+      query: { path: "", after: undefined, sort: "size", order: "desc", type: "files", groupFolders: "false" },
+    });
     apiRequests[3]!.resolve(Response.json(directory));
     await flush();
     expect(dom.window.location.search).not.toContain("after=");
@@ -438,5 +551,4 @@ describe("Files v2 progressive navigation", () => {
     await flush();
     expect(apiRequests).toHaveLength(5);
   });
-
 });

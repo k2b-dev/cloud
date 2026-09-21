@@ -1,26 +1,18 @@
 import { expect, test } from "bun:test";
-import { SQL } from "bun";
+import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 
-const enabled = process.env.GRIDS_EVIDENCE_CLEANUP_DB_TEST === "1";
 const databaseName = process.env.GRIDS_EVIDENCE_CLEANUP_DB_CHILD;
 
 if (!databaseName) {
-  (enabled ? test : test.skip)(
+  testFor("database")(
     "evidence retention drains a backlog in isolated Postgres",
     async () => {
-      const url = new URL(process.env.DATABASE_URL!);
+      const url = new URL(testInfra.database ?? "");
       if (!["localhost", "127.0.0.1", "ipa_postgres"].includes(url.hostname)) throw new Error("Requires local Postgres");
-      const database = `grids_cleanup_${crypto.randomUUID().replaceAll("-", "")}`;
-      const target = new URL(url);
-      target.pathname = `/${database}`;
-      url.pathname = "/postgres";
-      const admin = new SQL(url);
-      let created = false;
+      const isolated = await createDisposableDatabase("grids_cleanup");
       try {
-        await admin.unsafe(`CREATE DATABASE "${database}"`);
-        created = true;
         const child = Bun.spawn([process.execPath, "test", import.meta.path], {
-          env: { ...process.env, DATABASE_URL: target.toString(), GRIDS_EVIDENCE_CLEANUP_DB_CHILD: database },
+          env: { ...process.env, CLOUD_TEST_DATABASE_URL: isolated.url, GRIDS_EVIDENCE_CLEANUP_DB_CHILD: isolated.name },
           stdout: "pipe",
           stderr: "pipe",
         });
@@ -31,15 +23,14 @@ if (!databaseName) {
         ]);
         expect({ code, output: code === 0 ? "passed" : `${stdout}\n${stderr}` }).toEqual({ code: 0, output: "passed" });
       } finally {
-        if (created) await admin.unsafe(`DROP DATABASE "${database}"`);
-        await admin.close({ timeout: 5 });
+        await isolated.drop();
       }
     },
     60_000,
   );
 } else {
   test("scheduled cleanup drains more than 100 exports; UI stays bounded and cancellation preserves remaining work", async () => {
-    if (!enabled || !/^grids_cleanup_[a-f0-9]{32}$/.test(databaseName)) throw new Error("Unexpected isolated database");
+    if (!testInfra.database || !/^grids_cleanup_[a-f0-9]{16}_test$/.test(databaseName)) throw new Error("Unexpected isolated database");
     const { sql } = await import("bun");
     try {
       const [database] = await sql<{ name: string }[]>`SELECT current_database() AS name`;

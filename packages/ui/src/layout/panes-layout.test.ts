@@ -142,9 +142,11 @@ describe("Panes layout", () => {
       const next = applyPanesIntent(layout, intent);
       if (next === layout) {
         rejected = true;
-        expect(getPanesDropTargets(layout, intent.itemId, { movable: true, split: "both" }).some((target) => samePanesIntent(target.intent, intent))).toBe(
-          false,
-        );
+        expect(
+          getPanesDropTargets(layout, intent.itemId, { movable: true, split: "both" }).some((target) =>
+            samePanesIntent(target.intent, intent),
+          ),
+        ).toBe(false);
       }
       layout = next;
       expect(parsePanesLayout(layout)).not.toBeNull();

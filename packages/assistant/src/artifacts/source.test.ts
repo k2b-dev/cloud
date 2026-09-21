@@ -1,11 +1,17 @@
 import { expect, test } from "bun:test";
-import { sourceDiagnostics } from "./source";
 import { CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { artifactCodeHandlers } from "./code-tools";
+import { sourceDiagnostics } from "./source";
 
 test("direct source tools require revisions for atomic writes", () => {
   expect(Object.keys(artifactCodeHandlers).sort()).toEqual(Object.keys(CODE_SOURCE_TOOLS).sort());
-  expect(CODE_SOURCE_TOOLS.code_write.input.parse({ id: "aBc234", expectedRevision: 1, files: [{ path: "main.ts", content: "export default !!!" }] })).toBeDefined();
+  expect(
+    CODE_SOURCE_TOOLS.code_write.input.parse({
+      id: "aBc234",
+      expectedRevision: 1,
+      files: [{ path: "main.ts", content: "export default !!!" }],
+    }),
+  ).toBeDefined();
 });
 
 test("missing helpers and invalid intermediate code produce diagnostics", async () => {

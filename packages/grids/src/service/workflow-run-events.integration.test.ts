@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { toWorkflowRunEventSummary } from "../lib/workflow-run-events";
 import { startGridsTestSync } from "../sync-test-utils";
 import type { GridsWorkflowRun, GridsWorkflowStepRun } from "../workflows/contracts";
@@ -9,7 +10,7 @@ import {
   notifyWorkflowRunEvent,
 } from "./workflow-run-events";
 
-const natsTest = process.env.GRIDS_SYNC_TEST === "1" ? test : test.skip;
+const natsTest = testFor("nats");
 
 describe("workflow run events", () => {
   test("uses explicit transition ids to distinguish repeated run states", async () => {

@@ -1,23 +1,11 @@
-import { aiFileContentVersion } from "./file-content-version";
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { aiFileContentVersion } from "./file-content-version";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { aiConversations } from "./store";
-
-const canUseAiDatabase = async () => {
-  try {
-    const [row] = await sql<{ users: string | null; access: string | null }[]>`
-      SELECT to_regclass('auth.users')::text AS users, to_regclass('auth.access')::text AS access
-    `;
-    if (!row?.users || !row.access) return false;
-    await migrateCloudAi();
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 const insertUser = async (label: string) => {
   const suffix = crypto.randomUUID();
@@ -39,7 +27,10 @@ const insertServiceAccount = async (label: string) => {
   return row!.id;
 };
 
-describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
+databaseSuite()("aiProjects (integration)", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("versioned Project file transfers serialize replacements and reject stale content", async () => {
     const userId = await insertUser("file-transfer");
     const subject = { type: "user" as const, userId };
@@ -53,11 +44,11 @@ describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
         aiProjects.writeFile(project.id, subject, { ...input, expectedVersion: version, bytes: new Uint8Array([1]) }),
         aiProjects.writeFile(project.id, subject, { ...input, expectedVersion: version, bytes: new Uint8Array([2]) }),
       ]);
-      expect(writes.filter(write => write.status === "fulfilled")).toHaveLength(1);
-      expect(writes.filter(write => write.status === "rejected")).toHaveLength(1);
+      expect(writes.filter((write) => write.status === "fulfilled")).toHaveLength(1);
+      expect(writes.filter((write) => write.status === "rejected")).toHaveLength(1);
       await expect(aiProjects.writeFile(project.id, subject, input)).rejects.toThrow("version conflict");
       const page = await aiProjects.listFiles(project.id, subject, { limit: 1 });
-      expect(page.map(file => file.path)).toEqual([input.path]);
+      expect(page.map((file) => file.path)).toEqual([input.path]);
       expect(await aiProjects.listFiles(project.id, subject, { after: input.path, limit: 1 })).toEqual([]);
     } finally {
       await aiProjects.delete(project.id, subject);
@@ -110,9 +101,7 @@ describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
       expect(grant?.shortId).toMatch(AI_SHORT_ID_PATTERN);
       expect((await aiProjects.list(owner)).map((item) => item.id)).toContain(project.id);
       expect((await aiProjects.list(member)).map((item) => item.id)).toContain(project.id);
-      expect(await aiProjects.resolveShortIds([project.id, project.id], member)).toEqual(
-        new Map([[project.id, project.shortId]]),
-      );
+      expect(await aiProjects.resolveShortIds([project.id, project.id], member)).toEqual(new Map([[project.id, project.shortId]]));
       const visible = await aiProjects.get(project.id, member, "write");
       expect(visible?.permission).toBe("write");
       const knowledge = await aiProjects.createKnowledge(project.id, member, {
@@ -135,9 +124,7 @@ describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
       expect(knowledge).not.toBeNull();
       expect(file).not.toBeNull();
       expect(reference).not.toBeNull();
-      expect(new TextDecoder().decode((await aiProjects.readFileByPath(project.id, "guides/triage.md", member))?.bytes)).toBe(
-        "# Triage",
-      );
+      expect(new TextDecoder().decode((await aiProjects.readFileByPath(project.id, "guides/triage.md", member))?.bytes)).toBe("# Triage");
 
       const snapshot = await aiProjects.snapshot(project.id, member);
       expect(snapshot?.instructions).toBe("Answer with the support policy.");
@@ -167,12 +154,8 @@ describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
 
       const ownerChat = await aiConversations.createConversation({ ownerUserId: ownerId, projectId: project.id });
       const memberChat = await aiConversations.createConversation({ ownerUserId: memberId, projectId: project.id });
-      expect((await aiConversations.listConversations({ ownerUserId: ownerId })).map((chat) => chat.id)).toEqual([
-        ownerChat.id,
-      ]);
-      expect((await aiConversations.listConversations({ ownerUserId: memberId })).map((chat) => chat.id)).toEqual([
-        memberChat.id,
-      ]);
+      expect((await aiConversations.listConversations({ ownerUserId: ownerId })).map((chat) => chat.id)).toEqual([ownerChat.id]);
+      expect((await aiConversations.listConversations({ ownerUserId: memberId })).map((chat) => chat.id)).toEqual([memberChat.id]);
       expect(ownerChat.projectId).toBe(project.id);
       expect(memberChat.projectId).toBe(project.id);
 

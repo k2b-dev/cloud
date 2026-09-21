@@ -1,23 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { notificationObservability } from "./observability";
 
-const canUseNotificationDatabase = async (): Promise<boolean> => {
-  try {
-    const rows = await sql<Array<{ definitions: string | null; events: string | null; deliveries: string | null }>>`
-      SELECT
-        to_regclass('notifications.definitions')::text AS definitions,
-        to_regclass('notifications.events')::text AS events,
-        to_regclass('notifications.deliveries')::text AS deliveries
-    `;
-    return Boolean(rows[0]?.definitions && rows[0].events && rows[0].deliveries);
-  } catch {
-    return false;
-  }
-};
-
 /** Reported as skipped rather than silently passing when the backing service is absent. */
-const suite = (await canUseNotificationDatabase()) ? describe : describe.skip;
+const suite = databaseSuite();
 
 suite("notification observability", () => {
   test("filters metadata-only deliveries and reports the durable definition registry", async () => {

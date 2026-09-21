@@ -1,25 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { migrateCloudAi } from "./migrate";
 import { aiUserPrefs } from "./prefs";
-
-const canUseAiDatabase = async () => {
-  try {
-    const [authRow] = await sql<{ users: string | null }[]>`
-      SELECT to_regclass('auth.users')::text AS users
-    `;
-    if (!authRow?.users) return false;
-
-    await migrateCloudAi();
-
-    const [aiRow] = await sql<{ prefs: string | null }[]>`
-      SELECT to_regclass('ai.user_prefs')::text AS prefs
-    `;
-    return Boolean(aiRow?.prefs);
-  } catch {
-    return false;
-  }
-};
 
 const insertUser = async () => {
   const suffix = crypto.randomUUID();
@@ -36,7 +19,10 @@ const cleanupUser = async (userId: string) => {
   await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
 };
 
-describe.skipIf(!(await canUseAiDatabase()))("aiUserPrefs (integration)", () => {
+databaseSuite()("aiUserPrefs (integration)", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   test("get returns defaults for users without a row", async () => {
     const userId = await insertUser();
     try {

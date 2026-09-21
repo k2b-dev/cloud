@@ -144,10 +144,7 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
@@ -184,9 +181,7 @@
             "description": "Personal assignment ID returned by List my assignments or a venue.assignment ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -257,18 +252,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "venueId",
-          "venueName",
-          "venueTimezone",
-          "templateId",
-          "startsAt",
-          "endsAt",
-          "note",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "fcf5398ed8b6762e084b9e1e675fb3936180dceb6c3a4abdc4ef5a2a3442b3fe",
@@ -288,9 +272,7 @@
             "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           }
         },
-        "required": [
-          "venueId"
-        ],
+        "required": ["venueId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -348,21 +330,12 @@
                   ]
                 }
               },
-              "required": [
-                "date",
-                "count",
-                "averageRating"
-              ],
+              "required": ["date", "count", "averageRating"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "venueId",
-          "count",
-          "averageRating",
-          "buckets"
-        ],
+        "required": ["venueId", "count", "averageRating", "buckets"],
         "additionalProperties": false
       },
       "schemaHash": "00c4a02229e72e704324a0806e2f101fa4e19fba3f5a228eff0962b273c6a5af",
@@ -408,9 +381,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "venueId"
-        ],
+        "required": ["venueId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -538,11 +509,7 @@
             "description": "Venue-local occurrence date returned by shift.list."
           }
         },
-        "required": [
-          "venueId",
-          "templateId",
-          "date"
-        ],
+        "required": ["venueId", "templateId", "date"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -715,19 +682,11 @@
             },
             "openMode": {
               "type": "string",
-              "enum": [
-                "regular",
-                "staffed",
-                "combined"
-              ]
+              "enum": ["regular", "staffed", "combined"]
             },
             "signupMode": {
               "type": "string",
-              "enum": [
-                "templates",
-                "free",
-                "both"
-              ]
+              "enum": ["templates", "free", "both"]
             },
             "publicEnabled": {
               "type": "boolean"
@@ -739,11 +698,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "enum": [
-                    "read",
-                    "write",
-                    "admin"
-                  ]
+                  "enum": ["read", "write", "admin"]
                 },
                 {
                   "type": "null"
@@ -773,10 +728,7 @@
                   "description": "Stable 6-character resource ID."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "links": {
@@ -788,13 +740,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -811,10 +757,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             }
@@ -855,9 +798,7 @@
             "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -902,19 +843,11 @@
           },
           "openMode": {
             "type": "string",
-            "enum": [
-              "regular",
-              "staffed",
-              "combined"
-            ]
+            "enum": ["regular", "staffed", "combined"]
           },
           "signupMode": {
             "type": "string",
-            "enum": [
-              "templates",
-              "free",
-              "both"
-            ]
+            "enum": ["templates", "free", "both"]
           },
           "publicEnabled": {
             "type": "boolean"
@@ -926,11 +859,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "read",
-                  "write",
-                  "admin"
-                ]
+                "enum": ["read", "write", "admin"]
               },
               {
                 "type": "null"
@@ -1009,10 +938,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -1022,11 +948,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1053,10 +975,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -1100,10 +1019,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -1116,13 +1032,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1139,20 +1049,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -1164,10 +1067,7 @@
             "tag": "venue",
             "title": "Venues",
             "description": "Show Venues only.",
-            "aliases": [
-              "venues",
-              "place"
-            ]
+            "aliases": ["venues", "place"]
           }
         ]
       }
@@ -1186,9 +1086,7 @@
             "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           }
         },
-        "required": [
-          "venueId"
-        ],
+        "required": ["venueId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1251,11 +1149,7 @@
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": [
-                    "regular",
-                    "shift",
-                    "free"
-                  ]
+                  "enum": ["regular", "shift", "free"]
                 },
                 "title": {
                   "type": "string",
@@ -1273,12 +1167,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 }
               },
-              "required": [
-                "kind",
-                "title",
-                "startsAt",
-                "endsAt"
-              ],
+              "required": ["kind", "title", "startsAt", "endsAt"],
               "additionalProperties": false
             }
           }
@@ -1320,10 +1209,7 @@
             "description": "Own assignment ID returned by List my assignments or a venue.assignment ref."
           }
         },
-        "required": [
-          "venueId",
-          "assignmentId"
-        ],
+        "required": ["venueId", "assignmentId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1340,10 +1226,7 @@
             "const": true
           }
         },
-        "required": [
-          "assignmentId",
-          "cancelled"
-        ],
+        "required": ["assignmentId", "cancelled"],
         "additionalProperties": false
       },
       "schemaHash": "c59dafb852b195e7b7c4806e7c277a5bb4daa9c1690000b7718851e3b2843224",
@@ -1377,11 +1260,7 @@
             "description": "Venue-local occurrence date returned by shift.list."
           }
         },
-        "required": [
-          "venueId",
-          "templateId",
-          "date"
-        ],
+        "required": ["venueId", "templateId", "date"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1452,18 +1331,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "venueId",
-          "venueName",
-          "venueTimezone",
-          "templateId",
-          "startsAt",
-          "endsAt",
-          "note",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "9434ac40077fa3fd3a29a1d19ac4dd873875f43daf9bfb3eb89827d30997d490",
@@ -1510,11 +1378,7 @@
             ]
           }
         },
-        "required": [
-          "venueId",
-          "startsAt",
-          "endsAt"
-        ],
+        "required": ["venueId", "startsAt", "endsAt"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1585,18 +1449,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "venueId",
-          "venueName",
-          "venueTimezone",
-          "templateId",
-          "startsAt",
-          "endsAt",
-          "note",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "1c16533902eb1794ae03a379a9ef04951d2373820017172b9880600ba50eea20",

@@ -50,11 +50,7 @@
             "default": "read",
             "description": "Minimum effective permission required for each returned address book.",
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -88,18 +84,11 @@
               "minLength": 1
             },
             "description": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "permission": {
               "type": "string",
-              "enum": [
-                "read",
-                "write",
-                "admin"
-              ]
+              "enum": ["read", "write", "admin"]
             },
             "links": {
               "minItems": 1,
@@ -110,13 +99,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -133,10 +116,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             },
@@ -176,22 +156,11 @@
                   "pattern": "^[0-9A-Za-z]{6}$"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "name",
-            "description",
-            "permission",
-            "createdAt",
-            "updatedAt",
-            "ref"
-          ],
+          "required": ["id", "name", "description", "permission", "createdAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
@@ -212,9 +181,7 @@
             "description": "Address-book ID returned by List address books or a contacts.book ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -230,18 +197,11 @@
             "minLength": 1
           },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "permission": {
             "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
+            "enum": ["read", "write", "admin"]
           },
           "links": {
             "minItems": 1,
@@ -252,13 +212,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -275,10 +229,7 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           },
@@ -307,14 +258,7 @@
             ]
           }
         },
-        "required": [
-          "id",
-          "name",
-          "description",
-          "permission",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "name", "description", "permission", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "efb486013225e5eeb3d2cedfc4f173d12ba1443bb682abc71bfb4401b38fc2ec",
@@ -351,32 +295,19 @@
             "default": "name",
             "description": "Contact sort order.",
             "type": "string",
-            "enum": [
-              "name",
-              "updated",
-              "created",
-              "company"
-            ]
+            "enum": ["name", "updated", "created", "company"]
           },
           "email": {
             "default": "all",
             "description": "Filter by email-address presence.",
             "type": "string",
-            "enum": [
-              "all",
-              "yes",
-              "no"
-            ]
+            "enum": ["all", "yes", "no"]
           },
           "phone": {
             "default": "all",
             "description": "Filter by phone-number presence.",
             "type": "string",
-            "enum": [
-              "all",
-              "yes",
-              "no"
-            ]
+            "enum": ["all", "yes", "no"]
           },
           "favoritesOnly": {
             "default": false,
@@ -397,9 +328,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "bookId"
-        ],
+        "required": ["bookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -426,10 +355,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -473,10 +399,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -489,13 +412,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -512,20 +429,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -546,9 +456,7 @@
             "description": "Contact ID returned by contact search, suggest, resolve, list, or a contacts.contact ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -568,16 +476,10 @@
             "minLength": 1
           },
           "companyName": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "jobTitle": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "primaryEmail": {
             "anyOf": [
@@ -592,10 +494,7 @@
             ]
           },
           "primaryPhone": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "tags": {
             "maxItems": 100,
@@ -628,13 +527,7 @@
                     "properties": {
                       "rel": {
                         "type": "string",
-                        "enum": [
-                          "open",
-                          "edit",
-                          "status",
-                          "preview",
-                          "download"
-                        ],
+                        "enum": ["open", "edit", "status", "preview", "download"],
                         "description": "Semantic relationship; clients decide how to present it."
                       },
                       "href": {
@@ -651,10 +544,7 @@
                         "maxLength": 120
                       }
                     },
-                    "required": [
-                      "rel",
-                      "href"
-                    ],
+                    "required": ["rel", "href"],
                     "additionalProperties": false
                   }
                 },
@@ -669,14 +559,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 }
               },
-              "required": [
-                "id",
-                "bookId",
-                "name",
-                "color",
-                "createdAt",
-                "updatedAt"
-              ],
+              "required": ["id", "bookId", "name", "color", "createdAt", "updatedAt"],
               "additionalProperties": false
             }
           },
@@ -686,58 +569,31 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "label": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "firstName": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "lastName": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "department": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "vatId": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "birthday": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "salutation": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "pronouns": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "preferredLanguage": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "parentContactId": {
             "anyOf": [
@@ -757,10 +613,7 @@
               "type": "object",
               "properties": {
                 "label": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "email": {
                   "type": "string",
@@ -768,10 +621,7 @@
                   "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                 }
               },
-              "required": [
-                "label",
-                "email"
-              ],
+              "required": ["label", "email"],
               "additionalProperties": false
             }
           },
@@ -782,20 +632,14 @@
               "type": "object",
               "properties": {
                 "label": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "phone": {
                   "type": "string",
                   "minLength": 1
                 }
               },
-              "required": [
-                "label",
-                "phone"
-              ],
+              "required": ["label", "phone"],
               "additionalProperties": false
             }
           },
@@ -806,32 +650,20 @@
               "type": "object",
               "properties": {
                 "label": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "recipientName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "companyName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "line1": {
                   "type": "string",
                   "minLength": 1
                 },
                 "line2": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "postalCode": {
                   "type": "string"
@@ -840,10 +672,7 @@
                   "type": "string"
                 },
                 "stateRegion": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "countryCode": {
                   "type": "string",
@@ -851,17 +680,7 @@
                   "maxLength": 2
                 }
               },
-              "required": [
-                "label",
-                "recipientName",
-                "companyName",
-                "line1",
-                "line2",
-                "postalCode",
-                "city",
-                "stateRegion",
-                "countryCode"
-              ],
+              "required": ["label", "recipientName", "companyName", "line1", "line2", "postalCode", "city", "stateRegion", "countryCode"],
               "additionalProperties": false
             }
           },
@@ -872,20 +691,14 @@
               "type": "object",
               "properties": {
                 "label": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "url": {
                   "type": "string",
                   "format": "uri"
                 }
               },
-              "required": [
-                "label",
-                "url"
-              ],
+              "required": ["label", "url"],
               "additionalProperties": false
             }
           },
@@ -896,10 +709,7 @@
               "type": "object",
               "properties": {
                 "label": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "accountHolderName": {
                   "type": "string",
@@ -910,32 +720,16 @@
                   "minLength": 1
                 },
                 "bic": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "bankName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "note": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 }
               },
-              "required": [
-                "label",
-                "accountHolderName",
-                "iban",
-                "bic",
-                "bankName",
-                "note"
-              ],
+              "required": ["label", "accountHolderName", "iban", "bic", "bankName", "note"],
               "additionalProperties": false
             }
           },
@@ -944,14 +738,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": [
-                "tags",
-                "emails",
-                "phones",
-                "addresses",
-                "websites",
-                "bankAccounts"
-              ]
+              "enum": ["tags", "emails", "phones", "addresses", "websites", "bankAccounts"]
             }
           },
           "createdAt": {
@@ -1036,9 +823,7 @@
             "maximum": 50
           }
         },
-        "required": [
-          "emails"
-        ],
+        "required": ["emails"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1063,10 +848,7 @@
                       "pattern": "^[0-9A-Za-z]{6}$"
                     }
                   },
-                  "required": [
-                    "type",
-                    "id"
-                  ],
+                  "required": ["type", "id"],
                   "additionalProperties": false
                 },
                 "contactId": {
@@ -1086,16 +868,10 @@
                   "minLength": 1
                 },
                 "companyName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "jobTitle": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": ["string", "null"]
                 },
                 "matchedEmails": {
                   "minItems": 1,
@@ -1115,10 +891,7 @@
                     "type": "object",
                     "properties": {
                       "label": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
+                        "type": ["string", "null"]
                       },
                       "email": {
                         "type": "string",
@@ -1126,10 +899,7 @@
                         "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                       }
                     },
-                    "required": [
-                      "label",
-                      "email"
-                    ],
+                    "required": ["label", "email"],
                     "additionalProperties": false
                   }
                 },
@@ -1140,20 +910,14 @@
                     "type": "object",
                     "properties": {
                       "label": {
-                        "type": [
-                          "string",
-                          "null"
-                        ]
+                        "type": ["string", "null"]
                       },
                       "phone": {
                         "type": "string",
                         "minLength": 1
                       }
                     },
-                    "required": [
-                      "label",
-                      "phone"
-                    ],
+                    "required": ["label", "phone"],
                     "additionalProperties": false
                   }
                 },
@@ -1173,13 +937,7 @@
                     "properties": {
                       "rel": {
                         "type": "string",
-                        "enum": [
-                          "open",
-                          "edit",
-                          "status",
-                          "preview",
-                          "download"
-                        ],
+                        "enum": ["open", "edit", "status", "preview", "download"],
                         "description": "Semantic relationship; clients decide how to present it."
                       },
                       "href": {
@@ -1196,10 +954,7 @@
                         "maxLength": 120
                       }
                     },
-                    "required": [
-                      "rel",
-                      "href"
-                    ],
+                    "required": ["rel", "href"],
                     "additionalProperties": false
                   }
                 },
@@ -1238,10 +993,7 @@
             }
           }
         },
-        "required": [
-          "items",
-          "matchedEmails"
-        ],
+        "required": ["items", "matchedEmails"],
         "additionalProperties": false
       },
       "schemaHash": "e65c33da788e51eb19c7f293782d3ae7e52de0bb4ef3fabdf2d887ac3f969c39",
@@ -1288,10 +1040,7 @@
                 "description": "Stable app-owned resource identifier."
               }
             },
-            "required": [
-              "type",
-              "id"
-            ],
+            "required": ["type", "id"],
             "additionalProperties": false
           },
           "limit": {
@@ -1301,11 +1050,7 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": [
-          "query",
-          "tags",
-          "limit"
-        ],
+        "required": ["query", "tags", "limit"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1332,10 +1077,7 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -1379,10 +1121,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "label",
-                  "value"
-                ],
+                "required": ["label", "value"],
                 "additionalProperties": false
               }
             },
@@ -1395,13 +1134,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1418,20 +1151,13 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
+          "required": ["ref", "title", "links"],
           "additionalProperties": false
         }
       },
@@ -1443,9 +1169,7 @@
             "tag": "contact",
             "title": "Contacts",
             "description": "Show contact cards.",
-            "aliases": [
-              "addressbook"
-            ]
+            "aliases": ["addressbook"]
           },
           {
             "tag": "phone",
@@ -1488,9 +1212,7 @@
             "maximum": 25
           }
         },
-        "required": [
-          "query"
-        ],
+        "required": ["query"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1512,10 +1234,7 @@
                   "pattern": "^[0-9A-Za-z]{6}$"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             },
             "contactId": {
@@ -1531,16 +1250,10 @@
               "minLength": 1
             },
             "companyName": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "jobTitle": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "emails": {
               "minItems": 1,
@@ -1550,10 +1263,7 @@
                 "type": "object",
                 "properties": {
                   "label": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
+                    "type": ["string", "null"]
                   },
                   "email": {
                     "type": "string",
@@ -1561,10 +1271,7 @@
                     "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                   }
                 },
-                "required": [
-                  "label",
-                  "email"
-                ],
+                "required": ["label", "email"],
                 "additionalProperties": false
               }
             },
@@ -1575,20 +1282,14 @@
                 "type": "object",
                 "properties": {
                   "label": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
+                    "type": ["string", "null"]
                   },
                   "phone": {
                     "type": "string",
                     "minLength": 1
                   }
                 },
-                "required": [
-                  "label",
-                  "phone"
-                ],
+                "required": ["label", "phone"],
                 "additionalProperties": false
               }
             },
@@ -1608,13 +1309,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1631,10 +1326,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             },
@@ -1690,9 +1382,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "contactId"
-        ],
+        "required": ["contactId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1752,23 +1442,11 @@
                   "pattern": "^[0-9A-Za-z]{6}$"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "contactId",
-            "authorUserId",
-            "authorDisplayName",
-            "content",
-            "createdAt",
-            "updatedAt",
-            "ref"
-          ],
+          "required": ["id", "contactId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
@@ -1789,9 +1467,7 @@
             "description": "Contact-note ID returned by List contact notes or a contacts.note ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1837,15 +1513,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "contactId",
-          "authorUserId",
-          "authorDisplayName",
-          "content",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "contactId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "749008f4ca88f74858f1cd6cbae751f6fceb03cd2748d689e8bbc9fd52fa4da6",
@@ -1878,9 +1546,7 @@
             "maximum": 100
           }
         },
-        "required": [
-          "bookId"
-        ],
+        "required": ["bookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1915,13 +1581,7 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
+                    "enum": ["open", "edit", "status", "preview", "download"],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -1938,10 +1598,7 @@
                     "maxLength": 120
                   }
                 },
-                "required": [
-                  "rel",
-                  "href"
-                ],
+                "required": ["rel", "href"],
                 "additionalProperties": false
               }
             },
@@ -1967,22 +1624,11 @@
                   "pattern": "^[0-9A-Za-z]{6}$"
                 }
               },
-              "required": [
-                "type",
-                "id"
-              ],
+              "required": ["type", "id"],
               "additionalProperties": false
             }
           },
-          "required": [
-            "id",
-            "bookId",
-            "name",
-            "color",
-            "createdAt",
-            "updatedAt",
-            "ref"
-          ],
+          "required": ["id", "bookId", "name", "color", "createdAt", "updatedAt", "ref"],
           "additionalProperties": false
         }
       },
@@ -2003,9 +1649,7 @@
             "description": "Contact-tag ID returned by List contact tags or a contacts.tag ref."
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2037,13 +1681,7 @@
               "properties": {
                 "rel": {
                   "type": "string",
-                  "enum": [
-                    "open",
-                    "edit",
-                    "status",
-                    "preview",
-                    "download"
-                  ],
+                  "enum": ["open", "edit", "status", "preview", "download"],
                   "description": "Semantic relationship; clients decide how to present it."
                 },
                 "href": {
@@ -2060,10 +1698,7 @@
                   "maxLength": 120
                 }
               },
-              "required": [
-                "rel",
-                "href"
-              ],
+              "required": ["rel", "href"],
               "additionalProperties": false
             }
           },
@@ -2078,14 +1713,7 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": [
-          "id",
-          "bookId",
-          "name",
-          "color",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "bookId", "name", "color", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "schemaHash": "c562c7e8ce1ecd718394588e8a82c620d200c847af7a00ed2f5d354e5711a52e",
@@ -2287,9 +1915,7 @@
                   "description": "Email address."
                 }
               },
-              "required": [
-                "email"
-              ],
+              "required": ["email"],
               "additionalProperties": false
             }
           },
@@ -2319,9 +1945,7 @@
                   "description": "Phone number."
                 }
               },
-              "required": [
-                "phone"
-              ],
+              "required": ["phone"],
               "additionalProperties": false
             }
           },
@@ -2415,12 +2039,7 @@
                   "description": "Two-letter country code."
                 }
               },
-              "required": [
-                "line1",
-                "postalCode",
-                "city",
-                "countryCode"
-              ],
+              "required": ["line1", "postalCode", "city", "countryCode"],
               "additionalProperties": false
             }
           },
@@ -2450,9 +2069,7 @@
                   "description": "Website URL."
                 }
               },
-              "required": [
-                "url"
-              ],
+              "required": ["url"],
               "additionalProperties": false
             }
           },
@@ -2524,17 +2141,12 @@
                   ]
                 }
               },
-              "required": [
-                "accountHolderName",
-                "iban"
-              ],
+              "required": ["accountHolderName", "iban"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "bookId"
-        ],
+        "required": ["bookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2557,16 +2169,10 @@
                 "minLength": 1
               },
               "companyName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "jobTitle": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "primaryEmail": {
                 "anyOf": [
@@ -2581,10 +2187,7 @@
                 ]
               },
               "primaryPhone": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "tags": {
                 "maxItems": 100,
@@ -2617,13 +2220,7 @@
                         "properties": {
                           "rel": {
                             "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
+                            "enum": ["open", "edit", "status", "preview", "download"],
                             "description": "Semantic relationship; clients decide how to present it."
                           },
                           "href": {
@@ -2640,10 +2237,7 @@
                             "maxLength": 120
                           }
                         },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
+                        "required": ["rel", "href"],
                         "additionalProperties": false
                       }
                     },
@@ -2658,14 +2252,7 @@
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                     }
                   },
-                  "required": [
-                    "id",
-                    "bookId",
-                    "name",
-                    "color",
-                    "createdAt",
-                    "updatedAt"
-                  ],
+                  "required": ["id", "bookId", "name", "color", "createdAt", "updatedAt"],
                   "additionalProperties": false
                 }
               },
@@ -2675,58 +2262,31 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               "label": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "firstName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "lastName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "department": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "vatId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "birthday": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "salutation": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "pronouns": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "preferredLanguage": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "parentContactId": {
                 "anyOf": [
@@ -2746,10 +2306,7 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "email": {
                       "type": "string",
@@ -2757,10 +2314,7 @@
                       "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                     }
                   },
-                  "required": [
-                    "label",
-                    "email"
-                  ],
+                  "required": ["label", "email"],
                   "additionalProperties": false
                 }
               },
@@ -2771,20 +2325,14 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "phone": {
                       "type": "string",
                       "minLength": 1
                     }
                   },
-                  "required": [
-                    "label",
-                    "phone"
-                  ],
+                  "required": ["label", "phone"],
                   "additionalProperties": false
                 }
               },
@@ -2795,32 +2343,20 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "recipientName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "companyName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "line1": {
                       "type": "string",
                       "minLength": 1
                     },
                     "line2": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "postalCode": {
                       "type": "string"
@@ -2829,10 +2365,7 @@
                       "type": "string"
                     },
                     "stateRegion": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "countryCode": {
                       "type": "string",
@@ -2861,20 +2394,14 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "url": {
                       "type": "string",
                       "format": "uri"
                     }
                   },
-                  "required": [
-                    "label",
-                    "url"
-                  ],
+                  "required": ["label", "url"],
                   "additionalProperties": false
                 }
               },
@@ -2885,10 +2412,7 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "accountHolderName": {
                       "type": "string",
@@ -2899,32 +2423,16 @@
                       "minLength": 1
                     },
                     "bic": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "bankName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "note": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     }
                   },
-                  "required": [
-                    "label",
-                    "accountHolderName",
-                    "iban",
-                    "bic",
-                    "bankName",
-                    "note"
-                  ],
+                  "required": ["label", "accountHolderName", "iban", "bic", "bankName", "note"],
                   "additionalProperties": false
                 }
               },
@@ -2933,14 +2441,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "enum": [
-                    "tags",
-                    "emails",
-                    "phones",
-                    "addresses",
-                    "websites",
-                    "bankAccounts"
-                  ]
+                  "enum": ["tags", "emails", "phones", "addresses", "websites", "bankAccounts"]
                 }
               },
               "createdAt": {
@@ -2980,9 +2481,7 @@
             "additionalProperties": false
           }
         },
-        "required": [
-          "contact"
-        ],
+        "required": ["contact"],
         "additionalProperties": false
       },
       "schemaHash": "07af81460ad938859cf4daecda8f1ba36cdb7166224c5fd92e34d2c39422fd8b",
@@ -3012,10 +2511,7 @@
             "description": "updatedAt value returned by the last read; prevents stale deletion."
           }
         },
-        "required": [
-          "contactId",
-          "expectedUpdatedAt"
-        ],
+        "required": ["contactId", "expectedUpdatedAt"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3031,10 +2527,7 @@
             "const": true
           }
         },
-        "required": [
-          "contactId",
-          "deleted"
-        ],
+        "required": ["contactId", "deleted"],
         "additionalProperties": false
       },
       "schemaHash": "b14de91275e6a28e3346ce8aff1693b61d438b1ce0d6b0f0d1a371ac6a019fce",
@@ -3068,11 +2561,7 @@
             "description": "updatedAt value returned by the last read; prevents stale moves."
           }
         },
-        "required": [
-          "contactId",
-          "targetBookId",
-          "expectedUpdatedAt"
-        ],
+        "required": ["contactId", "targetBookId", "expectedUpdatedAt"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -3095,16 +2584,10 @@
                 "minLength": 1
               },
               "companyName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "jobTitle": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "primaryEmail": {
                 "anyOf": [
@@ -3119,10 +2602,7 @@
                 ]
               },
               "primaryPhone": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "tags": {
                 "maxItems": 100,
@@ -3155,13 +2635,7 @@
                         "properties": {
                           "rel": {
                             "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
+                            "enum": ["open", "edit", "status", "preview", "download"],
                             "description": "Semantic relationship; clients decide how to present it."
                           },
                           "href": {
@@ -3178,10 +2652,7 @@
                             "maxLength": 120
                           }
                         },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
+                        "required": ["rel", "href"],
                         "additionalProperties": false
                       }
                     },
@@ -3196,14 +2667,7 @@
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                     }
                   },
-                  "required": [
-                    "id",
-                    "bookId",
-                    "name",
-                    "color",
-                    "createdAt",
-                    "updatedAt"
-                  ],
+                  "required": ["id", "bookId", "name", "color", "createdAt", "updatedAt"],
                   "additionalProperties": false
                 }
               },
@@ -3213,58 +2677,31 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               "label": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "firstName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "lastName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "department": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "vatId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "birthday": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "salutation": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "pronouns": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "preferredLanguage": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "parentContactId": {
                 "anyOf": [
@@ -3284,10 +2721,7 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "email": {
                       "type": "string",
@@ -3295,10 +2729,7 @@
                       "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                     }
                   },
-                  "required": [
-                    "label",
-                    "email"
-                  ],
+                  "required": ["label", "email"],
                   "additionalProperties": false
                 }
               },
@@ -3309,20 +2740,14 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "phone": {
                       "type": "string",
                       "minLength": 1
                     }
                   },
-                  "required": [
-                    "label",
-                    "phone"
-                  ],
+                  "required": ["label", "phone"],
                   "additionalProperties": false
                 }
               },
@@ -3333,32 +2758,20 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "recipientName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "companyName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "line1": {
                       "type": "string",
                       "minLength": 1
                     },
                     "line2": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "postalCode": {
                       "type": "string"
@@ -3367,10 +2780,7 @@
                       "type": "string"
                     },
                     "stateRegion": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "countryCode": {
                       "type": "string",
@@ -3399,20 +2809,14 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "url": {
                       "type": "string",
                       "format": "uri"
                     }
                   },
-                  "required": [
-                    "label",
-                    "url"
-                  ],
+                  "required": ["label", "url"],
                   "additionalProperties": false
                 }
               },
@@ -3423,10 +2827,7 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "accountHolderName": {
                       "type": "string",
@@ -3437,32 +2838,16 @@
                       "minLength": 1
                     },
                     "bic": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "bankName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "note": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     }
                   },
-                  "required": [
-                    "label",
-                    "accountHolderName",
-                    "iban",
-                    "bic",
-                    "bankName",
-                    "note"
-                  ],
+                  "required": ["label", "accountHolderName", "iban", "bic", "bankName", "note"],
                   "additionalProperties": false
                 }
               },
@@ -3471,14 +2856,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "enum": [
-                    "tags",
-                    "emails",
-                    "phones",
-                    "addresses",
-                    "websites",
-                    "bankAccounts"
-                  ]
+                  "enum": ["tags", "emails", "phones", "addresses", "websites", "bankAccounts"]
                 }
               },
               "createdAt": {
@@ -3518,9 +2896,7 @@
             "additionalProperties": false
           }
         },
-        "required": [
-          "contact"
-        ],
+        "required": ["contact"],
         "additionalProperties": false
       },
       "schemaHash": "b318c35ca56be1dd335c8bcbb2759a05cc42df451b30bbb568b680409143c786",
@@ -3729,9 +3105,7 @@
                   "description": "Email address."
                 }
               },
-              "required": [
-                "email"
-              ],
+              "required": ["email"],
               "additionalProperties": false
             }
           },
@@ -3761,9 +3135,7 @@
                   "description": "Phone number."
                 }
               },
-              "required": [
-                "phone"
-              ],
+              "required": ["phone"],
               "additionalProperties": false
             }
           },
@@ -3857,12 +3229,7 @@
                   "description": "Two-letter country code."
                 }
               },
-              "required": [
-                "line1",
-                "postalCode",
-                "city",
-                "countryCode"
-              ],
+              "required": ["line1", "postalCode", "city", "countryCode"],
               "additionalProperties": false
             }
           },
@@ -3892,9 +3259,7 @@
                   "description": "Website URL."
                 }
               },
-              "required": [
-                "url"
-              ],
+              "required": ["url"],
               "additionalProperties": false
             }
           },
@@ -3966,18 +3331,12 @@
                   ]
                 }
               },
-              "required": [
-                "accountHolderName",
-                "iban"
-              ],
+              "required": ["accountHolderName", "iban"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "contactId",
-          "expectedUpdatedAt"
-        ],
+        "required": ["contactId", "expectedUpdatedAt"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4000,16 +3359,10 @@
                 "minLength": 1
               },
               "companyName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "jobTitle": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "primaryEmail": {
                 "anyOf": [
@@ -4024,10 +3377,7 @@
                 ]
               },
               "primaryPhone": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "tags": {
                 "maxItems": 100,
@@ -4060,13 +3410,7 @@
                         "properties": {
                           "rel": {
                             "type": "string",
-                            "enum": [
-                              "open",
-                              "edit",
-                              "status",
-                              "preview",
-                              "download"
-                            ],
+                            "enum": ["open", "edit", "status", "preview", "download"],
                             "description": "Semantic relationship; clients decide how to present it."
                           },
                           "href": {
@@ -4083,10 +3427,7 @@
                             "maxLength": 120
                           }
                         },
-                        "required": [
-                          "rel",
-                          "href"
-                        ],
+                        "required": ["rel", "href"],
                         "additionalProperties": false
                       }
                     },
@@ -4101,14 +3442,7 @@
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                     }
                   },
-                  "required": [
-                    "id",
-                    "bookId",
-                    "name",
-                    "color",
-                    "createdAt",
-                    "updatedAt"
-                  ],
+                  "required": ["id", "bookId", "name", "color", "createdAt", "updatedAt"],
                   "additionalProperties": false
                 }
               },
@@ -4118,58 +3452,31 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
               "label": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "firstName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "lastName": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "department": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "vatId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "birthday": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "salutation": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "pronouns": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "preferredLanguage": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "parentContactId": {
                 "anyOf": [
@@ -4189,10 +3496,7 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "email": {
                       "type": "string",
@@ -4200,10 +3504,7 @@
                       "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                     }
                   },
-                  "required": [
-                    "label",
-                    "email"
-                  ],
+                  "required": ["label", "email"],
                   "additionalProperties": false
                 }
               },
@@ -4214,20 +3515,14 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "phone": {
                       "type": "string",
                       "minLength": 1
                     }
                   },
-                  "required": [
-                    "label",
-                    "phone"
-                  ],
+                  "required": ["label", "phone"],
                   "additionalProperties": false
                 }
               },
@@ -4238,32 +3533,20 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "recipientName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "companyName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "line1": {
                       "type": "string",
                       "minLength": 1
                     },
                     "line2": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "postalCode": {
                       "type": "string"
@@ -4272,10 +3555,7 @@
                       "type": "string"
                     },
                     "stateRegion": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "countryCode": {
                       "type": "string",
@@ -4304,20 +3584,14 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "url": {
                       "type": "string",
                       "format": "uri"
                     }
                   },
-                  "required": [
-                    "label",
-                    "url"
-                  ],
+                  "required": ["label", "url"],
                   "additionalProperties": false
                 }
               },
@@ -4328,10 +3602,7 @@
                   "type": "object",
                   "properties": {
                     "label": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "accountHolderName": {
                       "type": "string",
@@ -4342,32 +3613,16 @@
                       "minLength": 1
                     },
                     "bic": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "bankName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     },
                     "note": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": ["string", "null"]
                     }
                   },
-                  "required": [
-                    "label",
-                    "accountHolderName",
-                    "iban",
-                    "bic",
-                    "bankName",
-                    "note"
-                  ],
+                  "required": ["label", "accountHolderName", "iban", "bic", "bankName", "note"],
                   "additionalProperties": false
                 }
               },
@@ -4376,14 +3631,7 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "enum": [
-                    "tags",
-                    "emails",
-                    "phones",
-                    "addresses",
-                    "websites",
-                    "bankAccounts"
-                  ]
+                  "enum": ["tags", "emails", "phones", "addresses", "websites", "bankAccounts"]
                 }
               },
               "createdAt": {
@@ -4423,9 +3671,7 @@
             "additionalProperties": false
           }
         },
-        "required": [
-          "contact"
-        ],
+        "required": ["contact"],
         "additionalProperties": false
       },
       "schemaHash": "fb6e3e1b8d2a52efd769c72e94f66f5be2d0afed68d40d36f45bca5f28593aff",
@@ -4453,10 +3699,7 @@
             "description": "Desired favorite state for the current user."
           }
         },
-        "required": [
-          "contactId",
-          "favorite"
-        ],
+        "required": ["contactId", "favorite"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4471,10 +3714,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "contactId",
-          "favorite"
-        ],
+        "required": ["contactId", "favorite"],
         "additionalProperties": false
       },
       "schemaHash": "83ee1f90fc8a99f132cdbc30accb439034d793af0010866b12d7aed22a413525",
@@ -4504,10 +3744,7 @@
             "description": "Plain-text note content."
           }
         },
-        "required": [
-          "contactId",
-          "content"
-        ],
+        "required": ["contactId", "content"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4556,21 +3793,11 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               }
             },
-            "required": [
-              "id",
-              "contactId",
-              "authorUserId",
-              "authorDisplayName",
-              "content",
-              "createdAt",
-              "updatedAt"
-            ],
+            "required": ["id", "contactId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt"],
             "additionalProperties": false
           }
         },
-        "required": [
-          "note"
-        ],
+        "required": ["note"],
         "additionalProperties": false
       },
       "schemaHash": "9d4af032311ab8d1148f29ecb95352715d36c5ac1608a0a5bff4611381e6d7ab",
@@ -4614,9 +3841,7 @@
             }
           }
         },
-        "required": [
-          "contactId"
-        ],
+        "required": ["contactId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -4658,13 +3883,7 @@
                     "properties": {
                       "rel": {
                         "type": "string",
-                        "enum": [
-                          "open",
-                          "edit",
-                          "status",
-                          "preview",
-                          "download"
-                        ],
+                        "enum": ["open", "edit", "status", "preview", "download"],
                         "description": "Semantic relationship; clients decide how to present it."
                       },
                       "href": {
@@ -4681,10 +3900,7 @@
                         "maxLength": 120
                       }
                     },
-                    "required": [
-                      "rel",
-                      "href"
-                    ],
+                    "required": ["rel", "href"],
                     "additionalProperties": false
                   }
                 },
@@ -4699,14 +3915,7 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 }
               },
-              "required": [
-                "id",
-                "bookId",
-                "name",
-                "color",
-                "createdAt",
-                "updatedAt"
-              ],
+              "required": ["id", "bookId", "name", "color", "createdAt", "updatedAt"],
               "additionalProperties": false
             }
           },
@@ -4714,11 +3923,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "contactId",
-          "tags",
-          "tagsTruncated"
-        ],
+        "required": ["contactId", "tags", "tagsTruncated"],
         "additionalProperties": false
       },
       "schemaHash": "78b6eff827d797d796ae2082b033c3662d359221c3f55c4b74fda1f005bc1a7a",

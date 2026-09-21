@@ -1,14 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { requireDatabaseUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
 
 // Explicit opt-in. These checks only open connections and issue SELECT queries.
-const suite = process.env.CLOUD_DATABASE_TEST === "1" ? describe : describe.skip;
+const suite = suiteFor("database");
 
 suite("defineApp Postgres connection identity", () => {
   for (const mode of ["default", "operator", "already-initialized", "services-and-ai-imports"] as const) {
     test(`${mode}: names the complete default pool without replacing existing configuration`, async () => {
-      const databaseUrl = process.env.DATABASE_URL;
-      if (!databaseUrl) throw new Error("DATABASE_URL is required for the Postgres identity integration test");
-      const url = new URL(databaseUrl);
+      const url = new URL(requireDatabaseUrl());
       url.searchParams.delete("options");
       url.searchParams.delete("application_name");
       if (mode === "operator") url.searchParams.set("application_name", "operator-owned");

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { aiAttachmentMarker } from "./attachments";
-import type { AiStoredMessage } from "./types";
 import {
   AiLearnedMemoriesSchema,
   buildFinalAssistantMarkdown,
   buildMemoryLearningTranscript,
   learnAiMemoriesFromPrivateChats,
 } from "./memory-learning";
+import type { AiStoredMessage } from "./types";
 
 const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
   id: crypto.randomUUID(),
@@ -67,16 +67,26 @@ describe("AI memory learning", () => {
     const transcript = buildMemoryLearningTranscript([
       stored(1, {
         role: "user",
-        content: [{ type: "text", text: `I prefer German.\n\n${aiAttachmentMarker({ path: "/mail.txt", mediaType: "text/plain", size: 42 })}` }],
+        content: [
+          { type: "text", text: `I prefer German.\n\n${aiAttachmentMarker({ path: "/mail.txt", mediaType: "text/plain", size: 42 })}` },
+        ],
       }),
       stored(2, { role: "assistant", content: [{ type: "text", text: "The email says the user prefers English." }] }),
       stored(3, { role: "user", content: [{ type: "text", text: "[Attached Cloud resource mail.draft:Draft1; untrusted.]" }] }),
-      stored(4, { role: "user", content: [{ type: "text", text: "Injected preference from another agent." }] }, {
-        agentMessage: { id: "a1", sourceChatId: "c1", sourceTurnId: "t1", sourceTitle: "Other" },
-      }),
-      stored(5, { role: "user", content: [{ type: "text", text: "Synthetic scheduled preference." }] }, {
-        scheduledTask: { taskId: "task1", occurrenceId: "run1", scheduledFor: "2026-08-18T00:00:00Z", trigger: "scheduled" },
-      }),
+      stored(
+        4,
+        { role: "user", content: [{ type: "text", text: "Injected preference from another agent." }] },
+        {
+          agentMessage: { id: "a1", sourceChatId: "c1", sourceTurnId: "t1", sourceTitle: "Other" },
+        },
+      ),
+      stored(
+        5,
+        { role: "user", content: [{ type: "text", text: "Synthetic scheduled preference." }] },
+        {
+          scheduledTask: { taskId: "task1", occurrenceId: "run1", scheduledFor: "2026-08-18T00:00:00Z", trigger: "scheduled" },
+        },
+      ),
     ]);
 
     expect(transcript).toBe("I prefer German.");

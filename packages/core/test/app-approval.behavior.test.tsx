@@ -117,7 +117,10 @@ describe("Cloud app approval UI", () => {
     const copied = spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     const opened = spyOn(window, "open").mockReturnValue(null);
     const dispose = render(() => createComponent(InstallApp, { origin }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     button(dom.root, "Install app").click();
     await flush();
     expect(opened).not.toHaveBeenCalled();
@@ -181,20 +184,33 @@ describe("Cloud app approval UI", () => {
     const dom = createDomTestHarness();
     const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
     dom.window.history.replaceState(null, "", `/me/security?reauthenticate=1&pairDevice=${id}`);
-    let dispose = render(() => createComponent(Devices, {
-      availability: "configured", initial: { items: [], nextCursor: null },
-      pairing: { userId: deviceId, name: "Different account", appOrigin: "https://app.example" },
-    }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    let dispose = render(
+      () =>
+        createComponent(Devices, {
+          availability: "configured",
+          initial: { items: [], nextCursor: null },
+          pairing: { userId: deviceId, name: "Different account", appOrigin: "https://app.example" },
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     expect(pairStart).not.toHaveBeenCalled();
     expect(dom.document.querySelector("dialog[open]")).toBeNull();
     dispose();
     dom.window.history.replaceState(null, "", `/me/security?reauthenticate=1&pairDevice=${id}`);
-    dispose = render(() => createComponent(Devices, {
-      availability: "configured", initial: { items: [], nextCursor: null },
-      pairing: { userId: id, name: "Ada", appOrigin: "https://app.example" },
-    }), dom.root);
+    dispose = render(
+      () =>
+        createComponent(Devices, {
+          availability: "configured",
+          initial: { items: [], nextCursor: null },
+          pairing: { userId: id, name: "Ada", appOrigin: "https://app.example" },
+        }),
+      dom.root,
+    );
     await flush();
     expect(pairStart).toHaveBeenCalledTimes(1);
     expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
@@ -215,7 +231,14 @@ describe("Cloud app approval UI", () => {
             nextCursor: null,
             items: [
               { id: deviceId, name: "Phone", createdAt: new Date().toISOString(), lastUsedAt: null, revokedAt: null, assisted: true },
-              { id, name: "Revoked phone", createdAt: new Date().toISOString(), lastUsedAt: null, revokedAt: new Date().toISOString(), assisted: false },
+              {
+                id,
+                name: "Revoked phone",
+                createdAt: new Date().toISOString(),
+                lastUsedAt: null,
+                revokedAt: new Date().toISOString(),
+                assisted: false,
+              },
             ],
           },
         }),
@@ -262,10 +285,21 @@ describe("Cloud app approval UI", () => {
     const dom = createDomTestHarness();
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
     pairStart.mockImplementationOnce(async () => Response.json({ code: "REAUTHENTICATE" }, { status: 403 }));
-    const dispose = render(() => createComponent(Pairing, {
-      actorId: id, userId: deviceId, name: "Another user", appOrigin: "https://app.example", returnTo: "/me/security",
-    }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(Pairing, {
+          actorId: id,
+          userId: deviceId,
+          name: "Another user",
+          appOrigin: "https://app.example",
+          returnTo: "/me/security",
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     expect(dom.document.querySelector('[data-state="loading"]')).not.toBeNull();
     expect(dom.document.body.textContent).toContain("Checking identity");
@@ -286,10 +320,22 @@ describe("Cloud app approval UI", () => {
     const closed = mock(() => {});
     const key = `cloud.app-pairing:${id}:${id}`;
     dom.window.sessionStorage.setItem(key, JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt }));
-    const dispose = render(() => createComponent(Pairing, {
-      actorId: id, userId: id, name: "Ada", appOrigin: "https://app.example", returnTo: "/me/security", onClose: closed,
-    }), dom.root);
-    cleanup = () => { dispose(); dom.cleanup(); };
+    const dispose = render(
+      () =>
+        createComponent(Pairing, {
+          actorId: id,
+          userId: id,
+          name: "Ada",
+          appOrigin: "https://app.example",
+          returnTo: "/me/security",
+          onClose: closed,
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
     await flush();
     const footer = dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
     const abort = button(footer, "Cancel pairing");
@@ -373,7 +419,7 @@ describe("Cloud app approval UI", () => {
     };
     await flush();
     const link = dom.root.querySelector<HTMLAnchorElement>('a[href="/auth/login?credential=legacy"]')!;
-    expect(dom.root.querySelector('.text-center .tabular-nums')?.textContent).toBe("123456");
+    expect(dom.root.querySelector(".text-center .tabular-nums")?.textContent).toBe("123456");
     expect(dom.root.textContent).not.toContain("Stopping here does not delete");
     link.addEventListener("click", (event) => event.preventDefault());
     link.click();
