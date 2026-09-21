@@ -10,7 +10,7 @@ import type { AutomationActionKind } from "./mail-automation-actions";
 import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { resolveMailMessageActionVisibility } from "./mail-message-action-visibility";
-import { buildExactSenderSearchHref, buildMailingListHref, senderDomainFromAddress } from "./mail-navigation";
+import { buildExactSenderSearchHref, buildMailingListHref, mailRouteUrl, senderDomainFromAddress } from "./mail-navigation";
 
 type SelectionContext = {
   selectionKey: string | null;
@@ -79,7 +79,7 @@ export default function MailSenderMessageActions(props: {
 
   const pending = () => reportPhishing.loading();
   const sender = () => props.message.from[0] ?? null;
-  const findSenderHref = () => (sender() ? buildExactSenderSearchHref(new URL(props.requestUrl), sender()!.address) : null);
+  const findSenderHref = () => (sender() ? buildExactSenderSearchHref(mailRouteUrl(props.requestUrl), sender()!.address) : null);
   const actionVisibility = () =>
     resolveMailMessageActionVisibility({
       outgoing: isOutgoingMessage(props.message, props.identities),
@@ -157,7 +157,7 @@ export default function MailSenderMessageActions(props: {
                         {
                           label: t().manageUnsubscribe,
                           icon: "ti ti-mail-off",
-                          href: buildMailingListHref(new URL(props.requestUrl), props.message.mailingList.listKey),
+                          href: buildMailingListHref(mailRouteUrl(props.requestUrl), props.message.mailingList.listKey),
                         },
                       ]
                     : []),

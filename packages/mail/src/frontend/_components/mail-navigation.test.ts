@@ -10,6 +10,8 @@ import {
   isMailListItemActive,
   isMailWorkspaceUrl,
   type MailListItem,
+  mailRouteUrl,
+  resolveMailWorkspaceUrl,
   senderDomainFromAddress,
 } from "./mail-navigation";
 
@@ -159,6 +161,30 @@ describe("Mail workspace route ownership", () => {
   test("owns query and selection changes on the current mailbox route", () => {
     expect(isMailWorkspaceUrl(new URL(`/app/mail/${mailboxId}?view=mine`, origin), mailboxId, origin)).toBe(true);
     expect(isMailWorkspaceUrl(new URL(`/app/mail/${mailboxId}?conversation=Conv01`, origin), mailboxId, origin)).toBe(true);
+  });
+
+  test("keeps the SSR route usable when the upstream origin differs from the public one", () => {
+    // Behind the gateway the page renders from http://app-mail:3000 while the browser is on the public
+    // origin; the page therefore serializes requestPath(c), i.e. pathname + search.
+    const upstream = new URL(`http://app-mail:3000/app/mail/${mailboxId}?view=needs_action`);
+    const route = `${upstream.pathname}${upstream.search}`;
+    const firstPage = resolveMailWorkspaceUrl(route, mailboxId, origin);
+    expect(firstPage?.href).toBe(`${origin}/app/mail/${mailboxId}?view=needs_action`);
+    // Page two and a live refresh derive from the same route source.
+    const secondPage = new URL(firstPage!);
+    secondPage.searchParams.set("cursor", "page-2");
+    expect(isMailWorkspaceUrl(secondPage, mailboxId, origin)).toBe(true);
+    expect(resolveMailWorkspaceUrl(`${firstPage!.pathname}${firstPage!.search}`, mailboxId, origin)?.href).toBe(firstPage!.href);
+    // The absolute upstream URL that used to be serialized is still rejected by the same guard.
+    expect(resolveMailWorkspaceUrl(`http://app-mail:3000/app/mail/${mailboxId}?view=needs_action`, mailboxId, origin)).toBeNull();
+    expect(resolveMailWorkspaceUrl("/app/mail/Box002", mailboxId, origin)).toBeNull();
+  });
+
+  test("route helpers parse a path and never leak the placeholder origin", () => {
+    const url = mailRouteUrl(`/app/mail/${mailboxId}?view=mine&conversation=Conv01`);
+    expect(url.searchParams.get("conversation")).toBe("Conv01");
+    expect(buildMailListHref(url)).toBe(`/app/mail/${mailboxId}?view=mine`);
+    expect(buildMailSelectionHref(url, item)).toBe(`/app/mail/${mailboxId}?view=mine&conversation=Conv01`);
   });
 
   test("leaves server-rendered Mail pages and other origins to document navigation", () => {

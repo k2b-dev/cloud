@@ -34,7 +34,7 @@ import { openMailSearchBuilder } from "./MailSearchBuilder";
 import type { MailActionId } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
-import { buildMailListHref, type MailListItem } from "./mail-navigation";
+import { buildMailListHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
 
 const selectedQuickSearchFields = (url: URL): MailQuickSearchField[] => {
@@ -98,7 +98,7 @@ export default function MailConversationList(props: {
         { value: "attachment_name", label: messages().attachmentNames, icon: "ti ti-paperclip" },
       ] satisfies Array<{ value: MailQuickSearchField; label: string; icon: string }>,
   );
-  const requestUrl = () => new URL(props.requestUrl);
+  const requestUrl = () => mailRouteUrl(props.requestUrl);
   const [searchValue, setSearchValue] = createSignal(props.query);
   const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
   const [loadMoreElement, setLoadMoreElement] = createSignal<HTMLDivElement>();
