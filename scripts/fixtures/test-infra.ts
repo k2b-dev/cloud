@@ -4,9 +4,10 @@
  * Integration suites gate themselves on the presence of `CLOUD_TEST_*`
  * variables. When a variable is present, the suite runs and fails loudly if
  * the target is unreachable. When it is absent, the suite is skipped and the
- * runtime variables point at a closed loopback port (`test-infra-env.ts`), so
- * an ungated test that reaches for infrastructure fails with a connection
- * error instead of touching the stack configured in `.env`.
+ * runtime variables are removed; `DATABASE_URL` and `REDIS_URL` instead point
+ * at a closed loopback port (`test-infra-env.ts`), because Bun's default `sql`
+ * and `redis` handles would otherwise dial `localhost` and reach the stack
+ * configured in `.env`.
  *
  * Import this module first in every integration test file. It is also loaded
  * as a `bun test` preload from `bunfig.toml` and by `scripts/run-tests.ts`.
@@ -26,7 +27,7 @@
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
 import { beforeAll, describe, test } from "bun:test";
-import { type InfraKind, infraMappings as mappings, readTestTarget, testRuntimeEnv } from "./test-infra-env";
+import { applyTestRuntimeEnv, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
 
 export type { InfraKind } from "./test-infra-env";
 
@@ -67,7 +68,7 @@ const applyMappings = (): Record<InfraKind, string | undefined> => {
     if (kind === "valkey" && value) assertValkeyUrlWithoutIndex(value);
     resolved[kind] = value;
   }
-  Object.assign(process.env, testRuntimeEnv(process.env));
+  applyTestRuntimeEnv(process.env);
   if (Object.values(resolved).some(Boolean)) {
     for (const [key, value] of Object.entries(testOnlyDefaults)) {
       if (!read(key)) process.env[key] = value;

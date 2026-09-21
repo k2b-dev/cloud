@@ -15,7 +15,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { testRuntimeEnv } from "./fixtures/test-infra-env";
+import { applyTestRuntimeEnv } from "./fixtures/test-infra-env";
 
 type PackageJson = {
   name?: string;
@@ -142,7 +142,8 @@ const run = async (): Promise<void> => {
 
   const suites = await discoverTestSuites(workspaceRoot, options);
   const preload = `--preload=${join(workspaceRoot, "scripts", "fixtures", "test-infra.ts")}`;
-  const env = { ...Bun.env, ...testRuntimeEnv(Bun.env) };
+  const env: Record<string, string | undefined> = { ...Bun.env };
+  applyTestRuntimeEnv(env);
   const failed: string[] = [];
 
   if (options.integration && process.env.CLOUD_TEST_DATABASE_URL) {

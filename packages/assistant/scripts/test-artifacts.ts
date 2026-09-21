@@ -1,4 +1,6 @@
 // Disposable Postgres and rsql: never connect these tests to the development database.
+import { testRuntimeEnv } from "../../../scripts/fixtures/test-infra-env";
+
 if (Bun.argv.includes("--help")) {
   console.log(`Usage: bun packages/assistant/scripts/test-artifacts.ts
 
@@ -75,6 +77,11 @@ try {
       await Bun.sleep(250);
     }
   }
+  const testTargets = {
+    CLOUD_TEST_DATABASE_URL: `postgres://postgres@127.0.0.1:${port}/cloud_assistant_artifacts_test`,
+    CLOUD_TEST_RSQL_URL: rsqlUrl,
+    CLOUD_TEST_VALKEY_URL: process.env.CLOUD_TEST_VALKEY_URL,
+  };
   const child = Bun.spawn(
     [
       process.execPath,
@@ -95,8 +102,9 @@ try {
         ASSISTANT_EVAL_MODEL: process.env.ASSISTANT_EVAL_MODEL,
         NODE_ENV: "test",
         CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:1",
-        CLOUD_TEST_DATABASE_URL: `postgres://postgres@127.0.0.1:${port}/cloud_assistant_artifacts_test`,
-        CLOUD_TEST_RSQL_URL: rsqlUrl,
+        ...testTargets,
+        // Bun binds its default `redis` handle to REDIS_URL before the preload runs (#39).
+        ...testRuntimeEnv(testTargets),
         APP_SECRET: "51".repeat(32),
       },
       stdout: "inherit",

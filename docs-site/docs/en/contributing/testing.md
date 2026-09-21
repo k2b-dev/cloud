@@ -49,11 +49,13 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 
 A suite runs when its variables are present and fails loudly when the target
 is unreachable. When a variable is absent, the suite is skipped and the
-matching runtime variables (`DATABASE_URL`, `NATS_SERVERS`, `REDIS_URL`, and
-so on) point at a closed loopback port (`redis://127.0.0.1:1`,
-`postgres://127.0.0.1:1/unset`, `nats://127.0.0.1:1`), so an ungated test that
-reaches for infrastructure fails with a connection error instead of touching
-the stack configured in `.env`.
+matching runtime variables (`NATS_SERVERS`, `GOTENBERG_URL`, and so on) are
+removed, because unset is the off switch for those clients. `DATABASE_URL` and
+`REDIS_URL` instead point at a closed loopback port
+(`postgres://127.0.0.1:1/unset`, `redis://127.0.0.1:1`): Bun's default `sql`
+and `redis` handles would otherwise dial `localhost`, so an ungated test that
+reaches for them fails with a connection error instead of touching the stack
+configured in `.env`.
 
 Run integration tests through `bun run test`: it exports those runtime
 variables into every test process before Bun starts, which is the only moment
