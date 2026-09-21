@@ -390,13 +390,16 @@ export const agentHost = {
         if (session.background) await authorize(session.context, session.turnId);
         else {
           const active = await aiConversations.getActiveTurn({ conversationId: session.conversationId });
-          if (active?.turn.cancelRequestedAt || (session.busy.size && session.lastCall?.turnId !== active?.turn.id)) {
+          if (
+            active?.turn.cancelRequestedAt ||
+            (session.busy.size && session.lastCall?.turnId !== active?.turn.id) ||
+            (!active && Date.now() - session.lastUsed > IDLE_MS)
+          ) {
             await closeSession(session);
             continue;
           }
         }
-        if (!session.busy.size && Date.now() - session.lastUsed > IDLE_MS) await closeSession(session);
-        else await (await session.host).health();
+        await (await session.host).health();
       } catch {
         await closeSession(session);
       }
