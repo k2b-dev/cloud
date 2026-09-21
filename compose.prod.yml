@@ -6,7 +6,10 @@
 # and depend on a `postgres` service with a healthcheck). See README and
 # compose.yml for an example.
 #
-# Configure via .env (see .env.prod.example).
+# Configure via .env (see .env.prod.example). Set CLOUD_IMAGE_TAG to a release
+# tag (`vX.Y.Z`) or an immutable `sha-<commit>` tag listed in that release's
+# release.json. Never deploy `main` or `latest`: they move underneath a running
+# installation and break the rollback path.
 
 x-shared-env: &shared-env
   DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}

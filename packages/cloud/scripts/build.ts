@@ -47,6 +47,10 @@ const release = process.env.CLOUD_RELEASE?.trim() || "local";
 if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(release)) {
   throw new Error(`Invalid CLOUD_RELEASE: ${JSON.stringify(release)}`);
 }
+const version = process.env.CLOUD_VERSION?.trim() || "0.0.0-local";
+if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+  throw new Error(`Invalid CLOUD_VERSION: ${JSON.stringify(version)}`);
+}
 const syncPackagePath = Bun.resolveSync("@k2b/sync/package.json", frameworkDir);
 const syncPackage = JSON.parse(await readFile(syncPackagePath, "utf8")) as {
   version?: unknown;
@@ -121,6 +125,7 @@ try {
     minify: true,
     metafile: true,
     define: {
+      __CLOUD_VERSION__: JSON.stringify(version),
       __CLOUD_RELEASE__: JSON.stringify(release),
       __CLOUD_SYNC_VERSION__: JSON.stringify(syncVersion),
       __CLOUD_PDF_RENDER_WORKER__: JSON.stringify("./pdf-render/worker.js"),
@@ -134,7 +139,7 @@ if (!server.success) {
   for (const m of server.logs) console.error(m);
   throw new Error("Server bundle failed");
 }
-if (Object.keys(server.metafile?.inputs ?? {}).some(path => path.endsWith("/ai/pdf-render.ts"))) {
+if (Object.keys(server.metafile?.inputs ?? {}).some((path) => path.endsWith("/ai/pdf-render.ts"))) {
   await buildPdfRenderer(dist);
 }
 

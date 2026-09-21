@@ -132,6 +132,10 @@ if (appId === "core" && existsSync(globalCssEntry)) {
 const appPublicDir = resolve(publicDir, appId);
 await mkdir(appPublicDir, { recursive: true });
 
+// Static assets from <appDir>/public, same as step 3 of the production build.
+const appPublicSource = resolve(appDir, "public");
+if (existsSync(appPublicSource)) await cp(appPublicSource, appPublicDir, { recursive: true });
+
 if (appId !== "core" && app) {
   await writeAppFavicon({
     publicDir,

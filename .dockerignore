@@ -17,7 +17,8 @@ build
 !docs-site/docs/en/build/**
 _ssr
 **/_ssr
-public                          # workspace-root public/ is a dev runtime artefact
+# workspace-root public/ is a dev runtime artefact
+public
 output
 coverage
 **/coverage
@@ -25,8 +26,9 @@ coverage
 .cache
 **/.cache
 **/.local
+**/.fallow
 
-# Repo metadata not needed in the image
+# Repo metadata and sources not needed in the image
 LICENSE
 README.md
 Dockerfile
@@ -35,11 +37,6 @@ compose*.yml
 .github
 .claude
 .dex
-.fallow
 .playwright-cli
-tmp
-todo
-wip
-packages/desktop-lab
+tests
 skills
-APPS.md

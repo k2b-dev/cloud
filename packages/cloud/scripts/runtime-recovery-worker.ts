@@ -1,4 +1,5 @@
 /** Disposable acceptance fixture for Cloud's shared runtime seams; no domain services. */
+import { parseArgs } from "node:util";
 import { createSync } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
 import { createHeartbeat } from "../src/_internal/heartbeat";
@@ -7,7 +8,8 @@ import { watchRegistryChanges } from "../src/_internal/registry-watch";
 import { FreeIpaTransportError, withFreeIpaResponse } from "../src/server/services/freeipa/transport";
 import { superviseRuntimeTask } from "../src/services/runtime-lifecycle";
 
-const namespace = process.env.RECOVERY_NAMESPACE!;
+const { values: options } = parseArgs({ args: Bun.argv.slice(2), options: { namespace: { type: "string" } } });
+const namespace = options.namespace;
 if (!namespace?.startsWith("cloud-runtime-acceptance-")) throw new Error("Disposable namespace required");
 const connection = await connect({ servers: "nats://broker:4222", name: namespace });
 const sync = createSync({ connection, namespace, application: "runtime-acceptance", defaults: { replicas: 1 } });

@@ -1,15 +1,17 @@
 /**
  * Isolated two-process recovery acceptance for the local NATS cluster.
  *
- * SYNC_RECOVERY_NAMESPACE=cloud-recovery-smoke-<unique> bun packages/cloud/scripts/sync-recovery-smoke.ts prepare
+ * bun packages/cloud/scripts/sync-recovery-smoke.ts prepare --namespace cloud-recovery-smoke-<unique>
  * Stop the application fleet across the printed nextTick boundary, keeping NATS up.
  * Restart the fleet, then run the same command with `recover`.
  * No provider or application-domain effects; successful recovery deletes only
  * the exact test streams after checking their broker identity metadata.
  */
-import { env } from "../src/config/env";
+
+import { parseArgs } from "node:util";
 import { createSync, type SyncResourceSummary, type Worker } from "@k2b/sync";
 import { connect, type NatsConnection } from "@nats-io/transport-node";
+import { env } from "../src/config/env";
 
 const APPLICATION = "cloud-recovery-smoke";
 const JOB_ID = "restart-job";
@@ -49,11 +51,24 @@ const removeTestStreams = async (connection: NatsConnection, namespace: string, 
 };
 
 export const main = async (): Promise<void> => {
-  const phase = Bun.argv[2];
+  const { values: options, positionals } = parseArgs({
+    args: Bun.argv.slice(2),
+    allowPositionals: true,
+    options: { namespace: { type: "string" }, help: { type: "boolean", default: false } },
+  });
+  if (options.help) {
+    console.log(`Usage: bun packages/cloud/scripts/sync-recovery-smoke.ts <prepare|recover> --namespace cloud-recovery-smoke-<unique>
+
+Two-phase recovery acceptance against the application's NATS servers (NATS_SERVERS, default nats://127.0.0.1:4222).
+Run "prepare", restart the application fleet while NATS stays up, then run "recover" with the same namespace.
+`);
+    return;
+  }
+  const phase = positionals[0];
   check(phase === "prepare" || phase === "recover", "Pass prepare or recover");
-  const namespace = process.env.SYNC_RECOVERY_NAMESPACE?.trim() ?? "";
-  check(/^cloud-recovery-smoke-[A-Za-z0-9_-]{6,60}$/.test(namespace), "Set a unique SYNC_RECOVERY_NAMESPACE=cloud-recovery-smoke-<suffix>");
-  const servers = (process.env.NATS_SERVERS ?? "nats://127.0.0.1:4222")
+  const namespace = options.namespace?.trim() ?? "";
+  check(/^cloud-recovery-smoke-[A-Za-z0-9_-]{6,60}$/.test(namespace), "Pass a unique --namespace cloud-recovery-smoke-<suffix>");
+  const servers = (env.NATS_SERVERS ?? "nats://127.0.0.1:4222")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);

@@ -1,48 +1,23 @@
+# syntax=docker/dockerfile:1.7-labs
 # Per-app production image.
 #
-#   docker build --build-arg APP_ID=<id> -t cloud-<id> .
+#   docker build --build-arg APP_ID=<id> \
+#     --build-arg CLOUD_VERSION=<semver> --build-arg CLOUD_RELEASE=<tag> -t cloud-<id> .
 #
-# `deps` is independent of APP_ID, so the same install layer is cached
-# across all release apps. `build` and `runtime` are app-specific.
+# `deps` and `deps-dev` are independent of APP_ID and of application sources,
+# so the install and the @k2b/ui build are cached across all release apps.
+# `build` and `runtime` are app-specific. The image is built natively per
+# architecture: the pdf-render binary must match the target platform.
 
 # ──────────────────────────────────────────────────────────────────────
-# Stage 1: deps — install workspace dependencies (cache-shared).
+# Stage 1: deps — production install (cache-shared, ships to runtime builds).
 # ──────────────────────────────────────────────────────────────────────
 FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS deps
 WORKDIR /app
 
 COPY package.json bun.lock bunfig.toml ./
 COPY patches/ patches/
-COPY pwas/pwa-auth/package.json pwas/pwa-auth/
-COPY packages/accounts/package.json      packages/accounts/
-COPY packages/api-docs/package.json      packages/api-docs/
-COPY packages/assistant/package.json     packages/assistant/
-COPY packages/capabilities/package.json  packages/capabilities/
-COPY packages/cloud/package.json         packages/cloud/
-COPY packages/cloud-cli/package.json     packages/cloud-cli/
-COPY packages/contacts/package.json      packages/contacts/
-COPY packages/core/package.json          packages/core/
-COPY packages/dashboard/package.json     packages/dashboard/
-COPY packages/faq/package.json           packages/faq/
-COPY packages/files/package.json         packages/files/
-COPY packages/filesv2/package.json       packages/filesv2/
-COPY packages/grids/package.json         packages/grids/
-COPY packages/gateway/package.json       packages/gateway/
-COPY packages/gateway-ops/package.json   packages/gateway-ops/
-COPY packages/ipa-hosts/package.json     packages/ipa-hosts/
-COPY packages/mail/package.json          packages/mail/
-COPY packages/notebooks/package.json     packages/notebooks/
-COPY packages/oauth/package.json         packages/oauth/
-COPY packages/pulse/package.json         packages/pulse/
-COPY packages/proxy-auth/package.json    packages/proxy-auth/
-COPY packages/quotes/package.json        packages/quotes/
-COPY packages/spaces/package.json        packages/spaces/
-COPY packages/tools/package.json         packages/tools/
-COPY packages/ui/package.json            packages/ui/
-COPY packages/venue/package.json         packages/venue/
-COPY packages/weather/package.json       packages/weather/
-COPY fixtures/ui-ssr/package.json        fixtures/ui-ssr/
-COPY docs-site/package.json              docs-site/
+COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
 
 # --production keeps CI/dev-only tools (Biome, TypeScript, @types, etc.) out
 # of production images. This avoids optional platform binaries in multi-arch
@@ -53,33 +28,50 @@ COPY docs-site/package.json              docs-site/
 RUN bun install --frozen-lockfile --ignore-scripts --production
 
 # ──────────────────────────────────────────────────────────────────────
-# Stage 2: build — bundle one app into /app/dist.
+# Stage 2: deps-dev — build toolchain + compiled @k2b/ui (cache-shared).
 # ──────────────────────────────────────────────────────────────────────
-FROM deps AS build
+FROM deps AS deps-dev
+ENV NODE_ENV=production
+
+# @k2b/ui's stylesheet is compiled in this disposable stage, so install its
+# build-time toolchain here. Only packages/ui is copied: this layer must stay
+# identical for every APP_ID and for source changes elsewhere.
+RUN bun install --frozen-lockfile --ignore-scripts
+COPY packages/ui packages/ui
+RUN bun run --cwd packages/ui build
+
+# ──────────────────────────────────────────────────────────────────────
+# Stage 3: build — bundle one app into /app/dist.
+# ──────────────────────────────────────────────────────────────────────
+FROM deps-dev AS build
 ARG APP_ID
+ARG CLOUD_VERSION=0.0.0-local
 ARG CLOUD_RELEASE=local
 ENV APP_ID=${APP_ID} \
-    CLOUD_RELEASE=${CLOUD_RELEASE} \
-    NODE_ENV=production
+    CLOUD_VERSION=${CLOUD_VERSION} \
+    CLOUD_RELEASE=${CLOUD_RELEASE}
 
 COPY packages packages
 COPY styles.css ./
-
-# The runtime install stays production-only. @k2b/ui's stylesheet is compiled
-# in this disposable build stage, so install its build-time toolchain here.
-RUN bun install --frozen-lockfile --ignore-scripts
-RUN bun run --cwd packages/ui build
 RUN bun run packages/cloud/scripts/build.ts
 
 # ──────────────────────────────────────────────────────────────────────
-# Stage 3: runtime — only the bundled output + bun runtime.
+# Stage 4: runtime — only the bundled output + bun runtime.
 # ──────────────────────────────────────────────────────────────────────
 FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
 WORKDIR /app
 ARG APP_ID
+ARG CLOUD_VERSION=0.0.0-local
+ARG CLOUD_RELEASE=local
+# Only Assistant needs the server-owned code execution browser.
 RUN if [ "$APP_ID" = "assistant" ]; then apk add --no-cache chromium; fi
-ENV NODE_ENV=production CLOUD_CLI_CHROMIUM=/usr/bin/chromium
-COPY --from=build /app/dist ./
+ENV NODE_ENV=production \
+    HOME=/home/bun \
+    CLOUD_VERSION=${CLOUD_VERSION} \
+    CLOUD_RELEASE=${CLOUD_RELEASE} \
+    CLOUD_CLI_CHROMIUM=/usr/bin/chromium
+COPY --from=build --chown=bun:bun /app/dist ./
+USER bun
 
 EXPOSE 3000
 CMD ["bun", "server.js"]
