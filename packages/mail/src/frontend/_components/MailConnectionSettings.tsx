@@ -355,29 +355,33 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                     onValueChange={setName}
                     required
                   />
-                  <div class="flex items-end gap-2">
-                    <div class="min-w-0 flex-1">
-                      <TextInput
-                        label={messages().emailAddress}
-                        description={messages().providerEmailDescription}
-                        type="email"
-                        value={email}
-                        onValueChange={setEmail}
-                        required
-                      />
-                    </div>
-                    <Button
-                      variant="input"
-                      size="sm"
-                      type="button"
-                      class="shrink-0"
-                      disabled={!email().trim() || discover.loading()}
-                      onClick={() => discover.mutate()}
-                    >
-                      <i class={`ti ${discover.loading() ? "ti-loader-2 animate-spin" : "ti-wand"}`} aria-hidden="true" />
-                      {messages().findSettings}
-                    </Button>
-                  </div>
+                  <TextInput
+                    label={messages().emailAddress}
+                    description={messages().providerEmailDescription}
+                    type="email"
+                    value={email}
+                    onValueChange={setEmail}
+                    required
+                  />
+                </div>
+                <TextInput
+                  label={messages().username}
+                  description={messages().usernameDescription}
+                  value={username}
+                  onValueChange={setUsername}
+                  required
+                />
+                <div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    disabled={!email().trim() || discover.loading()}
+                    onClick={() => discover.mutate()}
+                  >
+                    <i class={`ti ${discover.loading() ? "ti-loader-2 animate-spin" : "ti-wand"}`} aria-hidden="true" />
+                    {messages().findSettings}
+                  </Button>
                 </div>
                 <Show when={discoverySource()}>
                   {(source) => (
@@ -386,13 +390,6 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                     </NoticeCard>
                   )}
                 </Show>
-                <TextInput
-                  label={messages().username}
-                  description={messages().usernameDescription}
-                  value={username}
-                  onValueChange={setUsername}
-                  required
-                />
               </PanelDialog.Section>
 
               <PanelDialog.Section title={messages().serverSettings} subtitle={messages().serverSettingsDescription} icon="ti ti-server">
