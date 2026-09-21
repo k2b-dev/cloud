@@ -29,5 +29,6 @@
       "package-name": "@k2b/ui"
     }
   },
-  "last-release-sha": "f38cd47486eacf64524be6d4c36524967f0916fd"
+  "last-release-sha": "f38cd47486eacf64524be6d4c36524967f0916fd",
+  "plugins": ["node-workspace"]
 }
