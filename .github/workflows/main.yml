@@ -1,16 +1,16 @@
 name: Main
 
-# Runs after CI succeeded on main: keeps the release-please PR current, then
-# builds every image exactly once for the commit (tagged sha-<12>, plus
-# vX.Y.Z when this commit is a release) and finishes the release from that
-# build. Everything is chained here because tags and PRs created with
-# GITHUB_TOKEN never trigger other workflows.
+# Runs on every push to main. The merge queue already verified the exact
+# merge result with the CI gate, so no second CI run happens here: this
+# workflow keeps the release-please PR current, then builds every image
+# exactly once for the commit (tagged sha-<12>, plus vX.Y.Z when this commit
+# is a release) and finishes the release from that build. Everything is
+# chained here because tags and PRs created with GITHUB_TOKEN never trigger
+# other workflows.
 
 on:
-  workflow_run:
-    workflows: [CI]
+  push:
     branches: [main]
-    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -30,14 +30,6 @@ concurrency:
 
 jobs:
   release-please:
-    # Only same-repository pushes to main (workflow_run also fires for fork
-    # pull-request runs whose head branch is named main).
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -55,7 +47,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # A redo checks out the released commit; the workflow files still come from main.
-          ref: ${{ inputs.version != '' && format('refs/tags/cloud-v{0}', inputs.version) || github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ inputs.version != '' && format('refs/tags/cloud-v{0}', inputs.version) || github.sha }}
       - id: release
         if: inputs.version == ''
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
