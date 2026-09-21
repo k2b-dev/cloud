@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { generateSpecs } from "hono-openapi";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { focus, mailboxAccess, publicResources } from "../service";
 import * as workspace from "../service/workspace";
 import app from ".";
@@ -29,7 +30,10 @@ const user = {
 
 afterEach(() => mock.restore());
 
-describe("Mail focus API", () => {
+// These API contracts exercise the real services behind the routes, so they need the test database.
+const suite = databaseSuite();
+
+suite("Mail focus API", () => {
   test("publishes the authenticated cross-mailbox route", async () => {
     const spec = await generateSpecs(app);
     const operation = spec.paths?.["/overview/conversations"]?.get;

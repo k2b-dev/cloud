@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { commands, drafts, mailboxAccess, publicResources } from "../service";
 import app from ".";
 
@@ -27,7 +28,10 @@ const user = {
 
 afterEach(() => mock.restore());
 
-describe("Mail draft public boundary", () => {
+// These API contracts exercise the real services behind the routes, so they need the test database.
+const suite = databaseSuite();
+
+suite("Mail draft public boundary", () => {
   test("resolves public route IDs once before listing conversation drafts", async () => {
     const mailboxId = "22222222-2222-4222-8222-222222222222";
     const conversationId = "33333333-3333-4333-8333-333333333333";
@@ -51,7 +55,7 @@ describe("Mail draft public boundary", () => {
   });
 });
 
-describe("Mail command public boundary", () => {
+suite("Mail command public boundary", () => {
   test("resolves resource inputs to UUIDs and projects command targets back to short IDs", async () => {
     const mailboxId = "22222222-2222-4222-8222-222222222222";
     const messageId = "33333333-3333-4333-8333-333333333333";

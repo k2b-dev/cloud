@@ -1,10 +1,14 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { weatherService } from "@k2b/cloud/services";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import app from ".";
 
 afterEach(() => mock.restore());
 
-describe("Weather API locale", () => {
+// These API contracts exercise the real services behind the routes, so they need the test database.
+const suite = databaseSuite();
+
+suite("Weather API locale", () => {
   test("localizes human-facing failures from the request without changing the status", async () => {
     spyOn(weatherService.forecast, "get").mockResolvedValue(null);
 

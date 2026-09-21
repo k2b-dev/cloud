@@ -3,8 +3,8 @@ import { expect, test } from "bun:test";
 test("Sync replicas default to three and accept only explicit supported counts", async () => {
   const path = new URL("./env.ts", import.meta.url).pathname;
   for (const value of [undefined, "", "1", "3", "5", "0", "2", "abc"]) {
-    const vars = { ...process.env };
-    delete vars.SYNC_REPLICAS;
+    // A minimal environment: the test infrastructure preload may have set defaults in this process.
+    const vars: Record<string, string> = { PATH: process.env.PATH ?? "" };
     if (value !== undefined) vars.SYNC_REPLICAS = value;
     const child = Bun.spawn(
       [process.execPath, "--no-env-file", "-e", `import {env} from ${JSON.stringify(path)}; console.log(env.SYNC_REPLICAS)`],
