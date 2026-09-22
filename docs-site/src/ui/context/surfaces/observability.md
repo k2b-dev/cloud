@@ -41,7 +41,7 @@ import {
 | `subtitle` | `JSX.Element` | none | States a count, scope, or current view. |
 | `actions` | `JSX.Element` | none | Adds compact trailing controls. |
 | `as` | `"h1" \| "h2" \| "h3"` | `"h2"` | Preserves heading hierarchy. |
-| `size` | `"sm" \| "md"` | `"sm"` | Selects panel or page-level type scale. |
+| `size` | `"sm" \| "md" \| "lg"` | `"sm"` | Selects panel, section, or page-level type scale. `"lg"` is the page title of an overview. |
 
 `DataPanel` already includes `PanelHeader`.
 
@@ -88,7 +88,7 @@ Build every `href` from the current filter state so changing the range does not 
 ```ts
 type PanelHeaderProps = {
   title: JSX.Element; subtitle?: JSX.Element; actions?: JSX.Element; as?: "h1" | "h2" | "h3";
-  size?: "sm" | "md"; class?: string;
+  size?: "sm" | "md" | "lg"; class?: string;
 };
 
 type DataPanelProps = {

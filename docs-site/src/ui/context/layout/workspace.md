@@ -264,8 +264,8 @@ type AppWorkspaceBottomDrawerProps = {
 ```ts
 type AppWorkspaceSidebarProps = {
   label?: string;
-  children: JSX.Element; class?: string; resizable?: boolean; resizeShadow?: boolean; collapsible?: boolean;
-  defaultSize?: number; minSize?: number; maxSize?: number;
+  children: JSX.Element; class?: string; mobile?: "hidden" | "stacked"; resizable?: boolean; resizeShadow?: boolean;
+  collapsible?: boolean; defaultSize?: number; minSize?: number; maxSize?: number;
 };
 
 type AppWorkspaceSidebarBodyProps = {
@@ -279,7 +279,7 @@ type AppWorkspaceSidebarSectionProps = AppWorkspaceSidebarBodyProps & {
 };
 
 type AppWorkspaceSidebarItemProps = {
-  variant?: "row" | "card"; context?: JSX.Element; contextMeta?: JSX.Element;
+  variant?: "row" | "card" | "object"; context?: JSX.Element; contextMeta?: JSX.Element;
   description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
@@ -642,3 +642,33 @@ Completed work can retain `variant="row"` without context or description.
 Card context headers keep their width when trailing actions appear; only the title area yields space. Use `Format.RelativeTime` for relative timestamps. The desktop scroll track occupies the existing right inset and keeps its gutter when content fits, without adding space on the left. Keyboard focus on the main card action outlines the complete card.
 
 Inactive context cards use a transparent surface and border; the active item retains its selection treatment.
+
+### Object rows
+
+Use `SidebarItem variant="object"` when the sidebar lists the resources an
+overview navigates into, such as mailboxes or notebooks, rather than views
+inside one resource. The leading icon becomes a small accent tile, the label
+is the resource title, `description` is its one-line meta text, and
+`SidebarItemMeta` stacks trailing counts at the end of the row. Keep counts
+tabular and put their accessible wording in visually hidden text. Object rows
+truncate their title instead of scrolling it.
+
+```tsx
+<AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">
+  <AppWorkspace.SidebarItemIcon icon="ti ti-mail" />
+  <AppWorkspace.SidebarItemLabel>Support</AppWorkspace.SidebarItemLabel>
+  <AppWorkspace.SidebarItemMeta>
+    <span aria-hidden="true">12</span>
+    <span class="k2b-sr-only">12 unread</span>
+  </AppWorkspace.SidebarItemMeta>
+</AppWorkspace.SidebarItem>
+```
+
+### Stacked mobile sidebar
+
+Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
+list of an overview and the host's mobile navigation does not carry it. Below
+1024 px the sidebar then stays visible as a block above the content, capped at
+half the workspace height with its own scrolling body, and the footer wraps
+its items into a row. Leave the default `"hidden"` for workspaces whose
+sidebar is view navigation inside one resource.

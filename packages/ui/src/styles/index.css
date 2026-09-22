@@ -1815,6 +1815,20 @@
   line-height: 1.3333;
 }
 
+/* `size="lg"` is the page-level title of an overview: one strong line with a
+   one-line subtitle, still without any surface of its own. */
+.k2b-ui .k2b-panel-header__title.is-large {
+  font-size: 1.375rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.k2b-ui .k2b-panel-header[data-size="lg"] .k2b-panel-header__subtitle {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
 /* Cloud: `paper overflow-hidden`. */
 .k2b-ui .k2b-data-panel {
   @apply min-w-0 overflow-hidden;
@@ -7960,6 +7974,54 @@
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] .k2b-app-workspace__sidebar-item-label-text {
   font-size: 0.8125rem;
   font-weight: 500;
+}
+
+/* Object rows: one resource per row with a title, a description line, and
+   stacked trailing counts. The leading icon becomes a small accent tile. */
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"]:not(.has-action),
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-main {
+  min-height: 3.25rem;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  color: var(--k2b-text);
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.5rem;
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) 12%, var(--k2b-surface));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.5),
+    inset 0 -1px 1px rgb(0 0 0 / 0.05);
+  font-size: 1rem;
+}
+.k2b-ui[data-theme="dark"] .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-icon,
+.k2b-ui.k2b-dark .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-icon,
+.dark .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-icon {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.07),
+    inset 0 -1px 1px rgb(0 0 0 / 0.4);
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-copy {
+  gap: 0.0625rem;
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-label-text {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-meta {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.125rem;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item-context {
   display: flex;

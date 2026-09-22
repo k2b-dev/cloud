@@ -128,6 +128,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(html).toContain("data-k2b-app-workspace");
     expect(html).not.toContain("k2b-app-workspace__sidebar-mobile");
+    expect(html).not.toContain('data-mobile="stacked"');
     expect(html).toContain("Inventory");
     expect(html).toContain("k2b-app-workspace__sidebar-desktop");
     // The sidebar body's scroll memory runs inline right after the body so a
@@ -158,6 +159,54 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toContain('class="k2b-app-workspace__sidebar-item-meta k2b-app-workspace__nav-tree-leaf-meta"');
   });
 
+
+  test("renders object rows and an opt-in stacked mobile sidebar", () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace, {
+        get children() {
+          return [
+            createComponent(AppWorkspace.Sidebar, {
+              label: "Mailboxes",
+              mobile: "stacked",
+              get children() {
+                return createComponent(AppWorkspace.SidebarDesktop, {
+                  get children() {
+                    return createComponent(AppWorkspace.SidebarBody, {
+                      get children() {
+                        return createComponent(AppWorkspace.SidebarItem, {
+                          variant: "object",
+                          href: "/app/mail/support",
+                          description: "support@example.test",
+                          get children() {
+                            return [
+                              createComponent(AppWorkspace.SidebarItemIcon, { icon: "ti ti-mail" }),
+                              createComponent(AppWorkspace.SidebarItemLabel, { children: "Support" }),
+                              createComponent(AppWorkspace.SidebarItemMeta, { children: "12" }),
+                            ];
+                          },
+                        });
+                      },
+                    });
+                  },
+                });
+              },
+            }),
+            createComponent(AppWorkspace.Content, {
+              get children() {
+                return createComponent(AppWorkspace.Main, { children: "Main content" });
+              },
+            }),
+          ];
+        },
+      }),
+    );
+
+    expect(html).toMatch(/<aside[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
+    expect(html).toMatch(/<a href="\/app\/mail\/support"[^>]*data-variant="object"/);
+    expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-marquee="false"');
+    expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-description">support@example.test</span>');
+    expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-meta">12</span>');
+  });
   test("renders labelled actions beside a sidebar section title", () => {
     const html = renderToString(() =>
       createComponent(AppWorkspace.SidebarSection, {
@@ -729,6 +778,26 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-panel-header__subtitle")).toContain("font-size:.625rem");
       // The component emits `data-size`; before this it matched no rule at all.
       expect(rule(".k2b-panel-header[data-size=md] .k2b-panel-header__subtitle")).toContain("font-size:.75rem");
+      expect(rule(".k2b-panel-header__title.is-large")).toContain("font-size:1.375rem");
+      expect(rule(".k2b-panel-header[data-size=lg] .k2b-panel-header__subtitle")).toContain("font-size:.875rem");
+    });
+
+    test("gives object rows an accent tile, a strong title, and stacked counts", () => {
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain("width:2rem");
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-label-text")).toContain(
+        "font-weight:600",
+      );
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-meta")).toContain(
+        "flex-direction:column",
+      );
+    });
+
+    test("keeps a stacked sidebar visible above the content below the desktop breakpoint", () => {
+      // First rule of its media block, so the shared helper's `}` anchor cannot see it.
+      const stacked = css.match(/\.k2b-app-workspace__sidebar\[data-mobile=stacked\]\{([^}]*)\}/)?.[1] ?? "";
+      expect(stacked).toContain("display:flex");
+      expect(stacked).toContain("grid-area:mobile");
+      expect(stacked).toContain("max-height:50%");
     });
 
     test("gives the settings rail Cloud's sidebar-item affordances", () => {
