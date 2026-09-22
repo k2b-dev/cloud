@@ -97,6 +97,10 @@ const messages: Record<string, [string, string]> = {
     "Document editing is not configured for this Cloud.",
     "Die Dokumentbearbeitung ist in dieser Cloud nicht konfiguriert.",
   ],
+  internal: [
+    "Files hit an unexpected error. The server log has the details.",
+    "In Files ist ein unerwarteter Fehler aufgetreten. Details stehen im Server-Log.",
+  ],
   template_missing: [
     "The document template is missing from this Cloud installation. Ask the operator to rebuild the Files image.",
     "Die Dokumentvorlage fehlt in dieser Cloud-Installation. Bitte den Betreiber, das Files-Image neu zu bauen.",
