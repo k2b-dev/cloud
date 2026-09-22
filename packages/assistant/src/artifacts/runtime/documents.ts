@@ -4,41 +4,15 @@ import readExcelFile from "read-excel-file/universal";
 // Registers the bundled handler used by PDF.js's in-process transport. This
 // module already runs inside the isolated, terminable application worker.
 import "pdfjs-dist/build/pdf.worker.mjs";
+import { checkWorkbookArchive, WORKBOOK_EXPANDED_BYTES, writeOdsWorkbook } from "./workbook";
 
-// Parsing expands compressed data into XML/text and object graphs. These are
-// per-document working-set budgets, never a limit on the selected folder.
+// Parsing expands compressed data into XML/text and object graphs. This is a
+// per-document working-set budget, never a limit on the selected folder.
 export const DOCUMENT_BYTES = 64 * 1024 * 1024;
-export const WORKBOOK_EXPANDED_BYTES = 128 * 1024 * 1024;
 function checkFile(file: Blob) {
   if (!(file instanceof Blob)) throw new Error("Expected a local File or Blob");
   if (file.size > DOCUMENT_BYTES)
     throw new Error("Document exceeds the 64 MiB per-file parsing budget. Split this document; other files can still be processed.");
-}
-
-/** Check total ZIP directory sizes before a reader allocates expanded XML. */
-function checkWorkbookArchive(buffer: ArrayBuffer, format: "XLSX" | "ODS") {
-  const view = new DataView(buffer);
-  let end = -1;
-  for (let i = view.byteLength - 22; i >= Math.max(0, view.byteLength - 65557); i--) {
-    if (view.getUint32(i, true) === 0x06054b50 && i + 22 + view.getUint16(i + 20, true) === view.byteLength) {
-      end = i;
-      break;
-    }
-  }
-  if (end < 0) throw new Error(`Expected an ${format} ZIP archive; XLS and XLSB are not supported`);
-  const count = view.getUint16(end + 10, true);
-  let offset = view.getUint32(end + 16, true),
-    expanded = 0;
-  if (view.getUint16(end + 4, true) || view.getUint16(end + 6, true) || count === 0xffff || offset === 0xffffffff)
-    throw new Error("Multipart and ZIP64 workbooks are not supported");
-  for (let i = 0; i < count; i++) {
-    if (offset + 46 > end || view.getUint32(offset, true) !== 0x02014b50) throw new Error(`Invalid ${format} ZIP directory`);
-    if (view.getUint16(offset + 8, true) & 1) throw new Error("Encrypted workbooks are not supported");
-    expanded += view.getUint32(offset + 24, true);
-    if (expanded > WORKBOOK_EXPANDED_BYTES) throw new Error("Workbook exceeds the 128 MiB expanded XML budget");
-    offset += 46 + view.getUint16(offset + 28, true) + view.getUint16(offset + 30, true) + view.getUint16(offset + 32, true);
-  }
-  if (offset !== end) throw new Error(`Invalid ${format} ZIP directory length`);
 }
 
 export const excel = {
@@ -91,6 +65,7 @@ export const ods = {
       },
     };
   },
+  write: writeOdsWorkbook,
 };
 
 export const pdf = {

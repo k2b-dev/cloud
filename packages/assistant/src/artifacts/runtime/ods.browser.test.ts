@@ -6,7 +6,7 @@ import { chromium } from "playwright";
 import type {} from "./browser-harness";
 import { compileArtifact } from "./compile";
 
-test("ODS reads typed cells, grouped rows and cached formulas in the isolated worker", async () => {
+test("ODS reads typed cells, grouped rows and cached formulas and writes workbooks in the isolated worker", async () => {
   const directory = await mkdtemp(join(tmpdir(), "assistant-ods-test-"));
   let harness: string;
   try {
@@ -72,7 +72,21 @@ test("ODS reads typed cells, grouped rows and cached formulas in the isolated wo
       const excel = await sheet.openExcel(blob(${JSON.stringify(await fixture("ledger.xlsx"))}), {numbers:"string"});
       const excelAmount = excel.readSheet("Ledger")[1][1];
       excel.close();
-      return {names, ledger, types, empty, failures, excelAmount};
+      // Writing goes through the same worker and reads back with openOds.
+      const written = await sheet.toOds([{ name: "Export/2026", rows: [
+        ["Text", "Number", "Flag", "Date", "Empty"],
+        ["Müller & Söhne", 12.34, true, new Date("2026-09-20T00:00:00Z"), null],
+      ]}]);
+      const back = await sheet.openOds(written);
+      const roundTrip = {
+        type: written.type,
+        names: back.sheetNames,
+        rows: back.readSheet("Export_2026").map(row => row.map(value => value instanceof Date ? value.toISOString() : value)),
+      };
+      back.close();
+      try { await sheet.toOds([{ name: "Bad", rows: [[{ formula: "=1" }]] }]); failures.write = "unexpected success"; }
+      catch (e) { failures.write = e.message; }
+      return {names, ledger, types, empty, failures, excelAmount, roundTrip};
     }
   `,
       },
@@ -113,8 +127,17 @@ test("ODS reads typed cells, grouped rows and cached formulas in the isolated wo
         xlsx: expect.stringContaining("mimetype"),
         repeat: expect.stringContaining("limit"),
         size: expect.stringContaining("128 MiB"),
+        write: "Bad row 1 column 1: cells must be strings, numbers, booleans, dates, or null",
       },
       excelAmount: "12.34",
+      roundTrip: {
+        type: "application/vnd.oasis.opendocument.spreadsheet",
+        names: ["Export_2026"],
+        rows: [
+          ["Text", "Number", "Flag", "Date", "Empty"],
+          ["Müller & Söhne", 12.34, true, "2026-09-20T00:00:00.000Z"],
+        ],
+      },
     });
     expect(result.responsive).toBe(true);
   } finally {

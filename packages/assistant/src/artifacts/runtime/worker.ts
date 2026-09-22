@@ -11,6 +11,7 @@ import { ModalRequest } from "./modal-schema";
 import { createPdf } from "./pdf";
 import type { UiNode } from "./protocol";
 import { createWork } from "./work";
+import type { OdsSheet } from "./workbook";
 
 type Definition = () => unknown;
 const send = globalThis.postMessage.bind(globalThis);
@@ -232,6 +233,8 @@ const api = {
   sheet: {
     openExcel: excel.open,
     openOds: ods.open,
+    // User code gets the fixed workbook budget, never the second parameter.
+    toOds: (sheets: OdsSheet[]) => ods.write(sheets),
     fromCsv: async (file: File | string, options: { delimiter?: string; encoding?: string } = {}) => {
       let content: string;
       try {
