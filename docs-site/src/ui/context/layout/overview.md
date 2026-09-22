@@ -44,7 +44,12 @@ reference panel. Do not repeat the primary action there.
 
 Use `AppOverview.EmptyState` inside the main collection when there are no matching resources. Put the relevant create or reset action in its children.
 
-The component supplies responsive columns and a maximum page width. Do not wrap it in another page container.
+The component supplies responsive columns, a 72rem content width, and the same
+page inset as a sidebar-first overview (`clamp(1rem, 3vw, 2.5rem)`). Do not
+wrap it in another page container.
+
+The icon tile uses `--k2b-app-workspace-active`, the same optional accent hook
+as `AppWorkspace`; Cloud maps it to the current application accent.
 
 ## Frame record collections
 
