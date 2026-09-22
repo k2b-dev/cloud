@@ -10,6 +10,7 @@ import { imapSmtpConnector } from "./connectors";
 import { logDatabaseFailure } from "./database-errors";
 import { getProviderConnection, type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
+import { compareProviderEvidence, type EvidenceComparison, providerServerKey } from "./provider-identity";
 import { withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
@@ -34,7 +35,7 @@ type FolderEvidence = {
 };
 
 type ScopeEvidence = {
-  version: 1;
+  version: 1 | 2;
   serverKey: string;
   accountId: string;
   namespaces: RemoteNamespace[];
@@ -122,26 +123,22 @@ const buildScopeEvidence = async (params: {
   }));
 
   return {
-    version: 1,
-    serverKey: sha256({
-      host: params.runtime.imap.host.toLowerCase(),
-      port: params.runtime.imap.port,
-      tlsMode: params.runtime.imap.tlsMode,
-      serverInfo: params.verification.serverIdentity["serverInfo"] ?? {},
-    }),
+    version: 2,
+    serverKey: providerServerKey(params.runtime.imap, params.verification.serverIdentity),
     accountId: account.id,
     namespaces,
     folders: snapshots.sort((left, right) => left.relativePath.localeCompare(right.relativePath)),
   };
 };
 
-type EvidenceComparison = { state: "verified" | "different"; reason: string };
+const parseEvidence = (value: ScopeEvidence | string): ScopeEvidence =>
+  typeof value === "string" ? (JSON.parse(value) as ScopeEvidence) : value;
 
-const compareEvidence = (expected: ScopeEvidence, candidate: ScopeEvidence): EvidenceComparison => {
-  if (expected.serverKey !== candidate.serverKey) return { state: "different", reason: "Provider server identity differs" };
-  if (expected.accountId !== candidate.accountId) return { state: "different", reason: "Authenticated provider account differs" };
-  return { state: "verified", reason: "Provider server and authenticated account match" };
-};
+/** Stored identities that may have produced version-1 evidence: the attach-time resource identity and the connection's latest one. */
+const storedIdentities = (row: {
+  resource_identity: Record<string, unknown> | string;
+  connection_identity: Record<string, unknown> | string;
+}) => [row.resource_identity, row.connection_identity].map(parseRecord);
 
 const canonicalFolderKey = (relativePath: string): string => sha256({ version: 1, relativePath });
 
@@ -700,6 +697,8 @@ export const rediscoverProviderBinding = async (params: {
       secret_revision: number;
       scope_fingerprint: string;
       sync_generation: string | number;
+      resource_identity: Record<string, unknown> | string;
+      connection_identity: Record<string, unknown> | string;
     }[]
   >`
     SELECT
@@ -713,7 +712,9 @@ export const rediscoverProviderBinding = async (params: {
       binding.verified_secret_revision,
       connection.secret_revision,
       resource.scope_fingerprint,
-      resource.sync_generation
+      resource.sync_generation,
+      resource.server_identity AS resource_identity,
+      connection.server_identity AS connection_identity
     FROM mail.provider_bindings binding
     JOIN mail.remote_resources resource ON resource.id = binding.remote_resource_id
     JOIN mail.provider_connections connection ON connection.id = binding.connection_id
@@ -745,11 +746,10 @@ export const rediscoverProviderBinding = async (params: {
     if (folders.length === 0)
       throw Object.assign(new Error("The provider account contains no visible folders"), { code: "REMOTE_ACCOUNT_EMPTY" });
     const evidence = await buildScopeEvidence({ verification, folders, runtime: snapshot.runtime });
-    const previousEvidence =
-      typeof current.verification_evidence === "string"
-        ? (JSON.parse(current.verification_evidence) as ScopeEvidence)
-        : current.verification_evidence;
-    const comparison = compareEvidence(previousEvidence, evidence);
+    const comparison = compareProviderEvidence(parseEvidence(current.verification_evidence), evidence, {
+      endpoint: snapshot.runtime.imap,
+      storedIdentities: storedIdentities(current),
+    });
     if (comparison.state === "different") {
       throw Object.assign(new Error(comparison.reason), { code: "REMOTE_RESOURCE_CHANGED" });
     }
@@ -958,9 +958,10 @@ export const attachProviderBinding = async (params: {
             status: string;
             secret_revision: number;
             owner_mailbox_id: string;
+            server_identity: Record<string, unknown> | string;
           }[]
         >`
-        SELECT status, secret_revision, owner_mailbox_id
+        SELECT status, secret_revision, owner_mailbox_id, server_identity
         FROM mail.provider_connections
         WHERE id = ${params.connectionId}::uuid
         FOR UPDATE
@@ -978,9 +979,10 @@ export const attachProviderBinding = async (params: {
             id: string;
             scope_fingerprint: string;
             discovery_generation: string | number;
+            server_identity?: Record<string, unknown> | string;
           }[]
         >`
-        SELECT id, scope_fingerprint, discovery_generation
+        SELECT id, scope_fingerprint, discovery_generation, server_identity
         FROM mail.remote_resources
         WHERE mailbox_id = ${params.mailboxId}::uuid
         FOR UPDATE
@@ -1025,11 +1027,13 @@ export const attachProviderBinding = async (params: {
           LIMIT 1
         `;
           if (!prior) return fail(err.internal("Remote resource has no trusted verification evidence"));
-          const existingEvidence =
-            typeof prior.verification_evidence === "string"
-              ? (JSON.parse(prior.verification_evidence) as ScopeEvidence)
-              : prior.verification_evidence;
-          comparison = compareEvidence(existingEvidence, evidence);
+          comparison = compareProviderEvidence(parseEvidence(prior.verification_evidence), evidence, {
+            endpoint: runtime.imap,
+            storedIdentities: storedIdentities({
+              resource_identity: resource.server_identity ?? {},
+              connection_identity: lockedConnection.server_identity,
+            }),
+          });
           if (comparison.state === "different") return fail(err.badInput(comparison.reason));
           await tx`
           UPDATE mail.remote_resources
