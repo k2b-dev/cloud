@@ -39,7 +39,7 @@ describe("document link dialog", () => {
     const source = await Bun.file(new URL("./DocumentLinkDialog.tsx", import.meta.url)).text();
 
     expect(source).toContain("title={t().anyoneCanDownload}");
-    expect(documentMessages.resolve(["de-CH"]).t.anyoneCanDownload).toBe("Jede Person mit dem Link kann dieses PDF herunterladen");
+    expect(documentMessages.resolve(["de-CH"]).t.anyoneCanDownload).toBe("Jede Person mit dem Link kann diese Datei herunterladen");
     expect(source).toContain('tone="success"');
     expect(source).not.toContain('<NoticeCard tone="info" icon={false}>');
     expect(source).not.toContain('<NoticeCard tone="success" icon={false}>');
