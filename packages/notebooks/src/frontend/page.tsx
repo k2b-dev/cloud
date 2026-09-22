@@ -38,11 +38,28 @@ export default ssr<AuthContext>(async (c) => {
     }
   }
   const templates = notebooksService.template.list(getLocale(c));
+  const overviewStats = new Map(
+    (await notebooksService.notebook.overviewStats({ userId: user.id, notebookIds: notebooks.map((notebook) => notebook.id) })).map(
+      (stats) => [stats.notebookId, stats],
+    ),
+  );
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
       <NotebooksOverview
-        notebooks={notebooks.map(projectNotebook)}
+        notebooks={notebooks.map((notebook) => {
+          const { id, name, description, icon } = projectNotebook(notebook);
+          const stats = overviewStats.get(notebook.id);
+          return {
+            id,
+            name,
+            description,
+            icon,
+            noteCount: stats?.noteCount ?? 0,
+            lastEditedAt: stats?.lastNoteAt ?? null,
+            shared: stats?.shared ?? false,
+          };
+        })}
         templates={templates}
         recentNotes={recentNotes.map((note) => ({
           id: note.shortId,

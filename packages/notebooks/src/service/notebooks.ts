@@ -291,6 +291,41 @@ export const listWithPermission = async (params: ListNotebooksParams): Promise<{
   };
 };
 
+export type NotebookOverviewStats = {
+  notebookId: string;
+  noteCount: number;
+  lastNoteAt: string | null;
+  /** Someone other than this user holds access: a group, another user, or a service account. */
+  shared: boolean;
+};
+
+/** Per-notebook counts for the overview sidebar; one query for the listed notebooks. */
+export const overviewStats = async (params: { userId: string; notebookIds: string[] }): Promise<NotebookOverviewStats[]> => {
+  if (params.notebookIds.length === 0) return [];
+  const rows = await sql<{ id: string; note_count: number; last_note_at: Date | null; shared: boolean }[]>`
+    SELECT
+      n.id,
+      (SELECT COUNT(*)::int FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS note_count,
+      (SELECT MAX(nt.updated_at) FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS last_note_at,
+      EXISTS (
+        SELECT 1
+        FROM notebooks.notebook_access na
+        JOIN auth.access a ON a.id = na.access_id
+        WHERE na.notebook_id = n.id
+          AND a.permission <> 'none'
+          AND (a.user_id IS NULL OR a.user_id <> ${params.userId}::uuid)
+      ) AS shared
+    FROM notebooks.notebooks n
+    WHERE n.id = ANY(${params.notebookIds}::uuid[])
+  `;
+  return rows.map((row) => ({
+    notebookId: row.id,
+    noteCount: row.note_count,
+    lastNoteAt: row.last_note_at?.toISOString() ?? null,
+    shared: row.shared,
+  }));
+};
+
 /** Existing list contract without the capability-only permission projection. */
 export const list = async (params: ListNotebooksParams): Promise<{ items: Notebook[]; total: number }> => {
   const result = await listWithPermission(params);
