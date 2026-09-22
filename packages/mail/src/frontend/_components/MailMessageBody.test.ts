@@ -60,8 +60,9 @@ describe("MailMessageBody sizing", () => {
 
     expect(document).toContain("script-src 'nonce-channel123'");
     expect(document).toContain('<script nonce="channel123">');
-    expect(document).toContain('data.source === "cloud-mail-host"');
+    expect(document).toContain('data.source !== "cloud-mail-host"');
     expect(document).toContain('data.type === "measure"');
+    expect(document).toContain('data.type === "images"');
     expect(document).not.toContain("script-src 'unsafe-inline'");
   });
 

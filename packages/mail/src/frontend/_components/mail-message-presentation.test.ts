@@ -3,6 +3,7 @@ import { attachmentPreviewSignatureMatches } from "../../attachment-preview-poli
 import {
   attachmentPreviewKind,
   formatMailMessageDateTime,
+  markCidImageSources,
   messageDeliveryAllowsResponses,
   messageDeliveryControlLabel,
   messageDeliveryPresentation,
@@ -11,8 +12,6 @@ import {
   referencedContentIds,
   referencedRemoteImageIds,
   resolveMessageBodyFormat,
-  rewriteCidSources,
-  rewriteRemoteImageSources,
   splitPlainMessageSegments,
   splitPlainTextLinks,
   undoSendSecondsRemaining,
@@ -183,15 +182,11 @@ describe("mail message presentation", () => {
     expect(attachmentPreviewSignatureMatches("image/png", new TextEncoder().encode("not-png"))).toBeFalse();
   });
 
-  test("rewrites only known CID image sources to permission-checked object URLs", () => {
-    const urls = new Map([["logo@example.com", "blob:https://cloud.example/cid-logo"]]);
+  test("marks CID image sources with their normalized Content-ID", () => {
     expect(normalizeContentId(" <Logo@Example.COM> ")).toBe("logo@example.com");
-    expect(
-      rewriteCidSources(
-        '<img src="cid:Logo%40Example.COM"><img src="cid:unknown@example.com"><a href="cid:logo@example.com">link</a>',
-        urls,
-      ),
-    ).toBe('<img src="blob:https://cloud.example/cid-logo"><img src="cid:unknown@example.com"><a href="cid:logo@example.com">link</a>');
+    expect(markCidImageSources('<img src="cid:Logo%40Example.COM"><img src="cid:a%22b"><a href="cid:logo@example.com">link</a>')).toBe(
+      '<img data-mail-cid="logo@example.com"><img data-mail-cid="a&quot;b"><a href="cid:logo@example.com">link</a>',
+    );
   });
 
   test("extracts only normalized CIDs referenced by image sources", () => {
@@ -200,13 +195,10 @@ describe("mail message presentation", () => {
     ).toEqual(["logo@example.com"]);
   });
 
-  test("rewrites only known opaque remote image references", () => {
+  test("extracts opaque remote image references", () => {
     const first = "00000000-0000-4000-8000-000000000001";
     const second = "00000000-0000-4000-8000-000000000002";
-    const html = `<img alt="known" data-mail-remote-image="${first}"><img data-mail-remote-image="${second}">`;
+    const html = `<img alt="known" data-mail-remote-image="${first}"><img data-mail-remote-image="${second.toUpperCase()}">`;
     expect(referencedRemoteImageIds(html)).toEqual([first, second]);
-    expect(rewriteRemoteImageSources(html, new Map([[first, "blob:https://cloud.example/remote-image"]]))).toBe(
-      `<img alt="known" src="blob:https://cloud.example/remote-image" data-mail-remote-image="${first}"><img data-mail-remote-image="${second}">`,
-    );
   });
 });

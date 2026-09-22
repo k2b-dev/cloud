@@ -26,34 +26,36 @@ const REMOTE_IMAGE_ATTRIBUTE =
 
 export const normalizeContentId = (value: string): string => value.trim().replace(/^<|>$/gu, "").toLowerCase();
 
+const contentIdFromSource = (rawContentId: string): string => {
+  try {
+    return normalizeContentId(decodeURIComponent(rawContentId));
+  } catch {
+    // Malformed percent escapes cannot match a normalized MIME Content-ID.
+    return normalizeContentId(rawContentId);
+  }
+};
+
+const escapeHtmlAttribute = (value: string): string =>
+  value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+
 export const referencedContentIds = (html: string): string[] => {
   const ids = new Set<string>();
   for (const match of html.matchAll(CID_SOURCE)) {
-    const rawContentId = match[2];
-    if (!rawContentId) continue;
-    let decoded = rawContentId;
-    try {
-      decoded = decodeURIComponent(rawContentId);
-    } catch {
-      // Malformed percent escapes cannot match a normalized MIME Content-ID.
-    }
-    const normalized = normalizeContentId(decoded);
+    const normalized = match[2] ? contentIdFromSource(match[2]) : "";
     if (normalized) ids.add(normalized);
   }
   return [...ids];
 };
 
-export const rewriteCidSources = (html: string, urls: ReadonlyMap<string, string>): string =>
-  html.replace(CID_SOURCE, (source, quote: string, rawContentId: string) => {
-    let decoded = rawContentId;
-    try {
-      decoded = decodeURIComponent(rawContentId);
-    } catch {
-      // Malformed percent escapes cannot match a normalized MIME Content-ID.
-    }
-    const url = urls.get(normalizeContentId(decoded));
-    return url ? `src=${quote}${url}${quote}` : source;
-  });
+/**
+ * Replaces unloadable `cid:` sources with the normalized Content-ID, so the
+ * message frame can show inline images delivered by the parent later.
+ */
+export const markCidImageSources = (html: string): string =>
+  html.replace(
+    CID_SOURCE,
+    (_source, _quote: string, rawContentId: string) => `data-mail-cid="${escapeHtmlAttribute(contentIdFromSource(rawContentId))}"`,
+  );
 
 export const referencedRemoteImageIds = (html: string): string[] => {
   const ids = new Set<string>();
@@ -63,12 +65,6 @@ export const referencedRemoteImageIds = (html: string): string[] => {
   }
   return [...ids];
 };
-
-export const rewriteRemoteImageSources = (html: string, urls: ReadonlyMap<string, string>): string =>
-  html.replace(REMOTE_IMAGE_ATTRIBUTE, (attribute, _quote: string, rawId: string) => {
-    const url = urls.get(rawId.toLowerCase());
-    return url ? `src="${url}" ${attribute}` : attribute;
-  });
 
 export const splitPlainMessageSegments = (value: string): PlainMessageSegment[] => {
   const lines = value.replace(/\r\n?/gu, "\n").split("\n");
