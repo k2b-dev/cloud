@@ -76,9 +76,7 @@ export const ToolsWorkspace = (props: ToolsWorkspaceProps) => {
           {props.layout === "regions" ? (
             props.children
           ) : (
-            <AppWorkspace.Main
-              class={props.activeToolId ? "tools-main overflow-y-auto p-[var(--ui-space-shell)]" : "tools-main overflow-y-auto"}
-            >
+            <AppWorkspace.Main class={props.activeToolId ? "tools-main overflow-y-auto p-[var(--ui-space-shell)]" : "overflow-y-auto"}>
               {props.children}
             </AppWorkspace.Main>
           )}

@@ -24,7 +24,9 @@ import {
 ## Compose the page
 
 Pass the application `title` and required Tabler `icon` to the root.
-`subtitle` is optional.
+`subtitle` is optional and should fit on one line. The root renders the title
+and subtitle with `PanelHeader size="lg"`, the same page header as a
+sidebar-first overview.
 
 Use `AppOverview.Main` for the collection. Its `toolbar` slot suits a search field or one compact filter.
 
@@ -32,7 +34,12 @@ Use `AppOverview.Aside` for a short create menu. Keep its title action-oriented,
 
 Use `AppOverview.EmptyState` inside the main collection when there are no matching resources. Put the relevant create or reset action in its children.
 
-The component supplies responsive columns and a maximum page width. Do not wrap it in another page container.
+The component supplies responsive columns, a 72rem content width, and the same
+page inset as a sidebar-first overview (`clamp(1rem, 3vw, 2.5rem)`). Do not
+wrap it in another page container.
+
+The icon tile uses `--k2b-app-workspace-active`, the same optional accent hook
+as `AppWorkspace`; Cloud maps it to the current application accent.
 
 ## Frame record collections
 
