@@ -166,7 +166,10 @@ test("chunking does not change estimates and encoded file data is excluded", asy
       systemPrompt: "S".repeat(400),
     })) {
     }
-  expect(a.booked).toEqual(b.booked);
+  // Compare what chunking could change; requestStartedAt is wall-clock time of each run.
+  const comparable = (booked: typeof a.booked) =>
+    booked.map(({ details, ...rest }) => ({ ...rest, details: details && { ...details, requestStartedAt: undefined } }));
+  expect(comparable(a.booked)).toEqual(comparable(b.booked));
   expect(a.booked[0]!.usage!.output).toBe(3);
   expect(a.booked[0]!.usage!.input).toBeLessThan(200);
 });
