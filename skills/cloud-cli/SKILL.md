@@ -13,7 +13,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 
 1. On a new machine, sign in with `cld login --server <Cloud URL>`. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`.
 2. Run `cld apps list --json` before choosing an app command. It shows the live Cloud apps available to the current user; use `--search <text>` to narrow the list.
-3. Run `cld help` to discover installed CLI modules, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation.
+3. Run `cld help` to discover installed CLI modules, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Modules of third-party apps come from `cld` plugins; `cld plugins list` shows which are installed and whether they load.
 4. Use the default profile unless the task names another instance; pass `--profile <name>` only when needed.
 
 ## Agent workflow
@@ -23,6 +23,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 - Use `--json` whenever the next action depends on one complete response. Use `--jsonl` for supported list commands when processing items as a stream. Keep normal output for simple inspection.
 - Pass structured or multiline content through a command's file or stdin option instead of trying to escape it in a shell argument.
 - Do not delete content, revoke access, or perform another destructive action without an explicit user request. Check command help for any required confirmation first.
+- Install or remove a `cld` plugin only when the user asks for that exact package or path. A plugin runs unsandboxed with the user's Cloud credentials; confirm the package, version, and source shown by `cld plugins install` before you pass `--yes`.
 
 ## References
 
@@ -30,6 +31,7 @@ Read the app reference for the current task. Follow specialized links inside it 
 
 - Read [Account](references/account.md) to manage the signed-in user's profile, personal API keys, SSH keys, and account extension.
 - Read [API Docs](references/api-docs.md) to discover and inspect the live HTTP APIs published by Cloud apps.
+- Read [CLI plugins](references/plugins.md) to list, install, or remove `cld` plugins that add third-party app commands.
 - Read [Capabilities](references/capabilities.md) to discover and invoke live typed app Queries and Actions through the generic CLI.
 - Read [Assistant](references/assistant.md) for one-shot streaming chat, chat history, approvals, files, personalization, and Projects.
 - Read [Contacts](references/contacts.md) for contact books, contacts, tags, notes, exports, and access grants.

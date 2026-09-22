@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { cliHostBundle } from "../../assistant/src/artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../../assistant/src/artifacts/runtime/compile";
+import { buildEchoPlugin } from "../test/fixtures/build-plugin";
 
 test("standalone CLI starts and runs offline without Cloud server configuration", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-standalone-test-"));
@@ -64,6 +65,43 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
     expect(JSON.parse(reference.stdout).language.actions).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: "createRecord" }), expect.objectContaining({ kind: "sendEmail" })]),
     );
+
+    // A third-party module bundled with its own @k2b/cloud/cli copy loads
+    // into the compiled binary from disk and gets the host's context.
+    const plugin = await buildEchoPlugin(join(directory, "echo-plugin"));
+    const installed = await run(["plugins", "install", plugin, "--yes"]);
+    expect(installed.exitCode, installed.stderr).toBe(0);
+    const echoServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) =>
+        Response.json({ authorization: request.headers.get("authorization"), locale: request.headers.get("accept-language") }),
+    });
+    try {
+      const echoed = await run(["--server", echoServer.url.origin, "--token", "plugin-token", "--json", "echo", "whoami"]);
+      expect(echoed.exitCode, echoed.stderr).toBe(0);
+      expect(echoed.stderr).toBe("");
+      expect(JSON.parse(echoed.stdout)).toEqual({ authorization: "Bearer plugin-token", locale: "en", profile: "default", output: "json" });
+      const viaRun = await run([
+        "--server",
+        echoServer.url.origin,
+        "--token",
+        "plugin-token",
+        "plugins",
+        "run",
+        "echo",
+        "whoami",
+        "--json",
+      ]);
+      expect(viaRun.exitCode, viaRun.stderr).toBe(0);
+      expect(JSON.parse(viaRun.stdout)).toEqual(JSON.parse(echoed.stdout));
+    } finally {
+      await echoServer.stop(true);
+    }
+    const listed = await run(["plugins", "list", "--json"]);
+    expect(JSON.parse(listed.stdout).plugins).toEqual([
+      { id: "echo", package: "@k2b-test/cld-plugin-echo", version: "1.0.0", source: plugin, status: "ok" },
+    ]);
 
     // Exercise the compiled parent AND its internal browser subprocess, from
     // outside the checkout. No installation or user Cloud data is contacted.
