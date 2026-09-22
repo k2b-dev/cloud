@@ -133,15 +133,15 @@
     },
     "packages/cloud": {
       "name": "@k2b/cloud",
-      "version": "0.7.0",
+      "version": "0.9.1",
       "dependencies": {
         "@firecrawl/anydoc": "0.1.9",
         "@hono/standard-validator": "0.2.2",
-        "@k2b/nessi": "0.12.0",
+        "@k2b/nessi": "0.12.1",
         "@k2b/ssr": "0.14.0",
         "@k2b/stdlib": "0.25.0",
         "@k2b/sync": "6.4.0",
-        "@k2b/ui": "0.3.0",
+        "@k2b/ui": "0.4.2",
         "@modelcontextprotocol/sdk": "1.30.0",
         "@napi-rs/canvas": "1.0.8",
         "@nats-io/transport-node": "3.4.0",
@@ -188,7 +188,7 @@
     },
     "packages/cloud-cli": {
       "name": "@k2b/cloud-cli",
-      "version": "0.0.0",
+      "version": "0.9.1",
       "bin": {
         "cld": "src/index.ts",
       },
@@ -625,7 +625,7 @@
     },
     "packages/ui": {
       "name": "@k2b/ui",
-      "version": "0.3.0",
+      "version": "0.4.2",
       "dependencies": {
         "@fontsource/ibm-plex-mono": "5.3.0",
         "@fontsource/ibm-plex-sans": "5.3.0",
@@ -734,7 +734,7 @@
     "@codemirror/state": "6.7.1",
     "@codemirror/view": "6.43.7",
     "@firecrawl/anydoc": "0.1.9",
-    "@k2b/nessi": "0.12.0",
+    "@k2b/nessi": "0.12.1",
     "@k2b/ssr": "0.14.0",
     "@k2b/stdlib": "0.25.0",
     "@k2b/sync": "6.4.0",
@@ -1070,7 +1070,7 @@
 
     "@k2b/filegate": ["@k2b/filegate@6.1.0", "", {}, "sha512-cCdQZx9VF9mUcRTgDkpmpBvjsvuUTCjVkaFZx1jv8JtW7qW+VrBNByG0D04cejypbZurliq4W2JyQ6SAgnwRtw=="],
 
-    "@k2b/nessi": ["@k2b/nessi@0.12.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-1yxW7UWmpeoUTw8hvYrm5IF/8YwZLzcBwbczzAvYxqSfZ/k9xHn0dDvoo8P7eHnj82P4TlsY85xUQ2NJHuj6Vg=="],
+    "@k2b/nessi": ["@k2b/nessi@0.12.1", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-simdZR0f9l3ExbWjwlKDjPeudhKOe4y1uO9onhc8819rRiORAzgdUhf1cuhterw9VKXwlGDv/aB70mwYghaEcQ=="],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 

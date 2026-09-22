@@ -178,6 +178,50 @@ suite("AI usage inference accounting", () => {
     }
   });
 
+  test("keeps redacted call errors, cancellation and request milestones on the run detail", async () => {
+    const f = await fixture();
+    try {
+      const failed = await beginAiCall(f.model, { kind: "background", task: "timings", userId: f.userId }, 10, 2);
+      const requestStartedAt = Date.now() - 1_500;
+      await finishAiCall(failed.id, undefined, "failed", {
+        error: `SSE stream first byte timeout after 60000ms.\n${"x".repeat(1_000)}`,
+        requestStartedAt,
+        headersMs: 120.4,
+        firstByteMs: 800,
+      });
+      const aborted = await beginAiCall(f.model, { kind: "background", task: "timings", userId: f.userId }, 10, 2);
+      await finishAiCall(aborted.id, { input: 10, output: 1, estimated: true }, "aborted", {
+        cancelled: true,
+        requestStartedAt,
+        firstBlockMs: 900,
+      });
+      const detail = await aiUsage.detail("background", failed.id);
+      expect(detail).toMatchObject({
+        status: "failed",
+        errorCode: "ai_provider_call_failed",
+        cancelled: false,
+        headersMs: 120,
+        firstByteMs: 800,
+        firstBlockMs: null,
+      });
+      expect(detail?.error).toStartWith("SSE stream first byte timeout after 60000ms. xxx");
+      expect(detail?.error).toHaveLength(500);
+      expect(detail?.generationMs).toBeGreaterThanOrEqual(1_400);
+      expect(Math.abs(new Date(detail!.requestStartedAt!).getTime() - requestStartedAt)).toBeLessThan(1_000);
+      expect(await aiUsage.detail("background", aborted.id)).toMatchObject({
+        status: "aborted",
+        error: null,
+        errorCode: null,
+        cancelled: true,
+        firstBlockMs: 900,
+      });
+      const report = await f.report();
+      expect(report.tasks.items.find((row) => row.id === "timings")).toMatchObject({ runs: 2, failed: 1 });
+    } finally {
+      await f.cleanup();
+    }
+  });
+
   test("separates missing prices, missing tokens, estimates and known free calls without repricing history", async () => {
     const f = await fixture();
     try {

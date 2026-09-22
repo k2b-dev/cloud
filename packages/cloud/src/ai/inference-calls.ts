@@ -158,11 +158,31 @@ export async function beginAiCall(
   return { id: result.id!, maxOutputTokens: result.maxOutputTokens };
 }
 
+export type AiCallStatus = "ok" | "failed" | "aborted";
+
+/** Bounded diagnostics per provider request: milestones relative to the request, never content or credentials. */
+export type AiCallDetails = {
+  /** Redacted provider or transport error; `aborted` calls keep no error. */
+  error?: string | null;
+  /** The caller's signal was aborted (user stop or run budget), so the provider was not at fault. */
+  cancelled?: boolean;
+  /** When the provider request left Cloud, after admission. */
+  requestStartedAt?: number;
+  headersMs?: number;
+  firstByteMs?: number;
+  firstBlockMs?: number;
+};
+
+const AI_CALL_ERROR_MAX_CHARS = 500;
+export const redactAiCallError = (message: string): string => message.replace(/\s+/g, " ").trim().slice(0, AI_CALL_ERROR_MAX_CHARS);
+
 export async function finishAiCall(
   id: string,
   usage: { input: number; output: number; estimated?: boolean } | undefined,
-  status: "ok" | "failed",
+  status: AiCallStatus,
+  details: AiCallDetails = {},
 ) {
+  const ms = (value: number | undefined) => (value === undefined ? null : Math.max(0, Math.round(value)));
   await sql.begin(async (db) => {
     await db`SELECT singleton FROM ai.cost_config WHERE singleton FOR UPDATE`;
     const [call] = await db<
@@ -176,7 +196,10 @@ export async function finishAiCall(
           ? aiCostDecimal(aiCostUnits(call.pricing, usage.input, usage.output))
           : null;
     await db`UPDATE ai.inference_calls SET input=${usage?.input ?? null},output=${usage?.output ?? null},estimated=${usage?.estimated ?? false},
-      cost=${cost}::numeric,reserved=0,finished_at=clock_timestamp(),status=${status},error_code=${status === "failed" ? "ai_provider_call_failed" : null} WHERE id=${id}::uuid`;
+      cost=${cost}::numeric,reserved=0,finished_at=clock_timestamp(),status=${status},error_code=${status === "failed" ? "ai_provider_call_failed" : null},
+      error=${status === "failed" && details.error ? redactAiCallError(details.error) : null},cancelled=${details.cancelled ?? false},
+      request_started_at=${details.requestStartedAt === undefined ? null : new Date(details.requestStartedAt)},
+      headers_ms=${ms(details.headersMs)},first_byte_ms=${ms(details.firstByteMs)},first_block_ms=${ms(details.firstBlockMs)} WHERE id=${id}::uuid`;
     if (call.kind === "background") await checkBackgroundBudget(db);
   });
 }

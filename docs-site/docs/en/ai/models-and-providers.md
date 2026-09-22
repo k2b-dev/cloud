@@ -131,7 +131,10 @@ Ollama, vLLM, and OpenAI-compatible endpoints.
 Hosted providers require a credential. Ollama, vLLM, and OpenAI-compatible
 profiles can run against private infrastructure.
 
-An OpenAI-compatible profile must set `baseURL`.
+An OpenAI-compatible profile must set `baseURL`. Reasoning models behind such
+endpoints stream their thinking as `reasoning`, `reasoning_content`, or
+`reasoning_details`; Cloud shows all three as thinking blocks, so a long
+reasoning phase is visible progress rather than an idle turn.
 
 ## Handle configuration errors
 

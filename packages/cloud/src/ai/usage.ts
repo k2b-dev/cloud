@@ -28,6 +28,13 @@ export type AiUsageRun = {
   errorCode: string | null;
   error: string | null;
   attempts: number | null;
+  /** Provider request milestones; null for calls recorded before timing existed or that never left admission. */
+  requestStartedAt: string | null;
+  generationMs: number | null;
+  headersMs: number | null;
+  firstByteMs: number | null;
+  firstBlockMs: number | null;
+  cancelled: boolean;
 };
 export type AiUsageFeedback = {
   id: string;
@@ -107,7 +114,9 @@ const events = (since: Date, until: Date) => sql`
   SELECT c.id::text,c.kind,c.task,CASE WHEN c.status='ok' THEN 'completed' WHEN c.status='running' AND c.lease_expires_at<=now() THEN 'failed' ELSE c.status END AS status,
     c.started_at AS created_at,COALESCE(c.user_id,c.service_account_id) AS user_id,c.conversation_id,c.turn_id,c.workflow_run_id,c.trace_id,
     c.model_profile_id,c.provider_model,c.app_id,(c.input+c.output)::float8 AS tokens,c.cost AS cost,
-    extract(epoch FROM (c.finished_at-c.started_at))*1000 AS duration_ms,c.error_code,NULL::text AS error,1 AS attempts,
+    extract(epoch FROM (c.finished_at-c.started_at))*1000 AS duration_ms,c.error_code,c.error,1 AS attempts,
+    c.request_started_at,(extract(epoch FROM (c.finished_at-c.request_started_at))*1000)::float8 AS generation_ms,
+    c.headers_ms,c.first_byte_ms,c.first_block_ms,c.cancelled,
     CASE WHEN c.id=first_call.id THEN f.messages ELSE 0 END AS assistant_messages,
     CASE WHEN c.id=first_call.id THEN f.positive ELSE 0 END AS positive,
     CASE WHEN c.id=first_call.id THEN f.negative ELSE 0 END AS negative,
@@ -180,7 +189,9 @@ const pageOf = async <T>(projection: ReturnType<typeof events>, q: AiUsageQuery)
 const runColumns = () => sql`e.id, e.kind, e.task, e.status, e.created_at::text AS "createdAt", e.user_id::text AS "userId",
   COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",e.model_profile_id AS "modelProfileId",e.provider_model AS "providerModel",
   e.app_id AS "appId",e.conversation_id::text AS "conversationId",e.turn_id::text AS "turnId",e.workflow_run_id::text AS "workflowRunId",
-  e.workflow_id::text AS "workflowId",e.workflow_name AS "workflowName",e.estimated,e.trace_id AS "traceId",e.tokens,e.cost::float8 AS cost,e.duration_ms AS "durationMs",e.error_code AS "errorCode",e.error,e.attempts`;
+  e.workflow_id::text AS "workflowId",e.workflow_name AS "workflowName",e.estimated,e.trace_id AS "traceId",e.tokens,e.cost::float8 AS cost,e.duration_ms AS "durationMs",e.error_code AS "errorCode",e.error,e.attempts,
+  e.request_started_at::text AS "requestStartedAt",e.generation_ms AS "generationMs",e.headers_ms AS "headersMs",e.first_byte_ms AS "firstByteMs",
+  e.first_block_ms AS "firstBlockMs",e.cancelled`;
 
 export const aiUsage = {
   report: async (range = "30d", options: AiUsageReportOptions = {}): Promise<AiUsageReport> => {

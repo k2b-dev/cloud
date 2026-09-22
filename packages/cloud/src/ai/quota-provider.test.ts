@@ -1,6 +1,12 @@
 import { expect, spyOn, test } from "bun:test";
 import type { Provider, ProviderEvent } from "@k2b/nessi";
-import { AiBackgroundAdmissionError, AiBackgroundCostError, type AiCallContext } from "./inference-calls";
+import {
+  AiBackgroundAdmissionError,
+  AiBackgroundCostError,
+  type AiCallContext,
+  type AiCallDetails,
+  type AiCallStatus,
+} from "./inference-calls";
 import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
@@ -17,7 +23,11 @@ const profile: AiModelProfile = {
 const request = { messages: [] };
 const event: ProviderEvent = { type: "usage", usage: { input: 8, output: 2, total: 10 } };
 function fixture(events: ProviderEvent[]) {
-  const booked: { usage: { input: number; output: number; estimated?: boolean } | undefined; status: string }[] = [];
+  const booked: {
+    usage: { input: number; output: number; estimated?: boolean } | undefined;
+    status: AiCallStatus;
+    details?: AiCallDetails;
+  }[] = [];
   const contexts: AiCallContext[] = [];
   let calls = 0;
   const provider: Provider = {
@@ -39,8 +49,13 @@ function fixture(events: ProviderEvent[]) {
       contexts.push(context);
       return { id: crypto.randomUUID(), maxOutputTokens: 100 };
     },
-    finish: async (_id: string, usage: { input: number; output: number; estimated?: boolean } | undefined, status: "ok" | "failed") => {
-      booked.push({ usage, status });
+    finish: async (
+      _id: string,
+      usage: { input: number; output: number; estimated?: boolean } | undefined,
+      status: AiCallStatus,
+      details?: AiCallDetails,
+    ) => {
+      booked.push({ usage, status, details });
     },
     heartbeat: async (_id: string) => {},
   };
@@ -225,4 +240,53 @@ test("reservation waiting is bounded and returns a retryable error on timeout", 
   } finally {
     now.mockRestore();
   }
+});
+
+test("a provider timeout is retained as the call's error and is not a cancellation", async () => {
+  const f = fixture([
+    {
+      type: "issue",
+      issue: { kind: "timeout", scope: "provider_first_byte", message: "SSE stream first byte timeout after 60000ms.", retryable: true },
+    },
+  ]);
+  await drain(f.wrap());
+  expect(f.booked[0]).toMatchObject({
+    status: "failed",
+    details: { error: "SSE stream first byte timeout after 60000ms.", cancelled: false },
+  });
+  expect(f.booked[0]!.details!.requestStartedAt).toBeGreaterThan(0);
+});
+test("a caller abort is recorded as aborted without an error", async () => {
+  const controller = new AbortController();
+  const f = fixture([{ type: "block_delta", blockId: "a", delta: "partial" }]);
+  f.provider.stream = async function* (request) {
+    yield { type: "block_delta", blockId: "a", delta: "partial" };
+    controller.abort();
+    request.signal?.throwIfAborted();
+  };
+  await expect(
+    (async () => {
+      for await (const _ of f.wrap().stream({ ...request, signal: controller.signal })) {
+      }
+    })(),
+  ).rejects.toThrow();
+  expect(f.booked[0]).toMatchObject({ status: "aborted", details: { error: null, cancelled: true } });
+  expect(f.booked[0]!.usage!.estimated).toBe(true);
+});
+test("a thrown provider error keeps its message and the timing of the first visible block", async () => {
+  const f = fixture([]);
+  f.provider.stream = async function* () {
+    yield { type: "block_start", blockId: "a", index: 0, kind: "text" };
+    throw new Error("openai-compatible connection failed: socket hang up");
+  };
+  await expect(drain(f.wrap())).rejects.toThrow("socket hang up");
+  expect(f.booked[0]).toMatchObject({
+    status: "failed",
+    details: { error: "openai-compatible connection failed: socket hang up", cancelled: false },
+  });
+  expect(f.booked[0]!.details!.firstBlockMs).toBeGreaterThanOrEqual(0);
+  const complete = fixture([]);
+  complete.provider.complete = async () => ({ message: { role: "assistant", content: [] }, finishReason: "error" });
+  await complete.wrap().complete(request);
+  expect(complete.booked[0]).toMatchObject({ status: "failed", details: { error: "The provider finished with error." } });
 });
