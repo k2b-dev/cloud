@@ -29,6 +29,8 @@ COPY styles.css ./
 
 RUN bun run --cwd packages/ui build
 
-RUN mkdir -p /app/public && chown bun:bun /app/public
+# Dev build output (CSS under public/, island chunks under _ssr/) is written at
+# runtime; keep it writable for services that run as `bun` (Assistant).
+RUN mkdir -p /app/public /app/_ssr && chown bun:bun /app/public /app/_ssr
 
 EXPOSE 3000
