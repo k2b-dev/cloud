@@ -371,6 +371,7 @@ test("agent CLI preserves filters, complete context, paginated history and write
     ["done", "Space1", "Item01", "--claim-id", claimId, "--file", notePath, "--commit", "a1b2c3d"],
     ["update-item", "Space1", "Item01", "--clear-tags", "--clear-assignees"],
     ["checklist", "add", "Space1", "Item01", "--label", "Verify"],
+    ["checklist", "add", "Space1", "Item01", "--label", "Verified", "--completed"],
     ["checklist", "update", "Space1", "Item01", "Check1", "--completed"],
     ["references", "add", "Space1", "Item01", "--type", "notebooks.note", "--id", "Note01", "--label", "Design"],
     ["activity", "Space1", "Item01", "--cursor", "previous", "--limit", "10"],
@@ -412,6 +413,9 @@ test("agent CLI preserves filters, complete context, paginated history and write
   });
   expect(requests.find((r) => r.method === "PATCH" && r.path.endsWith("/Item01"))?.body).toEqual({ tagIds: [], assigneeIds: [] });
   expect(requests.find((r) => r.path.endsWith("/checklist/Check1"))?.body).toEqual({ completed: true });
+  const checklistAdds = requests.filter((r) => r.method === "POST" && r.path.endsWith("/checklist")).map((r) => r.body);
+  expect(checklistAdds).toContainEqual({ label: "Verify" });
+  expect(checklistAdds).toContainEqual({ label: "Verified", completed: true });
   expect(requests.find((r) => r.method === "POST" && r.path.endsWith("/references"))?.body).toEqual({
     ref: { type: "notebooks.note", id: "Note01" },
     label: "Design",

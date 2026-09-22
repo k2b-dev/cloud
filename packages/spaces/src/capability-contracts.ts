@@ -96,6 +96,7 @@ export const TaskChecklistListDataSchema = z.array(TaskChecklistDataSchema).max(
 export const TaskChecklistCreateInputSchema = CreateTaskChecklistEntrySchema.extend({
   itemId: ItemIdSchema,
   label: CreateTaskChecklistEntrySchema.shape.label.describe("Text of the new checkmark entry."),
+  completed: CreateTaskChecklistEntrySchema.shape.completed.describe("Whether the new checkmark starts complete; omitted creates it open."),
 });
 export const TaskChecklistUpdateInputSchema = UpdateTaskChecklistEntrySchema.safeExtend({
   itemId: ItemIdSchema,

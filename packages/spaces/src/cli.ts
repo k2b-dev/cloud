@@ -1077,7 +1077,7 @@ export default defineCliCommands({
             method
               ? jsonRequest(method, {
                   label: stringFlag(ctx.flags, "label"),
-                  ...(operation === "update" && (completed || reopen) ? { completed } : {}),
+                  ...((operation === "add" || operation === "update") && (completed || reopen) ? { completed } : {}),
                 })
               : undefined,
           );

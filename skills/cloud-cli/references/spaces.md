@@ -91,6 +91,7 @@ all selections; these cannot be combined with replacement values.
 ```bash
 cld spaces checklist list --space Space1 Item01 --json
 cld spaces checklist add --space Space1 Item01 --label "Run focused tests"
+cld spaces checklist add --space Space1 Item01 --label "Read the issue" --completed
 cld spaces checklist update --space Space1 Item01 Check1 --completed
 cld spaces checklist update --space Space1 Item01 Check1 --reopen
 cld spaces checklist delete --space Space1 Item01 Check1 --yes
