@@ -1,13 +1,13 @@
 import { err } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import type { Document } from "../contracts";
-import type { DocumentArtifactDraft } from "../document-profiles";
+import type { DocumentProfileArtifactDraft } from "../document-profiles";
 import { logAudit } from "./audit";
 import type { DocumentIssuanceActor } from "./document-issuance";
 import { type DocumentDbRow, hydrateDocuments } from "./document-mappers";
 import { documentServiceText } from "./document-messages";
 import { type capturedDocumentRecords, persistDocumentRecordSources } from "./document-record-sources";
-import { createProtected } from "./files";
+import { createProtected, createProtectedStreamed } from "./files";
 import { bindNumberAllocation } from "./number-series";
 
 /** One transactional storage path for every issued document. The issuance
@@ -40,8 +40,8 @@ export const persistIssuedDocument = async (
       validationStatus: "valid" | "warning" | "unchecked";
       validationReport: Record<string, unknown>;
     } | null;
-    primary: DocumentArtifactDraft;
-    artifacts: readonly DocumentArtifactDraft[];
+    primary: DocumentProfileArtifactDraft;
+    artifacts: readonly DocumentProfileArtifactDraft[];
     actor: DocumentIssuanceActor;
     issuedAt: string;
     allocationId: string | null;
@@ -57,20 +57,21 @@ export const persistIssuedDocument = async (
   const recordId = input.record?.recordId ?? null;
   const files: { key: string; fileId: string }[] = [];
   for (const draft of input.artifacts) {
-    const file = await createProtected(
-      {
-        ownerKind: "document_artifact",
-        ownerId: documentId,
-        baseId: input.baseId,
-        tableId,
-        recordId,
-        userId: actorId,
-        filename: draft.filename,
-        mimeType: draft.mediaType,
-        bytes: draft.bytes,
-      },
-      tx,
-    );
+    const owner = {
+      ownerKind: "document_artifact" as const,
+      ownerId: documentId,
+      baseId: input.baseId,
+      tableId,
+      recordId,
+      userId: actorId,
+    };
+    const file =
+      "bytes" in draft
+        ? await createProtected({ ...owner, filename: draft.filename, mimeType: draft.mediaType, bytes: draft.bytes }, tx)
+        : await createProtectedStreamed(
+            { ...owner, filename: draft.filename, mimeType: draft.mediaType, stream: draft.stream, locale: input.locale },
+            tx,
+          );
     if (!file.ok) throw file.error;
     files.push({ key: draft.key, fileId: file.data.id });
   }

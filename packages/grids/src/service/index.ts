@@ -283,6 +283,7 @@ export const gridsService = {
     getDocumentByShortId: documents.getDocumentByShortId,
     getDocumentArtifacts: documents.getDocumentArtifacts,
     getDocumentArtifact: documents.getDocumentArtifact,
+    openDocumentArtifact: documents.openDocumentArtifact,
     listDocumentLinks: documents.listDocumentLinksForDocument,
     getDocumentLink: documents.getDocumentLink,
     getDocumentLinkByShortId: documents.getDocumentLinkByShortId,

@@ -821,6 +821,28 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
             }
           });
         }
+        if (config.output && typeof config.output === "object" && !Array.isArray(config.output) && config.output.kind === "zip") {
+          const files = config.output.files;
+          if (Array.isArray(files)) {
+            files.forEach((selection, index) => {
+              if (!selection || typeof selection !== "object" || Array.isArray(selection)) return;
+              const at = [...path, "output", "files", index];
+              for (const key of ["column", "template", "mediaType", "folder"] as const) {
+                const value = selection[key];
+                if (typeof value === "string" && parseWorkflowValueString(value).kind !== "literal")
+                  addDiagnostic(context, "binding.output", "ZIP file selections must be literal", [...at, key]);
+              }
+              if (typeof selection.template === "string")
+                resolveCatalogRef(context, context.catalog.templates, selection.template, "document template", [...at, "template"]);
+            });
+          }
+          const include = config.output.include;
+          if (Array.isArray(include)) {
+            include.forEach((item, index) =>
+              expectReference(item, "grids.document", "include", [...path, "output", "include", index], scope, context),
+            );
+          }
+        }
         if (config.output && typeof config.output === "object" && !Array.isArray(config.output) && config.output.kind === "json") {
           const wrapper = config.output.wrapper;
           if (wrapper && typeof wrapper === "object" && !Array.isArray(wrapper)) {
