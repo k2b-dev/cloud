@@ -121,7 +121,15 @@
 
 .k2b-ui .k2b-link-card__glyph { font-size: 1.25rem; }
 .k2b-ui .k2b-link-card__copy { display: block; min-width: 0; flex: 1; }
-.k2b-ui .k2b-link-card__title { display: block; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
+.k2b-ui .k2b-link-card__title {
+  display: block;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .k2b-ui .k2b-link-card__description {
   overflow: hidden;
   margin: 0;
@@ -130,8 +138,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.k2b-ui .k2b-link-card__chevron { flex: 0 0 auto; color: var(--k2b-text-muted); transition: transform 120ms ease, color 120ms ease; }
-.k2b-ui .k2b-link-card:hover .k2b-link-card__chevron { transform: translateX(0.125rem); color: var(--k2b-action); }
+/* One trailing fact. Counts use the same tabular figures as object rows in
+   `AppWorkspace.SidebarItem variant="object"`. */
+.k2b-ui .k2b-link-card__meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+/* Cards never move on hover; only the chevron color responds. */
+.k2b-ui .k2b-link-card__chevron { flex: 0 0 auto; color: var(--k2b-text-muted); transition: color 120ms ease; }
+.k2b-ui .k2b-link-card:hover .k2b-link-card__chevron { color: var(--k2b-action); }
+
+/* Without an explicit color the glyph follows the active application accent
+   through the same optional hook as AppOverview's icon; it defaults to the
+   action colour outside a host that maps it. */
+.k2b-ui .k2b-link-card:not([data-color]) .k2b-link-card__icon { color: var(--k2b-app-workspace-active); }
 
 .k2b-ui .k2b-link-card[data-color="blue"] .k2b-link-card__icon { color: var(--k2b-accent-600); }
 .k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon { color: var(--k2b-success-600); }

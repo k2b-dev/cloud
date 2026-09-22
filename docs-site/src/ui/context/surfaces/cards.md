@@ -12,7 +12,7 @@ Use `LinkCard` when the complete surface leads to one destination. Use `Avatar` 
 import { Avatar, LinkCard } from "@k2b/ui";
 ```
 
-`LinkCard` accepts a title, description, icon, destination, and semantic color. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials.
+`LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Without `color`, the glyph uses `--k2b-app-workspace-active`, the same optional accent hook as `AppOverview`'s icon, which defaults to the action color; Cloud maps it to the active application's accent. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials.
 
 ## API reference
 
@@ -20,7 +20,7 @@ import { Avatar, LinkCard } from "@k2b/ui";
 type LinkCardColor = "blue" | "emerald" | "violet" | "orange" | "red" | "amber" | "zinc" | "cyan" | "rose";
 
 type LinkCardProps = {
-  href: string; title: string; description: string; icon: string; color: LinkCardColor;
+  href: string; title: string; description: string; icon: string; color?: LinkCardColor; meta?: JSX.Element;
 };
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
@@ -31,7 +31,7 @@ type AvatarProps = {
 };
 ```
 
-All five `LinkCard` props are required. `Avatar` defaults to `size="md"` and `loading="lazy"`. `alt` overrides the image alternative; `fallback` overrides initials.
+`href`, `title`, `description`, and `icon` are required. The card never moves on hover; only its colors respond. `Avatar` defaults to `size="md"` and `loading="lazy"`. `alt` overrides the image alternative; `fallback` overrides initials.
 
 ## Accessibility
 
@@ -51,6 +51,8 @@ Both components render on the server. Link navigation works without hydration; a
   icon="ti ti-server"
   color="cyan"
 />
+
+<LinkCard href="/app/capabilities/pulse" title="Pulse" description="Metrics and dashboards" icon="ti ti-activity" meta="12 capabilities" />
 
 <Avatar name="Ada Lovelace" src={profileImageUrl} size="sm" />
 <Avatar name="Workflow" icon="ti ti-route" size="sm" />

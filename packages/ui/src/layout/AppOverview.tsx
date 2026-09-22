@@ -6,6 +6,8 @@ export type AppOverviewProps = {
   title: string;
   subtitle?: string;
   icon: string;
+  /** The page's single primary action, such as a create button or menu. */
+  actions?: JSX.Element;
   class?: string;
   children: JSX.Element;
 };
@@ -26,9 +28,15 @@ export type AppOverviewEmptyStateProps = {
   children?: JSX.Element;
 };
 
+export type AppOverviewCardsProps = {
+  class?: string;
+  children: JSX.Element;
+};
+
 type AppOverviewComponent = ((props: AppOverviewProps) => JSX.Element) & {
   Main: (props: AppOverviewPanelProps) => JSX.Element;
   Aside: (props: AppOverviewPanelProps) => JSX.Element;
+  Cards: (props: AppOverviewCardsProps) => JSX.Element;
   EmptyState: (props: AppOverviewEmptyStateProps) => JSX.Element;
 };
 
@@ -65,6 +73,10 @@ const AppOverviewAside = (props: AppOverviewPanelProps): JSX.Element => (
   </aside>
 );
 
+const AppOverviewCards = (props: AppOverviewCardsProps): JSX.Element => (
+  <div class={`k2b-app-overview__cards ${props.class ?? ""}`}>{props.children}</div>
+);
+
 const AppOverviewEmptyState = (props: AppOverviewEmptyStateProps): JSX.Element => (
   <Placeholder
     surface="paper"
@@ -83,7 +95,7 @@ const AppOverview = ((props: AppOverviewProps): JSX.Element => (
       <span class="k2b-app-overview__icon" aria-hidden="true">
         <i class={tablerIconClass(props.icon, "ti-apps")} />
       </span>
-      <PanelHeader as="h1" size="lg" title={props.title} subtitle={props.subtitle} />
+      <PanelHeader as="h1" size="lg" title={props.title} subtitle={props.subtitle} actions={props.actions} />
     </header>
     <div class="k2b-app-overview__columns">{props.children}</div>
   </div>
@@ -91,6 +103,7 @@ const AppOverview = ((props: AppOverviewProps): JSX.Element => (
 
 AppOverview.Main = AppOverviewMain;
 AppOverview.Aside = AppOverviewAside;
+AppOverview.Cards = AppOverviewCards;
 AppOverview.EmptyState = AppOverviewEmptyState;
 
 export default AppOverview;

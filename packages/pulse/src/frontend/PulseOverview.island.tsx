@@ -1,6 +1,6 @@
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { AppOverview, Button, NoticeCard, prompts, TextInput, toast } from "@k2b/ui";
+import { AppOverview, Button, LinkCard, NoticeCard, prompts, TextInput, toast } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { PulseBase, PulseCapabilitySnapshot } from "../contracts";
 import { jsonFetch } from "./http";
@@ -68,10 +68,18 @@ export default function PulseOverview(props: Props) {
   };
 
   return (
-    <AppOverview title={t().appName} subtitle={t().appDescription} icon="ti ti-activity-heartbeat">
+    <AppOverview
+      title={t().appName}
+      icon="ti ti-activity-heartbeat"
+      subtitle={props.bases.length === 0 ? t().firstBaseDescription : t().baseCount({ count: props.bases.length })}
+      actions={
+        <Button disabled={createMutation.loading()} onClick={() => void createBase()}>
+          <i class="ti ti-plus" aria-hidden="true" /> {t().newBase}
+        </Button>
+      }
+    >
       <AppOverview.Main
         title={t().yourBases}
-        description={props.bases.length === 0 ? t().firstBaseDescription : t().baseCount({ count: props.bases.length })}
         toolbar={
           <TextInput
             name="pulse-search"
@@ -87,6 +95,11 @@ export default function PulseOverview(props: Props) {
           />
         }
       >
+        <Show when={props.capabilities && !props.capabilities.timescaleEnabled}>
+          <NoticeCard tone="warning" icon={false} class="mb-3">
+            {t().timescaleWarning}
+          </NoticeCard>
+        </Show>
         <Show
           when={props.bases.length > 0}
           fallback={
@@ -95,67 +108,28 @@ export default function PulseOverview(props: Props) {
               description={t().noBasesDescription}
               icon="ti ti-activity-heartbeat"
               class="min-h-72"
-            >
-              <Button variant="secondary" size="sm" disabled={createMutation.loading()} onClick={() => void createBase()}>
-                <i class="ti ti-plus" /> {t().createBase}
-              </Button>
-            </AppOverview.EmptyState>
+            />
           }
         >
           <Show
             when={filteredBases().length > 0}
             fallback={<AppOverview.EmptyState title={t().noMatchingBases} description={t().differentSearch} icon="ti ti-search" />}
           >
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <AppOverview.Cards>
               <For each={filteredBases()}>
                 {(base) => (
-                  <a
+                  <LinkCard
                     href={`/app/pulse/${base.id}`}
-                    class="paper group flex items-center gap-4 p-4 no-underline transition-all hover:paper-highlighted"
-                  >
-                    <div class="thumbnail flex h-10 w-10 shrink-0 items-center justify-center bg-white shadow-[var(--ui-shadow-surface)] dark:bg-zinc-950">
-                      <i class="ti ti-activity-heartbeat app-accent-text text-lg" />
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <span class="block truncate text-sm font-semibold text-primary">{base.name}</span>
-                      <p class="truncate text-xs text-dimmed">{base.description || t().rawRetention({ days: base.rawRetentionDays })}</p>
-                    </div>
-                    <i class="ti ti-chevron-right text-dimmed transition-colors group-hover:app-accent-text" />
-                  </a>
+                    title={base.name}
+                    description={base.description || t().rawRetention({ days: base.rawRetentionDays })}
+                    icon="ti ti-activity-heartbeat"
+                  />
                 )}
               </For>
-            </div>
+            </AppOverview.Cards>
           </Show>
         </Show>
       </AppOverview.Main>
-
-      <AppOverview.Aside title={t().createSection} description={t().createSectionDescription}>
-        <div class="grid grid-cols-1 gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            wrap
-            class="group h-auto w-full items-start justify-start gap-3 rounded-xl border border-[var(--ui-border)] p-4 text-left hover:bg-[var(--ui-surface-subtle)]"
-            disabled={createMutation.loading()}
-            onClick={() => void createBase()}
-          >
-            <span class="thumbnail flex h-9 w-9 shrink-0 items-center justify-center bg-zinc-100 dark:bg-zinc-900">
-              <i class="ti ti-plus app-accent-text text-lg" />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold text-primary">{t().newBase}</span>
-              <span class="block text-xs leading-snug text-dimmed">{t().createBaseDescription}</span>
-            </span>
-            <i class="ti ti-chevron-right mt-1 shrink-0 text-dimmed transition-colors group-hover:app-accent-text" />
-          </Button>
-
-          <Show when={props.capabilities && !props.capabilities.timescaleEnabled}>
-            <NoticeCard tone="warning" icon={false} class="mt-2">
-              {t().timescaleWarning}
-            </NoticeCard>
-          </Show>
-        </div>
-      </AppOverview.Aside>
     </AppOverview>
   );
 }
