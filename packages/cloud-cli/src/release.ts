@@ -5,13 +5,21 @@ import { arch, homedir, platform, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
-import { envReleaseApiBase, envReleaseBase } from "./config";
+import { envGithubToken, envReleaseApiBase, envReleaseBase } from "./config";
 
 const execFileAsync = promisify(execFile);
 
 export const CLI_RELEASE_REPOSITORY = "k2b-dev/cloud";
 export const CLI_RELEASE_BASE = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_API_BASE = `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}`;
+
+/**
+ * Headers for the GitHub releases API. An optional token (GH_TOKEN or
+ * GITHUB_TOKEN, as the gh CLI reads them) lifts the anonymous rate limit that
+ * shared CI runners exhaust; the token never travels to asset downloads.
+ */
+export const releaseApiHeaders = (token: string | undefined = envGithubToken()): Record<string, string> =>
+  token ? { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` } : { Accept: "application/vnd.github+json" };
 
 const MAX_RELEASE_FILE_BYTES = 512 * 1024 * 1024;
 const CLI_RELEASE_PAGE_SIZE = 100;
@@ -136,7 +144,7 @@ export const resolveCliRelease = async (version: string | undefined, source: Rel
   if (version && !requestedVersion) throw new Error("Cloud CLI updates require a stable version such as 1.2.3.");
 
   const url = requestedTag ? `${apiBase}/releases/tags/${encodeURIComponent(requestedTag)}` : undefined;
-  const response = url ? await fetchWithRetry(url, { headers: { Accept: "application/vnd.github+json" } }, fetchImpl) : undefined;
+  const response = url ? await fetchWithRetry(url, { headers: releaseApiHeaders() }, fetchImpl) : undefined;
 
   if (requestedTag) {
     if (!response) throw new Error("Could not resolve the requested Cloud CLI release.");
@@ -151,7 +159,7 @@ export const resolveCliRelease = async (version: string | undefined, source: Rel
   let newest: CliRelease | null = null;
   for (let page = 1; ; page += 1) {
     const pageUrl = `${apiBase}/releases?per_page=${CLI_RELEASE_PAGE_SIZE}&page=${page}`;
-    const pageResponse = await fetchWithRetry(pageUrl, { headers: { Accept: "application/vnd.github+json" } }, fetchImpl);
+    const pageResponse = await fetchWithRetry(pageUrl, { headers: releaseApiHeaders() }, fetchImpl);
     if (!pageResponse.ok) throw new Error(`Could not resolve Cloud CLI release (${pageResponse.status}).`);
     const payload = (await pageResponse.json()) as unknown;
     if (!Array.isArray(payload)) throw new Error("Cloud CLI release response is invalid.");

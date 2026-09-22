@@ -12,6 +12,8 @@
  *   CLD_LOCALE            Output locale used when no `--locale` flag is given.
  *   CLD_RELEASE_BASE      Base URL for release assets (`cld update`).
  *   CLD_RELEASE_API_BASE  Base URL of the release metadata API (`cld update`).
+ *   GH_TOKEN / GITHUB_TOKEN
+ *                         Optional GitHub token for release metadata requests (lifts the anonymous API rate limit); never sent to asset downloads.
  *   CLD_OUTPUT_DIR        Build only: output directory for the standalone binaries.
  *   CLD_VERSION           Build only: version embedded into the binaries.
  *   CLD_COMMIT            Build only: commit embedded into the binaries.
@@ -36,6 +38,7 @@ export const envToken = (): string | undefined => read("CLD_TOKEN");
 export const envLocale = (): string | undefined => read("CLD_LOCALE");
 export const envReleaseBase = (): string | undefined => read("CLD_RELEASE_BASE");
 export const envReleaseApiBase = (): string | undefined => read("CLD_RELEASE_API_BASE");
+export const envGithubToken = (): string | undefined => read("GH_TOKEN")?.trim() || read("GITHUB_TOKEN")?.trim() || undefined;
 
 /** Build-time knobs read by `scripts/build.ts`. */
 export const buildEnv = () => ({

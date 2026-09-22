@@ -29,6 +29,14 @@ have() { command -v "$1" >/dev/null 2>&1; }
 curl_get() {
   curl -fsSL --retry "$CURL_RETRY_COUNT" --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" "$@"
 }
+# GitHub API calls may carry GH_TOKEN/GITHUB_TOKEN to lift the anonymous rate limit; asset downloads never send it.
+api_get() {
+  if [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
+    curl_get -H "Authorization: Bearer ${GH_TOKEN:-$GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" "$@"
+  else
+    curl_get -H "Accept: application/vnd.github+json" "$@"
+  fi
+}
 
 stable_version_key() {
   printf '%s\n' "$1" | awk -F. '
@@ -42,7 +50,7 @@ latest_release() {
   page=1
   tags=""
   while :; do
-    body=$(curl_get "${API_BASE}/releases?per_page=100&page=${page}") || return 1
+    body=$(api_get "${API_BASE}/releases?per_page=100&page=${page}") || return 1
     [ "$(printf '%s' "$body" | tr -d '[:space:]')" = "[]" ] && break
     # Tolerant of compact or pretty JSON: each release yields its tag_name
     # followed by its draft/prerelease flags; drafts and prereleases are

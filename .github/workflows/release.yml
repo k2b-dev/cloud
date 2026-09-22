@@ -297,6 +297,8 @@ jobs:
       - name: Install and update cld from the published release with full verification
         env:
           VERSION: ${{ inputs.version }}
+          # Shared runners exhaust GitHub's anonymous API quota (403); the token lifts it.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           prefix="$RUNNER_TEMP/cld-bin"
