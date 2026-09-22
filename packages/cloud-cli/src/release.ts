@@ -20,7 +20,6 @@ export const CLI_RELEASE_API_BASE = `https://api.github.com/repos/${CLI_RELEASE_
  */
 export const releaseApiHeaders = (token: string | undefined = envGithubToken()): Record<string, string> =>
   token ? { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` } : { Accept: "application/vnd.github+json" };
-};
 
 const MAX_RELEASE_FILE_BYTES = 512 * 1024 * 1024;
 const CLI_RELEASE_PAGE_SIZE = 100;
