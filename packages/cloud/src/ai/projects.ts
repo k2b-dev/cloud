@@ -13,6 +13,7 @@ import {
 import { toPgUuidArray } from "../services/postgres";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { mountAiProjectFilePath } from "./file-mount";
+import { pickStoredAiFilePath } from "./files-store";
 import { withAiShortIdForDb } from "./short-id";
 import type { AiProjectPromptSnapshot } from "./types";
 
@@ -386,8 +387,9 @@ const touchProject = async (db: SQL, projectId: string): Promise<void> => {
   await db`UPDATE ai.projects SET revision = revision + 1, updated_at = now() WHERE id = ${projectId}::uuid`;
 };
 
+/** Relative, no `.`/`..` segments, Unicode NFC so equivalent spellings address one file. */
 const normalizeProjectPath = (value: string): string => {
-  const path = value.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  const path = value.trim().replace(/\\/g, "/").replace(/^\/+/, "").normalize("NFC");
   if (!path || path.length > 500 || path.split("/").some((part) => !part || part === "." || part === "..")) {
     throw new Error("Invalid project file path.");
   }
@@ -857,9 +859,15 @@ export const aiProjects = {
   ): Promise<(AiProjectFile & { bytes: Uint8Array }) | null> {
     if (!(await requireProject(projectId, subject, "read"))) return null;
     const normalized = normalizeProjectPath(path);
+    const candidates = await sql<{ path: string }[]>`
+      SELECT path FROM ai.project_files
+      WHERE project_id = ${projectId}::uuid AND (path = ${normalized} OR normalize(path, NFC) = ${normalized})
+      ORDER BY path = ${normalized} DESC LIMIT 3
+    `;
+    const stored = pickStoredAiFilePath(candidates, normalized);
     const rows = await sql<(FileRow & { bytes: Uint8Array })[]>`
       SELECT id, short_id, project_id, path, media_type, size, updated_at, bytes FROM ai.project_files
-      WHERE path = ${normalized} AND project_id = ${projectId}::uuid
+      WHERE path = ${stored} AND project_id = ${projectId}::uuid
     `;
     return rows[0] ? { ...toFile(rows[0]), bytes: rows[0].bytes } : null;
   },
