@@ -344,6 +344,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Einen einfachen Checklistenpunkt an eine beschreibbare Aufgabe anhängen.",
           input: {
             label: "Text des Checklistenpunkts.",
+            completed: "Ob der neue Checklistenpunkt bereits erledigt ist; ohne Angabe bleibt er offen.",
             itemId: "Öffentliche ID der Aufgabe.",
           },
         },

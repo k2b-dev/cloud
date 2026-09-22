@@ -109,8 +109,8 @@ export const create = async (params: {
       `;
       const nextRank = BigInt(rank?.value ?? "0") + 1024n;
       const [row] = await tx<ChecklistRow[]>`
-        INSERT INTO spaces.item_checklist_entries (short_id, item_id, label, rank)
-        VALUES (${shortId}, ${params.itemId}, ${label}, ${nextRank})
+        INSERT INTO spaces.item_checklist_entries (short_id, item_id, label, rank, completed)
+        VALUES (${shortId}, ${params.itemId}, ${label}, ${nextRank}, ${params.data.completed ?? false})
         RETURNING id, short_id, label, completed, created_at, updated_at
       `;
       if (row) await recordChange({ itemId: params.itemId, context, actor: params.actor, action: "checklist.created" }, tx);

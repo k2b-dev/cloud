@@ -132,7 +132,9 @@ export const SpaceTaskChecklistEntrySchema = z
   .strict();
 export type SpaceTaskChecklistEntry = z.infer<typeof SpaceTaskChecklistEntrySchema>;
 
-export const CreateTaskChecklistEntrySchema = z.object({ label: z.string().trim().min(1).max(500) }).strict();
+export const CreateTaskChecklistEntrySchema = z
+  .object({ label: z.string().trim().min(1).max(500), completed: z.boolean().optional() })
+  .strict();
 export type CreateTaskChecklistEntry = z.infer<typeof CreateTaskChecklistEntrySchema>;
 
 export const UpdateTaskChecklistEntrySchema = z

@@ -109,6 +109,7 @@ test("Spaces item filters default the overview to schedule grouping", () => {
 describe("Spaces task checklist contracts", () => {
   test("accepts only a bounded label plus completion changes", () => {
     expect(CreateTaskChecklistEntrySchema.parse({ label: "  Review copy  " }).label).toBe("Review copy");
+    expect(CreateTaskChecklistEntrySchema.parse({ label: "Review", completed: true }).completed).toBe(true);
     expect(UpdateTaskChecklistEntrySchema.safeParse({ completed: true }).success).toBe(true);
     expect(UpdateTaskChecklistEntrySchema.safeParse({ label: "Rename" }).success).toBe(true);
   });

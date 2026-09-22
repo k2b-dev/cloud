@@ -290,6 +290,8 @@ test("checklist changes keep task ownership and reject read-only actors before w
   if (!result.ok) return;
   expect(result.data.data).toEqual({ id: "Chk001", label: "Review", completed: false });
   expect(create.mock.calls[0]?.[0]).toMatchObject({ itemId: itemUuid, data: { label: "Review" } });
+  await action.run(TaskChecklistCreateInputSchema.parse({ itemId, label: "Review", completed: true }), userContext);
+  expect(create.mock.calls[1]?.[0]).toMatchObject({ data: { label: "Review", completed: true } });
 });
 
 test("task list fits escaped maximum previews without skipping rows", async () => {

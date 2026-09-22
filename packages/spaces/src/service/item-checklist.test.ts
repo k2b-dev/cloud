@@ -33,9 +33,15 @@ suite("Spaces task checklist", () => {
 
       const first = await checklist.create({ itemId: task!.id, data: { label: "Write notes" }, actor });
       const second = await checklist.create({ itemId: task!.id, data: { label: "Publish" }, actor });
+      const done = await checklist.create({ itemId: task!.id, data: { label: "Read issue", completed: true }, actor });
       expect(first.ok).toBe(true);
       expect(second.ok).toBe(true);
-      expect((await checklist.list({ itemId: task!.id })).map((entry) => entry.label)).toEqual(["Write notes", "Publish"]);
+      expect(done.ok && done.data).toMatchObject({ label: "Read issue", completed: true });
+      expect((await checklist.list({ itemId: task!.id })).map((entry) => [entry.label, entry.completed])).toEqual([
+        ["Write notes", false],
+        ["Publish", false],
+        ["Read issue", true],
+      ]);
 
       if (!first.ok) return;
       const [internal] = await sql<{ id: string }[]>`
@@ -49,7 +55,7 @@ suite("Spaces task checklist", () => {
       });
       expect(updated.ok && updated.data).toMatchObject({ label: "Write release notes", completed: true });
       expect((await checklist.remove({ itemId: task!.id, id: internal!.id, actor })).ok).toBe(true);
-      expect((await checklist.list({ itemId: task!.id })).map((entry) => entry.label)).toEqual(["Publish"]);
+      expect((await checklist.list({ itemId: task!.id })).map((entry) => entry.label)).toEqual(["Publish", "Read issue"]);
 
       const eventEntry = await checklist.create({ itemId: event!.id, data: { label: "Invalid" }, actor });
       expect(eventEntry.ok).toBe(false);
@@ -58,7 +64,7 @@ suite("Spaces task checklist", () => {
       const [activity] = await sql<{ count: number }[]>`
         SELECT COUNT(*)::int AS count FROM spaces.activity_events WHERE item_id = ${task!.id} AND action LIKE 'checklist.%'
       `;
-      expect(activity?.count).toBe(4);
+      expect(activity?.count).toBe(5);
     } finally {
       await sql`DELETE FROM spaces.spaces WHERE id = ${space!.id}::uuid`;
     }

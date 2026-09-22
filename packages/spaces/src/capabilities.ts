@@ -1192,7 +1192,7 @@ const runChecklistCreate = async (input: z.infer<typeof TaskChecklistCreateInput
     if (!task.ok) return task;
     const result = await spacesService.item.checklist.create({
       itemId: task.data.internalId,
-      data: { label: input.label },
+      data: { label: input.label, completed: input.completed },
       actor: spaceActivityActor(context),
     });
     return result.ok
