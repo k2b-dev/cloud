@@ -104,7 +104,7 @@ further questions:
 - Commit as you go, following the rules below; commits need no approval.
   Pushing, opening the pull request, and enabling auto-merge are one block
   that needs one approval: `gh pr create --fill`, then
-  `gh pr merge --auto --squash`, which places the green pull request in the
+  `gh pr merge --auto` (the queue applies the squash), which places the green pull request in the
   merge queue; the queue re-runs the gate on the merge result and merges.
   After the merge, `git worktree remove` the worktree; merged branches are
   deleted automatically.

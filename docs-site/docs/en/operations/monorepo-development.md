@@ -311,7 +311,7 @@ loudly when a target is unreachable:
 ```bash
 CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
-CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379/1 \
+CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 \
 bun run test --integration
 ```
 
