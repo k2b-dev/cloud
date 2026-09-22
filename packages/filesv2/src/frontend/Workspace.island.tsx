@@ -546,15 +546,6 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         <WorkspaceNavigationProvider label={t().files} navigation={navigation} />
         <AppWorkspace.Sidebar label={t().storage} collapsible>
           <AppWorkspace.SidebarDesktop>
-            <AppWorkspace.SidebarIconGrid columns={2}>
-              <AppWorkspace.SidebarIconAction
-                icon="ti ti-search"
-                label={b().globalSearch}
-                onClick={() =>
-                  openGlobalSearch({ query: "", scope: { appId: "filesv2", tag: "file", label: t().files, icon: "ti ti-folders" } })
-                }
-              />
-            </AppWorkspace.SidebarIconGrid>
             <AppWorkspace.SidebarBody scrollPreserveKey="filesv2-storage">
               <AppWorkspace.NavTree
                 ariaLabel={t().storage}
@@ -601,6 +592,15 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
               </AppWorkspace.NavTree>
             </AppWorkspace.SidebarBody>
             <AppWorkspace.SidebarFooter>
+              <AppWorkspace.SidebarItem
+                icon="ti ti-search"
+                title={b().globalSearch}
+                onClick={() =>
+                  openGlobalSearch({ query: "", scope: { appId: "filesv2", tag: "file", label: t().files, icon: "ti ti-folders" } })
+                }
+              >
+                {b().sidebarSearch}
+              </AppWorkspace.SidebarItem>
               <MarksSidebarItem kind="recent" onOpen={openMarked} revision={marksRevision()} />
               <MarksSidebarItem kind="favorites" onOpen={openMarked} revision={marksRevision()} />
               <AppWorkspace.SidebarItem

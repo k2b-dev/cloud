@@ -5,7 +5,9 @@ import { createDomTestHarness } from "../../ui/test/dom";
 import { createWorkspaceState, type WorkspaceSnapshot } from "../src/frontend/workspace-state";
 
 const apiRequests: Array<{ kind: string; input?: unknown; signal?: AbortSignal; resolve: (response: Response) => void }> = [];
+const searches: unknown[] = [];
 if (!isServer) {
+  mock.module("@k2b/cloud/browser/search", () => ({ openGlobalSearch: (options: unknown) => searches.push(options) }));
   const request = (kind: string) => (_input?: unknown, options?: { init?: { signal?: AbortSignal } }) =>
     new Promise<Response>((resolve) => apiRequests.push({ kind, input: _input, signal: options?.init?.signal, resolve }));
   mock.module("../src/api/client", () => ({
@@ -39,6 +41,7 @@ describe("Filesv2 progressive navigation", () => {
   afterEach(() => {
     cleanup();
     apiRequests.length = 0;
+    searches.length = 0;
   });
   const setup = () => {
     const dom = createDomTestHarness();
@@ -229,6 +232,15 @@ describe("Filesv2 progressive navigation", () => {
     ).toBe("Alice");
     expect(home.closest("[title]")?.getAttribute("title")).toBe("My files · Alice (Cloud)");
     expect(link("Alice")).toBe(home);
+    // Search is an ordinary footer item with a visible label, directly above Recent; the icon grid is gone.
+    expect(dom.root.querySelector(".k2b-app-workspace__sidebar-icon-grid")).toBeNull();
+    const footer = dom.root.querySelector(".k2b-app-workspace__sidebar-footer")!;
+    const footerLabels = [...footer.querySelectorAll<HTMLElement>("button, a")].map((item) => item.textContent?.trim());
+    expect(footerLabels.slice(0, 2)).toEqual(["Search", "Recent"]);
+    const search = footer.querySelector<HTMLButtonElement>("button")!;
+    expect(search.getAttribute("title")).toBe("Search files");
+    search.click();
+    expect(searches).toEqual([{ query: "", scope: { appId: "filesv2", tag: "file", label: "Files", icon: "ti ti-folders" } }]);
     const missingLink = link("Missing group");
     expect(missingLink.getAttribute("href")).toBe("/app/filesv2?base=missing");
     expect(missingLink.closest("[title]")?.getAttribute("title")).toBe("Missing group (Cloud)");

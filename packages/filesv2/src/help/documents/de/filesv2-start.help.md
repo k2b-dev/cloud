@@ -30,7 +30,7 @@ Geöffnete oder heruntergeladene Dateien erscheinen unter **Zuletzt**; **Favorit
 
 ## Suchen {icon="search"}
 
-Das Suchfeld oben durchsucht Namen überall unterhalb des aktuellen Ordners; Treffer zeigen ihren Pfad relativ zum Ordner. Enter startet die Suche, das Leeren des Feldes führt zurück zur Auflistung. Die FreeIPA-Suche liest auch bei aktiviertem Index den aktuellen Dateisystembestand. Ein unlesbarer Unterordner bricht die Suche ab; suche dann in einem zugänglichen Ordner. Ändern sich Rechte oder verschwindet ein Treffer beim Blättern, starte die Suche erneut. Ablagen ohne Suchindex werden bei Bedarf durchsucht; enthält ein Ordner dafür zu viele Einträge, suche in einem kleineren Ordner. Die Lupe oben in der Seitenleiste öffnet die globale Cloud-Suche nur für Dateien über alle deine Ablagen; ein Treffer führt in seinen Ordner mit ausgewählter Datei.
+Das Suchfeld oben durchsucht Namen überall unterhalb des aktuellen Ordners; Treffer zeigen ihren Pfad relativ zum Ordner. Enter startet die Suche, das Leeren des Feldes führt zurück zur Auflistung. Die FreeIPA-Suche liest auch bei aktiviertem Index den aktuellen Dateisystembestand. Ein unlesbarer Unterordner bricht die Suche ab; suche dann in einem zugänglichen Ordner. Ändern sich Rechte oder verschwindet ein Treffer beim Blättern, starte die Suche erneut. Ablagen ohne Suchindex werden bei Bedarf durchsucht; enthält ein Ordner dafür zu viele Einträge, suche in einem kleineren Ordner. **Suchen** unten in der Seitenleiste, oberhalb von Zuletzt, öffnet die globale Cloud-Suche nur für Dateien über alle deine Ablagen; ein Treffer führt in seinen Ordner mit ausgewählter Datei.
 
 ## Auswählen und handeln {icon="checkbox"}
 
