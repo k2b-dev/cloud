@@ -9,6 +9,7 @@ import {
   IconButton,
   NoticeCard,
   Placeholder,
+  PullToRefresh,
   ScrollArea,
   TextInput,
   Tooltip,
@@ -84,6 +85,7 @@ export default function MailConversationList(props: {
   onMergeItem: (item: MailListItem) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
+  onRefresh: () => Promise<void>;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
@@ -415,126 +417,128 @@ export default function MailConversationList(props: {
         </Show>
       </header>
 
-      <ScrollArea
-        ref={(element) => {
-          listScrollElement = element;
-        }}
-        class="flex-1 px-2 pb-2"
-        scrollPreserveKey={`mail-list-${props.mailboxId}`}
-      >
-        {props.error ? (
-          <Placeholder
-            state="error"
-            variant="panel"
-            title={messages().couldNotLoad}
-            description={props.error}
-            action={
-              <ButtonLink
-                href={listHref()}
-                variant="secondary"
-                size="sm"
-                navigation="enhanced"
-                onNavigate={props.onNavigate}
-                scroll="preserve"
-              >
-                {messages().retry}
-              </ButtonLink>
-            }
-          />
-        ) : props.items.length === 0 ? (
-          <Placeholder
-            icon={searchActive() ? "ti ti-search" : "ti ti-mail-off"}
-            variant="panel"
-            title={
-              searchActive()
-                ? messages().noMatchingMessages
-                : props.listMode === "conversations"
-                  ? messages().noConversations
-                  : messages().noMessages
-            }
-            description={searchActive() ? messages().changeFilters : messages().newMailAppears}
-            action={
-              searchActive() ? (
+      <PullToRefresh class="flex-1" onRefresh={props.onRefresh} disabled={props.loading} label={messages().refreshingList}>
+        <ScrollArea
+          ref={(element) => {
+            listScrollElement = element;
+          }}
+          class="flex-1 px-2 pb-2"
+          scrollPreserveKey={`mail-list-${props.mailboxId}`}
+        >
+          {props.error ? (
+            <Placeholder
+              state="error"
+              variant="panel"
+              title={messages().couldNotLoad}
+              description={props.error}
+              action={
                 <ButtonLink
-                  href={buildMailListHref(requestUrl(), true)}
+                  href={listHref()}
                   variant="secondary"
                   size="sm"
                   navigation="enhanced"
                   onNavigate={props.onNavigate}
                   scroll="preserve"
                 >
-                  {messages().clearSearch}
+                  {messages().retry}
                 </ButtonLink>
-              ) : undefined
-            }
-          />
-        ) : (
-          <div
-            class="flex flex-col gap-0.5"
-            role="list"
-            aria-label={
-              props.listMode === "conversations"
-                ? messages().conversationListLabel({ title: props.title })
-                : messages().messageListLabel({ title: props.title })
-            }
-          >
-            <For each={props.items}>
-              {(item) => (
-                <MailConversationRow
-                  item={item}
-                  requestUrl={requestUrl()}
-                  state={{
-                    selectedConversationId: props.selectedConversationId,
-                    selectedMessageId: props.selectedMessageId,
-                    selectedConversationIds: props.selectedConversationIds,
-                    selectionMode: props.selectionMode,
-                    canWrite: props.canWrite,
-                    junkFolderIds: props.junkFolderIds,
-                    dateConfig: props.dateConfig,
-                  }}
-                  actions={{
-                    navigate: props.onNavigateItem,
-                    toggleSelection: props.onToggleSelection,
-                    itemAction: props.onItemAction,
-                    manageTags: props.onManageTags,
-                    merge: props.onMergeItem,
-                  }}
-                />
-              )}
-            </For>
-          </div>
-        )}
-        <Show when={nextHref()}>
-          {(href) => (
-            <div ref={(element) => setLoadMoreElement(element)} class="flex min-h-14 items-center justify-center py-3">
-              <ButtonLink
-                variant="secondary"
-                size="sm"
-                href={href()}
-                aria-disabled={props.loading}
-                onClick={(event) => {
-                  event.preventDefault();
-                  if (props.loading) return;
-                  requestedLoadHref = null;
-                  void loadNextPage(href());
-                }}
-              >
-                <i
-                  class={
-                    props.loading ? "ti ti-loader-2 animate-spin" : failedLoadHref() === href() ? "ti ti-refresh" : "ti ti-chevron-down"
-                  }
-                  aria-hidden="true"
-                />
-                {props.loading
-                  ? messages().loadingConversations
-                  : failedLoadHref() === href()
-                    ? messages().retryLoading
-                    : messages().moreConversations}
-              </ButtonLink>
+              }
+            />
+          ) : props.items.length === 0 ? (
+            <Placeholder
+              icon={searchActive() ? "ti ti-search" : "ti ti-mail-off"}
+              variant="panel"
+              title={
+                searchActive()
+                  ? messages().noMatchingMessages
+                  : props.listMode === "conversations"
+                    ? messages().noConversations
+                    : messages().noMessages
+              }
+              description={searchActive() ? messages().changeFilters : messages().newMailAppears}
+              action={
+                searchActive() ? (
+                  <ButtonLink
+                    href={buildMailListHref(requestUrl(), true)}
+                    variant="secondary"
+                    size="sm"
+                    navigation="enhanced"
+                    onNavigate={props.onNavigate}
+                    scroll="preserve"
+                  >
+                    {messages().clearSearch}
+                  </ButtonLink>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div
+              class="flex flex-col gap-0.5"
+              role="list"
+              aria-label={
+                props.listMode === "conversations"
+                  ? messages().conversationListLabel({ title: props.title })
+                  : messages().messageListLabel({ title: props.title })
+              }
+            >
+              <For each={props.items}>
+                {(item) => (
+                  <MailConversationRow
+                    item={item}
+                    requestUrl={requestUrl()}
+                    state={{
+                      selectedConversationId: props.selectedConversationId,
+                      selectedMessageId: props.selectedMessageId,
+                      selectedConversationIds: props.selectedConversationIds,
+                      selectionMode: props.selectionMode,
+                      canWrite: props.canWrite,
+                      junkFolderIds: props.junkFolderIds,
+                      dateConfig: props.dateConfig,
+                    }}
+                    actions={{
+                      navigate: props.onNavigateItem,
+                      toggleSelection: props.onToggleSelection,
+                      itemAction: props.onItemAction,
+                      manageTags: props.onManageTags,
+                      merge: props.onMergeItem,
+                    }}
+                  />
+                )}
+              </For>
             </div>
           )}
-        </Show>
-      </ScrollArea>
+          <Show when={nextHref()}>
+            {(href) => (
+              <div ref={(element) => setLoadMoreElement(element)} class="flex min-h-14 items-center justify-center py-3">
+                <ButtonLink
+                  variant="secondary"
+                  size="sm"
+                  href={href()}
+                  aria-disabled={props.loading}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (props.loading) return;
+                    requestedLoadHref = null;
+                    void loadNextPage(href());
+                  }}
+                >
+                  <i
+                    class={
+                      props.loading ? "ti ti-loader-2 animate-spin" : failedLoadHref() === href() ? "ti ti-refresh" : "ti ti-chevron-down"
+                    }
+                    aria-hidden="true"
+                  />
+                  {props.loading
+                    ? messages().loadingConversations
+                    : failedLoadHref() === href()
+                      ? messages().retryLoading
+                      : messages().moreConversations}
+                </ButtonLink>
+              </div>
+            )}
+          </Show>
+        </ScrollArea>
+      </PullToRefresh>
     </div>
   );
 }

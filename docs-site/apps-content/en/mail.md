@@ -17,7 +17,8 @@ context such as assignments, comments, local tags, reminders, and follow-up stat
 ## Use Mail
 
 - Read complete conversations and search synchronized message and attachment
-  content across a mailbox.
+  content across a mailbox. Pull the conversation list down at its top, by
+  touch, mouse drag, or trackpad overscroll, to fetch new mail.
 - Organize provider mail with folders, read state, flags, archive, junk, and
   trash actions.
 - Assign conversations, maintain a shared summary, leave internal comments,
