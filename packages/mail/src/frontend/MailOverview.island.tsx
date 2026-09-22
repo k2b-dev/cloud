@@ -482,27 +482,25 @@ export default function MailOverview(props: {
               {pinAnnouncement()}
             </span>
           </AppWorkspace.SidebarBody>
-          <AppWorkspace.SidebarFooter class="mail-overview-sidebar-footer">
-            <Button
-              variant="text"
-              size="sm"
-              class="mail-overview-quiet-action"
-              loading={createMailbox.loading()}
-              loadingLabel={messages().creatingMailbox}
+          <AppWorkspace.SidebarFooter>
+            <AppWorkspace.SidebarItem
+              icon="ti ti-mail-plus"
+              disabled={createMailbox.loading()}
+              title={messages().newMailbox}
               onClick={() => createMailbox.mutate()}
             >
-              <i class="ti ti-mail-plus" aria-hidden="true" /> {messages().newMailbox}
-            </Button>
-            <Button
-              variant="text"
-              size="sm"
-              class="mail-overview-quiet-action"
-              aria-expanded={deletedOpen()}
-              aria-controls="mail-deleted-mailboxes"
+              {createMailbox.loading() ? messages().creatingMailbox : messages().newMailbox}
+            </AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem
+              icon="ti ti-trash"
+              title={messages().recentlyDeletedMailboxes}
               onClick={() => setDeletedOpen((open) => !open)}
             >
-              <i class="ti ti-trash" aria-hidden="true" /> {messages().recentlyDeletedMailboxes}
-            </Button>
+              <AppWorkspace.SidebarItemLabel>{messages().recentlyDeletedMailboxes}</AppWorkspace.SidebarItemLabel>
+              <AppWorkspace.SidebarItemMeta>
+                <i class={deletedOpen() ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
+              </AppWorkspace.SidebarItemMeta>
+            </AppWorkspace.SidebarItem>
             <Show when={deletedOpen()}>
               <div id="mail-deleted-mailboxes" class="mail-focus-deleted" role="group" aria-label={messages().recentlyDeletedMailboxes}>
                 <Show when={deletedResults.error()}>

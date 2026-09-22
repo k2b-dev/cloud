@@ -233,13 +233,6 @@
   .mail-overview-mailbox[data-pinned="true"] .ti-flag-off { color: var(--color-orange-600); }
   .dark .mail-overview-mailbox[data-pinned="true"] .ti-flag-off { color: var(--color-orange-400); }
 
-  .mail-overview-sidebar-footer {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
   .mail-focus-deleted {
     display: flex;
     min-width: 0;
@@ -587,22 +580,6 @@
 .k2b-ui .mail-overview-views .k2b-segmented-control__option {
   flex: 0 0 auto;
   white-space: nowrap;
-}
-
-.k2b-ui .mail-overview-quiet-action {
-  width: 100%;
-  color: var(--color-zinc-500);
-}
-
-.k2b-ui .mail-overview-quiet-action > .k2b-button__label {
-  width: 100%;
-  justify-content: flex-start;
-}
-
-@media (max-width: 63.999rem) {
-  .k2b-ui .mail-overview-quiet-action {
-    width: auto;
-  }
 }
 
 @media print {

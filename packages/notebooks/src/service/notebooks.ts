@@ -1,6 +1,6 @@
 import type { MutationResult } from "@k2b/cloud/contracts";
 import { deleteAccess, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { logger, serviceAccounts, get as settingsGet } from "@k2b/cloud/services";
+import { logger, serviceAccounts, get as settingsGet, toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate, validateNoteTitleTemplate } from "../lib/note-title-template";
@@ -316,7 +316,7 @@ export const overviewStats = async (params: { userId: string; notebookIds: strin
           AND (a.user_id IS NULL OR a.user_id <> ${params.userId}::uuid)
       ) AS shared
     FROM notebooks.notebooks n
-    WHERE n.id = ANY(${params.notebookIds}::uuid[])
+    WHERE n.id = ANY(${toPgUuidArray(params.notebookIds)}::uuid[])
   `;
   return rows.map((row) => ({
     notebookId: row.id,

@@ -390,10 +390,6 @@
   color: var(--color-zinc-100);
 }
 
-.k2b-ui .notebooks-overview-activity {
-  padding: 0;
-}
-
 .notebooks-overview-activity .k2b-detail-panel {
   min-height: 0;
 }
