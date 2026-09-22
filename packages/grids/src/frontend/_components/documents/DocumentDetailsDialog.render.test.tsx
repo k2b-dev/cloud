@@ -136,7 +136,16 @@ test("a primary file outside the supported document formats offers no public sha
           ...document,
           filename: "page.html",
           primaryArtifactKey: "page",
-          artifacts: [{ key: "page", filename: "page.html", mimeType: "text/html", sizeBytes: 200, sha256: "c".repeat(64) }],
+          artifacts: [
+            {
+              key: "page",
+              filename: "page.html",
+              mimeType: "text/html",
+              sizeBytes: 200,
+              sha256: "c".repeat(64),
+              downloadUrl: "/api/grids/documents/DOC/artifacts/page",
+            },
+          ],
         },
         canWrite: true,
         onDownload: () => {},

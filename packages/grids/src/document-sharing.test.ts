@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test";
 import { documentProfiles } from "./document-profiles";
 import { financialQueryProfiles } from "./document-profiles/financial";
+import { zipDocumentProfile } from "./document-profiles/zip";
 import { documentAllowsPublicLinks, documentMediaTypeAllowsPublicLinks, PUBLIC_DOCUMENT_LINK_MEDIA_TYPES } from "./document-sharing";
 
 test("the public link allow-list is exactly the primary formats Grids renderers produce", () => {
   const produced = new Set([
     "application/pdf",
-    ...[...documentProfiles, ...financialQueryProfiles].map((profile) => profile.primaryArtifact.mediaType),
+    ...[...documentProfiles, ...financialQueryProfiles, zipDocumentProfile].map((profile) => profile.primaryArtifact.mediaType),
   ]);
   expect(new Set<string>(PUBLIC_DOCUMENT_LINK_MEDIA_TYPES)).toEqual(produced);
 });
@@ -43,7 +44,6 @@ test("browser-renderable and unknown media types are never shareable", () => {
     "image/svg+xml",
     "application/xhtml+xml",
     "application/javascript",
-    "application/zip",
     "application/octet-stream",
     "APPLICATION/PDF",
     "",
