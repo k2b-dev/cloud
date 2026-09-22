@@ -876,7 +876,7 @@ Usage:
   cld auth status
   cld profile <list|show|use|set> [options]
   cld update [--version <version>] [--yes] [--no-verify]
-  cld plugins <list|install|remove> [options]
+  cld plugins <list|install|remove|run> [options]
   cld --version
 
 Global options:
@@ -909,7 +909,7 @@ Verwendung:
   cld auth status
   cld profile <list|show|use|set> [Optionen]
   cld update [--version <Version>] [--yes] [--no-verify]
-  cld plugins <list|install|remove> [Optionen]
+  cld plugins <list|install|remove|run> [Optionen]
   cld --version
 
 Globale Optionen:
@@ -1060,6 +1060,28 @@ const runUpdateCommand = async (args: string[], locale: string): Promise<number>
   return 0;
 };
 
+/** Run one built-in or plugin module with the shared context. */
+const runModule = async (module: CloudCliModule, moduleArgs: string[], global: GlobalArgs): Promise<number> => {
+  if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
+    console.log(
+      module.help?.(global.locale) ??
+        `${module.name}: ${global.locale.toLowerCase().startsWith("de") ? (germanModuleSummaries.get(module.name) ?? module.summary) : module.summary}`,
+    );
+    return 0;
+  }
+
+  const parsed = parseArgs(moduleArgs, new Set([...BOOLEAN_FLAGS, ...(module.booleanFlags ?? [])]));
+  const helpRequest = isModuleHelpRequest(parsed.args, parsed.flags);
+  const requiresCloud = module.requiresCloudFor?.(parsed.args, parsed.flags) ?? module.requiresCloud !== false;
+  const resolvedOptions = !requiresCloud || helpRequest ? await resolveOfflineOptions(global) : await resolveOptions(global);
+  const options: ResolvedCliOptions = {
+    ...resolvedOptions,
+    output: takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : resolvedOptions.output,
+  };
+  const code = await module.run(createContext(parsed.args, parsed.flags, options));
+  return code ?? 0;
+};
+
 const pluginsHelp = (locale: string): string =>
   text(
     locale,
@@ -1069,7 +1091,10 @@ Usage:
   cld plugins list [--json]
   cld plugins install <directory|package.tgz|npm-package[@version]> [--yes]
   cld plugins remove <id>
+  cld plugins run <id> [args...]
 
+Plugin commands also run as \`cld <id> ...\`. \`cld plugins run <id>\` always reaches the
+plugin, even when a built-in command with the same name takes precedence.
 Plugins add third-party application commands to cld without a new cld release.
 A plugin runs inside cld with your Cloud credentials. Install only plugins you trust.
 
@@ -1081,7 +1106,10 @@ Verwendung:
   cld plugins list [--json]
   cld plugins install <Verzeichnis|Paket.tgz|npm-Paket[@Version]> [--yes]
   cld plugins remove <ID>
+  cld plugins run <ID> [Argumente...]
 
+Plugin-Befehle laufen auch als \`cld <ID> ...\`. \`cld plugins run <ID>\` erreicht das Plugin
+immer, auch wenn ein eingebauter Befehl mit demselben Namen Vorrang hat.
 Plugins ergänzen cld um Befehle von Drittanbieter-Anwendungen, ohne ein neues cld-Release.
 Ein Plugin läuft in cld mit deinen Cloud-Zugangsdaten. Installiere nur Plugins, denen du vertraust.
 
@@ -1090,6 +1118,16 @@ Verzeichnis: ${pluginsDirectory()}
   );
 
 const warnSkippedPlugin = (plugin: PluginInfo, locale: string): void => {
+  if (plugin.status === "shadowed") {
+    console.error(
+      text(
+        locale,
+        `cld: plugin "${plugin.id}" shadowed by a built-in command, use \`cld plugins run ${plugin.id}\``,
+        `cld: Plugin "${plugin.id}" verdeckt durch eingebauten Befehl, nutze \`cld plugins run ${plugin.id}\``,
+      ),
+    );
+    return;
+  }
   console.error(
     text(
       locale,
@@ -1123,6 +1161,18 @@ const pluginFailure = (error: unknown, action: string, germanAction: string): ne
 
 const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
   const locale = global.locale;
+  if (args[0] === "run") {
+    // Everything after the ID belongs to the plugin; shadowing does not apply.
+    const [, id, ...moduleArgs] = args;
+    if (!id || id.startsWith("-")) {
+      throw new CliError("Usage: cld plugins run <id> [args...]", 1, "Verwendung: cld plugins run <ID> [Argumente...]");
+    }
+    const module = await loadPlugin(id).catch((error) =>
+      pluginFailure(error, `Plugin "${id}" cannot run`, `Plugin "${id}" kann nicht ausgeführt werden`),
+    );
+    if (!module) throw new CliError(`Plugin "${id}" is not installed.`, 1, `Plugin "${id}" ist nicht installiert.`);
+    return runModule(module, moduleArgs, global);
+  }
   const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y"]));
   const [command, target, ...extra] = parsed.args;
   if (!command || isModuleHelpRequest(parsed.args, parsed.flags)) {
@@ -1209,9 +1259,9 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
   }
 
   throw new CliError(
-    "Usage: cld plugins <list|install <source>|remove <id>>. Run `cld plugins help`.",
+    "Usage: cld plugins <list|install <source>|remove <id>|run <id>>. Run `cld plugins help`.",
     1,
-    "Verwendung: cld plugins <list|install <Quelle>|remove <ID>>. Führe `cld plugins help` aus.",
+    "Verwendung: cld plugins <list|install <Quelle>|remove <ID>|run <ID>>. Führe `cld plugins help` aus.",
   );
 };
 
@@ -1792,24 +1842,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
       `Unbekanntes Modul "${moduleName}". Führe \`cld help\` aus.`,
     );
 
-  if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
-    console.log(
-      module.help?.(global.locale) ??
-        `${module.name}: ${global.locale.toLowerCase().startsWith("de") ? (germanModuleSummaries.get(module.name) ?? module.summary) : module.summary}`,
-    );
-    return 0;
-  }
-
-  const parsed = parseArgs(moduleArgs, new Set([...BOOLEAN_FLAGS, ...(module.booleanFlags ?? [])]));
-  const helpRequest = isModuleHelpRequest(parsed.args, parsed.flags);
-  const requiresCloud = module.requiresCloudFor?.(parsed.args, parsed.flags) ?? module.requiresCloud !== false;
-  const resolvedOptions = !requiresCloud || helpRequest ? await resolveOfflineOptions(global) : await resolveOptions(global);
-  const options: ResolvedCliOptions = {
-    ...resolvedOptions,
-    output: takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : resolvedOptions.output,
-  };
-  const code = await module.run(createContext(parsed.args, parsed.flags, options));
-  return code ?? 0;
+  return runModule(module, moduleArgs, global);
 };
 
 const wantsJsonError = (argv: string[]): boolean => argv.includes("--json") || argv.includes("--jsonl");

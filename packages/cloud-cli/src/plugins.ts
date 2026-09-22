@@ -148,7 +148,8 @@ export type LoadedPlugins = { modules: CloudCliModule[]; plugins: PluginInfo[] }
 /**
  * Load every installed plugin. A failing plugin is reported with its status
  * and never prevents the others or the built-in modules from working.
- * Names in `reserved` belong to built-in commands and always win.
+ * Names in `reserved` belong to built-in commands and win over `cld <id>`;
+ * a shadowed plugin still loads through `cld plugins run <id>`.
  */
 export const loadPlugins = async (reserved: ReadonlySet<string>, root = pluginsDirectory()): Promise<LoadedPlugins> => {
   const modules: CloudCliModule[] = [];
@@ -161,8 +162,9 @@ export const loadPlugins = async (reserved: ReadonlySet<string>, root = pluginsD
       const manifest = await readPluginManifest(directory);
       info.package = manifest.package;
       info.version = manifest.version;
-      if (reserved.has(id)) throw new PluginError(`built-in command "${id}" takes precedence`, "shadowed");
-      modules.push(await importInstalledPlugin(id, manifest));
+      const module = await importInstalledPlugin(id, manifest);
+      if (reserved.has(id)) throw new PluginError(`shadowed by a built-in command, use \`cld plugins run ${id}\``, "shadowed");
+      modules.push(module);
     } catch (error) {
       info.status = error instanceof PluginError ? error.status : "error";
       info.message = error instanceof Error ? error.message : String(error);
@@ -265,7 +267,7 @@ export const commitPlugin = async (
 ): Promise<{ id: string; replaced: boolean }> => {
   const module = await importPluginModule(staged.manifest.entry);
   const id = module.name;
-  if (reserved.has(id)) throw new PluginError(`"${id}" is a built-in cld command`, "shadowed");
+  if (reserved.has(id)) throw new PluginError(`plugin id "${id}" is reserved by a built-in cld command`, "shadowed");
   await writeFile(join(staged.directory, INSTALL_RECORD), `${JSON.stringify({ source: staged.source }, null, 2)}\n`);
   await mkdir(root, { recursive: true, mode: 0o700 });
   const target = join(root, id);

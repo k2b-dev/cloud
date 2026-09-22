@@ -134,6 +134,9 @@ command is only an API client and the server keeps authorization.
 - Publish the module as a `cld` plugin: a package whose `package.json` has
   `"cld": { "apiVersion": 1, "entry": "dist/cli.js" }`, where the entry is one
   bundled, self-contained ESM file whose default export is the module.
+- The module name is the plugin ID and runs as `cld <id>`; names of built-in
+  modules and top-level commands are reserved. `cld plugins run <id>` always
+  reaches the plugin, even if a later built-in shadows `cld <id>`.
 - Version the plugin package with the application; command names, flags, and
   JSON output are stable syntax. Change `apiVersion` only when `cld`
   documents a new plugin API.

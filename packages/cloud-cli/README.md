@@ -39,6 +39,7 @@ Third-party applications ship their `cld` commands as plugins:
 ```bash
 cld plugins install @example/inventory-cli@1.4.0
 cld plugins list
+cld plugins run inventory items list
 cld plugins remove inventory
 ```
 

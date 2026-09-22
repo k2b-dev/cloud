@@ -399,6 +399,11 @@ with a `package.json` that declares the plugin manifest:
 The entry's default export is the module from `defineCliCommands()`. Its
 `name` becomes the command, `cld inventory …`, and the plugin's ID.
 
+The names of built-in modules and top-level commands (`help`, `version`,
+`login`, `logout`, `auth`, `profile`, `update`, `plugins`) are reserved.
+`cld plugins install` refuses a plugin whose ID matches one of them. Choose a
+distinct ID, such as your application ID.
+
 Bundle the entry into one self-contained file. `cld` does not install plugin
 dependencies, so the bundle carries its own copy of `@k2b/cloud/cli`:
 
@@ -419,6 +424,7 @@ cld plugins install @example/inventory-cli@1.4.0
 cld plugins install ./inventory-cli-1.4.0.tgz
 cld plugins install ./packages/inventory-cli
 cld plugins list
+cld plugins run inventory items get <item-id>
 cld plugins remove inventory
 ```
 
@@ -443,9 +449,14 @@ status:
 | Status | Meaning |
 | --- | --- |
 | `ok` | The plugin loads and its commands are available. |
-| `shadowed` | A built-in command has the same name and takes precedence. |
+| `shadowed` | A later `cld` release added a built-in command with the same name. It takes precedence for `cld <id>`; run the plugin with `cld plugins run <id>`. |
 | `incompatible` | The manifest names a plugin API version that this `cld` does not support. |
 | `error` | The manifest, the entry, or the module is invalid, or the entry fails to load. |
+
+A plugin's commands run as `cld <id> …`. `cld plugins run <id> …` runs the same
+command tree and always reaches the plugin, even when it is shadowed, so a new
+built-in command never makes an installed plugin unreachable. Use it in
+scripts that must keep working across `cld` upgrades.
 
 `cld help` lists plugin modules next to the built-in modules and prints one
 warning line on stderr for each plugin that it skips. A broken plugin fails

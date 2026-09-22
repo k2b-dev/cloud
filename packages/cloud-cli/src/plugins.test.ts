@@ -33,7 +33,7 @@ const writePlugin = async (directory: string, cld: unknown, entrySource = "expor
 };
 
 const moduleSource = (name: string) =>
-  `export default { name: ${JSON.stringify(name)}, summary: "Fake", run: (ctx) => { ctx.print("ran ${name}"); } };`;
+  `export default { name: ${JSON.stringify(name)}, summary: "Fake", requiresCloud: false, run: (ctx) => { ctx.print("ran ${name}"); } };`;
 
 const expectPluginError = async (promise: Promise<unknown>, status: PluginError["status"], message: string | RegExp) => {
   const error = await promise.then(
@@ -98,6 +98,9 @@ describe("plugin loading", () => {
       ["renamed", "error"],
     ]);
     expect(plugins.find((plugin) => plugin.id === "broken")?.message).toContain("boom");
+    expect(plugins.find((plugin) => plugin.id === "profile")?.message).toBe(
+      "shadowed by a built-in command, use `cld plugins run profile`",
+    );
     expect(plugins.find((plugin) => plugin.id === "renamed")?.message).toContain('"other" does not match its directory "renamed"');
     expect(plugins.find((plugin) => plugin.id === "echo")).toMatchObject({
       package: "@k2b-test/cld-plugin-echo",
@@ -137,7 +140,11 @@ describe("plugin install and remove", () => {
     const root = await tempDir();
     const staged = await stagePlugin(echoBuild);
     try {
-      await expectPluginError(commitPlugin(staged, new Set(["echo"]), root), "shadowed", "built-in");
+      await expectPluginError(
+        commitPlugin(staged, new Set(["echo"]), root),
+        "shadowed",
+        'plugin id "echo" is reserved by a built-in cld command',
+      );
     } finally {
       await staged.cleanup();
     }
@@ -233,7 +240,31 @@ describe("cld plugins command", () => {
       expect(help.exitCode, help.stderr).toBe(0);
       expect(help.stdout).toMatch(/\n {2}echo +Echo the host CLI context/);
       expect(help.stderr).toContain('plugin "broken" skipped (error)');
-      expect(help.stderr).toContain('plugin "update" skipped (shadowed)');
+      expect(help.stderr).toContain('plugin "update" shadowed by a built-in command, use `cld plugins run update`');
+      const germanHelp = await runCli(["--locale", "de", "help"], configHome);
+      expect(germanHelp.stderr).toContain('Plugin "update" verdeckt durch eingebauten Befehl, nutze `cld plugins run update`');
+
+      const shadowedRun = await runCli(["plugins", "run", "update", "anything"], configHome);
+      expect(shadowedRun.exitCode, shadowedRun.stderr).toBe(0);
+      expect(shadowedRun.stdout).toBe("ran update\n");
+      const flatRun = await runCli(
+        ["--server", server.url.origin, "--token", "plugin-token", "plugins", "run", "echo", "whoami", "--json"],
+        configHome,
+      );
+      expect(flatRun.exitCode, flatRun.stderr).toBe(0);
+      expect(JSON.parse(flatRun.stdout)).toMatchObject({ authorization: "Bearer plugin-token", output: "json" });
+      const missingRun = await runCli(["plugins", "run", "missing"], configHome);
+      expect(missingRun.exitCode).toBe(1);
+      expect(missingRun.stderr).toContain('Plugin "missing" is not installed.');
+
+      const pluginsHelp = await runCli(["plugins", "help"], configHome);
+      expect(pluginsHelp.stdout).toContain("cld plugins run <id> [args...]");
+
+      const reservedSource = join(configHome, "reserved-plugin");
+      await writePlugin(reservedSource, { apiVersion: 1, entry: "dist/cli.js" }, moduleSource("grids"));
+      const reserved = await runCli(["plugins", "install", reservedSource, "--yes"], configHome);
+      expect(reserved.exitCode).toBe(1);
+      expect(reserved.stderr).toContain('Cannot install plugin: plugin id "grids" is reserved by a built-in cld command');
 
       const builtIn = await runCli(
         ["--server", "https://cloud.invalid", "--token", "t", "--json", "grids", "workflows", "reference"],
