@@ -18,7 +18,17 @@ const document = (id: string, sizeBytes = 3): PublicDocument => ({
   sourceRecordCount: null,
   dataSnapshot: null,
   primaryArtifactKey: "pdf",
-  artifacts: [{ key: "pdf", filename: "same.pdf", mimeType: "application/pdf", sizeBytes, sha256: "0".repeat(64) }],
+  downloadUrl: "/api/grids/documents/DOC/download",
+  artifacts: [
+    {
+      key: "pdf",
+      filename: "same.pdf",
+      mimeType: "application/pdf",
+      sizeBytes,
+      sha256: "0".repeat(64),
+      downloadUrl: "/api/grids/documents/DOC/artifacts/pdf",
+    },
+  ],
 });
 const page = (items: PublicDocument[] = [], extra: Partial<PublicDocumentBrowseResponse> = {}): PublicDocumentBrowseResponse => ({
   items,

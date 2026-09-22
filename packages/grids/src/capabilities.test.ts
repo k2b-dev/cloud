@@ -195,7 +195,11 @@ describe("Grids capabilities", () => {
       const read = await invoke("query", "document.read", { id: document.id }, context);
       expect(read).toEqual(first);
       expect(document.downloadUrl).toBe(`/api/grids/documents/${document.id}/download`);
-      expect(read.ok && read.data.links).toContainEqual({ rel: "download", href: document.downloadUrl });
+      expect(document.artifacts.map((artifact) => artifact.downloadUrl)).toEqual([`/api/grids/documents/${document.id}/artifacts/pdf`]);
+      expect(read.ok && read.data.links).toEqual([
+        { rel: "download", href: document.downloadUrl },
+        { rel: "open", href: `/api/grids/documents/${document.id}/artifacts/pdf` },
+      ]);
       const content = await invoke("query", "document.content.read", { id: document.id }, context);
       if (!content.ok || !content.data.stream) throw new Error("Expected artifact stream");
       const stream = content.data.stream;
@@ -211,6 +215,7 @@ describe("Grids capabilities", () => {
       await expect(transfer(stream, outsider)).rejects.toBeDefined();
       const explicit = await invoke("query", "document.content.read", { id: document.id, artifactKey: "pdf" }, context);
       expect(explicit.ok && explicit.data.data).toEqual(content.data.data);
+      expect(content.data.data).toEqual(document.artifacts[0]);
       await expect(transfer({ ...stream, id: JSON.stringify({ id: document.id, artifactKey: "missing" }) }, context)).rejects.toBeDefined();
       await expect(transfer({ ...stream, id: "invalid" }, context)).rejects.toBeDefined();
       await expect(transfer(stream, { ...context, signal: AbortSignal.abort() })).rejects.toBeDefined();

@@ -174,9 +174,13 @@ const publicDocument = (row: DocumentFixture): z.infer<typeof PublicDocumentSche
   renderer: row.profile ? { kind: "profile", ...row.profile } : { kind: "html" },
   validationStatus: row.validationStatus,
   primaryArtifactKey: "pdf",
+  downloadUrl: `/api/grids/documents/${row.shortId}/download`,
   sourceRecordCount: 1,
   dataSnapshot: null,
-  artifacts: row.artifacts.map(({ fileId: _fileId, ...artifact }) => artifact),
+  artifacts: row.artifacts.map(({ fileId: _fileId, ...artifact }) => ({
+    ...artifact,
+    downloadUrl: `/api/grids/documents/${row.shortId}/artifacts/${artifact.key}`,
+  })),
 });
 
 const forbiddenResponse = {
