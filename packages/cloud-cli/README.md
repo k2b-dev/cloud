@@ -32,6 +32,21 @@ Run it from the workspace without installing a binary:
 bun run packages/cloud-cli/src/index.ts --server http://localhost:3000 --token cld_... notebooks list
 ```
 
+## Plugins
+
+Third-party applications ship their `cld` commands as plugins:
+
+```bash
+cld plugins install @example/inventory-cli@1.4.0
+cld plugins list
+cld plugins remove inventory
+```
+
+Plugins live in `~/.config/cloud/cld/plugins/<id>/` and run unsandboxed with
+your Cloud credentials. See
+[Application CLI modules](../../docs-site/docs/en/platform/cli-modules.md) for
+the manifest and the security model.
+
 ## Profiles
 
 Profiles live in `~/.config/cloud/cld/config.json` by default. The directory is

@@ -35,6 +35,16 @@ import venueCliModule from "@k2b/cloud-app-venue/cli";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
 import { configPath, envLocale, envServer, envToken } from "./config";
+import {
+  commitPlugin,
+  loadPlugin,
+  loadPlugins,
+  PluginError,
+  type PluginInfo,
+  pluginsDirectory,
+  removePlugin,
+  stagePlugin,
+} from "./plugins";
 import { defaultCloudCliSkillsDir, updateCli } from "./release";
 
 declare const __CLD_VERSION__: string;
@@ -130,6 +140,19 @@ const modules: CloudCliModule[] = [
 ];
 
 const moduleByName = new Map(modules.map((module) => [module.name, module]));
+
+/** Top-level names that plugins can never take over. */
+const reservedNames: ReadonlySet<string> = new Set([
+  ...moduleByName.keys(),
+  "help",
+  "version",
+  "login",
+  "logout",
+  "auth",
+  "profile",
+  "update",
+  "plugins",
+]);
 
 const text = (locale: string, en: string, de: string): string => localizeCloudCliText(locale, { en, de });
 
@@ -841,7 +864,7 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
   };
 };
 
-const helpText = (locale: string): string =>
+const helpText = (locale: string, pluginModules: CloudCliModule[]): string =>
   text(
     locale,
     `cld
@@ -853,6 +876,7 @@ Usage:
   cld auth status
   cld profile <list|show|use|set> [options]
   cld update [--version <version>] [--yes] [--no-verify]
+  cld plugins <list|install|remove> [options]
   cld --version
 
 Global options:
@@ -868,7 +892,7 @@ Global options:
   --jsonl                 Stream one JSON event per line where supported
 
 Modules:
-${modules.map((module) => `  ${module.name.padEnd(12)} ${module.summary}`).join("\n")}
+${[...modules, ...pluginModules].map((module) => `  ${module.name.padEnd(12)} ${module.summary}`).join("\n")}
 
 Examples:
   cld login --server http://localhost:3000
@@ -885,6 +909,7 @@ Verwendung:
   cld auth status
   cld profile <list|show|use|set> [Optionen]
   cld update [--version <Version>] [--yes] [--no-verify]
+  cld plugins <list|install|remove> [Optionen]
   cld --version
 
 Globale Optionen:
@@ -900,7 +925,7 @@ Globale Optionen:
   --jsonl                 Ein kompaktes JSON-Ereignis pro Zeile ausgeben
 
 Module:
-${modules.map((module) => `  ${module.name.padEnd(12)} ${germanModuleSummaries.get(module.name) ?? module.summary}`).join("\n")}
+${[...modules, ...pluginModules].map((module) => `  ${module.name.padEnd(12)} ${germanModuleSummaries.get(module.name) ?? module.summary}`).join("\n")}
 
 Beispiele:
   cld login --server http://localhost:3000
@@ -1033,6 +1058,161 @@ const runUpdateCommand = async (args: string[], locale: string): Promise<number>
   const skill = result.skill === "installed" ? "; Cloud CLI skill updated" : "";
   console.log(`Updated cld to ${result.release.version} (${verification}${skill}${claude}).`);
   return 0;
+};
+
+const pluginsHelp = (locale: string): string =>
+  text(
+    locale,
+    `cld plugins
+
+Usage:
+  cld plugins list [--json]
+  cld plugins install <directory|package.tgz|npm-package[@version]> [--yes]
+  cld plugins remove <id>
+
+Plugins add third-party application commands to cld without a new cld release.
+A plugin runs inside cld with your Cloud credentials. Install only plugins you trust.
+
+Directory: ${pluginsDirectory()}
+`,
+    `cld plugins
+
+Verwendung:
+  cld plugins list [--json]
+  cld plugins install <Verzeichnis|Paket.tgz|npm-Paket[@Version]> [--yes]
+  cld plugins remove <ID>
+
+Plugins ergänzen cld um Befehle von Drittanbieter-Anwendungen, ohne ein neues cld-Release.
+Ein Plugin läuft in cld mit deinen Cloud-Zugangsdaten. Installiere nur Plugins, denen du vertraust.
+
+Verzeichnis: ${pluginsDirectory()}
+`,
+  );
+
+const warnSkippedPlugin = (plugin: PluginInfo, locale: string): void => {
+  console.error(
+    text(
+      locale,
+      `cld: plugin "${plugin.id}" skipped (${plugin.status}): ${plugin.message}`,
+      `cld: Plugin "${plugin.id}" übersprungen (${plugin.status}): ${plugin.message}`,
+    ),
+  );
+};
+
+const confirmPluginInstall = async (message: string, locale: string): Promise<boolean> => {
+  if (!process.stdin.isTTY) {
+    throw new CliError(
+      "Not a terminal; pass --yes to install the plugin non-interactively.",
+      1,
+      "Kein Terminal; übergib --yes, um das Plugin ohne Rückfrage zu installieren.",
+    );
+  }
+  const prompt = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = await prompt.question(`${message} ${text(locale, "[y/N]", "[j/N]")} `);
+    return /^(y|yes|j|ja)$/i.test(answer.trim());
+  } finally {
+    prompt.close();
+  }
+};
+
+const pluginFailure = (error: unknown, action: string, germanAction: string): never => {
+  if (error instanceof PluginError) throw new CliError(`${action}: ${error.message}`, 1, `${germanAction}: ${error.message}`);
+  throw error;
+};
+
+const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
+  const locale = global.locale;
+  const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y"]));
+  const [command, target, ...extra] = parsed.args;
+  if (!command || isModuleHelpRequest(parsed.args, parsed.flags)) {
+    console.log(pluginsHelp(locale));
+    return 0;
+  }
+  const output = takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : global.output;
+  const allowedFlags = new Set(command === "install" ? ["json", "jsonl", "yes", "y"] : ["json", "jsonl"]);
+  const unsupportedFlag = Object.keys(parsed.flags).find((flag) => !allowedFlags.has(flag));
+  if (unsupportedFlag) throw new CliError(`Unknown plugins option "--${unsupportedFlag}".`);
+  const printJson = (value: unknown) => console.log(output === "jsonl" ? JSON.stringify(value) : JSON.stringify(value, null, 2));
+
+  if (command === "list" && !target) {
+    const { plugins } = await loadPlugins(reservedNames);
+    if (output === "jsonl") {
+      for (const plugin of plugins) printJson(plugin);
+    } else if (output === "json") {
+      printJson({ directory: pluginsDirectory(), plugins });
+    } else if (plugins.length === 0) {
+      console.log(text(locale, `No plugins installed in ${pluginsDirectory()}.`, `Keine Plugins in ${pluginsDirectory()} installiert.`));
+    } else {
+      console.log(
+        renderTable(plugins, [
+          { key: "id", label: "ID" },
+          { key: "package", label: text(locale, "PACKAGE", "PAKET") },
+          { key: "version", label: "VERSION" },
+          { key: "source", label: text(locale, "SOURCE", "QUELLE") },
+          { key: "status", label: "STATUS" },
+        ]),
+      );
+    }
+    for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, locale);
+    return 0;
+  }
+
+  if (command === "install" && target && extra.length === 0) {
+    const staged = await stagePlugin(target).catch((error) =>
+      pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden"),
+    );
+    try {
+      const { manifest, source } = staged;
+      const label = `${manifest.package}@${manifest.version}`;
+      console.error(
+        text(
+          locale,
+          `Plugin ${label} from ${source} runs inside cld with your Cloud credentials.`,
+          `Plugin ${label} aus ${source} läuft in cld mit deinen Cloud-Zugangsdaten.`,
+        ),
+      );
+      if (
+        !takeBooleanFlag(parsed.flags, "yes", "y") &&
+        !(await confirmPluginInstall(text(locale, "Install it?", "Installieren?"), locale))
+      ) {
+        console.error(text(locale, "Plugin installation cancelled.", "Plugin-Installation abgebrochen."));
+        return 1;
+      }
+      const { id, replaced } = await commitPlugin(staged, reservedNames).catch((error) =>
+        pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden"),
+      );
+      if (output !== "text") {
+        printJson({ id, package: manifest.package, version: manifest.version, source, replaced });
+      } else {
+        console.log(
+          text(
+            locale,
+            `${replaced ? "Replaced" : "Installed"} plugin "${id}" (${label}). Run \`cld ${id} help\`.`,
+            `Plugin "${id}" (${label}) ${replaced ? "ersetzt" : "installiert"}. Führe \`cld ${id} help\` aus.`,
+          ),
+        );
+      }
+      return 0;
+    } finally {
+      await staged.cleanup();
+    }
+  }
+
+  if (command === "remove" && target && extra.length === 0) {
+    if (!(await removePlugin(target))) {
+      throw new CliError(`Plugin "${target}" is not installed.`, 1, `Plugin "${target}" ist nicht installiert.`);
+    }
+    if (output !== "text") printJson({ id: target, removed: true });
+    else console.log(text(locale, `Removed plugin "${target}".`, `Plugin "${target}" entfernt.`));
+    return 0;
+  }
+
+  throw new CliError(
+    "Usage: cld plugins <list|install <source>|remove <id>>. Run `cld plugins help`.",
+    1,
+    "Verwendung: cld plugins <list|install <Quelle>|remove <ID>>. Führe `cld plugins help` aus.",
+  );
 };
 
 const runProfileCommand = async (args: string[], locale: string): Promise<number> => {
@@ -1585,7 +1765,9 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   const [moduleName, ...moduleArgs] = global.rest;
 
   if (!moduleName || moduleName === "help" || moduleName === "--help" || moduleName === "-h") {
-    console.log(helpText(global.locale));
+    const { modules: pluginModules, plugins } = await loadPlugins(reservedNames);
+    for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, global.locale);
+    console.log(helpText(global.locale, pluginModules));
     return 0;
   }
 
@@ -1594,8 +1776,15 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (moduleName === "auth") return runAuthCommand(moduleArgs, global);
   if (moduleName === "profile") return runProfileCommand(moduleArgs, global.locale);
   if (moduleName === "update") return runUpdateCommand(moduleArgs, global.locale);
+  if (moduleName === "plugins") return runPluginsCommand(moduleArgs, global);
 
-  const module = moduleByName.get(moduleName);
+  const module =
+    moduleByName.get(moduleName) ??
+    (reservedNames.has(moduleName)
+      ? undefined
+      : await loadPlugin(moduleName).catch((error) =>
+          pluginFailure(error, `Plugin "${moduleName}" cannot run`, `Plugin "${moduleName}" kann nicht ausgeführt werden`),
+        ));
   if (!module)
     throw new CliError(
       `Unknown module "${moduleName}". Run \`cld help\`.`,

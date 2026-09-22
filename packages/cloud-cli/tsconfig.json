@@ -19,6 +19,7 @@
   },
   "include": [
     "./src/**/*.ts",
+    "./test/**/*.ts",
     "../cloud/src/types/**/*.d.ts",
     "../cloud/src/cli/**/*.ts",
     "../assistant/src/cli.ts",

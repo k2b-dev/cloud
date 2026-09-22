@@ -125,6 +125,21 @@ SolidJS library remains independent of Cloud and application domains.
   persisted locale and theme without Cloud chrome. A custom root using none of
   these layouts must install one provider around its returned tree.
 
+## Ship CLI commands as a plugin
+
+Read **Application CLI modules** (`/en/docs/platform/cli-modules`) before
+adding `cld` commands. Define the module with `defineCliCommands()`; a
+command is only an API client and the server keeps authorization.
+
+- Publish the module as a `cld` plugin: a package whose `package.json` has
+  `"cld": { "apiVersion": 1, "entry": "dist/cli.js" }`, where the entry is one
+  bundled, self-contained ESM file whose default export is the module.
+- Version the plugin package with the application; command names, flags, and
+  JSON output are stable syntax. Change `apiVersion` only when `cld`
+  documents a new plugin API.
+- A plugin receives only the user's `CloudCliContext` and holds no privileges
+  beyond the user's credentials; never read CLI profiles or token files.
+
 ## Build and verify one complete slice
 
 For capability design or changes, read **App capabilities** in the Docs
