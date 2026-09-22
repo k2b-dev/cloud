@@ -48,6 +48,44 @@ describe("BottomSheet", () => {
     dom.cleanup();
   });
 
+  test("initial focus skips the handle and lands on the first input when there is one", async () => {
+    const dom = createDomTestHarness();
+    const { default: BottomSheet, bottomSheetOptions } = await import("../src/layout/BottomSheet");
+    const core = createDialogCore();
+    let closeSheet = () => {};
+    const buttonsOnly = core.open((close, context) => {
+      closeSheet = close;
+      return (
+        <BottomSheet onDismiss={context.requestDismiss}>
+          <BottomSheet.Header title="Approve sign-in" />
+          <BottomSheet.Footer>
+            <button type="button">Deny</button>
+            <button type="button">Approve</button>
+          </BottomSheet.Footer>
+        </BottomSheet>
+      );
+    }, bottomSheetOptions);
+    await Bun.sleep(20);
+    expect(dom.document.activeElement?.classList.contains("k2b-bottom-sheet__handle")).toBe(false);
+    closeSheet();
+    await buttonsOnly;
+    const withInput = core.open((close, context) => {
+      closeSheet = close;
+      return (
+        <BottomSheet onDismiss={context.requestDismiss}>
+          <BottomSheet.Body>
+            <input type="search" aria-label="Find an app" />
+          </BottomSheet.Body>
+        </BottomSheet>
+      );
+    }, bottomSheetOptions);
+    await Bun.sleep(20);
+    expect(dom.document.activeElement?.getAttribute("aria-label")).toBe("Find an app");
+    closeSheet();
+    await withInput;
+    dom.cleanup();
+  });
+
   test("cancelBehavior ignore protects the handle while completion still works", async () => {
     const dom = createDomTestHarness();
     const core = createDialogCore();

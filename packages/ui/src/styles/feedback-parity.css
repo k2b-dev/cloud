@@ -52,6 +52,12 @@
   z-index: 100;
 }
 
+/* The dialog element only receives focus programmatically (showModal without
+ * an initial target); it is never a tab stop, so it never shows a ring. */
+.k2b-ui .k2b-dialog:focus {
+  outline: none;
+}
+
 /* Only the body scrolls. `hidden` still lets focus/scroll anchoring scroll the
  * native dialog when fields disappear, pushing its header out of the frame.
  * `clip` prevents the outer frame from becoming a scroll container at all. */

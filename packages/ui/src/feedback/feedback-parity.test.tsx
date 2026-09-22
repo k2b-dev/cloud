@@ -277,6 +277,16 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(baseRule).not.toContain("max-height:");
   });
 
+  test("shows focus rings only for keyboard focus inside dialogs and sheets", () => {
+    // Programmatic initial focus lands on the dialog element or a control; only
+    // `:focus-visible` may draw a ring, and the container never draws one.
+    const containerRule = feedbackCss.match(/\.k2b-ui \.k2b-dialog:focus \{([^}]*)\}/)?.[1] ?? "";
+    expect(containerRule).toContain("outline: none");
+    expect(feedbackCss).toContain(".k2b-ui .k2b-dialog__close:focus-visible {");
+    expect(indexCss).toContain(".k2b-ui .k2b-bottom-sheet__handle:focus-visible {");
+    expect(indexCss).not.toMatch(/\.k2b-bottom-sheet__handle:focus\s*\{/);
+  });
+
   test("scrolls panel dialog bodies instead of shrinking their content", () => {
     const frameRule = feedbackCss.match(/\.k2b-ui \.k2b-dialog\.k2b-panel-dialog-frame \{([^}]*)\}/)?.[1] ?? "";
     // The frame clips without becoming another scroll container; the body owns scrolling.
