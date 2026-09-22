@@ -38,10 +38,20 @@ describe("Document resource API", () => {
       tags: ["invoice"],
       createdBy: null,
       primaryArtifactKey: "pdf",
+      downloadUrl: "/api/grids/documents/DOC123/download",
       dataSnapshot: null,
       sourceRecordCount: 1,
       validationStatus: null,
-      artifacts: [{ key: "pdf", filename: "invoice.pdf", mimeType: "application/pdf", sizeBytes: 4, sha256: "a".repeat(64) }],
+      artifacts: [
+        {
+          key: "pdf",
+          filename: "invoice.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 4,
+          sha256: "a".repeat(64),
+          downloadUrl: "/api/grids/documents/DOC123/artifacts/pdf",
+        },
+      ],
     };
     expect(PublicDocumentSchema.safeParse({ ...base, renderer: { kind: "html" } }).success).toBe(true);
     expect(
@@ -52,10 +62,18 @@ describe("Document resource API", () => {
         validationStatus: "valid",
         artifacts: [
           ...base.artifacts,
-          { key: "structured", filename: "invoice.xml", mimeType: "application/xml", sizeBytes: 3, sha256: "b".repeat(64) },
+          {
+            key: "structured",
+            filename: "invoice.xml",
+            mimeType: "application/xml",
+            sizeBytes: 3,
+            sha256: "b".repeat(64),
+            downloadUrl: "/api/grids/documents/DOC123/artifacts/structured",
+          },
         ],
       }).success,
     ).toBe(true);
+    expect(PublicDocumentSchema.safeParse({ ...base, renderer: { kind: "html" }, downloadUrl: undefined }).success).toBe(false);
     expect(PublicDocumentSchema.safeParse({ ...base, renderer: { kind: "html" }, documentNumber: base.number }).success).toBe(false);
     expect(PublicDocumentSchema.safeParse({ ...base, renderer: { kind: "html" }, recordId: null }).success).toBe(false);
     expect(

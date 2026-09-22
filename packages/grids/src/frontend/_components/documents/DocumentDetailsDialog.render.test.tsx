@@ -19,12 +19,27 @@ const document: PublicDocument = {
   tags: [],
   renderer: { kind: "html" },
   primaryArtifactKey: "pdf",
+  downloadUrl: "/api/grids/documents/DOC/download",
   sourceRecordCount: null,
   dataSnapshot: null,
   validationStatus: "warning",
   artifacts: [
-    { key: "pdf", filename: "invoice.pdf", mimeType: "application/pdf", sizeBytes: 1024, sha256: "a".repeat(64) },
-    { key: "structured", filename: "invoice.xml", mimeType: "application/xml", sizeBytes: 512, sha256: "b".repeat(64) },
+    {
+      key: "pdf",
+      filename: "invoice.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 1024,
+      sha256: "a".repeat(64),
+      downloadUrl: "/api/grids/documents/DOC/artifacts/pdf",
+    },
+    {
+      key: "structured",
+      filename: "invoice.xml",
+      mimeType: "application/xml",
+      sizeBytes: 512,
+      sha256: "b".repeat(64),
+      downloadUrl: "/api/grids/documents/DOC/artifacts/structured",
+    },
   ],
 };
 
@@ -87,7 +102,17 @@ test("CSV primary is shown once with an authorized download and no public sharin
           ...document,
           filename: "report.csv",
           primaryArtifactKey: "csv",
-          artifacts: [{ key: "csv", filename: "report.csv", mimeType: "text/csv", sizeBytes: 200, sha256: "c".repeat(64) }],
+          downloadUrl: "/api/grids/documents/DOC/download",
+          artifacts: [
+            {
+              key: "csv",
+              filename: "report.csv",
+              mimeType: "text/csv",
+              sizeBytes: 200,
+              sha256: "c".repeat(64),
+              downloadUrl: "/api/grids/documents/DOC/artifacts/csv",
+            },
+          ],
         },
         canWrite: true,
         onDownload: () => {},
@@ -110,9 +135,17 @@ test("large text artifacts remain downloadable without an unbounded preview", ()
         document: {
           ...document,
           primaryArtifactKey: "json",
+          downloadUrl: "/api/grids/documents/DOC/download",
           filename: "large.json",
           artifacts: [
-            { key: "json", filename: "large.json", mimeType: "application/json", sizeBytes: 3 * 1024 * 1024, sha256: "c".repeat(64) },
+            {
+              key: "json",
+              filename: "large.json",
+              mimeType: "application/json",
+              sizeBytes: 3 * 1024 * 1024,
+              sha256: "c".repeat(64),
+              downloadUrl: "/api/grids/documents/DOC/artifacts/json",
+            },
           ],
         },
         canWrite: false,
