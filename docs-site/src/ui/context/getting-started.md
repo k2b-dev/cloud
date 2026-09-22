@@ -168,6 +168,13 @@ the supplied message. `label` supplies the visible accessible name; use
 are component-specific and documented on each input page. Callback omission
 does not universally mean disabled or read-only; use the explicit supported prop.
 
+Fields placed side by side in a grid align their controls. When a grid contains
+only fields and at least one of them has a description, every field subgrids
+its label, description, control, and error rows, so a longer description in one
+column does not push that column's control down. Keep paired fields direct
+children of the same grid; a wrapper, button, or other sibling in the grid
+returns the fields to their stacked layout, as do flex rows and fill fields.
+
 ### Icons, tones and navigation
 
 Most `icon` props take a complete Tabler class, such as `"ti ti-search"`.

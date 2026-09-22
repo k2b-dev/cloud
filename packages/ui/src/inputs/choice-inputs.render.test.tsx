@@ -54,6 +54,26 @@ test("check and switch labels contain their visually hidden input", () => {
   expect(cssRule(".k2b-ui .k2b-check > input,\n.k2b-ui .k2b-switch > input")).toContain("position: absolute");
 });
 
+test("fields that share a grid align their controls through a subgrid", () => {
+  const described = renderToString(() =>
+    createComponent(TextInput, { label: "Address", description: "A two-line description.", value: "" }),
+  );
+  const plain = renderToString(() => createComponent(TextInput, { label: "Format", value: "" }));
+  // Both fields stack label, description, and control as direct children of
+  // `.k2b-field`; the stylesheet subgrids them so the control row starts at one height.
+  expect(described).toMatch(/^<div class="k2b-field "[^>]*><label [^>]*class="k2b-field__label"/);
+  expect(described).toContain('<p class="k2b-field__description"');
+  expect(plain).toMatch(/^<div class="k2b-field "[^>]*><label [^>]*class="k2b-field__label"/);
+  expect(plain).not.toContain("k2b-field__description");
+  const paired = '.k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"])';
+  const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \{([^}]*)\}`))?.[1] ?? "";
+  expect(fieldRule).toContain("grid-template-rows: subgrid");
+  expect(fieldRule).toContain("grid-row: span 4");
+  expect(indexCss).toContain(`${paired} > .k2b-field__label {\n    grid-row: 1;`);
+  expect(indexCss).toContain(`${paired} > .k2b-field__description {\n    grid-row: 2;`);
+  expect(indexCss).toContain(`${paired} > .k2b-field__error {\n    grid-row: 4;`);
+});
+
 test("input clear actions stay minimal and use danger text on hover", () => {
   expect(cssRule(".k2b-ui .k2b-input-clear-action")).toContain("background: transparent");
   const hover = cssRule(".k2b-ui .k2b-input-clear-action:hover");
