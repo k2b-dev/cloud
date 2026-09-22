@@ -17,7 +17,16 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.capabilities }]}>
       <div class="k2b-ui min-w-0 flex-1">
-        <AppOverview title={t.capabilities} subtitle={t.overview} icon="ti ti-api-app">
+        <AppOverview
+          title={t.capabilities}
+          subtitle={t.overview}
+          icon="ti ti-api-app"
+          actions={
+            <ButtonLink variant="secondary" href="/app/api-docs">
+              <i class="ti ti-book-2" aria-hidden="true" /> {t.apiDocs}
+            </ButtonLink>
+          }
+        >
           <AppOverview.Main
             title={t.apps}
             description={t.appsOnPage({ count: catalog.apps.length })}
@@ -27,7 +36,7 @@ export default ssr<AuthContext>(async (c) => {
               when={catalog.apps.length > 0}
               fallback={<AppOverview.EmptyState title={t.noLive} description={t.noLiveDescription} icon="ti ti-api-app" />}
             >
-              <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <AppOverview.Cards>
                 <For each={catalog.apps}>
                   {(app) => (
                     <LinkCard
@@ -35,11 +44,11 @@ export default ssr<AuthContext>(async (c) => {
                       title={app.name}
                       description={app.description}
                       icon={app.icon || "ti ti-apps"}
-                      color="violet"
+                      meta={t.capabilityCount({ count: app.capabilityCount })}
                     />
                   )}
                 </For>
-              </div>
+              </AppOverview.Cards>
               <Show when={catalog.cursor || catalog.nextCursor}>
                 <nav class="mt-4 flex items-center gap-2" aria-label={t.appPages}>
                   <Show when={catalog.cursor}>
@@ -58,9 +67,6 @@ export default ssr<AuthContext>(async (c) => {
               </Show>
             </Show>
           </AppOverview.Main>
-          <AppOverview.Aside title={t.reference} description={t.referenceDescription}>
-            <LinkCard href="/app/api-docs" title={t.apiDocs} description={t.apiDocsDescription} icon="ti ti-book-2" color="blue" />
-          </AppOverview.Aside>
         </AppOverview>
       </div>
     </Layout>

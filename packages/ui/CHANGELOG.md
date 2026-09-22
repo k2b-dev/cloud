@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.4.2...npm-ui-v0.5.0) (2026-09-22)
+
+
+### Features
+
+* align Weather, Pulse, Venue, and Capabilities overviews as cards ([#130](https://github.com/k2b-dev/cloud/issues/130)) ([ce747fa](https://github.com/k2b-dev/cloud/commit/ce747fa0137ee0edc30cbdea6878d9f66edd4056))
+* **mail:** pull to refresh the conversation list ([#109](https://github.com/k2b-dev/cloud/issues/109)) ([ad3a5f4](https://github.com/k2b-dev/cloud/commit/ad3a5f4a6166138e4a27622578f5eeb3d625d5d1))
+* **overview:** sidebar-first Mail and Notebooks overviews ([#125](https://github.com/k2b-dev/cloud/issues/125)) ([311972c](https://github.com/k2b-dev/cloud/commit/311972c0b8f642983422273891e79cdd1e6eb9fd))
+* **tools:** calm card overview with the shared page header ([#128](https://github.com/k2b-dev/cloud/issues/128)) ([d0234db](https://github.com/k2b-dev/cloud/commit/d0234dbc52fc4d62895bceeff6e99afea9be72b7))
+
 ## [0.4.2](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.4.1...npm-ui-v0.4.2) (2026-09-22)
 
 

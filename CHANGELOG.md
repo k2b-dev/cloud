@@ -3,6 +3,23 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.11.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.10.0...cloud-v0.11.0) (2026-09-22)
+
+
+### Features
+
+* align Weather, Pulse, Venue, and Capabilities overviews as cards ([#130](https://github.com/k2b-dev/cloud/issues/130)) ([ce747fa](https://github.com/k2b-dev/cloud/commit/ce747fa0137ee0edc30cbdea6878d9f66edd4056))
+* **grids:** show bases as the overview sidebar with a centered activity column ([#129](https://github.com/k2b-dev/cloud/issues/129)) ([45795c1](https://github.com/k2b-dev/cloud/commit/45795c1e4f076fa9a835c08b0c402e40bc81521f))
+* **mail:** pull to refresh the conversation list ([#109](https://github.com/k2b-dev/cloud/issues/109)) ([ad3a5f4](https://github.com/k2b-dev/cloud/commit/ad3a5f4a6166138e4a27622578f5eeb3d625d5d1))
+* **overview:** sidebar-first Mail and Notebooks overviews ([#125](https://github.com/k2b-dev/cloud/issues/125)) ([311972c](https://github.com/k2b-dev/cloud/commit/311972c0b8f642983422273891e79cdd1e6eb9fd))
+* **spaces:** show spaces as the overview sidebar with a centered activity column ([#127](https://github.com/k2b-dev/cloud/issues/127)) ([79cb07e](https://github.com/k2b-dev/cloud/commit/79cb07e084c4ea8be3f489b80f9fe39f5ece55d7))
+* **tools:** calm card overview with the shared page header ([#128](https://github.com/k2b-dev/cloud/issues/128)) ([d0234db](https://github.com/k2b-dev/cloud/commit/d0234dbc52fc4d62895bceeff6e99afea9be72b7))
+
+
+### Bug Fixes
+
+* **cli:** send an optional GitHub token with release metadata requests ([#124](https://github.com/k2b-dev/cloud/issues/124)) ([fcc64fa](https://github.com/k2b-dev/cloud/commit/fcc64face21a0d08896f441bf6c69b1a6a4bf3ca))
+
 ## [0.10.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.9.1...cloud-v0.10.0) (2026-09-22)
 
 

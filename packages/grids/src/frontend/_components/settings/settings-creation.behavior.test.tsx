@@ -122,6 +122,10 @@ domTest("blank and template Base creation preserve the submitted name after a fa
           limit: 25,
           offset: 0,
           initialQuery: "",
+          baseStats: {},
+          recentTables: [],
+          apps: { items: [], total: 0, page: null, pageSize: 8 },
+          dateConfig: { locale: "en", timeZone: "UTC", firstDayOfWeek: 1 },
           templates: [
             {
               id: "inventory",

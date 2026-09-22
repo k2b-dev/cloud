@@ -17,6 +17,7 @@ import {
   AppOverview,
   Button,
   DataPanel,
+  LinkCard,
   PanelHeader,
 } from "@k2b/ui";
 ```
@@ -24,15 +25,31 @@ import {
 ## Compose the page
 
 Pass the application `title` and required Tabler `icon` to the root.
-`subtitle` is optional.
+`subtitle` is optional and should fit on one line. The root renders the title
+and subtitle with `PanelHeader size="lg"`, the same page header as a
+sidebar-first overview.
+
+Put the page's single primary action, such as a create button or a create
+menu, in `actions`. It sits at the trailing edge of the page header.
 
 Use `AppOverview.Main` for the collection. Its `toolbar` slot suits a search field or one compact filter.
 
-Use `AppOverview.Aside` for a short create menu. Keep its title action-oriented, such as `Create`.
+Use `AppOverview.Cards` when the collection is a small set of objects. It lays
+out as many columns of at least 19rem as fit and collapses to one column on
+narrow screens. Put one `LinkCard` per object in it: a title, one secondary
+fact, and at most one trailing count or badge.
+
+Use `AppOverview.Aside` for short supporting content, such as a status or
+reference panel. Do not repeat the primary action there.
 
 Use `AppOverview.EmptyState` inside the main collection when there are no matching resources. Put the relevant create or reset action in its children.
 
-The component supplies responsive columns and a maximum page width. Do not wrap it in another page container.
+The component supplies responsive columns, a 72rem content width, and the same
+page inset as a sidebar-first overview (`clamp(1rem, 3vw, 2.5rem)`). Do not
+wrap it in another page container.
+
+The icon tile uses `--k2b-app-workspace-active`, the same optional accent hook
+as `AppWorkspace`; Cloud maps it to the current application accent.
 
 ## Frame record collections
 
@@ -54,11 +71,15 @@ does not add a border, background, or divider. Choose `as="h1"`, `"h2"`, or
 
 ```ts
 type AppOverviewProps = {
-  title: string; subtitle?: string; icon: string; class?: string; children: JSX.Element;
+  title: string; subtitle?: string; icon: string; actions?: JSX.Element; class?: string; children: JSX.Element;
 };
 
 type AppOverviewPanelProps = {
   title: string; description?: JSX.Element; toolbar?: JSX.Element; class?: string; children: JSX.Element;
+};
+
+type AppOverviewCardsProps = {
+  class?: string; children: JSX.Element;
 };
 
 type AppOverviewEmptyStateProps = {
@@ -88,35 +109,37 @@ filters, and actions keep their own runtime requirements.
 ```tsx
 <AppOverview
   title="Notebooks"
-  subtitle="Shared notes and prompts"
+  subtitle={`${total} notebooks`}
   icon="ti ti-notebook"
+  actions={<Button onClick={createNotebook}>New notebook</Button>}
 >
-  <AppOverview.Main
-    title="Your notebooks"
-    description={`${total} notebooks`}
-    toolbar={<NotebookSearch value={search} />}
-  >
+  <AppOverview.Main title="Your notebooks" toolbar={<NotebookSearch value={search} />}>
     {notebooks.length > 0 ? (
-      <NotebookGrid notebooks={notebooks} />
+      <AppOverview.Cards>
+        <For each={notebooks}>
+          {(notebook) => (
+            <LinkCard
+              href={`/app/notebooks/${notebook.id}`}
+              title={notebook.name}
+              description={notebook.description}
+              icon="ti ti-notebook"
+              meta={`${notebook.noteCount} notes`}
+            />
+          )}
+        </For>
+      </AppOverview.Cards>
     ) : (
       <AppOverview.EmptyState
         title="No notebooks found"
-        description="Create a notebook or reset the search."
+        description="Try a different search."
         icon="ti ti-notebook-off"
       >
-        <Button size="sm" onClick={() => navigate("/app/notebooks/new")}>
-          New notebook
+        <Button size="sm" variant="secondary" onClick={clearSearch}>
+          Clear search
         </Button>
       </AppOverview.EmptyState>
     )}
   </AppOverview.Main>
-
-  <AppOverview.Aside
-    title="Create"
-    description="Choose a starter, or start blank."
-  >
-    <NotebookStarters />
-  </AppOverview.Aside>
 </AppOverview>
 ```
 

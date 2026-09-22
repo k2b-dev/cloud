@@ -164,6 +164,23 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).toContain('data-interactive="true"');
     expect(link).toContain('data-color="cyan"');
     expect(link).toContain("Open runtime details");
+    expect(link).not.toContain("k2b-link-card__meta");
+  });
+
+  test("lets a LinkCard follow the app accent and carry one trailing fact", () => {
+    const link = renderToString(() =>
+      createComponent(LinkCard, {
+        href: "/apps/pulse",
+        title: "Pulse",
+        description: "Metrics and dashboards",
+        icon: "ti ti-activity",
+        meta: "12 capabilities",
+      }),
+    );
+
+    expect(link).not.toContain("data-color");
+    expect(link).toMatch(/<span class="k2b-link-card__meta">12 capabilities<\/span>/);
+    expect(link.indexOf("k2b-link-card__meta")).toBeLessThan(link.indexOf("k2b-link-card__chevron"));
   });
 
   test("renders the whole-page not-found state without imposing a main landmark", () => {

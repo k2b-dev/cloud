@@ -1,3 +1,4 @@
+import { type AccessSubject, buildAccessPrincipalTierConditions } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, crypto as stdCrypto } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -1573,6 +1574,55 @@ export const listSummariesByBase = async (baseId: string): Promise<CustomAppSumm
     ORDER BY name, id
   `;
   return rows.map(mapSummaryRow);
+};
+
+export type UsableCustomAppSummary = CustomAppSummary & { baseName: string };
+
+/**
+ * Published apps the subject may use, across every base, ordered by name.
+ * Authorization is the app's own use grants with the same first-matching-tier
+ * rule as `resolveEffectivePermission`; base access is deliberately irrelevant.
+ */
+export const listUsableSummaries = async (params: {
+  subject: AccessSubject | null;
+  limit: number;
+  offset?: number;
+}): Promise<{ items: UsableCustomAppSummary[]; total: number }> => {
+  const tiers = buildAccessPrincipalTierConditions({
+    subject: params.subject,
+    columns: {
+      userId: sql`a.user_id`,
+      groupId: sql`a.group_id`,
+      serviceAccountId: sql`a.service_account_id`,
+      authenticatedOnly: sql`a.authenticated_only`,
+    },
+  });
+  const rankFor = (tier: keyof typeof tiers) => sql`(
+    SELECT CASE
+      WHEN COUNT(*) = 0 THEN NULL
+      WHEN bool_or(a.permission = 'none') THEN 0
+      ELSE MAX(CASE a.permission WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 ELSE 0 END)
+    END
+    FROM grids.custom_app_access caa
+    JOIN auth.access a ON a.id = caa.access_id
+    WHERE caa.custom_app_id = app.id AND ${tiers[tier]}
+  )`;
+  const usable = () => sql`
+    SELECT app.id, app.short_id, app.base_id, app.name, app.icon, app.draft_definition, app.draft_capabilities,
+           app.published_definition, app.published_capabilities, app.published_at, app.updated_at, base.name AS base_name
+    FROM grids.custom_apps app
+    JOIN grids.bases base ON base.id = app.base_id AND base.deleted_at IS NULL
+    WHERE app.deleted_at IS NULL AND app.published_definition IS NOT NULL
+      AND COALESCE(${rankFor("serviceAccount")}, ${rankFor("user")}, ${rankFor("group")}, ${rankFor("authenticated")}, ${rankFor("public")}, 0) >= 1
+  `;
+  const [[count], rows] = await Promise.all([
+    sql<{ total: number }[]>`SELECT COUNT(*)::int AS total FROM (${usable()}) usable`,
+    sql<DbRow[]>`SELECT * FROM (${usable()}) usable ORDER BY lower(name), id LIMIT ${params.limit} OFFSET ${params.offset ?? 0}`,
+  ]);
+  return {
+    items: rows.map((row) => ({ ...mapSummaryRow(row), baseName: row.base_name as string })),
+    total: count?.total ?? 0,
+  };
 };
 
 const planCompilation = async (compilation: CustomAppCompilation, client: SqlClient = sql, locale?: string): Promise<CustomAppPlan> => {

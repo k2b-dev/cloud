@@ -12,7 +12,7 @@ export type CapabilityAppSummary = {
 };
 
 type CapabilityAppsPage = {
-  apps: CapabilityAppSummary[];
+  apps: (CapabilityAppSummary & { capabilityCount: number })[];
   cursor?: string;
   nextCursor?: string;
 };
@@ -71,7 +71,10 @@ export async function loadCapabilityApps(url: URL, locale?: string): Promise<Cap
   if (!catalog.ok) return { apps: [], cursor };
 
   return {
-    apps: catalog.data.apps.map(summary),
+    apps: catalog.data.apps.map((entry) => ({
+      ...summary(entry),
+      capabilityCount: entry.manifest.queries.length + entry.manifest.actions.length,
+    })),
     cursor,
     nextCursor: catalog.data.page.hasMore ? catalog.data.page.nextCursor : undefined,
   };

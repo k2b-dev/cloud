@@ -43,17 +43,18 @@ const ToolIcon = (props: { tool: LocalizedTool }) => (
   </span>
 );
 
-const QuickTool = (props: { tool: LocalizedTool }) => (
+const QuickTool = (props: { tool: LocalizedTool; category: string }) => (
   <a
     href={toolHref(props.tool)}
-    class="paper focus-ui group/quick flex min-h-24 items-start gap-3 p-3 transition-colors hover:paper-highlighted"
+    class="paper focus-ui group/quick flex min-w-0 items-center gap-3 p-3 transition-colors hover:paper-highlighted"
   >
     <ToolIcon tool={props.tool} />
     <span class="min-w-0 flex-1">
-      <span class="block text-sm font-semibold text-primary transition-colors group-hover/quick:app-accent-text">{props.tool.name}</span>
-      <span class="mt-0.5 block text-xs leading-5 text-dimmed">{props.tool.description}</span>
+      <span class="block truncate text-sm font-semibold text-primary transition-colors group-hover/quick:app-accent-text">
+        {props.tool.name}
+      </span>
+      <span class="block truncate text-xs text-dimmed">{props.category}</span>
     </span>
-    <i class="ti ti-chevron-right mt-1 shrink-0 text-xs text-dimmed transition-transform group-hover/quick:translate-x-0.5 group-hover/quick:app-accent-text" />
   </a>
 );
 
@@ -69,7 +70,6 @@ const ToolRow = (props: { tool: LocalizedTool }) => (
       </span>
       <span class="block truncate text-xs text-dimmed">{props.tool.description}</span>
     </span>
-    <i class="ti ti-chevron-right shrink-0 text-xs text-dimmed transition-transform group-hover/tool:translate-x-0.5 group-hover/tool:app-accent-text" />
   </a>
 );
 
@@ -111,7 +111,7 @@ export default function ToolCatalog() {
             <p class="text-xs text-dimmed">{t().quickToolsHint}</p>
           </header>
           <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <For each={featured()}>{(tool) => <QuickTool tool={tool} />}</For>
+            <For each={featured()}>{(tool) => <QuickTool tool={tool} category={registry().categories[tool.category].label} />}</For>
           </div>
         </section>
       </Show>
@@ -143,7 +143,7 @@ export default function ToolCatalog() {
                           </h4>
                           <p class="truncate text-xs text-dimmed">{registry().taskGroups[group].description}</p>
                         </span>
-                        <span class="text-xs tabular-nums text-dimmed">{groupTools().length}</span>
+                        <span class="text-sm font-semibold tabular-nums text-secondary">{groupTools().length}</span>
                       </header>
                       <div class="flex flex-col">
                         <For each={groupTools()}>{(tool) => <ToolRow tool={tool} />}</For>
