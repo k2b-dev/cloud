@@ -9,6 +9,7 @@ import type { DocumentProfileReference, PrimaryDocumentArtifact } from "../docum
 import { type DocumentArtifactDraft, type DocumentProfile, documentProfiles, profileKey, profileRegistry } from "../document-profiles";
 import { financialQueryProfiles } from "../document-profiles/financial";
 import { documentProfileInputMessage } from "../document-profiles/input-diagnostics";
+import { zipDocumentProfile } from "../document-profiles/zip";
 import { validateDocumentArtifactDrafts } from "./document-artifact-drafts";
 import { reserveDocumentExportClaims } from "./document-export-claims";
 import { normalizeFinancialDocumentOutput } from "./document-financial-output";
@@ -29,6 +30,8 @@ import {
   sourceVersionsFromData,
 } from "./document-source-versions";
 import { normalizeDocumentTags } from "./document-values";
+import { DocumentZipManifestSchema, resolveDocumentZipManifest } from "./document-zip-output";
+import { openProtectedContent } from "./files";
 import { allocateNumberInTransaction } from "./number-series";
 import { insertWithShortIdForDb } from "./short-id";
 import { loadWorkflowQueryData, WorkflowDocumentDataReferenceSchema } from "./workflow-query-store";
@@ -95,6 +98,7 @@ const FrozenQueryDocumentSchema = QueryDocumentRequestSchema.extend({
     })
     .strict()
     .optional(),
+  archive: DocumentZipManifestSchema.optional(),
 });
 
 const QueryDocumentInputSchema = QueryDocumentRequestSchema.extend({ sourceVersions: DocumentSourceVersionsInputSchema.optional() });
@@ -221,6 +225,30 @@ export const readDocumentArtifact = async (
     sizeBytes,
     sha256: row.sha256,
     bytes: row.bytes,
+  });
+};
+
+/** Streamed variant of `readDocumentArtifact` for responses; verifies length while reading. */
+export const openDocumentArtifact = async (
+  documentId: string,
+  key: string,
+  locale?: string,
+): Promise<Result<DocumentArtifact & { stream: () => ReadableStream<Uint8Array> }>> => {
+  const t = documentServiceText(locale);
+  const [row] = await defaultSql<Array<{ file_id: string }>>`
+    SELECT file_id::text FROM grids.document_artifacts WHERE document_id = ${documentId}::uuid AND artifact_key = ${key}
+  `;
+  if (!row) return fail(err.notFound(t.documentArtifactNotFound));
+  const content = await openProtectedContent({ fileId: row.file_id, ownerKind: "document_artifact", ownerId: documentId, locale });
+  if (!content.ok) return content;
+  return ok({
+    key,
+    fileId: content.data.id,
+    filename: content.data.filename,
+    mimeType: content.data.mimeType,
+    sizeBytes: content.data.sizeBytes,
+    sha256: content.data.sha256,
+    stream: content.data.stream,
   });
 };
 
@@ -388,7 +416,7 @@ const profileInputFor = async (template: DocumentTemplate, renderData: Record<st
 export const createDocumentIssuanceService = (options: { profiles?: readonly DocumentProfile[]; db?: SQL } = {}) => {
   const db = options.db ?? defaultSql;
   const profiles = profileRegistry(options.profiles ?? documentProfiles);
-  const queryProfiles = profileRegistry([...(options.profiles ?? documentProfiles), ...financialQueryProfiles]);
+  const queryProfiles = profileRegistry([...(options.profiles ?? documentProfiles), ...financialQueryProfiles, zipDocumentProfile]);
 
   const summaries = (): DocumentProfileReference[] =>
     [...profiles.values()]
@@ -424,7 +452,10 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         issuedAt: input.issuedAt ?? new Date(),
       });
       const artifacts = validateDocumentArtifactDrafts(rendered.artifacts, profile.primaryArtifact, input.locale);
-      return artifacts.ok ? ok(artifacts.data.artifacts) : artifacts;
+      if (!artifacts.ok) return artifacts;
+      const buffered = artifacts.data.artifacts.filter((artifact) => "bytes" in artifact);
+      if (buffered.length !== artifacts.data.artifacts.length) return fail(err.badInput(t.profilePreviewFailed));
+      return ok(buffered);
     } catch (error) {
       const known = serviceError(error);
       if (known) return fail({ ...known, message: t.profilePreviewFailed });
@@ -809,10 +840,13 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           number: frozen.documentNumber,
           issuedAt: new Date(frozen.issuedAt),
         });
+        // Record templates render buffers; streamed artifacts exist for query packages only.
+        const artifacts = output.artifacts.filter((artifact): artifact is DocumentArtifactDraft => "bytes" in artifact);
+        if (artifacts.length !== output.artifacts.length) throw new Error("Record document profiles must render buffered artifacts");
         rendered = {
           ...(output.output === undefined ? {} : { output: canonicalDocumentJson(output.output, input.dateConfig?.locale).value }),
           primaryArtifact: selected.primaryArtifact,
-          artifacts: output.artifacts,
+          artifacts,
           validationStatus: output.validationStatus,
           validationReport: output.validationReport,
         };
@@ -930,12 +964,14 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       locale?: string;
       /** Recheck run execution, Base write and every source table's read access. */
       authorize: (tableIds: readonly string[], client: SQL) => Promise<void>;
+      /** Keeps a long-running issuance's workflow lease alive; throws once the run is canceled. */
+      heartbeat?: () => Promise<void>;
     },
   ): Promise<Result<Document | QueryDocumentConfirmationRequired>> => {
     const t = documentServiceText(input.locale);
     const validKey = validateIdempotencyKey(input.idempotencyKey, input.locale);
     if (!validKey.ok) return validKey;
-    const { idempotencyKey, authorize, locale, ...raw } = input;
+    const { idempotencyKey, authorize, locale, heartbeat, ...raw } = input;
     const parsed = QueryDocumentInputSchema.safeParse(raw);
     if (!parsed.success) return fail(err.badInput(t.requestInvalidJson));
     const pendingRequest = parsed.data;
@@ -1028,6 +1064,18 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             (request.output.kind === "sepa-xml" && !filename.endsWith(".xml"))
           )
             throw err.badInput(t.profileInputInvalid);
+          let archive: z.infer<typeof DocumentZipManifestSchema> | undefined;
+          if (request.output.kind === "zip") {
+            // Freeze the file selection with the receipt: retries package
+            // exactly these files even after further Documents are issued.
+            const manifest = await resolveDocumentZipManifest(
+              { baseId: request.baseId, payload: captured.data.payload, output: request.output, locale },
+              attempt,
+            );
+            if (!manifest.ok) throw manifest.error;
+            await authorize(manifest.data.tableIds, attempt);
+            archive = manifest.data;
+          }
           const frozen = {
             ...request,
             kind: "query" as const,
@@ -1035,6 +1083,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             issuedAt: issuedAt.toISOString(),
             filename,
             ...(financial ? { financial } : {}),
+            ...(archive ? { archive } : {}),
           };
           const confirmationHash = financial ? canonicalJson(frozen, locale).sha256 : null;
           await attempt`UPDATE grids.document_profile_counters SET next_value = ${value + 1}
@@ -1054,7 +1103,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         return document ? ok(document) : fail(err.internal(t.receiptReadFailed));
       }
       const frozen = FrozenQueryDocumentSchema.parse(receipt.frozen_request);
-      const { kind: _kind, issuedAt: _issuedAt, number: _number, filename: _filename, financial, ...identity } = frozen;
+      const { kind: _kind, issuedAt: _issuedAt, number: _number, filename: _filename, financial, archive: _archive, ...identity } = frozen;
       // filename may have been generated after reservation; the request hash
       // authenticates all caller-controlled inputs before frozen data is used.
       if (canonicalJson({ ...identity, filename: request.filename }, locale).sha256 !== receipt.request_hash)
@@ -1096,20 +1145,27 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         if (concurrentDocument) return ok(concurrentDocument);
       } else if (financial || receipt.confirmation_hash) throw err.conflict(t.workflowQueryIntegrityFailed);
       const { kind: outputKind, ...outputOptions } = frozen.output;
+      if ((outputKind === "zip") !== (frozen.archive !== undefined)) throw err.conflict(t.workflowQueryIntegrityFailed);
       const profileInput = profile.input.safeParse(
         normalized?.ok
           ? { ...normalized.data.input, filename: frozen.filename }
-          : {
-              columns: captured.data.payload.columns,
-              rows: captured.data.payload.rows,
-              filename: frozen.filename,
-              ...(outputKind === "csv" || outputKind === "json" ? { options: outputOptions } : {}),
-              ...(outputKind === "pdf" ? { content: outputOptions } : {}),
-              ...(outputKind === "xml" ? outputOptions : {}),
-            },
+          : frozen.archive
+            ? { archive: frozen.archive, filename: frozen.filename }
+            : {
+                columns: captured.data.payload.columns,
+                rows: captured.data.payload.rows,
+                filename: frozen.filename,
+                ...(outputKind === "csv" || outputKind === "json" ? { options: outputOptions } : {}),
+                ...(outputKind === "pdf" ? { content: outputOptions } : {}),
+                ...(outputKind === "xml" ? outputOptions : {}),
+              },
       );
       if (!profileInput.success) return fail(err.badInput(documentProfileInputMessage(profile.id, profileInput.error.issues, locale)));
-      const rendered = await profile.issue(profileInput.data, { number: frozen.number, issuedAt: new Date(frozen.issuedAt) });
+      const rendered = await profile.issue(profileInput.data, {
+        number: frozen.number,
+        issuedAt: new Date(frozen.issuedAt),
+        ...(heartbeat ? { heartbeat } : {}),
+      });
       const profileOutput = rendered.output === undefined ? undefined : canonicalDocumentJson(rendered.output, locale).value;
       const checked = validateDocumentArtifactDrafts(rendered.artifacts, profile.primaryArtifact, locale);
       if (!checked.ok) return checked;
@@ -1127,7 +1183,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       };
       const template = { renderer: { kind: "profile", id: profile.id, version: profile.version }, output: frozen.output };
       return await db.begin(async (tx) => {
-        await authorize(tableIds, tx);
+        await authorize([...tableIds, ...(frozen.archive?.tableIds ?? [])], tx);
         let sources = await resolveCapturedDocumentRecords(captured.data.payload, frozen.baseId, tx);
         if (frozen.associatedData) {
           const associated = await loadWorkflowQueryData(

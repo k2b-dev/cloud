@@ -21,6 +21,7 @@ test("registered table profiles produce validated exact CSV and JSON artifacts",
     expect(checked.ok).toBe(true);
     if (!checked.ok) throw checked.error;
     expect(checked.data.primary.filename).toBe(`REPORT-1.${kind}`);
+    if (!("bytes" in checked.data.primary)) throw new Error("Expected a buffered table artifact");
     const text = new TextDecoder().decode(checked.data.primary.bytes);
     expect(text).toContain("12.30");
     if (kind === "csv") {
@@ -42,7 +43,9 @@ test("table profile options are explicit and do not alter JSON values", async ()
     profile.input.parse({ ...table, filename: "custom.csv", options: { delimiter: ";", textProtection: "raw" } }),
     context,
   );
-  expect(new TextDecoder().decode(output.artifacts[0]?.bytes)).toBe("Description;Amount\r\n=unsafe();12.30\r\n");
+  const artifact = output.artifacts[0];
+  if (!artifact || !("bytes" in artifact)) throw new Error("Expected a buffered CSV artifact");
+  expect(new TextDecoder().decode(artifact.bytes)).toBe("Description;Amount\r\n=unsafe();12.30\r\n");
   expect(output.artifacts[0]?.filename).toBe("custom.csv");
   expect(profile.input.safeParse({ ...table, options: { kind: "json" } }).success).toBe(false);
 });

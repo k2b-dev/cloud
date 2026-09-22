@@ -23,8 +23,14 @@ import { v } from "./validator";
 
 const DocumentArtifactKeySchema = z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/);
 
-const artifactResponse = (artifact: { bytes: Uint8Array; filename: string; mimeType: string; sizeBytes: number; sha256: string }) =>
-  new Response(new Blob([Uint8Array.from(artifact.bytes)]), {
+const artifactResponse = (artifact: {
+  stream: () => ReadableStream<Uint8Array>;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+}) =>
+  new Response(artifact.stream(), {
     headers: {
       "Content-Type": artifact.mimeType,
       "Content-Length": String(artifact.sizeBytes),
@@ -177,9 +183,9 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
         if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const artifact = await gridsService.document.getDocumentArtifact(document.id, document.primaryArtifactKey, getLocale(c));
+        const artifact = await gridsService.document.openDocumentArtifact(document.id, document.primaryArtifactKey, getLocale(c));
         if (!artifact.ok) return respond(c, () => Promise.resolve(artifact));
-        return fileResponse(artifact.data.bytes, artifact.data.filename, artifact.data.mimeType, {
+        return fileResponse(artifact.data, artifact.data.filename, artifact.data.mimeType, {
           "X-Grids-Document-Id": document.shortId,
           "X-Grids-Document-Number": document.documentNumber,
           "X-Grids-Document-Artifact": document.primaryArtifactKey,
@@ -200,7 +206,7 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
         if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const artifact = await gridsService.document.getDocumentArtifact(document.id, c.req.valid("param").artifactKey, getLocale(c));
+        const artifact = await gridsService.document.openDocumentArtifact(document.id, c.req.valid("param").artifactKey, getLocale(c));
         return artifact.ok ? artifactResponse(artifact.data) : respond(c, () => Promise.resolve(artifact));
       },
     );

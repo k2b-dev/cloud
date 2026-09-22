@@ -303,6 +303,29 @@ steps:
 
 - **XML:** `output.kind: xml` benötigt einen Liquid-`body` (bis 200.000 Zeichen) mit denselben Datenwurzeln wie PDF. Die Ausgabe ist UTF-8 XML 1.0 mit einem Wurzelelement. Werte dürfen in Text und gequoteten Attributen stehen; Namen und Namespaces müssen statisch bleiben. DTDs, CDATA, Raw-/Capture-/Comment-Blöcke in Liquid und dynamisches Markup werden abgelehnt. Statische XML-Kommentare und eine optionale statische XML-Deklaration sind erlaubt. Für das gerenderte Ergebnis gilt die gemeinsame Vorlagengrenze von 300.000 Bytes. Fehlerhaftes XML, unbekannte Entities, ungültige Namespaces oder Zeichen lassen den Schritt scheitern.
 
+- **ZIP:** `output.kind: zip` verpackt die gespeicherten Dateien vorhandener Dokumente, statt zu rendern. `files` listet Auswahlen aus den erfassten Daten: ohne `column` die erfassten Zeilen selbst (eine Zeilenabfrage aus einer Tabelle), mit `column` die Datensätze in diesem Relations-Alias. Jede Auswahl kann `template` (Name oder öffentliche ID einer Datensatzvorlage) und `mediaType` (zum Beispiel `application/pdf`) einschränken und ihre Dateien in einen `folder` legen. `required` ist standardmäßig true: Jeder ausgewählte Datensatz muss eine Datei liefern und jede Zeile einen Relationsdatensatz haben, sonst scheitert der Schritt; `required: false` überspringt sie. `include` nimmt Dokumente aus früheren Schritten auf (zum Beispiel eine Zahlungs-CSV). Jedes ausgestellte Dokument eines Datensatzes wird mit seinen Originalbytes verpackt; dieselbe Dokumentdatei erscheint nur einmal, gleiche Dateinamen erhalten die Dokument-ID angehängt. Die Auswahl wird beim ersten Versuch eingefroren, sodass Wiederholungen dasselbe Archiv erzeugen. Grenzen: 10.000 Dateien und 512 MiB pro Archiv; eine leere Auswahl scheitert.
+
+**Dokumentdateien verpacken**
+
+```yaml
+steps:
+  - query:
+      source: from table Items select Name
+      saveAs: items
+  - generateDocument:
+      data: items
+      output: { kind: csv }
+      saveAs: itemList
+  - generateDocument:
+      data: items
+      output:
+        kind: zip
+        files:
+          - { template: Item label, mediaType: application/pdf, folder: labels, required: false }
+        include: [itemList]
+      filename: item-labels.zip
+```
+
 Öffentliche Download-Links unterstützen nur PDF. Freies XML prüft kein Finanzformat.
 
 **Einen Finanzexport prüfen**

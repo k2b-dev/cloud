@@ -117,6 +117,8 @@ export const getDocumentArtifacts = async (documentId: string): Promise<Document
 export const getDocumentArtifact = (documentId: string, key: string, locale?: string): Promise<Result<DocumentArtifactContent>> =>
   documentIssuanceService.getDocumentArtifact(documentId, key, locale);
 
+export { openDocumentArtifact } from "./document-issuance";
+
 export const getDocumentPrimaryArtifact = async (document: Document, locale?: string): Promise<Result<DocumentArtifactContent>> => {
   const t = documentServiceText(locale);
   const primary = document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey);

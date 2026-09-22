@@ -19,6 +19,7 @@ const allowed: RegExp[] = [
   /^packages\/pulse\/src\/service\/high-cardinality-load\.ts$/,
   // Test-only worker process; the parent test passes its targets explicitly.
   /^packages\/grids\/src\/service\/document-workflow-crash\.worker\.ts$/,
+  /^packages\/grids\/src\/service\/document-zip-crash\.worker\.ts$/,
   // Browser-safe module with zero imports; must not pull the registry's schema dependency.
   /^packages\/cloud\/src\/desktop\/index\.ts$/,
   // Whole-environment passthrough to child processes and OS conventions (PATH, EDITOR, VISUAL).

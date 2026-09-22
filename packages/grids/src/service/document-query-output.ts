@@ -6,12 +6,14 @@ import { validateDocumentLiquidTemplate } from "./document-liquid";
 import { documentServiceText } from "./document-messages";
 import { DocumentTableOutputSchema } from "./document-table-output";
 import { validateDocumentXmlTemplate } from "./document-xml";
+import { DocumentZipOutputSchema } from "./document-zip-output";
 
 export const DocumentQueryOutputSchema = z.union([
   DocumentTableOutputSchema,
   DocumentHtmlContentSchema.extend({ kind: z.literal("pdf") }),
   z.object({ kind: z.literal("xml"), body: z.string().trim().min(1).max(200_000) }).strict(),
   FinancialDocumentOutputSchema,
+  DocumentZipOutputSchema,
 ]);
 
 const queryTemplateRoots = new Set(["rows", "columns", "document"]);

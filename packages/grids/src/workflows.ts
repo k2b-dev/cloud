@@ -35,6 +35,7 @@ import {
   DocumentSourceVersionsSchema,
   requireDocumentSourceVersions,
 } from "./service/document-source-versions";
+import type { DocumentZipOutput } from "./service/document-zip-output";
 import {
   createDocumentForRecord,
   createDocumentLink,
@@ -589,6 +590,25 @@ const documentToLink = async (ctx: WorkflowActionContext, scope: GridsWorkflowAc
   if (!documentAllowsPublicLinks(document)) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksPdfOnly);
   return document;
 };
+
+/**
+ * ZIP selections name templates the compiler bound and Documents earlier
+ * steps generated. Issuance freezes IDs only, so resolve both here.
+ */
+const resolveZipOutput = async (ctx: WorkflowActionContext, scope: GridsWorkflowActionScope, output: DocumentZipOutput) => ({
+  ...output,
+  files: output.files.map((selection, index) =>
+    selection.template === undefined ? selection : { ...selection, template: boundIdAt(ctx, ["output", "files", index, "template"]) },
+  ),
+  include: await Promise.all(
+    output.include.map(async (reference, index) => {
+      const { id } = documentReferenceId(ctx, await ctx.resolveReference(reference, "output", "include", index));
+      const document = await getDocument(id);
+      if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", runtimeText(ctx).generatedDocumentUnavailable);
+      return document.id;
+    }),
+  ),
+});
 
 /**
  * The same for a dry run, which accepts the placeholder an earlier
@@ -1611,7 +1631,8 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               stepKey: ctx.stepKey,
               data: reference.data,
               ...(associatedData?.success ? { associatedData: associatedData.data } : {}),
-              output: output.data,
+              output: output.data.kind === "zip" ? await resolveZipOutput(ctx, scope, output.data) : output.data,
+              heartbeat: () => ctx.heartbeat(),
               ...(config.sourceVersions === undefined
                 ? {}
                 : { sourceVersions: DocumentSourceVersionsInputSchema.parse(config.sourceVersions) }),
@@ -1740,6 +1761,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             reference.id.startsWith("dry-run:");
           if (typeof config.data === "string" && !plannedQuery && !WorkflowDocumentDataReferenceSchema.safeParse(reference).success)
             throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
+          if (config.output.kind === "zip" && Array.isArray(config.output.include)) {
+            for (const [index, item] of config.output.include.entries()) {
+              if (typeof item !== "string") throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).tableOutputInvalid);
+              documentReferenceId(ctx, await ctx.resolveReference(item, "output", "include", index));
+            }
+          }
           if (config.sourceVersions !== undefined) {
             if (config.output.kind !== "datev-csv" && config.output.kind !== "sepa-xml")
               throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).requestInvalidJson);
@@ -1773,7 +1800,8 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               tableId: null,
               templateId: null,
               recordId: null,
-              primaryArtifactMimeType: config.output.kind === "pdf" ? "application/pdf" : null,
+              primaryArtifactMimeType:
+                config.output.kind === "pdf" ? "application/pdf" : config.output.kind === "zip" ? "application/zip" : null,
               planned: true,
             },
           };
