@@ -464,7 +464,7 @@
   overflow-wrap: anywhere;
 }
 
-.notebooks-overview-mobile-activity {
+.k2b-ui .notebooks-overview-mobile-activity {
   display: none;
 }
 
@@ -510,7 +510,7 @@
     display: none !important;
   }
 
-  .notebooks-overview-mobile-activity {
+  .k2b-ui .notebooks-overview-mobile-activity {
     display: inline-flex;
   }
 }

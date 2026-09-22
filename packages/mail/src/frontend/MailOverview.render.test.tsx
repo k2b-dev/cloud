@@ -71,6 +71,7 @@ describe("Mail overview", () => {
     // Objects live in a stacked-on-mobile sidebar, not in a mailbox-style tree.
     expect(html).toMatch(/<aside[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
+    expect(html).toContain("--k2b-workspace-sidebar-width:304px");
     expect(html.match(/data-variant="object"/g)).toHaveLength(1);
     expect(html).toContain('href="/app/mail/Mail01?view=needs_action"');
     expect(html).toContain("support@example.test");

@@ -159,7 +159,6 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toContain('class="k2b-app-workspace__sidebar-item-meta k2b-app-workspace__nav-tree-leaf-meta"');
   });
 
-
   test("renders object rows and an opt-in stacked mobile sidebar", () => {
     const html = renderToString(() =>
       createComponent(AppWorkspace, {
@@ -797,7 +796,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       const stacked = css.match(/\.k2b-app-workspace__sidebar\[data-mobile=stacked\]\{([^}]*)\}/)?.[1] ?? "";
       expect(stacked).toContain("display:flex");
       expect(stacked).toContain("grid-area:mobile");
-      expect(stacked).toContain("max-height:50%");
+      expect(stacked).toContain("max-height:50dvh");
     });
 
     test("gives the settings rail Cloud's sidebar-item affordances", () => {

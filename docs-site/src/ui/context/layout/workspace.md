@@ -669,6 +669,6 @@ truncate their title instead of scrolling it.
 Set `mobile="stacked"` on `Sidebar` when the sidebar is the primary object
 list of an overview and the host's mobile navigation does not carry it. Below
 1024 px the sidebar then stays visible as a block above the content, capped at
-half the workspace height with its own scrolling body, and the footer wraps
+half the viewport height with its own scrolling body, and the footer wraps
 its items into a row. Leave the default `"hidden"` for workspaces whose
 sidebar is view navigation inside one resource.

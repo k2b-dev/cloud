@@ -72,6 +72,9 @@ type Props = {
 };
 type CreatedNotebook = { id: string };
 
+/** The object list needs room for a title and a meta line; the overview does not resize. */
+const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
+
 const errorMessage = async (response: Pick<Response, "json">, fallback: string) => {
   try {
     const body = await response.json();
@@ -364,7 +367,7 @@ export default function NotebooksOverview(props: Props) {
   });
 
   return (
-    <AppWorkspace mobileSurface="flush" class="notebooks-overview-workspace" resizable={false}>
+    <AppWorkspace mobileSurface="flush" class="notebooks-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">{t().notebooks}</h1>
       <AppWorkspace.Sidebar label={t().notebooks} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>

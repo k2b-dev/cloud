@@ -1205,9 +1205,11 @@
 @media (max-width: 63.999rem) {
   /* An opt-in stacked sidebar keeps an overview's object list above the
      content instead of handing navigation to the host's mobile chrome. */
+  /* A viewport cap, not a percentage: the grid row is content-sized, so a
+     percentage would be cyclic and collapse the list to one row. */
   .k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] {
     display: flex;
-    max-height: 50%;
+    max-height: 50dvh;
     grid-area: mobile;
   }
 

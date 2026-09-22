@@ -74,6 +74,7 @@ describe("Notebooks overview", () => {
     // Notebooks are object rows in a stacked-on-mobile sidebar, not a page tree.
     expect(html).toMatch(/<aside[^>]*aria-label="Notebooks"[^>]*data-mobile="stacked"/);
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
+    expect(html).toContain("--k2b-workspace-sidebar-width:304px");
     expect(html.match(/data-variant="object"/g)).toHaveLength(1);
     expect(html).toContain('href="/app/notebooks/Book01"');
     expect(html).toContain("12 notes");

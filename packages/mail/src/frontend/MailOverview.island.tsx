@@ -39,6 +39,9 @@ type MailboxOverviewItem = {
   needsAction: number;
 };
 
+/** The object list needs room for a title and an address; the overview does not resize. */
+const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
+
 const primaryParticipant = (summary: string, fallback: string): string => summary.split(/\s[·,]\s/u)[0]?.trim() || fallback;
 const participantInitials = (summary: string): string => {
   const words =
@@ -423,7 +426,7 @@ export default function MailOverview(props: {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" class="mail-focus-workspace" resizable={false}>
+    <AppWorkspace mobileSurface="flush" class="mail-focus-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Mail</h1>
       <AppWorkspace.Sidebar label={messages().mailboxes} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>
