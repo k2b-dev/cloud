@@ -35,8 +35,10 @@ then keep domain data and actions inside the application-owned content slots.
 
 ## Build an overview
 
-`AppOverview` contains a main area and an optional aside. Put create actions in
-`AppOverview.Aside`.
+`AppOverview` contains a page header, a main area, and an optional aside. Put
+the single primary action, such as a create button or menu, in its `actions`
+slot, and lay out a small set of objects with `AppOverview.Cards` and
+`LinkCard`.
 
 Use it for orientation and first actions. Do not turn it into a dashboard of
 every application capability.

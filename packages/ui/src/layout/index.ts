@@ -1,4 +1,5 @@
 export type {
+  AppOverviewCardsProps,
   AppOverviewEmptyStateProps,
   AppOverviewPanelProps,
   AppOverviewProps,

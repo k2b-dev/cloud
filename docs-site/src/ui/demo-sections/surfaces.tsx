@@ -183,15 +183,17 @@ const CardsDemo = () => (
       { kind: "component", name: "LinkCard", from: "@k2b/ui" },
       { kind: "component", name: "Avatar", from: "@k2b/ui" },
     ]}
-    description="LinkCard uses an explicit color and Avatar accepts a portable image URL or text fallback."
+    description="LinkCard uses an explicit color or the app accent and can carry one trailing count; Avatar accepts a portable image URL or text fallback."
     code={`import { Avatar, LinkCard } from "@k2b/ui";
 
 <LinkCard href="/runtime" title="Runtime" description="Open details" icon="ti ti-server" color="cyan" />
+<LinkCard href="/apps/pulse" title="Pulse" description="Metrics and dashboards" icon="ti ti-activity" meta="12 capabilities" />
 <Avatar name="Ada Lovelace" src="/avatars/ada.webp" size="lg" />
 <Avatar name="Grace Hopper" fallback="GH" size="md" />`}
   >
     <div class="ui-demo-form-grid">
       <LinkCard href="#cards" title="Runtime" description="Open runtime details" icon="ti ti-server" color="cyan" />
+      <LinkCard href="#cards" title="Pulse" description="Metrics and dashboards" icon="ti ti-activity" meta="12 capabilities" />
       <div class="ui-demo-row">
         <Avatar name="Ada Lovelace" src="/assets/logo.svg" size="lg" />
         <Avatar name="Grace Hopper" fallback="GH" size="md" />

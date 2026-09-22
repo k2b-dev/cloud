@@ -71,11 +71,20 @@
   padding: 0.75rem;
 }
 
+/* Top-aligned so the icon stays beside the title when a primary action wraps
+   below the subtitle on narrow screens. */
 .k2b-ui .k2b-app-overview__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.625rem;
   margin-bottom: 1rem;
+}
+
+/* The page title takes the remaining width so its optional primary action
+   sits at the trailing edge, as in the sidebar-first overviews. */
+.k2b-ui .k2b-app-overview__header > .k2b-panel-header {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .k2b-ui .k2b-app-overview__icon {
@@ -137,6 +146,15 @@
 .k2b-ui .k2b-app-overview__toolbar {
   width: 100%;
   min-width: 0;
+}
+
+/* Objects as cards: as many 19rem-or-wider columns as fit the page, which
+   leaves a `LinkCard` room for its title, one fact, and a trailing meta. */
+.k2b-ui .k2b-app-overview__cards {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  gap: 0.75rem;
 }
 
 /* Cloud renders the compact `Placeholder` as a bare child of the panel and

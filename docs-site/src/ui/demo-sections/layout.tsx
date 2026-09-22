@@ -10,6 +10,7 @@ import {
   Discussion,
   FloatingWindow,
   IconButton,
+  LinkCard,
   MarkdownView,
   Pagination,
   PanelDialog,
@@ -347,22 +348,28 @@ const addNextItem = (targetItemId: string | null) =>
 const OverviewDemo = () => (
   <DemoCard
     id="overview"
-    chip={{ kind: "component", name: "AppOverview", from: "@k2b/ui" }}
-    description="An application landing page with a required identity icon, a strong main task, and a quieter supporting panel."
-    code={`<AppOverview title="Projects" subtitle="Portable application overview" icon="ti ti-folders">
-  <AppOverview.Main title="Recent work" description="Updated today">
-    <AppOverview.EmptyState title="No recent projects" description="Open a project to see it here." icon="ti ti-folder-off">
-      <Button size="sm">New project</Button>
-    </AppOverview.EmptyState>
+    chip={[
+      { kind: "component", name: "AppOverview", from: "@k2b/ui" },
+      { kind: "component", name: "LinkCard", from: "@k2b/ui" },
+    ]}
+    description="An application landing page with one primary action in the page header, objects as calm cards, and a quieter supporting panel."
+    code={`<AppOverview title="Projects" subtitle="3 projects" icon="ti ti-folders" actions={<Button>New project</Button>}>
+  <AppOverview.Main title="Your projects">
+    <AppOverview.Cards>
+      <LinkCard href="/projects/website" title="Website" description="Shared with 4 people" icon="ti ti-world" meta="12 tasks" />
+      <LinkCard href="/projects/budget" title="Budget" description="Only you" icon="ti ti-coin" meta={<Tag size="sm">Admin</Tag>} />
+    </AppOverview.Cards>
   </AppOverview.Main>
   <AppOverview.Aside title="Workspace status">…</AppOverview.Aside>
 </AppOverview>`}
   >
-    <AppOverview title="Projects" subtitle="Portable application overview" icon="ti ti-folders">
-      <AppOverview.Main title="Recent work" description="Updated today">
-        <AppOverview.EmptyState title="No recent projects" description="Open a project to see it here." icon="ti ti-folder-off">
-          <Button size="sm">New project</Button>
-        </AppOverview.EmptyState>
+    <AppOverview title="Projects" subtitle="3 projects" icon="ti ti-folders" actions={<Button>New project</Button>}>
+      <AppOverview.Main title="Your projects">
+        <AppOverview.Cards>
+          <LinkCard href="#overview" title="Website" description="Shared with 4 people" icon="ti ti-world" meta="12 tasks" />
+          <LinkCard href="#overview" title="Budget" description="Only you" icon="ti ti-coin" meta={<Tag size="sm">Admin</Tag>} />
+          <LinkCard href="#overview" title="Onboarding" description="Shared with 14 people" icon="ti ti-users" meta="0 tasks" />
+        </AppOverview.Cards>
       </AppOverview.Main>
       <AppOverview.Aside title="Workspace status">
         <p>Everything is ready.</p>

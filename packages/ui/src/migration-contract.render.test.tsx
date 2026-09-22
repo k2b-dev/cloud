@@ -57,6 +57,29 @@ describe("@k2b/ui complete Cloud UI migrations", () => {
     expect(html).toContain("No notes");
   });
 
+  test("renders the overview page action and card grid", () => {
+    const html = renderToString(() =>
+      createComponent(AppOverview, {
+        title: "Notes",
+        subtitle: "3 notebooks",
+        icon: "ti ti-note",
+        actions: "New notebook",
+        get children() {
+          return createComponent(AppOverview.Main, {
+            title: "Your notebooks",
+            get children() {
+              return createComponent(AppOverview.Cards, { children: "Notebook cards" });
+            },
+          });
+        },
+      }),
+    );
+
+    expect(html).toMatch(/<h1 class="k2b-panel-header__title is-large">Notes<\/h1>/);
+    expect(html).toMatch(/k2b-panel-header__actions">New notebook</);
+    expect(html).toMatch(/<div class="k2b-app-overview__cards ">Notebook cards<\/div>/);
+  });
+
   test("renders panel headers and all data panel states", () => {
     const header = renderToString(() =>
       createComponent(PanelHeader, {
