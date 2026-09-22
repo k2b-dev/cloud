@@ -68,30 +68,33 @@ describe("Mail overview", () => {
   test("renders the server-provided cross-mailbox focus queue and accessible view controls", () => {
     const html = renderOverview();
     expect(html).toContain('class="k2b-app-workspace mail-focus-workspace"');
-    expect(html).not.toContain("What needs attention across your mailboxes.");
-    expect(html).toContain('href="/app/mail/compose"');
-    expect(html).toContain("Compose");
+    // Objects live in a stacked-on-mobile sidebar, not in a mailbox-style tree.
+    expect(html).toMatch(/<aside[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
+    expect(html).not.toContain("k2b-app-workspace__nav-tree");
+    expect(html.match(/data-variant="object"/g)).toHaveLength(1);
     expect(html).toContain('href="/app/mail/Mail01?view=needs_action"');
+    expect(html).toContain("support@example.test");
     expect(html).toContain("1 unread");
     expect(html).toContain("1 need action");
-    expect(html.match(/mail-focus-mailbox-button/g)).toHaveLength(1);
-    expect(html).not.toContain("Temporary mailbox layout preview");
-    expect(html).not.toContain("Customer support");
     expect(html).toContain('aria-label="Pin Support"');
     expect(html.indexOf("New mailbox")).toBeGreaterThan(html.indexOf("Support"));
-    expect(html).toContain('role="tablist" aria-label="Mail focus view"');
-    expect(html).toContain('role="tab" aria-selected="true"');
+    expect(html).toContain("Recently deleted mailboxes");
+    // The main area is a page: title, scope, primary action, one segmented view control.
+    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Focus<\/h2>/);
+    expect(html).toContain("1 conversation assigned to you · All mailboxes");
+    expect(html).toContain('href="/app/mail/compose"');
+    expect(html).toContain("Compose");
+    expect(html).toMatch(/class="k2b-tag mail-overview-scope"[^>]*>.*All mailboxes/);
+    expect(html).toContain('role="radiogroup" aria-label="Mail focus view"');
+    expect(html).toContain('role="radio" class="k2b-segmented-control__option" aria-checked="true"');
+    expect(html).not.toContain('role="tablist"');
     expect(html).toContain("For me");
     expect(html).toContain('<span class="mail-focus-tab-count">1</span>');
     expect(html).toContain("Unassigned");
     expect(html).toContain('<span class="mail-focus-tab-count">2</span>');
-    expect(html).toContain("1 conversation assigned to you");
-    expect(html).not.toContain('class="mail-focus-list-heading"');
-    expect(html).not.toContain("Newest first");
     expect(html).toContain("Release update");
     expect(html).toContain('class="mail-focus-avatar"');
     expect(html).toContain("Ada");
-    expect(html).toContain("Support");
     expect(html).toContain('href="/app/mail/Mail01?conversation=Convo1"');
     expect(html).toContain("Flagged");
     expect(html).toContain("Attachment");

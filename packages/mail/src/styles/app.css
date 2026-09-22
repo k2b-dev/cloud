@@ -174,115 +174,86 @@
   }
 
   .k2b-ui .mail-focus-main {
-    gap: clamp(1.5rem, 3vw, 2.5rem);
     padding: clamp(1rem, 3vw, 2.5rem);
     overflow-y: auto;
     background: var(--ui-surface);
   }
 
-  .mail-focus-mailboxes,
-  .mail-focus-panel {
+  /* The overview is deliberately not a mailbox: one page title, one scope
+     chip, one list. Objects live in the sidebar and open their own workspace. */
+  .mail-overview-page {
     display: flex;
+    width: 100%;
     min-width: 0;
+    max-width: 64rem;
     flex-direction: column;
     gap: 1rem;
   }
 
-  .mail-focus-section-heading {
+  .k2b-ui .mail-overview-page > .k2b-panel-header {
+    margin-bottom: 0.5rem;
+  }
+
+  .mail-overview-toolbar {
     display: flex;
     min-width: 0;
     flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .mail-focus-section-heading h2 {
-    color: var(--color-zinc-950);
-    font-size: 1rem;
-    font-weight: 650;
-  }
-
-  .mail-focus-section-heading p {
-    margin-top: 0.125rem;
-    color: var(--color-zinc-500);
-    font-size: 0.8125rem;
-  }
-
-  .mail-focus-mailbox-list {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .mail-focus-mailbox-item {
-    position: relative;
-    display: inline-flex;
-    min-width: 0;
-    max-width: min(100%, 24rem);
-  }
-
-  .k2b-ui .mail-focus-mailbox-pin {
-    position: absolute;
-    z-index: 1;
-    top: 50%;
-    right: 0.25rem;
-    translate: 0 -50%;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .mail-focus-mailbox-item:is(:hover, :has(:focus-visible)) .mail-focus-mailbox-pin {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .mail-focus-mailbox-item:is(:hover, :has(:focus-visible)) .mail-focus-mailbox-copy { max-width: calc(100% - 2.5rem); }
-  .mail-focus-mailbox-item[data-pinned="true"] .ti-flag-off { color: var(--color-orange-600); }
-  .dark .mail-focus-mailbox-item[data-pinned="true"] .ti-flag-off { color: var(--color-orange-400); }
-
-  .mail-focus-mailbox-copy {
-    display: flex;
-    min-width: 0;
-    flex: 1 1 auto;
     align-items: center;
-    gap: 0.5rem;
-    overflow: hidden;
+    gap: 0.5rem 0.75rem;
   }
 
-  .mail-focus-mailbox-name {
-    min-width: 0;
-    flex: 0 0 auto;
+  .k2b-ui .mail-overview-views {
+    width: auto;
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-x: auto;
   }
 
-  .mail-focus-mailbox-counts {
-    display: block;
-    min-width: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
+  .k2b-ui .mail-overview-list {
+    padding: 0.25rem 0.5rem;
+  }
+
+  .mail-overview-unread[data-zero="true"] {
     color: var(--color-zinc-500);
-    font-size: 0.6875rem;
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-weight: 400;
   }
 
-  .mail-focus-mailbox-counts > span + span {
-    margin-left: 0.5rem;
+  .mail-overview-needs-action {
+    display: inline-flex;
+    min-height: 1rem;
+    align-items: center;
+    padding: 0 0.375rem;
+    border-radius: 999px;
+    color: white;
+    background: var(--color-amber-600);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3);
+    font-size: 0.625rem;
+    font-weight: 600;
+    line-height: 1;
   }
 
-  @media (hover: none) {
-    .mail-focus-mailbox-copy { max-width: calc(100% - 2.5rem); }
-    .k2b-ui .mail-focus-mailbox-pin {
-      opacity: 1;
-      pointer-events: auto;
-    }
+  .dark .mail-overview-needs-action {
+    color: var(--color-zinc-950);
+    background: var(--color-amber-400);
+  }
+
+  .mail-overview-mailbox[data-pinned="true"] .ti-flag-off { color: var(--color-orange-600); }
+  .dark .mail-overview-mailbox[data-pinned="true"] .ti-flag-off { color: var(--color-orange-400); }
+
+  .mail-overview-sidebar-footer {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .k2b-ui .mail-overview-quiet-action {
+    width: 100%;
+    color: var(--color-zinc-500);
+  }
+
+  .k2b-ui .mail-overview-quiet-action > .k2b-button__label {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .mail-focus-deleted {
@@ -291,12 +262,9 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem 0.5rem;
+    padding: 0.25rem 0.5rem;
     color: var(--color-zinc-500);
     font-size: 0.6875rem;
-  }
-
-  .mail-focus-deleted > span:first-child {
-    font-weight: 600;
   }
 
   .mail-focus-tab-count {
@@ -308,7 +276,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    margin-top: 0.625rem;
   }
 
   .mail-focus-row {
@@ -505,31 +472,13 @@
     color: var(--color-blue-300);
   }
 
-  .dark .mail-focus-section-heading h2 {
-    color: var(--color-zinc-50);
-  }
-
   @media (max-width: 40rem) {
     .k2b-ui .mail-focus-main {
       padding: 1rem;
     }
 
-    .mail-focus-section-heading {
-      align-items: flex-start;
-    }
-
-    .mail-focus-mailbox-list {
-      margin-inline: -1rem;
-      padding-inline: 1rem;
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      overscroll-behavior-inline: contain;
-      scrollbar-width: thin;
-    }
-
-    .mail-focus-mailbox-item,
-    .k2b-ui .mail-focus-new-mailbox-button {
-      flex: 0 0 auto;
+    .k2b-ui .mail-overview-quiet-action {
+      width: auto;
     }
 
     .mail-focus-row {
@@ -647,20 +596,6 @@
 }
 
 /* Match the unlayered shared button styles so mailbox content stays left-aligned. */
-.k2b-ui .mail-focus-mailbox-button {
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.k2b-ui .mail-focus-mailbox-button > .k2b-button__label {
-  width: 100%;
-  min-width: 0;
-  flex: 1 1 auto;
-  justify-content: flex-start;
-  overflow: hidden;
-}
-
 @media print {
   body.mail-printing-conversation * {
     visibility: hidden !important;
