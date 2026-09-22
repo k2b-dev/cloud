@@ -847,7 +847,7 @@ export const deleteUser = async (params: {
     });
     throw dbError;
   }
-  await session.revokeAllForUser(id);
+  // Deleting the row invalidates every session; no epoch bump is possible or needed.
 
   return { ok: true, data: undefined };
 };

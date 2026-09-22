@@ -14,8 +14,11 @@ export function createDeleteUserAction(props: { user: DeleteTarget; onDeleted: (
   const destroy = mutation.create<void, void>({
     mutation: async (_, { abortSignal }) => {
       const res = await apiClient.users[":id"].$delete({ param: { id: props.user.id } }, { init: { signal: abortSignal } });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? messages().deleteUserFailed);
+      if (!res.ok) {
+        // Only a JSON body carries a message; anything else (proxy or framework error page) gets the localized fallback.
+        const body = res.headers.get("content-type")?.includes("application/json") ? await res.json().catch(() => null) : null;
+        throw new Error(body?.message ?? messages().deleteUserFailed);
+      }
       const user = props.user;
       await showAccountActionNotice(
         {

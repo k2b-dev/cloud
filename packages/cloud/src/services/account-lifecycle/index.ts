@@ -457,7 +457,6 @@ export const accountLifecycle = {
           });
           await tx`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
         });
-        await session.revokeAllForUser(userId);
         summary.changed += 1;
       } catch (error) {
         summary.failed += 1;
@@ -507,7 +506,6 @@ export const accountLifecycle = {
           });
           await tx`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
         });
-        await session.revokeAllForUser(userId);
         summary.changed += 1;
       } catch (error) {
         summary.failed += 1;
