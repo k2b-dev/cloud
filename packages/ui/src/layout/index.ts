@@ -128,6 +128,8 @@ export type { PanelHeaderProps } from "./PanelHeader";
 export { PanelHeader } from "./PanelHeader";
 export type { PanesItem, PanesProps } from "./Panes";
 export { default as Panes } from "./Panes";
+export type { PullToRefreshProps, PullToRefreshState } from "./PullToRefresh";
+export { default as PullToRefresh } from "./PullToRefresh";
 export type {
   AddPanesItemOptions,
   PanesDirection,

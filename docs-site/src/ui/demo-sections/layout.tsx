@@ -19,6 +19,7 @@ import {
   type PanesLayout,
   type PanesNode,
   Paper,
+  PullToRefresh,
   removePanesItem,
   ScrollArea,
   Select,
@@ -1311,6 +1312,43 @@ const ScrollAreaDemo = () => (
   </DemoCard>
 );
 
+const pullToRefreshRows = [
+  ["Ada Lovelace", "Invoice 1048 approved"],
+  ["Grace Hopper", "Compiler notes for Monday"],
+  ["Katherine Johnson", "Trajectory review"],
+  ["Margaret Hamilton", "Onboard software checklist"],
+  ["Radia Perlman", "Spanning tree follow-up"],
+  ["Barbara Liskov", "Substitution principle draft"],
+] as const;
+
+const PullToRefreshDemo = () => (
+  <DemoCard
+    id="pull-to-refresh"
+    chip={{ kind: "component", name: "PullToRefresh", from: "@k2b/ui" }}
+    description="With the list at its top, pull down on a touch screen, drag the free space with a mouse, or overscroll with a trackpad. The refresh icon follows the pull and spins while the simulated reload runs."
+    code={`<PullToRefresh onRefresh={() => reloadConversations()} label="Refreshing conversations">
+  <ScrollArea role="region" aria-label="Needs action">
+    <ConversationRows />
+  </ScrollArea>
+</PullToRefresh>`}
+  >
+    <div class="ui-pull-to-refresh-demo">
+      <PullToRefresh onRefresh={() => new Promise((resolve) => setTimeout(resolve, 1200))} label="Refreshing conversations">
+        <ScrollArea class="ui-pull-to-refresh-demo__viewport" role="region" aria-label="Needs action">
+          <ol class="ui-pull-to-refresh-demo__rows">
+            {pullToRefreshRows.map(([sender, subject]) => (
+              <li>
+                <strong>{sender}</strong>
+                <span>{subject}</span>
+              </li>
+            ))}
+          </ol>
+        </ScrollArea>
+      </PullToRefresh>
+    </div>
+  </DemoCard>
+);
+
 const DetailPanelActionDemo = () => (
   <DemoCard
     id="detail-panel-action"
@@ -1484,6 +1522,7 @@ const demos: DemoSection = {
       <DiscussionDemo />
     </DemoGrid>
   ),
+  "pull-to-refresh": () => <PullToRefreshDemo />,
   "floating-window": () => (
     <DemoGrid columns="one">
       <FloatingDemo />

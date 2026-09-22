@@ -55,6 +55,7 @@ import contentPagination from "./layout/pagination.md" with { type: "text" };
 import layoutPanelDialog from "./layout/panel-dialog.md" with { type: "text" };
 import layoutPanes from "./layout/panes.md" with { type: "text" };
 import layoutPermissions from "./layout/permissions.md" with { type: "text" };
+import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text" };
 import layoutScrollArea from "./layout/scroll-area.md" with { type: "text" };
 import layoutSettingsModal from "./layout/settings-modal.md" with { type: "text" };
 import layoutWorkspace from "./layout/workspace.md" with { type: "text" };
@@ -107,6 +108,7 @@ const catalogContextSources = {
   "layout/discussion": { file: "layout/discussion.md", content: layoutDiscussion },
   "layout/panes": { file: "layout/panes.md", content: layoutPanes },
   "layout/scroll-area": { file: "layout/scroll-area.md", content: layoutScrollArea },
+  "layout/pull-to-refresh": { file: "layout/pull-to-refresh.md", content: layoutPullToRefresh },
   "layout/overview": { file: "layout/overview.md", content: layoutOverview },
   "layout/settings-modal": { file: "layout/settings-modal.md", content: layoutSettingsModal },
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },

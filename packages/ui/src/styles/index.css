@@ -1899,6 +1899,74 @@
   height: min(18.75rem, 60dvh);
 }
 
+/* PullToRefresh wraps one scroll container. Only the indicator moves: it
+   slides in from above by the damped pull distance and the icon turns with the
+   progress, so the wrapped content never shifts and no overflow clipping is
+   needed. The wrapper leaves height and flex growth to the surrounding layout. */
+.k2b-ui .k2b-pull-to-refresh {
+  --k2b-pull-to-refresh-distance: 0px;
+  --k2b-pull-to-refresh-progress: 0;
+
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-pull-to-refresh__indicator {
+  position: absolute;
+  top: 0.25rem;
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--k2b-surface-elevated);
+  color: var(--k2b-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--k2b-border);
+  font-size: 1rem;
+  opacity: var(--k2b-pull-to-refresh-progress);
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, calc(var(--k2b-pull-to-refresh-distance) - 100%));
+  transition:
+    transform 160ms ease-out,
+    opacity 160ms ease-out;
+}
+
+.k2b-ui .k2b-pull-to-refresh__indicator > i {
+  transform: rotate(calc(var(--k2b-pull-to-refresh-progress) * 360deg));
+}
+
+.k2b-ui .k2b-pull-to-refresh:not([data-state="idle"]) .k2b-pull-to-refresh__indicator {
+  visibility: visible;
+}
+
+/* The indicator follows the input directly; easing only smooths the snap back. */
+.k2b-ui .k2b-pull-to-refresh[data-state="pulling"] .k2b-pull-to-refresh__indicator,
+.k2b-ui .k2b-pull-to-refresh[data-state="ready"] .k2b-pull-to-refresh__indicator {
+  transition: none;
+}
+
+.k2b-ui .k2b-pull-to-refresh[data-state="ready"] .k2b-pull-to-refresh__indicator,
+.k2b-ui .k2b-pull-to-refresh[data-state="refreshing"] .k2b-pull-to-refresh__indicator {
+  color: var(--k2b-action);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-pull-to-refresh__indicator {
+    transition: none;
+  }
+
+  .k2b-ui .k2b-pull-to-refresh__indicator > i {
+    transform: none;
+  }
+}
+
 /* A host may expose its trailing inset to the panel. The scrollport expands
    into that space so its stable gutter replaces the inset instead of adding a
    second gap, while the non-scrolling header keeps its original alignment. */

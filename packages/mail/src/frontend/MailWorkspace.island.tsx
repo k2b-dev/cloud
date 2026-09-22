@@ -1487,6 +1487,7 @@ export default function MailWorkspace(props: {
                     }}
                     onOpenHref={openWorkspaceHref}
                     onLoadMore={loadMoreConversations}
+                    onRefresh={reconcileWorkspace}
                   />
                 </AppWorkspace.MainPane>
                 <MailConversationReader
