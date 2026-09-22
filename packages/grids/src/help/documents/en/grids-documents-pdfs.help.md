@@ -448,18 +448,19 @@ The document page lists every generated Document for a template. Use **Table** f
 
 **All documents** opens in **Folders**, grouped by document template and then year. Its search covers filenames, document numbers, and tags across the Base, regardless of the open folder. Both document pages include their first results when the page loads.
 
-Document details offer stored downloads, captured row count and timestamp. **Preview** shows CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV stays original text. **Share links** requires PDF; **Technical details** shows IDs and hashes. Subdialogs return here. **More actions → Generate again** follows the template's issuance policy, never overwriting the original.
+Document details offer stored downloads, captured row count and timestamp. **Preview** shows CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV stays original text. **Share links** creates public links for the stored primary file; **Technical details** shows IDs and hashes. Subdialogs return here. **More actions → Generate again** follows the template's issuance policy, never overwriting the original.
 
 Before generation you can add tags and, for an HTML template, override the filename. An E-Invoice renderer owns its artifact filenames. A completed Document's number, filename, tags, and artifacts are immutable.
 
-The main download preserves the stored file format. Share links require a primary
-PDF; other formats require an authorized download.
+The main download preserves the stored file format. Share links serve that same
+primary file, whether it is a PDF, CSV, JSON or XML document, always as a download
+rather than a page shown in the browser.
 In a profile renderer's input, `document.filename` is `null`: the renderer has
 not produced its files yet. Read the completed Document's filename after generation.
 
 Base Read allows browsing and redownloading generated documents. Base Write also allows generation. Base Admin manages templates. A Grids App reader may download only a Document for the current page record whose template is in that Record block's published capability. This App-scoped download does not grant the reader generic Base document access.
 
-To share one generated PDF without a Cloud login, create a public link for 1, 7, 30, or 90 days. The link opens a minimal page with the document filename, its remaining validity, and a PDF download button. It never grants access to other documents or records. An optional comment explains the link's purpose to document editors. The creator or a document editor can revoke the link before it expires.
+To share one generated document without a Cloud login, create a public link for 1, 7, 30, or 90 days. The link opens a minimal page with the document filename, its remaining validity, and a download button for the stored primary file in its original format. It never grants access to other documents or records. An optional comment explains the link's purpose to document editors. The creator or a document editor can revoke the link before it expires.
 
 ## Snapshots and stored Documents {icon="point"}
 

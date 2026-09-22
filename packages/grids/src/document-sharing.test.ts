@@ -1,9 +1,20 @@
 import { expect, test } from "bun:test";
-import { documentAllowsPublicLinks } from "./document-sharing";
+import { documentProfiles } from "./document-profiles";
+import { financialQueryProfiles } from "./document-profiles/financial";
+import { documentAllowsPublicLinks, documentMediaTypeAllowsPublicLinks, PUBLIC_DOCUMENT_LINK_MEDIA_TYPES } from "./document-sharing";
 
-test("public sharing follows the primary PDF, not an artifact name or secondary PDF", () => {
-  expect(documentAllowsPublicLinks({ primaryArtifactKey: "main", artifacts: [{ key: "main", mimeType: "application/pdf" }] })).toBe(true);
-  expect(documentAllowsPublicLinks({ primaryArtifactKey: "pdf", artifacts: [{ key: "pdf", mimeType: "text/csv" }] })).toBe(false);
+test("the public link allow-list is exactly the primary formats Grids renderers produce", () => {
+  const produced = new Set([
+    "application/pdf",
+    ...[...documentProfiles, ...financialQueryProfiles].map((profile) => profile.primaryArtifact.mediaType),
+  ]);
+  expect(new Set<string>(PUBLIC_DOCUMENT_LINK_MEDIA_TYPES)).toEqual(produced);
+});
+
+test("public sharing follows the primary artifact's format, not an artifact name or secondary file", () => {
+  for (const mimeType of PUBLIC_DOCUMENT_LINK_MEDIA_TYPES) {
+    expect(documentAllowsPublicLinks({ primaryArtifactKey: "main", artifacts: [{ key: "main", mimeType }] })).toBe(true);
+  }
   expect(
     documentAllowsPublicLinks({
       primaryArtifactKey: "csv",
@@ -12,6 +23,33 @@ test("public sharing follows the primary PDF, not an artifact name or secondary 
         { key: "pdf", mimeType: "application/pdf" },
       ],
     }),
+  ).toBe(true);
+  expect(
+    documentAllowsPublicLinks({
+      primaryArtifactKey: "page",
+      artifacts: [
+        { key: "page", mimeType: "text/html" },
+        { key: "pdf", mimeType: "application/pdf" },
+      ],
+    }),
   ).toBe(false);
   expect(documentAllowsPublicLinks({ primaryArtifactKey: "missing", artifacts: [] })).toBe(false);
+});
+
+test("browser-renderable and unknown media types are never shareable", () => {
+  for (const mimeType of [
+    "text/html",
+    "text/html; charset=utf-8",
+    "image/svg+xml",
+    "application/xhtml+xml",
+    "application/javascript",
+    "application/zip",
+    "application/octet-stream",
+    "APPLICATION/PDF",
+    "",
+    null,
+    undefined,
+  ]) {
+    expect(documentMediaTypeAllowsPublicLinks(mimeType)).toBe(false);
+  }
 });

@@ -449,19 +449,19 @@ Die Dokumentseite listet jedes generierte Dokument einer Vorlage auf. Nutze **Ta
 
 **Alle Dokumente** öffnet sich in der Ansicht **Ordner**, gruppiert nach Dokumentvorlage und anschließend Jahr. Die Suche durchsucht Dateinamen, Dokumentnummern und Tags der gesamten Base, unabhängig vom geöffneten Ordner. Beide Dokumentseiten zeigen ihre ersten Ergebnisse bereits beim Laden der Seite.
 
-Dokumentdetails zeigen Downloads, übernommene Zeilenanzahl und Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV bleibt Originaltext. **Freigabelinks** erfordert PDF; **Technische Details** zeigt IDs und Prüfsummen. Unterdialoge führen zurück. **Weitere Aktionen → Erneut erzeugen** folgt der Ausstellungsregel und überschreibt nie das Original.
+Dokumentdetails zeigen Downloads, übernommene Zeilenanzahl und Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV bleibt Originaltext. **Freigabelinks** erstellt öffentliche Links für die gespeicherte Hauptdatei; **Technische Details** zeigt IDs und Prüfsummen. Unterdialoge führen zurück. **Weitere Aktionen → Erneut erzeugen** folgt der Ausstellungsregel und überschreibt nie das Original.
 
 Vor der Generierung kannst du Tags ergänzen und bei einer HTML-Vorlage den Dateinamen überschreiben. Ein E-Rechnungsrenderer bestimmt seine Artefaktdateinamen selbst. Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich.
 
-Der Hauptdownload behält das gespeicherte Dateiformat bei. Freigabelinks gibt es
-nur für eine PDF-Hauptdatei; andere Formate benötigen einen Download mit
-Zugriffsrechten. Im Input eines Profil-Renderers ist `document.filename` noch
+Der Hauptdownload behält das gespeicherte Dateiformat bei. Freigabelinks liefern
+dieselbe Hauptdatei, ob PDF, CSV, JSON oder XML, immer als Download und nie als
+im Browser angezeigte Seite. Im Input eines Profil-Renderers ist `document.filename` noch
 `null`, weil die Dateien erst erzeugt werden. Den Dateinamen kannst du danach
 am abgeschlossenen Dokument ablesen.
 
 Leseberechtigung auf die Basis erlaubt das Durchsuchen und erneute Herunterladen generierter Dokumente. Schreibberechtigung erlaubt zusätzlich Generierung. Personen mit Verwaltungsrechten verwalten Vorlagen. Eine lesende Person einer Grids App darf nur ein Dokument für den aktuellen Seitendatensatz herunterladen, dessen Vorlage in der veröffentlichten Capability dieses Datensatzblocks enthalten ist. Dieser App-begrenzte Download gewährt keinen allgemeinen Dokumentzugriff auf die Basis.
 
-Erstelle einen öffentlichen Link für 1, 7, 30 oder 90 Tage, um ein generiertes PDF ohne Cloud-Anmeldung zu teilen. Der Link öffnet eine minimale Seite mit dem Dateinamen des Dokuments, seiner verbleibenden Gültigkeit und einer Schaltfläche zum Herunterladen des PDFs. Er gewährt niemals Zugriff auf andere Dokumente oder Datensätze. Ein optionaler Kommentar erklärt Personen mit Bearbeitungsrechten den Zweck des Links. Die erstellende Person oder eine Person mit Dokumentbearbeitung kann den Link vor Ablauf widerrufen.
+Erstelle einen öffentlichen Link für 1, 7, 30 oder 90 Tage, um ein generiertes Dokument ohne Cloud-Anmeldung zu teilen. Der Link öffnet eine minimale Seite mit dem Dateinamen des Dokuments, seiner verbleibenden Gültigkeit und einer Schaltfläche zum Herunterladen der gespeicherten Hauptdatei in ihrem Originalformat. Er gewährt niemals Zugriff auf andere Dokumente oder Datensätze. Ein optionaler Kommentar erklärt Personen mit Bearbeitungsrechten den Zweck des Links. Die erstellende Person oder eine Person mit Dokumentbearbeitung kann den Link vor Ablauf widerrufen.
 
 ## Snapshots und gespeicherte Dokumente {icon="point"}
 

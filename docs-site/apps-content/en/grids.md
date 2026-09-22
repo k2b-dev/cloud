@@ -306,7 +306,7 @@ For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact.
 ### Generate documents and evidence
 
 - Generate documents or PDFs from reviewed templates and record data.
-- Download the exact stored primary file or an additional artifact of a completed Document. `primaryArtifactKey` identifies the main file and its MIME type determines the format. Public links share only a primary PDF. Repeatable templates can generate a new immutable Document; once-per-finalized-record templates retrieve the existing one for that finalized revision.
+- Download the exact stored primary file or an additional artifact of a completed Document. `primaryArtifactKey` identifies the main file and its MIME type determines the format. Public links, created only through the explicit share action, serve the stored primary file of any supported format (PDF, CSV, JSON, XML) as an attachment. Repeatable templates can generate a new immutable Document; once-per-finalized-record templates retrieve the existing one for that finalized revision.
 - If generation has an uncertain result, keep its dialog open and retry that
   attempt. Closing loses the retry context; check All documents before creating
   another Document.

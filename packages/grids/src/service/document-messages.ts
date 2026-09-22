@@ -15,7 +15,7 @@ export const documentServiceMessages = i18n.define({
       documentTemplateNotFound: "Document template",
       documentArtifactNotFound: "Document artifact",
       noCanonicalPdf: "Document has no canonical PDF artifact.",
-      publicLinksPdfOnly: "Public links are available only for PDF documents. Use an authorized download for this file.",
+      publicLinksUnsupportedFormat: "Public links are not available for this file format. Use an authorized download for this file.",
       artifactIntegrityFailed: "Stored document artifact failed its integrity check.",
       artifactMetadataIntegrityFailed: "Stored document artifact metadata failed its integrity check.",
       noWorkflowDocuments: "The workflow run did not generate any documents.",
@@ -213,7 +213,8 @@ export const documentServiceMessages = i18n.define({
       documentTemplateNotFound: "Dokumentvorlage",
       documentArtifactNotFound: "Dokumentartefakt",
       noCanonicalPdf: "Das Dokument enthält kein kanonisches PDF-Artefakt.",
-      publicLinksPdfOnly: "Freigabelinks sind nur für PDF-Dokumente verfügbar. Lade diese Datei mit deinen Zugriffsrechten herunter.",
+      publicLinksUnsupportedFormat:
+        "Freigabelinks sind für dieses Dateiformat nicht verfügbar. Lade diese Datei mit deinen Zugriffsrechten herunter.",
       artifactIntegrityFailed: "Die Integritätsprüfung des gespeicherten Dokumentartefakts ist fehlgeschlagen.",
       artifactMetadataIntegrityFailed: "Die Integritätsprüfung der Metadaten des gespeicherten Dokumentartefakts ist fehlgeschlagen.",
       noWorkflowDocuments: "Der Workflow-Lauf hat keine Dokumente erzeugt.",

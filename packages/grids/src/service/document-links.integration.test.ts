@@ -106,8 +106,8 @@ describe("document links integration", () => {
       const rejectedExport = await createDocumentLink({
         document: {
           ...document,
-          primaryArtifactKey: "csv",
-          artifacts: [{ ...document.artifacts[0]!, key: "csv", mimeType: "text/csv" }],
+          primaryArtifactKey: "page",
+          artifacts: [{ ...document.artifacts[0]!, key: "page", mimeType: "text/html" }],
         },
         input: { expiresIn: "30d" },
         actorId: null,
@@ -115,6 +115,16 @@ describe("document links integration", () => {
       expect(rejectedExport.ok).toBe(false);
       if (!rejectedExport.ok) expect(rejectedExport.error.code).toBe("BAD_INPUT");
       expect(await listDocumentLinksForDocument(document.id)).toEqual([]);
+      const csvExport = await createDocumentLink({
+        document: {
+          ...document,
+          primaryArtifactKey: "csv",
+          artifacts: [{ ...document.artifacts[0]!, key: "csv", mimeType: "text/csv" }],
+        },
+        input: { expiresIn: "1d" },
+        actorId: null,
+      });
+      expect(csvExport.ok).toBe(true);
 
       const created = await createDocumentLink({
         document,

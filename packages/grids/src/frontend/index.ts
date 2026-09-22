@@ -1,7 +1,6 @@
 import { type AuthContext, auth, getLocale, rateLimit } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
-import { pdfResponse } from "../api/download-response";
 import { ssr } from "../config";
 import { gridsService } from "../service";
 import documentTemplatePage from "./[baseId]/document/[documentTableId]/[documentTemplateId]/page";
@@ -16,6 +15,7 @@ import adminPage from "./admin";
 import customAppPage from "./custom-app/page";
 import { resolveGridsMessages } from "./messages";
 import indexPage from "./page";
+import { publicDocumentLinkDownload } from "./public/documents/[token]/download";
 import publicDocumentPage from "./public/documents/[token]/page";
 import publicFormPage from "./public/forms/[token]/page";
 import recordEventFailuresPage from "./record-event-failures";
@@ -33,21 +33,9 @@ const auditRequestContext = (c: Context<AuthContext>) => ({
 /** Public pages mounted at `/share/grids` — anonymous-friendly. */
 export const publicRoutes = new Hono<AuthContext>()
   .get("/forms/:token", auth.requireRole("*"), ...publicFormPage)
-  .get("/documents/:token/download", rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }), auth.requireRole("*"), async (c) => {
-    const { t } = resolveGridsMessages(getLocale(c));
-    const requestAudit = auditRequestContext(c);
-    const resolved = await gridsService.document.resolveDocumentLinkDownload(c.req.param("token") ?? "");
-    if (!resolved.ok) return c.json({ message: t.documentLinkNotFound }, 404);
-    const pdf = await gridsService.document.getPdf(resolved.data.document);
-    if (!pdf.ok) return c.json({ message: pdf.error.message }, pdf.error.status);
-    const access = await gridsService.document.recordDocumentLinkAccess(resolved.data.link.id, requestAudit);
-    if (!access.ok) return c.json({ message: t.documentLinkNotFound }, 404);
-    return pdfResponse(pdf.data.pdf, resolved.data.document.filename, {
-      "X-Grids-Document-Id": resolved.data.document.shortId,
-      "X-Grids-Document-Link-Id": resolved.data.link.shortId,
-      "X-Grids-Document-Artifact": "stored",
-    });
-  })
+  .get("/documents/:token/download", rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }), auth.requireRole("*"), (c) =>
+    publicDocumentLinkDownload(c, auditRequestContext(c)),
+  )
   .get("/documents/:token", rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }), auth.requireRole("*"), ...publicDocumentPage);
 
 /** Standalone published Apps mounted at `/apps`. */

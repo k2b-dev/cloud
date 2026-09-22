@@ -14,6 +14,21 @@ export const DocumentQueryOutputSchema = z.union([
   FinancialDocumentOutputSchema,
 ]);
 
+const QUERY_OUTPUT_MEDIA_TYPES: Record<z.infer<typeof DocumentQueryOutputSchema>["kind"], string> = {
+  pdf: "application/pdf",
+  csv: "text/csv",
+  json: "application/json",
+  xml: "application/xml",
+  "datev-csv": "text/csv",
+  "sepa-xml": "application/xml",
+};
+
+/** Media type of the primary artifact a query output kind produces; null for unknown kinds. */
+export const documentQueryOutputMediaType = (kind: unknown): string | null =>
+  typeof kind === "string" && kind in QUERY_OUTPUT_MEDIA_TYPES
+    ? QUERY_OUTPUT_MEDIA_TYPES[kind as keyof typeof QUERY_OUTPUT_MEDIA_TYPES]
+    : null;
+
 const queryTemplateRoots = new Set(["rows", "columns", "document"]);
 
 export const validateDocumentQueryOutput = (output: unknown, locale?: string): Result<void> => {
