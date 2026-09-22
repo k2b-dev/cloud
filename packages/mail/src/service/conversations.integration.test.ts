@@ -1035,7 +1035,8 @@ suite("mail manual conversation threading", () => {
       input: { messageIds: [disappearingMessageId], expectedRevision: 1, confirm: true },
     });
     let splitWaitingOnMessage = false;
-    for (let attempt = 0; attempt < 100; attempt += 1) {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
       const [waiting] = await sql<{ waiting: boolean }[]>`
         SELECT EXISTS (
           SELECT 1
