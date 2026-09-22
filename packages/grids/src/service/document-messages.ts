@@ -162,6 +162,23 @@ export const documentServiceMessages = i18n.define({
       receiptMissing: "The document issuance receipt disappeared.",
       documentInsertFailed: "The document could not be stored.",
       createdDocumentReadFailed: "The created document could not be read.",
+      zipEmpty: "The ZIP selection contains no files. Select rows with documents or include generated documents.",
+      zipRowsNotRowQuery: "ZIP files from captured rows require a single-table row query without joins, grouping or aggregates.",
+      zipColumnUnknown: ({ column }: { column: string }) =>
+        `Column "${column}" is not part of the captured query result. Use its exact GQL alias.`,
+      zipColumnNotRelation: ({ column }: { column: string }) => `Column "${column}" is not a relation column.`,
+      zipRelationMissing: ({ column, row }: { column: string; row: number }) =>
+        `Row ${row} has no "${column}" record. Set required: false to skip rows without one.`,
+      zipRecordUnavailable: ({ record }: { record: string }) => `Record ${record} is no longer available in this Base.`,
+      zipRecordFilesMissing: ({ record }: { record: string }) =>
+        `Record ${record} has no matching document file. Set required: false to skip records without one.`,
+      zipTemplateUnknown: ({ template }: { template: string }) => `Document template ${template} is not available in this Base.`,
+      zipIncludeUnavailable: ({ document }: { document: string }) => `Included document ${document} is no longer available in this Base.`,
+      zipTooManyFiles: ({ limit }: { limit: number }) =>
+        `The ZIP selection exceeds the ${limit} file limit. Narrow the selection; no partial archive was created.`,
+      zipTooLarge: ({ limit }: { limit: number }) =>
+        `The ZIP selection exceeds the ${limit}-byte limit. Narrow the selection; no partial archive was created.`,
+      zipSourceIntegrityFailed: ({ path }: { path: string }) => `The stored file for ${path} failed its integrity check.`,
     },
     de: {
       associatedDataInvalid: "associatedData muss auf das gespeicherte Ergebnis eines vorherigen Abfrageschritts verweisen.",
@@ -328,6 +345,24 @@ export const documentServiceMessages = i18n.define({
       receiptMissing: "Der Ausgabebeleg des Dokuments ist nicht mehr vorhanden.",
       documentInsertFailed: "Das Dokument konnte nicht gespeichert werden.",
       createdDocumentReadFailed: "Das erstellte Dokument konnte nicht gelesen werden.",
+      zipEmpty: "Die ZIP-Auswahl enthält keine Dateien. Wähle Zeilen mit Dokumenten oder nimm erzeugte Dokumente auf.",
+      zipRowsNotRowQuery:
+        "ZIP-Dateien aus erfassten Zeilen benötigen eine Zeilenabfrage aus einer Tabelle ohne Joins, Gruppierung oder Aggregate.",
+      zipColumnUnknown: ({ column }) =>
+        `Die Spalte „${column}“ ist nicht Teil des erfassten Abfrageergebnisses. Verwende ihren exakten GQL-Alias.`,
+      zipColumnNotRelation: ({ column }) => `Die Spalte „${column}“ ist keine Relationsspalte.`,
+      zipRelationMissing: ({ column, row }) =>
+        `Zeile ${row} hat keinen Datensatz in „${column}“. Setze required: false, um Zeilen ohne Datensatz zu überspringen.`,
+      zipRecordUnavailable: ({ record }) => `Der Datensatz ${record} ist in dieser Base nicht mehr verfügbar.`,
+      zipRecordFilesMissing: ({ record }) =>
+        `Der Datensatz ${record} hat keine passende Dokumentdatei. Setze required: false, um Datensätze ohne Datei zu überspringen.`,
+      zipTemplateUnknown: ({ template }) => `Die Dokumentvorlage ${template} ist in dieser Base nicht verfügbar.`,
+      zipIncludeUnavailable: ({ document }) => `Das aufgenommene Dokument ${document} ist in dieser Base nicht mehr verfügbar.`,
+      zipTooManyFiles: ({ limit }) =>
+        `Die ZIP-Auswahl überschreitet das Limit von ${limit} Dateien. Grenze die Auswahl ein; es wurde kein Teilarchiv erstellt.`,
+      zipTooLarge: ({ limit }) =>
+        `Die ZIP-Auswahl überschreitet das Limit von ${limit} Byte. Grenze die Auswahl ein; es wurde kein Teilarchiv erstellt.`,
+      zipSourceIntegrityFailed: ({ path }) => `Die gespeicherte Datei für ${path} hat ihre Integritätsprüfung nicht bestanden.`,
     },
   },
 });

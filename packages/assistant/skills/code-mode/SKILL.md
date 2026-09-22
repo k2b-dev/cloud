@@ -59,7 +59,7 @@ supported surface; links within references add related workflows when needed.
 | Task / API | Read |
 | --- | --- |
 | Source entry, input/output files, pickers, CSV, IDs | [Runtime and files](references/runtime.md) |
-| Inspect PDF pages, read PDF text/positions or XLSX/ODS cells | [Documents](references/documents.md) |
+| Inspect PDF pages, read PDF text/positions or XLSX/ODS cells, write ODS | [Documents](references/documents.md) |
 | Generate a PDF, embed attachments, combine invoice HTML and XML | [PDF generation](references/pdf.md) |
 | Exact amounts, taxes, allocation, localized money | [Money](references/money.md) |
 | Export DATEV bookings or SEPA transfers | [DATEV and SEPA](references/finance.md) |
@@ -108,7 +108,8 @@ compiling or saving source does not verify behavior. If `work.status` is
 Inspect only when the returned snapshot needs more detail. Errors and
 `outputTruncated` are not successful complete results.
 
-For a CSV, call `await files.save(sheet.toCsv(rows), "result.csv")` inside code.
+For a CSV, call `await files.save(sheet.toCsv(rows), "result.csv")` inside code;
+for a spreadsheet, `await files.save(await sheet.toOds(sheets), "result.ods")`.
 Then call the **tool** `code_export` with the returned `runId` and captured file
 name, and `present` its returned chat path. `files.save` returns no path.
 Reuse exported data via its path/version rather than retyping truncated output.

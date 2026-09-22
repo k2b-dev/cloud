@@ -1240,3 +1240,42 @@ steps:
   ])
     expect((await compileAndBindGridsWorkflowSource(invalid, catalog())).ok).toBe(false);
 });
+
+test("binds ZIP file selections to templates and included documents to earlier document outputs", async () => {
+  const source = `steps:
+  - query:
+      source: |
+        from table Items
+        select Name, Current archive
+      saveAs: items
+  - generateDocument:
+      data: items
+      output: { kind: csv }
+      saveAs: list
+  - generateDocument:
+      data: items
+      output:
+        kind: zip
+        files:
+          - { column: Current archive, template: Item sheet, mediaType: application/pdf, folder: sheets }
+          - { required: false }
+        include: [list]
+      saveAs: package
+`;
+  const bindQuery = async () => ok({ source: "from table Items\nselect Name, Current archive", schemaHash: "a".repeat(64) });
+  const bound = await compileAndBindGridsWorkflowSource(source, catalog(), bindQuery);
+  expect(bound.ok, bound.ok ? "" : JSON.stringify(bound.diagnostics)).toBe(true);
+  if (bound.ok) expect(bound.plan.bindings["steps.2.generateDocument.output.files.0.template"]).toBe(ids.document);
+  for (const invalid of [
+    source.replace("template: Item sheet", "template: Missing sheet"),
+    source.replace("template: Item sheet", 'template: "${{ inputs.template }}"'),
+    source.replace("include: [list]", "include: [items]"),
+    source.replace("include: [list]", "include: [nothing]"),
+    source.replace("column: Current archive, ", "column: Current archive, folder: ../up, "),
+    source.replace(
+      "        files:\n          - { column: Current archive, template: Item sheet, mediaType: application/pdf, folder: sheets }\n          - { required: false }\n        include: [list]\n",
+      "        files: []\n",
+    ),
+  ])
+    expect((await compileAndBindGridsWorkflowSource(invalid, catalog(), bindQuery)).ok, invalid).toBe(false);
+});

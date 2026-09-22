@@ -3,6 +3,7 @@ import { z } from "zod";
 import { type DocumentProfileSummary, DocumentProfileSummarySchema } from "./document-profile-contracts";
 import { germanBillingProfile, germanEInvoiceProfile } from "./document-profiles/einvoice-de";
 import { csvDocumentProfile, jsonDocumentProfile, pdfTableDocumentProfile, xmlTableDocumentProfile } from "./document-profiles/table";
+import type { ProtectedFileStream } from "./service/files";
 
 export type DocumentArtifactDraft = {
   key: string;
@@ -11,15 +12,28 @@ export type DocumentArtifactDraft = {
   bytes: Uint8Array;
 };
 
-type DocumentProfileResult = {
+/** Content produced on the storing transaction instead of a buffer; see `createProtectedStreamed`. */
+export type DocumentArtifactStreamDraft = {
+  key: string;
+  filename: string;
+  mediaType: string;
+  stream: ProtectedFileStream;
+};
+
+export type DocumentProfileArtifactDraft = DocumentArtifactDraft | DocumentArtifactStreamDraft;
+
+type DocumentProfileResult<TArtifact extends DocumentProfileArtifactDraft> = {
   /** Derived machine-readable values, stored with the issued artifacts. */
   output?: Record<string, unknown>;
-  artifacts: DocumentArtifactDraft[];
+  artifacts: TArtifact[];
   validationStatus: "valid" | "warning" | "unchecked";
   validationReport: Record<string, unknown>;
 };
 
-export type DocumentProfile<TSnapshot extends Record<string, unknown> = Record<string, unknown>> = DocumentProfileSummary & {
+export type DocumentProfile<
+  TSnapshot extends Record<string, unknown> = Record<string, unknown>,
+  TArtifact extends DocumentProfileArtifactDraft = DocumentArtifactDraft,
+> = DocumentProfileSummary & {
   input: z.ZodType<TSnapshot>;
   formatNumber: (context: { value: number; issuedAt: Date }) => string;
   issue(
@@ -27,9 +41,14 @@ export type DocumentProfile<TSnapshot extends Record<string, unknown> = Record<s
     context: {
       number: string;
       issuedAt: Date;
+      /** Long-running issuance keeps its workflow lease alive; throws once the run is canceled. */
+      heartbeat?: () => Promise<void>;
     },
-  ): Promise<DocumentProfileResult> | DocumentProfileResult;
+  ): Promise<DocumentProfileResult<TArtifact>> | DocumentProfileResult<TArtifact>;
 };
+
+/** Any installed profile, whether it renders buffers or streams its artifact. */
+export type InstalledDocumentProfile = DocumentProfile<Record<string, unknown>, DocumentProfileArtifactDraft>;
 
 export const exactDecimalSchema = (options: { scale?: number; nonnegative?: boolean } = {}) =>
   z
@@ -62,8 +81,8 @@ export const documentProfiles: readonly DocumentProfile[] = [
 
 export const profileKey = (id: string, version: number): string => `${id}@${version}`;
 
-export const profileRegistry = (profiles: readonly DocumentProfile[]) => {
-  const registry = new Map<string, DocumentProfile>();
+export const profileRegistry = (profiles: readonly InstalledDocumentProfile[]) => {
+  const registry = new Map<string, InstalledDocumentProfile>();
   for (const profile of profiles) {
     const summary = DocumentProfileSummarySchema.safeParse({
       id: profile.id,

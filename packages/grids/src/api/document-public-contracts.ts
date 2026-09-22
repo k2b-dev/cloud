@@ -3,6 +3,15 @@ import { ShortIdSchema } from "../contracts";
 
 export const PUBLIC_DOCUMENT_PAGE_LIMIT = 100;
 
+const DOWNLOAD_URL_DESCRIPTION = "Authenticated same-origin download path. Not a public share; access is checked on every download.";
+
+/** Root-relative download path for a Document's stored primary artifact. */
+export const documentDownloadUrl = (documentId: string): string => `/api/grids/documents/${encodeURIComponent(documentId)}/download`;
+
+/** Root-relative download path for one exact stored artifact of a Document. */
+export const documentArtifactDownloadUrl = (documentId: string, artifactKey: string): string =>
+  `/api/grids/documents/${encodeURIComponent(documentId)}/artifacts/${encodeURIComponent(artifactKey)}`;
+
 const PublicDocumentArtifactSchema = z
   .object({
     key: z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/),
@@ -10,6 +19,7 @@ const PublicDocumentArtifactSchema = z
     mimeType: z.string().trim().min(1).max(255),
     sizeBytes: z.number().int().positive(),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    downloadUrl: z.string().min(1).describe(DOWNLOAD_URL_DESCRIPTION),
   })
   .strict();
 
@@ -40,6 +50,7 @@ const DocumentShapeSchema = z
     validationStatus: z.enum(["valid", "warning", "unchecked"]).nullable(),
     artifacts: z.array(PublicDocumentArtifactSchema).min(1).max(8),
     primaryArtifactKey: PublicDocumentArtifactSchema.shape.key,
+    downloadUrl: z.string().min(1).describe(`${DOWNLOAD_URL_DESCRIPTION} Returns the stored primary artifact.`),
     sourceRecordCount: z.number().int().nonnegative().nullable(),
     dataSnapshot: z
       .object({

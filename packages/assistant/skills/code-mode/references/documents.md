@@ -81,9 +81,10 @@ Date recognition follows stored Excel number formats; validate ambiguous dates.
 
 Formulas are never executed. Only cached values are read; missing/error caches
 may appear empty. Macros and external workbook links are not executed or fetched.
-Legacy XLS/XLSB and Excel writing are not supported. Export with `sheet.toCsv`.
+Legacy XLS/XLSB and Excel writing are not supported. Export with `sheet.toCsv`
+or `sheet.toOds`.
 
-## OpenDocument spreadsheets (ODS, reading only)
+## OpenDocument spreadsheets (ODS)
 
 `await sheet.openOds(file: Blob)` returns the same workbook interface as
 `openExcel`: `sheetNames`, synchronous `readSheet(name)`, and `close()`.
@@ -109,7 +110,32 @@ never executed. A formula without a cached value is `null`.
 
 ODS has no `numbers: "string"` option. Do not assume arbitrary decimal precision
 or exact integers beyond JavaScript's safe range. Formatting, formulas, and merge
-metadata are not exposed. Password-protected ODS and ODS writing are unsupported.
+metadata are not exposed. Password-protected ODS is unsupported.
+
+### Write an ODS workbook
+
+`await sheet.toOds(sheets: {name: string, rows: Cell[][]}[])` returns a `Blob`
+of type `application/vnd.oasis.opendocument.spreadsheet`. A `Cell` is a string,
+finite number, boolean, `Date`, or `null`/`undefined` for an empty cell; the
+first row is written as data, so include the header row yourself. Save it with
+`files.save` or write it to App files; both keep the media type, so downloads
+and Collabora open it as a spreadsheet.
+
+```js
+const report = await sheet.toOds([
+  { name: "Summary", rows: [["Region", "Revenue", "Paid", "Date"], ["North", 1200.5, true, new Date("2026-09-20T00:00:00Z")]] },
+]);
+await files.save(report, "report.ods");
+```
+
+At least one sheet is required. Sheet names are made safe for every reader:
+`[ ] : * ? / \` become `_`, names are cut to 31 characters, empty names become
+`SheetN`, and case-insensitive duplicates get ` (2)`, ` (3)`, and so on. Dates
+are written in UTC with second precision. Objects, formulas, non-finite numbers,
+and invalid dates throw with the sheet, row, and column. Formatting, column
+widths, formulas, and merges are not supported. The written workbook stays
+within the same 128 MiB expanded budget the reader accepts; larger exports fail
+instead of producing an unreadable file.
 
 ## Large folders
 
@@ -120,7 +146,7 @@ workbook/PDF at a time and close it in `finally`. Never use `Promise.all` over a
 whole accounting folder or retain every parsed workbook.
 
 A document parser accepts at most 64 MiB per input document. XLSX/ODS expanded ZIP
-entries are checked against 128 MiB before parsing. These working-set budgets
+entries are checked against 128 MiB before parsing and after writing. These working-set budgets
 apply to each document, not the selected folder. This is not streaming XML/PDF
 parsing or a guarantee against all browser memory pressure. Split oversized
 single documents and show actionable per-file errors. The host can terminate a

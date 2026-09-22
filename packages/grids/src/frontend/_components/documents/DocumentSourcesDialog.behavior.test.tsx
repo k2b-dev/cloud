@@ -53,10 +53,20 @@ domTest("source inspection shows readable labels, pages and keeps deleted source
         tags: [],
         renderer: { kind: "profile", id: "grids.csv", version: 1 },
         primaryArtifactKey: "csv",
+        downloadUrl: "/api/grids/documents/DOC/download",
         sourceRecordCount: 2,
         dataSnapshot: null,
         validationStatus: null,
-        artifacts: [{ key: "csv", filename: "export.csv", mimeType: "text/csv", sizeBytes: 10, sha256: "a".repeat(64) }],
+        artifacts: [
+          {
+            key: "csv",
+            filename: "export.csv",
+            mimeType: "text/csv",
+            sizeBytes: 10,
+            sha256: "a".repeat(64),
+            downloadUrl: "/api/grids/documents/DOC/artifacts/csv",
+          },
+        ],
       },
     });
     const button = (label: string) => Array.from(dom.document.querySelectorAll("button")).find((node) => node.textContent?.includes(label));

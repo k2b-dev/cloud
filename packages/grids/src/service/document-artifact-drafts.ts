@@ -1,22 +1,33 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { PrimaryDocumentArtifact } from "../document-profile-contracts";
-import type { DocumentArtifactDraft } from "../document-profiles";
+import type { DocumentArtifactDraft, DocumentArtifactStreamDraft, DocumentProfileArtifactDraft } from "../document-profiles";
 import { documentServiceText } from "./document-messages";
 
 export const MAX_DOCUMENT_ARTIFACTS = 8;
 export const MAX_DOCUMENT_ARTIFACT_BYTES = 100 * 1024 * 1024;
 
-type ValidatedArtifact = DocumentArtifactDraft & { sha256: string };
+type ValidatedBufferedArtifact = DocumentArtifactDraft & { sha256: string };
+type ValidatedArtifact = ValidatedBufferedArtifact | (DocumentArtifactStreamDraft & { sha256: null });
 
 // Content types are persisted and later sent as HTTP headers. Keep them canonical.
 const mediaTypePattern = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/;
 
-export const validateDocumentArtifactDrafts = (
+export function validateDocumentArtifactDrafts(
   drafts: readonly DocumentArtifactDraft[],
   primary: PrimaryDocumentArtifact,
   locale?: string,
-): Result<{ artifacts: ValidatedArtifact[]; primary: ValidatedArtifact }> => {
+): Result<{ artifacts: ValidatedBufferedArtifact[]; primary: ValidatedBufferedArtifact }>;
+export function validateDocumentArtifactDrafts(
+  drafts: readonly DocumentProfileArtifactDraft[],
+  primary: PrimaryDocumentArtifact,
+  locale?: string,
+): Result<{ artifacts: ValidatedArtifact[]; primary: ValidatedArtifact }>;
+export function validateDocumentArtifactDrafts(
+  drafts: readonly DocumentProfileArtifactDraft[],
+  primary: PrimaryDocumentArtifact,
+  locale?: string,
+): Result<{ artifacts: ValidatedArtifact[]; primary: ValidatedArtifact }> {
   const t = documentServiceText(locale);
   if (drafts.length < 1 || drafts.length > MAX_DOCUMENT_ARTIFACTS) {
     return fail(err.badInput(t.artifactCount({ minimum: 1, maximum: MAX_DOCUMENT_ARTIFACTS })));
@@ -41,6 +52,8 @@ export const validateDocumentArtifactDrafts = (
     if (artifact.mediaType.length > 255 || !mediaTypePattern.test(artifact.mediaType)) {
       return fail(err.badInput(t.artifactMediaTypeInvalid({ key: artifact.key })));
     }
+    // Streamed content is bounded and verified while it is stored.
+    if (!("bytes" in artifact)) continue;
     if (artifact.bytes.byteLength === 0) return fail(err.badInput(t.artifactEmpty({ key: artifact.key })));
     totalBytes += artifact.bytes.byteLength;
     if (totalBytes > MAX_DOCUMENT_ARTIFACT_BYTES) {
@@ -54,7 +67,8 @@ export const validateDocumentArtifactDrafts = (
   if (!selected || selected.mediaType !== primary.mediaType) {
     return fail(err.badInput(t.primaryArtifactRequired({ key: primary.key, mediaType: primary.mediaType })));
   }
-  const artifacts = drafts.map((artifact) => {
+  const artifacts = drafts.map((artifact): ValidatedArtifact => {
+    if (!("bytes" in artifact)) return { ...artifact, sha256: null };
     // Retain the exact validated bytes even if a renderer reuses its buffer.
     const bytes = Uint8Array.from(artifact.bytes);
     return { ...artifact, bytes, sha256: createHash("sha256").update(bytes).digest("hex") };
@@ -62,4 +76,4 @@ export const validateDocumentArtifactDrafts = (
   const validatedPrimary = artifacts.find((artifact) => artifact.key === primary.key);
   if (!validatedPrimary) return fail(err.internal(t.artifactsMissing));
   return ok({ artifacts, primary: validatedPrimary });
-};
+}

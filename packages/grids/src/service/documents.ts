@@ -15,6 +15,7 @@ export {
   getDocumentByShortId,
   getDocumentPdf,
   getDocumentPrimaryArtifact,
+  openDocumentArtifact,
   renderWorkflowDocumentsPdf,
 } from "./document-core";
 export {

@@ -28,6 +28,7 @@ domTest("stored CSV and XML previews load authorized bytes and never activate ma
         mimeType: mimeType!,
         sizeBytes: source.length,
         sha256: "a".repeat(64),
+        downloadUrl: `/api/grids/documents/DOC001/artifacts/${key}`,
       });
       await Bun.sleep(50);
       expect(paths.at(-1)).toContain(`/documents/DOC001/artifacts/${key}`);
@@ -73,10 +74,20 @@ domTest("a newly created link explains that it cannot be displayed again", async
         tags: [],
         renderer: { kind: "html" },
         primaryArtifactKey: "pdf",
+        downloadUrl: "/api/grids/documents/DOC/download",
         sourceRecordCount: null,
         dataSnapshot: null,
         validationStatus: null,
-        artifacts: [{ key: "pdf", filename: "demo.pdf", mimeType: "application/pdf", sizeBytes: 100, sha256: "a".repeat(64) }],
+        artifacts: [
+          {
+            key: "pdf",
+            filename: "demo.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 100,
+            sha256: "a".repeat(64),
+            downloadUrl: "/api/grids/documents/DOC/artifacts/pdf",
+          },
+        ],
       },
     });
     const create = Array.from(dom.document.querySelectorAll("button")).find((node) => node.textContent?.trim() === "Create link");
@@ -125,10 +136,20 @@ domTest("subdialogs preserve the document dialog and share its link read", async
         tags: [],
         renderer: { kind: "html" },
         primaryArtifactKey: "pdf",
+        downloadUrl: "/api/grids/documents/DOC/download",
         sourceRecordCount: null,
         dataSnapshot: null,
         validationStatus: null,
-        artifacts: [{ key: "pdf", filename: "invoice.pdf", mimeType: "application/pdf", sizeBytes: 1024, sha256: "a".repeat(64) }],
+        artifacts: [
+          {
+            key: "pdf",
+            filename: "invoice.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 1024,
+            sha256: "a".repeat(64),
+            downloadUrl: "/api/grids/documents/DOC/artifacts/pdf",
+          },
+        ],
       },
     });
     await Bun.sleep(30);
@@ -194,10 +215,20 @@ domTest("read-only details resolve the source name without loading share links",
         tags: [],
         renderer: { kind: "html" },
         primaryArtifactKey: "pdf",
+        downloadUrl: "/api/grids/documents/DOC/download",
         sourceRecordCount: null,
         dataSnapshot: null,
         validationStatus: null,
-        artifacts: [{ key: "pdf", filename: "demo.pdf", mimeType: "application/pdf", sizeBytes: 100, sha256: "a".repeat(64) }],
+        artifacts: [
+          {
+            key: "pdf",
+            filename: "demo.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 100,
+            sha256: "a".repeat(64),
+            downloadUrl: "/api/grids/documents/DOC/artifacts/pdf",
+          },
+        ],
       },
     });
     await Bun.sleep(100);
@@ -270,10 +301,20 @@ domTest("link summary is honest during loading and errors, then follows revocati
         tags: [],
         renderer: { kind: "html" },
         primaryArtifactKey: "pdf",
+        downloadUrl: "/api/grids/documents/DOC/download",
         sourceRecordCount: null,
         dataSnapshot: null,
         validationStatus: null,
-        artifacts: [{ key: "pdf", filename: "demo.pdf", mimeType: "application/pdf", sizeBytes: 100, sha256: "a".repeat(64) }],
+        artifacts: [
+          {
+            key: "pdf",
+            filename: "demo.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 100,
+            sha256: "a".repeat(64),
+            downloadUrl: "/api/grids/documents/DOC/artifacts/pdf",
+          },
+        ],
       },
     });
     await Bun.sleep(30);

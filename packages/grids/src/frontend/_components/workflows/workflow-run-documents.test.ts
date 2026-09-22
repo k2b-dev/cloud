@@ -15,6 +15,7 @@ const document = (id: string): PublicDocument => ({
   createdBy: null,
   renderer: { kind: "html" },
   primaryArtifactKey: "pdf",
+  downloadUrl: "/api/grids/documents/DOC/download",
   sourceRecordCount: null,
   dataSnapshot: null,
   validationStatus: null,
@@ -25,6 +26,7 @@ const document = (id: string): PublicDocument => ({
       mimeType: "application/pdf",
       sizeBytes: 1,
       sha256: "a".repeat(64),
+      downloadUrl: `/api/grids/documents/${id}/artifacts/pdf`,
     },
   ],
 });

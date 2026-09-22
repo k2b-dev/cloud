@@ -243,12 +243,7 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
                         {artifact.mimeType} · {text.pprintBytes(artifact.sizeBytes, { locale: locale() })}
                       </p>
                     </div>
-                    <ButtonLink
-                      variant="secondary"
-                      size="sm"
-                      navigation="document"
-                      href={`/api/grids/documents/${encodeURIComponent(document().id)}/artifacts/${encodeURIComponent(artifact.key)}`}
-                    >
+                    <ButtonLink variant="secondary" size="sm" navigation="document" href={artifact.downloadUrl}>
                       <i class="ti ti-download" />
                       {t().download}
                     </ButtonLink>

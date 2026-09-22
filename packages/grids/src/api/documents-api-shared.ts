@@ -16,7 +16,12 @@ import type { SnapshotTableReadAuthorizer } from "../service/document-snapshots"
 import { decodeDocumentCursor } from "../service/document-values";
 import { loadDocumentNumberSeries } from "../service/number-series";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
-import { PUBLIC_DOCUMENT_PAGE_LIMIT, PublicDocumentSchema } from "./document-public-contracts";
+import {
+  documentArtifactDownloadUrl,
+  documentDownloadUrl,
+  PUBLIC_DOCUMENT_PAGE_LIMIT,
+  PublicDocumentSchema,
+} from "./document-public-contracts";
 import { pdfResponse } from "./download-response";
 import { apiMessages } from "./messages";
 import { PublicNumberSeriesSummarySchema, toPublicNumberSeries } from "./number-series-dto";
@@ -321,8 +326,12 @@ export const projectDocuments = async (documents: InternalDocumentSummary[]) => 
       createdBy: document.createdBy,
       renderer: document.profile ? { kind: "profile" as const, ...document.profile } : { kind: "html" as const },
       validationStatus: document.validationStatus,
-      artifacts: document.artifacts.map(({ fileId: _fileId, ...artifact }) => artifact),
+      artifacts: document.artifacts.map(({ fileId: _fileId, ...artifact }) => ({
+        ...artifact,
+        downloadUrl: documentArtifactDownloadUrl(shortId, artifact.key),
+      })),
       primaryArtifactKey: document.primaryArtifactKey,
+      downloadUrl: documentDownloadUrl(shortId),
       dataSnapshot: dataSnapshots.get(id) ?? null,
       sourceRecordCount: sourceCounts.get(id) ?? (recordId ? 1 : null),
     }),

@@ -849,11 +849,15 @@ produces no archive. The folder is enumerated live, not a frozen backup snapshot
 
 ### Read document files
 
-`document.list` and `document.read` return `downloadUrl`, the root-relative,
-same-origin download path for the stored primary artifact. `document.read`
-also returns a semantic `download` link. Use the returned path verbatim in
-ordinary authenticated Cloud UI. It does not grant access or create a public
-share; the endpoint checks current permissions again. Studio's isolated runtime
+Every Document shape carries `downloadUrl`, the root-relative, same-origin
+download path for the stored primary artifact, and each entry in `artifacts`
+carries its own `downloadUrl`. This applies to record-template and workflow
+Documents alike, in `document.list`, `document.read`, `document.create`, the
+REST document routes and a workflow run's generated documents. `document.read`
+also returns a semantic `download` link. Use the returned paths verbatim in
+ordinary authenticated Cloud UI. They do not grant access or create a public
+share; the endpoint checks current permissions again and returns the stored
+bytes in their original format (PDF, CSV, JSON, XML or a renderer artifact). Studio's isolated runtime
 should obtain a file through its capability stream API instead of fetching app
 routes directly. A shared Studio list can normalize each provider's file name,
 resource ref and download action while keeping provider-specific transfer logic.

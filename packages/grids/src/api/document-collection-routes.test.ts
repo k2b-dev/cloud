@@ -174,9 +174,13 @@ const publicDocument = (row: DocumentFixture): z.infer<typeof PublicDocumentSche
   renderer: row.profile ? { kind: "profile", ...row.profile } : { kind: "html" },
   validationStatus: row.validationStatus,
   primaryArtifactKey: "pdf",
+  downloadUrl: `/api/grids/documents/${row.shortId}/download`,
   sourceRecordCount: 1,
   dataSnapshot: null,
-  artifacts: row.artifacts.map(({ fileId: _fileId, ...artifact }) => artifact),
+  artifacts: row.artifacts.map(({ fileId: _fileId, ...artifact }) => ({
+    ...artifact,
+    downloadUrl: `/api/grids/documents/${row.shortId}/artifacts/${artifact.key}`,
+  })),
 });
 
 const forbiddenResponse = {
@@ -280,11 +284,16 @@ describe("document routes", () => {
       return { items: [summarizeDocument(document)], hasMore: true, nextCursor: "next-base-cursor" } as never;
     });
     spyOn(gridsService.document, "getDocument").mockImplementation(async (id) => (id === documentId ? currentDocument : null) as never);
-    spyOn(gridsService.document, "getDocumentArtifact").mockImplementation(async (documentId, key) => {
+    spyOn(gridsService.document, "openDocumentArtifact").mockImplementation(async (documentId, key) => {
       artifactInput = { documentId, key };
-      return key === currentDocument?.primaryArtifactKey
-        ? (artifactResult as never)
-        : ({ ok: false, error: { code: "NOT_FOUND", message: "Document artifact not found", status: 404 } } as never);
+      if (key !== currentDocument?.primaryArtifactKey || !artifactResult.ok)
+        return (
+          key === currentDocument?.primaryArtifactKey
+            ? artifactResult
+            : { ok: false, error: { code: "NOT_FOUND", message: "Document artifact not found", status: 404 } }
+        ) as never;
+      const { bytes, ...artifact } = artifactResult.data;
+      return { ok: true, data: { ...artifact, stream: () => new Blob([Uint8Array.from(bytes)]).stream() } } as never;
     });
     spyOn(gridsService.document, "summarizeDocument").mockImplementation(summarizeDocument as never);
     spyOn(gridsService.permission, "loadBaseGrantsForSubject").mockImplementation(async () => []);
