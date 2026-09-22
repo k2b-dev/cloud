@@ -39,7 +39,9 @@ commands use the readable IDs. Database UUIDs are not a fallback input format.
 
 Chat routes expose a Postgres-backed file system below each conversation. Paths
 are absolute in one namespace, such as `/photo.jpg` or `/reports/summary.md`,
-and reject `..` segments. Each file records whether it came from the user or
+and reject `..` segments. Names are stored in Unicode NFC, so a decomposed
+macOS spelling and its precomposed form address the same file (this also
+applies to Project files). Each file records whether it came from the user or
 the assistant; tools cannot overwrite a user upload. Default limits are 50 MB
 per file and 250 MB per conversation. Forking a conversation copies its files.
 

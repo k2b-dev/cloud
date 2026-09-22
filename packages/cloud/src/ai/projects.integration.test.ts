@@ -31,6 +31,29 @@ databaseSuite()("aiProjects (integration)", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("project file paths are NFC and legacy spellings migrate", async () => {
+    const userId = await insertUser("unicode");
+    const subject = { type: "user" as const, userId };
+    const project = await aiProjects.create({ subject, name: "Unicode" });
+    const nfd = "Anlagevermo\u0308gen.pdf";
+    const nfc = "Anlageverm\u00f6gen.pdf";
+    try {
+      await sql`INSERT INTO ai.project_files (short_id, project_id, path, media_type, bytes, size) VALUES ('legacy1', ${project.id}::uuid, ${`alt/${nfd}`}, 'text/plain', ${new Uint8Array([1])}, 1)`;
+      await migrateCloudAi();
+      expect((await aiProjects.readFileByPath(project.id, `alt/${nfc}`, subject))?.path).toBe(`alt/${nfc}`);
+
+      const written = await aiProjects.writeFile(project.id, subject, { path: nfd, mediaType: "text/plain", bytes: new Uint8Array([2]) });
+      expect(written?.path).toBe(nfc);
+      expect((await aiProjects.readFileByPath(project.id, nfd, subject))?.bytes).toEqual(new Uint8Array([2]));
+      expect((await aiProjects.listFiles(project.id, subject, { limit: 10 })).map((file) => file.path).sort()).toEqual(
+        [nfc, `alt/${nfc}`].sort(),
+      );
+    } finally {
+      await aiProjects.delete(project.id, subject);
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("versioned Project file transfers serialize replacements and reject stale content", async () => {
     const userId = await insertUser("file-transfer");
     const subject = { type: "user" as const, userId };

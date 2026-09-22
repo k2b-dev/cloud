@@ -2256,5 +2256,40 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.chat_task_occurrences ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS background_received_at TIMESTAMPTZ`.simple();
   await migrateAiMessageQueue();
+
+  // Canonically equivalent Unicode names (macOS uploads decompose umlauts)
+  // address one file, so stored paths become NFC. A row keeps its legacy form
+  // only when a normalized twin already exists; nothing is overwritten and
+  // lookups then prefer the exact NFC row.
+  await sql`
+    UPDATE ai.files f SET path = normalize(f.path, NFC)
+    WHERE f.path IS NOT NFC NORMALIZED AND NOT EXISTS (
+      SELECT 1 FROM ai.files o
+      WHERE o.conversation_id = f.conversation_id AND o.id <> f.id AND normalize(o.path, NFC) = normalize(f.path, NFC)
+    )
+  `.simple();
+  await sql`
+    UPDATE ai.turn_files f SET path = normalize(f.path, NFC)
+    WHERE f.path IS NOT NFC NORMALIZED AND NOT EXISTS (
+      SELECT 1 FROM ai.turn_files o
+      WHERE o.turn_id = f.turn_id AND o.path <> f.path AND normalize(o.path, NFC) = normalize(f.path, NFC)
+    )
+  `.simple();
+  await sql`
+    UPDATE ai.project_files f SET path = normalize(f.path, NFC)
+    WHERE f.path IS NOT NFC NORMALIZED AND NOT EXISTS (
+      SELECT 1 FROM ai.project_files o
+      WHERE o.project_id = f.project_id AND o.id <> f.id AND normalize(o.path, NFC) = normalize(f.path, NFC)
+    )
+  `.simple();
+  const [legacyPaths] = await sql<{ files: number; project_files: number }[]>`
+    SELECT (SELECT count(*)::int FROM ai.files WHERE path IS NOT NFC NORMALIZED) AS files,
+      (SELECT count(*)::int FROM ai.project_files WHERE path IS NOT NFC NORMALIZED) AS project_files
+  `;
+  if (legacyPaths && legacyPaths.files + legacyPaths.project_files > 0) {
+    console.warn(
+      `  ! ${legacyPaths.files} conversation and ${legacyPaths.project_files} project file paths keep a non-NFC Unicode form because a normalized twin exists`,
+    );
+  }
   console.log("  ✓ ai conversation tables");
 };

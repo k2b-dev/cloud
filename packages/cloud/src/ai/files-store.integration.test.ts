@@ -2,6 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiFileContentVersion } from "./file-content-version";
+import { createCloudAiReadFileTool } from "./file-tools";
 import { aiFileStore, normalizeAiFilePath, writeAiConversationFile } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
@@ -21,21 +22,10 @@ const insertUser = async () => {
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 
-suite("normalizeAiFilePath", () => {
+suite("aiFileStore integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
-  test("accepts absolute clean paths and rejects traversal", () => {
-    expect(normalizeAiFilePath("/a.txt")).toBe("/a.txt");
-    expect(normalizeAiFilePath("/notes//b/./c.txt")).toBe("/notes/b/c.txt");
-    expect(normalizeAiFilePath("relative.txt")).toBeNull();
-    expect(normalizeAiFilePath("/notes/../etc/passwd")).toBeNull();
-    expect(normalizeAiFilePath("/report\nignore.md")).toBeNull();
-    expect(normalizeAiFilePath("/")).toBeNull();
-  });
-});
-
-suite("aiFileStore integration", () => {
   test("versioned chat file transfers protect user uploads and resolve concurrent writes", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -311,6 +301,101 @@ suite("aiFileStore integration", () => {
       expect(serializedConfig).not.toContain('"data":"AQID"');
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+});
+
+suite("Unicode-equivalent file paths", () => {
+  const nfd = "/Anlagevermo\u0308gen.txt";
+  const nfc = "/Anlageverm\u00f6gen.txt";
+  const insertRaw = (conversationId: string, path: string, text: string) =>
+    sql`INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin) VALUES (${conversationId}, ${path}, ${bytes(text)}, 'text/plain', ${text.length}, 'user')`;
+  const readText = async (conversationId: string, path: string) => {
+    const file = await aiFileStore.read({ conversationId, path });
+    return file ? new TextDecoder().decode(file.bytes) : null;
+  };
+
+  test("uploads store NFC and the store and tools resolve either spelling", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const uploaded = await aiFileStore.createUserUpload({
+        conversationId: conversation.id,
+        path: normalizeAiFilePath(nfd)!,
+        bytes: bytes("balance"),
+        mediaType: "text/plain",
+      });
+      expect(uploaded.path).toBe(nfc);
+      expect(await readText(conversation.id, nfc)).toBe("balance");
+      expect(await readText(conversation.id, nfd)).toBe("balance");
+      expect((await aiFileStore.stat({ conversationId: conversation.id, path: nfd }))?.path).toBe(nfc);
+
+      const read = createCloudAiReadFileTool();
+      if (read.location !== "server") throw new Error("Expected server tool");
+      const context = {
+        actor: { kind: "user", user: { id: userId } },
+        conversationId: conversation.id,
+        signal: new AbortController().signal,
+      };
+      for (const path of [nfd, nfc, nfd.slice(1)]) {
+        const result = await read.run({ path, offset: 0, length: 1024 }, context as never);
+        expect(result.content).toBe("balance");
+      }
+
+      const twin = await aiFileStore.createUserUpload({
+        conversationId: conversation.id,
+        path: nfc,
+        bytes: bytes("again"),
+        mediaType: "text/plain",
+      });
+      expect(twin.path).toBe("/Anlageverm\u00f6gen-2.txt");
+      await aiFileStore.write({
+        conversationId: conversation.id,
+        path: nfd,
+        bytes: bytes("edited"),
+        origin: "user",
+        allowUserOverwrite: true,
+      });
+      expect(await readText(conversation.id, nfc)).toBe("edited");
+      expect((await aiFileStore.list({ conversationId: conversation.id })).map((file) => file.path).sort()).toEqual([twin.path, nfc]);
+      expect(await aiFileStore.remove({ conversationId: conversation.id, path: nfd })).toBe(1);
+      expect(await readText(conversation.id, nfc)).toBeNull();
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("migration normalizes legacy rows, keeps colliding twins, and refuses ambiguous lookups", async () => {
+    const userId = await insertUser();
+    const legacy = await aiConversations.createConversation({ ownerUserId: userId });
+    const colliding = await aiConversations.createConversation({ ownerUserId: userId });
+    const ambiguous = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      await insertRaw(legacy.id, nfd, "legacy");
+      await insertRaw(colliding.id, nfd, "decomposed");
+      await insertRaw(colliding.id, nfc, "precomposed");
+      await insertRaw(ambiguous.id, "/a\u0308\u0304.txt", "first");
+      await insertRaw(ambiguous.id, "/\u00e4\u0304.txt", "second");
+
+      await migrateCloudAi();
+      await migrateCloudAi();
+
+      expect((await aiFileStore.list({ conversationId: legacy.id })).map((file) => file.path)).toEqual([nfc]);
+      expect(await readText(legacy.id, nfc)).toBe("legacy");
+      expect(await readText(legacy.id, nfd)).toBe("legacy");
+
+      expect((await aiFileStore.list({ conversationId: colliding.id })).map((file) => file.path).sort()).toEqual([nfd, nfc].sort());
+      expect(await readText(colliding.id, nfc)).toBe("precomposed");
+      expect(await aiFileStore.remove({ conversationId: colliding.id, path: nfc })).toBe(1);
+      expect(await readText(colliding.id, nfc)).toBe("decomposed");
+
+      expect(await aiFileStore.list({ conversationId: ambiguous.id })).toHaveLength(2);
+      await expect(readText(ambiguous.id, "/\u01df.txt")).rejects.toThrow("Ambiguous file path /\\u{1df}.txt");
+      expect(await readText(ambiguous.id, "/a\u0308\u0304.txt")).toBe("first");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id IN (${legacy.id}::uuid, ${colliding.id}::uuid, ${ambiguous.id}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });

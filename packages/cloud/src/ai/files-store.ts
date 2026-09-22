@@ -82,7 +82,10 @@ export const createUniqueAiFileInTransaction = async (
     const path = numberedAiFilePath(input.path, number);
     const rows = await tx<FileRow[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at)
-        VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, ${input.origin}, ${input.dictationRecordedAt ?? null}, now())
+        SELECT ${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, ${input.origin}, ${input.dictationRecordedAt ?? null}, now()
+        WHERE NOT EXISTS (
+          SELECT 1 FROM ai.files WHERE conversation_id = ${input.conversationId} AND normalize(path, NFC) = ${path.normalize("NFC")}
+        )
         ON CONFLICT (conversation_id, path) DO NOTHING
         RETURNING path, size, media_type, origin, dictation_recorded_at, updated_at, version
       `;
@@ -104,7 +107,11 @@ export const aiConversationStoredBytes = async (db: SQL, conversationId: string,
   return Number(row?.total ?? 0);
 };
 
-/** Normalize a VFS path: absolute, no `.`/`..` segments, no trailing slash. */
+/**
+ * Normalize a VFS path: absolute, no `.`/`..` segments, no trailing slash, and
+ * Unicode NFC so canonically equivalent names (macOS uploads decompose umlauts)
+ * address one stored file.
+ */
 export const normalizeAiFilePath = (path: string): string | null => {
   if (!path.startsWith("/")) return null;
   const segments: string[] = [];
@@ -113,10 +120,45 @@ export const normalizeAiFilePath = (path: string): string | null => {
     if (part === "..") return null;
     if (part.includes("\0")) return null;
     if (/[\r\n"<>]/u.test(part)) return null;
-    segments.push(part);
+    segments.push(part.normalize("NFC"));
   }
   if (segments.length === 0) return null;
   return `/${segments.join("/")}`;
+};
+
+const escapeNonAscii = (value: string): string => value.replace(/[^\x20-\x7e]/gu, (char) => `\\u{${char.codePointAt(0)!.toString(16)}}`);
+
+/**
+ * Stored files are NFC after migration; rows keep another form only when a
+ * normalized twin exists. Lookups take the exact stored path first, then the
+ * single canonically equivalent row, and refuse to guess between several.
+ */
+export const pickStoredAiFilePath = (rows: { path: string }[], path: string): string => {
+  if (rows.length === 0 || rows.some((row) => row.path === path)) return path;
+  if (rows.length === 1) return rows[0]!.path;
+  throw new Error(
+    `Ambiguous file path ${escapeNonAscii(path)}: several stored files only differ in Unicode form (${rows
+      .map((row) => escapeNonAscii(row.path))
+      .join(", ")}). Rename or delete one of them first.`,
+  );
+};
+
+const storedAiFilePath = async (db: SQL, conversationId: string, path: string): Promise<string> => {
+  const rows = await db<{ path: string }[]>`
+    SELECT path FROM ai.files
+    WHERE conversation_id = ${conversationId} AND (path = ${path} OR normalize(path, NFC) = ${path.normalize("NFC")})
+    ORDER BY path = ${path} DESC LIMIT 3
+  `;
+  return pickStoredAiFilePath(rows, path);
+};
+
+const storedAiTurnFilePath = async (db: SQL, turnId: string, path: string): Promise<string> => {
+  const rows = await db<{ path: string }[]>`
+    SELECT path FROM ai.turn_files
+    WHERE turn_id = ${turnId}::uuid AND (path = ${path} OR normalize(path, NFC) = ${path.normalize("NFC")})
+    ORDER BY path = ${path} DESC LIMIT 3
+  `;
+  return pickStoredAiFilePath(rows, path);
 };
 
 export const decodeAiFileContent = (content: string, encoding: "utf8" | "base64"): Uint8Array => {
@@ -149,9 +191,10 @@ export const aiFileStore = {
     }
     return sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      const path = await storedAiFilePath(tx, input.conversationId, input.path);
       const existing = await tx<(FileContentRow & { producer_call_key: string | null })[]>`
         SELECT path, bytes, size, media_type, origin, dictation_recorded_at, updated_at, version, producer_call_key
-        FROM ai.files WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+        FROM ai.files WHERE conversation_id = ${input.conversationId} AND path = ${path}
       `;
       const row = existing[0];
       if (row) {
@@ -171,7 +214,7 @@ export const aiFileStore = {
       }
       const rows = await tx<FileRow[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, producer_call_key)
-        VALUES (${input.conversationId}, ${input.path}, ${input.bytes}, ${input.mediaType}, ${input.bytes.byteLength}, 'assistant', ${input.producerCallKey})
+        VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType}, ${input.bytes.byteLength}, 'assistant', ${input.producerCallKey})
         RETURNING path, size, media_type, origin, dictation_recorded_at, updated_at, version
       `;
       return toStat(rows[0]!);
@@ -215,28 +258,31 @@ export const aiFileStore = {
   },
 
   async stat(input: { conversationId: string; path: string }): Promise<AiFileStat | null> {
+    const path = await storedAiFilePath(sql, input.conversationId, input.path);
     const rows = await sql<FileRow[]>`
       SELECT path, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
-      WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+      WHERE conversation_id = ${input.conversationId} AND path = ${path}
     `;
     return rows[0] ? toStat(rows[0]) : null;
   },
 
   async read(input: { conversationId: string; path: string }): Promise<AiFileContent | null> {
+    const path = await storedAiFilePath(sql, input.conversationId, input.path);
     const rows = await sql<FileContentRow[]>`
       SELECT path, bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
-      WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+      WHERE conversation_id = ${input.conversationId} AND path = ${path}
     `;
     return rows[0] ? toContent(rows[0]) : null;
   },
 
   async readTurnFile(input: { turnId: string; path: string }): Promise<AiFileContent | null> {
+    const path = await storedAiTurnFilePath(sql, input.turnId, input.path);
     const rows = await sql<FileContentRow[]>`
       SELECT path, bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.turn_files
-      WHERE turn_id = ${input.turnId}::uuid AND path = ${input.path}
+      WHERE turn_id = ${input.turnId}::uuid AND path = ${path}
     `;
     return rows[0] ? toContent(rows[0]) : null;
   },
@@ -245,10 +291,11 @@ export const aiFileStore = {
   async readSlice(input: { conversationId: string; path: string; offset: number; length: number }): Promise<Uint8Array | null> {
     const offset = Math.max(0, Math.floor(input.offset));
     const length = Math.max(0, Math.floor(input.length));
+    const path = await storedAiFilePath(sql, input.conversationId, input.path);
     const rows = await sql<{ chunk: Uint8Array }[]>`
       SELECT substring(bytes FROM ${offset + 1} FOR ${length}) AS chunk
       FROM ai.files
-      WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+      WHERE conversation_id = ${input.conversationId} AND path = ${path}
     `;
     if (!rows[0]) return null;
     return new Uint8Array(rows[0].chunk ?? []);
@@ -257,10 +304,11 @@ export const aiFileStore = {
   async readSliceWithStat(input: { conversationId: string; path: string; offset: number; length: number }): Promise<AiFileContent | null> {
     const offset = Math.max(0, Math.floor(input.offset));
     const length = Math.max(0, Math.floor(input.length));
+    const path = await storedAiFilePath(sql, input.conversationId, input.path);
     const rows = await sql<FileContentRow[]>`
       SELECT path, substring(bytes FROM ${offset + 1} FOR ${length}) AS bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
-      WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+      WHERE conversation_id = ${input.conversationId} AND path = ${path}
     `;
     return rows[0] ? toContent(rows[0]) : null;
   },
@@ -268,18 +316,20 @@ export const aiFileStore = {
   async readTurnSliceWithStat(input: { turnId: string; path: string; offset: number; length: number }): Promise<AiFileContent | null> {
     const offset = Math.max(0, Math.floor(input.offset));
     const length = Math.max(0, Math.floor(input.length));
+    const path = await storedAiTurnFilePath(sql, input.turnId, input.path);
     const rows = await sql<FileContentRow[]>`
       SELECT path, substring(bytes FROM ${offset + 1} FOR ${length}) AS bytes, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.turn_files
-      WHERE turn_id = ${input.turnId}::uuid AND path = ${input.path}
+      WHERE turn_id = ${input.turnId}::uuid AND path = ${path}
     `;
     return rows[0] ? toContent(rows[0]) : null;
   },
 
   async readAll(input: { conversationId: string; path: string }): Promise<Uint8Array | null> {
+    const path = await storedAiFilePath(sql, input.conversationId, input.path);
     const rows = await sql<{ bytes: Uint8Array }[]>`
       SELECT bytes FROM ai.files
-      WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+      WHERE conversation_id = ${input.conversationId} AND path = ${path}
     `;
     if (!rows[0]) return null;
     return new Uint8Array(rows[0].bytes ?? []);
@@ -316,16 +366,17 @@ export const aiFileStore = {
         (!conversation || conversation.created_by_user_id !== input.ownerUserId || conversation.archived_at)
       )
         throw new Error("Conversation access denied");
+      const path = await storedAiFilePath(tx, input.conversationId, input.path);
       if (input.expectedVersion !== undefined) {
         const [existing] = await tx<
           FileContentRow[]
-        >`SELECT path,size,media_type,origin,updated_at,version,bytes FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${input.path}`;
+        >`SELECT path,size,media_type,origin,updated_at,version,bytes FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${path}`;
         const version = existing
-          ? aiFileContentVersion({ ...toContent(existing), id: `${input.conversationId}:${input.path}:${existing.version}` })
+          ? aiFileContentVersion({ ...toContent(existing), id: `${input.conversationId}:${path}:${existing.version}` })
           : null;
         if (version !== input.expectedVersion) throw new AiFileVersionConflict();
       }
-      const otherBytes = await aiConversationStoredBytes(tx, input.conversationId, input.path);
+      const otherBytes = await aiConversationStoredBytes(tx, input.conversationId, path);
       if (otherBytes + input.bytes.byteLength > maxConversation) {
         throw new AiFileWriteError(
           "STORAGE_FULL",
@@ -337,20 +388,20 @@ export const aiFileStore = {
           const written = await tx<{ id: string }[]>`
             UPDATE ai.files
             SET dictation_recorded_at = NULL, bytes = ${input.bytes}, media_type = ${input.mediaType ?? "application/octet-stream"}, size = ${input.bytes.byteLength}, updated_at = now(), version = version + 1
-            WHERE conversation_id = ${input.conversationId} AND path = ${input.path} AND origin = 'user'
+            WHERE conversation_id = ${input.conversationId} AND path = ${path} AND origin = 'user'
             RETURNING id
           `;
-          if (!written[0]) throw new Error(`User-uploaded file does not exist: ${input.path}.`);
+          if (!written[0]) throw new Error(`User-uploaded file does not exist: ${path}.`);
         } else {
           await tx`
             INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
-            VALUES (${input.conversationId}, ${input.path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'user', now())
+            VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'user', now())
           `;
         }
       } else {
         const written = await tx<{ id: string }[]>`
           INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
-          VALUES (${input.conversationId}, ${input.path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'assistant', now())
+          VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'assistant', now())
           ON CONFLICT (conversation_id, path) DO UPDATE SET
             bytes = EXCLUDED.bytes,
             media_type = EXCLUDED.media_type,
@@ -360,11 +411,11 @@ export const aiFileStore = {
           WHERE ai.files.origin = 'assistant'
           RETURNING id
         `;
-        if (!written[0]) throw new Error(`Cannot overwrite user-uploaded file ${input.path}.`);
+        if (!written[0]) throw new Error(`Cannot overwrite user-uploaded file ${path}.`);
       }
       const [written] = await tx<
         FileRow[]
-      >`SELECT path,size,media_type,origin,dictation_recorded_at,updated_at,version FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${input.path}`;
+      >`SELECT path,size,media_type,origin,dictation_recorded_at,updated_at,version FROM ai.files WHERE conversation_id=${input.conversationId} AND path=${path}`;
       return toStat(written!);
     });
   },
@@ -381,9 +432,10 @@ export const aiFileStore = {
     const maxConversation = input.maxConversationBytes ?? AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT;
     await sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      const path = await storedAiFilePath(tx, input.conversationId, input.path);
       const current = await tx<{ size: number }[]>`
         SELECT size FROM ai.files
-        WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+        WHERE conversation_id = ${input.conversationId} AND path = ${path}
       `;
       const nextSize = Number(current[0]?.size ?? 0) + input.bytes.byteLength;
       if (nextSize > maxFile) {
@@ -398,7 +450,7 @@ export const aiFileStore = {
       }
       const appended = await tx<{ id: string }[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
-        VALUES (${input.conversationId}, ${input.path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'assistant', now())
+        VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'assistant', now())
         ON CONFLICT (conversation_id, path) DO UPDATE SET
           bytes = ai.files.bytes || EXCLUDED.bytes,
           size = ai.files.size + EXCLUDED.size,
@@ -407,25 +459,26 @@ export const aiFileStore = {
         WHERE ai.files.origin = 'assistant'
         RETURNING id
       `;
-      if (!appended[0]) throw new Error(`Cannot append to user-uploaded file ${input.path}.`);
+      if (!appended[0]) throw new Error(`Cannot append to user-uploaded file ${path}.`);
     });
   },
 
   async remove(input: { conversationId: string; path: string; recursive?: boolean }): Promise<number> {
     return sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      const path = await storedAiFilePath(tx, input.conversationId, input.path);
       if (input.recursive) {
-        const pattern = `${input.path.endsWith("/") ? input.path : `${input.path}/`}%`;
+        const pattern = `${path.endsWith("/") ? path : `${path}/`}%`;
         const rows = await tx<{ id: string }[]>`
           DELETE FROM ai.files
-          WHERE conversation_id = ${input.conversationId} AND (path = ${input.path} OR path LIKE ${pattern})
+          WHERE conversation_id = ${input.conversationId} AND (path = ${path} OR path LIKE ${pattern})
           RETURNING id
         `;
         return rows.length;
       }
       const rows = await tx<{ id: string }[]>`
         DELETE FROM ai.files
-        WHERE conversation_id = ${input.conversationId} AND path = ${input.path}
+        WHERE conversation_id = ${input.conversationId} AND path = ${path}
         RETURNING id
       `;
       return rows.length;
@@ -435,12 +488,13 @@ export const aiFileStore = {
   async rename(input: { conversationId: string; from: string; to: string }): Promise<"renamed" | "not_found" | "conflict"> {
     return sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      const from = await storedAiFilePath(tx, input.conversationId, input.from);
       const source = await tx<{ id: string }[]>`
-        SELECT id FROM ai.files WHERE conversation_id = ${input.conversationId} AND path = ${input.from}
+        SELECT id FROM ai.files WHERE conversation_id = ${input.conversationId} AND path = ${from}
       `;
       if (!source[0]) return "not_found" as const;
       const target = await tx<{ id: string }[]>`
-        SELECT id FROM ai.files WHERE conversation_id = ${input.conversationId} AND path = ${input.to}
+        SELECT id FROM ai.files WHERE conversation_id = ${input.conversationId} AND normalize(path, NFC) = ${input.to.normalize("NFC")}
       `;
       if (target[0]) return "conflict" as const;
       await tx`UPDATE ai.files SET path = ${input.to}, updated_at = now(), version = version + 1 WHERE id = ${source[0].id}::uuid`;
