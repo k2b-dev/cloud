@@ -17,6 +17,12 @@ describe("document templates", () => {
     await expect(documentTemplate("nope")).rejects.toMatchObject({ code: "template_missing", status: 503 });
   });
 
+  test("a template path that cannot be resolved is the same defect, with the cause attached", async () => {
+    const error = await documentTemplate("/../../../x").catch((error: unknown) => error);
+    expect(error).toMatchObject({ code: "template_missing", status: 503 });
+    expect(((error as Error).cause as Error).message).toBe("Asset path escapes src/assets: templates/empty./../../../x");
+  });
+
   test("the production build ships every template next to the bundle", async () => {
     const build = Bun.spawn([process.execPath, "run", "packages/cloud/scripts/build.ts"], {
       cwd: root,

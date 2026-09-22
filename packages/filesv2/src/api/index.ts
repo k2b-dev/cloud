@@ -10,8 +10,7 @@ import {
   respond,
   v,
 } from "@k2b/cloud/server";
-import { AccountIdentityError } from "@k2b/cloud/services";
-import { FilegateError } from "@k2b/filegate";
+import { logger } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -54,37 +53,21 @@ import {
 } from "../contracts";
 import { isMarkdown } from "../document-assets";
 import { FilesError, filesService } from "../service";
-import { filegateErrorCode } from "./filegate-error";
+import { apiError, describeError } from "./api-error";
 import { errorMessage } from "./messages";
 import { templateApi } from "./templates";
 import { wopiApi } from "./wopi";
 
+const log = logger("filesv2:api");
 const api = new Hono<AuthContext>()
   // Collabora reaches these routes with an editor token instead of a session; they must answer before the role check.
   .route("/wopi", wopiApi)
   .use(rateLimit())
   .use("*", auth.requireRole("user"))
   .onError((error, c) => {
-    const known = error instanceof FilesError || error instanceof AccountIdentityError;
-    const code = known ? error.code : error instanceof FilegateError ? filegateErrorCode(error) : "unavailable";
-    const status = known
-      ? error.status
-      : code === "forbidden"
-        ? 403
-        : code === "not_found"
-          ? 404
-          : [
-                "path_conflict",
-                "idempotency_conflict",
-                "write_conflict",
-                "cursor_invalid",
-                "execution_disabled",
-                "identity_changed",
-                "feature_disabled",
-                "operation_conflict",
-              ].includes(code)
-            ? 409
-            : 503;
+    const { code, status } = apiError(error);
+    if (status >= 500)
+      log.error("Files request failed", { code, status, method: c.req.method, path: c.req.path, error: describeError(error) });
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
   .route("/templates", templateApi)

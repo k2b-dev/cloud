@@ -5,10 +5,14 @@ import { env } from "../config/env";
 /** Set by `scripts/build.ts`; the bundle lives next to `dist/assets/`. */
 declare const __CLOUD_APP_ASSETS__: string | undefined;
 
+// `resolve` normalizes both forms: a file URL keeps its trailing slash, which
+// would otherwise break the containment check below (`/app/assets//...`).
 const assetsRoot = (): string =>
-  typeof __CLOUD_APP_ASSETS__ === "string"
-    ? fileURLToPath(new URL(__CLOUD_APP_ASSETS__, import.meta.url))
-    : resolve(env.APP_DIR ?? process.cwd(), "src/assets");
+  resolve(
+    typeof __CLOUD_APP_ASSETS__ === "string"
+      ? fileURLToPath(new URL(__CLOUD_APP_ASSETS__, import.meta.url))
+      : resolve(env.APP_DIR ?? process.cwd(), "src/assets"),
+  );
 
 /**
  * Absolute path of a server-side application asset.
