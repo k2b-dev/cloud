@@ -8,7 +8,6 @@ import { writeLocalAccount } from "../../accounts/posix";
 import type { AuditActor } from "../../audit";
 import { generateUniqueAbbreviation } from "../../ipa/users";
 import { isUniqueViolation } from "../../postgres";
-import { session } from "../../session";
 import * as settings from "../../settings";
 
 type DbRow = Record<string, unknown>;
@@ -265,8 +264,8 @@ export const remove = async (params: { id: string; actor: { userId: string; uid:
     });
     await tx`DELETE FROM auth.users WHERE id = ${params.id}::uuid`;
   });
-
-  await session.revokeAllForUser(params.id);
+  // Deleting the row invalidates every session: session lookups find no user.
+  // A separate epoch bump would fail because the row is gone.
 
   return { ok: true, data: undefined };
 };

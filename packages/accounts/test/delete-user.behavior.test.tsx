@@ -131,4 +131,17 @@ describe("duplicate account deletion", () => {
     expect(notice.mock.calls[0]?.[0]).toMatchObject({ action: "user.delete", id: "local-id", provider: "local", category: "guest" });
     expect(refreshed).toHaveBeenCalledTimes(1);
   });
+
+  test("a non-JSON error response shows the localized fallback instead of a parse error", async () => {
+    spyOn(prompts, "confirm").mockResolvedValue(true);
+    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const button = await mount();
+    button.click();
+    await flush();
+    requests[0]!.resolve(new Response("Internal Server Error", { status: 500, headers: { "content-type": "text/plain; charset=UTF-8" } }));
+    await flush();
+    expect(error).toHaveBeenCalledWith("The user could not be deleted.");
+    expect(notice).not.toHaveBeenCalled();
+    expect(refreshed).not.toHaveBeenCalled();
+  });
 });
