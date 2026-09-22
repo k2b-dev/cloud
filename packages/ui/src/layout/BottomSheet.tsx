@@ -3,9 +3,17 @@ import type { OpenDialogOptions } from "../feedback/dialog-core";
 import { useUiMessages } from "../intl/messages";
 import PanelDialog from "./PanelDialog";
 
+/** Initial focus goes to the first input of the top sheet; the drag handle never
+ * takes it, so a sheet that opens without a user gesture shows no focus ring. */
+const sheetInitialFocus = (dialog: HTMLDialogElement): HTMLElement | null =>
+  dialog.lastElementChild?.querySelector<HTMLElement>(
+    "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])",
+  ) ?? null;
+
 export const bottomSheetOptions = {
   panelClassName: "k2b-dialog k2b-bottom-sheet-frame",
   contentClassName: "k2b-panel-dialog-viewport k2b-bottom-sheet-viewport",
+  initialFocus: sheetInitialFocus,
 } satisfies OpenDialogOptions;
 
 export type BottomSheetProps = {

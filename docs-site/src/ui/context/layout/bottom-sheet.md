@@ -42,7 +42,10 @@ motion. It is also usable on desktop; the host decides when to open it.
 
 Use a visible header title and meaningful dismiss labels. The native dialog
 provides modal focus containment; the shared core restores focus on close.
-Both the handle and header close control are keyboard-accessible.
+Initial focus goes to the first input in the sheet and otherwise stays on the
+dialog itself; the handle never receives it, so a sheet that opens without a
+user gesture shows no focus ring. Both the handle and header close control are
+keyboard-accessible and show a ring on keyboard focus.
 
 ## Runtime
 
