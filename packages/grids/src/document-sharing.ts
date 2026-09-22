@@ -7,7 +7,13 @@ import type { DocumentArtifact } from "./contracts";
  * Everything else, in particular HTML, SVG and other browser-renderable
  * types, never leaves through an anonymous link.
  */
-export const PUBLIC_DOCUMENT_LINK_MEDIA_TYPES = ["application/pdf", "text/csv", "application/json", "application/xml", "application/zip"] as const;
+export const PUBLIC_DOCUMENT_LINK_MEDIA_TYPES = [
+  "application/pdf",
+  "text/csv",
+  "application/json",
+  "application/xml",
+  "application/zip",
+] as const;
 
 export const documentMediaTypeAllowsPublicLinks = (mimeType: unknown): mimeType is (typeof PUBLIC_DOCUMENT_LINK_MEDIA_TYPES)[number] =>
   typeof mimeType === "string" && (PUBLIC_DOCUMENT_LINK_MEDIA_TYPES as readonly string[]).includes(mimeType);
