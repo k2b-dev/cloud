@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { AppOverview, Button, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { AppOverview, Button, Dropdown, type DropdownItem, LinkCard, prompts, Tag, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { Venue, VenueTemplateSummary } from "../../contracts";
@@ -135,11 +135,35 @@ export default function VenueOverview(props: Props) {
     });
   };
 
+  const createMenuItems = (): DropdownItem[] => [
+    { items: [{ label: t().blankVenue, description: t().blankVenueDescription, icon: "ti ti-plus", action: () => createVenue.mutate() }] },
+    {
+      sectionLabel: t().templates,
+      items: props.templates.map((template) => ({
+        label: template.name,
+        description: template.description,
+        icon: template.icon,
+        action: () => void openTemplate(template),
+      })),
+    },
+  ];
+
   return (
-    <AppOverview title={t().appName} subtitle={t().overviewSubtitle} icon="ti ti-building-carousel">
+    <AppOverview
+      title={t().appName}
+      icon="ti ti-building-carousel"
+      subtitle={props.venues.length === 0 ? t().createFirstVenue : t().venuesAvailable({ count: props.venues.length })}
+      actions={
+        <Dropdown.Root items={createMenuItems()} position="bottom-right" width="min(26rem, calc(100vw - 1rem))" label={t().newVenue}>
+          <Dropdown.Trigger variant="primary" disabled={createVenue.loading() || createFromTemplate.loading()}>
+            <i class="ti ti-plus" aria-hidden="true" /> {t().newVenue}
+            <i class="ti ti-chevron-down" aria-hidden="true" />
+          </Dropdown.Trigger>
+        </Dropdown.Root>
+      }
+    >
       <AppOverview.Main
         title={t().yourVenues}
-        description={props.venues.length === 0 ? t().createFirstVenue : t().venuesAvailable({ count: props.venues.length })}
         toolbar={
           <TextInput
             name="venue-search"
@@ -173,87 +197,25 @@ export default function VenueOverview(props: Props) {
               </AppOverview.EmptyState>
             }
           >
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <AppOverview.Cards>
               <For each={filteredVenues()}>
                 {(venue) => (
-                  <a
+                  <LinkCard
                     href={`/app/venue/${venue.id}`}
-                    class="paper group flex items-center gap-4 p-4 no-underline transition-all hover:paper-highlighted"
-                    style={`view-transition-name: venue-card-${venue.id}`}
-                  >
-                    <div
-                      class="thumbnail flex h-10 w-10 shrink-0 items-center justify-center"
-                      style={`background-color: color-mix(in srgb, ${venue.accentColor} 12%, var(--ui-surface)); color: ${venue.accentColor}; view-transition-name: venue-color-${venue.id}`}
-                    >
-                      <i class={`${venue.icon || "ti ti-building-carousel"} text-lg`} />
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="flex items-center gap-2">
-                        <span
-                          class="block truncate text-sm font-semibold text-primary"
-                          style={`view-transition-name: venue-name-${venue.id}`}
-                        >
-                          {venue.name}
-                        </span>
-                        <span class="tag shrink-0">{permissionLabel(venue.permission)}</span>
-                      </div>
-                      <p class="truncate text-xs text-dimmed">
-                        {venue.description ||
-                          `${signupLabel(venue.signupMode)} · ${venue.publicEnabled ? t().publicPageActive : t().publicPageHidden}`}
-                      </p>
-                    </div>
-                    <i class="ti ti-chevron-right text-dimmed transition-transform group-hover:translate-x-0.5" />
-                  </a>
+                    title={venue.name}
+                    description={
+                      venue.description ||
+                      `${signupLabel(venue.signupMode)} · ${venue.publicEnabled ? t().publicPageActive : t().publicPageHidden}`
+                    }
+                    icon={venue.icon || "ti ti-building-carousel"}
+                    meta={<Tag size="sm">{permissionLabel(venue.permission)}</Tag>}
+                  />
                 )}
               </For>
-            </div>
+            </AppOverview.Cards>
           </Show>
         )}
       </AppOverview.Main>
-
-      <AppOverview.Aside title={t().create} description={t().chooseStarter}>
-        <div class="grid grid-cols-1 gap-2">
-          <For each={props.templates}>
-            {(template) => (
-              <button
-                type="button"
-                class="paper p-4 text-left flex items-start gap-3 hover:paper-highlighted transition-all"
-                onClick={() => openTemplate(template)}
-                disabled={createFromTemplate.loading()}
-              >
-                <span class="w-9 h-9 thumbnail bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                  <i class={`${template.icon} text-lg text-primary`} />
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="block text-sm font-semibold text-primary">{template.name}</span>
-                  <span class="block text-xs text-dimmed leading-snug line-clamp-2">{template.description}</span>
-                </span>
-              </button>
-            )}
-          </For>
-
-          <button
-            type="button"
-            class="paper p-4 text-left flex items-start gap-3 hover:paper-highlighted transition-all"
-            onClick={() => createVenue.mutate()}
-            disabled={createVenue.loading()}
-          >
-            <span class="w-9 h-9 thumbnail bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center shrink-0">
-              <i
-                class={
-                  createVenue.loading()
-                    ? "ti ti-loader-2 animate-spin text-lg text-blue-600 dark:text-blue-400"
-                    : "ti ti-plus text-lg text-blue-600 dark:text-blue-400"
-                }
-              />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold text-primary">{t().blankVenue}</span>
-              <span class="block text-xs text-dimmed leading-snug">{t().blankVenueDescription}</span>
-            </span>
-          </button>
-        </div>
-      </AppOverview.Aside>
     </AppOverview>
   );
 }

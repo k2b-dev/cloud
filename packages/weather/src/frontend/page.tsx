@@ -18,16 +18,15 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
       <ScrollArea class="min-h-0 min-w-0 flex-1">
-        <AppOverview title={t.appName} subtitle={t.overviewSubtitle} icon="ti ti-temperature-celsius">
-          <AppOverview.Main title={t.locations} description={t.noSavedLocations}>
+        <AppOverview
+          title={t.appName}
+          subtitle={t.overviewSubtitle}
+          icon="ti ti-temperature-celsius"
+          actions={<AddLocationButton variant="overview" />}
+        >
+          <AppOverview.Main title={t.locations}>
             <AppOverview.EmptyState title={t.noLocationsTitle} description={t.noLocationsDescription} icon="ti ti-map-pin" />
           </AppOverview.Main>
-
-          <AppOverview.Aside title={t.create} description={t.createDescription}>
-            <div class="grid grid-cols-1 gap-2">
-              <AddLocationButton variant="overview" />
-            </div>
-          </AppOverview.Aside>
         </AppOverview>
       </ScrollArea>
     </Layout>
