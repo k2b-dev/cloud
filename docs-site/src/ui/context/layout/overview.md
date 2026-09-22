@@ -47,8 +47,8 @@ description or content.
 `PanelHeader` is the title row used by `DataPanel`. Use it directly when
 another surface needs the same title, subtitle, and action arrangement. It
 does not add a border, background, or divider. Choose `as="h1"`, `"h2"`, or
-`"h3"` to preserve the page hierarchy, and `size="md"` only for a larger
-page-level title.
+`"h3"` to preserve the page hierarchy, `size="md"` for a section title, and
+`size="lg"` for the page title of a sidebar-first overview.
 
 ## API reference
 

@@ -1,7 +1,20 @@
 import { listenPopState, navigate, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { detailPanel, mutation as mutations, query as queries } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, ButtonLink, IconButton, Placeholder, prompts, Tabs, toast, useLocale } from "@k2b/ui";
+import {
+  AppWorkspace,
+  Button,
+  ButtonLink,
+  IconButton,
+  PanelHeader,
+  Paper,
+  Placeholder,
+  prompts,
+  SegmentedControl,
+  Tag,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { DeletedMailbox, DeletedMailboxPage, Mailbox, MailFocusPage, MailFocusView } from "../contracts";
@@ -25,6 +38,9 @@ type MailboxOverviewItem = {
   unread: number;
   needsAction: number;
 };
+
+/** The object list needs room for a title and an address; the overview does not resize. */
+const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
 
 const primaryParticipant = (summary: string, fallback: string): string => summary.split(/\s[·,]\s/u)[0]?.trim() || fallback;
 const participantInitials = (summary: string): string => {
@@ -57,6 +73,7 @@ export default function MailOverview(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
+  const formatCount = (count: number) => count.toLocaleString(locale());
   const [view, setView] = createSignal<MailFocusView>(props.initialView);
   const [pinnedMailboxIds, setPinnedMailboxIds] = createSignal(props.initialPinnedMailboxIds);
   const [pinAnnouncement, setPinAnnouncement] = createSignal("");
@@ -128,6 +145,17 @@ export default function MailOverview(props: {
     if (view() === "waiting") return messages().focusDescriptionWaiting({ count });
     return messages().focusDescriptionAll({ count });
   };
+  const focusViewOptions = () => [
+    { value: "mine" as const, label: focusViewLabel(messages().forMe, counts().mine) },
+    { value: "unassigned" as const, label: focusViewLabel(messages().unassigned, counts().unassigned) },
+    { value: "waiting" as const, label: focusViewLabel(messages().waiting, counts().waiting) },
+    { value: "all" as const, label: focusViewLabel(messages().allActive, counts().all) },
+  ];
+  const focusViewLabel = (label: string, count: number) => (
+    <>
+      {label} <span class="mail-focus-tab-count">{count}</span>
+    </>
+  );
   const focusError = () => focusResults.error()?.message ?? initialFocusError();
   const [selection, setSelection] = createSignal<MailFocusSelection | null>(props.initialSelection);
   const [wideLayout, setWideLayout] = createSignal(false);
@@ -398,79 +426,81 @@ export default function MailOverview(props: {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" class="mail-focus-workspace" resizable={false}>
+    <AppWorkspace mobileSurface="flush" class="mail-focus-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Mail</h1>
-      <AppWorkspace.Content>
-        <AppWorkspace.Main class="mail-focus-main" aria-busy={focusResults.loading() || focusResults.refreshing()}>
-          <header class="mail-focus-mailboxes">
-            <div class="mail-focus-section-heading">
-              <div>
-                <h2>{messages().mailboxes}</h2>
-                <p>{messages().mailboxesDescription}</p>
-              </div>
-              <ButtonLink href="/app/mail/compose" size="sm" class="mail-compose-action">
-                <i class="ti ti-pencil" aria-hidden="true" /> {messages().compose}
-              </ButtonLink>
-            </div>
-            <nav class="mail-focus-mailbox-list" aria-label={messages().mailboxes}>
+      <AppWorkspace.Sidebar label={messages().mailboxes} mobile="stacked" resizable={false}>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarBody scrollPreserveKey={false}>
+            <AppWorkspace.SidebarSection title={messages().mailboxes} count={props.mailboxes.length}>
               <For each={orderedMailboxOverviewItems()}>
                 {(mailbox) => {
                   const pinned = () => mailboxIsPinned(mailbox.id);
                   return (
-                    <span class="mail-focus-mailbox-item group" data-pinned={pinned() ? "true" : undefined}>
-                      <ButtonLink
-                        href={mailbox.href}
-                        variant="secondary"
-                        size="sm"
-                        class="mail-focus-mailbox-button"
-                        title={`${mailbox.name} · ${mailbox.subtitle}`}
-                      >
-                        <i class={`ti ${pinned() ? "ti-flag" : "ti-mail"} app-accent-text`} aria-hidden="true" />
-                        <span class="mail-focus-mailbox-copy">
-                          <span class="mail-focus-mailbox-name">{mailbox.name}</span>
-                          <span class="mail-focus-mailbox-counts">
-                            <span>{messages().unreadCount({ count: mailbox.unread })}</span>
-                            <span>{messages().needsActionCount({ count: mailbox.needsAction })}</span>
-                          </span>
+                    <AppWorkspace.SidebarItem
+                      variant="object"
+                      href={mailbox.href}
+                      title={`${mailbox.name} · ${mailbox.subtitle}`}
+                      description={mailbox.subtitle}
+                      class="mail-overview-mailbox"
+                      data={{ pinned: pinned() ? "true" : undefined }}
+                      actions={
+                        <AppWorkspace.SidebarItemActions visibility="hover">
+                          <IconButton
+                            label={
+                              pinned() ? messages().unpinMailbox({ name: mailbox.name }) : messages().pinMailbox({ name: mailbox.name })
+                            }
+                            size="xs"
+                            variant="text"
+                            aria-pressed={pinned()}
+                            onClick={() => toggleMailboxPin(mailbox)}
+                          >
+                            <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
+                          </IconButton>
+                        </AppWorkspace.SidebarItemActions>
+                      }
+                    >
+                      <AppWorkspace.SidebarItemIcon icon={pinned() ? "ti ti-flag" : "ti ti-mail"} />
+                      <AppWorkspace.SidebarItemLabel>{mailbox.name}</AppWorkspace.SidebarItemLabel>
+                      <AppWorkspace.SidebarItemMeta>
+                        <span class="mail-overview-unread" data-zero={mailbox.unread === 0 ? "true" : undefined}>
+                          <span aria-hidden="true">{formatCount(mailbox.unread)}</span>
+                          <span class="sr-only">{messages().unreadCount({ count: mailbox.unread })}</span>
                         </span>
-                      </ButtonLink>
-                      <IconButton
-                        label={pinned() ? messages().unpinMailbox({ name: mailbox.name }) : messages().pinMailbox({ name: mailbox.name })}
-                        size="xs"
-                        variant="text"
-                        class="mail-focus-mailbox-pin"
-                        aria-pressed={pinned()}
-                        onClick={() => toggleMailboxPin(mailbox)}
-                      >
-                        <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
-                      </IconButton>
-                    </span>
+                        <Show when={mailbox.needsAction > 0}>
+                          <span class="mail-overview-needs-action">
+                            <span aria-hidden="true">{formatCount(mailbox.needsAction)}</span>
+                            <span class="sr-only">{messages().needsActionCount({ count: mailbox.needsAction })}</span>
+                          </span>
+                        </Show>
+                      </AppWorkspace.SidebarItemMeta>
+                    </AppWorkspace.SidebarItem>
                   );
                 }}
               </For>
-              <Button
-                variant="secondary"
-                size="sm"
-                class="mail-focus-new-mailbox-button"
-                loading={createMailbox.loading()}
-                loadingLabel={messages().creatingMailbox}
-                onClick={() => createMailbox.mutate()}
-              >
-                <i class="ti ti-mail-plus app-accent-text" aria-hidden="true" /> {messages().newMailbox}
-              </Button>
-            </nav>
+            </AppWorkspace.SidebarSection>
             <span class="sr-only" aria-live="polite">
               {pinAnnouncement()}
             </span>
-            <Button
-              variant="text"
-              size="sm"
-              aria-expanded={deletedOpen()}
-              aria-controls="mail-deleted-mailboxes"
+          </AppWorkspace.SidebarBody>
+          <AppWorkspace.SidebarFooter>
+            <AppWorkspace.SidebarItem
+              icon="ti ti-mail-plus"
+              disabled={createMailbox.loading()}
+              title={messages().newMailbox}
+              onClick={() => createMailbox.mutate()}
+            >
+              {createMailbox.loading() ? messages().creatingMailbox : messages().newMailbox}
+            </AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem
+              icon="ti ti-trash"
+              title={messages().recentlyDeletedMailboxes}
               onClick={() => setDeletedOpen((open) => !open)}
             >
-              {messages().recentlyDeletedMailboxes}
-            </Button>
+              <AppWorkspace.SidebarItemLabel>{messages().recentlyDeletedMailboxes}</AppWorkspace.SidebarItemLabel>
+              <AppWorkspace.SidebarItemMeta>
+                <i class={deletedOpen() ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
+              </AppWorkspace.SidebarItemMeta>
+            </AppWorkspace.SidebarItem>
             <Show when={deletedOpen()}>
               <div id="mail-deleted-mailboxes" class="mail-focus-deleted" role="group" aria-label={messages().recentlyDeletedMailboxes}>
                 <Show when={deletedResults.error()}>
@@ -518,58 +548,38 @@ export default function MailOverview(props: {
                 </Show>
               </div>
             </Show>
-          </header>
-
-          <section class="mail-focus-panel" aria-labelledby="mail-focus-title">
-            <div class="mail-focus-section-heading">
-              <div>
-                <h2 id="mail-focus-title">{messages().focus}</h2>
-                <p>{focusDescription()}</p>
-              </div>
+          </AppWorkspace.SidebarFooter>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+      <AppWorkspace.Content>
+        <AppWorkspace.Main class="mail-focus-main" width="content" aria-busy={focusResults.loading() || focusResults.refreshing()}>
+          <div class="mail-overview-page">
+            <PanelHeader
+              as="h2"
+              size="lg"
+              title={messages().focus}
+              subtitle={`${focusDescription()} · ${messages().allMailboxes}`}
+              actions={
+                <ButtonLink href="/app/mail/compose" class="mail-compose-action">
+                  <i class="ti ti-pencil" aria-hidden="true" /> {messages().compose}
+                </ButtonLink>
+              }
+            />
+            <div class="mail-overview-toolbar">
+              <SegmentedControl<MailFocusView>
+                class="mail-overview-views"
+                size="sm"
+                ariaLabel={messages().focusView}
+                value={view}
+                onValueChange={selectView}
+                options={focusViewOptions()}
+              />
+              <Tag icon="ti ti-inbox" size="lg" class="mail-overview-scope">
+                {messages().allMailboxes}
+              </Tag>
             </div>
-            <Tabs<MailFocusView> ariaLabel={messages().focusView} value={view} onValueChange={selectView}>
-              <Tabs.Item
-                value="mine"
-                label={
-                  <>
-                    {messages().forMe} <span class="mail-focus-tab-count">{counts().mine}</span>
-                  </>
-                }
-              >
-                {focusPanel()}
-              </Tabs.Item>
-              <Tabs.Item
-                value="unassigned"
-                label={
-                  <>
-                    {messages().unassigned} <span class="mail-focus-tab-count">{counts().unassigned}</span>
-                  </>
-                }
-              >
-                {focusPanel()}
-              </Tabs.Item>
-              <Tabs.Item
-                value="waiting"
-                label={
-                  <>
-                    {messages().waiting} <span class="mail-focus-tab-count">{counts().waiting}</span>
-                  </>
-                }
-              >
-                {focusPanel()}
-              </Tabs.Item>
-              <Tabs.Item
-                value="all"
-                label={
-                  <>
-                    {messages().allActive} <span class="mail-focus-tab-count">{counts().all}</span>
-                  </>
-                }
-              >
-                {focusPanel()}
-              </Tabs.Item>
-            </Tabs>
-          </section>
+            <Paper class="mail-overview-list">{focusPanel()}</Paper>
+          </div>
         </AppWorkspace.Main>
 
         <AppWorkspace.Detail id="mail-focus-detail" open={detailOpen()} width="lg" resizable={false}>

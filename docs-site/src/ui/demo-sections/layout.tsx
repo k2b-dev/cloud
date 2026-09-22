@@ -59,6 +59,16 @@ const WorkspaceDemo = () => {
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody>
+            <AppWorkspace.SidebarSection title="Warehouses">
+              <AppWorkspace.SidebarItem variant="object" href="#warehouse-north" description="Hamburg">
+                <AppWorkspace.SidebarItemIcon icon="ti ti-building-warehouse" />
+                <AppWorkspace.SidebarItemLabel>North</AppWorkspace.SidebarItemLabel>
+                <AppWorkspace.SidebarItemMeta>
+                  <span aria-hidden="true">128</span>
+                  <span class="k2b-sr-only">128 items</span>
+                </AppWorkspace.SidebarItemMeta>
+              </AppWorkspace.SidebarItem>
+            </AppWorkspace.SidebarSection>
             <AppWorkspace.SidebarSection title="Status">
               <AppWorkspace.SidebarItem>
                 <AppWorkspace.SidebarItemIcon icon="ti ti-message" />

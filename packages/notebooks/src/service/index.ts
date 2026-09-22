@@ -64,6 +64,7 @@ export const notebooksService = {
         hasNext: page * perPage < result.total,
       };
     },
+    overviewStats: notebooks.overviewStats,
     get: notebooks.get,
     getByShortId: notebooks.getByShortId,
     create: notebooks.create,

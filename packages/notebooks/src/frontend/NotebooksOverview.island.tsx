@@ -6,17 +6,17 @@ import {
   AppWorkspace,
   Avatar,
   Button,
-  ButtonLink,
   DetailPanel,
   Dropdown,
   dialogCore,
   IconButton,
-  LinkCard,
   PanelDialog,
+  PanelHeader,
   Paper,
   Placeholder,
   panelDialogOptions,
   prompts,
+  Tag,
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
@@ -26,7 +26,14 @@ import { notebooksPageMessages } from "./messages";
 import { createNoteCommands } from "./note-commands";
 
 type TemplateSummary = { id: string; name: string; description: string; icon: string };
-type PublicNotebook = { id: string; name: string; description: string | null; icon: string | null };
+type OverviewNotebook = {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  noteCount: number;
+  lastEditedAt: string | null;
+};
 type RecentNote = {
   id: string;
   notebookId: string;
@@ -54,7 +61,7 @@ type ActivityItem = {
 };
 type ActivityPage = { items: ActivityItem[]; nextCursor: string | null };
 type Props = {
-  notebooks: PublicNotebook[];
+  notebooks: OverviewNotebook[];
   templates: TemplateSummary[];
   recentNotes: RecentNote[];
   initialActivity: ActivityPage;
@@ -63,6 +70,9 @@ type Props = {
   dateConfig: DateContext;
 };
 type CreatedNotebook = { id: string };
+
+/** The object list needs room for a title and a meta line; the overview does not resize. */
+const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
 
 const errorMessage = async (response: Pick<Response, "json">, fallback: string) => {
   try {
@@ -143,6 +153,7 @@ export default function NotebooksOverview(props: Props) {
   createNoteCommands();
   const locale = useLocale();
   const t = () => notebooksPageMessages.resolve([locale()]).t;
+  const formatCount = (count: number) => count.toLocaleString(locale());
   const [pinnedNotebookIds, setPinnedNotebookIds] = createSignal(props.initialPinnedNotebookIds);
   const [pinAnnouncement, setPinAnnouncement] = createSignal("");
   const [initialActivityError, setInitialActivityError] = createSignal(props.initialActivityError);
@@ -157,8 +168,10 @@ export default function NotebooksOverview(props: Props) {
     }),
   );
   const notebookIsPinned = (notebookId: string) => pinnedNotebookIds().includes(notebookId);
+  // A column of identical default icons says nothing; show icons only when at least one notebook chose its own.
+  const showNotebookIcons = createMemo(() => props.notebooks.some((notebook) => notebook.icon));
 
-  const toggleNotebookPin = (notebook: PublicNotebook) => {
+  const toggleNotebookPin = (notebook: OverviewNotebook) => {
     setPinnedNotebookIds((current) => {
       const pinned = current.includes(notebook.id);
       const next = pinned ? current.filter((id) => id !== notebook.id) : [notebook.id, ...current];
@@ -355,16 +368,93 @@ export default function NotebooksOverview(props: Props) {
   });
 
   return (
-    <AppWorkspace mobileSurface="flush" class="notebooks-overview-workspace" resizable={false}>
+    <AppWorkspace mobileSurface="flush" class="notebooks-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">{t().notebooks}</h1>
+      <AppWorkspace.Sidebar label={t().notebooks} mobile="stacked" resizable={false}>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarBody scrollPreserveKey={false}>
+            <AppWorkspace.SidebarSection title={t().notebooks} count={props.notebooks.length}>
+              <For each={orderedNotebooks()}>
+                {(notebook) => {
+                  const pinned = () => notebookIsPinned(notebook.id);
+                  return (
+                    <AppWorkspace.SidebarItem
+                      variant="object"
+                      href={`/app/notebooks/${notebook.id}`}
+                      title={notebook.description || notebook.name}
+                      class="notebooks-overview-notebook"
+                      data={{ pinned: pinned() ? "true" : undefined }}
+                      description={
+                        <Show when={notebook.lastEditedAt}>
+                          {(lastEditedAt) => (
+                            <time datetime={lastEditedAt()} title={dates.formatDateTime(lastEditedAt(), props.dateConfig)}>
+                              {dates.formatDateTimeRelative(lastEditedAt(), props.dateConfig)}
+                            </time>
+                          )}
+                        </Show>
+                      }
+                      actions={
+                        <AppWorkspace.SidebarItemActions visibility="hover">
+                          <IconButton
+                            label={pinned() ? t().unpin({ name: notebook.name }) : t().pin({ name: notebook.name })}
+                            tooltip={pinned() ? t().unpin({ name: notebook.name }) : t().pin({ name: notebook.name })}
+                            size="xs"
+                            variant="text"
+                            aria-pressed={pinned()}
+                            onClick={() => toggleNotebookPin(notebook)}
+                          >
+                            <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
+                          </IconButton>
+                        </AppWorkspace.SidebarItemActions>
+                      }
+                    >
+                      <Show when={showNotebookIcons() || pinned()}>
+                        <AppWorkspace.SidebarItemIcon icon={pinned() ? "ti ti-flag" : notebook.icon || "ti ti-notebook"} />
+                      </Show>
+                      <AppWorkspace.SidebarItemLabel>{notebook.name}</AppWorkspace.SidebarItemLabel>
+                      <AppWorkspace.SidebarItemMeta>
+                        <span class="notebooks-overview-count" data-zero={notebook.noteCount === 0 ? "true" : undefined}>
+                          <span aria-hidden="true">{formatCount(notebook.noteCount)}</span>
+                          <span class="sr-only">{t().noteCount({ count: notebook.noteCount })}</span>
+                        </span>
+                      </AppWorkspace.SidebarItemMeta>
+                    </AppWorkspace.SidebarItem>
+                  );
+                }}
+              </For>
+            </AppWorkspace.SidebarSection>
+            <span class="sr-only" aria-live="polite">
+              {pinAnnouncement()}
+            </span>
+          </AppWorkspace.SidebarBody>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="notebooks-overview-main">
-          <header class="notebooks-overview-notebooks">
-            <div class="notebooks-overview-heading">
-              <div>
-                <h2>{t().notebooks}</h2>
-                <p>{t().overviewDescription}</p>
-              </div>
+        <AppWorkspace.Main class="notebooks-overview-main" width="content">
+          <div class="notebooks-overview-page">
+            <PanelHeader
+              as="h2"
+              size="lg"
+              title={t().recentlyEdited}
+              subtitle={t().recentNotesDescription}
+              actions={
+                <Dropdown.Root
+                  items={createMenuItems()}
+                  position="bottom-right"
+                  width="min(38rem, calc(100vw - 1rem))"
+                  label={t().newNotebook}
+                >
+                  <Dropdown.Trigger variant="primary" disabled={createNotebookMutation.loading() || createFromTemplateMutation.loading()}>
+                    <i class="ti ti-plus" aria-hidden="true" /> {t().newNotebook}
+                    <i class="ti ti-chevron-down" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
+              }
+            />
+            <div class="notebooks-overview-toolbar">
+              <Tag icon="ti ti-notebook" size="lg" class="notebooks-overview-scope">
+                {t().allNotebooks}
+              </Tag>
               <div class="notebooks-overview-actions">
                 <Button type="button" variant="secondary" size="sm" onClick={() => void openSearch()}>
                   <i class="ti ti-search" aria-hidden="true" /> {t().search}
@@ -374,89 +464,46 @@ export default function NotebooksOverview(props: Props) {
                 </Button>
               </div>
             </div>
-            <nav class="notebooks-overview-notebook-list" aria-label={t().notebooks}>
-              <For each={orderedNotebooks()}>
-                {(notebook) => {
-                  const pinned = () => notebookIsPinned(notebook.id);
-                  return (
-                    <span class="notebooks-overview-notebook-item" data-pinned={pinned() ? "true" : undefined}>
-                      <ButtonLink
-                        href={`/app/notebooks/${notebook.id}`}
-                        variant="secondary"
-                        size="sm"
-                        class="notebooks-overview-notebook-button"
-                        title={notebook.description || notebook.name}
-                      >
-                        <i class={`${pinned() ? "ti ti-flag" : notebook.icon || "ti ti-notebook"} app-accent-text`} aria-hidden="true" />
-                        <span class="notebooks-overview-notebook-name">{notebook.name}</span>
-                      </ButtonLink>
-                      <IconButton
-                        label={pinned() ? t().unpin({ name: notebook.name }) : t().pin({ name: notebook.name })}
-                        tooltip={pinned() ? t().unpin({ name: notebook.name }) : t().pin({ name: notebook.name })}
-                        size="xs"
-                        variant="text"
-                        class="notebooks-overview-notebook-pin"
-                        aria-pressed={pinned()}
-                        onClick={() => toggleNotebookPin(notebook)}
-                      >
-                        <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
-                      </IconButton>
-                    </span>
-                  );
-                }}
-              </For>
-              <Dropdown.Root
-                items={createMenuItems()}
-                position="bottom-right"
-                width="min(38rem, calc(100vw - 1rem))"
-                label={t().newNotebook}
+            <Paper class="notebooks-overview-list">
+              <Show
+                when={props.recentNotes.length > 0}
+                fallback={
+                  <Placeholder state="empty" title={t().noNotes} description={t().noNotesDescription} icon="ti ti-note" class="min-h-56" />
+                }
               >
-                <Dropdown.Trigger
-                  variant="secondary"
-                  size="sm"
-                  disabled={createNotebookMutation.loading() || createFromTemplateMutation.loading()}
-                >
-                  <i class="ti ti-plus app-accent-text" aria-hidden="true" /> {t().newNotebook}
-                  <i class="ti ti-chevron-down" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-            </nav>
-            <span class="sr-only" aria-live="polite">
-              {pinAnnouncement()}
-            </span>
-          </header>
-
-          <section class="notebooks-overview-recent" aria-labelledby="notebooks-recent-title">
-            <div class="notebooks-overview-heading">
-              <div>
-                <h2 id="notebooks-recent-title">{t().recentNotes}</h2>
-                <p>{t().recentNotesDescription}</p>
-              </div>
-            </div>
-            <Show
-              when={props.recentNotes.length > 0}
-              fallback={
-                <Placeholder state="empty" title={t().noNotes} description={t().noNotesDescription} icon="ti ti-note" class="min-h-72" />
-              }
-            >
-              <div class="notebooks-overview-note-grid">
-                <For each={props.recentNotes}>
-                  {(note) => (
-                    <LinkCard
-                      href={`/app/notebooks/${note.notebookId}/notes/${note.id}`}
-                      title={note.title}
-                      description={`${note.notebookName} · ${dates.formatDateTimeRelative(note.updatedAt, props.dateConfig)}`}
-                      icon={note.notebookIcon || "ti ti-note"}
-                      color="blue"
-                    />
-                  )}
-                </For>
-              </div>
-            </Show>
-          </section>
+                <ol class="notebooks-overview-notes" aria-label={t().recentlyEdited}>
+                  <For each={props.recentNotes}>
+                    {(note) => (
+                      <li>
+                        <a href={`/app/notebooks/${note.notebookId}/notes/${note.id}`} class="notebooks-overview-note">
+                          <span class="notebooks-overview-note-icon" aria-hidden="true">
+                            <i class={note.notebookIcon || "ti ti-note"} />
+                          </span>
+                          <span class="notebooks-overview-note-copy">
+                            <span class="notebooks-overview-note-title">{note.title}</span>
+                            <span class="notebooks-overview-note-meta">
+                              <i class="ti ti-notebook" aria-hidden="true" /> {note.notebookName}
+                            </span>
+                          </span>
+                          <time
+                            class="notebooks-overview-note-time"
+                            datetime={note.updatedAt}
+                            title={dates.formatDateTime(note.updatedAt, props.dateConfig)}
+                          >
+                            {dates.formatDateTimeRelative(note.updatedAt, props.dateConfig)}
+                          </time>
+                          <i class="ti ti-chevron-right notebooks-overview-note-chevron" aria-hidden="true" />
+                        </a>
+                      </li>
+                    )}
+                  </For>
+                </ol>
+              </Show>
+            </Paper>
+          </div>
         </AppWorkspace.Main>
 
-        <AppWorkspace.Detail id="notebooks-overview-activity" open width="lg" resizable={false} class="notebooks-overview-activity">
+        <AppWorkspace.Detail id="notebooks-overview-activity" open width="md" resizable={false} class="notebooks-overview-activity">
           <DetailPanel>
             <DetailPanel.Header title={t().activity} subtitle={t().activityDescription} />
             <DetailPanel.Body scrollPreserveKey="notebooks-overview-activity">{activityFeed()}</DetailPanel.Body>

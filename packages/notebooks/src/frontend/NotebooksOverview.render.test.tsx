@@ -20,7 +20,16 @@ const renderOverview = (initialActivityError: string | null = null, locale = "en
       locale,
       get children() {
         return createComponent(NotebooksOverview, {
-          notebooks: [{ id: "Book01", name: "Product", description: "Product knowledge", icon: "ti ti-bulb" }],
+          notebooks: [
+            {
+              id: "Book01",
+              name: "Product",
+              description: "Product knowledge",
+              icon: "ti ti-bulb",
+              noteCount: 12,
+              lastEditedAt: "2026-08-20T10:00:00.000Z",
+            },
+          ],
           templates: [{ id: "blank", name: "Project", description: "Project notes", icon: "ti ti-template" }],
           recentNotes: [
             {
@@ -61,10 +70,20 @@ describe("Notebooks overview", () => {
   test("renders the recent cross-notebook workspace and stable desktop activity panel", () => {
     const html = renderOverview();
     expect(html).toContain('class="k2b-app-workspace notebooks-overview-workspace"');
+    // Notebooks are object rows in a stacked-on-mobile sidebar, not a page tree.
+    expect(html).toMatch(/<aside[^>]*aria-label="Notebooks"[^>]*data-mobile="stacked"/);
+    expect(html).not.toContain("k2b-app-workspace__nav-tree");
+    expect(html).toContain("--k2b-workspace-sidebar-width:304px");
+    expect(html.match(/data-variant="object"/g)).toHaveLength(1);
     expect(html).toContain('href="/app/notebooks/Book01"');
+    expect(html).toContain("12 notes");
+    expect(html).toMatch(/class="k2b-app-workspace__main[^"]*notebooks-overview-main ?"[^>]*data-width="content"/);
+    expect(html).toContain("Unpin Product");
+    // The main area is a page: title, scope, primary create action, search.
+    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Recently edited<\/h2>/);
+    expect(html).toMatch(/class="k2b-tag notebooks-overview-scope"[^>]*>.*All notebooks/);
     expect(html).toContain("New notebook");
     expect(html).toContain("Search");
-    expect(html).toContain("Unpin Product");
     expect(html).toContain('href="/app/notebooks/Book01/notes/Note01"');
     expect(html).toContain("Launch plan");
     expect(html).toContain("Sofie");
@@ -88,7 +107,9 @@ describe("Notebooks overview", () => {
   test("renders German copy for a regional request locale during SSR", () => {
     const html = renderOverview(null, "de-CH");
     expect(html).toContain("Neues Notizbuch");
-    expect(html).toContain("Letzte Notizen");
+    expect(html).toContain("Zuletzt bearbeitet");
+    expect(html).toContain("Alle Notizbücher");
+    expect(html).toContain("12 Notizen");
     expect(html).toContain("Product lösen");
     expect(html).not.toContain("New notebook");
   });

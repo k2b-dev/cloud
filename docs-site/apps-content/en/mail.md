@@ -51,8 +51,14 @@ secrets.
 
 ## Delete and restore a mailbox
 
-Open **Recently deleted mailboxes** on the Mail overview to load mailboxes
-you can restore. The list loads on demand and supports retry and pagination.
+The Mail overview lists your mailboxes in a sidebar with their unread and
+needs-action counts; opening one enters its workspace. The page itself is the
+cross-mailbox focus queue (for me, unassigned, waiting, all active) with
+**Compose** as its primary action.
+
+Open **Recently deleted mailboxes** at the bottom of that sidebar to load
+mailboxes you can restore. The list loads on demand and supports retry and
+pagination.
 
 Moving a mailbox to **Recently deleted** pauses its transport and retains its
 Cloud data. It does not delete provider mail. A mailbox administrator can

@@ -1,6 +1,6 @@
 import type { MutationResult } from "@k2b/cloud/contracts";
 import { deleteAccess, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { logger, serviceAccounts, get as settingsGet } from "@k2b/cloud/services";
+import { logger, serviceAccounts, get as settingsGet, toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate, validateNoteTitleTemplate } from "../lib/note-title-template";
@@ -289,6 +289,30 @@ export const listWithPermission = async (params: ListNotebooksParams): Promise<{
     items: rows.map(mapToNotebookWithPermission),
     total: countRow?.count ?? 0,
   };
+};
+
+export type NotebookOverviewStats = {
+  notebookId: string;
+  noteCount: number;
+  lastNoteAt: string | null;
+};
+
+/** Per-notebook counts for the overview sidebar; one query for the listed notebooks. */
+export const overviewStats = async (params: { notebookIds: string[] }): Promise<NotebookOverviewStats[]> => {
+  if (params.notebookIds.length === 0) return [];
+  const rows = await sql<{ id: string; note_count: number; last_note_at: Date | null }[]>`
+    SELECT
+      n.id,
+      (SELECT COUNT(*)::int FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS note_count,
+      (SELECT MAX(nt.updated_at) FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS last_note_at
+    FROM notebooks.notebooks n
+    WHERE n.id = ANY(${toPgUuidArray(params.notebookIds)}::uuid[])
+  `;
+  return rows.map((row) => ({
+    notebookId: row.id,
+    noteCount: row.note_count,
+    lastNoteAt: row.last_note_at?.toISOString() ?? null,
+  }));
 };
 
 /** Existing list contract without the capability-only permission projection. */

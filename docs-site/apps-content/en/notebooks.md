@@ -19,12 +19,13 @@ Book keeps the normal Cloud navigation around its page tree and reading area,
 including on tag pages. It still requires sign-in and notebook access; choosing
 Book does not publish a notebook anonymously.
 
-The Notebooks start page keeps accessible notebooks at the top, shows recently
-edited notes across those notebooks, and provides one permission-aware activity
-stream. Pin notebooks to keep them first, or use the shared search prompt to
-open an accessible notebook or note directly. Activity stays beside the
-overview on larger screens and opens as a separate panel on mobile so it does
-not replace the note list.
+The Notebooks overview lists your notebooks in a sidebar with their note
+count and last edit; opening one enters its workspace. The page itself shows recently edited notes across all notebooks,
+one create action, and one permission-aware activity stream. Pin notebooks to
+keep them first, or use the shared search prompt to open an accessible
+notebook or note directly. Activity stays beside the overview on larger
+screens and opens as a separate panel on mobile so it does not replace the
+note list.
 
 ## Use Notebooks
 

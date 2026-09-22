@@ -160,6 +160,8 @@ export type AppWorkspaceContentProps = { children: JSX.Element; class?: string }
 export type AppWorkspaceMainProps = {
   children: JSX.Element;
   class?: string;
+  /** `"content"` centers the children as one reading column with the shared page width on large screens. */
+  width?: "full" | "content";
   mobilePane?: string;
   scroll?: boolean;
   scrollFade?: boolean;
@@ -209,6 +211,12 @@ export type AppWorkspaceSidebarProps = {
   label?: string;
   children: JSX.Element;
   class?: string;
+  /**
+   * Below the desktop breakpoint the sidebar is hidden and the host's mobile
+   * navigation takes over. `"stacked"` keeps it as a block above the content
+   * instead, for overviews whose sidebar is the primary object list.
+   */
+  mobile?: "hidden" | "stacked";
   resizable?: boolean;
   resizeShadow?: boolean;
   collapsible?: boolean;
@@ -239,8 +247,12 @@ export type AppWorkspaceSidebarItemTone = "default" | "success" | "danger";
 export type AppWorkspaceSidebarIconActionTone = "default" | "success" | "danger";
 export type AppWorkspaceSidebarItemProps = {
   children: JSX.Element;
-  /** Card rows add a quiet context header above the main label. */
-  variant?: "row" | "card";
+  /**
+   * Card rows add a quiet context header above the main label. Object rows
+   * present one resource with a title, a description line, and stacked
+   * trailing counts; use them for the objects an overview navigates into.
+   */
+  variant?: "row" | "card" | "object";
   context?: JSX.Element;
   contextMeta?: JSX.Element;
   /** Passive second line; keep controls in actions or preview. */
@@ -414,6 +426,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
     <div
       class={`k2b-app-workspace__main ${hasPanes() ? "has-panes" : ""} ${props.class ?? ""}`}
       data-mobile-pane={props.mobilePane}
+      data-width={props.width === "content" ? "content" : undefined}
       data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
       data-scroll={props.scroll === false ? "false" : undefined}
       aria-busy={props["aria-busy"]}
@@ -593,6 +606,7 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
         id={domId}
         class={`k2b-app-workspace__sidebar ${props.class ?? ""}`}
         aria-label={props.label}
+        data-mobile={props.mobile === "stacked" ? "stacked" : undefined}
         data-workspace-resizable={resizable() ? "true" : "false"}
         data-workspace-collapsible={props.collapsible ? "true" : "false"}
       >
@@ -888,7 +902,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
         </Show>
         <span
           class="k2b-app-workspace__sidebar-item-label"
-          data-marquee={(labelSlot()?.marquee ?? props.variant !== "card") ? "true" : "false"}
+          data-marquee={(labelSlot()?.marquee ?? (props.variant ?? "row") === "row") ? "true" : "false"}
         >
           <span class="k2b-app-workspace__sidebar-item-label-text">{label() as JSX.Element}</span>
         </span>
