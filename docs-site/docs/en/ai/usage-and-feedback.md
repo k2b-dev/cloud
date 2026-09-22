@@ -64,6 +64,16 @@ provider model so editing a profile does not combine different provider models.
   cost, measurement status, task, trace, and workflow/chat references. Workflow
   references open the existing workflow observability page.
 
+Each run keeps its redacted provider or transport error (for example
+`SSE stream first byte timeout after 60000ms.`), never request content or
+credentials. A run stopped by the user or by the turn's run budget has status
+`aborted`, `cancelled: true`, and no error; it is not counted as failed.
+Runs also record request milestones measured from the moment the provider
+request left Cloud: `headersMs` (response headers), `firstByteMs` (first body
+byte), `firstBlockMs` (first text, thinking, or tool-call block), and
+`generationMs` (until the call finished). `requestStartedAt` is null for calls
+recorded before this instrumentation or that never left admission.
+
 One actual `stream()` or `complete()` attempt produces one record. Structured
 output repair and real retries are separate calls. Replaying a completed
 workflow step, copying a chat, or reopening a conversation does not call a

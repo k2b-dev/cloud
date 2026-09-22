@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import type { InboundEvent, Message, OutboundEvent } from "@k2b/nessi";
+import type { InboundEvent, Message, OutboundEvent, Provider } from "@k2b/nessi";
 import { sql } from "bun";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -18,6 +18,7 @@ import { aiConversations } from "./store";
 import { aiStreamTopic } from "./stream";
 import type { PreparedAiTools } from "./tools";
 import type { AiChatTurnRunConfig, AiModelProfile, AiTurnFinalizedEvent } from "./types";
+import { aiUsage } from "./usage";
 import type { validateAiTurnRequest } from "./validate";
 import { createCloudAiViewImageTool } from "./vision-tool";
 
@@ -69,6 +70,38 @@ const fakeValidateTurn: typeof validateAiTurnRequest = async () => {
     resolved: { profile, provider: createAiProvider(profile, "test") },
   };
 };
+
+/** Same seam with a synthetic provider, for failure modes the SSE mock cannot express quickly (timeouts, aborts). */
+const fakeValidateWithProvider =
+  (provider: Provider): typeof validateAiTurnRequest =>
+  async () => {
+    const profile = mockProfile();
+    return {
+      settings: {
+        ok: true,
+        enabled: true,
+        defaultModelId: MODEL_ID,
+        globalInstructions: "",
+        compactionInstructions: "",
+        maxToolResultChars: 2_000,
+        firecrawlConfigured: false,
+        profiles: [profile],
+      },
+      resolved: { profile, provider },
+    };
+  };
+
+const syntheticProvider = (stream: Provider["stream"]): Provider => ({
+  name: "synthetic",
+  family: "openai-compatible",
+  model: "mock",
+  contextWindow: 8_000,
+  capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
+  complete: async () => {
+    throw new Error("synthetic provider streams only");
+  },
+  stream,
+});
 
 const fakeValidateToolTurn: typeof validateAiTurnRequest = async () => {
   const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "tools"] };
@@ -1180,6 +1213,98 @@ suite("AI executor integration", () => {
     } finally {
       onCompletionRequest = null;
       completionQueue = [];
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+  test("a provider first-byte timeout is stored as the turn's and the call's redacted error", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const message = "SSE stream first byte timeout after 60000ms.";
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
+        userMessage: userMessage("Hi"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "timeout-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      const provider = syntheticProvider(async function* () {
+        yield { type: "issue", issue: { kind: "timeout", scope: "provider_first_byte", message, retryable: true } };
+      });
+      await createExecutor("timeout-exec", undefined, fakeValidateWithProvider(provider)).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+      expect(finalTurn).toMatchObject({ status: "failed", error: message });
+      const [call] = await sql<
+        { id: string; kind: "chat" | "background" }[]
+      >`SELECT id,kind FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+      expect(await aiUsage.detail(call!.kind, call!.id)).toMatchObject({
+        status: "failed",
+        error: message,
+        cancelled: false,
+        errorCode: "ai_provider_call_failed",
+      });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a user abort during generation is recorded as aborted, distinct from a provider failure", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const controller = new AbortController();
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
+        userMessage: userMessage("Hi"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "abort-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      const provider = syntheticProvider(async function* (request) {
+        yield { type: "block_start", blockId: "b0", index: 0, kind: "text" };
+        yield { type: "block_delta", blockId: "b0", delta: "Partial" };
+        controller.abort();
+        request.signal?.throwIfAborted();
+        throw new Error("The stop request did not reach the provider request.");
+      });
+      await createExecutor("abort-exec", undefined, fakeValidateWithProvider(provider)).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: controller.signal,
+      });
+      const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+      expect(finalTurn).toMatchObject({ status: "aborted", error: null });
+      const [call] = await sql<
+        { id: string; kind: "chat" | "background" }[]
+      >`SELECT id,kind FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+      const detail = await aiUsage.detail(call!.kind, call!.id);
+      expect(detail).toMatchObject({ status: "aborted", error: null, cancelled: true, errorCode: null });
+      expect(detail?.firstBlockMs).toBeGreaterThanOrEqual(0);
+    } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }

@@ -4,7 +4,8 @@ import { sql } from "bun";
 import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
 import { isAssistantChatTurn } from "./assistant-models";
-import { AiBackgroundAdmissionError, type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
+import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beginAiCall, finishAiCall } from "./inference-calls";
+import { runWithProviderFetchMarks } from "./provider-fetch";
 import type { AiModelProfile } from "./types";
 
 const log = logger("ai:quotas");
@@ -68,9 +69,14 @@ export function inferenceProvider(
     }, 30_000);
     return { ...call, inputTokens, stop: () => clearInterval(heartbeat) };
   };
-  const finish = async (id: string, usage: Parameters<typeof finishAiCall>[1], status: "ok" | "failed") => {
+  const finish = async (
+    id: string,
+    usage: Parameters<typeof finishAiCall>[1],
+    status: Parameters<typeof finishAiCall>[2],
+    details?: AiCallDetails,
+  ) => {
     try {
-      await lifecycle.finish(id, usage, status);
+      await lifecycle.finish(id, usage, status, details);
     } catch {
       log.error("AI cost booking failed", { callId: id, code: "ai_cost_booking_failed" });
     }
@@ -85,8 +91,13 @@ export function inferenceProvider(
       const call = await begin(request, completeContext);
       let usage: Parameters<typeof finishAiCall>[1];
       let status: "ok" | "failed" = "failed";
+      let error: string | undefined;
+      const requestStartedAt = Date.now();
+      const marks: { headersAt?: number; firstByteAt?: number } = {};
       try {
-        const result = await provider.complete({ ...request, maxOutputTokens: call.maxOutputTokens });
+        const result = await runWithProviderFetchMarks(marks, () =>
+          provider.complete({ ...request, maxOutputTokens: call.maxOutputTokens }),
+        );
         if (
           result.usage &&
           [result.usage.input, result.usage.output].every((n) => Number.isSafeInteger(n) && n >= 0) &&
@@ -94,11 +105,22 @@ export function inferenceProvider(
         )
           usage = { input: result.usage.input, output: result.usage.output };
         status = ["error", "aborted", "interrupted"].includes(result.finishReason) ? "failed" : "ok";
+        if (status === "failed") error = `The provider finished with ${result.finishReason}.`;
         return result;
+      } catch (thrown) {
+        error = thrown instanceof Error ? thrown.message : String(thrown);
+        throw thrown;
       } finally {
         call.stop();
         if (!usage && status === "failed") usage = { input: call.inputTokens, output: 0, estimated: true };
-        await finish(call.id, usage, status);
+        const cancelled = request.signal?.aborted === true;
+        await finish(call.id, usage, cancelled && status === "failed" ? "aborted" : status, {
+          error: cancelled ? null : error,
+          cancelled,
+          requestStartedAt,
+          headersMs: marks.headersAt === undefined ? undefined : marks.headersAt - requestStartedAt,
+          firstByteMs: marks.firstByteAt === undefined ? undefined : marks.firstByteAt - requestStartedAt,
+        });
       }
     },
     stream: async function* (request) {
@@ -107,11 +129,23 @@ export function inferenceProvider(
       let usage: { input: number; output: number; estimated?: boolean } | undefined;
       let completed = false;
       let failed = false;
+      let error: string | undefined;
       const outputBlocks = new Map<string, number>();
       let generated = false;
+      const requestStartedAt = Date.now();
+      const marks: { headersAt?: number; firstByteAt?: number; firstBlockAt?: number } = {};
+      // The wrapped adapter reads lazily, so the request only leaves once the first pull runs inside the marked scope.
+      const events = provider.stream({ ...request, maxOutputTokens: call.maxOutputTokens })[Symbol.asyncIterator]();
+      const next = () => runWithProviderFetchMarks(marks, () => events.next());
       try {
-        for await (const event of provider.stream({ ...request, maxOutputTokens: call.maxOutputTokens })) {
-          if (event.type === "issue" && event.issue.kind === "provider_error") failed = true;
+        for (let step = await next(); !step.done; step = await next()) {
+          const event = step.value;
+          if (event.type === "issue" && (event.issue.kind === "provider_error" || event.issue.kind === "timeout")) {
+            failed = true;
+            error ??= event.issue.message;
+          }
+          if ((event.type === "block_start" || event.type === "block_delta") && marks.firstBlockAt === undefined)
+            marks.firstBlockAt = Date.now();
           if (event.type === "block_delta") outputBlocks.set(event.blockId, (outputBlocks.get(event.blockId) ?? 0) + event.delta.length);
           if (event.type === "block_end") {
             const block = event.block;
@@ -136,8 +170,12 @@ export function inferenceProvider(
           yield event;
         }
         completed = true;
+      } catch (thrown) {
+        error ??= thrown instanceof Error ? thrown.message : String(thrown);
+        throw thrown;
       } finally {
         call.stop();
+        await events.return?.().catch(() => undefined);
         if (id) {
           try {
             // Interrupted adapters commonly omit their final usage event. Charge an
@@ -164,7 +202,15 @@ export function inferenceProvider(
                 estimated: true,
               };
             }
-            await finish(id, usage, completed && !failed && !request.signal?.aborted ? "ok" : "failed");
+            const cancelled = request.signal?.aborted === true;
+            await finish(id, usage, cancelled ? "aborted" : completed && !failed ? "ok" : "failed", {
+              error: cancelled ? null : (error ?? (completed ? null : "The provider stream ended before completion.")),
+              cancelled,
+              requestStartedAt,
+              headersMs: marks.headersAt === undefined ? undefined : marks.headersAt - requestStartedAt,
+              firstByteMs: marks.firstByteAt === undefined ? undefined : marks.firstByteAt - requestStartedAt,
+              firstBlockMs: marks.firstBlockAt === undefined ? undefined : marks.firstBlockAt - requestStartedAt,
+            });
           } catch (error) {
             log.warn("Chat usage booking failed", { code: "quota_booking_failed", turnId: context.turnId, callId: id });
           }

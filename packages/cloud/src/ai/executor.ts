@@ -1,4 +1,4 @@
-import type { CompactEvent, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
+import type { CompactEvent, LoopAggregate, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
@@ -557,7 +557,9 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
 // Executor
 // ---------------------------------------------------------------------------
 
-type AttemptOutcome = { kind: "finished"; status: "completed" | "failed" | "aborted"; error: string | null } | { kind: "suspended" };
+type AttemptOutcome =
+  | { kind: "finished"; status: "completed" | "failed" | "aborted"; error: string | null; timing?: LoopAggregate["timing"] }
+  | { kind: "suspended" };
 
 export class AiTurnExecutor {
   constructor(private readonly config: ExecutorConfig) {}
@@ -1169,8 +1171,11 @@ export class AiTurnExecutor {
       turnId,
       attempt: claim.turn.attempt,
       status: outcome.status,
+      cancelled: outcome.status === "aborted",
       durationMs: Date.now() - startedAt,
       firstBlockMs: pipeline.firstBlockMs,
+      generationMs: outcome.timing?.generationMs,
+      toolMs: outcome.timing?.toolExecutionMs,
       wireSeq: pipeline.seq,
     });
   }
@@ -1282,12 +1287,18 @@ export class AiTurnExecutor {
               .setLatestAssistantLoopAggregate({ conversationId, loopId: turnId, aggregate, doneReason: event.reason })
               .catch(() => undefined);
           }
-          if (event.reason === "aborted") return { kind: "finished", status: "aborted", error: null };
-          if (event.reason === "stop") return { kind: "finished", status: "completed", error: null };
+          const timing = aggregate.timing;
+          if (event.reason === "aborted") return { kind: "finished", status: "aborted", error: null, timing };
+          if (event.reason === "stop") return { kind: "finished", status: "completed", error: null, timing };
           if (event.reason === "max_turns") {
-            return { kind: "finished", status: "failed", error: "The model did not produce a final answer within its tool-round limit." };
+            return {
+              kind: "finished",
+              status: "failed",
+              error: "The model did not produce a final answer within its tool-round limit.",
+              timing,
+            };
           }
-          return { kind: "finished", status: "failed", error: lastIssueMessage ?? `AI turn ended: ${event.reason}` };
+          return { kind: "finished", status: "failed", error: lastIssueMessage ?? `AI turn ended: ${event.reason}`, timing };
         }
       }
       return { kind: "finished", status: abortController.signal.aborted ? "aborted" : "completed", error: null };
