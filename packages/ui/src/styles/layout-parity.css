@@ -63,12 +63,14 @@
 
 /* ---------------------------------------------------------- app overview */
 
-/* Cloud pins the overview padding to --ui-space-section (0.75rem) at every
-   width; the `sm:p-4` utility in its markup never wins. */
+/* The page inset matches the sidebar-first overviews (Mail, Notebooks), whose
+   main column pads a 72rem reading column by clamp(1rem, 3vw, 2.5rem). The
+   width adds that inset back so the content column stays 72rem wide. */
 .k2b-ui .k2b-app-overview {
-  width: min(100%, 72rem);
+  --k2b-app-overview-inset: clamp(1rem, 3vw, 2.5rem);
+  width: min(100%, calc(72rem + 2 * var(--k2b-app-overview-inset)));
   margin-inline: auto;
-  padding: 0.75rem;
+  padding: var(--k2b-app-overview-inset);
 }
 
 .k2b-ui .k2b-app-overview__header {
@@ -78,6 +80,8 @@
   margin-bottom: 1rem;
 }
 
+/* The icon follows the active application accent through the same optional
+   hook as the workspace's active navigation; it defaults to the action colour. */
 .k2b-ui .k2b-app-overview__icon {
   display: flex;
   width: 2.5rem;
@@ -86,9 +90,9 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--k2b-radius-control);
-  color: var(--k2b-action);
-  background: color-mix(in srgb, var(--k2b-action) 9%, var(--k2b-surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-action) 16%, transparent);
+  color: var(--k2b-app-workspace-active);
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) 9%, var(--k2b-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-app-workspace-active) 16%, transparent);
   font-size: 1.25rem;
 }
 

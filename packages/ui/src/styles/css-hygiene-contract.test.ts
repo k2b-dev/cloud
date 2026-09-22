@@ -63,6 +63,20 @@ describe("@k2b/ui stylesheet hygiene", () => {
     }
   });
 
+  test("gives AppOverview the sidebar-first page inset and the application accent", () => {
+    const rules = readShippedCssRules(stylesDir);
+    const declarations = (selector: string) => {
+      const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === "");
+      expect(rule, selector).toBeDefined();
+      return cssDeclarations(rule!.body);
+    };
+
+    const page = declarations(".k2b-ui .k2b-app-overview");
+    expect(page.get("--k2b-app-overview-inset")).toEqual(["clamp(1rem, 3vw, 2.5rem)"]);
+    expect(page.get("padding")).toEqual(["var(--k2b-app-overview-inset)"]);
+    expect(declarations(".k2b-ui .k2b-app-overview__icon").get("color")).toEqual(["var(--k2b-app-workspace-active)"]);
+  });
+
   test("overlays DataTable scrollbars and keeps dark scrollbars quieter", () => {
     const rules = readShippedCssRules(stylesDir);
     const finePointer = "@media (hover: hover) and (pointer: fine)";
