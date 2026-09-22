@@ -4,8 +4,8 @@ navTitle: CLI modules
 section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
-tags: [cli, cld, automation]
-updated: 2026-08-30
+tags: [cli, cld, automation, plugins]
+updated: 2026-09-22
 ---
 
 # Application CLI modules
@@ -367,15 +367,113 @@ principal resolution and output contracts.
 
 Export the module from the application package, usually from `src/cli.ts`.
 
-The `cld` distribution imports its modules explicitly. A CLI build that should
-ship the application commands must depend on the application package and add
-the exported module to its `modules` array.
+The bundled `cld` distribution imports the built-in modules explicitly. Every
+other application ships its module as a `cld` plugin. The installed `cld`
+loads plugins at run time, so the application releases its commands on its
+own schedule, without a new `cld` build.
 
-This explicit list defines what ships in that CLI build. Creating a module does
-not register it automatically. A third-party application can therefore publish
-the server independently and provide its own `cld` distribution or contribute
-the module to another distribution without importing Cloud repository source
-paths.
+## Ship a module as a plugin
+
+A plugin is an npm package, a `.tgz` archive of one, or a local directory
+with a `package.json` that declares the plugin manifest:
+
+```json
+{
+  "name": "@example/inventory-cli",
+  "version": "1.4.0",
+  "type": "module",
+  "files": ["dist"],
+  "cld": {
+    "apiVersion": 1,
+    "entry": "dist/cli.js"
+  }
+}
+```
+
+| Field | Rule |
+| --- | --- |
+| `name`, `version` | Required. Shown by `cld plugins list`. |
+| `cld.apiVersion` | Required. `1` is the `CloudCliModule` contract of `@k2b/cloud/cli`. |
+| `cld.entry` | Required. Relative path to an ESM file inside the package. |
+
+The entry's default export is the module from `defineCliCommands()`. Its
+`name` becomes the command, `cld inventory …`, and the plugin's ID.
+
+The names of built-in modules and top-level commands (`help`, `version`,
+`login`, `logout`, `auth`, `profile`, `update`, `plugins`) are reserved.
+`cld plugins install` refuses a plugin whose ID matches one of them. Choose a
+distinct ID, such as your application ID.
+
+Bundle the entry into one self-contained file. `cld` does not install plugin
+dependencies, so the bundle carries its own copy of `@k2b/cloud/cli`:
+
+```sh
+bun build src/cli.ts --target bun --format esm --outfile dist/cli.js
+```
+
+`cld` checks the module's shape, not its package copy. Any `@k2b/cloud`
+version that produces the `apiVersion: 1` module shape works.
+
+Release the plugin package together with the application. Command names,
+flags, and JSON output stay stable syntax across plugin versions.
+
+## Install a plugin
+
+```sh
+cld plugins install @example/inventory-cli@1.4.0
+cld plugins install ./inventory-cli-1.4.0.tgz
+cld plugins install ./packages/inventory-cli
+cld plugins list
+cld plugins run inventory items get <item-id>
+cld plugins remove inventory
+```
+
+`install` accepts a local directory, a local `.tgz` archive, or an npm package
+from the public npm registry. Pass an exact version or a dist-tag; the
+default is `latest`. `cld` checks the tarball against the registry's `sha512`
+integrity value. To install from a private registry, download the archive
+with `npm pack <package>` and install the `.tgz` file.
+
+Before it places a plugin, `cld` checks the manifest and shows the package,
+version, and source. It asks for confirmation unless you pass `--yes`, and
+without a terminal it requires `--yes`. It then loads the module and installs
+it under `$XDG_CONFIG_HOME/cloud/cld/plugins/<id>/`; without
+`XDG_CONFIG_HOME`, that is `~/.config/cloud/cld/plugins/<id>/`.
+Installing the same ID again replaces it. You can also place an unpacked
+plugin directory there by hand; `cld plugins list` shows its source as
+`manual`.
+
+`cld plugins list` shows each plugin's ID, package, version, source, and
+status:
+
+| Status | Meaning |
+| --- | --- |
+| `ok` | The plugin loads and its commands are available. |
+| `shadowed` | A later `cld` release added a built-in command with the same name. It takes precedence for `cld <id>`; run the plugin with `cld plugins run <id>`. |
+| `incompatible` | The manifest names a plugin API version that this `cld` does not support. |
+| `error` | The manifest, the entry, or the module is invalid, or the entry fails to load. |
+
+A plugin's commands run as `cld <id> …`. `cld plugins run <id> …` runs the same
+command tree and always reaches the plugin, even when it is shadowed, so a new
+built-in command never makes an installed plugin unreachable. Use it in
+scripts that must keep working across `cld` upgrades.
+
+`cld help` lists plugin modules next to the built-in modules and prints one
+warning line on stderr for each plugin that it skips. A broken plugin fails
+only its own commands. Built-in commands never load plugins.
+
+## Plugin security
+
+A plugin is not sandboxed. It runs inside `cld` with the permissions of your
+operating-system account and receives the same `CloudCliContext` as a
+built-in module: the selected profile, the Cloud credentials, the locale, and
+the output mode. Plugins do not get extra privileges or access to other
+plugins through `cld`, but their code can read any file that you can read.
+
+Install plugins only from sources that you trust, and pin a version for
+repeatable installations. Cloud authorizes plugin requests exactly like other
+requests from the same user. The server remains the only place that grants
+access.
 
 ## Keep authorization on the server
 
