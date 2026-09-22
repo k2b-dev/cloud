@@ -107,8 +107,10 @@ Inspect current examples in the [UI catalog](/ui).
 Cloud owns one mobile menu below 1024 px. The header launcher opens the current
 workspace menu by default; **All apps** switches to the application grid.
 The sheet header combines the workspace name and **All apps** in one segmented
-control. All apps uses a three-column grid and a local search over app names and
-descriptions. Signed-in users also find their profile, theme, language, and
+control. An application without its own navigation gets no header row: the
+sheet shows only the application grid, and the handle, backdrop, Escape, and
+Back dismiss it. All apps uses a three-column grid and a local search over app
+names and descriptions. Signed-in users also find their profile, theme, language, and
 sign-out actions there; the mobile header has no separate profile menu.
 At 1024 px and above, the existing desktop rail and workspace sidebar apply.
 There is no intermediate tablet menu.
