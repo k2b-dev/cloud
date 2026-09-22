@@ -54,10 +54,13 @@ test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab reques
     dom.root,
   );
   const settle = () => Bun.sleep(30);
+  const labels: Record<string, string> = { today: "Today", upcoming: "Upcoming" };
   const select = (view: string) => {
-    const link = dom.root.querySelector<HTMLAnchorElement>(`a[href="/app/spaces?view=${view}"]`);
-    expect(link).not.toBeNull();
-    link!.click();
+    const option = Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find((button) =>
+      button.textContent?.startsWith(labels[view]!),
+    );
+    expect(option).toBeDefined();
+    option!.click();
   };
   try {
     await settle();

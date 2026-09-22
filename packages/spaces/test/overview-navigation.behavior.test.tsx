@@ -9,7 +9,7 @@ describe("Spaces overview navigation", () => {
     return;
   }
 
-  test("enhances work links, restores history, and leaves modifier clicks native", async () => {
+  test("keeps the selected work view in the URL and restores it from history", async () => {
     const dom = createDomTestHarness();
     const previousCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
     Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
@@ -29,30 +29,25 @@ describe("Spaces overview navigation", () => {
       dom.root,
     );
     try {
-      const today = dom.root.querySelector<HTMLAnchorElement>('a[href="/app/spaces?view=today"]')!;
-      const upcoming = dom.root.querySelector<HTMLAnchorElement>('a[href="/app/spaces?view=upcoming"]')!;
-      expect(today).not.toBeNull();
-      expect(upcoming).not.toBeNull();
-      const modified = new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true });
-      upcoming.dispatchEvent(modified);
-      expect(modified.defaultPrevented).toBe(false);
-      expect(upcoming.hasAttribute("aria-current")).toBe(false);
-      // Happy DOM follows native anchors in the same window, including modifier clicks.
-      dom.window.history.replaceState(null, "", "/app/spaces");
+      const option = (label: string) =>
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find((button) => button.textContent?.startsWith(label))!;
+      const today = option("Today");
+      const upcoming = option("Upcoming");
+      expect(today).toBeDefined();
+      expect(upcoming).toBeDefined();
+      expect(option("For me").getAttribute("aria-checked")).toBe("true");
       today.focus();
-      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
-      today.dispatchEvent(click);
-      expect(click.defaultPrevented).toBe(true);
+      today.click();
       expect(window.location.search).toBe("?view=today");
-      expect(today.getAttribute("aria-current")).toBe("page");
+      expect(today.getAttribute("aria-checked")).toBe("true");
       expect(document.activeElement).toBe(today);
       const length = window.history.length;
       today.click();
       expect(window.history.length).toBe(length);
       dom.window.history.replaceState(null, "", "/app/spaces?view=upcoming");
       dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
-      expect(upcoming.getAttribute("aria-current")).toBe("page");
-      expect(today.hasAttribute("aria-current")).toBe(false);
+      expect(upcoming.getAttribute("aria-checked")).toBe("true");
+      expect(today.getAttribute("aria-checked")).toBe("false");
     } finally {
       dispose();
       dom.cleanup();
