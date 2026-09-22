@@ -12,7 +12,7 @@ Use `LinkCard` when the complete surface leads to one destination. Use `Avatar` 
 import { Avatar, LinkCard } from "@k2b/ui";
 ```
 
-`LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Without `color`, the glyph uses `--k2b-link-card-accent`, with the portable UI accent as its fallback; Cloud maps that hook to the active application's accent. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials.
+`LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Without `color`, the glyph uses `--k2b-app-workspace-active`, the same optional accent hook as `AppOverview`'s icon, which defaults to the action color; Cloud maps it to the active application's accent. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials.
 
 ## API reference
 

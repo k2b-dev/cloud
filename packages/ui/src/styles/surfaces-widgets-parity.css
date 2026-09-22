@@ -156,12 +156,10 @@
 .k2b-ui .k2b-link-card__chevron { flex: 0 0 auto; color: var(--k2b-text-muted); transition: color 120ms ease; }
 .k2b-ui .k2b-link-card:hover .k2b-link-card__chevron { color: var(--k2b-action); }
 
-/* Without an explicit color the glyph follows the host application's accent
-   through the optional `--k2b-link-card-accent` hook. */
-.k2b-ui .k2b-link-card:not([data-color]) .k2b-link-card__icon { color: var(--k2b-link-card-accent, var(--k2b-accent-600)); }
-.k2b-ui[data-theme="dark"] .k2b-link-card:not([data-color]) .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card:not([data-color]) .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card:not([data-color]) .k2b-link-card__icon { color: var(--k2b-link-card-accent, var(--k2b-accent-400)); }
+/* Without an explicit color the glyph follows the active application accent
+   through the same optional hook as AppOverview's icon; it defaults to the
+   action colour outside a host that maps it. */
+.k2b-ui .k2b-link-card:not([data-color]) .k2b-link-card__icon { color: var(--k2b-app-workspace-active); }
 
 .k2b-ui .k2b-link-card[data-color="blue"] .k2b-link-card__icon { color: var(--k2b-accent-600); }
 .k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon { color: var(--k2b-success-600); }

@@ -194,7 +194,6 @@
      it to the active app appearance. */
   --k2b-app-workspace-active: var(--ui-app-accent-text);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);
-  --k2b-link-card-accent: var(--ui-app-accent-text);
 }
 
 .dark :is(.cloud-app-canvas, .app-accent-scope) {
@@ -202,7 +201,6 @@
   --ui-app-accent-border: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
   --k2b-app-workspace-active: var(--ui-app-accent-text);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);
-  --k2b-link-card-accent: var(--ui-app-accent-text);
 }
 
 @utility slider-track-colors {
