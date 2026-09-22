@@ -1,5 +1,6 @@
 import { type JSX, Show } from "solid-js";
 import Placeholder from "../surfaces/Placeholder";
+import { PanelHeader } from "./PanelHeader";
 
 export type AppOverviewProps = {
   title: string;
@@ -82,12 +83,7 @@ const AppOverview = ((props: AppOverviewProps): JSX.Element => (
       <span class="k2b-app-overview__icon" aria-hidden="true">
         <i class={tablerIconClass(props.icon, "ti-apps")} />
       </span>
-      <div class="k2b-app-overview__identity">
-        <h1>{props.title}</h1>
-        <Show when={props.subtitle}>
-          <p>{props.subtitle}</p>
-        </Show>
-      </div>
+      <PanelHeader as="h1" size="lg" title={props.title} subtitle={props.subtitle} />
     </header>
     <div class="k2b-app-overview__columns">{props.children}</div>
   </div>

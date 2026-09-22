@@ -24,7 +24,9 @@ import {
 ## Compose the page
 
 Pass the application `title` and required Tabler `icon` to the root.
-`subtitle` is optional.
+`subtitle` is optional and should fit on one line. The root renders the title
+and subtitle with `PanelHeader size="lg"`, the same page header as a
+sidebar-first overview.
 
 Use `AppOverview.Main` for the collection. Its `toolbar` slot suits a search field or one compact filter.
 
