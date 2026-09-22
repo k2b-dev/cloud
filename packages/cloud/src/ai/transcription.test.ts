@@ -58,7 +58,7 @@ describe("audio model boundaries", () => {
       profiles: [chat, audio],
       credentialProfileIds: [],
     });
-    expect(Object.keys(errors).sort()).toEqual([
+    expect(errors.map((issue) => issue.setting).sort()).toEqual([
       "ai.audio_model_id",
       "ai.background_model_id",
       "ai.default_model_id",

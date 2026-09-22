@@ -20,7 +20,8 @@ import {
   splitAiModelAccess,
 } from "../ai/model-access";
 import { parseAiModelProfiles, planAiProfileCredentials, validateAiSettingsConfiguration } from "../ai/settings";
-import { type AuthContext, auth, jsonResponse, requiresAdmin, v } from "../server";
+import { type AiSettingsIssueWithMessage, aiSettingsNotSavedMessage, describeAiSettingsIssues } from "../ai/settings-messages";
+import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
 import { settingsDeleteLegacyKeys, settingsListLegacyKeys } from "../services";
 import { readAccountCategoryPolicy } from "../services/account-category-policy";
 import { audit } from "../services/audit";
@@ -97,6 +98,8 @@ const storeAiCredentials = async (
 
 type AiSettingsMutationPlan = {
   errors: FieldErrors;
+  /** Structured validation issues with stable codes; `errors` carries the same messages keyed by setting. */
+  issues?: AiSettingsIssueWithMessage[];
   keepCredentialProfileIds?: string[];
   modelProfileIds?: string[];
 };
@@ -111,6 +114,7 @@ const prepareAiSettingsMutation = async (
   updates: Record<string, unknown>,
   resets: readonly string[],
   aiSplit: ReturnType<typeof splitAiProfileCredentials>,
+  locale: string,
 ): Promise<AiSettingsMutationPlan> => {
   const keys = [...Object.keys(updates), ...resets];
   if (!keys.some((key) => AI_CONFIGURATION_KEYS.has(key))) return { errors: {} };
@@ -164,7 +168,7 @@ const prepareAiSettingsMutation = async (
     keepCredentialProfileIds = credentialPlan.keepCredentialProfileIds;
   }
 
-  const errors = validateAiSettingsConfiguration({
+  const issues = validateAiSettingsConfiguration({
     enabled: nextEnabled,
     defaultModelId: String(valueAfterMutation(AI_DEFAULT_MODEL_KEY, currentDefaultModelId ?? "", updates, resets)),
     backgroundModelId: String(valueAfterMutation(AI_BACKGROUND_MODEL_KEY, currentBackgroundModelId ?? "", updates, resets)),
@@ -174,8 +178,11 @@ const prepareAiSettingsMutation = async (
     profiles: nextParsed.profiles,
     credentialProfileIds: keepCredentialProfileIds ?? existingCredentialProfileIds,
   });
+  // Stored profiles come second so a profile that is being removed keeps its label.
+  const described = describeAiSettingsIssues(issues, { locale, profiles: [...nextParsed.profiles, ...currentParsed.profiles] });
   return {
-    errors,
+    errors: described.errors,
+    issues: described.issues,
     keepCredentialProfileIds,
     modelProfileIds: profilesUpdated || profilesReset ? nextParsed.profiles.map((profile) => profile.id) : undefined,
   };
@@ -405,13 +412,13 @@ const app = new Hono<AuthContext>()
 
     let aiPlan: AiSettingsMutationPlan;
     try {
-      aiPlan = await prepareAiSettingsMutation(validatedValues, resets, aiSplit);
+      aiPlan = await prepareAiSettingsMutation(validatedValues, resets, aiSplit, getLocale(c));
     } catch (error) {
       console.error("[settings] failed to validate the prospective AI configuration", error);
       return c.json({ message: "Failed to validate AI settings" }, 500);
     }
     if (Object.keys(aiPlan.errors).length > 0) {
-      return c.json({ message: "Invalid AI configuration", errors: aiPlan.errors }, 400);
+      return c.json({ message: aiSettingsNotSavedMessage(getLocale(c)), errors: aiPlan.errors, issues: aiPlan.issues ?? [] }, 400);
     }
 
     const fieldErrors: FieldErrors = {};
@@ -491,13 +498,13 @@ const app = new Hono<AuthContext>()
 
     let aiPlan: AiSettingsMutationPlan;
     try {
-      aiPlan = await prepareAiSettingsMutation({}, [key], null);
+      aiPlan = await prepareAiSettingsMutation({}, [key], null, getLocale(c));
     } catch (error) {
       console.error("[settings] failed to validate the prospective AI configuration", error);
       return c.json({ message: "Failed to validate AI settings" }, 500);
     }
     if (Object.keys(aiPlan.errors).length > 0) {
-      return c.json({ message: "Invalid AI configuration", errors: aiPlan.errors }, 400);
+      return c.json({ message: aiSettingsNotSavedMessage(getLocale(c)), errors: aiPlan.errors, issues: aiPlan.issues ?? [] }, 400);
     }
 
     try {
