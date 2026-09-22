@@ -26,7 +26,9 @@ or calendar without copying the work into separate systems.
   enabled calendar feed to another calendar client.
 
 The Spaces start page brings accessible work together without changing its
-owning Space. Pin frequently used Spaces, search Spaces, tasks, and events,
+owning Space. A sidebar lists your Spaces with their open items and last
+activity; opening one enters its workspace, and **New space** starts one from
+a starter. Pin frequently used Spaces, search Spaces, tasks, and events,
 and switch between **For me**, **Today**, and **Upcoming**. On larger screens,
 the Activity panel shows recent Space and item changes; on mobile it opens
 from the Activity button.
