@@ -167,6 +167,13 @@ export const resolveCustomAppWithGrantsForAccess = async (
   };
 };
 
+/** Published apps the caller may open, under the same bound-credential and scope caps as `gateCustomAppAtAccess`. */
+export const listUsableCustomAppsForAccess = async (access: GridsAccessContext, page: { limit: number; offset?: number }) => {
+  if (resourceBoundBaseIdFor(access) !== undefined) return { items: [], total: 0 };
+  if (!gridsService.permission.hasAtLeast(credentialPermissionFor(access), "read")) return { items: [], total: 0 };
+  return gridsService.customApp.listUsableSummaries({ subject: accessSubjectFor(access), ...page });
+};
+
 export const gateCustomAppAtAccess = async (access: GridsAccessContext, customAppId: string): Promise<Result<PermissionLevel>> => {
   const resolved = await resolveCustomAppWithGrantsForAccess(access, customAppId);
   return gridsService.permission.hasAtLeast(resolved.level, "read") ? ok(resolved.level) : deny();

@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-09-20
+updated: 2026-09-22
 ---
 
 # Grids
@@ -13,6 +13,12 @@ updated: 2026-09-20
 Grids builds structured applications from tables and records. A base can grow
 from a simple shared dataset into forms, saved views, dashboards, generated
 documents, and workflows without splitting the domain across unrelated tools.
+
+The Grids overview lists your Bases in a sidebar with their table count and
+last change. The page shows the published Apps you may use, including Apps
+shared with you from Bases you cannot open, then the most recently changed
+tables across all Bases, and a **New base** menu for a blank Base or a
+template. **All apps** lists every usable App.
 
 ## Use Grids
 
