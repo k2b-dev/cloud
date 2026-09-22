@@ -22,6 +22,7 @@ import { resolveRoleFolder } from "./folders";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { assertMailboxTransportFence, loadMailboxTransportFence, type MailboxTransportFence } from "./mailbox-transport-fence";
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
+import { assessMessageSourceSize } from "./message-source-size";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
@@ -1306,7 +1307,15 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
               if (download.expectedSize > MAX_IMPORT_SOURCE_BYTES) {
                 throw Object.assign(new Error("Remote draft source exceeds the import limit"), { code: "REMOTE_DRAFT_TOO_LARGE" });
               }
-              const blob = await storeReadableBlob(download.stream, download.expectedSize);
+              const blob = await storeReadableBlob(download.stream);
+              const sizeVerdict = assessMessageSourceSize(blob.byteLength, download.expectedSize);
+              if (sizeVerdict.kind === "advisory_mismatch") {
+                log.warn("Remote draft source size differs from the advertised RFC822.SIZE", {
+                  snapshotId: snapshot.id,
+                  expectedSize: sizeVerdict.expectedSize,
+                  byteLength: sizeVerdict.byteLength,
+                });
+              }
               await assertLeaseActive();
               mimeBlobId = blob.id;
               await sql`

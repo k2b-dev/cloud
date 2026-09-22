@@ -1119,14 +1119,14 @@ suite("mail manual conversation threading", () => {
         "Subject: Re: Verified projection",
         "Content-Type: text/plain; charset=utf-8",
         "",
-        "This source intentionally fails its advertised size.",
+        "This source is announced but intentionally never delivered.",
       ].join("\r\n"),
     );
     await expect(
       hydrateMessageFromSource({
         messageId: newerId,
-        source: Readable.from([newerSource]),
-        expectedSize: newerSource.byteLength + 1,
+        source: Readable.from([]),
+        expectedSize: newerSource.byteLength,
       }),
     ).rejects.toMatchObject({ code: "MESSAGE_SIZE_MISMATCH" });
     const [pendingProjection] = await sql<{ work_status: string; revision: number }[]>`
