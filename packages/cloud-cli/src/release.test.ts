@@ -275,3 +275,9 @@ describe("Cloud CLI releases", () => {
     }
   });
 });
+
+test("release API requests carry a GitHub token only when one is configured", async () => {
+  const { releaseApiHeaders } = await import("./release");
+  expect(releaseApiHeaders(undefined)).toEqual({ Accept: "application/vnd.github+json" });
+  expect(releaseApiHeaders("ghs_x")).toEqual({ Accept: "application/vnd.github+json", Authorization: "Bearer ghs_x" });
+});
