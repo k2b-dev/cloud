@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { logger } from "@k2b/cloud/services";
 import type { Headers } from "@zone-eu/mailsplit";
 import { sql } from "bun";
 import { type AttachmentStream, MailParser, type MessageText } from "mailparser";
@@ -15,6 +16,7 @@ import { assertMailboxTransportFence, type MailboxTransportFence } from "./mailb
 import { createBlobReadable, type StoredBlob, storeReadableBlob } from "./message-blobs";
 import { extractMessageProtocolFacts, parseMessageProtocolFacts, readMessageRootHeaders } from "./message-protocol";
 import { parseMessageReceiptSource, recordMessageReceipt } from "./message-receipts";
+import { assessMessageSourceSize } from "./message-source-size";
 import { splitSearchText } from "./search-chunks";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
 
@@ -29,6 +31,8 @@ type HydratedPart = {
   blob: StoredBlob;
   attachment: boolean;
 };
+
+const log = logger("mail:hydration");
 
 // Hydration stops retrying at this attempt count; a permanent failure jumps to it.
 const MAX_HYDRATION_ATTEMPTS = 5;
@@ -262,17 +266,17 @@ const normalizeErrorCode = (error: unknown): string => {
 
 const readableFromText = (value: string): Readable => Readable.from([Buffer.from(value, "utf8")]);
 
-const storeMessageSource = async (source: Readable, expectedSize?: number | null): Promise<StoredBlob> => {
-  try {
-    return await storeReadableBlob(source, expectedSize);
-  } catch (error) {
-    if (normalizeErrorCode(error) === "BLOB_SIZE_MISMATCH") {
-      throw Object.assign(new Error("Message source ended before the advertised byte count", { cause: error }), {
-        code: "MESSAGE_SIZE_MISMATCH",
-      });
-    }
-    throw error;
+const storeMessageSource = async (messageId: string, source: Readable, expectedSize?: number | null): Promise<StoredBlob> => {
+  const blob = await storeReadableBlob(source);
+  const verdict = assessMessageSourceSize(blob.byteLength, expectedSize);
+  if (verdict.kind === "advisory_mismatch") {
+    log.warn("Mail message source size differs from the advertised RFC822.SIZE", {
+      messageId,
+      expectedSize: verdict.expectedSize,
+      byteLength: verdict.byteLength,
+    });
   }
+  return blob;
 };
 
 const readReceiptSource = async (blob: StoredBlob): Promise<string | null> => {
@@ -698,7 +702,7 @@ export const hydrateMessageFromSource = async (params: {
   let parsePipeline: Promise<void> | null = null;
 
   try {
-    const storedSource = await storeMessageSource(params.source, params.expectedSize);
+    const storedSource = await storeMessageSource(params.messageId, params.source, params.expectedSize);
     sourceBlob = storedSource;
     await sql.begin(async (tx) => {
       const [current] = await tx<{ id: string }[]>`

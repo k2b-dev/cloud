@@ -3039,8 +3039,8 @@ suite("mail lifecycle control plane", () => {
           if (!request) throw new Error("Terminal hydration dependency request is missing");
           await consume({
             ...request,
-            expectedSize: Buffer.byteLength(source) + 1,
-            stream: Readable.from([source]),
+            expectedSize: Buffer.byteLength(source),
+            stream: Readable.from([]),
           });
         },
       );

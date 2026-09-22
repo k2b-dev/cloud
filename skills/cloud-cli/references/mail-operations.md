@@ -11,7 +11,7 @@ cld --json mail status
 cld --json mail mailbox wait --health active --timeout-seconds 300
 ```
 
-`mailbox wait` stops early when the mailbox enters an incompatible failure health. A healthy command result does not replace checking the relevant durable command or sync run.
+`mailbox wait` stops early when the mailbox enters an incompatible failure health. A healthy command result does not replace checking the relevant durable command or sync run. `mail status` reports `degraded` with the failed count while any message hydration has failed, even when the provider transport itself is active.
 
 Mailbox admins can inspect the redacted operator view:
 
