@@ -243,6 +243,7 @@ jobs:
           APP_SECRET: ${{ env.TEST_SECRET }}
         run: |
           set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:17-alpine valkey/valkey:8-alpine
           registry="ghcr.io/${OWNER,,}"
           ref() { jq -r --arg image "$1" '.[] | select(.image == $image) | .digest' "$RUNNER_TEMP/release-images.json"; }
           for image in cloud-gateway cloud-core cloud-app-faq; do

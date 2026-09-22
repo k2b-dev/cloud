@@ -51,6 +51,16 @@ describe("personal app rail", () => {
       false,
     );
   });
+  test("SSR paths and the browser href agree on the active app across differing origins", () => {
+    const link = app("mail", "Mail");
+    // The server sees the internal upstream origin; the island later sees the public one.
+    expect(railLinkActive(link, "/app/mail/inbox?view=mine")).toBe(true);
+    expect(railLinkActive(link, "https://cloud.example.test/app/mail/inbox?view=mine")).toBe(true);
+    expect(railLinkActive(link, "/app/mailbox")).toBe(false);
+    const exact = { ...link, match: "/app/mail?q=one#item", exact: true };
+    expect(railLinkActive(exact, "/app/mail?q=one#item")).toBe(true);
+    expect(railLinkActive(exact, "/app/mail?q=two#item")).toBe(false);
+  });
   test("rejects unsafe link forms while allowing local paths and web links", () => {
     for (const href of [
       "javascript:alert(1)",

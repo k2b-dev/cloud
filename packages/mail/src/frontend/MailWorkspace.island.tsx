@@ -45,7 +45,7 @@ import {
   reconcileMailListOptimisticState,
 } from "./_components/mail-list-optimistic";
 import { createMailLiveInvalidationHub, type MailLiveInvalidation } from "./_components/mail-live-invalidation-hub";
-import { buildMailListHref, isMailWorkspaceUrl } from "./_components/mail-navigation";
+import { buildMailListHref, isMailWorkspaceUrl, mailRouteUrl, resolveMailWorkspaceUrl } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
@@ -66,7 +66,7 @@ import { assertCursorProgress } from "./pagination";
 
 const rank = (permission: string): number => (permission === "admin" ? 3 : permission === "write" ? 2 : permission === "read" ? 1 : 0);
 const mailListScope = (href: string): string => {
-  const url = new URL(href, "http://mail.local");
+  const url = mailRouteUrl(href);
   url.searchParams.delete("conversation");
   url.searchParams.delete("message");
   url.searchParams.delete("cursor");
@@ -75,7 +75,8 @@ const mailListScope = (href: string): string => {
 
 export default function MailWorkspace(props: {
   data: MailboxPageData;
-  requestUrl: string;
+  /** Route as `pathname + search`; resolved against the browser origin, never an upstream URL. */
+  requestPath: string;
   currentUserId: string;
   currentUserEmail: string | null;
   dateConfig: DateContext;
@@ -89,7 +90,7 @@ export default function MailWorkspace(props: {
   // A store keeps shell, list, and detail consumers granular even though the
   // server snapshot remains one canonical contract.
   const [data, setData] = createStore(props.data);
-  const [requestUrl, setRequestUrl] = createSignal(props.requestUrl);
+  const [requestPath, setRequestPath] = createSignal(props.requestPath);
   const [listCollapsed, setListCollapsed] = createSignal(props.initialPreferences.listCollapsed);
   const [detailsOpen, setDetailsOpen] = createSignal(props.initialPreferences.detailsOpen);
   const [toolbarActions, setToolbarActions] = createSignal(props.initialPreferences.toolbarActions);
@@ -102,7 +103,7 @@ export default function MailWorkspace(props: {
   const [liveTransportDegraded, setLiveTransportDegraded] = createSignal(false);
   const [liveSnapshotDegraded, setLiveSnapshotDegraded] = createSignal(false);
   const liveDegraded = createMemo(() => liveTransportDegraded() || liveSnapshotDegraded());
-  const activeSearch = createMemo(() => resolveMailSearchRoute(new URL(requestUrl(), "http://mail.local")));
+  const activeSearch = createMemo(() => resolveMailSearchRoute(mailRouteUrl(requestPath())));
   const activeTagId = createMemo(() => {
     const expression = activeSearch().expression;
     return expression?.type === "local_tag_id" ? expression.tagId : null;
@@ -169,8 +170,8 @@ export default function MailWorkspace(props: {
     signal: AbortSignal,
     listMode: MailboxPageData["listMode"] = data.listMode,
   ): Promise<MailboxPageData | null> => {
-    const target = new URL(href, window.location.origin);
-    if (!isMailWorkspaceUrl(target, mailboxId, window.location.origin)) return null;
+    const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
+    if (!target) return null;
     const response = await apiClient.mailboxes[":mailboxId"]["workspace-route"].$get(
       {
         param: { mailboxId },
@@ -189,7 +190,7 @@ export default function MailWorkspace(props: {
   };
   const encodeRouteSource = (href: string, listMode: MailboxPageData["listMode"]) => JSON.stringify({ href, listMode });
   const decodeRouteSource = (source: string): { href: string; listMode: MailboxPageData["listMode"] } => JSON.parse(source);
-  const initialRouteSource = encodeRouteSource(props.requestUrl, props.data.listMode);
+  const initialRouteSource = encodeRouteSource(props.requestPath, props.data.listMode);
   const [routeSource, setRouteSource] = createSignal(initialRouteSource);
   let committedRouteSource = initialRouteSource;
   let workspaceTransition: WorkspaceTransition | null = null;
@@ -275,9 +276,9 @@ export default function MailWorkspace(props: {
     href: string,
     listMode: MailboxPageData["listMode"] = data.listMode,
   ): Promise<"applied" | "failed" | "stale"> => {
-    const target = new URL(href, window.location.origin);
-    if (!isMailWorkspaceUrl(target, mailboxId, window.location.origin)) return Promise.resolve("failed");
-    const source = encodeRouteSource(target.toString(), listMode);
+    const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
+    if (!target) return Promise.resolve("failed");
+    const source = encodeRouteSource(`${target.pathname}${target.search}`, listMode);
     if (workspaceTransition) workspaceTransition.resolve("stale");
     workspaceTransition = null;
     if (source === routeSource()) {
@@ -297,7 +298,7 @@ export default function MailWorkspace(props: {
     const first = pages[0];
     if (!first || first.source !== routeSource()) return;
     const target = decodeRouteSource(first.source);
-    const scopeChanged = mailListScope(requestUrl()) !== mailListScope(target.href);
+    const scopeChanged = mailListScope(requestPath()) !== mailListScope(target.href);
     let next = applyPendingListState(preserveCurrentDetail(first.snapshot));
     for (const page of pages.slice(1)) {
       const reconciled = applyPendingListState(page.snapshot);
@@ -322,7 +323,7 @@ export default function MailWorkspace(props: {
     }
     batch(() => {
       committedRouteSource = first.source;
-      setRequestUrl(target.href);
+      setRequestPath(target.href);
       setData(reconcile(next));
       setConversationSelection((current) =>
         scopeChanged
@@ -380,8 +381,7 @@ export default function MailWorkspace(props: {
 
   const loadMoreConversations = async (href: string): Promise<boolean> => {
     if (routeLoading()) return false;
-    const target = new URL(href, window.location.origin);
-    if (!isMailWorkspaceUrl(target, mailboxId, window.location.origin)) return false;
+    if (!resolveMailWorkspaceUrl(href, mailboxId, window.location.origin)) return false;
     await workspaceQuery.loadMore();
     const error = workspaceQuery.error();
     if (error) toast.error(error.message);
@@ -428,7 +428,7 @@ export default function MailWorkspace(props: {
     setConversationSelection(emptyMailConversationSelection());
     setSelectionMode(false);
     void (async () => {
-      const href = buildMailListHref(new URL(requestUrl()));
+      const href = buildMailListHref(mailRouteUrl(requestPath()));
       const result = await replaceWorkspaceRoute(href, listMode);
       if (result === "applied") {
         navigate(href, { replace: true, scroll: "preserve" });
@@ -509,7 +509,7 @@ export default function MailWorkspace(props: {
       if (disposed) return;
       if (result.deleted) return documentNavigate("/app/mail");
       if (!result.workspaceChanged) return;
-      const refreshResult = await replaceWorkspaceRoute(requestUrl());
+      const refreshResult = await replaceWorkspaceRoute(requestPath());
       if (refreshResult === "failed") toast.error(t().settingsRefreshFailed);
     } finally {
       if (!disposed) setSettingsOpening(false);
@@ -523,7 +523,7 @@ export default function MailWorkspace(props: {
       const result = await openMailboxHealthDialog({ mailboxId: data.mailbox.id, dateConfig: props.dateConfig });
       if (disposed) return;
       if (!result.workspaceChanged) return;
-      const refreshResult = await replaceWorkspaceRoute(requestUrl());
+      const refreshResult = await replaceWorkspaceRoute(requestPath());
       if (refreshResult === "failed") toast.error(t().healthRefreshFailed);
     } finally {
       if (!disposed) setManagementOpening(null);
@@ -563,13 +563,13 @@ export default function MailWorkspace(props: {
       if (currentListKey !== initialListKey) return;
       current.searchParams.delete("mailingList");
       window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
-      setRequestUrl(current.toString());
+      setRequestPath(`${current.pathname}${current.search}`);
     }
   };
 
   let openedMailingListKey: string | null = null;
   createEffect(() => {
-    const key = new URL(requestUrl()).searchParams.get("mailingList")?.trim().toLowerCase().slice(0, 4096) || null;
+    const key = mailRouteUrl(requestPath()).searchParams.get("mailingList")?.trim().toLowerCase().slice(0, 4096) || null;
     if (!key) {
       openedMailingListKey = null;
       return;
@@ -580,7 +580,7 @@ export default function MailWorkspace(props: {
   });
 
   onMount(() => {
-    setRequestUrl(window.location.href);
+    setRequestPath(`${window.location.pathname}${window.location.search}`);
     let readyReceived = false;
     const live = createLiveWebSocket<MailLiveServerMessage>({
       url: "/api/mail/ws",
@@ -663,7 +663,7 @@ export default function MailWorkspace(props: {
       void (async () => {
         const result = await replaceWorkspaceRoute(`${url.pathname}${url.search}`);
         if (!disposed && result === "failed") {
-          navigate(requestUrl(), { replace: true, scroll: "preserve", viewTransition: false });
+          navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
           toast.error(t().restoreViewFailed);
         }
       })();
@@ -789,7 +789,7 @@ export default function MailWorkspace(props: {
     } else if (result === "failed") toast.error(t().openConversationFailed);
   };
 
-  const requireWorkspaceReconcile = () => requireMailWorkspaceRefresh(() => replaceWorkspaceRoute(requestUrl()), t().refreshMailboxFailed);
+  const requireWorkspaceReconcile = () => requireMailWorkspaceRefresh(() => replaceWorkspaceRoute(requestPath()), t().refreshMailboxFailed);
 
   const reconcileWorkspace = async () => {
     const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
@@ -968,7 +968,7 @@ export default function MailWorkspace(props: {
   };
 
   const conversationHref = (conversationId: string): string => {
-    const current = new URL(buildMailListHref(new URL(requestUrl())), window.location.origin);
+    const current = new URL(buildMailListHref(mailRouteUrl(requestPath())), window.location.origin);
     current.searchParams.set("conversation", conversationId);
     return `${current.pathname}${current.search}`;
   };
@@ -1199,7 +1199,7 @@ export default function MailWorkspace(props: {
       const refreshError = await captureMailWorkspaceRefreshError(() =>
         removesActiveConversation
           ? requireMailWorkspaceRefresh(
-              () => transitionWorkspaceHref(buildMailListHref(new URL(requestUrl())), true),
+              () => transitionWorkspaceHref(buildMailListHref(mailRouteUrl(requestPath())), true),
               t().actionRefreshFailed,
             )
           : requireWorkspaceReconcile(),
@@ -1446,7 +1446,7 @@ export default function MailWorkspace(props: {
                   <MailConversationList
                     mailbox={data.mailbox}
                     mailboxId={data.mailbox.id}
-                    requestUrl={requestUrl()}
+                    requestUrl={requestPath()}
                     query={data.query}
                     title={data.listTitle}
                     items={data.listItems}
@@ -1491,7 +1491,7 @@ export default function MailWorkspace(props: {
                 </AppWorkspace.MainPane>
                 <MailConversationReader
                   mailboxId={data.mailbox.id}
-                  requestUrl={requestUrl()}
+                  requestUrl={requestPath()}
                   canWrite={canWrite()}
                   canAdmin={canAdmin()}
                   identities={data.identities}
@@ -1593,7 +1593,7 @@ export default function MailWorkspace(props: {
               conversationDrafts={data.conversationDrafts}
               messages={data.detailMessages}
               subject={data.selectedSubject}
-              requestUrl={requestUrl()}
+              requestUrl={requestPath()}
               dateConfig={props.dateConfig}
               onCollaborationChange={applyCollaborationState}
               onConversationTagsChange={applyConversationTags}

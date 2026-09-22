@@ -68,7 +68,7 @@ const shareView = (row: ShareRow, binding: Binding | null, url: string | null = 
   title: row.title,
   note: row.note,
   publicNote: row.public_note,
-  base: { id: binding ? baseId(binding) : row.base_id, name: binding?.identity_name ?? row.base_path },
+  base: { id: binding ? baseId(binding) : row.base_id, name: binding?.identity_name ?? row.base_path, kind: binding?.kind },
   scope: row.scope,
   items: row.items,
   createdBy: row.created_by_name,

@@ -29,7 +29,7 @@ should use them only when a feature guide gives the exact import.
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
-| `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, and admin layouts; runtime context; URL filters |
+| `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, and admin layouts; runtime context; request path; URL filters |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |

@@ -6,6 +6,15 @@ export type { MailListItem } from "../../service/workspace";
 export const isMailWorkspaceUrl = (url: URL, mailboxId: string, origin: string): boolean =>
   url.origin === origin && url.pathname === `/app/mail/${mailboxId}`;
 
+/** Resolves a route (`pathname + search` or absolute) against the browser origin; null when it leaves this mailbox. */
+export const resolveMailWorkspaceUrl = (href: string, mailboxId: string, origin: string): URL | null => {
+  const url = new URL(href, origin);
+  return isMailWorkspaceUrl(url, mailboxId, origin) ? url : null;
+};
+
+/** Parses a route given as `pathname + search`. The placeholder origin never reaches a href. */
+export const mailRouteUrl = (route: string): URL => new URL(route, "http://mail.local");
+
 export const buildMailListHref = (requestUrl: URL, clearSearch = false): string => {
   const next = new URL(requestUrl);
   next.searchParams.delete("conversation");

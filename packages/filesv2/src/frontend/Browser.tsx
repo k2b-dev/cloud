@@ -36,6 +36,7 @@ import {
 import { isMarkdown } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { useAssetMessages } from "./asset-messages";
+import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import {
   browseOptions,
@@ -647,7 +648,7 @@ export default function Browser(props: {
             type: "info",
             content: () => (
               <InlineGuidance icon="ti ti-folder">
-                <span class="break-all">{`${props.directory.base.name} / ${folder()}`.replace(/ \/ $/, "")}</span>
+                <span class="break-all">{`${baseLabel(props.directory.base, b())} / ${folder()}`.replace(/ \/ $/, "")}</span>
               </InlineGuidance>
             ),
           },
@@ -1061,7 +1062,7 @@ export default function Browser(props: {
     const value = searchText().trim();
     if (value !== (props.directory.query ?? "")) props.onSearch?.(value || null);
   };
-  const parentOf = (path: string) => parentPath(path) || props.directory.base.name;
+  const parentOf = (path: string) => parentPath(path) || baseLabel(props.directory.base, b());
   const detailOpen = () => selectedPaths().length > 0;
   const addItems = () =>
     !canCreate()
@@ -1201,7 +1202,7 @@ export default function Browser(props: {
                 type="search"
                 icon="ti ti-search"
                 placeholder={b().search}
-                aria-label={b().searchIn(folder().split("/").at(-1) || props.directory.base.name)}
+                aria-label={b().searchIn(folder().split("/").at(-1) || baseLabel(props.directory.base, b()))}
                 value={searchText()}
                 onValueChange={setSearchText}
                 onSubmit={submitSearch}

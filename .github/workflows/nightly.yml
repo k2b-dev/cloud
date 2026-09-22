@@ -57,6 +57,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: |
           set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine
           docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils
@@ -92,6 +93,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: |
           set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:15-alpine
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \

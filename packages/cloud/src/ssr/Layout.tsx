@@ -26,6 +26,7 @@ import type { LayoutBreadcrumb } from "./layout-runtime";
 import { platformMessages } from "./platform-messages";
 import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
 import { sortRailApps } from "./rail-navigation";
+import { requestPath } from "./request-path";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 import TimezoneCookie from "./TimezoneCookie.island";
 
@@ -257,7 +258,7 @@ export default function Layout(props: LayoutProps) {
             openAppsLabel={t.openApps}
             apps={allApps}
             railSettings={c.get("railPreferences") ?? defaultRailPreferences()}
-            currentUrl={c.req.raw.url}
+            currentPath={requestPath(c)}
             profileAvatarSrc={profileAvatarSrc}
             profileName={profileName}
             searchHelpApps={searchHelpApps}

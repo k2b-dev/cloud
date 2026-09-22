@@ -53,7 +53,7 @@ import { getMailConversationToolbarSections, type MailConversationToolbarActionI
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
-import { buildMailListHref } from "./mail-navigation";
+import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
 type MailConversationComposerRequest = {
@@ -167,7 +167,7 @@ export default function MailConversationReader(props: {
     onError: (error) => prompts.error(error.message),
   });
   const summarySaving = summarySave.loading;
-  const closeHref = () => buildMailListHref(new URL(props.requestUrl));
+  const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
   let historyScroller: HTMLDivElement | undefined;

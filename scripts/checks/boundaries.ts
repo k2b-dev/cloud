@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { packageIds } from "../workspace";
-import { listFiles, sourceFilePattern } from "./files";
+import { isTestFile, listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const extractSpecifiers = (source: string): Array<{ specifier: string; index: number }> => {
@@ -204,9 +204,39 @@ const checkActorUsage = (workspaceRoot: string, appNames: string[]): Finding[] =
   return findings;
 };
 
+/**
+ * Behind the gateway `c.req.url` carries the internal upstream origin
+ * (`http://app-mail:3000`). Serialized into an island prop it breaks every
+ * same-origin guard in the browser and leaks the hostname. Pages hand islands
+ * the route as `pathname + search` via `requestPath(c)` from `@k2b/cloud/ssr`.
+ */
+const requestOriginAttributeRe = /=\{\s*(?:c\.req\.(?:raw\.)?url|\w*[uU]rl\.(?:toString\(\)|href))\s*\}/;
+
+const checkIslandRequestOrigin = (workspaceRoot: string, packageNames: string[]): Finding[] => {
+  const findings: Finding[] = [];
+
+  for (const packageName of packageNames) {
+    for (const file of listFiles(join(workspaceRoot, "packages", packageName, "src"), /\.tsx$/)) {
+      if (isTestFile(file)) continue;
+      const lines = readFileSync(file, "utf8").split("\n");
+      lines.forEach((line, index) => {
+        if (!requestOriginAttributeRe.test(line)) return;
+        findings.push({
+          file,
+          line: index + 1,
+          message:
+            "Do not pass the absolute request URL to a component: behind the gateway its origin is the internal upstream. Pass requestPath(c) from @k2b/cloud/ssr and resolve it against window.location.origin in the browser.",
+        });
+      });
+    }
+  }
+
+  return findings;
+};
+
 export const rule: Rule = {
   name: "boundaries",
-  description: "Package import boundaries, contracts/shared drift, CLI output modes, and actor usage",
+  description: "Package import boundaries, contracts/shared drift, CLI output modes, actor usage, and request URLs in JSX",
   run: async ({ workspaceRoot }) => {
     const appNames = packageIds(workspaceRoot).filter(
       (name) => name !== "cloud" && name !== "ui" && existsSync(join(workspaceRoot, "packages", name, "src")),
@@ -217,6 +247,10 @@ export const rule: Rule = {
       ...checkContractsSharedDrift(workspaceRoot),
       ...checkCliOutputModes(workspaceRoot, appNames),
       ...checkActorUsage(workspaceRoot, appNames),
+      ...checkIslandRequestOrigin(
+        workspaceRoot,
+        packageIds(workspaceRoot).filter((name) => name !== "ui"),
+      ),
     ];
   },
 };

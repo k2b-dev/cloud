@@ -19,7 +19,8 @@ type LayoutRailProps = {
   openAppsLabel: string;
   apps: RailApp[];
   railSettings: RailSnapshot;
-  currentUrl: string;
+  /** `pathname + search` of the request; the island resolves it against the browser origin. */
+  currentPath: string;
   profileAvatarSrc?: string;
   profileName: string;
   searchHelpApps: GlobalSearchHelpApp[];
@@ -46,7 +47,7 @@ export default function LayoutRail(props: LayoutRailProps) {
           </a>
         </div>
         <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={props.appsLabel}>
-          <RailApps apps={props.apps} settings={props.railSettings} currentUrl={props.currentUrl} />
+          <RailApps apps={props.apps} settings={props.railSettings} currentPath={props.currentPath} />
           <AppLaunchpad
             profile={{ name: props.profileName, theme: props.theme }}
             apps={props.launchpadApps}

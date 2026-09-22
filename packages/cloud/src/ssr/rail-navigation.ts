@@ -48,8 +48,9 @@ export const projectRailNavigation = (apps: readonly RailApp[], settings: RailSn
   };
 };
 
-export const railLinkActive = (link: RailLink, currentUrl: string): boolean => {
-  const current = new URL(currentUrl, "https://cloud.invalid");
+/** `currentPath` is the route as `pathname + search`; an absolute URL is accepted but never required. */
+export const railLinkActive = (link: RailLink, currentPath: string): boolean => {
+  const current = new URL(currentPath, "https://cloud.invalid");
   const target = new URL(link.match, current);
   if (target.origin !== current.origin) return false;
   if (link.exact) return target.pathname === current.pathname && target.search === current.search && target.hash === current.hash;

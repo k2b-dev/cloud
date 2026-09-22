@@ -228,11 +228,20 @@ suite("platform capability idempotency claims", () => {
 
   test("freezes the claim as uncertain when the request times out", async () => {
     const key = `timeout-${crypto.randomUUID()}`;
+    // Like a real fetch, rejects immediately when the signal is already
+    // aborted; only listening for a future "abort" event would hang forever
+    // if the deadline fired before the upstream call was reached.
     const stalls: UpstreamFetch = async (_input, init) => {
-      await new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true }));
+      const signal = init?.signal;
+      if (!signal) throw new Error("upstream fetch requires the dispatch signal");
+      signal.throwIfAborted();
+      await new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
       throw new Error("unreachable");
     };
-    const timedOut = await invoke({ key, fetch: stalls, actionTimeoutMs: 25 });
+    // The deadline starts before the invocation is signed and the claim is
+    // written; both must finish first, or the claim is never recorded. That
+    // phase takes 2-7 ms idle and up to ~70 ms on a saturated machine.
+    const timedOut = await invoke({ key, fetch: stalls, actionTimeoutMs: 1_000 });
     expect(timedOut.status).toBe(504);
 
     const retry = await invoke({ key, fetch: succeeds });
