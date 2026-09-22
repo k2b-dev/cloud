@@ -57,6 +57,10 @@ and durable data.
   mandate for the workload. It authenticates to Core with its app-bound
   workload credential and never stores the user's session or personal API key.
 - Keep transport conversion in handlers and domain rules in the application.
+- Ship server-side files (templates, fixtures a service reads at runtime)
+  under `src/assets/` and resolve them with `appAssetPath()` from
+  `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in
+  the bundled image.
 - Store durable state explicitly, never in process memory or container files.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable
@@ -98,6 +102,12 @@ SolidJS library remains independent of Cloud and application domains.
 - Custom UI follows the same tokens, semantics, interaction, accessibility,
   responsive, theme, and state principles. Reusable presentation belongs in
   the library; applications retain their domain behavior.
+- Give an application's landing page the shared overview pattern: either a
+  sidebar-first `AppWorkspace` (objects as `SidebarItem variant="object"` rows,
+  `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` page header
+  with one primary action) when users own many objects, or `AppOverview` with
+  `AppOverview.Cards` of `LinkCard`s when they own few. Keep rows and cards to
+  one secondary fact.
 
 ## Keep server and browser behavior coherent
 
