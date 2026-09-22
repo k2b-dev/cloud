@@ -24,9 +24,23 @@ const template = {
   highlights: ["Tables", "Forms", "Apps"] as [string, string, string],
 };
 
-const renderOverview = (options: { withBases?: boolean; locale?: string } = {}) => {
+const app = (index: number) => ({
+  id: `App00${index}`,
+  name: `Loan desk ${index}`,
+  icon: index === 1 ? "scan" : null,
+  baseName: "Inventory",
+});
+
+type RenderOptions = {
+  withBases?: boolean;
+  locale?: string;
+  apps?: { count: number; total: number; page?: number };
+};
+
+const renderOverview = (options: RenderOptions = {}) => {
   const locale = options.locale ?? "en";
   const withBases = options.withBases ?? true;
+  const apps = options.apps ?? { count: 0, total: 0 };
   return renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -51,6 +65,12 @@ const renderOverview = (options: { withBases?: boolean; locale?: string } = {}) 
                 },
               ]
             : [],
+          apps: {
+            items: Array.from({ length: apps.count }, (_, index) => app(index + 1)),
+            total: apps.total,
+            page: apps.page ?? null,
+            pageSize: apps.page ? 48 : 8,
+          },
           dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
         });
       },
@@ -72,7 +92,10 @@ describe("Grids bases overview", () => {
     expect(html).not.toContain("k2b-app-workspace__sidebar-item-icon");
     expect(html).toContain('aria-label="Search bases"');
     expect(html).toMatch(/class="k2b-app-workspace__main[^"]*grids-overview-main ?"[^>]*data-width="content"/);
-    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Recently changed<\/h2>/);
+    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Overview<\/h2>/);
+    expect(html).toContain("Recently changed");
+    // Without usable apps there is no apps section.
+    expect(html).not.toContain("grids-overview-apps");
     expect(html).toContain("All bases");
     expect(html).toContain("New base");
     expect(html).toContain('href="/app/grids/Base01/table/Tabl01"');
@@ -95,8 +118,48 @@ describe("Grids bases overview", () => {
     const html = renderOverview({ locale: "de-CH" });
     expect(html).toContain("Neue Base");
     expect(html).toContain("Zuletzt geändert");
+    expect(html).toContain("Übersicht");
     expect(html).toContain("Alle Bases");
     expect(html).toContain("3 Tabellen");
     expect(html).not.toContain("New base");
+  });
+
+  test("shows usable apps as tiles above recent tables with a bounded link to all apps", () => {
+    const html = renderOverview({ apps: { count: 8, total: 11 } });
+    expect(html.match(/class="k2b-paper k2b-link-card/g)).toHaveLength(8);
+    expect(html).toContain('href="/apps/App001"');
+    expect(html).toContain("ti ti-scan");
+    expect(html).toContain("ti ti-app-window");
+    expect(html).toContain("Inventory");
+    expect(html.indexOf("grids-overview-apps")).toBeLessThan(html.indexOf("Recently changed"));
+    expect(html).toContain('href="/app/grids?apps=1"');
+    expect(html).toContain("All apps (11)");
+  });
+
+  test("omits the all-apps link when every usable app fits", () => {
+    const html = renderOverview({ apps: { count: 2, total: 2 } });
+    expect(html.match(/class="k2b-paper k2b-link-card/g)).toHaveLength(2);
+    expect(html).not.toContain("All apps (");
+  });
+
+  test("shows only the apps section to a user without base access", () => {
+    const html = renderOverview({ withBases: false, apps: { count: 1, total: 1 } });
+    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Overview<\/h2>/);
+    expect(html).toContain("Apps you can use");
+    expect(html).not.toContain('aria-label="Search bases"');
+    expect(html).toContain('href="/apps/App001"');
+    expect(html).not.toContain("Get started");
+    expect(html).not.toContain('aria-label="Create Inventory base"');
+    expect(html).not.toContain("Recently changed");
+  });
+
+  test("lists every usable app on its own paginated page", () => {
+    const html = renderOverview({ apps: { count: 3, total: 51, page: 2 } });
+    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">All apps<\/h2>/);
+    expect(html).toContain("51 apps you can use");
+    expect(html).toContain('href="/app/grids"');
+    expect(html).toContain('href="/app/grids?apps=1"');
+    expect(html).not.toContain("Recently changed");
+    expect(html.match(/class="k2b-paper k2b-link-card/g)).toHaveLength(3);
   });
 });

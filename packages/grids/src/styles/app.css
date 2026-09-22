@@ -800,3 +800,21 @@
 .grids-overview-table-chevron {
   color: var(--color-zinc-400);
 }
+
+.grids-overview-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* Four tiles per row in the 72 rem column, fewer as the column narrows. */
+.grids-overview-apps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

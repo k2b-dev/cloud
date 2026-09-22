@@ -4,11 +4,13 @@ import { mutation as mutations, timed } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
   Button,
+  ButtonLink,
   CheckboxCard,
   confirmDiscardIfDirty,
   Dropdown,
   dialogCore,
   InlineGuidance,
+  LinkCard,
   Pagination,
   PanelDialog,
   PanelHeader,
@@ -45,6 +47,8 @@ type RecentTable = {
   lastActivityAt: string;
 };
 
+type UsableApp = { id: string; name: string; icon: string | null; baseName: string };
+
 type Props = {
   bases: PublicBase[];
   total: number;
@@ -55,6 +59,8 @@ type Props = {
   /** Keyed by public base id; search results outside the server-rendered set show no stats. */
   baseStats: Record<string, BaseStats>;
   recentTables: RecentTable[];
+  /** Published apps the user may use across all bases; `page` is set while the full list is open. */
+  apps: { items: UsableApp[]; total: number; page: number | null; pageSize: number };
   dateConfig: DateContext;
 };
 
@@ -249,8 +255,10 @@ export default function BasesOverview(props: Props) {
     },
   ];
 
-  // Without any base the templates are the useful first screen, with their highlights.
-  const firstRun = !props.initialQuery && props.bases.length === 0;
+  const hasBases = Boolean(props.initialQuery) || props.bases.length > 0;
+  const hasApps = props.apps.total > 0;
+  // Without any base or usable app the templates are the useful first screen, with their highlights.
+  const firstRun = !hasBases && !hasApps && props.apps.page === null;
 
   const templateCards = () => (
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -292,8 +300,8 @@ export default function BasesOverview(props: Props) {
         disabled={isCreating()}
         aria-busy={isCreating() && creatingTemplateId() === null}
       >
-        <span class="app-accent-text w-9 h-9 thumbnail bg-[var(--ui-selected)] flex items-center justify-center shrink-0">
-          <i class={`ti ${isCreating() && creatingTemplateId() === null ? "ti-loader-2 animate-spin" : "ti-plus"} text-lg`} />
+        <span class="w-9 h-9 thumbnail bg-[var(--ui-surface-raised)] flex items-center justify-center shrink-0">
+          <i class={`ti ${isCreating() && creatingTemplateId() === null ? "ti-loader-2 animate-spin" : "ti-plus"} text-lg text-primary`} />
         </span>
         <span class="min-w-0 flex-1">
           <span class="block text-sm font-semibold text-primary">{t.blankBase}</span>
@@ -334,13 +342,111 @@ export default function BasesOverview(props: Props) {
     </Paper>
   );
 
+  const createMenu = () => (
+    <Dropdown.Root items={createMenuItems()} position="bottom-right" width="min(38rem, calc(100vw - 1rem))" label={t.newBase}>
+      <Dropdown.Trigger variant="primary" disabled={isCreating()}>
+        <i class="ti ti-plus" aria-hidden="true" /> {t.newBase}
+        <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Dropdown.Trigger>
+    </Dropdown.Root>
+  );
+
+  const appTiles = () => (
+    <ul class="grids-overview-apps" aria-label={t.apps}>
+      <For each={props.apps.items}>
+        {(app) => (
+          <li>
+            <LinkCard
+              href={`/apps/${app.id}`}
+              title={app.name}
+              description={app.baseName}
+              icon={app.icon ? `ti ti-${app.icon}` : "ti ti-app-window"}
+              color="emerald"
+            />
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+
+  const overviewDescription = () =>
+    hasApps && hasBases ? t.overviewDescription : hasApps ? t.appsOnlyDescription : t.tablesOnlyDescription;
+
+  const overviewPage = () => (
+    <Show
+      when={!firstRun}
+      fallback={
+        <>
+          <PanelHeader as="h2" size="lg" title={t.getStarted} subtitle={t.noBasesDescription} actions={createMenu()} />
+          {templateCards()}
+        </>
+      }
+    >
+      <PanelHeader as="h2" size="lg" title={t.overview} subtitle={overviewDescription()} actions={createMenu()} />
+      <div>
+        <Tag icon="ti ti-database" size="lg">
+          {t.allBases}
+        </Tag>
+      </div>
+      <Show when={hasApps}>
+        <section class="grids-overview-section" aria-labelledby="grids-overview-apps-title">
+          <PanelHeader
+            as="h3"
+            title={<span id="grids-overview-apps-title">{t.apps}</span>}
+            actions={
+              <Show when={props.apps.total > props.apps.items.length}>
+                <ButtonLink href="/app/grids?apps=1" variant="text" size="sm">
+                  {t.allApps({ count: props.apps.total })}
+                </ButtonLink>
+              </Show>
+            }
+          />
+          {appTiles()}
+        </section>
+      </Show>
+      <Show when={hasBases}>
+        <section class="grids-overview-section" aria-labelledby="grids-overview-tables-title">
+          <PanelHeader
+            as="h3"
+            title={<span id="grids-overview-tables-title">{t.recentlyChanged}</span>}
+            subtitle={t.recentTablesDescription}
+          />
+          {recentTableList()}
+        </section>
+      </Show>
+    </Show>
+  );
+
+  const allAppsPage = (page: number) => (
+    <>
+      <PanelHeader
+        as="h2"
+        size="lg"
+        title={t.allAppsTitle}
+        subtitle={t.usableAppCount({ count: props.apps.total })}
+        actions={
+          <ButtonLink href="/app/grids" variant="secondary">
+            <i class="ti ti-arrow-left" aria-hidden="true" /> {t.backToOverview}
+          </ButtonLink>
+        }
+      />
+      <Show
+        when={props.apps.items.length > 0}
+        fallback={<Placeholder state="empty" title={t.noApps} description={t.noAppsDescription} icon="ti ti-app-window" class="min-h-56" />}
+      >
+        {appTiles()}
+      </Show>
+      <Pagination currentPage={page} totalPages={Math.ceil(props.apps.total / props.apps.pageSize)} baseUrl="/app/grids?apps=" />
+    </>
+  );
+
   return (
     <AppWorkspace mobileSurface="flush" class="grids-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Grids</h1>
       <AppWorkspace.Sidebar label={t.bases} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey={false}>
-            <Show when={!firstRun}>
+            <Show when={hasBases}>
               <div class="grids-overview-search">
                 <TextInput
                   name="grids-base-search"
@@ -399,27 +505,8 @@ export default function BasesOverview(props: Props) {
       <AppWorkspace.Content>
         <AppWorkspace.Main class="grids-overview-main" width="content">
           <div class="grids-overview-page">
-            <PanelHeader
-              as="h2"
-              size="lg"
-              title={firstRun ? t.getStarted : t.recentlyChanged}
-              subtitle={firstRun ? t.noBasesDescription : t.recentTablesDescription}
-              actions={
-                <Dropdown.Root items={createMenuItems()} position="bottom-right" width="min(38rem, calc(100vw - 1rem))" label={t.newBase}>
-                  <Dropdown.Trigger variant="primary" disabled={isCreating()}>
-                    <i class="ti ti-plus" aria-hidden="true" /> {t.newBase}
-                    <i class="ti ti-chevron-down" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              }
-            />
-            <Show when={!firstRun} fallback={templateCards()}>
-              <div>
-                <Tag icon="ti ti-database" size="lg">
-                  {t.allBases}
-                </Tag>
-              </div>
-              {recentTableList()}
+            <Show when={props.apps.page} fallback={overviewPage()}>
+              {(page) => allAppsPage(page())}
             </Show>
           </div>
         </AppWorkspace.Main>

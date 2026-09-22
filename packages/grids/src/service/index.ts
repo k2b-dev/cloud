@@ -228,6 +228,7 @@ export const gridsService = {
     getPublishedByShortId: customApps.getPublishedByShortId,
     listByBase: customApps.listByBase,
     listSummariesByBase: customApps.listSummariesByBase,
+    listUsableSummaries: customApps.listUsableSummaries,
   },
   view: {
     listForTable: views.listForTable,

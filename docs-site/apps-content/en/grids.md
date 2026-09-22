@@ -15,8 +15,10 @@ from a simple shared dataset into forms, saved views, dashboards, generated
 documents, and workflows without splitting the domain across unrelated tools.
 
 The Grids overview lists your Bases in a sidebar with their table count and
-last change; the page shows the most recently changed tables across all Bases
-and a **New base** menu for a blank Base or a template.
+last change. The page shows the published Apps you may use, including Apps
+shared with you from Bases you cannot open, then the most recently changed
+tables across all Bases, and a **New base** menu for a blank Base or a
+template. **All apps** lists every usable App.
 
 ## Use Grids
 
