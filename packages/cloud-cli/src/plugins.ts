@@ -201,7 +201,7 @@ const extractTarball = async (archive: string, workspace: string): Promise<strin
 const downloadNpmTarball = async (spec: string, workspace: string, registry: string): Promise<{ archive: string; source: string }> => {
   const { name, version } = parseNpmSpec(spec);
   const base = registry.replace(/\/+$/, "");
-  const metadataUrl = `${base}/${name.replace("/", "%2f")}/${encodeURIComponent(version)}`;
+  const metadataUrl = `${base}/${name.replaceAll("/", "%2f")}/${encodeURIComponent(version)}`;
   const response = await fetch(metadataUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!response.ok) throw new PluginError(`npm registry returned ${response.status} for ${name}@${version}`);
   const metadata: unknown = await response.json();
