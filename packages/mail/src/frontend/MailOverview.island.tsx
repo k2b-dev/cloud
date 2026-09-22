@@ -552,7 +552,7 @@ export default function MailOverview(props: {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="mail-focus-main" aria-busy={focusResults.loading() || focusResults.refreshing()}>
+        <AppWorkspace.Main class="mail-focus-main" width="content" aria-busy={focusResults.loading() || focusResults.refreshing()}>
           <div class="mail-overview-page">
             <PanelHeader
               as="h2"

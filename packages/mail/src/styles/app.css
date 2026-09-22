@@ -183,9 +183,7 @@
      chip, one list. Objects live in the sidebar and open their own workspace. */
   .mail-overview-page {
     display: flex;
-    width: 100%;
     min-width: 0;
-    max-width: 64rem;
     flex-direction: column;
     gap: 1rem;
   }

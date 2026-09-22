@@ -73,6 +73,7 @@ describe("Mail overview", () => {
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
     expect(html).toContain("--k2b-workspace-sidebar-width:304px");
     expect(html.match(/data-variant="object"/g)).toHaveLength(1);
+    expect(html).toMatch(/class="k2b-app-workspace__main[^"]*mail-focus-main ?"[^>]*data-width="content"/);
     expect(html).toContain('href="/app/mail/Mail01?view=needs_action"');
     expect(html).toContain("support@example.test");
     expect(html).toContain("1 unread");

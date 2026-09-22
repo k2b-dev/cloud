@@ -5,7 +5,6 @@ import { migrate } from "../migrate";
 import { overviewStats } from "./notebooks";
 
 const postgresTest = testFor("database");
-const userId = crypto.randomUUID();
 const first = crypto.randomUUID();
 const second = crypto.randomUUID();
 const empty = crypto.randomUUID();
@@ -35,11 +34,11 @@ afterAll(async () => {
 // JS array bound as a comma-joined string, which Postgres rejects as a
 // malformed array literal as soon as there are two notebooks.
 postgresTest("computes overview counts for several notebooks in one query", async () => {
-  const stats = await overviewStats({ userId, notebookIds: [first, second, empty] });
+  const stats = await overviewStats({ notebookIds: [first, second, empty] });
   const byId = new Map(stats.map((item) => [item.notebookId, item]));
   expect(byId.size).toBe(3);
-  expect(byId.get(first)).toMatchObject({ noteCount: 2, lastNoteAt: "2026-02-01T10:00:00.000Z", shared: false });
-  expect(byId.get(second)).toMatchObject({ noteCount: 1, lastNoteAt: "2026-03-01T10:00:00.000Z", shared: false });
-  expect(byId.get(empty)).toMatchObject({ noteCount: 0, lastNoteAt: null, shared: false });
-  expect(await overviewStats({ userId, notebookIds: [] })).toEqual([]);
+  expect(byId.get(first)).toMatchObject({ noteCount: 2, lastNoteAt: "2026-02-01T10:00:00.000Z" });
+  expect(byId.get(second)).toMatchObject({ noteCount: 1, lastNoteAt: "2026-03-01T10:00:00.000Z" });
+  expect(byId.get(empty)).toMatchObject({ noteCount: 0, lastNoteAt: null });
+  expect(await overviewStats({ notebookIds: [] })).toEqual([]);
 });

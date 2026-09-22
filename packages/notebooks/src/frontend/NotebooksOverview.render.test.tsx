@@ -28,7 +28,6 @@ const renderOverview = (initialActivityError: string | null = null, locale = "en
               icon: "ti ti-bulb",
               noteCount: 12,
               lastEditedAt: "2026-08-20T10:00:00.000Z",
-              shared: true,
             },
           ],
           templates: [{ id: "blank", name: "Project", description: "Project notes", icon: "ti ti-template" }],
@@ -78,7 +77,7 @@ describe("Notebooks overview", () => {
     expect(html.match(/data-variant="object"/g)).toHaveLength(1);
     expect(html).toContain('href="/app/notebooks/Book01"');
     expect(html).toContain("12 notes");
-    expect(html).toContain("Shared");
+    expect(html).toMatch(/class="k2b-app-workspace__main[^"]*notebooks-overview-main ?"[^>]*data-width="content"/);
     expect(html).toContain("Unpin Product");
     // The main area is a page: title, scope, primary create action, search.
     expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Recently edited<\/h2>/);

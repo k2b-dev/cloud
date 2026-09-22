@@ -33,7 +33,6 @@ type OverviewNotebook = {
   icon: string | null;
   noteCount: number;
   lastEditedAt: string | null;
-  shared: boolean;
 };
 type RecentNote = {
   id: string;
@@ -169,6 +168,8 @@ export default function NotebooksOverview(props: Props) {
     }),
   );
   const notebookIsPinned = (notebookId: string) => pinnedNotebookIds().includes(notebookId);
+  // A column of identical default icons says nothing; show icons only when at least one notebook chose its own.
+  const showNotebookIcons = createMemo(() => props.notebooks.some((notebook) => notebook.icon));
 
   const toggleNotebookPin = (notebook: OverviewNotebook) => {
     setPinnedNotebookIds((current) => {
@@ -384,20 +385,13 @@ export default function NotebooksOverview(props: Props) {
                       class="notebooks-overview-notebook"
                       data={{ pinned: pinned() ? "true" : undefined }}
                       description={
-                        <>
-                          <i class={notebook.shared ? "ti ti-users" : "ti ti-lock"} aria-hidden="true" />
-                          {notebook.shared ? t().shared : t().private}
-                          <Show when={notebook.lastEditedAt}>
-                            {(lastEditedAt) => (
-                              <>
-                                {" · "}
-                                <time datetime={lastEditedAt()} title={dates.formatDateTime(lastEditedAt(), props.dateConfig)}>
-                                  {dates.formatDateTimeRelative(lastEditedAt(), props.dateConfig)}
-                                </time>
-                              </>
-                            )}
-                          </Show>
-                        </>
+                        <Show when={notebook.lastEditedAt}>
+                          {(lastEditedAt) => (
+                            <time datetime={lastEditedAt()} title={dates.formatDateTime(lastEditedAt(), props.dateConfig)}>
+                              {dates.formatDateTimeRelative(lastEditedAt(), props.dateConfig)}
+                            </time>
+                          )}
+                        </Show>
                       }
                       actions={
                         <AppWorkspace.SidebarItemActions visibility="hover">
@@ -414,7 +408,9 @@ export default function NotebooksOverview(props: Props) {
                         </AppWorkspace.SidebarItemActions>
                       }
                     >
-                      <AppWorkspace.SidebarItemIcon icon={pinned() ? "ti ti-flag" : notebook.icon || "ti ti-notebook"} />
+                      <Show when={showNotebookIcons() || pinned()}>
+                        <AppWorkspace.SidebarItemIcon icon={pinned() ? "ti ti-flag" : notebook.icon || "ti ti-notebook"} />
+                      </Show>
                       <AppWorkspace.SidebarItemLabel>{notebook.name}</AppWorkspace.SidebarItemLabel>
                       <AppWorkspace.SidebarItemMeta>
                         <span class="notebooks-overview-count" data-zero={notebook.noteCount === 0 ? "true" : undefined}>
@@ -434,7 +430,7 @@ export default function NotebooksOverview(props: Props) {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="notebooks-overview-main">
+        <AppWorkspace.Main class="notebooks-overview-main" width="content">
           <div class="notebooks-overview-page">
             <PanelHeader
               as="h2"

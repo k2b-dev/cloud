@@ -60,7 +60,7 @@ const WorkspaceDemo = () => {
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody>
             <AppWorkspace.SidebarSection title="Warehouses">
-              <AppWorkspace.SidebarItem variant="object" href="#warehouse-north" description="Hamburg · 3 open tasks">
+              <AppWorkspace.SidebarItem variant="object" href="#warehouse-north" description="Hamburg">
                 <AppWorkspace.SidebarItemIcon icon="ti ti-building-warehouse" />
                 <AppWorkspace.SidebarItemLabel>North</AppWorkspace.SidebarItemLabel>
                 <AppWorkspace.SidebarItemMeta>

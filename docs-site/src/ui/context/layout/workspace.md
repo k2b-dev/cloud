@@ -30,7 +30,7 @@ import {
 `AppWorkspace.Content` is required. Put `Main` first and each `Detail` after it
 inside `Content`. Put `BottomDrawer` at the workspace root.
 
-`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
+`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel keeps its own track. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
 
 `Main` and `MainPane` show subtle 16 px overflow hints by default when they
 own scrolling. Set `scrollFade={false}` to opt out. A split `Main` wrapper
@@ -236,7 +236,7 @@ type AppWorkspaceLayoutStateProviderProps = {
 type AppWorkspaceContentProps = { children: JSX.Element; class?: string };
 
 type AppWorkspaceMainProps = {
-  children: JSX.Element; class?: string; mobilePane?: string; scroll?: boolean; scrollFade?: boolean;
+  children: JSX.Element; class?: string; width?: "full" | "content"; mobilePane?: string; scroll?: boolean; scrollFade?: boolean;
   scrollPreserveKey?: string | false;
   "aria-busy"?: boolean | "true" | "false";
 };
@@ -647,11 +647,12 @@ Inactive context cards use a transparent surface and border; the active item ret
 
 Use `SidebarItem variant="object"` when the sidebar lists the resources an
 overview navigates into, such as mailboxes or notebooks, rather than views
-inside one resource. The leading icon becomes a small accent tile, the label
-is the resource title, `description` is its one-line meta text, and
-`SidebarItemMeta` stacks trailing counts at the end of the row. Keep counts
-tabular and put their accessible wording in visually hidden text. Object rows
-truncate their title instead of scrolling it.
+inside one resource. The label is the resource title, `description` is one
+quiet meta line with at most one secondary fact, and `SidebarItemMeta` stacks
+trailing counts at the end of the row. Keep counts tabular and put their
+accessible wording in visually hidden text. Omit the leading icon when every
+object would show the same one. Object rows truncate their title instead of
+scrolling it.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">

@@ -20,8 +20,7 @@ including on tag pages. It still requires sign-in and notebook access; choosing
 Book does not publish a notebook anonymously.
 
 The Notebooks overview lists your notebooks in a sidebar with their note
-count, last edit, and whether they are shared; opening one enters its
-workspace. The page itself shows recently edited notes across all notebooks,
+count and last edit; opening one enters its workspace. The page itself shows recently edited notes across all notebooks,
 one create action, and one permission-aware activity stream. Pin notebooks to
 keep them first, or use the shared search prompt to open an accessible
 notebook or note directly. Activity stays beside the overview on larger

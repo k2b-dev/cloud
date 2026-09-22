@@ -192,7 +192,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
             }),
             createComponent(AppWorkspace.Content, {
               get children() {
-                return createComponent(AppWorkspace.Main, { children: "Main content" });
+                return createComponent(AppWorkspace.Main, { width: "content", children: "Main content" });
               },
             }),
           ];
@@ -201,6 +201,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     );
 
     expect(html).toMatch(/<aside[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
+    expect(html).toMatch(/class="k2b-app-workspace__main[^"]*"[^>]*data-width="content"/);
     expect(html).toMatch(/<a href="\/app\/mail\/support"[^>]*data-variant="object"/);
     expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-marquee="false"');
     expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-description">support@example.test</span>');
@@ -782,13 +783,23 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("gives object rows an accent tile, a strong title, and stacked counts", () => {
-      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain("width:2rem");
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-icon")).toContain(
+        "width:1.25rem",
+      );
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-main")).toContain(
+        "min-height:2.75rem",
+      );
       expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-label-text")).toContain(
         "font-weight:600",
       );
       expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-meta")).toContain(
         "flex-direction:column",
       );
+    });
+
+    test("centers a content-width main as the shared 72rem page column", () => {
+      expect(rule(".k2b-app-workspace__main[data-width=content]>*")).toContain("width:min(100%,72rem)");
+      expect(rule(".k2b-app-workspace__main[data-width=content]>*")).toContain("margin-inline-start:auto");
     });
 
     test("keeps a stacked sidebar visible above the content below the desktop breakpoint", () => {

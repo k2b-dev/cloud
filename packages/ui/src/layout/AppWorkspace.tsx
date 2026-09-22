@@ -160,6 +160,8 @@ export type AppWorkspaceContentProps = { children: JSX.Element; class?: string }
 export type AppWorkspaceMainProps = {
   children: JSX.Element;
   class?: string;
+  /** `"content"` centers the children as one reading column with the shared page width on large screens. */
+  width?: "full" | "content";
   mobilePane?: string;
   scroll?: boolean;
   scrollFade?: boolean;
@@ -424,6 +426,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
     <div
       class={`k2b-app-workspace__main ${hasPanes() ? "has-panes" : ""} ${props.class ?? ""}`}
       data-mobile-pane={props.mobilePane}
+      data-width={props.width === "content" ? "content" : undefined}
       data-scroll-fade-mode={!hasPanes() && props.scroll !== false && props.scrollFade !== false ? "both" : undefined}
       data-scroll={props.scroll === false ? "false" : undefined}
       aria-busy={props["aria-busy"]}

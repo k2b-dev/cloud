@@ -259,9 +259,7 @@
    chip, one list. Notebooks live in the sidebar and open their own workspace. */
 .notebooks-overview-page {
   display: flex;
-  width: 100%;
   min-width: 0;
-  max-width: 64rem;
   flex-direction: column;
   gap: 1rem;
 }
