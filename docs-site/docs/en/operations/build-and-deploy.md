@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-09-21
+updated: 2026-09-23
 ---
 
 # Build and deploy
@@ -73,6 +73,10 @@ const template = Bun.file(appAssetPath("templates", "empty.odt"));
 Do not locate server-side files relative to `import.meta.url`: the bundle
 flattens every module into `dist/server.js`, so such paths only work from the
 source tree.
+
+Import Bun built-ins statically, for example `import { sql } from "bun"`. The
+minified server bundle breaks `await import("bun")`: it runs from source but
+throws a `ReferenceError` in the built image.
 
 Add `scripts/build-extras.ts` only when the application must generate another
 artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.

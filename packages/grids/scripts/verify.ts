@@ -29,7 +29,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { SQL } from "bun";
+import { SQL, sql } from "bun";
 import { assertVerificationReport, localVerificationUrl, selectPhases } from "./verification";
 
 const root = resolve(import.meta.dir, "../../..");
@@ -43,7 +43,6 @@ if (argv.includes("--bootstrap")) {
   // Callers (this script and scripts/diagnostics.ts) pass the isolated database as DATABASE_URL.
   const databaseUrl = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
   if (!/^\/grids_verify_[a-f0-9]{16,32}(?:_test)?$/.test(databaseUrl.pathname)) throw new Error("Unexpected verification database");
-  const { sql } = await import("bun");
   for (const path of ["auth", "audit", "logging", "settings", "notifications", "workflows"]) {
     const { migrate } = await import(`${root}/packages/core/src/migrate/core/${path}.ts`);
     await migrate();

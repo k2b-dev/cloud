@@ -2,6 +2,7 @@ import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { connect, createServer, type Socket } from "node:net";
 import { cpus, loadavg } from "node:os";
+import { RedisClient, redis, SQL, sql } from "bun";
 import { Hono } from "hono";
 import { bindProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { benchmarkConfiguration } from "./configuration";
@@ -95,7 +96,6 @@ const meteredUrl = new URL(source);
 meteredUrl.hostname = "127.0.0.1";
 meteredUrl.port = String(address.port);
 process.env.DATABASE_URL = metered ? meteredUrl.href : source.href;
-const { sql, SQL, redis, RedisClient } = await import("bun");
 const telemetry = new RedisClient(process.env.REDIS_URL!);
 const redisSnapshot = async (): Promise<Counts> => {
   const raw = String(await telemetry.send("INFO", ["commandstats"]));

@@ -1,4 +1,5 @@
 import { afterAll } from "bun:test";
+import { sql } from "bun";
 import { createDisposableDatabase, testInfra } from "../../../scripts/fixtures/test-infra";
 
 /**
@@ -43,7 +44,6 @@ if (testInfra.database && testInfra.nats) {
       await runtime.stop();
       await deleteNamespaceStreams(namespace);
     } finally {
-      const { sql } = await import("bun");
       await sql.close().catch(() => undefined);
       await database.drop();
     }
