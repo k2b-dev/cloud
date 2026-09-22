@@ -1,4 +1,4 @@
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { currentActorUser } from "../api/permissions";
 import { toPublicBases } from "../api/public-dto";
@@ -8,10 +8,12 @@ import BasesOverview from "./_components/overview/BasesOverview.island";
 import { resolveGridsMessages } from "./messages";
 import { recentBasePath } from "./recent-base-path";
 
+/** One overview screen of recently changed tables. */
+const RECENT_TABLE_LIMIT = 12;
+
 /**
- * Bases list page — shows every base the user has access to.
- * Layout matches the spaces / notebooks index pages: hero + notice card
- * with the create button + paper-card grid.
+ * Bases overview: visible bases as sidebar objects and the most recently
+ * changed tables across them. Search and pagination only narrow the sidebar.
  */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
@@ -48,6 +50,34 @@ export default ssr<AuthContext>(async (c) => {
 
   const templates = gridsService.template.list(locale);
   const publicBases = await toPublicBases(visible.items);
+  // Recent tables always span the first page of all visible bases, independent of search and paging.
+  const scope =
+    page === 1 && !initialQuery
+      ? visible.items
+      : (await gridsService.base.listVisible({ userId: user.id, userGroups: user.memberofGroupIds, limit })).items;
+  const basesById = new Map([...scope, ...visible.items].map((base) => [base.id, base]));
+  const activity = await gridsService.base.overviewActivity({ baseIds: [...basesById.keys()], tableLimit: RECENT_TABLE_LIMIT });
+  const baseStats = Object.fromEntries(
+    activity.bases.flatMap((stats) => {
+      const base = basesById.get(stats.baseId);
+      return base ? [[base.shortId, { tableCount: stats.tableCount, lastActivityAt: stats.lastActivityAt }]] : [];
+    }),
+  );
+  const recentTables = activity.tables.flatMap((table) => {
+    const base = basesById.get(table.baseId);
+    return base
+      ? [
+          {
+            id: table.shortId,
+            baseId: base.shortId,
+            baseName: base.name,
+            name: table.name,
+            icon: table.icon,
+            lastActivityAt: table.lastActivityAt,
+          },
+        ]
+      : [];
+  });
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: "Grids" }]}>
@@ -58,6 +88,9 @@ export default ssr<AuthContext>(async (c) => {
         offset={offset}
         templates={templates}
         initialQuery={initialQuery}
+        baseStats={baseStats}
+        recentTables={recentTables}
+        dateConfig={getDateConfig(c)}
       />
     </Layout>
   );

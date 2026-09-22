@@ -1,4 +1,5 @@
 import { type AccessSubject, buildAccessPrincipalTierConditions } from "@k2b/cloud/server";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { DocumentDefaultsSchema } from "../contracts";
@@ -148,6 +149,59 @@ export const get = async (id: string, opts: { includeDeleted?: boolean; client?:
         FROM grids.bases WHERE id = ${id}::uuid AND deleted_at IS NULL
       `;
   return row ? mapRow(row) : null;
+};
+
+export type BaseOverviewActivity = {
+  bases: { baseId: string; tableCount: number; lastActivityAt: string }[];
+  tables: { id: string; shortId: string; baseId: string; name: string; icon: string | null; lastActivityAt: string }[];
+};
+
+/**
+ * Table counts and last changes for bases the caller already resolved as
+ * visible. A table's last change is its newest audit event (record or schema
+ * write) or its own update time; one index probe per table.
+ */
+export const overviewActivity = async (params: { baseIds: string[]; tableLimit: number }): Promise<BaseOverviewActivity> => {
+  if (params.baseIds.length === 0) return { bases: [], tables: [] };
+  const baseIds = toPgUuidArray(params.baseIds);
+  const activity = () => sql`
+    SELECT t.id, t.short_id, t.base_id, t.name, t.icon,
+      GREATEST(t.updated_at, latest.created_at) AS last_activity_at
+    FROM grids.tables t
+    LEFT JOIN LATERAL (
+      SELECT a.created_at FROM grids.audit_log a
+      WHERE a.table_id = t.id
+      ORDER BY a.created_at DESC
+      LIMIT 1
+    ) latest ON true
+    WHERE t.base_id = ANY(${baseIds}::uuid[]) AND t.deleted_at IS NULL
+  `;
+  const [baseRows, tableRows] = await Promise.all([
+    sql<{ id: string; table_count: number; last_activity_at: Date }[]>`
+      SELECT b.id, COUNT(activity.id)::int AS table_count,
+        GREATEST(b.updated_at, MAX(activity.last_activity_at)) AS last_activity_at
+      FROM grids.bases b
+      LEFT JOIN (${activity()}) activity ON activity.base_id = b.id
+      WHERE b.id = ANY(${baseIds}::uuid[]) AND b.deleted_at IS NULL
+      GROUP BY b.id
+    `,
+    sql<{ id: string; short_id: string; base_id: string; name: string; icon: string | null; last_activity_at: Date }[]>`
+      SELECT * FROM (${activity()}) activity
+      ORDER BY last_activity_at DESC, id DESC
+      LIMIT ${params.tableLimit}
+    `,
+  ]);
+  return {
+    bases: baseRows.map((row) => ({ baseId: row.id, tableCount: row.table_count, lastActivityAt: row.last_activity_at.toISOString() })),
+    tables: tableRows.map((row) => ({
+      id: row.id,
+      shortId: row.short_id,
+      baseId: row.base_id,
+      name: row.name,
+      icon: row.icon,
+      lastActivityAt: row.last_activity_at.toISOString(),
+    })),
+  };
 };
 
 /** Resolves the only public base identifier to the internal resource. */
