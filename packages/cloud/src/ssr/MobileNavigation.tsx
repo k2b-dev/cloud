@@ -32,11 +32,13 @@ function MobileNavigation(props: {
   );
   return (
     <BottomSheet onDismiss={props.dismiss}>
-      <BottomSheet.Header
-        title={workspace()?.label || t().apps}
-        close={() => void props.dismiss()}
-        actions={
-          <Show when={workspace()} fallback={<span class="font-semibold">{t().allApps}</span>}>
+      {/* Without an app menu the launchpad gets the whole sheet; the hidden
+          heading still names the dialog, and the handle and backdrop dismiss it. */}
+      <Show when={workspace()} fallback={<h2 class="sr-only">{t().allApps}</h2>}>
+        <BottomSheet.Header
+          title={workspace()?.label || t().apps}
+          close={() => void props.dismiss()}
+          actions={
             <SegmentedControl
               class="cloud-mobile-menu__switch"
               size="md"
@@ -48,9 +50,9 @@ function MobileNavigation(props: {
                 { value: "apps", label: t().allApps },
               ]}
             />
-          </Show>
-        }
-      />
+          }
+        />
+      </Show>
       <BottomSheet.Body>
         <Show
           when={workspace() && tab() === "app"}
