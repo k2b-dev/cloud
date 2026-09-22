@@ -97,54 +97,62 @@ describe("AI settings save errors", () => {
     return;
   }
 
-  test("removing a profile the Vision model uses explains the blocker and keeps the draft", async () => {
-    const ui = await setup("providers");
-    try {
-      const { dialogCore } = await import("@k2b/ui");
-      ui.button("Remove profile").click();
-      await tick();
-      ui.button("Remove").click();
-      await tick();
-      ui.button("Save changes").click();
-      await tick();
-      await tick();
+  test(
+    "removing a profile the Vision model uses explains the blocker and keeps the draft",
+    async () => {
+      const ui = await setup("providers");
+      try {
+        const { dialogCore } = await import("@k2b/ui");
+        ui.button("Remove profile").click();
+        await tick();
+        ui.button("Remove").click();
+        await tick();
+        ui.button("Save changes").click();
+        await tick();
+        await tick();
 
-      expect(JSON.parse(ui.requests[0]!)["ai.model_profiles_json"]).not.toContain("tensorx");
-      const notice = ui.notice();
-      expect(notice).not.toBeNull();
-      expect(notice!.textContent).toContain(rejection.message);
-      expect(notice!.querySelector('[data-setting="ai.vision_model_id"]')?.textContent).toContain(`Vision tool model${visionMessage}`);
-      const link = notice!.querySelector<HTMLAnchorElement>('a[href="/admin/settings?tab=ai-general"]');
-      expect(link?.textContent?.trim()).toBe("Open AI general");
-      // No modal on top of the summary, and the removal stays staged.
-      expect(dialogCore.isOpen()).toBe(false);
-      expect(ui.document.activeElement).toBe(notice);
-      expect(ui.document.querySelector("table")?.textContent).not.toContain("TensorX Standard");
-      expect(ui.document.querySelector("table")?.textContent).toContain("Cortecs");
-      expect(ui.button("Save changes").disabled).toBe(false);
-    } finally {
-      ui.cleanup();
-    }
-  }, TIMEOUT);
+        expect(JSON.parse(ui.requests[0]!)["ai.model_profiles_json"]).not.toContain("tensorx");
+        const notice = ui.notice();
+        expect(notice).not.toBeNull();
+        expect(notice!.textContent).toContain(rejection.message);
+        expect(notice!.querySelector('[data-setting="ai.vision_model_id"]')?.textContent).toContain(`Vision tool model${visionMessage}`);
+        const link = notice!.querySelector<HTMLAnchorElement>('a[href="/admin/settings?tab=ai-general"]');
+        expect(link?.textContent?.trim()).toBe("Open AI general");
+        // No modal on top of the summary, and the removal stays staged.
+        expect(dialogCore.isOpen()).toBe(false);
+        expect(ui.document.activeElement).toBe(notice);
+        expect(ui.document.querySelector("table")?.textContent).not.toContain("TensorX Standard");
+        expect(ui.document.querySelector("table")?.textContent).toContain("Cortecs");
+        expect(ui.button("Save changes").disabled).toBe(false);
+      } finally {
+        ui.cleanup();
+      }
+    },
+    TIMEOUT,
+  );
 
-  test("marks and focuses the rejected field when it is on the current page", async () => {
-    const ui = await setup("general");
-    try {
-      const vision = ui.document.getElementById("setting-ai-vision_model_id") as HTMLButtonElement;
-      vision.click();
-      await tick();
-      ui.document.querySelector<HTMLButtonElement>('[role="option"][id^="setting-ai-vision_model_id-"][aria-label="Cortecs"]')!.click();
-      await tick();
-      ui.button("Save changes").click();
-      await tick();
-      await tick();
+  test(
+    "marks and focuses the rejected field when it is on the current page",
+    async () => {
+      const ui = await setup("general");
+      try {
+        const vision = ui.document.getElementById("setting-ai-vision_model_id") as HTMLButtonElement;
+        vision.click();
+        await tick();
+        ui.document.querySelector<HTMLButtonElement>('[role="option"][id^="setting-ai-vision_model_id-"][aria-label="Cortecs"]')!.click();
+        await tick();
+        ui.button("Save changes").click();
+        await tick();
+        await tick();
 
-      expect(vision.getAttribute("aria-invalid")).toBe("true");
-      expect(ui.document.getElementById(vision.getAttribute("aria-describedby")!.split(" ").at(-1)!)?.textContent).toBe(visionMessage);
-      expect(ui.document.activeElement).toBe(vision);
-      expect(ui.notice()?.textContent).toContain("Go to field");
-    } finally {
-      ui.cleanup();
-    }
-  }, TIMEOUT);
+        expect(vision.getAttribute("aria-invalid")).toBe("true");
+        expect(ui.document.getElementById(vision.getAttribute("aria-describedby")!.split(" ").at(-1)!)?.textContent).toBe(visionMessage);
+        expect(ui.document.activeElement).toBe(vision);
+        expect(ui.notice()?.textContent).toContain("Go to field");
+      } finally {
+        ui.cleanup();
+      }
+    },
+    TIMEOUT,
+  );
 });
