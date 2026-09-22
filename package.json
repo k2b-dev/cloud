@@ -106,13 +106,13 @@
     "@k2b/stdlib": "0.25.0",
     "jose": "6.2.5",
     "zod": "4.6.2",
-    "@biomejs/biome": "2.5.6",
+    "@biomejs/biome": "2.5.14",
     "@types/bun": "1.4.2",
     "@types/node": "25.9.5",
     "seroval": "1.6.0",
     "solid-js": "1.9.14",
     "tailwindcss": "4.3.3",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "license": "AGPL-3.0-or-later",
   "trustedDependencies": [],

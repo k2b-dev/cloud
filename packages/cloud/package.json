@@ -111,7 +111,7 @@
     "marked": "17.0.6",
     "mermaid": "11.16.0",
     "nodemailer": "9.1.1",
-    "postcss": "8.5.25",
+    "postcss": "8.5.28",
     "reflect-metadata": "0.2.2",
     "sanitize-html": "2.17.6",
     "seroval": "1.6.0",
@@ -125,13 +125,13 @@
     "@types/web-push": "3.6.4"
   },
   "devDependencies": {
-    "@babel/core": "7.29.7",
-    "@babel/preset-typescript": "7.29.7",
+    "@babel/core": "8.0.6",
+    "@babel/preset-typescript": "8.0.1",
     "@types/bun": "1.4.2",
     "babel-preset-solid": "1.9.12",
     "hono": "4.12.32",
     "solid-js": "1.9.14",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "zod": "4.6.2"
   },
   "peerDependencies": {

@@ -54,8 +54,8 @@
     "solid-js": "^1.9.10"
   },
   "devDependencies": {
-    "@babel/core": "7.29.7",
-    "@babel/preset-typescript": "7.29.7",
+    "@babel/core": "8.0.6",
+    "@babel/preset-typescript": "8.0.1",
     "@k2b/ssr": "0.14.0",
     "@types/babel__core": "7.20.5",
     "@types/bun": "1.4.2",
@@ -66,7 +66,7 @@
     "seroval": "1.6.0",
     "solid-js": "1.9.14",
     "tailwindcss": "4.3.3",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "publishConfig": {
     "access": "public"
