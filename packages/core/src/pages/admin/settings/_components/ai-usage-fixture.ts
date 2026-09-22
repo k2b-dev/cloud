@@ -74,6 +74,12 @@ export const usageFixture = (): AiUsageReport => ({
       errorCode: "provider_error",
       error: "A complete error with enough text to inspect and copy.",
       attempts: 1,
+      requestStartedAt: "2026-09-08T12:00:00Z",
+      generationMs: 12,
+      headersMs: 4,
+      firstByteMs: 8,
+      firstBlockMs: null,
+      cancelled: false,
     },
   ]),
 });
