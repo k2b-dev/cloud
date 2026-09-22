@@ -3,7 +3,7 @@ import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/serv
 import { logger } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { spacesService } from "@/service";
-import { loadOverviewWork } from "@/service/overview";
+import { loadOverviewWork, loadSpaceOverviewStats } from "@/service/overview";
 import { spacesPublicResources } from "@/service/public-resources";
 import { ssr } from "../config";
 import { parseLastSpaceId, parsePinnedSpaceIds } from "./[id]/_components/settings/SpaceSettingsStore";
@@ -34,7 +34,11 @@ export default ssr<AuthContext>(async (c) => {
         return { page: { items: [], nextCursor: null }, error: t.activityLoadFailed };
       }),
   ]);
-  const userSpaces = await spacesPublicResources.projectSpaces(spacesPage.items);
+  const [userSpaces, spaceStats] = await Promise.all([
+    spacesPublicResources.projectSpaces(spacesPage.items),
+    loadSpaceOverviewStats({ spaceIds: spacesPage.items.map((space) => space.id) }),
+  ]);
+  const statsBySpace = new Map(spaceStats.map((stats) => [stats.spaceId, stats]));
 
   // Redirect to last opened space if ?recent=true
   if (url.searchParams.get("recent") === "true" && userSpaces.length > 0) {
@@ -47,7 +51,10 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: "Spaces" }]}>
       <SpacesOverview
-        spaces={userSpaces}
+        spaces={userSpaces.map((space, index) => {
+          const stats = statsBySpace.get(spacesPage.items[index]!.id);
+          return { ...space, openItemCount: stats?.openItemCount ?? 0, lastActivityAt: stats?.lastActivityAt ?? space.updatedAt };
+        })}
         initialView={view}
         initialPinnedSpaceIds={parsePinnedSpaceIds(cookieHeader)}
         initialWork={initialWork}

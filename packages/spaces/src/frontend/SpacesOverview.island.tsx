@@ -1,12 +1,11 @@
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { listenPopState, navigateTo } from "@k2b/ssr/nav";
+import { listenPopState, navigate, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
   Avatar,
   Button,
-  ButtonLink,
   ColorInput,
   DetailPanel,
   Dropdown,
@@ -14,10 +13,13 @@ import {
   IconButton,
   NoticeCard,
   PanelDialog,
+  PanelHeader,
   Paper,
   Placeholder,
   panelDialogOptions,
   prompts,
+  SegmentedControl,
+  Tag,
   TextInput,
   toast,
   useLocale,
@@ -43,8 +45,10 @@ type ActivityItem = {
   lastOccurredAt: string;
 };
 type ActivityPage = { data: ActivityItem[]; nextCursor: string | null };
+/** A Space plus the one sidebar fact and count the overview shows for it. */
+type OverviewSpace = Space & { openItemCount: number; lastActivityAt: string };
 type Props = {
-  spaces: Space[];
+  spaces: OverviewSpace[];
   initialView: OverviewView;
   initialPinnedSpaceIds: string[];
   initialWork: OverviewWork;
@@ -54,6 +58,9 @@ type Props = {
 };
 type SpaceStarter = { id: string; name: string; description: string; icon: string; color: string };
 type SpaceDraft = { name: string; description: string; color: string };
+
+/** The object list needs room for a title and a meta line; the overview does not resize. */
+const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
 
 export const overviewMessages = i18n.define({
   baseLocale: "en",
@@ -108,7 +115,8 @@ export const overviewMessages = i18n.define({
       nothingToday: "Nothing due today",
       nothingUpcoming: "No upcoming work",
       allCaughtUp: "You are all caught up.",
-      overviewDescription: "Open a workspace or find work across every Space you can access.",
+      allSpaces: "All Spaces",
+      openItemCount: ({ count }: { count: number }) => `${count} open ${count === 1 ? "item" : "items"}`,
       search: "Search",
       myWork: "My work",
       myWorkDescription: "Tasks and events that need attention across your Spaces.",
@@ -198,7 +206,8 @@ export const overviewMessages = i18n.define({
       nothingToday: "Heute ist nichts fällig",
       nothingUpcoming: "Keine anstehenden Aufgaben oder Termine",
       allCaughtUp: "Alles erledigt.",
-      overviewDescription: "Öffne einen Arbeitsbereich oder finde Aufgaben und Termine in deinen Spaces.",
+      allSpaces: "Alle Spaces",
+      openItemCount: ({ count }) => `${count} ${count === 1 ? "offener Eintrag" : "offene Einträge"}`,
       search: "Suchen",
       myWork: "Meine Arbeit",
       myWorkDescription: "Aufgaben und Termine, die deine Aufmerksamkeit erfordern.",
@@ -497,8 +506,22 @@ export default function SpacesOverview(props: Props) {
     },
   ];
 
-  const workViews = ["mine", "today", "upcoming"] as const;
-  const viewHref = (next: OverviewView) => (next === "mine" ? "/app/spaces" : `/app/spaces?view=${next}`);
+  const formatCount = (count: number) => count.toLocaleString(locale());
+  const workViewOptions = () =>
+    (["mine", "today", "upcoming"] as const).map((value) => ({
+      value,
+      label: (
+        <>
+          {value === "mine" ? t.forMe : value === "today" ? t.today : t.upcoming}{" "}
+          <span class="spaces-overview-tab-count">{formatCount(counts()[value])}</span>
+        </>
+      ),
+    }));
+  const selectView = (next: OverviewView) => {
+    if (view() === next) return;
+    setView(next);
+    navigate(next === "mine" ? "/app/spaces" : `/app/spaces?view=${next}`, { scroll: "preserve" });
+  };
   onMount(() => {
     onCleanup(
       listenPopState(({ url }) => {
@@ -680,99 +703,116 @@ export default function SpacesOverview(props: Props) {
 
   onCleanup(() => createSpaceMutation.abort());
   return (
-    <AppWorkspace mobileSurface="flush" class="spaces-overview-workspace" resizable={false}>
+    <AppWorkspace mobileSurface="flush" class="spaces-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Spaces</h1>
-      <AppWorkspace.Content>
-        <AppWorkspace.Main class="spaces-overview-main">
-          <header class="spaces-overview-spaces">
-            <div class="spaces-overview-heading">
-              <div>
-                <h2>Spaces</h2>
-                <p>{t.overviewDescription}</p>
-              </div>
-              <div class="spaces-overview-actions">
-                <Button variant="secondary" size="sm" onClick={() => void openSearch()}>
-                  <i class="ti ti-search" aria-hidden="true" /> {t.search}
-                </Button>
-                <Button variant="secondary" size="sm" class="spaces-overview-mobile-activity" onClick={openMobileActivity}>
-                  <i class="ti ti-history" aria-hidden="true" /> {t.activity}
-                </Button>
-              </div>
-            </div>
-            <nav class="spaces-overview-space-list" aria-label="Spaces">
+      <AppWorkspace.Sidebar label="Spaces" mobile="stacked" resizable={false}>
+        <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarBody scrollPreserveKey={false}>
+            <AppWorkspace.SidebarSection title="Spaces" count={props.spaces.length}>
               <For each={orderedSpaces()}>
                 {(space) => {
                   const isPinned = () => pinned().includes(space.id);
                   return (
-                    <span class="spaces-overview-space-item" data-pinned={isPinned() ? "true" : undefined}>
-                      <ButtonLink
-                        href={`/app/spaces/${space.id}`}
-                        variant="secondary"
-                        size="sm"
-                        class="spaces-overview-space-button"
-                        title={space.description || space.name}
-                      >
-                        <span class="spaces-overview-space-dot" style={{ "background-color": space.color }} />
-                        <i class={`ti ${isPinned() ? "ti-flag" : "ti-layout-kanban"} app-accent-text`} aria-hidden="true" />
-                        <span class="spaces-overview-space-name">{space.name}</span>
-                      </ButtonLink>
-                      <IconButton
-                        label={isPinned() ? t.unpin({ name: space.name }) : t.pin({ name: space.name })}
-                        size="xs"
-                        variant="text"
-                        class="spaces-overview-space-pin"
-                        aria-pressed={isPinned()}
-                        onClick={() => togglePin(space)}
-                      >
-                        <i class={`ti ${isPinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
-                      </IconButton>
-                    </span>
+                    <AppWorkspace.SidebarItem
+                      variant="object"
+                      href={`/app/spaces/${space.id}`}
+                      title={space.description || space.name}
+                      class="spaces-overview-space"
+                      data={{ pinned: isPinned() ? "true" : undefined }}
+                      description={
+                        <time datetime={space.lastActivityAt} title={dates.formatDateTime(space.lastActivityAt, props.dateConfig)}>
+                          {dates.formatDateTimeRelative(space.lastActivityAt, props.dateConfig)}
+                        </time>
+                      }
+                      actions={
+                        <AppWorkspace.SidebarItemActions visibility="hover">
+                          <IconButton
+                            label={isPinned() ? t.unpin({ name: space.name }) : t.pin({ name: space.name })}
+                            tooltip={isPinned() ? t.unpin({ name: space.name }) : t.pin({ name: space.name })}
+                            size="xs"
+                            variant="text"
+                            aria-pressed={isPinned()}
+                            onClick={() => togglePin(space)}
+                          >
+                            <i class={`ti ${isPinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
+                          </IconButton>
+                        </AppWorkspace.SidebarItemActions>
+                      }
+                    >
+                      {/* Every Space shares the kanban icon, so the row leads with the Space's own colour instead. */}
+                      <AppWorkspace.SidebarItemIcon>
+                        <Show
+                          when={isPinned()}
+                          fallback={<span class="spaces-overview-space-dot" style={{ "background-color": space.color }} />}
+                        >
+                          <i class="ti ti-flag" style={{ color: space.color }} />
+                        </Show>
+                      </AppWorkspace.SidebarItemIcon>
+                      <AppWorkspace.SidebarItemLabel>{space.name}</AppWorkspace.SidebarItemLabel>
+                      <AppWorkspace.SidebarItemMeta>
+                        <span class="spaces-overview-count" data-zero={space.openItemCount === 0 ? "true" : undefined}>
+                          <span aria-hidden="true">{formatCount(space.openItemCount)}</span>
+                          <span class="sr-only">{t.openItemCount({ count: space.openItemCount })}</span>
+                        </span>
+                      </AppWorkspace.SidebarItemMeta>
+                    </AppWorkspace.SidebarItem>
                   );
                 }}
               </For>
-              <Dropdown.Root items={createMenuItems()} position="bottom-right" width="min(38rem, calc(100vw - 1rem))" label={t.createSpace}>
-                <Dropdown.Trigger variant="secondary" size="sm" disabled={createSpaceMutation.loading()}>
-                  <i class="ti ti-plus app-accent-text" aria-hidden="true" /> {t.newSpace}
-                  <i class="ti ti-chevron-down" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-            </nav>
+            </AppWorkspace.SidebarSection>
             <span class="sr-only" aria-live="polite">
               {pinAnnouncement()}
             </span>
-          </header>
-          <section class="spaces-overview-focus" aria-labelledby="spaces-work-title">
-            <div class="spaces-overview-heading">
-              <div>
-                <h2 id="spaces-work-title">{t.myWork}</h2>
-                <p>{t.myWorkDescription}</p>
-              </div>
+          </AppWorkspace.SidebarBody>
+          <AppWorkspace.SidebarFooter>
+            <AppWorkspace.SidebarItem icon="ti ti-search" title={t.searchTitle} onClick={() => void openSearch()}>
+              {t.searchTitle}
+            </AppWorkspace.SidebarItem>
+          </AppWorkspace.SidebarFooter>
+        </AppWorkspace.SidebarDesktop>
+      </AppWorkspace.Sidebar>
+      <AppWorkspace.Content>
+        <AppWorkspace.Main class="spaces-overview-main" width="content" aria-busy={work.loading()}>
+          <div class="spaces-overview-page">
+            <PanelHeader
+              as="h2"
+              size="lg"
+              title={t.myWork}
+              subtitle={t.myWorkDescription}
+              actions={
+                <Dropdown.Root
+                  items={createMenuItems()}
+                  position="bottom-right"
+                  width="min(38rem, calc(100vw - 1rem))"
+                  label={t.createSpace}
+                >
+                  <Dropdown.Trigger variant="primary" disabled={createSpaceMutation.loading()}>
+                    <i class="ti ti-plus" aria-hidden="true" /> {t.newSpace}
+                    <i class="ti ti-chevron-down" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
+              }
+            />
+            <div class="spaces-overview-toolbar">
+              <SegmentedControl<OverviewView>
+                class="spaces-overview-views"
+                size="sm"
+                ariaLabel={t.workView}
+                value={view}
+                onValueChange={selectView}
+                options={workViewOptions()}
+              />
+              <Tag icon="ti ti-layout-kanban" size="lg" class="spaces-overview-scope">
+                {t.allSpaces}
+              </Tag>
+              <Button variant="secondary" size="sm" class="spaces-overview-mobile-activity" onClick={openMobileActivity}>
+                <i class="ti ti-history" aria-hidden="true" /> {t.activity}
+              </Button>
             </div>
-            <nav aria-label={t.workView} class="flex gap-2 overflow-x-auto">
-              <For each={workViews}>
-                {(next) => (
-                  <ButtonLink
-                    href={viewHref(next)}
-                    navigation="enhanced"
-                    variant={view() === next ? "subtle" : "text"}
-                    size="sm"
-                    aria-current={view() === next ? "page" : undefined}
-                    onNavigate={(event) => {
-                      if (view() === next) return;
-                      setView(next);
-                      event.push(viewHref(next), { scroll: "preserve" });
-                    }}
-                  >
-                    {next === "mine" ? t.forMe : next === "today" ? t.today : t.upcoming}
-                    <span class="spaces-overview-tab-count">{counts()[next]}</span>
-                  </ButtonLink>
-                )}
-              </For>
-            </nav>
-            {workList()}
-          </section>
+            <Paper class="spaces-overview-list">{workList()}</Paper>
+          </div>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="spaces-overview-activity" open width="lg" resizable={false} class="spaces-overview-activity">
+        <AppWorkspace.Detail id="spaces-overview-activity" open width="md" resizable={false} class="spaces-overview-activity">
           <DetailPanel>
             <DetailPanel.Header title={t.activity} subtitle={t.activityDescription} />
             <DetailPanel.Body scrollPreserveKey="spaces-overview-activity">{activityFeed()}</DetailPanel.Body>

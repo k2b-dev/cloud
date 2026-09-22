@@ -1,4 +1,6 @@
+import { toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
+import { sql } from "bun";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { dashboardSnapshot, listMyTasks } from "./items";
 
@@ -24,4 +26,24 @@ export async function loadOverviewWork(params: { userId: string; view: OverviewV
       deadline: item.deadline,
     })),
   };
+}
+
+export type SpaceOverviewStats = { spaceId: string; openItemCount: number; lastActivityAt: string };
+
+/** Per-space sidebar facts for Spaces the caller already resolved through access checks; one query. */
+export async function loadSpaceOverviewStats(params: { spaceIds: string[] }): Promise<SpaceOverviewStats[]> {
+  if (params.spaceIds.length === 0) return [];
+  const rows = await sql<{ id: string; open_item_count: number; last_activity_at: Date }[]>`
+    SELECT
+      s.id,
+      (
+        SELECT COUNT(*)::int FROM spaces.items i
+        JOIN spaces.columns c ON c.id = i.column_id
+        WHERE i.space_id = s.id AND i.completed_at IS NULL AND c.is_done = false
+      ) AS open_item_count,
+      COALESCE((SELECT MAX(e.last_occurred_at) FROM spaces.activity_events e WHERE e.space_id = s.id), s.updated_at) AS last_activity_at
+    FROM spaces.spaces s
+    WHERE s.id = ANY(${toPgUuidArray(params.spaceIds)}::uuid[])
+  `;
+  return rows.map((row) => ({ spaceId: row.id, openItemCount: row.open_item_count, lastActivityAt: row.last_activity_at.toISOString() }));
 }
