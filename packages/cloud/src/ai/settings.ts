@@ -185,6 +185,27 @@ export const parseAiModelProfiles = (rawJson: string): { profiles: AiModelProfil
   return { profiles };
 };
 
+export type AiModelReferenceSetting =
+  | "ai.default_model_id"
+  | "ai.background_model_id"
+  | "ai.workflow_model_id"
+  | "ai.vision_model_id"
+  | "ai.audio_model_id";
+
+/**
+ * One reason why a prospective AI configuration cannot be saved. Codes and
+ * profile ids are stable and locale-free; the admin route turns them into
+ * request-localized messages.
+ */
+export type AiSettingsIssue =
+  | { code: "model_required"; setting: AiModelReferenceSetting }
+  | {
+      code: "model_profile_missing" | "model_profile_disabled" | "model_profile_incompatible";
+      setting: AiModelReferenceSetting;
+      profileId: string;
+    }
+  | { code: "provider_credential_missing"; setting: "ai.model_profiles_json"; profileId: string };
+
 export const validateAiSettingsConfiguration = (input: {
   enabled: boolean;
   defaultModelId: string;
@@ -194,51 +215,41 @@ export const validateAiSettingsConfiguration = (input: {
   workflowModelId: string;
   profiles: readonly AiModelProfile[];
   credentialProfileIds: readonly string[];
-}): Record<string, string> => {
-  if (!input.enabled) return {};
+}): AiSettingsIssue[] => {
+  if (!input.enabled) return [];
 
-  const errors: Record<string, string> = {};
-  const enabledProfiles = input.profiles.filter((profile) => profile.enabled);
-  const defaultProfile = input.profiles.find((profile) => profile.id === input.defaultModelId);
-  if (!input.defaultModelId || !defaultProfile?.enabled || defaultProfile.capabilities.includes("transcription")) {
-    errors["ai.default_model_id"] = "Choose an enabled model profile.";
-  }
-
-  if (input.backgroundModelId) {
-    const backgroundProfile = input.profiles.find((profile) => profile.id === input.backgroundModelId);
-    if (!backgroundProfile?.enabled || backgroundProfile.capabilities.includes("transcription"))
-      errors["ai.background_model_id"] = "Choose an enabled chat model profile or use the platform default.";
-  }
-
-  if (input.visionModelId) {
-    const visionProfile = input.profiles.find((profile) => profile.id === input.visionModelId);
-    if (!visionProfile?.enabled || !visionProfile.capabilities.includes("vision")) {
-      errors["ai.vision_model_id"] = "Choose an enabled model profile with Vision support or disable the fallback.";
+  const issues: AiSettingsIssue[] = [];
+  const isChatModel = (profile: AiModelProfile) => !profile.capabilities.includes("transcription");
+  const checkReference = (
+    setting: AiModelReferenceSetting,
+    profileId: string | undefined,
+    fits: (profile: AiModelProfile) => boolean,
+    required = false,
+  ) => {
+    if (!profileId) {
+      if (required) issues.push({ code: "model_required", setting });
+      return;
     }
-  }
+    const profile = input.profiles.find((item) => item.id === profileId);
+    if (!profile) issues.push({ code: "model_profile_missing", setting, profileId });
+    else if (!profile.enabled) issues.push({ code: "model_profile_disabled", setting, profileId });
+    else if (!fits(profile)) issues.push({ code: "model_profile_incompatible", setting, profileId });
+  };
 
-  if (input.workflowModelId) {
-    const workflowProfile = input.profiles.find((profile) => profile.id === input.workflowModelId);
-    if (!workflowProfile?.enabled || workflowProfile.capabilities.includes("transcription"))
-      errors["ai.workflow_model_id"] = "Choose an enabled chat model profile or use the background model.";
-  }
-
-  if (input.audioModelId) {
-    const audioProfile = input.profiles.find((profile) => profile.id === input.audioModelId);
-    if (!audioProfile?.enabled || !audioProfile.capabilities.includes("transcription")) {
-      errors["ai.audio_model_id"] = "Choose an enabled audio transcription profile or disable audio transcription.";
-    }
-  }
+  checkReference("ai.default_model_id", input.defaultModelId, isChatModel, true);
+  checkReference("ai.background_model_id", input.backgroundModelId, isChatModel);
+  checkReference("ai.workflow_model_id", input.workflowModelId, isChatModel);
+  checkReference("ai.vision_model_id", input.visionModelId, (profile) => profile.capabilities.includes("vision"));
+  checkReference("ai.audio_model_id", input.audioModelId, (profile) => profile.capabilities.includes("transcription"));
 
   const configured = new Set(input.credentialProfileIds);
-  const missingCredentials = enabledProfiles.filter(
-    (profile) => providerRequiresCredential(profile.provider) && !configured.has(profile.id),
-  );
-  if (missingCredentials.length > 0) {
-    errors["ai.model_profiles_json"] = `Enter a provider API key for: ${missingCredentials.map((profile) => profile.label).join(", ")}.`;
+  for (const profile of input.profiles) {
+    if (profile.enabled && providerRequiresCredential(profile.provider) && !configured.has(profile.id)) {
+      issues.push({ code: "provider_credential_missing", setting: "ai.model_profiles_json", profileId: profile.id });
+    }
   }
 
-  return errors;
+  return issues;
 };
 
 export const planAiProfileCredentials = (input: {

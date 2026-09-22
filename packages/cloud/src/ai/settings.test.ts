@@ -242,77 +242,76 @@ describe("AI settings admin invariants", () => {
     return parsed.profiles;
   };
 
-  test("requires every enabled hosted profile to be usable when AI is enabled", () => {
+  const validate = (input: Partial<Parameters<typeof validateAiSettingsConfiguration>[0]>) =>
+    validateAiSettingsConfiguration({
+      enabled: true,
+      defaultModelId: "chat",
+      backgroundModelId: "",
+      workflowModelId: "",
+      profiles: parse([
+        { id: "chat", label: "Chat", provider: "ollama", model: "qwen", enabled: true, capabilities: ["streaming", "tools"] },
+        { id: "vision", label: "Vision", provider: "ollama", model: "llava", enabled: true, capabilities: ["vision"] },
+        { id: "off", label: "Off", provider: "ollama", model: "qwen", enabled: false, capabilities: ["vision"] },
+        {
+          id: "audio",
+          label: "Audio",
+          provider: "openai-compatible",
+          baseURL: "http://stt.test/v1",
+          model: "whisper",
+          capabilities: ["transcription"],
+        },
+      ]),
+      credentialProfileIds: [],
+      ...input,
+    });
+
+  test("requires every enabled hosted profile to have a provider key, one issue per profile", () => {
     const profiles = parse([
       { id: "local", label: "Local", provider: "ollama", model: "qwen", enabled: true },
       { id: "hosted", label: "Hosted", provider: "openrouter", model: "qwen", enabled: true },
+      { id: "second", label: "Second", provider: "openai", model: "gpt", enabled: true },
+      { id: "keyed", label: "Keyed", provider: "openai", model: "gpt", enabled: true },
+      { id: "idle", label: "Idle", provider: "openai", model: "gpt", enabled: false },
     ]);
 
-    expect(
-      validateAiSettingsConfiguration({
-        enabled: true,
-        defaultModelId: "local",
-        backgroundModelId: "",
-        workflowModelId: "",
-        profiles,
-        credentialProfileIds: [],
-      }),
-    ).toEqual({ "ai.model_profiles_json": "Enter a provider API key for: Hosted." });
+    expect(validate({ defaultModelId: "local", profiles, credentialProfileIds: ["keyed"] })).toEqual([
+      { code: "provider_credential_missing", setting: "ai.model_profiles_json", profileId: "hosted" },
+      { code: "provider_credential_missing", setting: "ai.model_profiles_json", profileId: "second" },
+    ]);
   });
 
-  test("validates default and background profile references only when AI is enabled", () => {
-    const profiles = parse([{ id: "local", label: "Local", provider: "ollama", model: "qwen", enabled: true }]);
-    const invalid = validateAiSettingsConfiguration({
-      enabled: true,
-      defaultModelId: "missing",
-      backgroundModelId: "missing",
-      workflowModelId: "missing",
-      profiles,
-      credentialProfileIds: [],
-    });
-
-    expect(invalid["ai.default_model_id"]).toBeDefined();
-    expect(invalid["ai.background_model_id"]).toBeDefined();
-    expect(invalid["ai.workflow_model_id"]).toBeDefined();
+  test("reports each model reference with its setting, profile, and reason", () => {
+    expect(validate({})).toEqual([]);
+    expect(validate({ defaultModelId: "" })).toEqual([{ code: "model_required", setting: "ai.default_model_id" }]);
     expect(
-      validateAiSettingsConfiguration({
-        enabled: false,
-        defaultModelId: "missing",
-        backgroundModelId: "missing",
-        workflowModelId: "missing",
-        profiles,
-        credentialProfileIds: [],
+      validate({
+        defaultModelId: "gone",
+        backgroundModelId: "off",
+        workflowModelId: "audio",
+        visionModelId: "chat",
+        audioModelId: "vision",
       }),
-    ).toEqual({});
-  });
-
-  test("requires the configured image tool model to support vision", () => {
-    const profiles = parse([
-      { id: "text", label: "Text", provider: "ollama", model: "qwen", enabled: true, capabilities: ["streaming", "tools"] },
-      { id: "vision", label: "Vision", provider: "ollama", model: "llava", enabled: true, capabilities: ["vision"] },
+    ).toEqual([
+      { code: "model_profile_missing", setting: "ai.default_model_id", profileId: "gone" },
+      { code: "model_profile_disabled", setting: "ai.background_model_id", profileId: "off" },
+      { code: "model_profile_incompatible", setting: "ai.workflow_model_id", profileId: "audio" },
+      { code: "model_profile_incompatible", setting: "ai.vision_model_id", profileId: "chat" },
+      { code: "model_profile_incompatible", setting: "ai.audio_model_id", profileId: "vision" },
     ]);
     expect(
-      validateAiSettingsConfiguration({
-        enabled: true,
-        defaultModelId: "text",
-        backgroundModelId: "",
-        visionModelId: "text",
-        workflowModelId: "",
-        profiles,
-        credentialProfileIds: [],
-      })["ai.vision_model_id"],
-    ).toBeDefined();
-    expect(
-      validateAiSettingsConfiguration({
-        enabled: true,
-        defaultModelId: "text",
-        backgroundModelId: "",
-        visionModelId: "vision",
-        workflowModelId: "",
-        profiles,
-        credentialProfileIds: [],
-      }),
-    ).toEqual({});
+      validate({ visionModelId: "removed", audioModelId: "removed", backgroundModelId: "removed", workflowModelId: "removed" }),
+    ).toEqual(
+      (["ai.background_model_id", "ai.workflow_model_id", "ai.vision_model_id", "ai.audio_model_id"] as const).map((setting) => ({
+        code: "model_profile_missing" as const,
+        setting,
+        profileId: "removed",
+      })),
+    );
+    expect(validate({ visionModelId: "vision", audioModelId: "audio", backgroundModelId: "chat", workflowModelId: "chat" })).toEqual([]);
+  });
+
+  test("skips reference checks while AI is disabled", () => {
+    expect(validate({ enabled: false, defaultModelId: "missing", backgroundModelId: "missing", visionModelId: "missing" })).toEqual([]);
   });
 
   test("keeps credentials only for the same profile id and provider", () => {

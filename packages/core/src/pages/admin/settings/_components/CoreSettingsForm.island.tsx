@@ -71,6 +71,7 @@ import ApprovalStatus from "../../../app-approval/ApprovalStatus";
 import type { ApprovalAvailability } from "../../../app-approval/availability";
 import { appApprovalMessages } from "../../../app-approval/messages";
 import CacheNotice from "../../CacheNotice.island";
+import { adminMessages } from "../../messages";
 import { accountSettingsSection } from "./account-settings";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { aiSettingsMessages } from "./ai-settings-messages";
@@ -192,6 +193,20 @@ const AI_ENRICH_CRON_SETTING_KEY = "ai.enrich_cron";
 const AI_MEMORY_LEARNING_CRON_SETTING_KEY = "ai.memory_learning_cron";
 const AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY = "ai.memory_learning_monthly_token_budget";
 
+type AiSection = "general" | "providers" | "jobs";
+
+/** Where the AI panel renders each setting a save can reject, so the error summary can point there. */
+const AI_SETTING_SECTIONS: Readonly<Record<string, AiSection>> = {
+  [AI_DEFAULT_MODEL_SETTING_KEY]: "general",
+  [AI_VISION_MODEL_SETTING_KEY]: "general",
+  [AI_AUDIO_MODEL_SETTING_KEY]: "general",
+  [AI_BACKGROUND_MODEL_SETTING_KEY]: "jobs",
+  [AI_WORKFLOW_MODEL_SETTING_KEY]: "jobs",
+  [AI_PROFILE_SETTING_KEY]: "providers",
+};
+
+const settingControlId = (key: string) => `setting-${key.replaceAll(".", "-")}`;
+
 const AI_SETTINGS_HANDLED_BY_PANEL = new Set<string>([
   AI_ENABLED_SETTING_KEY,
   AI_DEFAULT_MODEL_SETTING_KEY,
@@ -289,6 +304,9 @@ export default function CoreSettingsForm(props: Props) {
   const [drafts, setDrafts] = createSignal<Record<string, unknown>>({});
   const [resetKeys, setResetKeys] = createSignal<Record<string, true>>({});
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
+  // Title of the rejected save; the listed problems are the live field errors.
+  const [saveProblem, setSaveProblem] = createSignal<string | null>(null);
+  let saveProblemNotice: HTMLElement | undefined;
 
   const entryMap = createMemo(() => {
     const m: Record<string, SettingFieldDef> = {};
@@ -385,6 +403,39 @@ export default function CoreSettingsForm(props: Props) {
     setDrafts({});
     setResetKeys({});
     setFieldErrors({});
+    setSaveProblem(null);
+  };
+
+  const aiSection = () => props.aiSection ?? "general";
+  const aiT = () => aiSettingsMessages.resolve([locale()]).t;
+  const problemLabel = (key: string): string | undefined =>
+    ({
+      [AI_DEFAULT_MODEL_SETTING_KEY]: aiT().defaultModel,
+      [AI_VISION_MODEL_SETTING_KEY]: aiT().visionModel,
+      [AI_AUDIO_MODEL_SETTING_KEY]: aiT().audioModel,
+      [AI_BACKGROUND_MODEL_SETTING_KEY]: aiT().backgroundModel,
+      [AI_WORKFLOW_MODEL_SETTING_KEY]: aiT().workflowModel,
+      [AI_PROFILE_SETTING_KEY]: aiT().modelProfiles,
+    })[key] ?? entryMap()[key]?.label;
+  const sectionTitle = (section: AiSection) => {
+    const admin = adminMessages.resolve([locale()]).t;
+    return { general: admin.aiGeneral, providers: admin.aiProviders, jobs: admin.aiBackgroundJobs }[section];
+  };
+  const focusSetting = (key: string): boolean => {
+    const control = document.getElementById(settingControlId(key));
+    if (!control) return false;
+    control.scrollIntoView({ block: "center" });
+    control.focus();
+    return true;
+  };
+  // Land on the first problem the admin can fix here, otherwise on the summary.
+  const focusFirstProblem = () => {
+    const keys = Object.keys(fieldErrors());
+    if (keys.some(focusSetting)) return;
+    const invalid = document.querySelector<HTMLElement>('[aria-invalid="true"]');
+    const target = invalid ?? saveProblemNotice;
+    target?.scrollIntoView({ block: "center" });
+    target?.focus();
   };
 
   if (typeof window !== "undefined") {
@@ -393,6 +444,7 @@ export default function CoreSettingsForm(props: Props) {
 
   const save = mutations.create<void, void>({
     mutation: async () => {
+      setSaveProblem(null);
       const resets = resetKeyList().filter((key) => changedKeys().includes(key));
       const updates: Record<string, unknown> = {};
       for (const k of changedKeys()) {
@@ -423,6 +475,11 @@ export default function CoreSettingsForm(props: Props) {
       if (!response.ok) {
         const { message, fields } = await readSettingsError(response, t().saveFailed({ status: response.status }));
         setFieldErrors(fields);
+        // Field-level problems stay on the page next to the preserved drafts instead of a modal.
+        if (Object.keys(fields).length > 0) {
+          setSaveProblem(message);
+          queueMicrotask(focusFirstProblem);
+        }
         throw new Error(message);
       }
     },
@@ -430,7 +487,9 @@ export default function CoreSettingsForm(props: Props) {
       window.onbeforeunload = null;
       window.location.reload();
     },
-    onError: (e) => prompts.error(e.message),
+    onError: (e) => {
+      if (!saveProblem()) prompts.error(e.message);
+    },
   });
 
   const openTestEmailDialog = () => {
@@ -572,6 +631,40 @@ export default function CoreSettingsForm(props: Props) {
         />
       }
     >
+      <Show when={saveProblem() && Object.keys(fieldErrors()).length > 0}>
+        <NoticeCard ref={saveProblemNotice} tabIndex={-1} tone="danger" title={saveProblem()}>
+          <ul class="flex flex-col gap-2">
+            <For each={Object.entries(fieldErrors())}>
+              {([key, message]) => {
+                const section = isAiSettings() ? AI_SETTING_SECTIONS[key] : undefined;
+                return (
+                  <li class="flex flex-col gap-0.5" data-setting={key}>
+                    <Show when={problemLabel(key)}>{(label) => <span class="font-medium text-primary">{label()}</span>}</Show>
+                    <span>{message}</span>
+                    <Show when={section}>
+                      {(owner) => (
+                        <Show
+                          when={owner() !== aiSection()}
+                          fallback={
+                            <Button type="button" variant="text" size="sm" class="self-start" onClick={() => focusSetting(key)}>
+                              {t().goToField}
+                            </Button>
+                          }
+                        >
+                          <ButtonLink variant="text" size="sm" class="self-start" href={`/admin/settings?tab=ai-${owner()}`}>
+                            {t().openSettingsPage({ page: sectionTitle(owner()) })}
+                          </ButtonLink>
+                        </Show>
+                      )}
+                    </Show>
+                  </li>
+                );
+              }}
+            </For>
+          </ul>
+        </NoticeCard>
+      </Show>
+
       <Show when={props.showTestEmailAction || props.showTestPdfAction || props.showTestFreeIpaAction}>
         <NoticeCard tone="info" title={t().testsUseSaved} detail={t().testsUseSavedDescription} />
       </Show>
@@ -1093,7 +1186,7 @@ function AiSettingsPanel(props: {
   credentialProfileIds: string[];
   modelAccess: AiModelAccessMap;
   accountingUnit: string;
-  section: "general" | "providers" | "jobs";
+  section: AiSection;
   showJobsLink?: boolean;
 }) {
   const locale = useLocale();
@@ -1336,6 +1429,7 @@ function AiSettingsPanel(props: {
           <Select
             label={t().defaultModel}
             description={t().defaultModelDescription}
+            id={settingControlId(AI_DEFAULT_MODEL_SETTING_KEY)}
             value={() => defaultModelId()}
             onValueChange={(value) => value !== null && setDefaultModel(value)}
             options={profiles()
@@ -1393,6 +1487,7 @@ function AiSettingsPanel(props: {
           <Select
             label={t().visionModel}
             description={t().visionModelDescription}
+            id={settingControlId(AI_VISION_MODEL_SETTING_KEY)}
             value={() => asString(props.valueOf(AI_VISION_MODEL_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_VISION_MODEL_SETTING_KEY, value ?? "")}
             options={[
@@ -1418,6 +1513,7 @@ function AiSettingsPanel(props: {
           <Select
             label={t().audioModel}
             description={t().audioModelDescription}
+            id={settingControlId(AI_AUDIO_MODEL_SETTING_KEY)}
             value={() => asString(props.valueOf(AI_AUDIO_MODEL_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_AUDIO_MODEL_SETTING_KEY, value ?? "")}
             options={[
@@ -1456,6 +1552,7 @@ function AiSettingsPanel(props: {
           <Select
             label={t().backgroundModel}
             description={t().backgroundModelDescription}
+            id={settingControlId(AI_BACKGROUND_MODEL_SETTING_KEY)}
             value={() => asString(props.valueOf(AI_BACKGROUND_MODEL_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_BACKGROUND_MODEL_SETTING_KEY, value ?? "")}
             options={[
@@ -1482,6 +1579,7 @@ function AiSettingsPanel(props: {
           <Select
             label={t().workflowModel}
             description={t().workflowModelDescription}
+            id={settingControlId(AI_WORKFLOW_MODEL_SETTING_KEY)}
             value={() => asString(props.valueOf(AI_WORKFLOW_MODEL_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_WORKFLOW_MODEL_SETTING_KEY, value ?? "")}
             options={[
@@ -1635,7 +1733,7 @@ function AiSettingsPanel(props: {
             />
           </Show>
           <Show when={props.errorFor(AI_PROFILE_SETTING_KEY)}>
-            <div class="px-3 pb-3">
+            <div id={settingControlId(AI_PROFILE_SETTING_KEY)} tabIndex={-1} class="px-3 pb-3">
               <FieldError error={() => props.errorFor(AI_PROFILE_SETTING_KEY)} />
             </div>
           </Show>
