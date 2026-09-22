@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-09-21
+updated: 2026-09-23
 ---
 
 # Release process
@@ -65,6 +65,32 @@ release-please runs on every push to `main`:
 
 Every push to `main` also builds `sha-<12>` images for staging. Those tags are
 not releases: they carry no changelog entry and no support commitment.
+
+## Verify the CLI assets
+
+The GitHub release for `cloud-vX.Y.Z` also carries the `cld` binaries
+(`cld_darwin_arm64`, `cld_darwin_x64`, `cld_linux_arm64`, `cld_linux_x64`),
+the `cloud-cli-skill.tar.gz` skill archive, and `checksums.txt` with the
+SHA-256 of each. The release workflow signs `checksums.txt` keylessly with
+Cosign and publishes the Sigstore bundle `checksums.txt.sigstore.json`. Verify
+it with Cosign 2.4.2 or newer:
+
+```bash
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/k2b-dev/cloud/\.github/workflows/release\.yml@refs/heads/main$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+sha256sum --check --ignore-missing checksums.txt
+```
+
+The installer and `cld update` run the same check whenever `cosign` is on
+`PATH`; SHA-256 is always checked. Releases published before the bundle carry
+only a detached signature `checksums.txt.sig` and certificate
+`checksums.txt.pem`. The installer and `cld update` use these only when a
+release has no bundle. New releases still publish both files, taken from the
+bundle, so already installed `cld` versions keep updating; they will be
+dropped in a later release.
 
 ## Ship a hotfix
 

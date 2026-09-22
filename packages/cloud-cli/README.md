@@ -13,10 +13,11 @@ cld login --server https://cloud.example.com
 ```
 
 The installer places `cld` in `~/.local/bin`, verifies SHA-256 checksums, and
-uses Cosign when it is available. It can also install the `cloud-cli` skill into
-`~/.agents/skills` and optionally symlink it into `~/.claude/skills/cloud-cli`.
-Run `cld update` to install the latest CLI release and refresh the skill without
-changing profiles or OAuth credentials.
+verifies their signature with Cosign 2.4.2 or newer when it is available. It
+can also install the `cloud-cli` skill into `~/.agents/skills` and optionally
+symlink it into `~/.claude/skills/cloud-cli`. Run `cld update` to install the
+latest CLI release and refresh the skill without changing profiles or OAuth
+credentials.
 
 Useful installer flags:
 

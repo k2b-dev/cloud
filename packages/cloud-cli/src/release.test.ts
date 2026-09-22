@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import { arch, platform, tmpdir } from "node:os";
 import { join } from "node:path";
-import { COSIGN_CERTIFICATE_IDENTITY_REGEXP, resolveCliRelease, updateCli } from "./release";
+import { COSIGN_CERTIFICATE_IDENTITY_REGEXP, cosignVerifyBlobArgs, resolveCliRelease, updateCli } from "./release";
 
 const temporaryDirectories: string[] = [];
 
@@ -35,6 +35,47 @@ const createSkillArchive = async (directory: string): Promise<Uint8Array> => {
   const [exitCode, stderr] = await Promise.all([tar.exited, new Response(tar.stderr).text()]);
   if (exitCode !== 0) throw new Error(stderr);
   return new Uint8Array(await Bun.file(archive).arrayBuffer());
+};
+
+/** A `cosign` on PATH that records its arguments, one per line, and exits with the given code. */
+const createCosignStub = async (directory: string, exitCode = 0) => {
+  const bin = join(directory, "stub-bin");
+  const log = join(directory, "cosign.args");
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(bin, "cosign"), `#!/bin/sh\nprintf '%s\\n' "$@" > '${log}'\nexit ${exitCode}\n`, { mode: 0o755 });
+  await chmod(join(bin, "cosign"), 0o755);
+  return { path: `${bin}:${process.env.PATH ?? ""}`, args: async () => (await readFile(log, "utf8")).trimEnd().split("\n") };
+};
+
+const cosignIdentityArgs = [
+  "--certificate-identity-regexp",
+  COSIGN_CERTIFICATE_IDENTITY_REGEXP,
+  "--certificate-oidc-issuer",
+  "https://token.actions.githubusercontent.com",
+];
+
+/** `bundle` is the HTTP status of the bundle asset; absent means 404. */
+type SignatureAssets = { bundle?: number; signature?: boolean };
+
+/** Serves release cloud-v1.2.3 with a binary, its checksum, and the requested signature assets; records requested paths. */
+const serveSignedRelease = (assetName: string, binary: string, assets: SignatureAssets) => {
+  const requested: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url);
+      requested.push(url.pathname);
+      const base = "/release/download/cloud-v1.2.3";
+      if (url.pathname === "/releases") return Response.json([{ tag_name: "cloud-v1.2.3" }]);
+      if (url.pathname === `${base}/checksums.txt`) return new Response(`${sha256(new TextEncoder().encode(binary))}  ${assetName}\n`);
+      if (url.pathname === `${base}/${assetName}`) return new Response(binary);
+      if (url.pathname === `${base}/checksums.txt.sigstore.json` && assets.bundle) return new Response("{}", { status: assets.bundle });
+      if (url.pathname === `${base}/checksums.txt.sig` && assets.signature) return new Response("signature");
+      if (url.pathname === `${base}/checksums.txt.pem` && assets.signature) return new Response("certificate");
+      return new Response("not found", { status: 404 });
+    },
+  });
+  return { server, requested };
 };
 
 describe("Cloud CLI releases", () => {
@@ -273,6 +314,141 @@ describe("Cloud CLI releases", () => {
     } finally {
       server.stop(true);
     }
+  });
+  test("builds cosign verify-blob arguments for a bundle and for the detached signature", () => {
+    expect(cosignVerifyBlobArgs("/t/checksums.txt", { bundle: "/t/checksums.txt.sigstore.json" })).toEqual([
+      "verify-blob",
+      "--bundle",
+      "/t/checksums.txt.sigstore.json",
+      ...cosignIdentityArgs,
+      "/t/checksums.txt",
+    ]);
+    expect(cosignVerifyBlobArgs("/t/checksums.txt", { signature: "/t/checksums.txt.sig", certificate: "/t/checksums.txt.pem" })).toEqual([
+      "verify-blob",
+      "--certificate",
+      "/t/checksums.txt.pem",
+      "--signature",
+      "/t/checksums.txt.sig",
+      ...cosignIdentityArgs,
+      "/t/checksums.txt",
+    ]);
+  });
+
+  const updateWithCosign = async (assets: SignatureAssets, cosignExitCode = 0) => {
+    const directory = await createTemporaryDirectory();
+    const executablePath = join(directory, "cld");
+    const assetName = "cld_linux_x64";
+    await writeFile(executablePath, "old binary", { mode: 0o755 });
+    const cosign = await createCosignStub(directory, cosignExitCode);
+    const { server, requested } = serveSignedRelease(assetName, "new binary", assets);
+    const originalPath = process.env.PATH;
+    process.env.PATH = cosign.path;
+    try {
+      const result = await updateCli({
+        apiBase: `http://127.0.0.1:${server.port}`,
+        releaseBase: `http://127.0.0.1:${server.port}/release`,
+        executablePath,
+        standalone: true,
+        target: { os: "linux", arch: "x64", asset: assetName },
+        installSkill: false,
+        confirm: async () => true,
+      }).then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      return { result, requested, cosign, executablePath };
+    } finally {
+      process.env.PATH = originalPath;
+      server.stop(true);
+    }
+  };
+
+  test("cld update verifies the checksum manifest with the Sigstore bundle when the release has one", async () => {
+    const { result, requested, cosign, executablePath } = await updateWithCosign({ bundle: 200, signature: true });
+
+    expect("value" in result && result.value.cosign).toBe("verified");
+    const args = await cosign.args();
+    expect(args.slice(0, 2)).toEqual(["verify-blob", "--bundle"]);
+    expect(args[2]).toEndWith("/checksums.txt.sigstore.json");
+    expect(args.slice(3, 7)).toEqual(cosignIdentityArgs);
+    expect(args[7]).toEndWith("/checksums.txt");
+    expect(requested.some((path) => path.endsWith(".sig") || path.endsWith(".pem"))).toBe(false);
+    expect(await readFile(executablePath, "utf8")).toBe("new binary");
+  });
+
+  test("cld update falls back to the detached signature only when the release has no bundle", async () => {
+    const { result, cosign } = await updateWithCosign({ signature: true });
+
+    expect("value" in result && result.value.cosign).toBe("verified");
+    const args = await cosign.args();
+    expect(args[0]).toBe("verify-blob");
+    expect(args[1]).toBe("--certificate");
+    expect(args[2]).toEndWith("/checksums.txt.pem");
+    expect(args[3]).toBe("--signature");
+    expect(args[4]).toEndWith("/checksums.txt.sig");
+    expect(args.slice(5, 9)).toEqual(cosignIdentityArgs);
+  });
+
+  test("cld update refuses the release when the bundle cannot be downloaded or does not verify", async () => {
+    const unavailable = await updateWithCosign({ bundle: 403, signature: true });
+    expect("error" in unavailable.result && String(unavailable.result.error)).toContain("checksums.txt.sigstore.json (403)");
+    expect(await readFile(unavailable.executablePath, "utf8")).toBe("old binary");
+
+    const rejected = await updateWithCosign({ bundle: 200, signature: true }, 1);
+    expect("error" in rejected.result && String(rejected.result.error)).toContain("Cosign verification failed");
+    expect(await readFile(rejected.executablePath, "utf8")).toBe("old binary");
+  });
+
+  const installWithCosign = async (assets: SignatureAssets) => {
+    const directory = await createTemporaryDirectory();
+    const prefix = join(directory, "bin");
+    const assetName = currentAssetName();
+    const cosign = await createCosignStub(directory);
+    const { server, requested } = serveSignedRelease(assetName, "release binary", assets);
+    try {
+      const installer = join(import.meta.dir, "..", "scripts", "install.sh");
+      const child = Bun.spawn(["sh", installer, "--prefix", prefix, "--version", "1.2.3", "--no-skills", "--yes"], {
+        env: {
+          ...process.env,
+          PATH: cosign.path,
+          CLD_RELEASE_API_BASE: `http://127.0.0.1:${server.port}`,
+          CLD_RELEASE_BASE: `http://127.0.0.1:${server.port}/release`,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      return { exitCode, output: `${stdout}\n${stderr}`, requested, cosign };
+    } finally {
+      server.stop(true);
+    }
+  };
+
+  test("the shell installer prefers the Sigstore bundle and falls back to the detached signature", async () => {
+    const bundled = await installWithCosign({ bundle: 200, signature: true });
+    expect(bundled.exitCode, bundled.output).toBe(0);
+    const bundleArgs = await bundled.cosign.args();
+    expect(bundleArgs.slice(0, 2)).toEqual(["verify-blob", "--bundle"]);
+    expect(bundleArgs[2]).toEndWith("/checksums.txt.sigstore.json");
+    expect(bundleArgs.slice(3, 7)).toEqual(cosignIdentityArgs);
+    expect(bundled.requested.some((path) => path.endsWith(".sig") || path.endsWith(".pem"))).toBe(false);
+
+    const detached = await installWithCosign({ signature: true });
+    expect(detached.exitCode, detached.output).toBe(0);
+    const detachedArgs = await detached.cosign.args();
+    expect(detachedArgs[1]).toBe("--certificate");
+    expect(detachedArgs[2]).toEndWith("/checksums.txt.pem");
+    expect(detachedArgs[3]).toBe("--signature");
+    expect(detachedArgs[4]).toEndWith("/checksums.txt.sig");
+    expect(detachedArgs.slice(5, 9)).toEqual(cosignIdentityArgs);
+
+    const broken = await installWithCosign({ bundle: 403, signature: true });
+    expect(broken.exitCode).not.toBe(0);
+    expect(broken.output).toContain("could not download the checksum bundle");
   });
 });
 

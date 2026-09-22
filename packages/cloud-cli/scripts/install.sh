@@ -301,11 +301,20 @@ install_skill() {
 
 curl_get "${DOWNLOAD_BASE}/checksums.txt" -o "$TMP/checksums.txt" || die "missing checksum manifest"
 if [ "$VERIFY" = "1" ] && have cosign; then
-  curl_get "${DOWNLOAD_BASE}/checksums.txt.sig" -o "$TMP/checksums.txt.sig" || die "missing checksum signature"
-  curl_get "${DOWNLOAD_BASE}/checksums.txt.pem" -o "$TMP/checksums.txt.pem" || die "missing checksum certificate"
-  cosign verify-blob \
-    --certificate "$TMP/checksums.txt.pem" \
-    --signature "$TMP/checksums.txt.sig" \
+  # Prefer the Sigstore bundle; releases published before it carry only the
+  # detached signature and certificate, used only when the bundle is absent.
+  bundle_status=$(curl -sSL --retry "$CURL_RETRY_COUNT" --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+    -o "$TMP/checksums.txt.sigstore.json" -w '%{http_code}' "${DOWNLOAD_BASE}/checksums.txt.sigstore.json") || bundle_status=""
+  case "$bundle_status" in
+    200) set -- --bundle "$TMP/checksums.txt.sigstore.json" ;;
+    404)
+      curl_get "${DOWNLOAD_BASE}/checksums.txt.sig" -o "$TMP/checksums.txt.sig" || die "missing checksum signature"
+      curl_get "${DOWNLOAD_BASE}/checksums.txt.pem" -o "$TMP/checksums.txt.pem" || die "missing checksum certificate"
+      set -- --certificate "$TMP/checksums.txt.pem" --signature "$TMP/checksums.txt.sig"
+      ;;
+    *) die "could not download the checksum bundle" ;;
+  esac
+  cosign verify-blob "$@" \
     --certificate-identity-regexp "$COSIGN_IDENTITY_REGEXP" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
     "$TMP/checksums.txt" >/dev/null 2>&1 || die "Cosign verification failed"

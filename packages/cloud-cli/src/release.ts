@@ -29,6 +29,11 @@ const CLOUD_CLI_SKILL_ASSET = "cloud-cli-skill.tar.gz";
 const CLOUD_CLI_SKILL_NAME = "cloud-cli";
 const cliReleaseTag = /^cloud-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 export const COSIGN_CERTIFICATE_IDENTITY_REGEXP = "^https://github\\.com/k2b-dev/cloud/\\.github/workflows/release\\.yml@refs/heads/main$";
+const COSIGN_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+const CHECKSUMS_ASSET = "checksums.txt";
+const CHECKSUMS_BUNDLE_ASSET = "checksums.txt.sigstore.json";
+const CHECKSUMS_SIGNATURE_ASSET = "checksums.txt.sig";
+const CHECKSUMS_CERTIFICATE_ASSET = "checksums.txt.pem";
 
 export type CliRelease = {
   tag: string;
@@ -175,14 +180,26 @@ export const resolveCliRelease = async (version: string | undefined, source: Rel
   return newest;
 };
 
-const fetchBytes = async (url: string, fetchImpl: FetchImplementation): Promise<Uint8Array> => {
-  const response = await fetchWithRetry(url, {}, fetchImpl);
-  if (!response.ok) throw new Error(`Could not download ${url} (${response.status}).`);
+const readBytes = async (response: Response): Promise<Uint8Array> => {
   const contentLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > MAX_RELEASE_FILE_BYTES) throw new Error("Cloud CLI release asset is too large.");
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength > MAX_RELEASE_FILE_BYTES) throw new Error("Cloud CLI release asset is too large.");
   return bytes;
+};
+
+const fetchBytes = async (url: string, fetchImpl: FetchImplementation): Promise<Uint8Array> => {
+  const response = await fetchWithRetry(url, {}, fetchImpl);
+  if (!response.ok) throw new Error(`Could not download ${url} (${response.status}).`);
+  return readBytes(response);
+};
+
+/** Like fetchBytes, but a release without the asset (404) yields null. */
+const fetchOptionalBytes = async (url: string, fetchImpl: FetchImplementation): Promise<Uint8Array | null> => {
+  const response = await fetchWithRetry(url, {}, fetchImpl);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Could not download ${url} (${response.status}).`);
+  return readBytes(response);
 };
 
 const expectedChecksum = (manifest: string, asset: string): string => {
@@ -198,34 +215,55 @@ const verifyChecksum = (asset: Uint8Array, expected: string): void => {
   if (actual !== expected) throw new Error("Cloud CLI checksum verification failed.");
 };
 
+/** Signature material for checksums.txt: a Sigstore bundle, or the detached signature and certificate of older releases. */
+export type CosignMaterial = { bundle: string } | { signature: string; certificate: string };
+
+export const cosignVerifyBlobArgs = (manifestPath: string, material: CosignMaterial): string[] => [
+  "verify-blob",
+  ...("bundle" in material ? ["--bundle", material.bundle] : ["--certificate", material.certificate, "--signature", material.signature]),
+  "--certificate-identity-regexp",
+  COSIGN_CERTIFICATE_IDENTITY_REGEXP,
+  "--certificate-oidc-issuer",
+  COSIGN_OIDC_ISSUER,
+  manifestPath,
+];
+
+const writeReleaseFile = async (directory: string, name: string, bytes: Uint8Array): Promise<string> => {
+  const path = join(directory, name);
+  await writeFile(path, bytes, { mode: 0o600 });
+  return path;
+};
+
+/**
+ * Verifies checksums.txt with the release's Sigstore bundle. Releases
+ * published before the bundle carry only the detached signature and
+ * certificate; they are used only when the bundle asset does not exist.
+ */
 const verifyCosign = async (
   directory: string,
   manifest: Uint8Array,
-  signature: Uint8Array,
-  certificate: Uint8Array,
+  downloadBase: string,
+  fetchImpl: FetchImplementation,
 ): Promise<"verified" | "unavailable"> => {
   if (!Bun.which("cosign")) return "unavailable";
-  const manifestPath = join(directory, "checksums.txt");
-  const signaturePath = join(directory, "checksums.txt.sig");
-  const certificatePath = join(directory, "checksums.txt.pem");
-  await Promise.all([
-    writeFile(manifestPath, manifest, { mode: 0o600 }),
-    writeFile(signaturePath, signature, { mode: 0o600 }),
-    writeFile(certificatePath, certificate, { mode: 0o600 }),
-  ]);
+  const manifestPath = await writeReleaseFile(directory, CHECKSUMS_ASSET, manifest);
+  const bundle = await fetchOptionalBytes(`${downloadBase}/${CHECKSUMS_BUNDLE_ASSET}`, fetchImpl);
+  const material: CosignMaterial = bundle
+    ? { bundle: await writeReleaseFile(directory, CHECKSUMS_BUNDLE_ASSET, bundle) }
+    : {
+        signature: await writeReleaseFile(
+          directory,
+          CHECKSUMS_SIGNATURE_ASSET,
+          await fetchBytes(`${downloadBase}/${CHECKSUMS_SIGNATURE_ASSET}`, fetchImpl),
+        ),
+        certificate: await writeReleaseFile(
+          directory,
+          CHECKSUMS_CERTIFICATE_ASSET,
+          await fetchBytes(`${downloadBase}/${CHECKSUMS_CERTIFICATE_ASSET}`, fetchImpl),
+        ),
+      };
   try {
-    await execFileAsync("cosign", [
-      "verify-blob",
-      "--certificate",
-      certificatePath,
-      "--signature",
-      signaturePath,
-      "--certificate-identity-regexp",
-      COSIGN_CERTIFICATE_IDENTITY_REGEXP,
-      "--certificate-oidc-issuer",
-      "https://token.actions.githubusercontent.com",
-      manifestPath,
-    ]);
+    await execFileAsync("cosign", cosignVerifyBlobArgs(manifestPath, material));
   } catch {
     throw new Error("Cloud CLI Cosign verification failed.");
   }
@@ -364,16 +402,9 @@ export const updateCli = async (options: UpdateOptions = {}): Promise<CliUpdateR
   const temporaryDirectory = await mkdtemp(join(replaceInstalledBinary ? directory : tmpdir(), ".cld-update-"));
   try {
     const downloadBase = `${source.releaseBase}/download/${release.tag}`;
-    const manifest = await fetchBytes(`${downloadBase}/checksums.txt`, source.fetchImpl);
+    const manifest = await fetchBytes(`${downloadBase}/${CHECKSUMS_ASSET}`, source.fetchImpl);
     const cosign =
-      options.verifyCosign === false
-        ? "skipped"
-        : await verifyCosign(
-            temporaryDirectory,
-            manifest,
-            await fetchBytes(`${downloadBase}/checksums.txt.sig`, source.fetchImpl),
-            await fetchBytes(`${downloadBase}/checksums.txt.pem`, source.fetchImpl),
-          );
+      options.verifyCosign === false ? "skipped" : await verifyCosign(temporaryDirectory, manifest, downloadBase, source.fetchImpl);
     const binary = await fetchBytes(`${downloadBase}/${target.asset}`, source.fetchImpl);
     verifyChecksum(binary, expectedChecksum(new TextDecoder().decode(manifest), target.asset));
     if (replaceInstalledBinary) {
