@@ -26,6 +26,7 @@ describe("public document share page", () => {
     const html = renderToString(() =>
       createComponent(PublicDocumentShare, {
         filename: "charge-statement.pdf",
+        mimeType: "application/pdf",
         expiresAt: "2026-08-20T18:00:00.000Z",
         expiresAtLabel: "August 20, 2026 at 8:00 PM",
         downloadHref: "/share/grids/documents/gdl_test/download",
@@ -40,6 +41,8 @@ describe("public document share page", () => {
     expect(html).toContain("August 20, 2026 at 8:00 PM");
     expect(html).toContain("/share/grids/documents/gdl_test/download");
     expect(html).toContain("Shared securely through Grids");
+    expect(html).toContain("ti-file-type-pdf");
+    expect(html).toContain("Download file");
     expect(html).not.toContain("Shared PDF");
     expect(html).not.toContain("A document was shared with you through Grids.");
     expect(html).not.toContain("w-full justify-center");
@@ -53,6 +56,20 @@ describe("public document share page", () => {
     expect(html).toContain("Link no longer available");
     expect(html).toContain("This document link has expired or was revoked.");
     expect(html).not.toContain("charge-statement.pdf");
-    expect(html).not.toContain("Download PDF");
+    expect(html).not.toContain("Download file");
+  });
+
+  test("shows a format-specific icon for non-PDF shares", () => {
+    const html = renderToString(() =>
+      createComponent(PublicDocumentShare, {
+        filename: "payments.csv",
+        mimeType: "text/csv",
+        expiresAt: "2026-08-20T18:00:00.000Z",
+        expiresAtLabel: "August 20, 2026 at 8:00 PM",
+        downloadHref: "/share/grids/documents/gdl_test/download",
+      }),
+    );
+    expect(html).toContain("ti-file-type-csv");
+    expect(html).toContain("payments.csv");
   });
 });

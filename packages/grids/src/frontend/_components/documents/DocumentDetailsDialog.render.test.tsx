@@ -94,7 +94,7 @@ test("source inspection avoids duplicating a direct single-record link", () => {
   }
 });
 
-test("CSV primary is shown once with an authorized download and no public sharing", () => {
+test("CSV primary is shown once with an authorized download and public sharing", () => {
   const html = renderToString(() =>
     createComponent(DocumentDetailsDialog, {
       args: {
@@ -125,6 +125,35 @@ test("CSV primary is shown once with an authorized download and no public sharin
   expect(html.match(/report.csv/g)).toHaveLength(1);
   expect(html).toContain("Download");
   expect(html).not.toContain("Download PDF");
+  expect(html).toContain("Share links");
+});
+
+test("a primary file outside the supported document formats offers no public sharing", () => {
+  const html = renderToString(() =>
+    createComponent(DocumentDetailsDialog, {
+      args: {
+        document: {
+          ...document,
+          filename: "page.html",
+          primaryArtifactKey: "page",
+          artifacts: [
+            {
+              key: "page",
+              filename: "page.html",
+              mimeType: "text/html",
+              sizeBytes: 200,
+              sha256: "c".repeat(64),
+              downloadUrl: "/api/grids/documents/DOC/artifacts/page",
+            },
+          ],
+        },
+        canWrite: true,
+        onDownload: () => {},
+      },
+      close: () => {},
+    }),
+  );
+  expect(html).toContain("Download");
   expect(html).not.toContain("Share links");
 });
 

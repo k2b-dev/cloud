@@ -328,11 +328,11 @@ cld grids documents links create DOCUMENT_ID --expires-in 7d --comment 'Customer
 cld grids documents links revoke LINK_ID
 ```
 
-Public links require a primary PDF. Lifetimes: `1d`, `7d`, `30d` (default), `90d`.
+Public links serve the stored primary file of any supported format (PDF, CSV, JSON, XML) as an attachment. Lifetimes: `1d`, `7d`, `30d` (default), `90d`.
 The complete URL is returned only at creation: save/copy it then, not in a public
 log. Later list results contain lifecycle metadata, not a reconstructable URL.
 Revocation invalidates the link; ask for approval before doing it. Creating a link
-does not send it. Non-PDF outputs require authorized downloads.
+does not send it.
 
 ## Batch PDFs and free CSV/JSON/XML
 

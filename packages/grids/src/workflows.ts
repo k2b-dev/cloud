@@ -23,13 +23,13 @@ import { workflowAction } from "@k2b/cloud/workflows";
 import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { Document, RecordMutationAudit, Table } from "./contracts";
-import { documentAllowsPublicLinks } from "./document-sharing";
+import { documentAllowsPublicLinks, documentMediaTypeAllowsPublicLinks } from "./document-sharing";
 import { objectListRecordInputValues } from "./field-types/object-list";
 import { logAudit, type SqlClient } from "./service/audit";
 import { documentIssuanceService } from "./service/document-issuance";
 import { summarizeDocument } from "./service/document-mappers";
 import { documentServiceText } from "./service/document-messages";
-import { DocumentQueryOutputSchema } from "./service/document-query-output";
+import { DocumentQueryOutputSchema, documentQueryOutputMediaType } from "./service/document-query-output";
 import {
   DocumentSourceVersionsInputSchema,
   DocumentSourceVersionsSchema,
@@ -587,7 +587,8 @@ const documentToLink = async (ctx: WorkflowActionContext, scope: GridsWorkflowAc
   const { id } = documentReferenceId(ctx, await ctx.resolveReference(reference, "document"));
   const document = await getDocument(id);
   if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", runtimeText(ctx).generatedDocumentUnavailable);
-  if (!documentAllowsPublicLinks(document)) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksPdfOnly);
+  if (!documentAllowsPublicLinks(document))
+    throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksUnsupportedFormat);
   return document;
 };
 
@@ -629,8 +630,8 @@ const plannedDocumentToLink = async (
     (typeof referenceDocument.tableId === "string" || referenceDocument.tableId === null) &&
     (typeof referenceDocument.recordId === "string" || referenceDocument.recordId === null)
   ) {
-    if (referenceDocument.primaryArtifactMimeType !== "application/pdf")
-      throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksPdfOnly);
+    if (!documentMediaTypeAllowsPublicLinks(referenceDocument.primaryArtifactMimeType))
+      throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksUnsupportedFormat);
     return {
       id,
       baseId: scope.baseId,
@@ -641,7 +642,8 @@ const plannedDocumentToLink = async (
   }
   const document = await getDocument(id);
   if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", runtimeText(ctx).generatedDocumentUnavailable);
-  if (!documentAllowsPublicLinks(document)) throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksPdfOnly);
+  if (!documentAllowsPublicLinks(document))
+    throw actionError("BAD_INPUT", documentServiceText(invocationLocale(ctx)).publicLinksUnsupportedFormat);
   return document;
 };
 
@@ -1800,8 +1802,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               tableId: null,
               templateId: null,
               recordId: null,
-              primaryArtifactMimeType:
-                config.output.kind === "pdf" ? "application/pdf" : config.output.kind === "zip" ? "application/zip" : null,
+              primaryArtifactMimeType: documentQueryOutputMediaType(config.output.kind),
               planned: true,
             },
           };

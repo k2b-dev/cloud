@@ -1014,7 +1014,7 @@ cld grids documents renderers --json
 ```
 
 Each renderer declares `primaryArtifact: { key, mediaType }`. Public share links
-are available only for a primary PDF; other formats require authorized downloads.
+serve the primary artifact of any supported format (PDF, CSV, JSON, XML) as an attachment.
 Profile renderers own filenames, so `document.filename` is `null` while building
 their input. Read the completed Document's `filename` after generation.
 
@@ -1279,7 +1279,7 @@ steps:
 Both steps use the same captured rows. Each creates one immutable Document; a retry of that step returns its existing Document.
 Generation rechecks execution authorization: direct runs require Base Write; published App Workflows use their authorized launcher within the same Base, without personal Base grants or a UI-table restriction. Dry-runs validate but do not render files.
 The Document belongs to the workflow, not a dummy Record; find it under **All Documents** or the workflow run.
-Downloads use the stored primary artifact; public download links currently support PDF only.
+Downloads and public download links use the stored primary artifact in any supported format.
 
 Instead of a query reference, `data` accepts typed workflow values:
 `{ columns: [{ key: amount, type: decimal }], rows: [{ amount: "${{ inputs.amount }}" }] }`.

@@ -94,7 +94,7 @@ export const createDocumentLink = async (params: {
   locale?: string;
 }): Promise<Result<{ link: DocumentLink; token: string }>> => {
   const t = documentServiceText(params.locale);
-  if (!documentAllowsPublicLinks(params.document)) return fail(err.badInput(t.publicLinksPdfOnly));
+  if (!documentAllowsPublicLinks(params.document)) return fail(err.badInput(t.publicLinksUnsupportedFormat));
   const token = generateDocumentLinkToken();
   const expiresAt = documentLinkExpiresAt(params.input.expiresIn);
   const comment = normalizeDocumentLinkComment(params.input.comment);

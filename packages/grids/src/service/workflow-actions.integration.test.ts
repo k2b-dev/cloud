@@ -870,14 +870,9 @@ steps:
         );
         if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
         const runId = await queueRun(fixture, { plan: compiled.plan, mode: "dryRun" });
-        expect(await drive(runId, "dryRun")).toBe(kind === "pdf" ? "succeeded" : "failed");
+        expect(await drive(runId, "dryRun")).toBe("succeeded");
         const steps = await stepRuns(runId);
-        if (kind === "pdf") expect(steps.at(-1)?.outcome?.output).toMatchObject({ kind: "documentLink", planned: true, expiresIn: "7d" });
-        else
-          expect(steps.at(-1)?.outcome).toMatchObject({
-            output: null,
-            issues: [{ reason: "Public links are available only for PDF documents. Use an authorized download for this file." }],
-          });
+        expect(steps.at(-1)?.outcome?.output).toMatchObject({ kind: "documentLink", planned: true, expiresIn: "7d" });
         expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(0);
         expect(await sql`SELECT id FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`).toHaveLength(0);
       }

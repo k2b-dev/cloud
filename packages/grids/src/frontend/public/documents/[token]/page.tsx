@@ -17,8 +17,22 @@ const remainingTime = (expiresAt: string, locale: string, now = Date.now()): str
   return t.days({ count: days });
 };
 
+const fileIcon = (mimeType: string | undefined): string => {
+  switch (mimeType) {
+    case "application/pdf":
+      return "ti ti-file-type-pdf";
+    case "text/csv":
+      return "ti ti-file-type-csv";
+    case "application/xml":
+      return "ti ti-file-type-xml";
+    default:
+      return "ti ti-file";
+  }
+};
+
 export function PublicDocumentShare(props: {
   filename?: string;
+  mimeType?: string;
   expiresAt?: string;
   expiresAtLabel?: string;
   downloadHref?: string;
@@ -43,7 +57,7 @@ export function PublicDocumentShare(props: {
           >
             <div class="flex items-center gap-3">
               <span class="app-accent-text flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)]">
-                <i class="ti ti-file-type-pdf text-lg" aria-hidden="true" />
+                <i class={`${fileIcon(props.mimeType)} text-lg`} aria-hidden="true" />
               </span>
               <div class="min-w-0 flex-1">
                 <h1 class="break-words text-base font-semibold leading-snug sm:text-lg">{props.filename}</h1>
@@ -60,7 +74,7 @@ export function PublicDocumentShare(props: {
             <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
               <ButtonLink href={props.downloadHref} navigation="document" size="md" variant="primary" download="">
                 <i class="ti ti-download" aria-hidden="true" />
-                {t().downloadPdf}
+                {t().downloadFile}
               </ButtonLink>
               <p class="text-xs text-dimmed">{t().sharedThroughGrids}</p>
             </div>
@@ -95,12 +109,13 @@ export default ssr<AuthContext>(async (c) => {
   }).format(new Date(expiresAt));
 
   c.get("page").title = resolved.data.document.filename;
-  c.get("page").description = t.sharedPdfDescription;
+  c.get("page").description = t.sharedDocumentDescription;
 
   return () => (
     <MinimalLayout c={c}>
       <PublicDocumentShare
         filename={resolved.data.document.filename}
+        mimeType={resolved.data.document.artifacts.find((artifact) => artifact.key === resolved.data.document.primaryArtifactKey)?.mimeType}
         expiresAt={expiresAt}
         expiresAtLabel={expiresAtLabel}
         downloadHref={`/share/grids/documents/${encodeURIComponent(token)}/download`}

@@ -155,7 +155,7 @@ export const documentMessages = i18n.define({
       comment: "Comment",
       commentDescription: "Optional internal note. It is not visible to people using the link.",
       commentPlaceholder: "Why this link exists",
-      anyoneCanDownload: "Anyone with the link can download this PDF",
+      anyoneCanDownload: "Anyone with the link can download this file",
       publicLinkScope: "The link works without login until it expires or you revoke it. It does not provide access to other documents.",
       linkCreatedCopied: "Link created and copied",
       linkCreated: "Link created",
@@ -418,7 +418,7 @@ export const documentMessages = i18n.define({
       comment: "Kommentar",
       commentDescription: "Optionale interne Notiz. Personen mit dem Link können sie nicht sehen.",
       commentPlaceholder: "Zweck dieses Links",
-      anyoneCanDownload: "Jede Person mit dem Link kann dieses PDF herunterladen",
+      anyoneCanDownload: "Jede Person mit dem Link kann diese Datei herunterladen",
       publicLinkScope:
         "Der Link funktioniert ohne Anmeldung, bis er abläuft oder widerrufen wird. Er gewährt keinen Zugriff auf andere Dokumente.",
       linkCreatedCopied: "Link erstellt und kopiert",

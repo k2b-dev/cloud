@@ -293,6 +293,7 @@ export const gridsService = {
     recordDocumentLinkAccess: documents.recordDocumentLinkAccess,
     publicDocumentLinkPath: documents.publicDocumentLinkPath,
     publicDocumentLinkUrl: documents.publicDocumentLinkUrl,
+    getPrimaryArtifact: documents.getDocumentPrimaryArtifact,
     getPdf: documents.getDocumentPdf,
     renderWorkflowDocumentsPdf: documents.renderWorkflowDocumentsPdf,
   },
