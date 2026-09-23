@@ -4,6 +4,7 @@ import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { EventQuery } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { queryEventMapData } from "./event-map-query";
+import { withEventQuerySnapshot } from "./event-query-window";
 
 const runDbSmoke = testInfra.database !== undefined;
 const postgresTest = runDbSmoke ? test : test.skip;
@@ -73,6 +74,31 @@ describe("Pulse event map Postgres smoke", () => {
         },
       ]);
       expect(JSON.stringify(result.data)).not.toContain("203.0.113.42");
+    } finally {
+      await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
+    }
+  });
+
+  postgresTest("a window ending now includes every event visible in the snapshot", async () => {
+    const baseId = crypto.randomUUID();
+    await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Event window end')`;
+    try {
+      const query: EventQuery = {
+        kind: "events",
+        baseId,
+        event: "qr.opened",
+        since: "1h",
+        dimensions: {},
+        aggregation: "rows",
+        bucket: "1h",
+        groupBy: [],
+        limit: 1,
+      };
+      const result = await withEventQuerySnapshot(query, async (db, range) => {
+        const [row] = await db<{ covered: boolean }[]>`SELECT now() <= ${range.to} AS covered`;
+        return { ok: true as const, data: row!.covered };
+      });
+      expect(result).toEqual({ ok: true, data: true });
     } finally {
       await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
     }
