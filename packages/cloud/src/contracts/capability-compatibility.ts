@@ -263,12 +263,8 @@ const subsetIssues = (sub: Side, sup: Side, path: string, mode: Mode, depth: num
     if (typeof supSchema.pattern === "string" && !formatCoversPattern && subSchema.pattern !== supSchema.pattern) {
       add(issues, path, `must use the contract pattern`);
     }
-    // A UUID string always has 36 characters, even when no length keywords are published.
-    const fixedLength = subSchema.format === "uuid" ? 36 : undefined;
-    if (!withinMin(subSchema.minLength ?? fixedLength, supSchema.minLength))
-      add(issues, path, `must be at least ${supSchema.minLength} characters`);
-    if (!withinMax(subSchema.maxLength ?? fixedLength, supSchema.maxLength))
-      add(issues, path, `must be at most ${supSchema.maxLength} characters`);
+    if (!withinMin(subSchema.minLength, supSchema.minLength)) add(issues, path, `must be at least ${supSchema.minLength} characters`);
+    if (!withinMax(subSchema.maxLength, supSchema.maxLength)) add(issues, path, `must be at most ${supSchema.maxLength} characters`);
   }
   if (types.has("number") || types.has("integer")) {
     if (!withinLower(lowerBound(subSchema), lowerBound(supSchema)) || !withinUpper(upperBound(subSchema), upperBound(supSchema))) {

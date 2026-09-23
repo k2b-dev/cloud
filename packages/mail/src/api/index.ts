@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { ContactDirectoryMatchSchema, ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
+import { CloudResourceRefSchema, ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
 import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
@@ -947,8 +947,9 @@ const mailOperationsApi = new Hono<MailApiContext>()
       z.object({
         mailboxId: ResourceShortIdSchema,
         conversationId: ResourceShortIdSchema,
-        bookId: ContactDirectoryMatchSchema.shape.bookId,
-        contactId: ContactDirectoryMatchSchema.shape.contactId,
+        // Provider-owned contact IDs, bounded like Cloud resource-reference IDs.
+        bookId: CloudResourceRefSchema.shape.id,
+        contactId: CloudResourceRefSchema.shape.id,
       }),
     ),
     v("query", relatedMailQuerySchema),

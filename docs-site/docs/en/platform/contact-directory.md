@@ -132,10 +132,10 @@ administrator saves the mapping. A capability is compatible when:
   only identifiers you issued.
 - **Result.** Every result you can return satisfies the contract. Required
   fields are always present; types and nullability match; `email` and
-  `date-time` formats match; arrays and identifiers stay within the contract
-  bounds. Extra fields, narrower types, literals, and your own identifier
-  formats are fine. Identifiers need a known length: a literal, the `uuid`
-  format, or a `min` and `max` length.
+  `date-time` formats match; arrays stay within the contract bounds. Extra
+  fields, narrower types, literals, and your own identifier formats are fine.
+  Identifiers are opaque strings; Mail attaches a `ref` to Assistant only when
+  its `id` has 1 to 512 characters, like any Cloud resource reference.
 
 The check is conservative. A JSON Schema keyword it does not understand makes
 the capability incompatible rather than silently accepted. Mail also validates

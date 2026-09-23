@@ -1,4 +1,5 @@
 import { type AssistantLaunch, type LaunchAssistantInput, launchAssistant } from "@k2b/cloud/ai/browser";
+import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { contactOpenHref } from "../../app-integration-contracts";
 import type { ContactDirectoryTarget } from "../../contact-directory-settings";
 import type { MailAddress } from "../../contracts";
@@ -56,11 +57,14 @@ export const mailAssistantContactResources = (emails: readonly string[], resolut
     if (matches?.size !== 1) continue;
     const contact = matches.values().next().value;
     if (!contact || attachedContactIds.has(contact.contactId)) continue;
+    // Provider IDs are opaque; attach only refs that fit Cloud's resource-reference bounds.
+    const ref = CloudResourceRefSchema.safeParse(contact.ref);
+    if (!ref.success) continue;
     attachedContactIds.add(contact.contactId);
     const href = contactOpenHref(contact.links);
     resources.push({
       type: "resource",
-      ref: contact.ref,
+      ref: ref.data,
       title: contact.displayName,
       icon: "ti ti-address-book",
       ...(href ? { href } : {}),

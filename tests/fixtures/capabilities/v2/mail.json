@@ -8331,19 +8331,21 @@
         "type": "object",
         "properties": {
           "contact": {
-            "description": "Optional contact to read and choose a recipient from.",
+            "description": "Optional contact from Mail's configured contact directory, such as a contacts.contact ref, to read and choose a recipient from.",
             "type": "object",
             "properties": {
               "type": {
                 "type": "string",
-                "const": "contacts.contact",
-                "description": "Contact resource type."
+                "minLength": 3,
+                "maxLength": 180,
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "description": "Namespaced resource type declared by the owning app."
               },
               "id": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 100,
-                "description": "Public contact ID."
+                "maxLength": 512,
+                "description": "Stable app-owned resource identifier."
               }
             },
             "required": ["type", "id"],

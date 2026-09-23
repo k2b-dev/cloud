@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CapabilitySemanticLinkSchema, CloudResourceRefSchema } from "./capabilities";
+import { CapabilityQualifiedIdSchema, CapabilitySemanticLinkSchema } from "./capabilities";
 
 /**
  * Provider-neutral contact-directory contract.
@@ -9,7 +9,8 @@ import { CapabilitySemanticLinkSchema, CloudResourceRefSchema } from "./capabili
  * and extra result fields; the schemas below are the minimum both sides share.
  */
 
-const ContactDirectoryIdSchema = z.string().min(1).max(512);
+// Identifiers are opaque provider strings; each provider owns their syntax and length.
+const ContactDirectoryIdSchema = z.string();
 const TimestampSchema = z.string().datetime({ offset: true });
 const NullableTextSchema = z.string().nullable();
 const CursorSchema = z.string().min(1).max(256);
@@ -62,7 +63,7 @@ export const ContactDirectoryResolveInputSchema = z
 
 export const ContactDirectoryMatchSchema = z
   .object({
-    ref: CloudResourceRefSchema,
+    ref: z.object({ type: CapabilityQualifiedIdSchema, id: ContactDirectoryIdSchema }).strict(),
     ...contactFacts,
     bookName: z.string().min(1),
     matchedEmails: z.array(EmailSchema).min(1).max(100),
@@ -150,7 +151,13 @@ export const contactDirectory = {
 } as const;
 
 export type ContactDirectoryFunction = keyof typeof contactDirectory;
-export const CONTACT_DIRECTORY_FUNCTIONS = Object.keys(contactDirectory) as ContactDirectoryFunction[];
+export const CONTACT_DIRECTORY_FUNCTIONS = [
+  "suggest",
+  "resolve",
+  "read",
+  "listWritableBooks",
+  "create",
+] as const satisfies readonly ContactDirectoryFunction[];
 
 export type ContactDirectorySuggestion = z.output<typeof ContactDirectorySuggestionSchema>;
 export type ContactDirectoryMatch = z.output<typeof ContactDirectoryMatchSchema>;
