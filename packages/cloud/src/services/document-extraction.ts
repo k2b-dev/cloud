@@ -106,6 +106,8 @@ const mapConversionError = (error: unknown, format: DocumentFormat): DocumentExt
     case "malformed":
     case "missingPart":
       return new DocumentExtractionError("malformed", "The document is malformed or incomplete.");
+    case "needsOcr":
+      return new DocumentExtractionError("ocr_required", "The PDF has no readable text and requires OCR.");
     case "unsupported":
       return format === "pdf"
         ? new DocumentExtractionError("ocr_required", "The PDF has no readable text and requires OCR.")

@@ -426,7 +426,7 @@ const PromptFormDialog = <T extends Record<string, FieldSchema>>(props: {
 
 type CloudSearchResolver<T> = (input: PromptSearchInput) => Promise<PromptSearchItem<T>[]> | PromptSearchItem<T>[];
 
-const openSearchPrompt = <T = unknown>(resolver: CloudSearchResolver<T>, options?: PromptSearchOptions) =>
+const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchResolver<T>, options?: PromptSearchOptions) =>
   dialogCore.open<PromptSearchItem<T>>(
     (close) => {
       const [query, setQuery] = createSignal(options?.initialQuery ?? "");
@@ -799,7 +799,10 @@ export const prompts = {
       ariaLabel: config.ariaLabel ?? config.title ?? resolveUiMessages().form,
     })) ?? null,
 
-  dialog: <T = unknown>(component: (close: (result?: T) => void) => JSX.Element, options?: DialogOptions): Promise<T | undefined> =>
+  dialog: <T extends unknown = unknown>(
+    component: (close: (result?: T) => void) => JSX.Element,
+    options?: DialogOptions,
+  ): Promise<T | undefined> =>
     dialogCore.open<T>(
       (close) => {
         const body = component(close);

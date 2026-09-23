@@ -45,6 +45,11 @@ has four collapsible sections. Opening another section preserves your draft:
 **Apply to draft** updates the settings form. Save that form to persist the
 configuration and permissions. Canceling the dialog discards its edits.
 
+If a save would leave a model setting without a usable profile, such as
+removing the profile that the Vision tool model still uses, or an enabled
+profile without its provider key, Cloud keeps the draft and lists each blocking
+setting with the profile, the next step, and a link to where you can change it.
+
 ## Use a model policy
 
 ```ts

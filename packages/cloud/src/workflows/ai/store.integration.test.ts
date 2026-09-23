@@ -275,11 +275,13 @@ describe("durable workflow AI tasks", () => {
     });
     let started!: () => void;
     const providerStarted = new Promise<void>((resolve) => (started = resolve));
+    // The provider answers only after the cancellation committed, however long that takes.
+    const cancelled = Promise.withResolvers<void>();
     const runStructured = (async <TOutput extends z.ZodType>(
       input: RunAiStructuredInput<TOutput>,
     ): Promise<RunAiStructuredResult<TOutput>> => {
       started();
-      await Bun.sleep(50);
+      await cancelled.promise;
       return {
         output: input.output.parse({ text: "late" }),
         modelProfileId: "workflow-model",
@@ -294,6 +296,7 @@ describe("durable workflow AI tasks", () => {
     );
     await providerStarted;
     await requestWorkflowRunCancel(runId);
+    cancelled.resolve();
     await processing;
 
     expect(await getWorkflowAiTask(created.task.id)).toMatchObject({ status: "canceled", output: null });

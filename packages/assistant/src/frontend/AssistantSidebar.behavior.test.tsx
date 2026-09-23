@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, jest, spyOn, test } from "bun:test";
 import type { AiConversation } from "@k2b/cloud/ai";
 import { createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
@@ -217,16 +217,21 @@ test("Done keeps its card through live updates, confirms success, then fades wit
     expect(card()?.classList.contains("assistant-chat-sidebar-item--saving")).toBe(true);
     setItems([completed]);
     expect(card()).not.toBeNull();
+    // The confirm (450 ms) and fade (150 ms) phases are timer-driven; fake timers keep a stalled runner from skipping one.
+    jest.useFakeTimers();
     resolveSave(completed);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await save.mock.results[0]!.value;
     expect(card()?.classList.contains("assistant-chat-sidebar-item--confirmed")).toBe(true);
     expect(card()?.textContent).toContain("Done");
-    await new Promise((resolve) => setTimeout(resolve, 460));
+    jest.advanceTimersByTime(449);
+    expect(card()?.classList.contains("assistant-chat-sidebar-item--confirmed")).toBe(true);
+    jest.advanceTimersByTime(1);
     expect(card()?.classList.contains("assistant-chat-sidebar-item--leaving")).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 170));
+    jest.advanceTimersByTime(150);
     expect(card()).toBeNull();
     expect(save).toHaveBeenCalledTimes(1);
   } finally {
+    jest.useRealTimers();
     dispose();
     save.mockRestore();
     live.dispose();

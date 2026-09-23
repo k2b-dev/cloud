@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { sql } from "bun";
 import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 
 const databaseName = process.env.GRIDS_EVIDENCE_CLEANUP_DB_CHILD;
@@ -31,7 +32,6 @@ if (!databaseName) {
 } else {
   test("scheduled cleanup drains more than 100 exports; UI stays bounded and cancellation preserves remaining work", async () => {
     if (!testInfra.database || !/^grids_cleanup_[a-f0-9]{16}_test$/.test(databaseName)) throw new Error("Unexpected isolated database");
-    const { sql } = await import("bun");
     try {
       const [database] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
       expect(database?.name).toBe(databaseName);

@@ -11,7 +11,9 @@ suite("logging observability", () => {
     try {
       logger(source).warn("Fixture warning", { code: "fixture_warning", conversationId: "fixture" });
       let kind: string | undefined;
-      for (let attempt = 0; attempt < 20 && !kind; attempt++) {
+      // The logger inserts fire-and-forget; wait for the row by time, not by iterations.
+      const deadline = Date.now() + 5_000;
+      while (!kind && Date.now() < deadline) {
         const [row] = await sql<{ kind: string }[]>`SELECT jsonb_typeof(metadata) AS kind FROM logging.entries WHERE source=${source}`;
         kind = row?.kind;
         if (!kind) await Bun.sleep(10);

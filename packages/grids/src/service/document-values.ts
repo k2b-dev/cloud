@@ -24,6 +24,8 @@ export const safePdfFilename = (value: string, fallback: string): string => {
 const DocumentCursorSchema = z.object({
   createdAt: z.string().datetime(),
   id: z.string().uuid(),
+  /** Present only in cursors of a filename-sorted page. */
+  filename: z.string().optional(),
 });
 
 type DocumentCursor = z.infer<typeof DocumentCursorSchema>;
@@ -39,8 +41,15 @@ const decodeCursorPart = (value: string): string => {
   return Buffer.from(padded, "base64").toString("utf8");
 };
 
-export const encodeDocumentCursor = (document: Pick<Document, "createdAt" | "id">): string =>
-  encodeCursorPart(JSON.stringify({ createdAt: document.createdAt, id: document.id } satisfies DocumentCursor));
+/** Pass `filename` only for a filename-sorted page; it becomes part of the keyset. */
+export const encodeDocumentCursor = (document: Pick<Document, "createdAt" | "id">, filename?: string): string =>
+  encodeCursorPart(
+    JSON.stringify({
+      createdAt: document.createdAt,
+      id: document.id,
+      ...(filename === undefined ? {} : { filename }),
+    } satisfies DocumentCursor),
+  );
 
 export const decodeDocumentCursor = (cursor: string | null | undefined): DocumentCursor | null => {
   if (!cursor) return null;

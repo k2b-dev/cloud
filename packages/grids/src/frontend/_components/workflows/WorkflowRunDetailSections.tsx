@@ -1,5 +1,6 @@
 import { Button, DetailPanel, IconButton, NoticeCard, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
+import { documentFileIcon } from "../documents/document-workspace-utils";
 import type { PublicDocument } from "../documents/public-document-types";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
 import { financialExportMessages } from "./financial-export-messages";
@@ -215,7 +216,7 @@ export function WorkflowRunDocumentsSection(props: {
         >
           {(document) => (
             <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2 py-1 text-xs">
-              <i class="ti ti-file-type-pdf text-dimmed" />
+              <i class={`${documentFileIcon(document)} text-dimmed`} aria-hidden="true" />
               <span class="min-w-0">
                 <span class="block truncate text-primary">{document.filename}</span>
                 <span class="block truncate text-dimmed">{document.number}</span>

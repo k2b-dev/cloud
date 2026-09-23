@@ -15,6 +15,7 @@
  * next save or the next scheduler tick will reconcile.
  */
 import { logger } from "@k2b/cloud/services";
+import { sql } from "bun";
 import * as attachments from "./attachments";
 import * as links from "./links";
 import { repairNoteDataProperties } from "./note-properties";
@@ -53,7 +54,6 @@ export const reindexNotebook = async (params: {
   notebookId: string;
   onProgress?: () => Promise<void>;
 }): Promise<{ notes: number; failed: number }> => {
-  const { sql } = await import("bun");
   const notes = await sql<{ id: string; content_md: string | null }[]>`
     SELECT id, content_md FROM notebooks.notes WHERE notebook_id = ${params.notebookId}
   `;
@@ -93,7 +93,6 @@ export const reindexNotebook = async (params: {
 export const reindexAll = async (
   params: { onProgress?: () => Promise<void> } = {},
 ): Promise<{ notebooks: number; notes: number; failed: number }> => {
-  const { sql } = await import("bun");
   const notebooks = await sql<{ id: string }[]>`SELECT id FROM notebooks.notebooks`;
   let totalNotes = 0;
   let totalFailed = 0;

@@ -211,7 +211,9 @@ suite("incoming automations", () => {
     await startIncomingAutomationBackfillRuntime();
     try {
       let result = await startIncomingAutomationBackfill(request);
-      for (let attempt = 0; attempt < 100 && result.ok && result.data.state !== "completed"; attempt++) {
+      // The backfill runs on the Sync worker; bound the wait by time, not by iterations.
+      const deadline = Date.now() + 10_000;
+      while (result.ok && result.data.state !== "completed" && Date.now() < deadline) {
         await Bun.sleep(20);
         result = await startIncomingAutomationBackfill(request);
       }

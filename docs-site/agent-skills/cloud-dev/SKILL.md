@@ -60,7 +60,8 @@ and durable data.
 - Ship server-side files (templates, fixtures a service reads at runtime)
   under `src/assets/` and resolve them with `appAssetPath()` from
   `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in
-  the bundled image.
+  the bundled image. Import Bun built-ins statically; the minified server
+  bundle breaks `await import("bun")`.
 - Store durable state explicitly, never in process memory or container files.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable
@@ -134,6 +135,16 @@ SolidJS library remains independent of Cloud and application domains.
   Use `MinimalLayout` for an app-styled standalone page that needs Cloud's
   persisted locale and theme without Cloud chrome. A custom root using none of
   these layouts must install one provider around its returned tree.
+
+## Ship CLI commands as a plugin
+
+Read **Application CLI modules** (`/en/docs/platform/cli-modules`) before
+adding `cld` commands. Define the module with `defineCliCommands()` and publish
+it as a package with `"cld": { "apiVersion": 1, "entry": "dist/cli.js" }`
+(one bundled ESM file). The module name is the plugin ID (`cld <id>`, always
+reachable as `cld plugins run <id>`); built-in names are reserved. Commands
+are API clients with the user's `CloudCliContext` only; the server keeps
+authorization, and command names, flags, and JSON output are stable syntax.
 
 ## Build and verify one complete slice
 

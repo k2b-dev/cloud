@@ -102,6 +102,8 @@ describe("GridsSidebar workflows", () => {
     state.route = {
       kind: "documents",
       canWriteDocuments: false,
+      initialCatalog: { q: "", view: "folders", path: [], workflow: null, template: null, table: null, mediaType: null, sort: "newest" },
+      facets: { workflows: [], templates: [], tables: [], mediaTypes: [] },
       initialBrowserPage: { items: [], folders: [], path: [], cursor: null, hasMore: false },
     };
     const active = renderToString(() => createComponent(GridsSidebar, { state }));

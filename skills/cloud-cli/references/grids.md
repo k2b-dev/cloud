@@ -997,7 +997,7 @@ cld grids documents generate Invoices Invoice \
 cld grids documents by-record Invoices <record-id> --json
 ```
 
-Document commands are `documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact`. `documents list` is the Base-wide immutable catalog. Every generation requires an explicit idempotency key; reuse it after an uncertain response to receive the same Document. An E-Invoice renderer owns its number and artifact filenames. `documents browse --mode folders --path 2026/07` traverses one template's generated Documents by year and month. Search matches filenames, numbers, or tags; tag filters are repeatable.
+Document commands are `documents renderers|list|list-by-template|browse|by-record|sources|contents|generate|get|download|download-artifact`. `documents list` is the Base-wide immutable catalog; `--workflow`, `--template`, `--table` (direct record binding only), `--media-type` and `--sort newest|oldest|name` combine. `documents contents` lists the files packaged in a ZIP Document. Every generation requires an explicit idempotency key; reuse it after an uncertain response to receive the same Document. An E-Invoice renderer owns its number and artifact filenames. `documents browse --mode folders --path 2026/07` traverses one template's generated Documents by year and month. Search matches filenames, numbers, or tags; tag filters are repeatable.
 
 A record-template Document appears in its record detail, template workspace, and **All documents**. Workflow outputs use a frozen data source instead; their `tableId`, `recordId`, and `templateId` are null. `dataSnapshot` reports `rowCount` and `capturedAt` for these outputs and is null for record-template Documents. It never contains source rows. `documents get`, lists and `workflow-runs documents` return the same Document shape, including all stored artifacts, an authenticated `downloadUrl` for the primary file and one per `artifacts[]` entry. `primaryArtifactKey` identifies the main file in `artifacts`; use its `mimeType`, not the key or filename, to determine the format. Download that file with `documents download`, or choose an exact artifact:
 
@@ -1824,7 +1824,7 @@ apps runtime comments list|create|update|delete
 apps runtime files list|upload|replace|download|delete
 document-templates reference|list|get|create|update|delete
 document-templates preview-data|preview-pdf|preview-draft-data|preview-draft-pdf
-documents renderers|list|list-by-template|browse|by-record|sources|generate|get|download|download-artifact
+documents renderers|list|list-by-template|browse|by-record|sources|contents|generate|get|download|download-artifact
 documents links list|create|revoke
 evidence preflight|list|create|get|retry|cancel|download|verify
 email-templates reference|list|get|create|update|delete

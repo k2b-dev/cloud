@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL } from "bun";
+import { SQL, sql } from "bun";
 import { natsServers, requireDatabaseUrl, testFor } from "../../../../scripts/fixtures/test-infra";
 
 const databaseName = process.env.NOTEBOOKS_SNAPSHOT_DB_CHILD;
@@ -43,7 +43,6 @@ if (!databaseName) {
 } else {
   test("real note save uses snapshot timestamps and sequence guards", async () => {
     if (!/^notebook_snapshot_[a-f0-9]{32}_test$/.test(databaseName)) throw new Error("Unexpected isolated database");
-    const { sql } = await import("bun");
     const [database] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
     expect(database?.name).toBe(databaseName);
     const { createSync } = await import("@k2b/sync");

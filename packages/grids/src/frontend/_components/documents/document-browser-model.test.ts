@@ -18,6 +18,8 @@ const document = (id: string): PublicDocument => ({
   recordId: "record",
   filename: `${id}.pdf`,
   templateId: "template",
+  workflowId: null,
+  workflowRunId: null,
   number: id,
   tags: [],
   artifacts: [

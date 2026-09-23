@@ -1813,6 +1813,13 @@ const defineSchema = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_documents_workflow_run ON grids.documents USING btree (workflow_run_id, created_at DESC, id DESC) WHERE (workflow_run_id IS NOT NULL)
   `.simple();
+  // Base-wide catalog pages: newest/oldest first and filename order.
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_base_created ON grids.documents USING btree (base_id, created_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_base_filename ON grids.documents USING btree (base_id, filename, id)
+  `.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_documents_workflow_step ON grids.documents USING btree (workflow_run_id, workflow_step_key) WHERE ((workflow_run_id IS NOT NULL) AND (workflow_step_key IS NOT NULL))
   `.simple();

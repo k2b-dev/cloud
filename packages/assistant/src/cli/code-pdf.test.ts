@@ -18,16 +18,15 @@ test("CLI PDF uses binary multipart, cancels an individual request and continues
         if (request.operation === "render") {
           const signal = init?.signal;
           if (!signal) throw new Error("Missing signal");
-          return new Promise<Response>((_resolve, reject) =>
-            signal.addEventListener(
-              "abort",
-              () => {
-                aborted = true;
-                reject(new DOMException("Cancelled", "AbortError"));
-              },
-              { once: true },
-            ),
-          );
+          // Like a real fetch, honour an abort that already happened while the body was decoded.
+          return new Promise<Response>((_resolve, reject) => {
+            const cancel = () => {
+              aborted = true;
+              reject(new DOMException("Cancelled", "AbortError"));
+            };
+            if (signal.aborted) cancel();
+            else signal.addEventListener("abort", cancel, { once: true });
+          });
         }
         if (request.operation !== "attach") throw new Error("Unexpected operation");
         expect(request.document.size).toBe(17 * 1024 * 1024);

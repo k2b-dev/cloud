@@ -4,8 +4,10 @@ import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 
 const settle = () => Bun.sleep(20);
+// Bounded by time, not iterations: the dialog is a lazy import whose cold load slows down under CPU load.
 const waitFor = async <T,>(read: () => T | undefined): Promise<T> => {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
     const value = read();
     if (value !== undefined) return value;
     await Bun.sleep(10);

@@ -23,7 +23,9 @@ export type SpotlightButtonProps = {
   onClick: () => void | Promise<void>;
 };
 
-export const openSpotlightSearch = <T = unknown>(options: SpotlightSearchOptions<T>): Promise<PromptSearchItem<T> | undefined> => {
+export const openSpotlightSearch = <T extends unknown = unknown>(
+  options: SpotlightSearchOptions<T>,
+): Promise<PromptSearchItem<T> | undefined> => {
   const { resolve, ...promptOptions } = options;
   const messages = resolveUiMessages();
   return prompts.search(resolve, {

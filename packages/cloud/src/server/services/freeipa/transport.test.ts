@@ -87,7 +87,8 @@ describe("FreeIPA transport bounds", () => {
 
   test("does not expose the low-level network error", async () => {
     try {
-      await request("http://127.0.0.1:1", {}, { timeoutMs: 100 });
+      // The refused loopback connect must win; a 100 ms deadline could fire first on a stalled event loop.
+      await request("http://127.0.0.1:1", {}, { timeoutMs: 5_000 });
       throw new Error("expected request to fail");
     } catch (error) {
       expect(error).toBeInstanceOf(FreeIpaTransportError);

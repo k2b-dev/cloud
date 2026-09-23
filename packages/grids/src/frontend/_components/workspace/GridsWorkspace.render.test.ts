@@ -52,6 +52,8 @@ describe("GridsWorkspace", () => {
     state.route = {
       kind: "documents",
       canWriteDocuments: false,
+      initialCatalog: { q: "", view: "folders", path: [], workflow: null, template: null, table: null, mediaType: null, sort: "newest" },
+      facets: { workflows: [], templates: [], tables: [], mediaTypes: [] },
       initialBrowserPage: { items: [], folders: [], path: [], cursor: null, hasMore: false },
     };
     state.catalog.documentTemplateLevels = { TMPL01: "admin", TMPL02: "write", TMPL03: "read" };

@@ -211,14 +211,16 @@ suite("platform capability idempotency claims", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    const forwarded = Promise.withResolvers<void>();
     const slow: UpstreamFetch = async (...args) => {
+      forwarded.resolve();
       await held;
       return succeeds(...args);
     };
     const first = invoke({ key, fetch: slow });
     // The claim is written before the request is forwarded, so a second call
     // observing `in_flight` proves the ordering.
-    await Bun.sleep(50);
+    await forwarded.promise;
     const concurrent = await invoke({ key, fetch: succeeds });
     expect(concurrent.status).toBe(409);
     expect(concurrent.body).toMatchObject({ code: "IDEMPOTENCY_IN_PROGRESS" });

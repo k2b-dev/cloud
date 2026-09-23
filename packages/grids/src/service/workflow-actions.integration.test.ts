@@ -3276,7 +3276,9 @@ steps:
         await locked.promise;
         executions.push(...runIds.map((id) => drive(id)));
         let waiting = 0;
-        for (let attempt = 0; attempt < 200 && waiting < 2; attempt++) {
+        // The execution reaches the row lock asynchronously; bound the wait by time, not by iterations.
+        const lockDeadline = Date.now() + 10_000;
+        while (waiting < 2 && Date.now() < lockDeadline) {
           const [state] = await sql`SELECT count(*)::int AS count FROM pg_stat_activity
             WHERE datname = current_database() AND wait_event_type = 'Lock'
               AND query LIKE '%FOR UPDATE OF r%'`;
@@ -3455,7 +3457,9 @@ steps:
       let waiting = false;
       // Observe the actual database wait, not a timing assumption. This means
       // initial action authorization ran before we revoke the grant.
-      for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+      // The execution reaches the row lock asynchronously; bound the wait by time, not by iterations.
+      const lockDeadline = Date.now() + 10_000;
+      while (!waiting && Date.now() < lockDeadline) {
         const [state] = await sql`SELECT EXISTS (
           SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
           AND ${blocker}::int = ANY(pg_blocking_pids(pid))
@@ -3602,7 +3606,9 @@ steps:
       const blocker = await held.promise;
       execution = drive(runId);
       let waiting = false;
-      for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+      // The execution reaches the row lock asynchronously; bound the wait by time, not by iterations.
+      const lockDeadline = Date.now() + 10_000;
+      while (!waiting && Date.now() < lockDeadline) {
         const [state] =
           await sql`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND ${blocker}::int = ANY(pg_blocking_pids(pid))) AS waiting`;
         waiting = state.waiting;
@@ -3711,7 +3717,9 @@ steps:
           const blocker = await held.promise;
           execution = runGridsWorkflowRun(runId);
           let waiting = false;
-          for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+          // The execution reaches the row lock asynchronously; bound the wait by time, not by iterations.
+          const lockDeadline = Date.now() + 10_000;
+          while (!waiting && Date.now() < lockDeadline) {
             const [state] = await sql`SELECT EXISTS (
               SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
               AND ${blocker}::int = ANY(pg_blocking_pids(pid))

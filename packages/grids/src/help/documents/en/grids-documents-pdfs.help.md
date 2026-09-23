@@ -446,7 +446,11 @@ Additional BWIP symbol ids
 
 The document page lists every generated Document for a template. Use **Table** for a searchable list or **Folders** to browse by year and month. Searching switches to the table result so matching documents are not hidden inside folders.
 
-**All documents** opens in **Folders**, grouped by document template and then year. Its search covers filenames, document numbers, and tags across the Base, regardless of the open folder. Both document pages include their first results when the page loads.
+**All documents** lists every Document of the Base, whether a template, a workflow or both produced it, in any file format. It opens in **Folders**, grouped by document template or workflow and then year. Its search covers filenames, document numbers, and tags across the Base, regardless of the open folder. Both document pages include their first results when the page loads.
+
+Filter **All documents** by **Workflow**, **Template**, **Record table** and **File type**, and combine the filters to narrow the list. **Record table** matches only Documents generated for one of that table's records, not the source rows of a workflow export or the files inside a ZIP. **Sort** switches between newest first (the default), oldest first and filename. A search, a filter or a different sort shows one list instead of folders. The address keeps all of them, so a reload or a shared link opens the same view.
+
+A Document from a workflow names its workflow; select the name to open the run that generated it. Details of a ZIP Document list its **Archive contents**: each packaged file, its size and the Document it came from. The archive is not linked to those Documents' records.
 
 Document details offer stored downloads, captured row count and timestamp. **Preview** shows CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV stays original text. **Share links** creates public links for the stored primary file; **Technical details** shows IDs and hashes. Subdialogs return here. **More actions → Generate again** follows the template's issuance policy, never overwriting the original.
 

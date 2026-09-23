@@ -46,6 +46,8 @@ domTest("source inspection shows readable labels, pages and keeps deleted source
         tableId: null,
         recordId: null,
         templateId: null,
+        workflowId: null,
+        workflowRunId: null,
         number: "EXPORT-1",
         filename: "export.csv",
         createdAt: "2026-09-13T12:00:00Z",
