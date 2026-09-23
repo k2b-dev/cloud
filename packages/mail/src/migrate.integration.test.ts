@@ -32,7 +32,13 @@ suite("mail baseline schema", () => {
     await Promise.all([migrate(), migrate(), migrate()]);
     const rows = await sql<{ version: number }[]>`SELECT version FROM mail.schema_migrations`;
     expect(rows).toHaveLength(1);
-    const [locks] = await sql<{ held: number }[]>`SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory'`;
+    // pg_locks spans the whole server; other databases on it may hold advisory locks of their own.
+    const [locks] = await sql<{ held: number }[]>`
+      SELECT count(*)::int AS held
+      FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+    `;
     expect(locks?.held).toBe(0);
   });
 
