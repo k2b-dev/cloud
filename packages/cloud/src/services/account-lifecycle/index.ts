@@ -831,7 +831,7 @@ export const accountLifecycle = {
           OR LOWER(COALESCE(display_name, '')) LIKE ${pattern} ESCAPE '\\'
           OR LOWER(COALESCE(mail, '')) LIKE ${pattern} ESCAPE '\\'
         )
-      ORDER BY deleted_at DESC
+      ORDER BY deleted_at DESC, id DESC
       LIMIT ${config.perPage}
       OFFSET ${offset}
     `;
@@ -905,7 +905,7 @@ export const accountLifecycle = {
           OR LOWER(COALESCE(r.mail, u.mail, '')) LIKE ${pattern} ESCAPE '\\'
           OR LOWER(COALESCE(r.display_name, u.display_name, '')) LIKE ${pattern} ESCAPE '\\'
         )
-      ORDER BY r.created_at DESC
+      ORDER BY r.created_at DESC, r.id DESC
       LIMIT ${config.perPage}
       OFFSET ${offset}
     `;

@@ -205,7 +205,7 @@ const list = async (
         AND (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT ${perPage} OFFSET ${offset}
     `;
   } else if (hasSourceList) {
@@ -225,7 +225,7 @@ const list = async (
         AND (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT ${perPage} OFFSET ${offset}
     `;
   } else {
@@ -243,7 +243,7 @@ const list = async (
       WHERE (${filterLevel}::text IS NULL OR level = ${filterLevel})
         AND (${filterSinceHours}::int IS NULL OR created_at >= now() - (${filterSinceHours}::int * INTERVAL '1 hour'))
         AND (${searchPattern}::text IS NULL OR message ILIKE ${searchPattern} ESCAPE '\\' OR metadata::text ILIKE ${searchPattern} ESCAPE '\\')
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT ${perPage} OFFSET ${offset}
     `;
   }

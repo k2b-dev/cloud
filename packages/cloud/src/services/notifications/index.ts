@@ -235,7 +235,7 @@ export const list = async (
         WHERE
           (${statusFilter}::text IS NULL OR CASE WHEN m.sent_at IS NOT NULL THEN 'sent' WHEN m.error IS NOT NULL THEN 'error' ELSE 'pending' END = ${statusFilter})
           AND (m.subject ILIKE ${searchPattern} ESCAPE '\' OR m.content ILIKE ${searchPattern} ESCAPE '\' OR m.recipient ILIKE ${searchPattern} ESCAPE '\')
-        ORDER BY m.created_at DESC
+        ORDER BY m.created_at DESC, m.id DESC
         LIMIT ${perPage} OFFSET ${offset}
       `;
     } else {
@@ -251,7 +251,7 @@ export const list = async (
         FROM notifications.messages m
         LEFT JOIN auth.users u ON m.sent_by = u.id
         WHERE ${statusFilter}::text IS NULL OR CASE WHEN m.sent_at IS NOT NULL THEN 'sent' WHEN m.error IS NOT NULL THEN 'error' ELSE 'pending' END = ${statusFilter}
-        ORDER BY m.created_at DESC
+        ORDER BY m.created_at DESC, m.id DESC
         LIMIT ${perPage} OFFSET ${offset}
       `;
     }
@@ -276,7 +276,7 @@ export const list = async (
           m.sent_by = ${sentBy}
           AND (${statusFilter}::text IS NULL OR CASE WHEN m.sent_at IS NOT NULL THEN 'sent' WHEN m.error IS NOT NULL THEN 'error' ELSE 'pending' END = ${statusFilter})
           AND (m.subject ILIKE ${searchPattern} ESCAPE '\' OR m.content ILIKE ${searchPattern} ESCAPE '\' OR m.recipient ILIKE ${searchPattern} ESCAPE '\')
-        ORDER BY m.created_at DESC
+        ORDER BY m.created_at DESC, m.id DESC
         LIMIT ${perPage} OFFSET ${offset}
       `;
     } else {
@@ -296,7 +296,7 @@ export const list = async (
         WHERE
           m.sent_by = ${sentBy}
           AND (${statusFilter}::text IS NULL OR CASE WHEN m.sent_at IS NOT NULL THEN 'sent' WHEN m.error IS NOT NULL THEN 'error' ELSE 'pending' END = ${statusFilter})
-        ORDER BY m.created_at DESC
+        ORDER BY m.created_at DESC, m.id DESC
         LIMIT ${perPage} OFFSET ${offset}
       `;
     }

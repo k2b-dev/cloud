@@ -1261,7 +1261,7 @@ export const accountsAppService = {
         FROM auth.account_requests r
         JOIN auth.users u ON u.id = r.user_id
         WHERE ${where}
-        ORDER BY r.created_at DESC
+        ORDER BY r.created_at DESC, r.id DESC
         LIMIT ${perPage}
         OFFSET ${offset}
       `;

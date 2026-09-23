@@ -1,6 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import type { LoopAggregate, Message } from "@k2b/nessi";
 import { sql } from "bun";
+import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { toPgTextArray } from "../services/postgres";
@@ -1711,6 +1712,30 @@ suite("AI conversation store integration", () => {
     } finally {
       await cleanupFixture({ userId, conversationIds: [] });
       await cleanupFixture({ userId: otherUserId, conversationIds: [] });
+    }
+  });
+  test("conversation pages stay stable when conversations share their timestamps", async () => {
+    const userId = await insertUser();
+    const conversationIds = await sql.begin(async (tx) => {
+      const created: string[] = [];
+      for (let index = 0; index < 12; index++) {
+        const [row] = await tx<{ id: string }[]>`
+          INSERT INTO ai.conversations (short_id, title, created_by_user_id)
+          VALUES (${createAiShortId()}, ${`Paging ${index}`}, ${userId}::uuid)
+          RETURNING id
+        `;
+        created.push(row!.id);
+      }
+      return created;
+    });
+    try {
+      const seen = await collectPages(async ({ page, limit }) => {
+        const result = await aiConversations.listConversationsPage({ ownerUserId: userId, page, perPage: limit });
+        return result.items.map((item) => item.id);
+      });
+      expect(seen).toEqual(descending(conversationIds));
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
     }
   });
 });
