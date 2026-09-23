@@ -201,9 +201,12 @@ Start or refresh the local Fibel server from `docs-site/compose.yml` and point
 your development Cloud at it:
 
 ```bash
-docker compose -f docs-site/compose.yml up --build -d --wait
+docker compose -f docs-site/compose.yml up --build -d --wait --renew-anon-volumes
 bun run dev:cld -- admin documentation set --url http://localhost:4187 --yes
 ```
+
+`--renew-anon-volumes` replaces the container's `node_modules` volume, so a
+dependency update takes effect instead of the previous install being reused.
 
 Reload Administration and open a **Documentation** link. Use the actual Fibel
 port if it differs. This address works only for browsers on the development

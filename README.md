@@ -132,7 +132,7 @@ Releases publish `ghcr.io/k2b-dev/cloud-<image>:vX.Y.Z` for every app plus a
 Start the documentation site from the checkout and install its developer skill:
 
 ```bash
-docker compose -f docs-site/compose.yml up --build -d --wait
+docker compose -f docs-site/compose.yml up --build -d --wait --renew-anon-volumes
 bunx skills add http://localhost:4187
 ```
 
