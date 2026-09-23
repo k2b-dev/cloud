@@ -270,12 +270,13 @@ natsSuite()("notebook reindex runtime", () => {
     expect(schedulerStarts).toBe(1);
     expect(createdSchedules.map((schedule) => [schedule.id, schedule.cron, schedule.timezone])).toEqual([
       ["notebooks:yjs-snapshot-reconcile", "0 * * * *", "Europe/Berlin"],
+      ["notebooks:yjs-legacy-migration", "*/5 * * * *", "Europe/Berlin"],
       ["notebooks:reindex", "0 */12 * * *", "Europe/Berlin"],
     ]);
     expect(submittedJobs).toEqual([]);
     expect(reindexRuns).toBe(0);
 
-    await createdSchedules[1]!.process({ runId: "run:12345" });
+    await createdSchedules.find((schedule) => schedule.id === "notebooks:reindex")!.process({ runId: "run:12345" });
 
     expect(submittedJobs).toContainEqual({ key: "run:12345", input: { trigger: "scheduler" } });
     expect(reindexRuns).toBe(0);

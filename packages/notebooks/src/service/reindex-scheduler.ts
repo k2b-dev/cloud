@@ -20,6 +20,7 @@ import { lazySync } from "@k2b/cloud";
 import { logger, get as settingsGet } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
 import { reindexAll } from "./note-refs";
+import { migrateLegacyYjsTopics } from "./yjs-legacy-migration";
 import { yjsSnapshotWorker } from "./yjs-snapshot-worker";
 
 const log = logger("notebooks:reindex");
@@ -27,6 +28,8 @@ const log = logger("notebooks:reindex");
 const DEFAULT_REINDEX_CRON = "0 */12 * * *";
 const SETTING_KEY = "notebooks.reindex_cron";
 const SNAPSHOT_RECONCILE_CRON = "0 * * * *";
+/** Frequent while legacy topics remain; a run without any is one broker list request. */
+const LEGACY_MIGRATION_CRON = "*/5 * * * *";
 
 const getCron = async (): Promise<string> => {
   const value = String((await settingsGet<string>(SETTING_KEY)) || "").trim();
@@ -146,9 +149,28 @@ const createSnapshotReconcileSchedule = async (tz: string): Promise<void> => {
   });
 };
 
+/** Retire the per-note Yjs topics of releases up to 0.10 (see `yjs-legacy-migration.ts`). */
+const createLegacyMigrationSchedule = async (tz: string): Promise<void> => {
+  await reindexScheduler().create({
+    id: "notebooks:yjs-legacy-migration",
+    cron: LEGACY_MIGRATION_CRON,
+    timezone: tz,
+    meta: {
+      appId: "notebooks",
+      family: "notebooks:maintenance",
+      label: "Notebook legacy Yjs topic migration",
+      source: "notebooks:yjs-legacy-migration",
+    },
+    process: async (ctx) => {
+      await migrateLegacyYjsTopics({ signal: ctx.signal, heartbeat: ctx.heartbeat });
+    },
+  });
+};
+
 const registerSchedule = async (cron?: string): Promise<void> => {
   const [tz, resolvedCron] = await Promise.all([getTimezone(), cron ? Promise.resolve(cron) : getCron()]);
   await createSnapshotReconcileSchedule(tz);
+  await createLegacyMigrationSchedule(tz);
   try {
     await createSchedule(resolvedCron, tz);
     registered = true;

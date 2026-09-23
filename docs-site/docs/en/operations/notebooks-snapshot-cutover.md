@@ -5,7 +5,7 @@ section: Operations
 order: 1137
 description: Move existing Notebook snapshot work to the ordered worker without losing accepted edits.
 tags: [notebooks, snapshots, migration, nats]
-updated: 2026-09-08
+updated: 2026-09-23
 ---
 
 # Change the Notebook snapshot worker
@@ -15,6 +15,10 @@ Use a maintenance window when upgrading from the unpartitioned
 existing resource's ordering causes provisioning drift. A normal restart also
 leaves queued jobs behind: worker drain waits for active handlers, and closing
 editing connections can enqueue additional snapshots.
+
+The read-only check below inspects the per-note document topics of releases
+up to 0.10. Run it, and finish this cutover, before upgrading to a release that
+uses the shared [Notebook document log](/en/docs/operations/notebooks-document-log).
 
 The ordered worker uses eight partitions keyed by note and one handler per
 process. Snapshots of the same note stay serialized, and each process still
@@ -85,7 +89,7 @@ a note whose stored sequence is older, so the loser is rejected.
 The new job uses the same seven-day work retention, per-note-and-cursor
 submission keys, replay coverage checks, contributor history, and restore
 revision guard. Transient database or transport failures retry up to twenty
-attempts. It continues to read existing document topics and Postgres snapshots.
+attempts. It reads the document log and Postgres snapshots.
 It does not import or erase the old job or mutex resources.
 
 Missing history and undecodable retained updates trigger recovery instead of
@@ -116,9 +120,10 @@ An hourly `notebooks:yjs-snapshot-reconcile` schedule re-queues snapshots for
 notes whose topic head moved past their stored cursor without a settled job,
 for example after a crashed process or a lost enqueue. It scans all unlocked
 notes in pages of 5000 stable note IDs, including notes that have never saved a
-cursor. Empty topics do not enqueue snapshot jobs. This also provisions the
-existing per-note Sync resources for notes that have never been opened: size
-JetStream for the whole notebook inventory, not only recently active notes.
+cursor. Notes without newer updates do not enqueue snapshot jobs; idle notes
+move their stored position forward instead. Since the shared
+[Notebook document log](/en/docs/operations/notebooks-document-log), the
+JetStream reservation no longer depends on the number of notes.
 
 Verify a new edit survives saving, reconnecting, and an application restart.
 Confirm the stored snapshot cursor reaches the note topic's latest sequence,

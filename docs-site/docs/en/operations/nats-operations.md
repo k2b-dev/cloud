@@ -5,7 +5,7 @@ section: Operations
 order: 1165
 description: Inspect NATS infrastructure, investigate Sync failures, and configure independent outage monitoring.
 tags: [nats, sync, observability, operations]
-updated: 2026-09-08
+updated: 2026-09-23
 ---
 
 # NATS operations
@@ -218,4 +218,7 @@ stack do not constitute production acceptance.
 Retain the recovery point and old broker resources until the deployment's
 migration checks pass. See the
 [notebook snapshot cutover](/en/docs/operations/notebooks-snapshot-cutover)
-before removing historical notebook streams.
+before removing historical notebook streams. Notebooks retires its per-note
+document topics itself; the
+[Notebook document log](/en/docs/operations/notebooks-document-log) describes
+how to observe that migration and how to recover an exhausted account.

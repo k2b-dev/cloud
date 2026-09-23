@@ -19,7 +19,15 @@ import { notebooksService } from "./service";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "./service/presence";
 import { yjsSnapshotWorker } from "./service/yjs-snapshot-worker";
 import type { YjsTopicEvent } from "./service/yjs-sync";
-import { createYjsAwarenessTopic, createYjsTopic, isValidYjsUpdate, maxStreamCursor, NODE_ID, toBase64 } from "./service/yjs-sync";
+import {
+  createYjsAwarenessTopic,
+  createYjsTopic,
+  isStorageExhausted,
+  isValidYjsUpdate,
+  maxStreamCursor,
+  NODE_ID,
+  toBase64,
+} from "./service/yjs-sync";
 import { type NotebooksWsMessages, notebooksWsMessages } from "./ws-messages";
 
 /**
@@ -197,7 +205,7 @@ const warn = (socket: ServerWebSocket<unknown>, code: NotebooksYjsErrorCode, mes
 };
 
 const closeCodeForError = (code: NotebooksYjsErrorCode): number => {
-  if (code === ERROR_CODE.resyncRequired || code === ERROR_CODE.streamFailed) return 1012;
+  if (code === ERROR_CODE.resyncRequired || code === ERROR_CODE.streamFailed || code === ERROR_CODE.storageExhausted) return 1012;
   if (code === ERROR_CODE.internalError) return 1011;
   if (code === ERROR_CODE.backpressure) return 1013;
   return 1008;
@@ -725,6 +733,10 @@ const failLiveStream = async (ctx: WsContext, noteId: string, noteShortId: strin
     error: error instanceof Error ? error.message : String(error),
   });
   const resync = stream === "sync" && (error instanceof RetentionGapError || error instanceof CursorMismatchError);
+  if (isStorageExhausted(error)) {
+    await fatal(ctx, ERROR_CODE.storageExhausted, ctx.messages.liveSyncStorageExhausted, noteShortId);
+    return;
+  }
   await fatal(
     ctx,
     resync ? ERROR_CODE.resyncRequired : ERROR_CODE.streamFailed,
@@ -767,7 +779,7 @@ const startLiveStream = (
   })();
 
   void (async () => {
-    const noteTopic = createYjsTopic(noteId);
+    const noteTopic = createYjsTopic();
     const pending: PushUpdate[] = [];
     let pendingBytes = 0;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -788,11 +800,12 @@ const startLiveStream = (
 
     try {
       const events = async function* () {
-        const head = await noteTopic.latestCursor();
+        const head = await noteTopic.latestCursor({ tenantId: noteId });
         if (head) {
           let delivered = 0;
           try {
             for await (const event of noteTopic.replay({
+              tenantId: noteId,
               after: replay.after ?? noteTopic.cursorAt(0),
               until: head,
               signal: abort.signal,
@@ -812,7 +825,9 @@ const startLiveStream = (
         if (abort.signal.aborted || ctx.streamAbort !== abort) return;
         flush();
         onCaughtUp();
-        yield* noteTopic.hub().subscribe({ after: head ?? replay.after ?? noteTopic.cursorAt(0), signal: abort.signal });
+        yield* noteTopic
+          .hub({ tenantId: noteId })
+          .subscribe({ after: head ?? replay.after ?? noteTopic.cursorAt(0), signal: abort.signal });
       };
       for await (const event of events()) {
         if (ctx.phase !== "joined" || ctx.noteId !== noteId) break;
@@ -1043,7 +1058,7 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
   const clientCursor = payload.fromCursor && notebooksYjs.streamCursorPattern.test(payload.fromCursor) ? payload.fromCursor : null;
   let replayCursor = clientCursor;
   if (!clientCursor) {
-    const snapshot = await notebooksService.note.getYjsStateWithCursor({ noteId: dbNoteId });
+    const snapshot = await notebooksService.note.getAnchoredYjsState({ noteId: dbNoteId });
     if (snapshot?.yjsState) {
       send(ctx.socket, WS_TYPE.syncPush, {
         noteId: payload.noteId,
@@ -1085,8 +1100,9 @@ const handleSyncPublish = async (ctx: WsContext, payload: z.infer<typeof SyncPub
   }
 
   // Topic keys stay UUID-backed below the public short-id boundary.
-  const noteTopic = createYjsTopic(ctx.noteId!);
+  const noteTopic = createYjsTopic();
   const published = await noteTopic.publish({
+    tenantId: ctx.noteId!,
     data: {
       kind: "sync",
       payload: payload.payload,
@@ -1281,6 +1297,17 @@ const app = new Hono().get(
               noteId: currentCtx.noteId,
               error: error instanceof Error ? error.message : String(error),
             });
+            // Joining or publishing needs the document log; a full JetStream
+            // account is an operator problem, not an internal error.
+            if (isStorageExhausted(error)) {
+              await fatal(
+                currentCtx,
+                ERROR_CODE.storageExhausted,
+                currentCtx.messages.liveSyncStorageExhausted,
+                currentCtx.noteShortId ?? undefined,
+              );
+              return;
+            }
             await fatal(currentCtx, ERROR_CODE.internalError, currentCtx.messages.handlingFailed, currentCtx.noteShortId ?? undefined);
           })
           .finally(() => {

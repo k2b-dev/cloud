@@ -299,6 +299,7 @@ function EditorInstance(props: EditorInstanceProps) {
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [connected, setConnected] = createSignal(false);
   const [historyIncomplete, setHistoryIncomplete] = createSignal(props.historyIncomplete);
+  const [storageExhausted, setStorageExhausted] = createSignal(false);
   createEffect(() => {
     if (props.historyIncomplete) setHistoryIncomplete(true);
   });
@@ -450,6 +451,10 @@ function EditorInstance(props: EditorInstanceProps) {
         appUrl: props.appUrl,
         onConnectionChange: setConnected,
         onHistoryIncomplete: () => setHistoryIncomplete(true),
+        onError: (error) => {
+          if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
+        },
+        onReady: () => setStorageExhausted(false),
         // Forwards every presence update to the OnlineSection island via a
         // window event — the editor itself doesn't need to track participants
         // anymore now that the toolbar no longer renders them.
@@ -469,36 +474,43 @@ function EditorInstance(props: EditorInstanceProps) {
           const isMissing = error.code === "NOTE_NOT_FOUND";
           const isRevoked = error.code === "ACCESS_REVOKED" || error.code === "ACCESS_DENIED";
           const isSession = error.code === "SESSION_EXPIRED" || error.code === "LOGIN_REQUIRED";
+          const isStorage = error.code === "STORAGE_EXHAUSTED";
 
-          const title = isLocked
-            ? t().noteLocked
-            : isMissing
-              ? t().noteNotFound
-              : isRevoked
-                ? t().accessChanged
-                : isSession
-                  ? t().sessionExpired
-                  : t().connectionClosed;
+          const title = isStorage
+            ? t().storageExhaustedTitle
+            : isLocked
+              ? t().noteLocked
+              : isMissing
+                ? t().noteNotFound
+                : isRevoked
+                  ? t().accessChanged
+                  : isSession
+                    ? t().sessionExpired
+                    : t().connectionClosed;
 
-          const icon = isLocked
-            ? "ti ti-lock"
-            : isMissing
-              ? "ti ti-file-x"
-              : isRevoked
-                ? "ti ti-shield-off"
-                : isSession
-                  ? "ti ti-login-2"
-                  : "ti ti-alert-triangle";
+          const icon = isStorage
+            ? "ti ti-database-off"
+            : isLocked
+              ? "ti ti-lock"
+              : isMissing
+                ? "ti ti-file-x"
+                : isRevoked
+                  ? "ti ti-shield-off"
+                  : isSession
+                    ? "ti ti-login-2"
+                    : "ti ti-alert-triangle";
 
-          const message = isLocked
-            ? t().noteLockedDescription
-            : isMissing
-              ? t().noteMissingDescription
-              : isRevoked
-                ? t().accessChangedDescription
-                : isSession
-                  ? t().sessionExpiredDescription
-                  : t().connectionClosedDescription;
+          const message = isStorage
+            ? t().storageExhaustedDescription
+            : isLocked
+              ? t().noteLockedDescription
+              : isMissing
+                ? t().noteMissingDescription
+                : isRevoked
+                  ? t().accessChangedDescription
+                  : isSession
+                    ? t().sessionExpiredDescription
+                    : t().connectionClosedDescription;
 
           void prompts
             .alert(t().reloadNotice({ message }), {
@@ -781,6 +793,9 @@ function EditorInstance(props: EditorInstanceProps) {
 
   return (
     <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <Show when={storageExhausted()}>
+        <NoticeCard role="alert" tone="danger" title={t().storageExhaustedTitle} detail={t().storageExhaustedDetail} />
+      </Show>
       <Show when={historyIncomplete()}>
         <NoticeCard role="status" tone="warning" title={t().historyIncompleteTitle} detail={t().historyIncompleteDetail} />
       </Show>
