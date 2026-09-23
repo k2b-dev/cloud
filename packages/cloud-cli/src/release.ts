@@ -407,7 +407,9 @@ export const updateCli = async (options: UpdateOptions = {}): Promise<CliUpdateR
     const downloadBase = `${source.releaseBase}/download/${release.tag}`;
     const manifest = await fetchBytes(`${downloadBase}/${CHECKSUMS_ASSET}`, source.fetchImpl);
     const cosign =
-      options.verifyCosign === false ? "skipped" : await verifyCosign(temporaryDirectory, manifest, downloadBase, source.fetchImpl, options.cosignPath ?? Bun.which("cosign"));
+      options.verifyCosign === false
+        ? "skipped"
+        : await verifyCosign(temporaryDirectory, manifest, downloadBase, source.fetchImpl, options.cosignPath ?? Bun.which("cosign"));
     const binary = await fetchBytes(`${downloadBase}/${target.asset}`, source.fetchImpl);
     verifyChecksum(binary, expectedChecksum(new TextDecoder().decode(manifest), target.asset));
     if (replaceInstalledBinary) {

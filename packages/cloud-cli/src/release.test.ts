@@ -44,7 +44,11 @@ const createCosignStub = async (directory: string, exitCode = 0) => {
   await mkdir(bin, { recursive: true });
   await writeFile(join(bin, "cosign"), `#!/bin/sh\nprintf '%s\\n' "$@" > '${log}'\nexit ${exitCode}\n`, { mode: 0o755 });
   await chmod(join(bin, "cosign"), 0o755);
-  return { executable: join(bin, "cosign"), path: `${bin}:${process.env.PATH ?? ""}`, args: async () => (await readFile(log, "utf8")).trimEnd().split("\n") };
+  return {
+    executable: join(bin, "cosign"),
+    path: `${bin}:${process.env.PATH ?? ""}`,
+    args: async () => (await readFile(log, "utf8")).trimEnd().split("\n"),
+  };
 };
 
 const cosignIdentityArgs = [
