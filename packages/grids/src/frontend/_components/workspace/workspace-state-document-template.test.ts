@@ -138,20 +138,28 @@ describe("loadGridsWorkspaceState — document templates use Base access", () =>
   afterEach(() => mock.restore());
 
   test("All documents derives workflow-document actions from Base write access", async () => {
-    spyOn(gridsService.document, "browseDocumentsForBase").mockResolvedValue({ path: [], folders: [], items: [] });
+    const browse = spyOn(gridsService.document, "browseDocumentsForBase").mockResolvedValue({ path: [], folders: [], items: [] });
+    const facets = { workflows: [], templates: [], tables: [], mediaTypes: ["application/zip"] };
+    spyOn(gridsService.document, "catalogFacets").mockResolvedValue(facets);
     spyOn(gridsService.customApp, "listSummariesByBase").mockResolvedValue([]);
     for (const level of ["read", "write", "admin"] as const) {
       baseLevel = level;
       const state = await loadWorkspaceState({
         user: { id: "44444444-4444-4444-8444-444444444444", memberofGroupIds: [] },
         baseShortId: base.shortId,
-        href: "http://localhost/app/grids/BASE01/documents",
+        href: "http://localhost/app/grids/BASE01/documents?type=application%2Fzip&sort=oldest",
         documentsRequested: true,
       });
       expect(state.kind).toBe("ok");
       if (state.kind !== "ok") throw new Error("Missing document workspace");
-      expect(state.route).toMatchObject({ kind: "documents", canWriteDocuments: level !== "read" });
+      expect(state.route).toMatchObject({
+        kind: "documents",
+        canWriteDocuments: level !== "read",
+        initialCatalog: { mediaType: "application/zip", sort: "oldest" },
+        facets,
+      });
     }
+    expect(browse.mock.calls.at(-1)?.[0]).toMatchObject({ filters: { mediaType: "application/zip" }, sort: "oldest" });
   });
 
   test("rejects a document template route without Base read access", async () => {
