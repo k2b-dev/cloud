@@ -273,6 +273,23 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(css).toContain("pointer-events: auto");
   });
 
+  test("overlays revealed object-row actions on the trailing counts instead of shifting them", async () => {
+    const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
+    const finePointer = css.slice(
+      css.indexOf("@media (hover: hover) and (pointer: fine) {\n  .k2b-ui .k2b-app-workspace__sidebar-section-actions"),
+    );
+    const block = finePointer.slice(0, finePointer.indexOf("\n}\n"));
+    const overlay = block.match(
+      /\[data-variant="object"\]:has\(\.k2b-app-workspace__sidebar-item-meta\)\s*> \.k2b-app-workspace__sidebar-item-actions\[data-visibility="hover"\] \{([^}]*)\}/,
+    )?.[1];
+    expect(overlay).toContain("position: absolute");
+    expect(overlay).toContain("inset-inline-end: 0");
+    const hiddenMeta = block.match(/\):is\(:hover, :focus-within\)\s*\.k2b-app-workspace__sidebar-item-meta \{([^}]*)\}/)?.[1];
+    // Opacity keeps the counts' visually hidden text in the accessibility tree.
+    expect(hiddenMeta).toContain("opacity: 0");
+    expect(hiddenMeta).not.toContain("visibility");
+  });
+
   test("aligns sidebar metadata and actions on one inherited icon line box", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const metaRule = css.match(/\.k2b-ui \.k2b-app-workspace__sidebar-item-meta \{([^}]*)\}/)?.[1];
@@ -794,6 +811,9 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       );
       expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-meta")).toContain(
         "flex-direction:column",
+      );
+      expect(rule(".k2b-app-workspace__sidebar-item[data-variant=object] .k2b-app-workspace__sidebar-item-meta")).toContain(
+        "min-width:1.5rem",
       );
     });
 

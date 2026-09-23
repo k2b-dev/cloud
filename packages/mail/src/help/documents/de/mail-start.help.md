@@ -14,7 +14,7 @@ Der E-Mail-Anbieter bleibt die maßgebliche Quelle für übertragbare E-Mail-Zus
 
 - Wenn du Mail über die App-Navigation öffnest, erscheint **Fokus**: eine gemeinsame Arbeitsliste für alle Postfächer, die du lesen darfst.
 - Unter **Für mich** findest du dir zugewiesene Unterhaltungen mit Handlungsbedarf. **Nicht zugewiesen** zeigt Vorgänge ohne zuständige Person, **Wartend** deine zugewiesenen Unterhaltungen, die auf eine Antwort warten, und **Alle aktiven** alle nicht abgeschlossenen Unterhaltungen, die du lesen darfst und die nicht unter **Später** liegen.
-- Jede Postfachschaltfläche zeigt die Anzahl ungelesener Unterhaltungen und der Unterhaltungen mit Handlungsbedarf. Öffne ein Postfach, wenn du Ordner, die postfachweite Suche oder Einstellungen benötigst.
+- Jede Postfachschaltfläche zeigt, wie viele Unterhaltungen Handlungsbedarf haben. Ein Punkt am Postfachsymbol bedeutet, dass es ungelesene Unterhaltungen gibt; zeige auf die Schaltfläche, um beide genauen Zahlen zu sehen. Öffne ein Postfach, wenn du Ordner, die postfachweite Suche oder Einstellungen benötigst.
 - Auf einem großen Bildschirm kannst du eine Zeile in Fokus auswählen und daneben Kontext, Zusammenfassung, Workflow-Felder und Teamnotizen prüfen. Auf einem kleineren Bildschirm öffnet die Auswahl die Unterhaltung in ihrem Postfach.
 - Wähle **Neues Postfach**, um ein weiteres E-Mail-Konto zu verbinden.
 - Ein neues Postfach ist zunächst privat. Du verwaltest es, bis du unter **Einstellungen > Zugriff** weitere Berechtigungen vergibst.
