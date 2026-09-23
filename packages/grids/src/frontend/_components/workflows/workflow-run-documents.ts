@@ -23,3 +23,16 @@ export const mergeRefreshedWorkflowRunDocuments = (
     nextOffset: items.length < total ? items.length : null,
   };
 };
+
+/**
+ * What "download all" will deliver: the server merges PDFs only when every
+ * primary file is a PDF, otherwise it returns a ZIP. Unloaded pages leave an
+ * all-PDF prefix undecided.
+ */
+export const workflowRunDownloadFormat = (state: WorkflowRunDocumentsState): "pdf" | "zip" | "pdf-or-zip" => {
+  const nonPdf = state.items.some(
+    (document) => document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey)?.mimeType !== "application/pdf",
+  );
+  if (nonPdf) return "zip";
+  return state.hasMore ? "pdf-or-zip" : "pdf";
+};

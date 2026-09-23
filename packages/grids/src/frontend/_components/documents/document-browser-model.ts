@@ -63,7 +63,7 @@ export const documentCountLabel = (
     const count = folders.reduce((sum, folder) => sum + folder.count, 0);
     return t.documentCount({ count, formatted: format.format(count) });
   }
-  return t.countDocuments({ formatted: format.format(documents.length), more: hasMore });
+  return t.countDocuments({ count: documents.length, formatted: format.format(documents.length), more: hasMore });
 };
 
 export const documentBrowserEmptyText = (

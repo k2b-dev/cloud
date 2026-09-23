@@ -18,8 +18,8 @@ const contentDispositionFilename = (disposition: "attachment" | "inline", filena
   return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(safeFilename)}`;
 };
 
-/** Stored content read in bounded slices; the length is known up front. */
-export type StreamedFileBody = { stream: () => ReadableStream<Uint8Array>; sizeBytes: number };
+/** Content read in bounded slices; `sizeBytes` is set when the length is known up front. */
+export type StreamedFileBody = { stream: () => ReadableStream<Uint8Array>; sizeBytes?: number };
 
 export const fileResponse = (
   body: Uint8Array | StreamedFileBody,
@@ -31,7 +31,7 @@ export const fileResponse = (
   new Response(body instanceof Uint8Array ? new Blob([Uint8Array.from(body)], { type: contentType }) : body.stream(), {
     headers: {
       "Content-Type": contentType,
-      ...(body instanceof Uint8Array ? {} : { "Content-Length": String(body.sizeBytes) }),
+      ...(body instanceof Uint8Array || body.sizeBytes === undefined ? {} : { "Content-Length": String(body.sizeBytes) }),
       "Content-Disposition": contentDispositionFilename(disposition, filename),
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",

@@ -9,6 +9,8 @@ import { documentServiceText } from "./document-messages";
 import { buildLiveRenderData } from "./document-rendering";
 import { captureRecordSnapshotDraft, type SnapshotTableReadAuthorizer } from "./document-snapshots";
 import { getStoredTemplate } from "./document-templates";
+import { assertSafeZipPath, DOCUMENT_ZIP_MAX_BYTES, zipEndRecordBytes, zipEntryOverheadBytes } from "./document-zip-archive";
+import { type DocumentZipManifest, planZipEntries, writeDocumentZip } from "./document-zip-output";
 import type { ExpansionViewer } from "./relation-access";
 import { get as getTable } from "./tables";
 import { buildTemplateAppData } from "./template-context";
@@ -144,11 +146,21 @@ export const getDocumentPdf = async (document: Document, locale?: string): Promi
   return ok({ pdf: stored.data.bytes, contentType: "application/pdf" });
 };
 
-export const renderWorkflowDocumentsPdf = async (
+export type WorkflowDocumentsDownload = { filename: string; documentCount: number } & (
+  | { format: "pdf"; pdf: Uint8Array }
+  | { format: "zip"; body: ReadableStream<Uint8Array> }
+);
+
+/**
+ * One download for every readable Document of a workflow run: a merged PDF
+ * when every primary file is a PDF, otherwise a streamed ZIP of the primary
+ * files under their original names.
+ */
+export const downloadWorkflowDocuments = async (
   workflowRunId: string,
   canRead: DocumentReadAuthorizer,
   locale?: string,
-): Promise<Result<RenderHtmlToPdfResult & { filename: string; documentCount: number }>> => {
+): Promise<Result<WorkflowDocumentsDownload>> => {
   const t = documentServiceText(locale);
   const accessWhere = workflowRunDocumentAccessWhere(await loadReadableWorkflowRunDocumentScopes(workflowRunId, canRead));
   const [{ count } = { count: 0 }] = await sql<{ count: number }[]>`
@@ -165,18 +177,26 @@ export const renderWorkflowDocumentsPdf = async (
     ORDER BY created_at ASC, id ASC
   `;
   const documents = await hydrateDocuments(rows);
+  const primaries: Array<{ document: Document; artifact: DocumentArtifact }> = [];
+  for (const document of documents) {
+    const artifact = document.artifacts.find((candidate) => candidate.key === document.primaryArtifactKey);
+    if (!artifact) return fail(err.internal(t.artifactMetadataIntegrityFailed));
+    primaries.push({ document, artifact });
+  }
+  const base = `workflow-run-${workflowRunId.slice(0, 8)}`;
+  if (primaries.some(({ artifact }) => artifact.mimeType !== "application/pdf")) {
+    return workflowDocumentsZip(primaries, `${base}.zip`, locale);
+  }
   const files: Array<{ pdf: Uint8Array; filename: string }> = [];
   for (const document of documents) {
     const pdf = await getDocumentPdf(document, locale);
     if (!pdf.ok) return pdf;
     files.push({ pdf: pdf.data.pdf, filename: document.filename });
   }
-  if (files.length === 1) {
-    return ok({ pdf: files[0]!.pdf, contentType: "application/pdf", filename: files[0]!.filename, documentCount: 1 });
-  }
+  if (files.length === 1) return ok({ format: "pdf", pdf: files[0]!.pdf, filename: files[0]!.filename, documentCount: 1 });
   try {
     const merged = await mergePdfs({ files });
-    return ok({ ...merged, filename: `workflow-run-${workflowRunId.slice(0, 8)}.pdf`, documentCount: files.length });
+    return ok({ format: "pdf", pdf: merged.pdf, filename: `${base}.pdf`, documentCount: files.length });
   } catch (error) {
     if (error instanceof GotenbergRenderError) {
       return fail(
@@ -185,4 +205,47 @@ export const renderWorkflowDocumentsPdf = async (
     }
     throw error;
   }
+};
+
+/**
+ * Plans the archive with the document ZIP output's naming and bounds before
+ * the first byte is streamed, so a bound still yields a normal error response.
+ */
+export const planWorkflowDocumentsZip = (
+  primaries: ReadonlyArray<{ document: Pick<Document, "id" | "shortId" | "tableId" | "artifacts">; artifact: DocumentArtifact }>,
+  locale?: string,
+): Result<DocumentZipManifest> => {
+  const entries = planZipEntries(primaries.map(({ document, artifact }) => ({ document, artifact, folder: undefined })));
+  let sourceBytes = 0;
+  let archiveBound = zipEndRecordBytes;
+  for (const entry of entries) {
+    assertSafeZipPath(entry.p);
+    sourceBytes += entry.b;
+    archiveBound += entry.b + zipEntryOverheadBytes(entry.p);
+  }
+  if (archiveBound > DOCUMENT_ZIP_MAX_BYTES) {
+    return fail(err.badInput(documentServiceText(locale).workflowDocumentArchiveTooLarge({ limit: DOCUMENT_ZIP_MAX_BYTES })));
+  }
+  return ok({ entries, tableIds: [], sourceBytes });
+};
+
+/** Streams the planned archive with backpressure: the writer waits until the client reads. */
+const workflowDocumentsZip = (
+  primaries: ReadonlyArray<{ document: Document; artifact: DocumentArtifact }>,
+  filename: string,
+  locale?: string,
+): Result<WorkflowDocumentsDownload> => {
+  const manifest = planWorkflowDocumentsZip(primaries, locale);
+  if (!manifest.ok) return manifest;
+  const modifiedAt = new Date(Math.max(...primaries.map(({ document }) => Date.parse(document.createdAt))));
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  writeDocumentZip({ manifest: manifest.data, modifiedAt, locale }, sql, (bytes) => writer.write(bytes))
+    .then(
+      () => writer.close(),
+      (error: unknown) => writer.abort(error),
+    )
+    // A canceled download has already errored the stream; nothing is left to report.
+    .catch(() => undefined);
+  return ok({ format: "zip", body: readable, filename, documentCount: manifest.data.entries.length });
 };

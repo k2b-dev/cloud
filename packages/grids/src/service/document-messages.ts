@@ -20,7 +20,9 @@ export const documentServiceMessages = i18n.define({
       artifactMetadataIntegrityFailed: "Stored document artifact metadata failed its integrity check.",
       noWorkflowDocuments: "The workflow run did not generate any documents.",
       workflowDocumentLimit: ({ limit }: { limit: number }) =>
-        `Combined PDF downloads support at most ${limit} documents per workflow run.`,
+        `Downloading all documents supports at most ${limit} documents per workflow run.`,
+      workflowDocumentArchiveTooLarge: ({ limit }: { limit: number }) =>
+        `The documents of this workflow run exceed the ${limit}-byte ZIP limit. Download them individually.`,
       sourceRequired: "GQL source is required.",
       sourceTooLarge: "GQL source is too large.",
       sourceInvalid: "The GQL source is invalid.",
@@ -235,7 +237,9 @@ export const documentServiceMessages = i18n.define({
       artifactIntegrityFailed: "Die Integritätsprüfung des gespeicherten Dokumentartefakts ist fehlgeschlagen.",
       artifactMetadataIntegrityFailed: "Die Integritätsprüfung der Metadaten des gespeicherten Dokumentartefakts ist fehlgeschlagen.",
       noWorkflowDocuments: "Der Workflow-Lauf hat keine Dokumente erzeugt.",
-      workflowDocumentLimit: ({ limit }) => `Ein kombinierter PDF-Download unterstützt höchstens ${limit} Dokumente pro Workflow-Lauf.`,
+      workflowDocumentLimit: ({ limit }) => `Alle Dokumente herunterladen unterstützt höchstens ${limit} Dokumente pro Workflow-Lauf.`,
+      workflowDocumentArchiveTooLarge: ({ limit }) =>
+        `Die Dokumente dieses Workflow-Laufs überschreiten das ZIP-Limit von ${limit} Byte. Lade sie einzeln herunter.`,
       sourceRequired: "Eine GQL-Quelle ist erforderlich.",
       sourceTooLarge: "Die GQL-Quelle ist zu groß.",
       sourceInvalid: "Die GQL-Quelle ist ungültig.",

@@ -299,7 +299,7 @@ export const gridsService = {
     publicDocumentLinkUrl: documents.publicDocumentLinkUrl,
     getPrimaryArtifact: documents.getDocumentPrimaryArtifact,
     getPdf: documents.getDocumentPdf,
-    renderWorkflowDocumentsPdf: documents.renderWorkflowDocumentsPdf,
+    downloadWorkflowDocuments: documents.downloadWorkflowDocuments,
   },
   emailTemplate: {
     listForBase: emailTemplates.listForBase,

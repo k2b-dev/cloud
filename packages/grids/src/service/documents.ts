@@ -11,6 +11,7 @@ export {
 } from "./document-browse";
 export {
   createDocumentForRecord,
+  downloadWorkflowDocuments,
   getDocument,
   getDocumentArtifact,
   getDocumentArtifacts,
@@ -18,7 +19,6 @@ export {
   getDocumentPdf,
   getDocumentPrimaryArtifact,
   openDocumentArtifact,
-  renderWorkflowDocumentsPdf,
 } from "./document-core";
 export {
   createDocumentLink,

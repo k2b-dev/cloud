@@ -58,7 +58,8 @@ export const documentMessages = i18n.define({
       noMatchingDocuments: "No documents match this search.",
       emptyFolder: "This folder is empty.",
       noGeneratedDocuments: "No generated documents yet.",
-      countDocuments: ({ formatted, more }: { formatted: string; more: boolean }) => `${formatted}${more ? "+" : ""} documents`,
+      countDocuments: ({ count, formatted, more }: { count: number; formatted: string; more: boolean }) =>
+        more ? `${formatted}+ documents` : i18n.plural(count, "en", { one: "1 document", other: `${formatted} documents` }),
       completedDocument: "Completed document",
       immutableDocumentDetail: "The number, source snapshot, and stored artifacts are immutable. Generate again to create a new Document.",
       number: "Number",
@@ -348,7 +349,8 @@ export const documentMessages = i18n.define({
       noMatchingDocuments: "Keine Dokumente entsprechen dieser Suche.",
       emptyFolder: "Dieser Ordner ist leer.",
       noGeneratedDocuments: "Noch keine erzeugten Dokumente.",
-      countDocuments: ({ formatted, more }) => `${formatted}${more ? "+" : ""} Dokumente`,
+      countDocuments: ({ count, formatted, more }) =>
+        more ? `${formatted}+ Dokumente` : i18n.plural(count, "de", { one: "1 Dokument", other: `${formatted} Dokumente` }),
       completedDocument: "Abgeschlossenes Dokument",
       immutableDocumentDetail:
         "Nummer, Quelldaten-Snapshot und gespeicherte Artefakte sind unveränderlich. Erzeuge das Dokument erneut, um ein neues Dokument anzulegen.",

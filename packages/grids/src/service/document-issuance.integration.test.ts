@@ -13,12 +13,13 @@ import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import { grantAccess } from "./access";
-import { getDocumentPdf, getDocumentPrimaryArtifact, renderWorkflowDocumentsPdf } from "./document-core";
+import { downloadWorkflowDocuments, getDocumentPdf, getDocumentPrimaryArtifact, type WorkflowDocumentsDownload } from "./document-core";
 import { type FinancialDocumentOutput, normalizeFinancialDocumentOutput } from "./document-financial-output";
 import { createDocumentIssuanceService, type IssueDocumentInput } from "./document-issuance";
 import { MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./document-json";
 import { type DocumentDbRow, mapDocumentTemplate } from "./document-mappers";
 import { createTemplate, getTemplate } from "./document-templates";
+import { readZipArchive } from "./document-zip-test-reader";
 import { enable as enableHistory } from "./durable-history";
 import { provisionDocumentNumberSeries } from "./number-series";
 import { enable as enableFinalization, finalize } from "./record-finalization";
@@ -479,54 +480,132 @@ postgresTest(
   30_000,
 );
 
-describe("Document issuance", () => {
-  postgresTest("rejects a mixed-format run PDF download instead of silently omitting its CSV", async () => {
-    const scope = await createScope();
-    const workflowId = await insertTestWorkflow({ baseId: scope.baseId, shortId: testShortId("W") });
-    const runId = await insertTestWorkflowRun({ baseId: scope.baseId, workflowId, shortId: testShortId("R"), state: "succeeded" });
-    const profiles: DocumentProfile<Record<string, never>>[] = ["pdf", "csv"].map((key) => ({
-      id: `test.run-${key}`,
+type RunFile = { key: string; filename: string; mediaType: string; bytes: Uint8Array };
+
+/** Issues one Document per file into a fresh workflow run, one profile template each. */
+const issueRunDocuments = async (files: RunFile[]) => {
+  const scope = await createScope();
+  const workflowId = await insertTestWorkflow({ baseId: scope.baseId, shortId: testShortId("W") });
+  const runId = await insertTestWorkflowRun({ baseId: scope.baseId, workflowId, shortId: testShortId("R"), state: "succeeded" });
+  const templates: DocumentTemplate[] = [];
+  for (const [index, file] of files.entries()) {
+    const profile: DocumentProfile<Record<string, never>> = {
+      id: `test.run-${index}`,
       version: 1,
-      title: key,
-      description: "Mixed run fixture",
+      title: file.key,
+      description: "Workflow run download fixture",
       rendererVersion: "test-v1",
       validatorVersion: "test-v1",
-      primaryArtifact: { key, mediaType: key === "pdf" ? "application/pdf" : "text/csv" },
+      primaryArtifact: { key: file.key, mediaType: file.mediaType },
       input: z.object({}).strict(),
-      formatNumber: ({ value }) => `RUN-${key}-${value}`,
+      formatNumber: ({ value }) => `RUN-${index}-${value}`,
       issue: () => ({
-        artifacts: [
-          {
-            key,
-            filename: `output.${key}`,
-            mediaType: key === "pdf" ? "application/pdf" : "text/csv",
-            bytes: key === "pdf" ? pdf("run") : new TextEncoder().encode("amount\r\n12.30\r\n"),
-          },
-        ],
+        artifacts: [{ key: file.key, filename: file.filename, mediaType: file.mediaType, bytes: file.bytes }],
         validationStatus: "valid",
         validationReport: { valid: true },
       }),
-    }));
-    const service = createDocumentIssuanceService({ profiles });
-    for (const profile of profiles) {
-      const template = await insertProfileTemplate(scope.tableId, { kind: "profile", id: profile.id, version: 1, inputTemplate: "{}" });
-      const issued = await service.issueDocument(inputFor(template, scope, { workflowRunId: runId, workflowStepKey: profile.id }));
-      if (!issued.ok) throw issued.error;
-      if (profile.primaryArtifact.key === "pdf") {
-        const single = await renderWorkflowDocumentsPdf(runId, async () => true);
-        if (!single.ok) throw single.error;
-        expect(single.data.documentCount).toBe(1);
-        expect(single.data.pdf).toEqual(pdf("run"));
-      }
-    }
-    const mixed = await renderWorkflowDocumentsPdf(runId, async () => true);
-    expect(mixed.ok).toBe(false);
-    if (!mixed.ok) {
-      expect(mixed.error.code).toBe("BAD_INPUT");
-      expect(mixed.error.message).toContain("PDF");
+    };
+    const template = await insertProfileTemplate(scope.tableId, { kind: "profile", id: profile.id, version: 1, inputTemplate: "{}" });
+    const issued = await createDocumentIssuanceService({ profiles: [profile] }).issueDocument(
+      inputFor(template, scope, { workflowRunId: runId, workflowStepKey: `step-${index}` }),
+    );
+    if (!issued.ok) throw issued.error;
+    templates.push(template);
+  }
+  return { runId, templates };
+};
+
+const text = (value: string) => new TextEncoder().encode(value);
+const csvFile = (filename: string, body: string): RunFile => ({ key: "csv", filename, mediaType: "text/csv", bytes: text(body) });
+const pdfFile = (filename: string, label: string): RunFile => ({ key: "pdf", filename, mediaType: "application/pdf", bytes: pdf(label) });
+
+const zipOf = async (download: WorkflowDocumentsDownload) => {
+  if (download.format !== "zip") throw new Error(`Expected a ZIP download, got ${download.format}`);
+  const archive = new Uint8Array(await new Response(download.body).arrayBuffer());
+  return readZipArchive(archive).map((entry) => ({ path: entry.path, text: new TextDecoder().decode(entry.bytes) }));
+};
+
+describe("Workflow run download-all", () => {
+  postgresTest("returns the stored PDF when every run document is a PDF", async () => {
+    const { runId } = await issueRunDocuments([pdfFile("invoice.pdf", "invoice")]);
+    const download = await downloadWorkflowDocuments(runId, async () => true);
+    if (!download.ok) throw download.error;
+    expect(download.data).toMatchObject({ format: "pdf", filename: "invoice.pdf", documentCount: 1 });
+    if (download.data.format === "pdf") expect(download.data.pdf).toEqual(pdf("invoice"));
+  });
+
+  postgresTest("packs a mixed PDF and CSV run into one ZIP with original filenames", async () => {
+    const { runId } = await issueRunDocuments([pdfFile("invoice.pdf", "invoice"), csvFile("bookings.csv", "amount\r\n12.30\r\n")]);
+    const download = await downloadWorkflowDocuments(runId, async () => true, "de");
+    if (!download.ok) throw download.error;
+    expect(download.data.filename).toBe(`workflow-run-${runId.slice(0, 8)}.zip`);
+    expect(download.data.documentCount).toBe(2);
+    expect(await zipOf(download.data)).toEqual([
+      { path: "invoice.pdf", text: new TextDecoder().decode(pdf("invoice")) },
+      { path: "bookings.csv", text: "amount\r\n12.30\r\n" },
+    ]);
+  });
+
+  postgresTest("packs a CSV-only run into one ZIP and renames clashing filenames", async () => {
+    const { runId } = await issueRunDocuments([csvFile("export.csv", "a\r\n1\r\n"), csvFile("export.csv", "b\r\n2\r\n")]);
+    const download = await downloadWorkflowDocuments(runId, async () => true);
+    if (!download.ok) throw download.error;
+    const [second] = await sql<Array<{ short_id: string }>>`
+      SELECT short_id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid ORDER BY created_at DESC, id DESC LIMIT 1
+    `;
+    expect(await zipOf(download.data)).toEqual([
+      { path: "export.csv", text: "a\r\n1\r\n" },
+      { path: `export (${second?.short_id}).csv`, text: "b\r\n2\r\n" },
+    ]);
+  });
+
+  postgresTest("includes only readable documents and rejects a run with none", async () => {
+    const { runId, templates } = await issueRunDocuments([pdfFile("invoice.pdf", "invoice"), csvFile("bookings.csv", "amount\r\n")]);
+    const csvTemplate = templates[1]!.id;
+    const partial = await downloadWorkflowDocuments(runId, async (document) => document.templateId !== csvTemplate);
+    if (!partial.ok) throw partial.error;
+    expect(partial.data).toMatchObject({ format: "pdf", filename: "invoice.pdf", documentCount: 1 });
+
+    const denied = await downloadWorkflowDocuments(runId, async () => false);
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) {
+      expect(denied.error.code).toBe("BAD_INPUT");
+      expect(denied.error.message).toBe("The workflow run did not generate any documents.");
     }
   });
 
+  postgresTest("rejects a run over the document count limit", async () => {
+    const { runId } = await issueRunDocuments([csvFile("export.csv", "x\r\n")]);
+    // Random short IDs may clash with earlier rows; extra attempts keep the run above the limit.
+    await sql`
+      INSERT INTO grids.documents (
+        short_id, template_id, workflow_run_id, workflow_step_key, snapshot_id, base_id, table_id, record_id,
+        document_number, filename, template_snapshot, render_data, renderer_kind, renderer_version, template_revision,
+        profile_id, profile_version, profile_snapshot, snapshot_sha256, validator_version, validation_status,
+        validation_report, issued_actor, primary_artifact_key
+      )
+      SELECT substr(md5(random()::text || n), 1, 6), template_id, workflow_run_id, 'limit-' || n, snapshot_id, base_id, table_id,
+        record_id, document_number || '-' || n, filename, template_snapshot, render_data, renderer_kind, renderer_version,
+        template_revision, profile_id, profile_version, profile_snapshot, snapshot_sha256, validator_version, validation_status,
+        validation_report, issued_actor, primary_artifact_key
+      FROM grids.documents, generate_series(1, 1100) AS n
+      WHERE workflow_run_id = ${runId}::uuid
+      ON CONFLICT DO NOTHING
+    `;
+    const [{ count } = { count: 0 }] = await sql<Array<{ count: number }>>`
+      SELECT count(*)::int AS count FROM grids.documents WHERE workflow_run_id = ${runId}::uuid
+    `;
+    expect(count).toBeGreaterThan(1000);
+    const tooMany = await downloadWorkflowDocuments(runId, async () => true);
+    expect(tooMany.ok).toBe(false);
+    if (!tooMany.ok) {
+      expect(tooMany.error.code).toBe("BAD_INPUT");
+      expect(tooMany.error.message).toBe("Downloading all documents supports at most 1000 documents per workflow run.");
+    }
+  });
+});
+
+describe("Document issuance", () => {
   postgresTest("rejects invalid derived profile output without issuing a document and permits a corrected retry", async () => {
     const scope = await createScope();
     let output: Record<string, unknown> = { amount: Number.NaN };
