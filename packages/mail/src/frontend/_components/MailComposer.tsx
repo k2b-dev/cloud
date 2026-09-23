@@ -55,6 +55,7 @@ import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { reconcileMailComposerPanes } from "./mail-composer-panes";
 import { createMailComposerTransition } from "./mail-composer-transition";
+import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
@@ -87,6 +88,7 @@ export default function MailComposer(props: {
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
+  const contactDirectory = useMailContactDirectory();
   const intentLabel = (intent: DraftIntent): string =>
     intent === "reply" ? t().reply : intent === "reply_all" ? t().replyAll : intent === "forward" ? t().forward : t().send;
   const initial = props.initialDraft ?? props.initialSeed;
@@ -230,6 +232,7 @@ export default function MailComposer(props: {
       const currentDraft = await persist();
       if (!currentDraft) throw new Error(statusMessage() || t().draftCouldNotBeSaved);
       const launch = await launchMailDraftAssistant({
+        contactResolve: contactDirectory.resolve,
         mailboxId: props.mailboxId,
         returnHref: props.returnHref,
         draft: currentDraft,

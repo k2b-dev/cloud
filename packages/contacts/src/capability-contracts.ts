@@ -7,7 +7,10 @@ const CursorSchema = z.string().min(1).max(256).optional().describe("Opaque curs
 const LimitSchema = z.number().int().min(1).max(100).default(25).describe("Maximum number of results to return.");
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
 const ContactOpenHrefSchema = z.string().regex(/^\/app\/contacts\/.*/);
-export const ResourceShortIdSchema = z.string().regex(/^[0-9A-Za-z]{6}$/);
+export const ResourceShortIdSchema = z
+  .string()
+  .length(6)
+  .regex(/^[0-9A-Za-z]{6}$/);
 const resourceRef = <Type extends string>(type: Type) => z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
 export const CONTACT_COLLECTION_LIMIT = 20;
 export const CONTACT_TAG_LIMIT = 100;

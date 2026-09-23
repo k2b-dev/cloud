@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import type { PanesLayout } from "@k2b/ui";
 import { ButtonLink, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, onMount, Show } from "solid-js";
+import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import MailComposerPage from "./MailComposerPage.island";
 import { mailComposerMessages } from "./mail-composer-messages";
@@ -18,6 +19,7 @@ export default function MailDraftSeedComposerPage(props: {
   dateConfig: DateContext;
   canShareAttachments: boolean;
   calendarIntegrationAvailable: boolean;
+  contactDirectory: MailContactDirectory;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -58,6 +60,7 @@ export default function MailDraftSeedComposerPage(props: {
             popout={props.popout}
             dateConfig={props.dateConfig}
             canShareAttachments={props.canShareAttachments}
+            contactDirectory={props.contactDirectory}
             calendarIntegrationAvailable={props.calendarIntegrationAvailable}
           />
         )}

@@ -1,5 +1,6 @@
 import { NoticeCard, useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
+import type { MailContactDirectory } from "../contact-directory-settings";
 import type { MailIncomingAutomationsWorkspaceData } from "../service/automation-workspace";
 import MailAutomationShell from "./_components/MailAutomationShell";
 import MailIncomingAutomationSettings, { type IncomingAutomationPreset } from "./_components/MailIncomingAutomationSettings";
@@ -8,6 +9,7 @@ import { mailAutomationPageMessages } from "./mail-automation-page-messages";
 export default function MailIncomingAutomationsPage(props: {
   data: MailIncomingAutomationsWorkspaceData;
   currentUserEmail: string | null;
+  contactDirectory: MailContactDirectory;
   openPreset: IncomingAutomationPreset | null;
 }) {
   const locale = useLocale();
@@ -18,6 +20,7 @@ export default function MailIncomingAutomationsPage(props: {
       mailbox={props.data.mailbox}
       permission={props.data.permission}
       currentUserEmail={props.currentUserEmail}
+      contactDirectory={props.contactDirectory}
       activePage="incoming"
     >
       <header>

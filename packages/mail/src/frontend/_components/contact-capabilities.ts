@@ -1,24 +1,30 @@
 import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
+import { contactDirectory } from "@k2b/cloud/contracts";
 import type { z } from "zod";
-import {
-  contactBooksSchema,
-  contactMutationDataSchema,
-  contactResolveDataSchema,
-  contactSuggestionsSchema,
-} from "../../app-integration-contracts";
+import type { ContactDirectoryTarget } from "../../contact-directory-settings";
 
-const invokeContactsCapability = async <T>(params: {
-  kind: "query" | "action";
-  id: string;
-  input: unknown;
-  dataSchema: z.ZodType<T>;
-  signal?: AbortSignal;
-  idempotencyKey?: string;
-}) => {
+export class ContactDirectoryUnavailableError extends Error {
+  constructor() {
+    super("No contact directory is configured for this function.");
+    this.name = "ContactDirectoryUnavailableError";
+  }
+}
+
+const invokeContactDirectory = async <T>(
+  target: ContactDirectoryTarget | null,
+  params: {
+    kind: "query" | "action";
+    input: unknown;
+    dataSchema: z.ZodType<T>;
+    signal?: AbortSignal;
+    idempotencyKey?: string;
+  },
+) => {
+  if (!target) throw new ContactDirectoryUnavailableError();
   const result = await invokeCapabilityWithDataSchema(
     {
-      appId: "contacts",
-      capabilityId: params.id,
+      appId: target.appId,
+      capabilityId: target.capabilityId,
       kind: params.kind,
       input: params.input,
       signal: params.signal,
@@ -30,51 +36,43 @@ const invokeContactsCapability = async <T>(params: {
   return result.data;
 };
 
-export const suggestContacts = (input: { query: string; cursor?: string; limit?: number }, signal?: AbortSignal) =>
-  invokeContactsCapability({
-    kind: "query",
-    id: "contact.suggest",
-    input,
-    dataSchema: contactSuggestionsSchema,
-    signal,
-  });
+export const suggestContacts = (
+  target: ContactDirectoryTarget | null,
+  input: z.input<typeof contactDirectory.suggest.input>,
+  signal?: AbortSignal,
+) => invokeContactDirectory(target, { kind: "query", input, dataSchema: contactDirectory.suggest.data, signal });
 
-export const resolveContacts = (input: { emails: string[]; limit?: number }, signal?: AbortSignal) =>
-  invokeContactsCapability({
-    kind: "query",
-    id: "contact.resolve",
-    input,
-    dataSchema: contactResolveDataSchema,
-    signal,
-  });
+export const resolveContacts = (
+  target: ContactDirectoryTarget | null,
+  input: z.input<typeof contactDirectory.resolve.input>,
+  signal?: AbortSignal,
+) => invokeContactDirectory(target, { kind: "query", input, dataSchema: contactDirectory.resolve.data, signal });
 
-export const listWritableContactBooks = (input: { cursor?: string; query?: string; limit?: number } = {}, signal?: AbortSignal) =>
-  invokeContactsCapability({
+export const readContact = (target: ContactDirectoryTarget | null, id: string, signal?: AbortSignal) =>
+  invokeContactDirectory(target, { kind: "query", input: { id }, dataSchema: contactDirectory.read.data, signal });
+
+export const listWritableContactBooks = (
+  target: ContactDirectoryTarget | null,
+  input: Omit<z.input<typeof contactDirectory.listWritableBooks.input>, "minimumPermission"> = {},
+  signal?: AbortSignal,
+) =>
+  invokeContactDirectory(target, {
     kind: "query",
-    id: "book.list",
     input: { ...input, minimumPermission: "write" },
-    dataSchema: contactBooksSchema,
+    dataSchema: contactDirectory.listWritableBooks.data,
     signal,
   });
 
 export const createContact = (
-  input: {
-    bookId: string;
-    label?: string | null;
-    firstName?: string | null;
-    lastName?: string | null;
-    companyName?: string | null;
-    emails?: { label?: string | null; email: string }[];
-    phones?: { label?: string | null; phone: string }[];
-  },
+  target: ContactDirectoryTarget | null,
+  input: z.input<typeof contactDirectory.create.input>,
   idempotencyKey: string,
   signal?: AbortSignal,
 ) =>
-  invokeContactsCapability({
+  invokeContactDirectory(target, {
     kind: "action",
-    id: "contact.create",
     input,
-    dataSchema: contactMutationDataSchema,
+    dataSchema: contactDirectory.create.data,
     idempotencyKey,
     signal,
   });

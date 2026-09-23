@@ -1,6 +1,7 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../../config";
+import { requestContactDirectory } from "../../../../../contact-directory-settings";
 import { calendarInvitations, type MailRequestContext, mailboxAccess, mailboxes, senderIdentities } from "../../../../../service";
 import MailDraftSeedComposerPage from "../../../../_components/MailDraftSeedComposerPage.island";
 import { mailDraftReturnHref } from "../../../../_components/mail-compose-route";
@@ -48,6 +49,7 @@ export default ssr<AuthContext>(async (c) => {
         dateConfig={getDateConfig(c)}
         canShareAttachments={permission === "admin"}
         calendarIntegrationAvailable={calendarIntegrationAvailable}
+        contactDirectory={requestContactDirectory(c)}
       />
     </Layout>
   );

@@ -1,6 +1,7 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
+import { requestContactDirectory } from "../../../../contact-directory-settings";
 import type { MailRequestContext } from "../../../../service";
 import { loadMailWorkflowsWorkspace } from "../../../../service/automation-workspace";
 import MailWorkflowsPage from "../../../MailWorkflowsPage.island";
@@ -37,7 +38,12 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.breadcrumbWorkflows },
       ]}
     >
-      <MailWorkflowsPage data={data} currentUserEmail={user.mail} openNew={c.req.query("new") === "1"} />
+      <MailWorkflowsPage
+        data={data}
+        currentUserEmail={user.mail}
+        contactDirectory={requestContactDirectory(c)}
+        openNew={c.req.query("new") === "1"}
+      />
     </Layout>
   );
 });

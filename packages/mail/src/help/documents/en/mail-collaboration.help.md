@@ -49,7 +49,7 @@ Open **Conversation details** to see Contacts whose email addresses exactly matc
 
 If an external participant has no matching Contact, select **Add as contact**, choose a writable contact book, and Mail creates the Contact there with the displayed name and email. No button is shown for an address that already matches a readable Contact, including matches that are not on the first result page.
 
-Mail stores no Contact ownership, notes, bank details, access entries, or other private fields. It requests a bounded participant projection from Contacts whenever the details panel is opened.
+Mail stores no Contact ownership, notes, bank details, access entries, or other private fields. It requests a bounded participant projection from Contacts whenever the details panel is opened. Cloud administrators can switch this section to another contact directory app; see **Choose the contact directory**. **Add as contact** is shown only when that app supports creating contacts.
 
 The CLI exposes conversation-level matches through `cld mail conversation related`, Contacts context through `cld mail conversation context`, and the dedicated Contact-aware history boundary through `cld mail conversation contact-history`.
 

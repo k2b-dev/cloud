@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import { launchMailDraftAssistant } from "./mail-assistant-launch";
 
 const originalFetch = globalThis.fetch;
@@ -11,6 +12,7 @@ const contact = (index: number, matchedEmail: string) => {
   const contactId = `Ct${String(index).padStart(4, "0")}`;
   const bookId = "Bk0001";
   return {
+    ref: { type: "contacts.contact", id: contactId },
     contactId,
     bookId,
     bookName: "Contacts",
@@ -58,6 +60,7 @@ describe("Mail Assistant launch", () => {
     );
 
     const launch = await launchMailDraftAssistant({
+      contactResolve: DEFAULT_MAIL_CONTACT_DIRECTORY.resolve,
       mailboxId: "Box001",
       returnHref: "/app/mail/Box001?conversation=Msg001",
       draft: draft(["Ada@Example.Test"]),
@@ -103,6 +106,79 @@ describe("Mail Assistant launch", () => {
     });
   });
 
+  test("uses the configured third-party directory for contact resources and the Assistant tool", async () => {
+    const paths: string[] = [];
+    let launchBody = "";
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        paths.push(path);
+        if (path.includes("/capabilities/v1/queries/crm/customer.match")) {
+          return Response.json({
+            data: {
+              items: [
+                {
+                  ...contact(1, "ada@example.test"),
+                  ref: { type: "crm.customer", id: "c9a1f7de-5a53-4f67-9e3c-0f1a2b3c4d5e" },
+                  contactId: "c9a1f7de-5a53-4f67-9e3c-0f1a2b3c4d5e",
+                  bookId: "customers",
+                  links: [{ rel: "open", href: "/app/crm/customers/c9a1f7de-5a53-4f67-9e3c-0f1a2b3c4d5e" }],
+                  customerNumber: "K-1001",
+                },
+              ],
+              matchedEmails: ["ada@example.test"],
+            },
+            page: { hasMore: false },
+          });
+        }
+        launchBody = String(init?.body);
+        return Response.json(conversation, { status: 201 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await launchMailDraftAssistant({
+      contactResolve: { appId: "crm", capabilityId: "customer.match" },
+      mailboxId: "Box001",
+      returnHref: "/app/mail/Box001",
+      draft: draft(["ada@example.test"]),
+    });
+
+    expect(paths).toEqual(["/api/capabilities/v1/queries/crm/customer.match", "/api/ai/conversations"]);
+    const body = JSON.parse(launchBody);
+    expect(body.draft.content.at(-1)).toEqual({
+      type: "resource",
+      ref: { type: "crm.customer", id: "c9a1f7de-5a53-4f67-9e3c-0f1a2b3c4d5e" },
+      title: "Contact 1",
+      icon: "ti ti-address-book",
+      href: "/app/crm/customers/c9a1f7de-5a53-4f67-9e3c-0f1a2b3c4d5e",
+    });
+    expect(body.preloadTools.at(-1)).toEqual({ appId: "crm", kind: "query", id: "customer.match" });
+  });
+
+  test("skips contact context when no directory resolves participants", async () => {
+    let launchBody = "";
+    const paths: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        paths.push(String(request));
+        launchBody = String(init?.body);
+        return Response.json(conversation, { status: 201 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await launchMailDraftAssistant({
+      contactResolve: null,
+      mailboxId: "Box001",
+      returnHref: "/app/mail/Box001",
+      draft: draft(["ada@example.test"]),
+    });
+
+    expect(paths).toEqual(["/api/ai/conversations"]);
+    expect(JSON.parse(launchBody).preloadTools).toHaveLength(6);
+  });
+
   test("does not attach an ambiguous contact", async () => {
     let launchBody = "";
     globalThis.fetch = Object.assign(
@@ -122,7 +198,12 @@ describe("Mail Assistant launch", () => {
       { preconnect: originalFetch.preconnect },
     );
 
-    await launchMailDraftAssistant({ mailboxId: "Box001", returnHref: "/app/mail/Box001", draft: draft(["shared@example.test"]) });
+    await launchMailDraftAssistant({
+      contactResolve: DEFAULT_MAIL_CONTACT_DIRECTORY.resolve,
+      mailboxId: "Box001",
+      returnHref: "/app/mail/Box001",
+      draft: draft(["shared@example.test"]),
+    });
 
     const launchPayload = JSON.parse(launchBody);
     expect(launchPayload).toMatchObject({
@@ -142,7 +223,12 @@ describe("Mail Assistant launch", () => {
       { preconnect: originalFetch.preconnect },
     );
 
-    await launchMailDraftAssistant({ mailboxId: "Box001", returnHref: "/app/mail/Box001", draft: draft(["ada@example.test"]) });
+    await launchMailDraftAssistant({
+      contactResolve: DEFAULT_MAIL_CONTACT_DIRECTORY.resolve,
+      mailboxId: "Box001",
+      returnHref: "/app/mail/Box001",
+      draft: draft(["ada@example.test"]),
+    });
 
     const launchPayload = JSON.parse(launchBody);
     expect(launchPayload.draft.content).toHaveLength(2);
@@ -174,7 +260,12 @@ describe("Mail Assistant launch", () => {
       { preconnect: originalFetch.preconnect },
     );
 
-    await launchMailDraftAssistant({ mailboxId: "Box001", returnHref: "/app/mail/Box001", draft: draft(recipients) });
+    await launchMailDraftAssistant({
+      contactResolve: DEFAULT_MAIL_CONTACT_DIRECTORY.resolve,
+      mailboxId: "Box001",
+      returnHref: "/app/mail/Box001",
+      draft: draft(recipients),
+    });
 
     expect(JSON.parse(resolutionBody)).toEqual({ input: { emails: resolvedEmails, limit: 50 } });
     expect(

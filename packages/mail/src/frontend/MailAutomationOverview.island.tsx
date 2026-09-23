@@ -1,11 +1,16 @@
 import { ButtonLink, StatCell, StatGrid, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
+import type { MailContactDirectory } from "../contact-directory-settings";
 import type { MailAutomationOverviewData } from "../service/automation-workspace";
 import MailAutomationActivityTable from "./_components/MailAutomationActivityTable";
 import MailAutomationShell from "./_components/MailAutomationShell";
 import { mailAutomationPageMessages } from "./mail-automation-page-messages";
 
-export default function MailAutomationOverview(props: { data: MailAutomationOverviewData; currentUserEmail: string | null }) {
+export default function MailAutomationOverview(props: {
+  data: MailAutomationOverviewData;
+  currentUserEmail: string | null;
+  contactDirectory: MailContactDirectory;
+}) {
   const locale = useLocale();
   const messages = createMemo(() => mailAutomationPageMessages.resolve([locale()]).t);
   const activeReply = () => props.data.automaticReplies.find((configuration) => configuration.enabled) ?? null;
@@ -20,6 +25,7 @@ export default function MailAutomationOverview(props: { data: MailAutomationOver
       mailbox={props.data.mailbox}
       permission={props.data.permission}
       currentUserEmail={props.currentUserEmail}
+      contactDirectory={props.contactDirectory}
       activePage="overview"
     >
       <header>

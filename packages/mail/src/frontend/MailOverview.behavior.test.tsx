@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 
 test.skipIf(isServer)("deleted mailboxes load on disclosure, retry failures, and paginate", async () => {
   const dom = createDomTestHarness();
@@ -28,6 +29,7 @@ test.skipIf(isServer)("deleted mailboxes load on disclosure, retry failures, and
         initialDetail: null,
         initialPinnedMailboxIds: [],
         currentUserEmail: null,
+        contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
         dateConfig: { locale: "en", timeZone: "UTC" },
         initialFocusError: null,
         initialFocus: { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null },

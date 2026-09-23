@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-09-08
+updated: 2026-09-23
 ---
 
 # App capabilities
@@ -749,6 +749,12 @@ provider Zod declaration -> live manifest JSON Schema -> Core dispatcher
 
 The provider still parses and authorizes inside `run`. Core's validation is an
 additional transport invariant, not a replacement for app-side checks.
+
+When several providers can serve the same consumer, the shared schemas belong
+in `@k2b/cloud/contracts` instead of either app, and the consumer selects the
+provider through its settings. [Contact directory](/en/docs/platform/contact-directory)
+is the current example; `capabilityContractIssues` checks a published operation
+against such a contract.
 
 ### Evolve published local IDs additively
 

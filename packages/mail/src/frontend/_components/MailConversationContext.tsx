@@ -4,11 +4,13 @@ import { Button, DetailPanel, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../commands";
+import { canCreateDirectoryContacts } from "../../contact-directory-settings";
 import type { MailConversationContext } from "../../contracts";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
 import { createContact, listWritableContactBooks } from "./contact-capabilities";
 import { buildMailContactParticipantRows } from "./mail-contact-context";
+import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { buildExactParticipantSearchHref } from "./mail-navigation";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
@@ -25,6 +27,8 @@ export default function MailConversationContext(props: {
   });
   const locale = useLocale();
   const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const contactDirectory = useMailContactDirectory();
+  const canCreateContact = canCreateDirectoryContacts(contactDirectory);
   const contexts = query.createInfinite<string, MailConversationContext, string>({
     source: () => props.conversationId,
     enabled: () => props.active,
@@ -78,6 +82,7 @@ export default function MailConversationContext(props: {
     onBefore: () => ({ idempotencyKey: crypto.randomUUID() }),
     mutation: async ({ participant, book, conversationId }, { abortSignal, idempotencyKey }) => {
       await createContact(
+        contactDirectory.create,
         {
           bookId: book.id,
           label: participant.displayName || participant.email,
@@ -102,7 +107,11 @@ export default function MailConversationContext(props: {
   const chooseBookAndCreate = async (participant: { email: string; displayName: string | null }) => {
     const selected = await prompts.search<{ id: string; name: string }>(
       async ({ query, abortSignal }) => {
-        const result = await listWritableContactBooks({ query: query.trim() || undefined, limit: 25 }, abortSignal);
+        const result = await listWritableContactBooks(
+          contactDirectory.listWritableBooks,
+          { query: query.trim() || undefined, limit: 25 },
+          abortSignal,
+        );
         return result.data.map((book) => ({
           value: { id: book.id, name: book.name },
           label: book.name,
@@ -295,13 +304,17 @@ export default function MailConversationContext(props: {
                           when={participant.contacts.length > 0}
                           fallback={
                             <Show
-                              when={!participant.hasMatch}
+                              when={!participant.hasMatch && canCreateContact}
                               fallback={
                                 <div class="flex min-w-0 items-start gap-2 px-2 py-1.5">
                                   <i class="ti ti-user mt-0.5 text-dimmed" aria-hidden="true" />
                                   <div class="min-w-0 flex-1">
                                     <p class="truncate text-sm font-medium text-primary">{participant.displayName || participant.email}</p>
-                                    <p class="truncate text-xs text-dimmed">{messages().matchingContactAvailable}</p>
+                                    <Show when={participant.hasMatch || participant.displayName}>
+                                      <p class="truncate text-xs text-dimmed">
+                                        {participant.hasMatch ? messages().matchingContactAvailable : participant.email}
+                                      </p>
+                                    </Show>
                                   </div>
                                 </div>
                               }

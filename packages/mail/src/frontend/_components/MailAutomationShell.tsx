@@ -1,6 +1,7 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { AppWorkspace, createNavigation, type NavigationItem, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
+import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { Mailbox } from "../../contracts";
 import { openMailboxSettingsDialog } from "./MailboxSettingsDialog";
 import { mailRemainingMessages } from "./mail-remaining-messages";
@@ -45,6 +46,7 @@ export default function MailAutomationShell(props: {
   mailbox: Mailbox;
   permission: "read" | "write" | "admin";
   currentUserEmail: string | null;
+  contactDirectory: MailContactDirectory;
   activePage: MailAutomationPageId;
   children: JSX.Element;
 }) {
@@ -59,6 +61,7 @@ export default function MailAutomationShell(props: {
       await openMailboxSettingsDialog({
         mailboxId: props.mailbox.id,
         currentUserEmail: props.currentUserEmail,
+        contactDirectory: props.contactDirectory,
         initialTab: "access",
       });
     } finally {

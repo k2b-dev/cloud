@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 
 if (!isServer)
   test("contact Commands read with current authority, never create a draft, and recover from denied access", async () => {
@@ -16,7 +17,18 @@ if (!isServer)
         if (url.endsWith("/contacts/contact.read"))
           return denied
             ? Response.json({ code: "FORBIDDEN", message: "Not allowed" }, { status: 403 })
-            : Response.json({ data: { emails: [{ email: "ada@example.test", label: "Work" }] } });
+            : Response.json({
+                data: {
+                  id: "cont01",
+                  bookId: "book01",
+                  displayName: "Ada Example",
+                  companyName: null,
+                  jobTitle: null,
+                  emails: [{ email: "ada@example.test", label: "Work" }],
+                  phones: [],
+                  updatedAt: "2026-08-18T12:00:00.000Z",
+                },
+              });
         throw new Error(`Unexpected request: ${url}`);
       },
       { preconnect: originalFetch.preconnect },
@@ -31,6 +43,7 @@ if (!isServer)
           autoStart={false}
           mailto={null}
           returnHref={null}
+          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
         />
       ),
       dom.root,

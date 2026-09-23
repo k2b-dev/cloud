@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
+import { ContactDirectoryMatchSchema, ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
 import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
@@ -18,6 +18,7 @@ import {
   spacesMailDestinationsSchema,
 } from "../app-integration-contracts";
 import { attachmentPreviewKind, attachmentPreviewSignatureMatches, baseAttachmentContentType } from "../attachment-preview-policy";
+import { requestContactDirectory } from "../contact-directory-settings";
 import {
   type AttachmentLink,
   type AttachmentLinkPage,
@@ -143,6 +144,7 @@ import { discoverMailConfigurations } from "../service/onboarding-discovery";
 import { loadMailboxConversationDetail, loadMailboxPageData } from "../service/workspace";
 import wsRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
+import contactDirectoryRoutes from "./contact-directory";
 import {
   internalInput,
   internalMailboxId,
@@ -824,6 +826,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         conversationContext.getConversationContext({
           context: requestContext(c),
           request: integrationRequest(c),
+          contactDirectory: requestContactDirectory(c),
           ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
           query: await internalInput(c, c.req.valid("query")),
         }),
@@ -944,8 +947,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
       z.object({
         mailboxId: ResourceShortIdSchema,
         conversationId: ResourceShortIdSchema,
-        bookId: z.union([ResourceShortIdSchema, z.literal("system")]),
-        contactId: ResourceShortIdSchema,
+        bookId: ContactDirectoryMatchSchema.shape.bookId,
+        contactId: ContactDirectoryMatchSchema.shape.contactId,
       }),
     ),
     v("query", relatedMailQuerySchema),
@@ -953,6 +956,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       const result = await conversationContext.listRelatedMail({
         context: requestContext(c),
         request: integrationRequest(c),
+        contactDirectory: requestContactDirectory(c),
         ...internalParams(c, c.req.valid("param")),
         ...(await internalInput(c, c.req.valid("query"))),
       });
@@ -2778,6 +2782,7 @@ const adminApi = new Hono<MailApiContext>()
   .use("/admin/*", auth.requireRole("admin"))
   .use("/admin/mailboxes/:mailboxId", resolveMailboxParam)
   .use("/admin/mailboxes/:mailboxId/*", resolveMailboxParam)
+  .route("/", contactDirectoryRoutes)
   .get("/admin/operations", v("query", platformOperationsQuerySchema), async (c) =>
     respondPublic(c, operations.getPlatformMailOperations(requestContext(c), c.req.valid("query"))),
   )

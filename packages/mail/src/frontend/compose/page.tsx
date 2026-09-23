@@ -1,6 +1,7 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
+import { requestContactDirectory } from "../../contact-directory-settings";
 import { type MailRequestContext, mailboxes } from "../../service";
 import MailComposeIntentPage from "../_components/MailComposeIntentPage.island";
 import { mailPageMessages } from "../pages-messages";
@@ -39,6 +40,7 @@ export default ssr<AuthContext>(async (c) => {
         autoStart={!c.req.query("command") && c.req.query("autostart") === "1" && Boolean(initialMailboxId) && !c.req.query("mailto")}
         mailto={c.req.query("mailto") ?? null}
         returnHref={c.req.query("return") ?? null}
+        contactDirectory={requestContactDirectory(c)}
       />
     </Layout>
   );

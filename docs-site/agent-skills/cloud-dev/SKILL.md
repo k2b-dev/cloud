@@ -154,7 +154,8 @@ and design-review guidance. Trace real task paths and consumers before choosing
 result fields or changing contracts; keep detailed API rules in that guide.
 Cloud records one execution row for every capability call on every surface;
 an application writes `context.requestId` into its own audit rows so the two
-trails join without sharing payloads.
+trails join without sharing payloads. For a shared cross-app contract such as
+the contact directory, read `/en/docs/platform/contact-directory`.
 
 For deployment questions, read **Deployment requirements** in the Docs
 collection (`/en/docs/operations/deployment-requirements`) before selecting
@@ -162,18 +163,17 @@ services or secrets. Distinguish startup prerequisites from optional feature
 dependencies, then follow the linked runtime and migration guides for the
 deployed version. Do not infer feature readiness from container health.
 
-Build the smallest end-to-end behavior through its public seam. Avoid
-speculative paths, one-off abstractions, and unrelated cleanup.
-
 In a repository development environment, refresh only the processes affected
 by a source change. Prefer a no-build restart when source is mounted into the
 runtime; rebuild only when an image-baked input changed. Follow the repository's
 commands and ownership map rather than rebuilding the complete stack by default.
 
-Start with the fastest relevant check, then verify each affected permission,
-data, registration, and SSR/browser boundary. Integration tests gate on
-`CLOUD_TEST_*` variables and never touch a database whose name does not end in
-`_test`. Before release, test against the
-target Cloud version with the published package version used in production.
-Update the application's docs when observable behavior changes. Finish when
-code, focused tests, and documentation describe one contract.
+Build the smallest end-to-end behavior through its public seam. Avoid
+speculative paths, one-off abstractions, and unrelated cleanup. Start with the
+fastest relevant check, then verify each affected permission, data,
+registration, and SSR/browser boundary. Integration tests gate on `CLOUD_TEST_*`
+variables and never touch a database whose name does not end in `_test`. Before
+release, test against the target Cloud version with the published package
+version used in production. Update the application's docs when observable
+behavior changes. Finish when code, focused tests, and documentation describe
+one contract.

@@ -17,12 +17,14 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
+import type { MailContactDirectory } from "../contact-directory-settings";
 import type { DeletedMailbox, DeletedMailboxPage, Mailbox, MailFocusPage, MailFocusView } from "../contracts";
 import type { MailConversationDetailData } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
 import { openMailboxHealthDialog } from "./_components/MailboxHealthDialog";
 import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
+import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
 import { readMailWorkspacePreferences, writeMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import { mailOverviewMessages } from "./mail-overview-messages";
@@ -60,7 +62,7 @@ const participantInitials = (summary: string): string => {
 const avatarTone = (summary: string): string =>
   String([...primaryParticipant(summary, "")].reduce((total, character) => total + character.codePointAt(0)!, 0) % 5);
 
-export default function MailOverview(props: {
+function MailOverviewView(props: {
   mailboxes: MailboxWithPermission[];
   initialFocus: MailFocusPage;
   initialFocusError: string | null;
@@ -69,6 +71,7 @@ export default function MailOverview(props: {
   initialDetail: MailConversationDetailData | null;
   initialPinnedMailboxIds: string[];
   currentUserEmail: string | null;
+  contactDirectory: MailContactDirectory;
   dateConfig: DateContext;
 }) {
   const locale = useLocale();
@@ -267,9 +270,12 @@ export default function MailOverview(props: {
     onSuccess: (mailbox) => {
       if (!mailbox) return;
       toast.success(messages().mailboxCreated);
-      void openMailboxSettingsDialog({ mailboxId: mailbox.id, currentUserEmail: props.currentUserEmail, initialTab: "delivery" }).then(
-        (result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`),
-      );
+      void openMailboxSettingsDialog({
+        mailboxId: mailbox.id,
+        currentUserEmail: props.currentUserEmail,
+        contactDirectory: props.contactDirectory,
+        initialTab: "delivery",
+      }).then((result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -665,5 +671,13 @@ export default function MailOverview(props: {
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
     </AppWorkspace>
+  );
+}
+
+export default function MailOverview(props: Parameters<typeof MailOverviewView>[0]) {
+  return (
+    <MailContactDirectoryProvider value={props.contactDirectory}>
+      <MailOverviewView {...props} />
+    </MailContactDirectoryProvider>
   );
 }

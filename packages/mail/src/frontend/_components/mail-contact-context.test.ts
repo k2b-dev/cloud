@@ -6,6 +6,7 @@ import { buildMailContactParticipantRows } from "./mail-contact-context";
 type ContactMatch = z.infer<typeof contactResolveMatchSchema>;
 
 const contact = (id: string, bookId: string, email: string): ContactMatch => ({
+  ref: { type: "contacts.contact", id },
   contactId: id,
   bookId,
   bookName: `Book ${bookId}`,

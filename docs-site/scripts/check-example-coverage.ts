@@ -40,6 +40,10 @@ export const recipeFixtures: RecipeFixture[] = [
     fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts", "browser-navigation.ts"],
   },
   {
+    page: "platform/contact-directory.md",
+    fixtures: ["platform-contact-directory.ts"],
+  },
+  {
     page: "platform/search.md",
     fixtures: ["platform-capabilities.ts", "platform-capabilities-app.ts", "browser-navigation.ts"],
   },

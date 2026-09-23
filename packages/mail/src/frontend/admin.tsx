@@ -4,6 +4,7 @@ import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import { ssr } from "../config";
+import { contactDirectoryMessages } from "../contact-directory-messages";
 import type { PlatformMailboxOperationSummary } from "../contracts";
 import { type MailRequestContext, operations, storageObservability } from "../service";
 import { localizeMailError } from "../service/error-messages";
@@ -89,6 +90,9 @@ export default ssr<AuthContext>(async (c) => {
           <div class="flex flex-wrap gap-2">
             <ButtonLink href="/admin/mail/security" variant="secondary" size="sm">
               <i class="ti ti-shield-lock" aria-hidden="true" /> {t.security}
+            </ButtonLink>
+            <ButtonLink href="/admin/mail/contact-directory" variant="secondary" size="sm">
+              <i class="ti ti-address-book" aria-hidden="true" /> {contactDirectoryMessages.resolve([locale]).t.title}
             </ButtonLink>
             <MailAdminStorageActions />
           </div>

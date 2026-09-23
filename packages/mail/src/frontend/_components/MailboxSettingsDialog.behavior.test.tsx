@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { MailboxSettingsContext } from "../../settings-context";
 
 const mailboxId = "00000000-0000-4000-8000-000000000001";
@@ -54,7 +55,12 @@ describe("Mailbox settings dialog query lifecycle", () => {
     const { dialogCore } = await import("@k2b/ui");
     const { openMailboxSettingsDialog } = await import("./MailboxSettingsDialog");
 
-    const result = openMailboxSettingsDialog({ mailboxId, currentUserEmail: "reader@example.test", initialTab: "reading" });
+    const result = openMailboxSettingsDialog({
+      mailboxId,
+      contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+      currentUserEmail: "reader@example.test",
+      initialTab: "reading",
+    });
     try {
       await settle();
       expect(dom.document.body.textContent).toContain("Message display");
@@ -73,7 +79,11 @@ describe("Mailbox settings dialog query lifecycle", () => {
     const { dialogCore } = await import("@k2b/ui");
     const { openMailboxSettingsDialog } = await import("./MailboxSettingsDialog");
 
-    const result = openMailboxSettingsDialog({ mailboxId, currentUserEmail: "reader@example.test" });
+    const result = openMailboxSettingsDialog({
+      mailboxId,
+      contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+      currentUserEmail: "reader@example.test",
+    });
     try {
       await settle();
       expect(dom.document.body.textContent).toContain("Could not load mailbox settings");

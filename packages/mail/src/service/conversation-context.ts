@@ -2,6 +2,7 @@ import { toPgTextArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
+import type { MailContactDirectory } from "../contact-directory-settings";
 import {
   type MailConversationContext,
   type MailConversationContextQuery,
@@ -179,6 +180,7 @@ export const unlinkConversationSpaceItem = async (params: {
 export const getConversationContext = async (params: {
   context: MailRequestContext;
   request: AppIntegrationRequest;
+  contactDirectory: MailContactDirectory;
   mailboxId: string;
   conversationId: string;
   query: MailConversationContextQuery;
@@ -200,6 +202,7 @@ export const getConversationContext = async (params: {
             limit: params.query.contactsLimit,
           },
           params.request,
+          params.contactDirectory.resolve,
         ),
     findSpaceItemsByResource({ type: "mail.conversation", id: publicConversationId }, params.request),
   ]);
@@ -224,6 +227,7 @@ export const getConversationContext = async (params: {
 export const listRelatedMail = async (params: {
   context: MailRequestContext;
   request: AppIntegrationRequest;
+  contactDirectory: MailContactDirectory;
   mailboxId: string;
   conversationId: string;
   bookId: string;
@@ -237,7 +241,11 @@ export const listRelatedMail = async (params: {
   if (!conversation) return fail(err.notFound("Conversation"));
   const participantEmails = conversation.participants.map((participant) => participant.email);
   if (participantEmails.length === 0) return fail(err.notFound("Contact"));
-  const contact = await resolveContacts({ emails: participantEmails, contactIds: [params.contactId], limit: 1 }, params.request);
+  const contact = await resolveContacts(
+    { emails: participantEmails, contactIds: [params.contactId], limit: 1 },
+    params.request,
+    params.contactDirectory.resolve,
+  );
   if (!contact.ok) return { ...contact, status: 503 as const };
   const match = contact.data.items.find((item) => item.contactId === params.contactId && item.bookId === params.bookId);
   if (!match) return fail(err.notFound("Contact"));

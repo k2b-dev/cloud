@@ -157,6 +157,18 @@ The CLI exposes the same recovery surface:
 
 **Reconcile storage** queues a background reconciliation. The page and `cld mail admin storage show` continue to show the last completed snapshot until that job finishes; queuing the job does not synchronously update the numbers. These values are observability data, not storage quotas, and do not provide content drilldown.
 
+## Choose the contact directory {icon="address-book"}
+
+Mail uses the built-in Contacts app for recipient suggestions, contacts in **Conversation details**, **New contact**, and contacts attached to **Write with AI**. Nothing needs to be configured for that.
+
+To use another app, such as a customer-management app, open **Administration > Mail > Contact directory**. This also requires Cloud **Admin** access. Choose the app, then choose one of its capabilities for each function. Each list offers only capabilities that match the contact-directory contract; the defaults are filled in when the app provides them.
+
+- **Suggest recipients** and **Match participants** are required.
+- **Read a contact** is optional. Without it, **Compose email** from a contact in another app reports that the contact is unavailable.
+- **List writable books** and **Create a contact** are optional and belong together. Without them, Mail hides **New contact**.
+
+**Save** checks every choice against the app's current capabilities and names each field Mail cannot use. Mail always calls the app with each person's own access, so people see only the contacts they may read there. If the app is stopped or later changes incompatibly, the affected features become unavailable, just as when Contacts is unavailable. **Use Contacts defaults** restores the built-in mapping.
+
 ## Configure signatures and email design {icon="pencil"}
 
 Under **Settings > Writing**, create private or mailbox signatures and snippets. Assign the mailbox default signature under **Accounts & identities > Sending identities**. A collaborator's personal default under **Writing** takes precedence.
