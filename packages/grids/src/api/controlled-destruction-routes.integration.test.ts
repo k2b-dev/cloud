@@ -101,7 +101,9 @@ describe("controlled destruction routes", () => {
       `;
       expect(storedRun).toMatchObject({ short_id: run.id, base_id: baseId });
       let status = "queued";
-      for (let attempt = 0; attempt < 100 && ["queued", "running", "cancel_requested"].includes(status); attempt++) {
+      // The run executes in the background; bound the wait by time, not by iterations.
+      const deadline = Date.now() + 10_000;
+      while (["queued", "running", "cancel_requested"].includes(status) && Date.now() < deadline) {
         const response = await app.request(`${path}/${run.id}`);
         if (response.status !== 200) throw new Error(`Run status returned ${response.status}: ${await response.text()}`);
         status = ((await response.json()) as { status: string }).status;
