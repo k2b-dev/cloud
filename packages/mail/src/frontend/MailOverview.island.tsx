@@ -441,11 +441,16 @@ function MailOverviewView(props: {
               <For each={orderedMailboxOverviewItems()}>
                 {(mailbox) => {
                   const pinned = () => mailboxIsPinned(mailbox.id);
+                  // One number per row: needs action. Unread is a dot; both exact counts live in the tooltip and sr-only text.
+                  const countLabels = () => [
+                    ...(mailbox.needsAction > 0 ? [messages().needsActionCount({ count: mailbox.needsAction })] : []),
+                    ...(mailbox.unread > 0 ? [messages().unreadCount({ count: mailbox.unread })] : []),
+                  ];
                   return (
                     <AppWorkspace.SidebarItem
                       variant="object"
                       href={mailbox.href}
-                      title={`${mailbox.name} · ${mailbox.subtitle}`}
+                      title={[mailbox.name, mailbox.subtitle, ...countLabels()].join(" · ")}
                       description={mailbox.subtitle}
                       class="mail-overview-mailbox"
                       data={{ pinned: pinned() ? "true" : undefined }}
@@ -465,18 +470,19 @@ function MailOverviewView(props: {
                         </AppWorkspace.SidebarItemActions>
                       }
                     >
-                      <AppWorkspace.SidebarItemIcon icon={pinned() ? "ti ti-flag" : "ti ti-mail"} />
+                      <AppWorkspace.SidebarItemIcon>
+                        <i class={pinned() ? "ti ti-flag" : "ti ti-mail"} />
+                        <Show when={mailbox.unread > 0}>
+                          <span class="mail-overview-unread-dot" />
+                        </Show>
+                      </AppWorkspace.SidebarItemIcon>
                       <AppWorkspace.SidebarItemLabel>{mailbox.name}</AppWorkspace.SidebarItemLabel>
                       <AppWorkspace.SidebarItemMeta>
-                        <span class="mail-overview-unread" data-zero={mailbox.unread === 0 ? "true" : undefined}>
-                          <span aria-hidden="true">{formatCount(mailbox.unread)}</span>
-                          <span class="sr-only">{messages().unreadCount({ count: mailbox.unread })}</span>
+                        <span class="mail-overview-needs-action" aria-hidden="true">
+                          {mailbox.needsAction > 0 ? formatCount(mailbox.needsAction) : ""}
                         </span>
-                        <Show when={mailbox.needsAction > 0}>
-                          <span class="mail-overview-needs-action">
-                            <span aria-hidden="true">{formatCount(mailbox.needsAction)}</span>
-                            <span class="sr-only">{messages().needsActionCount({ count: mailbox.needsAction })}</span>
-                          </span>
+                        <Show when={countLabels().length > 0}>
+                          <span class="sr-only">{countLabels().join(", ")}</span>
                         </Show>
                       </AppWorkspace.SidebarItemMeta>
                     </AppWorkspace.SidebarItem>

@@ -650,9 +650,12 @@ overview navigates into, such as mailboxes or notebooks, rather than views
 inside one resource. The label is the resource title, `description` is one
 quiet meta line with at most one secondary fact, and `SidebarItemMeta` stacks
 trailing counts at the end of the row. Keep counts tabular and put their
-accessible wording in visually hidden text. Omit the leading icon when every
-object would show the same one. Object rows truncate their title instead of
-scrolling it.
+accessible wording in visually hidden text. The count column keeps a minimum
+width, so counts line up across rows. When an object row has trailing counts,
+`SidebarItemActions visibility="hover"` overlays that column on fine pointers
+instead of pushing it toward the title. The counts stay in the accessibility
+tree while hidden. Omit the leading icon when every object would show the same
+one. Object rows truncate their title instead of scrolling it.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">

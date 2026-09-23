@@ -14,7 +14,7 @@ The email provider remains the source for portable mail state. Moving a message,
 
 - Opening Mail from the app navigation shows **Focus**, a combined work queue across every mailbox you may read.
 - Use **For me** for assigned conversations that need action, **Unassigned** for unowned work, **Waiting** for your assigned conversations waiting on a reply, or **All active** for every unfinished conversation you may read that is not in **Later**.
-- Each mailbox button shows its unread and needs-action conversation counts. Open a mailbox when you need folders, mailbox-wide search, or settings.
+- Each mailbox button shows how many conversations need action. A dot on the mailbox icon means it has unread conversations; point at the button to see both exact counts. Open a mailbox when you need folders, mailbox-wide search, or settings.
 - On a large screen, select a Focus row to review its context, summary, workflow fields, and team notes beside the queue. On a smaller screen, selecting the row opens the conversation in its mailbox.
 - Select **New mailbox** when you need to connect another email account.
 - A new mailbox starts private. You are its administrator until you grant access in **Settings > Access**.

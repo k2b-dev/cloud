@@ -3379,6 +3379,31 @@
     opacity: 1;
     pointer-events: auto;
   }
+
+  /* Object rows keep their trailing count column in place: revealed actions
+     overlay the counts instead of pushing them toward the title. */
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item[data-variant="object"]:has(
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]
+    ):has(.k2b-app-workspace__sidebar-item-meta) {
+    position: relative;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item[data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)
+    > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item[data-variant="object"]:has(
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]
+    ):is(:hover, :focus-within)
+    .k2b-app-workspace__sidebar-item-meta {
+    opacity: 0;
+  }
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item.has-action {
@@ -8078,6 +8103,7 @@
   line-height: 1rem;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] .k2b-app-workspace__sidebar-item-meta {
+  min-width: 1.5rem;
   flex-direction: column;
   align-items: flex-end;
   gap: 0.125rem;
