@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.5.0...npm-ui-v0.5.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **mail:** show one aligned needs-action count per mailbox ([#176](https://github.com/k2b-dev/cloud/issues/176)) ([4239477](https://github.com/k2b-dev/cloud/commit/4239477c3f44ad5e21f1ed282df511b46d8d8e79)), closes [#175](https://github.com/k2b-dev/cloud/issues/175)
+
 ## [0.5.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.4.2...npm-ui-v0.5.0) (2026-09-22)
 
 

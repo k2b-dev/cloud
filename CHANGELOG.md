@@ -3,6 +3,13 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.14.1](https://github.com/k2b-dev/cloud/compare/cloud-v0.14.0...cloud-v0.14.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **mail:** show one aligned needs-action count per mailbox ([#176](https://github.com/k2b-dev/cloud/issues/176)) ([4239477](https://github.com/k2b-dev/cloud/commit/4239477c3f44ad5e21f1ed282df511b46d8d8e79)), closes [#175](https://github.com/k2b-dev/cloud/issues/175)
+
 ## [0.14.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.13.0...cloud-v0.14.0) (2026-09-23)
 
 
