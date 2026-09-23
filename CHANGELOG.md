@@ -3,6 +3,23 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.12.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.11.0...cloud-v0.12.0) (2026-09-23)
+
+
+### Features
+
+* **cli:** load third-party application modules as plugins ([#135](https://github.com/k2b-dev/cloud/issues/135)) ([94607d4](https://github.com/k2b-dev/cloud/commit/94607d4906fbcf0c6e765a44dfa6931281b58da5)), closes [#123](https://github.com/k2b-dev/cloud/issues/123)
+* **grids:** filter and sort the document catalog by origin and type ([#156](https://github.com/k2b-dev/cloud/issues/156)) ([8a245eb](https://github.com/k2b-dev/cloud/commit/8a245ebc744a3b509729333a2add0095190e2edf)), closes [#52](https://github.com/k2b-dev/cloud/issues/52)
+* **release:** sign and verify the CLI checksums with Sigstore bundles ([#142](https://github.com/k2b-dev/cloud/issues/142)) ([4ac9a92](https://github.com/k2b-dev/cloud/commit/4ac9a922978548c055243bcfa69309f709a48ec4))
+
+
+### Bug Fixes
+
+* **ai:** explain which setting blocks removing a model profile ([#139](https://github.com/k2b-dev/cloud/issues/139)) ([45aafcd](https://github.com/k2b-dev/cloud/commit/45aafcd930bdab910bfba1904c9a988c0dd68ce1))
+* **dev:** let every dev container write its SSR output ([#138](https://github.com/k2b-dev/cloud/issues/138)) ([3577fd0](https://github.com/k2b-dev/cloud/commit/3577fd018c53c77c8e11a9537bab3c39679d4dc7))
+* **mail:** keep HTML messages stable and show allowed images ([#143](https://github.com/k2b-dev/cloud/issues/143)) ([a1c8442](https://github.com/k2b-dev/cloud/commit/a1c8442aa3ba65d46089535ab52231fcec38c077))
+* **notebooks:** import Bun statically so the minified reindex runs ([#140](https://github.com/k2b-dev/cloud/issues/140)) ([ed9ba97](https://github.com/k2b-dev/cloud/commit/ed9ba97a17552768c7ebc0695f7f9142f78ee3c6))
+
 ## [0.11.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.10.0...cloud-v0.11.0) (2026-09-22)
 
 
