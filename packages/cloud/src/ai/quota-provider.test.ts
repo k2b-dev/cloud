@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, setSystemTime, spyOn, test } from "bun:test";
 import type { Provider, ProviderEvent } from "@k2b/nessi";
 import {
   AiBackgroundAdmissionError,
@@ -160,16 +160,19 @@ test("chunking does not change estimates and encoded file data is excluded", asy
   const failure: ProviderEvent = { type: "issue", issue: { kind: "provider_error", message: "lost", retryable: true } };
   const a = fixture([{ type: "block_delta", blockId: "a", delta: "hello world" }, failure]);
   const b = fixture([...Array.from("hello world", (delta) => ({ type: "block_delta" as const, blockId: "a", delta })), failure]);
-  for (const f of [a, b])
-    for await (const _ of f.wrap().stream({
-      messages: [{ role: "user", content: [{ type: "file", data: "A".repeat(100000), mediaType: "image/png" }] }],
-      systemPrompt: "S".repeat(400),
-    })) {
-    }
-  // Compare what chunking could change; requestStartedAt is wall-clock time of each run.
-  const comparable = (booked: typeof a.booked) =>
-    booked.map(({ details, ...rest }) => ({ ...rest, details: details && { ...details, requestStartedAt: undefined } }));
-  expect(comparable(a.booked)).toEqual(comparable(b.booked));
+  // Timing details derive from Date.now(); a frozen clock makes both runs comparable as a whole.
+  setSystemTime(new Date("2026-01-01T00:00:00Z"));
+  try {
+    for (const f of [a, b])
+      for await (const _ of f.wrap().stream({
+        messages: [{ role: "user", content: [{ type: "file", data: "A".repeat(100000), mediaType: "image/png" }] }],
+        systemPrompt: "S".repeat(400),
+      })) {
+      }
+  } finally {
+    setSystemTime();
+  }
+  expect(a.booked).toEqual(b.booked);
   expect(a.booked[0]!.usage!.output).toBe(3);
   expect(a.booked[0]!.usage!.input).toBeLessThan(200);
 });
