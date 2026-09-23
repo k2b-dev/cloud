@@ -29,6 +29,8 @@ export const NOTEBOOKS_YJS_ERROR_CODE = {
   resyncRequired: "RESYNC_REQUIRED",
   /** A transient live-stream failure: reconnect with the last cursor, no resync. */
   streamFailed: "STREAM_FAILED",
+  /** The broker refused to store the document log: an operator must add storage. Retried a bounded number of times. */
+  storageExhausted: "STORAGE_EXHAUSTED",
 } as const;
 
 export type NotebooksYjsErrorCode = (typeof NOTEBOOKS_YJS_ERROR_CODE)[keyof typeof NOTEBOOKS_YJS_ERROR_CODE];

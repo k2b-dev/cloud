@@ -381,3 +381,51 @@ test("reports incomplete recovered history only for the active document snapshot
   expect(warnings).toBe(2);
   provider.dispose();
 });
+
+describe("Yjs provider storage exhaustion", () => {
+  test("reports the error, retries a bounded number of times, then stops", () => {
+    const doc = new Y.Doc();
+    const errors: string[] = [];
+    const fatal: string[] = [];
+    let ready = 0;
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    try {
+      const provider = createYjsProvider({
+        doc,
+        awareness: new Awareness(doc),
+        noteId: NOTE_ID,
+        appUrl: "http://localhost",
+        onError: (error) => errors.push(error.code),
+        onFatal: (error) => fatal.push(error.code),
+        onReady: () => ready++,
+      });
+      provider.connect();
+      const storageClose = (socket: FakeWebSocket) => {
+        socket.open();
+        socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STORAGE_EXHAUSTED", message: "full", noteId: NOTE_ID } });
+        socket.onclose?.({ code: 1012, reason: "STORAGE_EXHAUSTED" });
+      };
+      // One success in between resets the budget.
+      storageClose(FakeWebSocket.instances[0]!);
+      timers.shift()!();
+      const recovered = FakeWebSocket.instances[1]!;
+      recovered.open();
+      recovered.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+      expect(ready).toBe(1);
+      recovered.onclose?.({ code: 1006, reason: "" });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        timers.shift()!();
+        storageClose(FakeWebSocket.instances.at(-1)!);
+      }
+      expect(errors.filter((code) => code === "STORAGE_EXHAUSTED")).toHaveLength(6);
+      expect(fatal).toEqual(["STORAGE_EXHAUSTED"]);
+      // Terminated: no further reconnect is scheduled.
+      expect(timers).toHaveLength(0);
+      provider.dispose();
+    } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
+    }
+  });
+});

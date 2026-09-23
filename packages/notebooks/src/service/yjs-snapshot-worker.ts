@@ -1,9 +1,18 @@
-import { lazySync } from "@k2b/cloud";
+import { getProcessSync, lazySync } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { type JobConfig, RetentionGapError, type Worker } from "@k2b/sync";
 import * as Y from "yjs";
 import * as notes from "./notes";
-import { applyYjsTopicEvent, compareStreamCursor, createYjsTopic, MalformedSyncEventError, NODE_ID, TOPIC_RETENTION_MS } from "./yjs-sync";
+import {
+  applyYjsTopicEvent,
+  compareStreamCursor,
+  createYjsTopic,
+  isSharedCursor,
+  MalformedSyncEventError,
+  NODE_ID,
+  TOPIC_RETENTION_MS,
+  YJS_TOPIC_ID,
+} from "./yjs-sync";
 
 const log = logger("yjs-snapshot-worker");
 const ACK_WAIT_MS = 120_000;
@@ -14,7 +23,7 @@ const ACK_WAIT_MS = 120_000;
 const SNAPSHOT_PARTITIONS = 8;
 const RECONCILE_NOTE_LIMIT = 5_000;
 export const SNAPSHOT_JOB_ID = "notebooks.yjs.snapshot.ordered";
-type SnapshotReason = "periodic" | "unload" | "shutdown" | "reconcile";
+type SnapshotReason = "periodic" | "unload" | "shutdown" | "reconcile" | "legacy";
 type SnapshotSaveJob = { noteId: string; targetCursor: string; reason: SnapshotReason };
 export const SNAPSHOT_JOB_CONFIG = {
   id: SNAPSHOT_JOB_ID,
@@ -28,35 +37,68 @@ export const SNAPSHOT_JOB_CONFIG = {
 } satisfies JobConfig;
 const snapshotJob = lazySync((sync) => sync.job<SnapshotSaveJob>(SNAPSHOT_JOB_CONFIG));
 const queueSnapshotSave = async (config: { noteId: string; targetCursor: string; reason: SnapshotReason }): Promise<void> => {
-  const sequence = createYjsTopic(config.noteId).cursorSequence(config.targetCursor);
+  const sequence = createYjsTopic().cursorSequence(config.targetCursor);
   // A final unload at a newer cursor must not coalesce with an already settling snapshot.
   await snapshotJob().submit({ key: `${config.noteId}:${sequence}`, coalesce: true, orderingKey: config.noteId, input: config });
 };
 
-/** Reconcile all unlocked notes in bounded keyset pages, with cancellation and lease heartbeats. */
+/** First retained sequence of the shared log, for deciding when an idle cursor needs to move. */
+const sharedLogFirstSequence = async (): Promise<number> => {
+  for await (const entry of getProcessSync().listTopics({ idPrefix: YJS_TOPIC_ID })) {
+    if (entry.id === YJS_TOPIC_ID) return entry.firstSequence;
+  }
+  return 0;
+};
+
+/**
+ * Reconcile all unlocked notes in bounded keyset pages, with cancellation and
+ * lease heartbeats. Notes whose log moved past their snapshot get a snapshot
+ * queued. Idle notes whose cursor sits in the older half of the shared log's
+ * window move to the head, so the window never passes a note's cursor just
+ * because other notes were edited.
+ */
 const reconcile = async (
   config: { signal?: AbortSignal; heartbeat?: () => Promise<void> } = {},
-): Promise<{ checked: number; queued: number }> => {
+): Promise<{ checked: number; queued: number; advanced: number }> => {
+  const topic = createYjsTopic();
   let after: string | undefined;
   let checked = 0;
   let queued = 0;
+  let advanced = 0;
   while (true) {
     config.signal?.throwIfAborted();
     const candidates = await notes.listSnapshotCursors({ limit: RECONCILE_NOTE_LIMIT, after });
+    // Head BEFORE each note's latest event: a note without newer events is covered up to it.
+    const head = await topic.head();
+    const headSeq = topic.cursorSequence(head);
+    const firstSeq = await sharedLogFirstSequence();
+    const refreshBelow = firstSeq + Math.floor((headSeq - firstSeq) / 2);
     for (const candidate of candidates) {
       config.signal?.throwIfAborted();
       if (checked % 200 === 0) await config.heartbeat?.();
-      const head = await createYjsTopic(candidate.noteId).latestCursor();
       checked++;
-      if (!head || (candidate.streamCursor && compareStreamCursor(head, candidate.streamCursor) <= 0)) continue;
-      await queueSnapshotSave({ noteId: candidate.noteId, targetCursor: head, reason: "reconcile" });
-      queued++;
+      let stored = candidate.streamCursor;
+      if (!isSharedCursor(stored))
+        stored = (await notes.getAnchoredYjsState({ noteId: candidate.noteId, signal: config.signal }))?.streamCursor ?? null;
+      if (!stored) continue;
+      const latest = await topic.latestCursor({ tenantId: candidate.noteId });
+      if (latest && compareStreamCursor(latest, stored) > 0) {
+        await queueSnapshotSave({ noteId: candidate.noteId, targetCursor: latest, reason: "reconcile" });
+        queued++;
+        continue;
+      }
+      if (
+        topic.cursorSequence(stored) < refreshBelow &&
+        (await notes.advanceYjsWatermark({ noteId: candidate.noteId, storedCursor: stored, head, latest }))
+      ) {
+        advanced++;
+      }
     }
     if (candidates.length < RECONCILE_NOTE_LIMIT) break;
     after = candidates.at(-1)!.noteId;
   }
-  log.info("Snapshot reconcile finished", { checked, queued });
-  return { checked, queued };
+  log.info("Snapshot reconcile finished", { checked, queued, advanced });
+  return { checked, queued, advanced };
 };
 
 let worker: Worker | null = null;
@@ -94,16 +136,19 @@ const start = async (): Promise<void> => {
           heartbeatError = error;
         });
       }, 15_000);
-      const topic = createYjsTopic(noteId);
+      const topic = createYjsTopic();
       try {
+        const initial = await notes.getAnchoredYjsState({ noteId, signal: context.signal });
+        // Head BEFORE the note's latest event: once the note is applied up to
+        // that event, the head is a valid (fresher) cursor for the snapshot.
+        const head = await topic.head();
         // Cover queued older cursors in one replay; later jobs skip already saved state.
-        const targetCursor = await topic.latestCursor();
+        const targetCursor = await topic.latestCursor({ tenantId: noteId });
         if (!targetCursor) {
           log.warn("Snapshot skipped: no retained events for the note", { noteId, requestedCursor: context.input.targetCursor });
           return;
         }
         const requestedAt = Date.now();
-        const initial = await notes.getYjsStateWithCursor({ noteId });
         if (!initial || (initial.streamCursor && compareStreamCursor(initial.streamCursor, targetCursor) >= 0)) return;
         const doc = new Y.Doc({ gc: true });
         const contributors = new Map<string, notes.NoteVersionContributorInput>();
@@ -112,6 +157,7 @@ const start = async (): Promise<void> => {
           let reachedTarget = false;
           try {
             for await (const event of topic.replay({
+              tenantId: noteId,
               after: initial.streamCursor ?? topic.cursorAt(0),
               until: targetCursor,
               signal: context.signal,
@@ -142,7 +188,7 @@ const start = async (): Promise<void> => {
             contentMd: doc.getText("codemirror").toString(),
             createdBy: null,
             createVersion: true,
-            streamCursor: targetCursor,
+            streamCursor: compareStreamCursor(head, targetCursor) > 0 ? head : targetCursor,
             restoreRevision: initial.restoreRevision,
             requestedAt,
             contributors: [...contributors.values()],

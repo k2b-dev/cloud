@@ -17,15 +17,17 @@ testFor("nats")(
     const source = new Y.Doc();
     const replayed = new Y.Doc();
     try {
-      const topic = createYjsTopic(noteId);
+      const topic = createYjsTopic();
       await sync.ready();
       source.getText("codemirror").insert(0, "first");
       const first = await topic.publish({
+        tenantId: noteId,
         data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source)), originNodeId: NODE_ID, originPeerId: null },
       });
       const state = Y.encodeStateVector(source);
       source.getText("codemirror").insert(5, " second");
       const second = await topic.publish({
+        tenantId: noteId,
         data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source, state)), originNodeId: NODE_ID, originPeerId: null },
       });
       await replayYjsTopicToCursor({ noteId, after: null, targetCursor: first.cursor, doc: replayed });
@@ -34,20 +36,20 @@ testFor("nats")(
       expect(replayed.getText("codemirror").toString()).toBe("first second");
       expect(topic.cursorSequence(second.cursor)).toBe(second.streamSequence);
 
-      // Remove the first retained update only in this test namespace: a document
-      // without a covering DB snapshot must fail instead of reconstructing a suffix.
+      // Evict the log's front (the first update) only in this test namespace: a
+      // document without a covering DB snapshot must fail instead of reconstructing a suffix.
       const { jetstreamManager } = await import("@nats-io/jetstream");
       const manager = await jetstreamManager(connection);
       const streams = await Array.fromAsync(manager.streams.list());
       const stream = streams.find(
         (entry) =>
           entry.config.metadata?.["sync.namespace"] === namespace &&
-          entry.config.metadata?.["sync.kind"] === "topic" &&
-          entry.state.messages === 2,
+          entry.config.metadata?.["sync.id"] === "cloud:notebooks:yjs" &&
+          entry.config.subjects.some((subject) => subject.endsWith(".event")),
       );
       expect(stream).toBeDefined();
       if (!stream) throw new Error("Test topic stream missing");
-      await manager.streams.deleteMessage(stream.config.name, first.streamSequence);
+      await manager.streams.purge(stream.config.name, { seq: second.streamSequence });
       const incomplete = new Y.Doc();
       try {
         await expect(replayYjsTopicToCursor({ noteId, after: null, targetCursor: second.cursor, doc: incomplete })).rejects.toBeInstanceOf(
@@ -61,9 +63,10 @@ testFor("nats")(
       // the database seam is stubbed, so no application note is created or changed.
       const notes = await import("./notes");
       const { SNAPSHOT_JOB_CONFIG, yjsSnapshotWorker } = await import("./yjs-snapshot-worker");
-      const readState = spyOn(notes, "getYjsStateWithCursor").mockResolvedValue({
+      const readState = spyOn(notes, "getAnchoredYjsState").mockResolvedValue({
         yjsState: null,
-        streamCursor: null,
+        // Anchored before any update: covers nothing of the log.
+        streamCursor: topic.cursorAt(0),
         restoreRevision: "0",
         contentMd: null,
         historyIncomplete: false,
@@ -104,14 +107,24 @@ testFor("nats")(
         // re-queueing the note) and the job dead-letters on the first attempt.
         const poisonedId = crypto.randomUUID();
         adopt.mockClear();
-        await createYjsTopic(poisonedId).publish({
+        // The poisoned note was anchored just before its only update.
+        const beforePoison = await createYjsTopic().head();
+        readState.mockImplementation(async ({ noteId: id }) => ({
+          yjsState: null,
+          streamCursor: id === poisonedId ? beforePoison : topic.cursorAt(0),
+          restoreRevision: "0",
+          contentMd: null,
+          historyIncomplete: false,
+        }));
+        await createYjsTopic().publish({
+          tenantId: poisonedId,
           data: { kind: "sync", payload: toBase64(new Uint8Array([255, 255, 255, 255])), originNodeId: NODE_ID, originPeerId: null },
         });
         readState.mockClear();
         await yjsSnapshotWorker.start();
         await yjsSnapshotWorker.queueSnapshotSave({
           noteId: poisonedId,
-          targetCursor: createYjsTopic(poisonedId).cursorAt(1),
+          targetCursor: await createYjsTopic().head(),
           reason: "unload",
         });
         const poisonDeadline = Date.now() + 25_000;
@@ -139,13 +152,18 @@ testFor("nats")(
         adopt.mockRestore();
       }
       // A fully saved idle document remains joinable after every retained update
-      // expires. Its saved cursor still covers that history; zero does not.
-      await manager.streams.deleteMessage(stream.config.name, second.streamSequence);
-      expect(await topic.latestCursor()).toBeNull();
+      // expires. Its saved watermark still covers that history; zero does not.
+      const saved = await topic.head();
+      await manager.streams.purge(stream.config.name);
+      expect(await topic.latestCursor({ tenantId: noteId })).toBeNull();
       const idleAbort = new AbortController();
-      const idleSubscription = topic.hub().subscribe({ after: second.cursor, signal: idleAbort.signal })[Symbol.asyncIterator]();
+      const idleSubscription = topic
+        .hub({ tenantId: noteId })
+        .subscribe({ after: saved, signal: idleAbort.signal })
+        [Symbol.asyncIterator]();
       const nextLive = idleSubscription.next();
       const third = await topic.publish({
+        tenantId: noteId,
         data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source)), originNodeId: NODE_ID, originPeerId: null },
       });
       expect((await nextLive).value?.cursor).toBe(third.cursor);

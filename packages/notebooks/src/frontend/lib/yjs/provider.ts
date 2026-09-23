@@ -36,6 +36,8 @@ export type YjsProviderOptions = {
   onError?: (error: YjsProviderError) => void;
   onFatal?: (error: YjsProviderError) => void;
   onHistoryIncomplete?: () => void;
+  /** Replay reached the live tail: the note is fully connected again. */
+  onReady?: () => void;
 };
 
 const WS_TYPE = notebooksYjs.wsType;
@@ -52,6 +54,12 @@ const KNOWN_ERROR_CODES = new Set<string>(Object.values(notebooksYjs.errorCode))
 const RECONNECT_BASE_DELAY_MS = 2_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
 const RECONNECT_JITTER_MS = 1_500;
+/**
+ * Consecutive STORAGE_EXHAUSTED closes before the provider gives up. With the
+ * reconnect backoff this spans about a minute: long enough to ride out a
+ * broker that frees space, short enough not to hammer a full one.
+ */
+export const MAX_STORAGE_RETRIES = 5;
 
 /** Doubles per failed attempt since the last successful replay, capped, plus jitter. */
 export const reconnectDelayMs = (failedAttempts: number, random: number = Math.random()): number =>
@@ -87,6 +95,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let isTerminated = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let failedConnects = 0;
+  let storageFailures = 0;
   let lastCursor = opts.initialCursor ?? null;
   let lastWorkspaceCursor = opts.workspace?.initialCursor ?? null;
   let workspaceEventQueue = Promise.resolve();
@@ -110,6 +119,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     INTERNAL_ERROR: "Internal websocket error",
     RESYNC_REQUIRED: "Reload collaborative state",
     STREAM_FAILED: "Live connection interrupted",
+    STORAGE_EXHAUSTED: "Server storage for live editing is exhausted",
   };
 
   const sendJson = (type: string, payload?: unknown): boolean => {
@@ -251,6 +261,11 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (msg.type !== WS_TYPE.error) return false;
     const error = normalizeError(msg.payload);
     opts.onError?.(error);
+    if (error.code === notebooksYjs.errorCode.storageExhausted) {
+      storageFailures += 1;
+      if (storageFailures >= MAX_STORAGE_RETRIES) terminate(error);
+      return true;
+    }
     if (error.code === notebooksYjs.errorCode.resyncRequired) {
       lastCursor = null;
       replayReady = false;
@@ -327,6 +342,8 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (payload.noteId !== activeNoteId) return true;
     replayReady = true;
     failedConnects = 0;
+    storageFailures = 0;
+    opts.onReady?.();
     sendLocalStateIfNeeded();
     return true;
   };

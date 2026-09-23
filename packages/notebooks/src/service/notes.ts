@@ -25,8 +25,11 @@ import {
   applyYjsTopicEvent,
   compareStreamCursor,
   createYjsTopic,
+  isSharedCursor,
+  legacyYjsTopicInfo,
   MalformedSyncEventError,
   NODE_ID,
+  parseStreamCursor,
   replayYjsTopicToCursor,
   toBase64,
 } from "./yjs-sync";
@@ -668,12 +671,17 @@ export const getWithContent = async (params: { id: string }): Promise<NoteWithCo
  * must act on current content rather than the latest persisted snapshot.
  */
 export const getCurrentWithContent = async (params: { id: string }): Promise<NoteWithContent | null> => {
-  const row = await getWithContentRow(params.id);
+  let row = await getWithContentRow(params.id);
   if (!row) return null;
+  if (!isSharedCursor(row.yjs_stream_cursor)) {
+    await getAnchoredYjsState({ noteId: params.id });
+    row = await getWithContentRow(params.id);
+    if (!row) return null;
+  }
 
   const streamCursor = row.yjs_stream_cursor ?? null;
-  const noteTopic = createYjsTopic(params.id);
-  const targetCursor = await noteTopic.latestCursor();
+  const noteTopic = createYjsTopic();
+  const targetCursor = await noteTopic.latestCursor({ tenantId: params.id });
   if (!targetCursor || (streamCursor && compareStreamCursor(targetCursor, streamCursor) <= 0)) return mapToNoteWithContent(row);
 
   const doc = createDocFromState(row.yjs_snapshot ? new Uint8Array(row.yjs_snapshot) : null, row.content_md);
@@ -986,7 +994,7 @@ export const save = async (params: {
   const title = deriveNoteTitle(contentMd);
   const dataProperties = dataPropertiesForContent(contentMd);
 
-  const parsedCursor = streamCursor ? { seq: createYjsTopic(noteId).cursorSequence(streamCursor) } : null;
+  const parsedCursor = streamCursor ? { seq: createYjsTopic().cursorSequence(streamCursor) } : null;
   const requestedAtSeconds = (requestedAt ?? Date.now()) / 1000;
 
   const result = parsedCursor
@@ -1040,7 +1048,7 @@ export const save = async (params: {
       const current = await getYjsStateWithCursor({ noteId });
       // Only ACK work already covered by the current snapshot. A restore can
       // invalidate our base while leaving later accepted edits unsnapshotted.
-      if (!current?.streamCursor || compareStreamCursor(current.streamCursor, streamCursor) < 0) {
+      if (!isSharedCursor(current?.streamCursor) || compareStreamCursor(current.streamCursor, streamCursor) < 0) {
         return { ok: false, error: "Note snapshot changed during replay; retry from its current state", status: 409 };
       }
     }
@@ -1206,11 +1214,11 @@ export const editContent = async (params: {
   }
 
   const requestedAt = Date.now();
-  const initialState = await getYjsStateWithCursor({ noteId: params.noteId });
+  const initialState = await getAnchoredYjsState({ noteId: params.noteId });
   if (!initialState) return { ok: false, error: "Note not found", status: 404 };
 
-  const noteTopic = createYjsTopic(params.noteId);
-  const targetCursor = await noteTopic.latestCursor();
+  const noteTopic = createYjsTopic();
+  const targetCursor = await noteTopic.latestCursor({ tenantId: params.noteId });
 
   const editDoc = createDocFromState(initialState.yjsState, existing.contentMd);
   try {
@@ -1257,6 +1265,7 @@ export const editContent = async (params: {
   }, "cli-edit");
   const editUpdate = Y.encodeStateAsUpdate(editDoc, beforeEditState);
   const published = await noteTopic.publish({
+    tenantId: params.noteId,
     data: {
       kind: "sync",
       payload: toBase64(editUpdate),
@@ -1344,6 +1353,93 @@ export const getYjsStateWithCursor = async (params: {
   };
 };
 
+type YjsState = NonNullable<Awaited<ReturnType<typeof getYjsStateWithCursor>>>;
+
+/**
+ * Stored Yjs state whose cursor is a watermark on the shared document log.
+ *
+ * Notes created or last snapshotted before the shared log carry no cursor or
+ * a cursor of their retired per-note topic. Such a cursor cannot address the
+ * shared log, and replaying the shared log from its start would report a gap
+ * as soon as the log's front moved. So the first reader anchors the note: the
+ * shared log's head, read BEFORE the note's latest event, becomes its cursor.
+ * Every note event at or below that head is applied first; normally there is
+ * none, because every writer anchors before publishing. The legacy cursor's
+ * sequence is kept in `yjs_legacy_seq`: the retired topic's events up to it
+ * are in the snapshot, and the legacy migration republishes the rest.
+ */
+export const getAnchoredYjsState = async (params: { noteId: string; signal?: AbortSignal }): Promise<YjsState | null> => {
+  const { noteId } = params;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const stored = await getYjsStateWithCursor({ noteId });
+    if (!stored || isSharedCursor(stored.streamCursor)) return stored;
+    params.signal?.throwIfAborted();
+    const topic = createYjsTopic();
+    const head = await topic.head();
+    const latest = await topic.latestCursor({ tenantId: noteId });
+    const legacySeq = parseStreamCursor(stored.streamCursor)?.seq ?? null;
+    let yjsState = stored.yjsState;
+    let contentMd = stored.contentMd;
+    let watermark = head;
+    if (latest) {
+      // A writer published without anchoring first. Apply what the log
+      // still holds; the stored snapshot covers nothing of the shared log.
+      log.warn("Anchoring a note that already has shared-log events", { noteId, latest });
+      const doc = createDocFromState(stored.yjsState, stored.contentMd);
+      try {
+        for await (const event of topic.replay({ tenantId: noteId, until: latest, signal: params.signal })) {
+          applyYjsTopicEvent(doc, event, noteId);
+        }
+        yjsState = Y.encodeStateAsUpdate(doc);
+        contentMd = doc.getText(NOTE_TEXT_NAME).toString();
+      } finally {
+        doc.destroy();
+      }
+      if (compareStreamCursor(latest, head) > 0) watermark = latest;
+    }
+    const seq = topic.cursorSequence(watermark);
+    const result = await sql`
+      UPDATE notebooks.notes
+      SET yjs_stream_cursor = ${watermark},
+          yjs_stream_seq = ${seq},
+          yjs_legacy_seq = COALESCE(yjs_legacy_seq, ${legacySeq}::bigint),
+          yjs_snapshot = ${yjsState ? Buffer.from(yjsState) : null},
+          content_md = ${contentMd}
+      WHERE id = ${noteId}::uuid
+        AND yjs_restore_revision = ${stored.restoreRevision}::bigint
+        AND yjs_stream_cursor IS NOT DISTINCT FROM ${stored.streamCursor}
+    `;
+    if (result.count > 0) {
+      log.info("Anchored note on the shared Yjs log", { noteId, legacyCursor: stored.streamCursor, cursor: watermark });
+    }
+    // Lost the race or anchored: the next read returns the current state.
+  }
+  throw new Error(`Could not anchor note ${noteId} on the shared Yjs log`);
+};
+
+/**
+ * Advance an idle note's cursor to the shared log's head while the note has
+ * no newer events. The log's window is shared by every note: without this, a
+ * note untouched for longer than the window would look like it lost history
+ * on its next edit. Returns true when the stored cursor moved.
+ */
+export const advanceYjsWatermark = async (params: {
+  noteId: string;
+  storedCursor: string;
+  head: string;
+  latest: string | null;
+}): Promise<boolean> => {
+  const { noteId, storedCursor, head, latest } = params;
+  if (latest && compareStreamCursor(latest, storedCursor) > 0) return false;
+  if (compareStreamCursor(head, storedCursor) <= 0) return false;
+  const result = await sql`
+    UPDATE notebooks.notes
+    SET yjs_stream_cursor = ${head}, yjs_stream_seq = ${createYjsTopic().cursorSequence(head)}
+    WHERE id = ${noteId}::uuid AND yjs_stream_cursor = ${storedCursor}
+  `;
+  return result.count > 0;
+};
+
 /**
  * Recover every decodable retained update without discarding unresolved Yjs
  * dependencies. The saved binary includes pending structs and deletes, so a
@@ -1356,9 +1452,9 @@ export const adoptSnapshotAtHead = async (params: {
   signal?: AbortSignal;
 }): Promise<{ cursor: string } | null> => {
   const { noteId, cause } = params;
-  const stored = await getYjsStateWithCursor({ noteId });
+  const stored = await getAnchoredYjsState({ noteId, signal: params.signal });
   if (!stored) return null;
-  const topic = createYjsTopic(noteId);
+  const topic = createYjsTopic();
   const head = await topic.head();
   const startedAt = new Date();
   const doc = createDocFromState(stored.yjsState, stored.contentMd);
@@ -1372,7 +1468,7 @@ export const adoptSnapshotAtHead = async (params: {
     while (compareStreamCursor(after, head) < 0) {
       params.signal?.throwIfAborted();
       try {
-        for await (const event of topic.replay({ after, until: head, signal: params.signal })) {
+        for await (const event of topic.replay({ tenantId: noteId, after, until: head, signal: params.signal })) {
           try {
             applyYjsTopicEvent(doc, event, noteId);
             recoveredUpdates++;
@@ -1382,7 +1478,8 @@ export const adoptSnapshotAtHead = async (params: {
           }
           after = event.cursor;
         }
-        if (compareStreamCursor(after, head) < 0) throw new Error("Recovery replay did not reach its captured target");
+        // The replay covered every note event up to the captured head.
+        after = head;
       } catch (error) {
         if (!(error instanceof RetentionGapError) || !error.resumeAfter || compareStreamCursor(error.resumeAfter, after) <= 0) throw error;
         historyGaps++;
@@ -1613,10 +1710,14 @@ export const restoreFromSnapshot = async (params: {
   const restoredDataProperties = dataPropertiesForContent(restoredContentMd);
   // The restored snapshot replaces everything up to this real stream boundary.
   // Preserve the zero boundary too: absence of retained events is not a new log.
-  const restoreTopic = createYjsTopic(noteId);
-  const restoreCursor =
-    (await restoreTopic.latestCursor()) ?? (await getYjsStateWithCursor({ noteId }))?.streamCursor ?? restoreTopic.cursorAt(0);
+  const restoreTopic = createYjsTopic();
+  // Head before latest: every note event up to the chosen cursor is replaced.
+  const restoreHead = await restoreTopic.head();
+  const restoreLatest = await restoreTopic.latestCursor({ tenantId: noteId });
+  const restoreCursor = restoreLatest && compareStreamCursor(restoreLatest, restoreHead) > 0 ? restoreLatest : restoreHead;
   const restoreSequence = restoreTopic.cursorSequence(restoreCursor);
+  // Unmigrated edits of a retired per-note topic predate the restore as well.
+  const legacyTopic = await legacyYjsTopicInfo(noteId);
 
   const restored = await sql.begin(async (tx): Promise<{ versionId: string } | null> => {
     const result = await tx`
@@ -1625,6 +1726,8 @@ export const restoreFromSnapshot = async (params: {
           yjs_stream_cursor = ${restoreCursor},
           yjs_stream_seq = ${restoreSequence},
           yjs_restore_revision = yjs_restore_revision + 1,
+          yjs_legacy_seq = CASE WHEN ${legacyTopic?.lastSequence ?? null}::bigint IS NULL THEN yjs_legacy_seq
+            ELSE GREATEST(COALESCE(yjs_legacy_seq, 0), ${legacyTopic?.lastSequence ?? null}::bigint) END,
           yjs_snapshot_at = now(),
           content_md = ${restoredContentMd},
           data_properties = ${restoredDataProperties}::jsonb,

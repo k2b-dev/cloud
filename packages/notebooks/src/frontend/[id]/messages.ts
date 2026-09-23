@@ -168,6 +168,11 @@ export const notebookWorkspaceMessages = i18n.define({
       accessChangedDescription: "Your access changed or the note is no longer available.",
       sessionExpiredDescription: "Sign in again to continue editing this note.",
       connectionClosedDescription: "The collaboration connection was closed.",
+      storageExhaustedTitle: "Live editing is unavailable",
+      storageExhaustedDetail:
+        "The server has run out of storage for collaborative editing, so changes cannot be saved right now. Keep this page open to retry automatically, and ask your administrator to raise the JetStream storage limit.",
+      storageExhaustedDescription:
+        "The server still has no storage for collaborative editing. Ask your administrator to raise the JetStream storage limit, then open the note again.",
       reloadNotice: ({ message }: { message: string }) => `${message} The note view will now reload.`,
       imageResized: "Image resized",
       imageResizedDescription: ({ name, before, after, limit }: { name: string; before: string; after: string; limit: string }) =>
@@ -487,6 +492,11 @@ export const notebookWorkspaceMessages = i18n.define({
       accessChangedDescription: "Dein Zugriff wurde geändert oder die Notiz ist nicht mehr verfügbar.",
       sessionExpiredDescription: "Melde dich erneut an, um diese Notiz weiter zu bearbeiten.",
       connectionClosedDescription: "Die Verbindung für die gemeinsame Bearbeitung wurde geschlossen.",
+      storageExhaustedTitle: "Live-Bearbeitung nicht verfügbar",
+      storageExhaustedDetail:
+        "Auf dem Server ist kein Speicher für die gemeinsame Bearbeitung mehr frei, daher können Änderungen gerade nicht gespeichert werden. Lass diese Seite geöffnet, damit es automatisch erneut versucht wird, und bitte deine Administration, das JetStream-Speicherlimit zu erhöhen.",
+      storageExhaustedDescription:
+        "Auf dem Server ist weiterhin kein Speicher für die gemeinsame Bearbeitung frei. Bitte deine Administration, das JetStream-Speicherlimit zu erhöhen, und öffne die Notiz danach erneut.",
       reloadNotice: ({ message }) => `${message} Die Notizansicht wird jetzt neu geladen.`,
       imageResized: "Bild verkleinert",
       imageResizedDescription: ({ name, before, after, limit }) =>

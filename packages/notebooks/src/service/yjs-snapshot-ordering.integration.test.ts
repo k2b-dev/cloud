@@ -51,18 +51,18 @@ testFor("nats")(
       // and required note ordering key. The consumer body has no DB effects.
       await yjsSnapshotWorker.queueSnapshotSave({
         noteId: firstNote,
-        targetCursor: createYjsTopic(firstNote).cursorAt(1),
+        targetCursor: createYjsTopic().cursorAt(1),
         reason: "unload",
       });
       await firstEntered.promise;
       await yjsSnapshotWorker.queueSnapshotSave({
         noteId: firstNote,
-        targetCursor: createYjsTopic(firstNote).cursorAt(2),
+        targetCursor: createYjsTopic().cursorAt(2),
         reason: "unload",
       });
       await yjsSnapshotWorker.queueSnapshotSave({
         noteId: secondNote,
-        targetCursor: createYjsTopic(secondNote).cursorAt(1),
+        targetCursor: createYjsTopic().cursorAt(1),
         reason: "unload",
       });
       // The idle worker was offered the same note's newer cursor before the

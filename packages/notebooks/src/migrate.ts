@@ -76,6 +76,9 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE notebooks.notes ADD COLUMN IF NOT EXISTS yjs_stream_cursor TEXT`.simple();
   await sql`ALTER TABLE notebooks.notes ADD COLUMN IF NOT EXISTS yjs_history_incomplete BOOLEAN NOT NULL DEFAULT FALSE`.simple();
   await sql`ALTER TABLE notebooks.notes ADD COLUMN IF NOT EXISTS yjs_restore_revision BIGINT NOT NULL DEFAULT 0`.simple();
+  // Sequence of a retired per-note Yjs topic already captured by the shared
+  // log or the snapshot; NULL means none. Cleared when that topic is deleted.
+  await sql`ALTER TABLE notebooks.notes ADD COLUMN IF NOT EXISTS yjs_legacy_seq BIGINT`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_notes_notebook
     ON notebooks.notes(notebook_id)

@@ -51,7 +51,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       note: {
         getByShortId: async () => note,
         get: async () => note,
-        getYjsStateWithCursor: async () => ({
+        getAnchoredYjsState: async () => ({
           yjsState: new Uint8Array([0, 0]),
           streamCursor: "s6t.fixture.9",
           restoreRevision: "0",
@@ -77,6 +77,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     NODE_ID: "fixture-node",
     toBase64: () => "",
     isValidYjsUpdate: () => true,
+    isStorageExhausted: (error: unknown) => /insufficient (storage )?resources/i.test(String(error)),
     maxStreamCursor: (_previous: string | null, next: string) => next,
     createYjsTopic: () => ({
       latestCursor: async () => replayGap.head,
@@ -177,6 +178,20 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     expect(await socket.closed.promise).toBe(1012);
     expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
       "STREAM_FAILED",
+    ]);
+    expect(adoptions).toEqual([]);
+  }, 10_000);
+
+  test("an exhausted JetStream account closes with an actionable STORAGE_EXHAUSTED error, not a resync", async () => {
+    replayGap.head = "s6t.fixture.19";
+    replayGap.gapBelow = null;
+    replayGap.failure = new Error("insufficient storage resources available");
+    adoptions.length = 0;
+    const socket = await openSocket();
+    socket.request("s6t.fixture.12");
+    expect(await socket.closed.promise).toBe(1012);
+    expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
+      "STORAGE_EXHAUSTED",
     ]);
     expect(adoptions).toEqual([]);
   }, 10_000);

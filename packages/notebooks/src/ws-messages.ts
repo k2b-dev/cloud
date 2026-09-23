@@ -16,6 +16,7 @@ const catalog = i18n.define({
       workspaceAccessRefreshFailed: "Workspace access refresh failed",
       liveAwarenessStreamFailed: "Live awareness stream failed",
       liveSyncStreamFailed: "Live sync stream failed",
+      liveSyncStorageExhausted: "The server has no storage left for live editing",
       workspaceStreamFailed: "Workspace event stream failed",
       messageNotAllowed: ({ type, phase }: { type: string; phase: string }) => `Message "${type}" is not allowed in phase "${phase}"`,
       replayRequired: "Replay request required before publishing",
@@ -42,6 +43,7 @@ const catalog = i18n.define({
       workspaceAccessRefreshFailed: "Die Zugriffsprüfung für den Arbeitsbereich ist fehlgeschlagen",
       liveAwarenessStreamFailed: "Der Live-Präsenzstrom ist fehlgeschlagen",
       liveSyncStreamFailed: "Der Live-Synchronisierungsstrom ist fehlgeschlagen",
+      liveSyncStorageExhausted: "Auf dem Server ist kein Speicher für die Live-Bearbeitung mehr frei",
       workspaceStreamFailed: "Der Ereignisstrom des Arbeitsbereichs ist fehlgeschlagen",
       messageNotAllowed: ({ type, phase }: { type: string; phase: string }) =>
         `Die Nachricht "${type}" ist in der Phase "${phase}" nicht erlaubt`,
