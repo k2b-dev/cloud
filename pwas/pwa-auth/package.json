@@ -20,7 +20,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@babel/core": "7.29.7",
+    "@babel/core": "8.0.6",
     "@babel/preset-typescript": "7.29.7",
     "@types/babel__core": "7.20.5",
     "@types/bun": "catalog:",
