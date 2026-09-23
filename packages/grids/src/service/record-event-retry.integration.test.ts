@@ -99,7 +99,8 @@ natsTest(
       if (!workStream) throw new Error("Record event work stream not found");
       await waitFor(() => seen.some((item) => item.recordId === sibling));
       // The sibling shares the partition and is served while the failure waits out its delay.
-      expect(seen.map((item) => item.recordId)).toEqual([failing, sibling]);
+      // Only the first two deliveries are ordered; the delayed retry may already follow when the poll notices the sibling.
+      expect(seen.slice(0, 2).map((item) => item.recordId)).toEqual([failing, sibling]);
       await waitFor(() => seen.filter((item) => item.recordId === failing).length === budget, 20_000);
       const failures = seen.filter((item) => item.recordId === failing);
       expect(failures.map((item) => item.attempt)).toEqual([1, 1, 1]);
