@@ -3,6 +3,18 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.13.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.12.0...cloud-v0.13.0) (2026-09-23)
+
+
+### Features
+
+* **notebooks:** share one Yjs log across notes so JetStream reservations stay constant ([#168](https://github.com/k2b-dev/cloud/issues/168)) ([977d1d2](https://github.com/k2b-dev/cloud/commit/977d1d2d0b91b53caa408f9f4d61db0876f06f05))
+
+
+### Bug Fixes
+
+* **pulse:** keep events from the last millisecond inside live query windows ([#171](https://github.com/k2b-dev/cloud/issues/171)) ([38ee659](https://github.com/k2b-dev/cloud/commit/38ee65959ee99ae28a9696d3b290479554958ec8))
+
 ## [0.12.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.11.0...cloud-v0.12.0) (2026-09-23)
 
 
