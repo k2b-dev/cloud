@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, relative, resolve } from "node:path";
-import { transformAsync } from "@babel/core";
+import { type PresetItem, transformAsync } from "@babel/core";
 import tsPreset from "@babel/preset-typescript";
 import solidPreset from "babel-preset-solid";
 import tailwind from "bun-plugin-tailwind";
@@ -37,6 +37,8 @@ const sourceFiles = async (directory: string): Promise<string[]> => {
   return files;
 };
 
+const typescript: PresetItem = [tsPreset, {}];
+
 const compileModules = async (mode: "dom" | "ssr", outputRoot: string): Promise<void> => {
   for (const sourcePath of await sourceFiles(sourceRoot)) {
     const source = await readFile(sourcePath, "utf8");
@@ -48,10 +50,8 @@ const compileModules = async (mode: "dom" | "ssr", outputRoot: string): Promise<
       sourceMaps: true,
       babelrc: false,
       configFile: false,
-      presets: [
-        [tsPreset, {}],
-        [solidPreset, { generate: mode, hydratable: mode === "dom" }],
-      ],
+      // Babel 8 parses every file with the JSX syntax Solid enables, so plain TypeScript skips it.
+      presets: /\.[jt]sx$/.test(sourcePath) ? [typescript, [solidPreset, { generate: mode, hydratable: mode === "dom" }]] : [typescript],
     });
     if (!result?.code || !result.map) {
       throw new Error(`@k2b/ui ${mode} transform failed: ${sourcePath}`);
