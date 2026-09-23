@@ -3,6 +3,13 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.14.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.13.0...cloud-v0.14.0) (2026-09-23)
+
+
+### Features
+
+* **mail:** configure the contact directory in a dialog and through cld ([#173](https://github.com/k2b-dev/cloud/issues/173)) ([18c78db](https://github.com/k2b-dev/cloud/commit/18c78db2f5205eac6a31b13e47241dbebcf3d257))
+
 ## [0.13.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.12.0...cloud-v0.13.0) (2026-09-23)
 
 
