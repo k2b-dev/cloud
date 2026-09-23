@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
+import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
-import { listVisible, overviewActivity } from "./bases";
+import { adminList, listVisible, overviewActivity } from "./bases";
 
 const postgresTest = testFor("database");
 const uuid = () => Bun.randomUUIDv7();
@@ -121,6 +122,28 @@ describe("base overview activity integration", () => {
     } finally {
       await sql`DELETE FROM grids.audit_log WHERE table_id = ${activeTableId}::uuid`;
       await sql`DELETE FROM grids.bases WHERE id IN (${baseAId}::uuid, ${baseBId}::uuid, ${otherBaseId}::uuid)`;
+    }
+  });
+});
+
+describe("admin base list integration", () => {
+  postgresTest("pages bases that share one creation time exactly once, newest id first", async () => {
+    const marker = `stable-paging-${crypto.randomUUID()}`;
+    // One statement shares one now(): every base ties on created_at.
+    const inserted = await sql<{ id: string }[]>`
+      INSERT INTO grids.bases (short_id, name)
+      SELECT substr(md5(random()::text || n), 1, 6), ${marker} || ' ' || n
+      FROM generate_series(1, 12) AS n
+      RETURNING id::text AS id
+    `;
+    try {
+      const seen = await collectPages(async ({ offset, limit }) => {
+        const result = await adminList({ pagination: { offset, perPage: limit }, filter: { query: marker } });
+        return result.items.map((item) => item.id);
+      });
+      expect(seen).toEqual(descending(inserted.map((row) => row.id)));
+    } finally {
+      await sql`DELETE FROM grids.bases WHERE name LIKE ${`${marker}%`}`;
     }
   });
 });

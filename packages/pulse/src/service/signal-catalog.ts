@@ -440,7 +440,7 @@ export const listRecentEvents = async (
         OR dimensions::text ILIKE ${pattern} ESCAPE '\\'
         OR payload::text ILIKE ${pattern} ESCAPE '\\'
       )
-    ORDER BY ts DESC, recorded_at DESC
+    ORDER BY ts DESC, recorded_at DESC, id DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `;
@@ -651,7 +651,7 @@ export const listResourceEvents = async (
         OR dimensions::text ILIKE ${pattern} ESCAPE '\\'
         OR payload::text ILIKE ${pattern} ESCAPE '\\'
       )
-    ORDER BY ts DESC, recorded_at DESC
+    ORDER BY ts DESC, recorded_at DESC, id DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `;

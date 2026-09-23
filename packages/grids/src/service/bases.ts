@@ -413,7 +413,7 @@ export const adminList = async (params: {
       (SELECT COUNT(*)::int FROM grids.base_access WHERE base_id = b.id) AS access_count
     FROM grids.bases b
     WHERE ${where}
-    ORDER BY b.created_at DESC
+    ORDER BY b.created_at DESC, b.id DESC
     LIMIT ${perPage} OFFSET ${offset}
   `;
 

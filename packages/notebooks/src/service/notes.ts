@@ -504,7 +504,8 @@ export const listPaged = async (params: {
           ORDER BY
             CASE WHEN ${pattern}::text IS NULL THEN 0 WHEN n.title ILIKE ${pattern} THEN 0 ELSE 1 END,
             n.position ASC,
-            n.updated_at DESC
+            n.updated_at DESC,
+            n.id DESC
           LIMIT ${params.pagination.limit}
           OFFSET ${params.pagination.offset}
         `;
@@ -1628,7 +1629,7 @@ export const listVersions = async (params: {
       ON contributor.actor_kind = 'service_account' AND actor_service.id = contributor.actor_id
     WHERE version.note_id = ${noteId}::uuid
     GROUP BY version.id
-    ORDER BY version.created_at DESC
+    ORDER BY version.created_at DESC, version.id DESC
     LIMIT ${perPage} OFFSET ${offset}
   `;
 

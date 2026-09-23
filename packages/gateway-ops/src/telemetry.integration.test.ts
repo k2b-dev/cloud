@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
+import { collectPages } from "../../../scripts/fixtures/stable-paging";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 
 const dbTest = testFor("database");
@@ -38,5 +39,26 @@ dbTest("cleanupTelemetry deletes expired rows in bounded batches and heartbeats 
   } finally {
     await sql`DELETE FROM gateway.telemetry_events WHERE app_id = ${appId}`;
     await sql`DELETE FROM gateway.telemetry_rollups_minute WHERE app_id = ${appId}`;
+  }
+});
+
+dbTest("listTelemetryEvents pages events that share one timestamp exactly once, newest id first", async () => {
+  const { listTelemetryEvents } = await import("./telemetry");
+  const appId = `test-${crypto.randomUUID()}`;
+  try {
+    // One statement shares one now(): every event ties on occurred_at.
+    const inserted = await sql<{ id: number }[]>`
+      INSERT INTO gateway.telemetry_events (event_id, cursor, kind, app_id, route_prefix, method, status_code, status_class, duration_ms, occurred_at)
+      SELECT ${appId} || ':' || n, 'c' || n, 'request', ${appId}, '/x', 'GET', 200, 2, 1, now()
+      FROM generate_series(1, 12) AS n
+      RETURNING id
+    `;
+    const seen = await collectPages(async ({ page, limit }) => {
+      const result = await listTelemetryEvents({ appId, page, perPage: limit });
+      return result.items.map((item) => Number(item.id));
+    });
+    expect(seen).toEqual(inserted.map((row) => Number(row.id)).sort((left, right) => right - left));
+  } finally {
+    await sql`DELETE FROM gateway.telemetry_events WHERE app_id = ${appId}`;
   }
 });

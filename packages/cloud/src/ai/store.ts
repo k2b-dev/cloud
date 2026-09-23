@@ -1095,10 +1095,10 @@ export const aiConversations: AiConversationService = {
     const refs = input.refs ?? [];
     const rows = await withConversationSearchBackend(query, async (backend) => {
       const order = query
-        ? sql`${conversationSearchRank(backend, query)} DESC, conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`
+        ? sql`${conversationSearchRank(backend, query)} DESC, conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC, conversation.id DESC`
         : input.done === true
           ? sql`conversation.last_used_at DESC, conversation.id DESC`
-          : sql`conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`;
+          : sql`conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC, conversation.id DESC`;
       return sql<ConversationRow[]>`
       SELECT
         conversation.*,
@@ -1198,10 +1198,10 @@ export const aiConversations: AiConversationService = {
     const { page, perPage, offset } = sanitizePagination(input);
     const rows = await withConversationSearchBackend(query, async (backend) => {
       const order = query
-        ? sql`${conversationSearchRank(backend, query)} DESC, conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`
+        ? sql`${conversationSearchRank(backend, query)} DESC, conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC, conversation.id DESC`
         : input.done === true
           ? sql`conversation.last_used_at DESC, conversation.id DESC`
-          : sql`conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC`;
+          : sql`conversation.pinned_at DESC NULLS LAST, conversation.updated_at DESC, conversation.created_at DESC, conversation.id DESC`;
       return sql<ConversationRow[]>`
       SELECT
         conversation.*,

@@ -553,7 +553,7 @@ export const listOverview = async (config?: {
         OR sa.resource_type ILIKE '%' || ${search} || '%'
         OR sa.resource_id ILIKE '%' || ${search} || '%'
       )
-    ORDER BY c.created_at DESC
+    ORDER BY c.created_at DESC, c.id DESC
     LIMIT ${perPage}
     OFFSET ${offset}
   `;

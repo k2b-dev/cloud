@@ -131,7 +131,7 @@ export const listNotesForTag = async (params: {
         OR LOWER(n.title) LIKE ${pattern}
         OR LOWER(n.content_md) LIKE ${pattern}
       )
-    ORDER BY n.updated_at DESC
+    ORDER BY n.updated_at DESC, n.id DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `;

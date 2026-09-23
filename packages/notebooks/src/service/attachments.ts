@@ -191,7 +191,7 @@ export const searchPaginated = async (params: {
     FROM notebooks.attachments
     WHERE notebook_id = ${params.notebookId}
       AND (${pattern}::text IS NULL OR LOWER(filename) LIKE ${pattern})
-    ORDER BY created_at DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ${params.pagination.limit}
     OFFSET ${params.pagination.offset}
   `;

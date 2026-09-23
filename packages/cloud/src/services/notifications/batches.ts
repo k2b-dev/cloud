@@ -460,7 +460,7 @@ export const list = async (params?: {
     SELECT *, COUNT(*) OVER() AS total
     FROM notifications.batches
     WHERE (${params?.status ?? null}::text IS NULL OR status = ${params?.status ?? null})
-    ORDER BY created_at DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ${perPage} OFFSET ${offset}
   `;
   return {

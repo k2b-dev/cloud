@@ -789,7 +789,7 @@ const list = async (
         ) AS event_count
       FROM logging.trace_spans s
       WHERE ${where}
-      ORDER BY COALESCE(s.ended_at, s.updated_at, s.started_at) DESC
+      ORDER BY COALESCE(s.ended_at, s.updated_at, s.started_at) DESC, s.trace_id DESC, s.span_id DESC
       LIMIT ${perPage} OFFSET ${offset}
     `,
   ]);
