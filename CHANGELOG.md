@@ -3,6 +3,22 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.15.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.14.1...cloud-v0.15.0) (2026-09-23)
+
+
+### Features
+
+* **notebooks:** render diagrams with mermaid 12 ([#181](https://github.com/k2b-dev/cloud/issues/181)) ([5a41b0a](https://github.com/k2b-dev/cloud/commit/5a41b0a47537bae93daa3ddd26aa04c5014462db))
+
+
+### Bug Fixes
+
+* **cloud:** recover stalled live connections when a tab or network returns ([#184](https://github.com/k2b-dev/cloud/issues/184)) ([230c402](https://github.com/k2b-dev/cloud/commit/230c4026cf11cd353127664e1157b872c3f1cccb))
+* **grids:** pluralise document counts and download mixed run results as a ZIP ([#183](https://github.com/k2b-dev/cloud/issues/183)) ([1bd5f10](https://github.com/k2b-dev/cloud/commit/1bd5f1009852b1dbb2a39c6dfcc252b4406501e7))
+* **mail:** keep forwarded attachments and automations in their original order ([#180](https://github.com/k2b-dev/cloud/issues/180)) ([491972c](https://github.com/k2b-dev/cloud/commit/491972c0f65bc95b2823d61336ee160fef9af143))
+* **mail:** list message attachments in their original order ([#185](https://github.com/k2b-dev/cloud/issues/185)) ([9ac2b00](https://github.com/k2b-dev/cloud/commit/9ac2b00bdf14b1a0e98932d0c4b1f14d80fad90e))
+* page notifications, bases and telemetry with a stable order ([#182](https://github.com/k2b-dev/cloud/issues/182)) ([b04cffb](https://github.com/k2b-dev/cloud/commit/b04cffb535b244562ff5f29d6e5e044d7219852d))
+
 ## [0.14.1](https://github.com/k2b-dev/cloud/compare/cloud-v0.14.0...cloud-v0.14.1) (2026-09-23)
 
 
