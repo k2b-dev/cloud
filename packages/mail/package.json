@@ -41,7 +41,6 @@
     "@types/bun": "catalog:",
     "@types/html-to-text": "9.0.4",
     "@types/mailparser": "3.4.6",
-    "@types/nodemailer": "catalog:",
     "@types/sanitize-html": "catalog:",
     "playwright": "catalog:",
     "typescript": "catalog:"

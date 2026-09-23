@@ -10,7 +10,7 @@ import {
   type MessageStructureObject,
 } from "imapflow";
 import { simpleParser } from "mailparser";
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
 import type SMTPTransport from "nodemailer/lib/smtp-transport";
 import { z } from "zod";
@@ -274,7 +274,7 @@ const smtpOptions = (config: SmtpConnectionConfig, endpoint: ResolvedEndpoint, a
 
 const withSmtpTransport = async <T>(
   config: SmtpConnectionConfig,
-  fn: (transport: nodemailer.Transporter<SMTPTransport.SentMessageInfo, SMTPTransport.Options>) => Promise<T>,
+  fn: (transport: Transporter<SMTPTransport.SentMessageInfo>) => Promise<T>,
   options: { allowAddressFailover?: boolean; signal?: AbortSignal } = {},
 ): Promise<T> => {
   const throwIfAborted = (): void => {
@@ -952,7 +952,7 @@ const send = async (config: ProviderConnectionInput, request: SendRequest): Prom
     return {
       accepted: info.accepted.map(String),
       rejected: info.rejected.map(String),
-      response: info.response,
+      response: info.response ?? "",
       messageId: info.messageId,
     };
   });
@@ -982,7 +982,7 @@ const sendSource = async (config: SmtpConnectionConfig, request: SendSourceReque
         return {
           accepted: info.accepted.map(String),
           rejected: info.rejected.map(String),
-          response: info.response,
+          response: info.response ?? "",
           messageId: info.messageId || request.messageId,
         };
       } finally {

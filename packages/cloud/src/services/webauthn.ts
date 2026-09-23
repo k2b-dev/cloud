@@ -1,7 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import {
   type AuthenticationResponseJSON,
-  type AuthenticatorTransportFuture,
   generateAuthenticationOptions,
   generateRegistrationOptions,
   type PublicKeyCredentialCreationOptionsJSON,
@@ -137,7 +136,7 @@ const toCredential = (row: DbPasskeyRow): WebAuthnCredential => ({
   id: row.credential_id,
   publicKey: new Uint8Array(row.public_key) as WebAuthnCredential["publicKey"],
   counter: Number(row.counter),
-  transports: (row.transports ?? []) as AuthenticatorTransportFuture[],
+  transports: row.transports ?? [],
 });
 
 const isExpired = (date: Date | null): boolean => Boolean(date && date.getTime() <= Date.now());
@@ -176,7 +175,7 @@ export const beginRegistration = async (params: { user: User }): Promise<Result<
     },
     excludeCredentials: existing.map((credential) => ({
       id: credential.credentialId,
-      transports: credential.transports as AuthenticatorTransportFuture[],
+      transports: credential.transports,
     })),
   });
 

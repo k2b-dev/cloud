@@ -89,11 +89,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
-    "@firecrawl/anydoc": "0.1.9",
+    "@firecrawl/anydoc": "0.2.4",
     "@napi-rs/canvas": "1.0.9",
     "pdfjs-dist": "6.3.289",
     "@hono/standard-validator": "0.2.2",
-    "@simplewebauthn/server": "13.3.2",
+    "@simplewebauthn/server": "14.0.2",
     "@tabler/icons": "3.47.0",
     "@tailwindcss/typography": "0.5.20",
     "@k2b/nessi": "0.12.1",
@@ -110,7 +110,7 @@
     "liquidjs": "10.29.0",
     "marked": "17.0.6",
     "mermaid": "11.16.0",
-    "nodemailer": "9.1.1",
+    "nodemailer": "10.0.10",
     "postcss": "8.5.28",
     "reflect-metadata": "0.2.2",
     "sanitize-html": "2.17.7",
@@ -120,7 +120,6 @@
     "web-vitals": "6.2.2",
     "yaml": "2.9.1",
     "hash-wasm": "4.12.0",
-    "@types/nodemailer": "7.0.12",
     "@types/sanitize-html": "2.16.1",
     "@types/web-push": "3.6.4"
   },
