@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { PublicDocument } from "../documents/public-document-types";
-import { mergeRefreshedWorkflowRunDocuments } from "./workflow-run-documents";
+import { workflowMessages } from "./messages";
+import { mergeRefreshedWorkflowRunDocuments, workflowRunDownloadFormat } from "./workflow-run-documents";
 
 const document = (id: string): PublicDocument => ({
   id,
@@ -61,5 +62,58 @@ describe("mergeRefreshedWorkflowRunDocuments", () => {
   test("uses the refreshed first page when no additional page is loaded", () => {
     const refreshed = { items: [document("new")], total: 1, hasMore: false, nextOffset: null };
     expect(mergeRefreshedWorkflowRunDocuments({ items: [], total: 0, hasMore: false, nextOffset: null }, refreshed)).toBe(refreshed);
+  });
+});
+
+describe("workflowRunDownloadFormat", () => {
+  const csv = (id: string): PublicDocument => {
+    const base = document(id);
+    return {
+      ...base,
+      filename: `${id}.csv`,
+      primaryArtifactKey: "csv",
+      artifacts: [{ ...base.artifacts[0]!, key: "csv", filename: `${id}.csv`, mimeType: "text/csv" }],
+    };
+  };
+  const state = (items: PublicDocument[], hasMore = false) => ({
+    items,
+    total: items.length + (hasMore ? 1 : 0),
+    hasMore,
+    nextOffset: null,
+  });
+
+  test("names a merged PDF only when every document is known to be a PDF", () => {
+    expect(workflowRunDownloadFormat(state([document("a"), document("b")]))).toBe("pdf");
+    expect(workflowRunDownloadFormat(state([document("a"), csv("b")]))).toBe("zip");
+    expect(workflowRunDownloadFormat(state([csv("a")]))).toBe("zip");
+    expect(workflowRunDownloadFormat(state([csv("a")], true))).toBe("zip");
+    expect(workflowRunDownloadFormat(state([document("a")], true))).toBe("pdf-or-zip");
+  });
+
+  test("labels say what the download delivers in English and German", () => {
+    const en = workflowMessages.resolve(["en"]).t;
+    const de = workflowMessages.resolve(["de"]).t;
+    expect([en.downloadAllPdf, en.downloadAllZip]).toEqual(["All as PDF", "All as ZIP"]);
+    expect([de.downloadAllPdf, de.downloadAllZip]).toEqual(["Alle als PDF", "Alle als ZIP"]);
+    expect(en.downloadAllZipHint).toContain("ZIP");
+    expect(de.downloadAllMixedHint).toContain("ZIP-Archiv");
+  });
+});
+
+describe("scanner count labels", () => {
+  test("use singular and plural forms in English and German", () => {
+    const en = workflowMessages.resolve(["en"]).t;
+    const de = workflowMessages.resolve(["de"]).t;
+    expect([en.scanCount({ count: 1 }), en.scanCount({ count: 2 }), en.errorCount({ count: 1 }), en.errorCount({ count: 0 })]).toEqual([
+      "1 scan",
+      "2 scans",
+      "1 error",
+      "0 errors",
+    ]);
+    expect([de.scanCount({ count: 1 }), de.scanCount({ count: 3 }), de.errorCount({ count: 1 })]).toEqual([
+      "1 Scan",
+      "3 Scans",
+      "1 Fehler",
+    ]);
   });
 });

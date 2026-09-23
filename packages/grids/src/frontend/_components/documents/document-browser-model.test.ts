@@ -79,6 +79,18 @@ describe("document browser model", () => {
     expect(documentBrowserEmptyText("rechnung", "list", [], "de-CH")).toBe("Keine Dokumente entsprechen dieser Suche.");
   });
 
+  test("count labels use singular and plural forms in English and German", () => {
+    const two = [document("one"), document("two")];
+    expect(documentCountLabel("list", [], [document("one")], false)).toBe("1 document");
+    expect(documentCountLabel("list", [], two, false)).toBe("2 documents");
+    expect(documentCountLabel("list", [], [], false)).toBe("0 documents");
+    expect(documentCountLabel("folders", [folder("2026", 1)], [], false)).toBe("1 document");
+    expect(documentCountLabel("list", [], [document("one")], false, "de")).toBe("1 Dokument");
+    expect(documentCountLabel("list", [], two, false, "de")).toBe("2 Dokumente");
+    expect(documentCountLabel("list", [], [document("one")], true, "de")).toBe("1+ Dokumente");
+    expect(documentCountLabel("folders", [folder("2026", 1)], [], false, "de")).toBe("1 Dokument");
+  });
+
   test("read users only get download actions and busy state is per Document", () => {
     expect(documentActionState(false, "one", "one")).toEqual({ showEdit: false, showLink: false, downloadBusy: true });
     expect(documentActionState(true, "one", "two")).toEqual({ showEdit: true, showLink: true, downloadBusy: false });

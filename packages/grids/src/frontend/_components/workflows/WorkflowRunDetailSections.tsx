@@ -16,7 +16,7 @@ import {
   workflowStepStatusLabel,
   workflowStepStatusTone,
 } from "./workflow-display";
-import type { WorkflowRunDocumentsState } from "./workflow-run-documents";
+import { type WorkflowRunDocumentsState, workflowRunDownloadFormat } from "./workflow-run-documents";
 
 type WorkflowRunInputRow = {
   name: string;
@@ -197,15 +197,23 @@ export function WorkflowRunDocumentsSection(props: {
 }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
+  const downloadAll = () => {
+    const format = workflowRunDownloadFormat(props.documents);
+    if (format === "pdf") return { label: t().downloadAllPdf, hint: t().downloadAllPdfHint };
+    if (format === "zip") return { label: t().downloadAllZip, hint: t().downloadAllZipHint };
+    return { label: t().downloadAll, hint: t().downloadAllMixedHint };
+  };
   return (
     <DetailPanel.Section
       title={t().generatedDocuments}
       icon="ti ti-files"
       actions={
         <Show when={props.documents.total > 0}>
-          <Button variant="ghost" size="sm" type="button" onClick={props.onDownloadAll} disabled={props.downloadingAll}>
-            <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} /> {t().all}
-          </Button>
+          <Tooltip.Anchor content={downloadAll().hint}>
+            <Button variant="ghost" size="sm" type="button" onClick={props.onDownloadAll} disabled={props.downloadingAll}>
+              <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} /> {downloadAll().label}
+            </Button>
+          </Tooltip.Anchor>
         </Show>
       }
     >

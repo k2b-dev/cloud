@@ -668,6 +668,7 @@ steps:
 - `execute` führt die festgeschriebene Revision aus; `dryRun` zeichnet geplante Auswirkungen ohne Änderungen oder externe Anfragen auf.
 - Kanäle: `api` für UI/API/CLI; `customApp`, `scanner`, `bulk` für Ausführungsoptionen; `schedule`, `recordEvent` für automatische Trigger.
 - Laufdetails zeigen Revision, Eingaben, Zeiten, Ergebnis/Fehler, Schritte und Dokumente. Statistiken zählen execute-Läufe; Testlauffehler bleiben im Verlauf.
+- **Alle als PDF** oder **Alle als ZIP** bei den erzeugten Dokumenten eines Laufs lädt jedes Dokument, das du lesen darfst. Sind alle PDFs, erhältst du ein zusammengeführtes PDF, sonst ein ZIP mit jeder Datei unter ihrem ursprünglichen Dateinamen; bei gleichen Namen wird die Dokument-ID ergänzt. Höchstens 1.000 Dokumente und ein Archiv von 512 MiB.
 - Die Workflow-Seite zeigt Zeitplanabgleich, nächsten Lauf oder dauerhafte Zeitplanprobleme sowie aktive Datensatzereignis-/Tabellenbindungen.
 - Auslösende Ereignisse und einzelne externe Auswirkungen findet die Cloud-Administration unter **Observability → Workflows** oder `cld admin workflows`.
 

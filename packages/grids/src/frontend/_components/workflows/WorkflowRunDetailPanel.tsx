@@ -463,7 +463,7 @@ export function WorkflowRunDetailPanel(props: {
     setDownloadingAll(true);
     try {
       const res = await requestWorkflowDocumentsDownload(props.runId);
-      await downloadPdfResponse(res, `workflow-run-${props.runId.slice(0, 8)}.pdf`);
+      await downloadPdfResponse(res, `workflow-run-${props.runId.slice(0, 8)}`);
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : t().downloadGeneratedDocumentsFailed);
     } finally {

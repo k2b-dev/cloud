@@ -666,6 +666,7 @@ steps:
 - `execute` performs effects on the pinned revision; `dryRun` records predicted effects without changes or external requests.
 - Channels: `api` for direct UI/API/CLI; `customApp`, `scanner`, `bulk` for run options; `schedule`, `recordEvent` for automatic triggers.
 - Run details show revision, inputs, timing, result/error, steps and Documents. Statistics count execute runs; dry-run failures remain in history.
+- **All as PDF** or **All as ZIP** under a run's generated documents downloads every Document you may read. If all are PDFs, you get one merged PDF; otherwise one ZIP with each file under its original filename, a clashing name gaining the Document ID. At most 1,000 Documents and a 512 MiB archive.
 - The workflow page shows schedule reconciliation, next execution or a persistent schedule problem, and active record-event/table bindings.
 - Cloud administrators inspect initiating occurrences and individual external effects under **Observability → Workflows** or `cld admin workflows`.
 
