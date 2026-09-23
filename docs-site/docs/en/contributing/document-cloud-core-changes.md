@@ -65,7 +65,7 @@ curl --fail --silent http://localhost:4187/health | rg '"/en/docs"'
 If it does not, start the documentation site from the current checkout:
 
 ```bash
-docker compose -f docs-site/compose.yml up --build -d --wait
+docker compose -f docs-site/compose.yml up --build -d --wait --renew-anon-volumes
 ```
 
 This builds and starts one isolated Docker Compose service, then waits for its
@@ -83,7 +83,7 @@ It listens on port `4187` by default. If that port belongs to another local
 process, choose a free host port:
 
 ```bash
-FIBEL_PORT=4199 docker compose -f docs-site/compose.yml up --build -d --wait
+FIBEL_PORT=4199 docker compose -f docs-site/compose.yml up --build -d --wait --renew-anon-volumes
 ```
 
 Add the active MCP endpoint with the stable local name `cloud-dev-mcp`.

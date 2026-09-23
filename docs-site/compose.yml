@@ -1,5 +1,5 @@
 # Isolated documentation service — run from the repository root with:
-#   docker compose -f docs-site/compose.yml up --build -d --wait
+#   docker compose -f docs-site/compose.yml up --build -d --wait --renew-anon-volumes
 name: cloud-fibel
 
 services:

@@ -71,7 +71,7 @@ Use the current checkout's documentation through `cloud-dev-mcp`: call
 pages. The default local endpoint is `http://localhost:4187/_fibel/mcp`.
 
 If the endpoint is unhealthy, start it with
-`docker compose -f docs-site/compose.yml up --build -d --wait`. If the MCP
+`docker compose -f docs-site/compose.yml up --build -d --wait --renew-anon-volumes`. If the MCP
 connection is missing or stale, say that clearly and use reduced documentation
 mode with `docs-site/docs/en`, public exports, types, and focused tests. Do not
 silently rely on an older checkout or rendered HTML.
