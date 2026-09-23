@@ -53,7 +53,9 @@ let timers: Array<(() => void) | null> = [];
 const installBrowser = () => {
   FakeWebSocket.instances = [];
   timers = [];
-  (globalThis as unknown as { window: unknown }).window = { location: { origin: "http://localhost:3000" } };
+  (globalThis as unknown as { window: unknown }).window = Object.assign(new EventTarget(), {
+    location: { origin: "http://localhost:3000" },
+  });
   (globalThis as unknown as { document: unknown }).document = new FakeDocument();
   (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
   globalThis.setTimeout = ((callback: () => void) => {
@@ -273,6 +275,38 @@ describe("AI live connection multiplexing", () => {
 
     expect(fatal).toEqual(["login_required"]);
     expect(errors).toEqual(["Live access changed or expired."]);
+    expect(timers.filter(Boolean)).toHaveLength(0);
+    connection.dispose();
+  });
+
+  test("recovers a stalled reconnect when the network returns and resubscribes the current turn", () => {
+    installBrowser();
+    const turnStatuses: string[] = [];
+    const connection = createAiLiveConnection({ initialCursor: "4-1", onLiveMessage: () => undefined });
+    connection.streamTransport.subscribe({
+      conversationId: "Chat01",
+      url: "/unused",
+      onEvent: () => undefined,
+      onStatus: (status) => turnStatuses.push(status),
+    });
+    connection.connect();
+    FakeWebSocket.instances[0]!.open();
+    connection.markApplied("4-2");
+    FakeWebSocket.instances[0]!.close(1006);
+    runNextTimer();
+    runNextTimer();
+    expect(FakeWebSocket.instances[1]!.readyState).toBe(FakeWebSocket.CLOSED);
+
+    window.dispatchEvent(new Event("online"));
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    const recovered = FakeWebSocket.instances[2]!;
+    recovered.open();
+    expect(recovered.sent).toEqual([
+      { type: "ai.live.subscribe", payload: { fromCursor: "4-2", recover: true } },
+      { type: "ai.turn.subscribe", payload: { conversationId: "Chat01" } },
+    ]);
+    recovered.message({ type: "ai.turn.event", payload: { conversationId: "Chat01", event: stateEvent("Chat01") } });
+    expect(turnStatuses).toEqual(["connecting", "connecting", "reconnecting", "open"]);
     expect(timers.filter(Boolean)).toHaveLength(0);
     connection.dispose();
   });

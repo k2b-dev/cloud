@@ -121,9 +121,12 @@ test.each([false, true])("Cloud live client resumes after upstream loss (server 
   const f = fixture();
   const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
   const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
-  // Use the real WebSocket transport; only provide the browser environment checks.
-  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { origin: f.gateway.url.origin } } });
-  Object.defineProperty(globalThis, "document", { configurable: true, value: {} });
+  // Use the real WebSocket transport; only provide the browser environment and its recovery events.
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: Object.assign(new EventTarget(), { location: { origin: f.gateway.url.origin } }),
+  });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: new EventTarget() });
   const received: string[] = [];
   const fatal: string[] = [];
   const live = createLiveWebSocket({
