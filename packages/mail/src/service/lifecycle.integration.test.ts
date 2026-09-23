@@ -982,14 +982,19 @@ suite("mail lifecycle control plane", () => {
         mailbox_health: "bootstrapping",
       });
 
+      // The winner holds the provider mutex inside discovery until the loser has settled.
+      const releaseDiscovery = Promise.withResolvers<void>();
       discover.mockImplementation(async () => {
-        await Bun.sleep(75);
+        await releaseDiscovery.promise;
         return [remoteFolder("INBOX", "10", "inbox")];
       });
-      const concurrent = await Promise.allSettled([
+      const calls = [
         executeBindingRediscovery(bindingId, false, async () => undefined),
         executeBindingRediscovery(bindingId, false, async () => undefined),
-      ]);
+      ];
+      await Promise.race(calls.map((call) => call.catch(() => undefined)));
+      releaseDiscovery.resolve();
+      const concurrent = await Promise.allSettled(calls);
       expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
       const rejected = concurrent.find((result) => result.status === "rejected");
       expect(rejected?.status === "rejected" ? rejected.reason : null).toMatchObject({ code: "SYNC_BUSY" });
@@ -1047,13 +1052,17 @@ suite("mail lifecycle control plane", () => {
 
   test("an in-flight rediscovery cannot overwrite a newer credential revision", async () => {
     const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification());
+    const enteredDiscovery = Promise.withResolvers<void>();
+    const releaseDiscovery = Promise.withResolvers<void>();
     const discover = spyOn(imapSmtpConnector, "discoverFolders").mockImplementation(async () => {
-      await Bun.sleep(75);
+      enteredDiscovery.resolve();
+      await releaseDiscovery.promise;
       return [remoteFolder("INBOX", "10", "inbox")];
     });
     try {
+      // Discovery starts only after the binding and credential revision were read.
       const rediscovery = rediscoverProviderBinding({ bindingId });
-      await Bun.sleep(15);
+      await Promise.race([enteredDiscovery.promise, rediscovery]);
       await sql.begin(async (tx) => {
         await tx`UPDATE mail.provider_connections SET secret_revision = 2 WHERE id = ${connectionId}::uuid`;
         await tx`
@@ -1065,6 +1074,7 @@ suite("mail lifecycle control plane", () => {
           WHERE id = ${bindingId}::uuid
         `;
       });
+      releaseDiscovery.resolve();
       await expect(rediscovery).rejects.toMatchObject({
         code: "CREDENTIAL_REVISION_CHANGED",
       });
@@ -1094,16 +1104,20 @@ suite("mail lifecycle control plane", () => {
 
   test("an in-flight rediscovery cannot reactivate a lifecycle-fenced mailbox", async () => {
     const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification());
+    const enteredDiscovery = Promise.withResolvers<void>();
+    const releaseDiscovery = Promise.withResolvers<void>();
     const discover = spyOn(imapSmtpConnector, "discoverFolders").mockImplementation(async () => {
-      await Bun.sleep(75);
+      enteredDiscovery.resolve();
+      await releaseDiscovery.promise;
       return [remoteFolder("INBOX", "10", "inbox")];
     });
     const [resource] = await sql<{ id: string }[]>`
       SELECT remote_resource_id AS id FROM mail.provider_bindings WHERE id = ${bindingId}::uuid
     `;
     try {
+      // Discovery starts only after the binding and credential revision were read.
       const rediscovery = rediscoverProviderBinding({ bindingId });
-      await Bun.sleep(15);
+      await Promise.race([enteredDiscovery.promise, rediscovery]);
       await sql.begin(async (tx) => {
         await tx`
           UPDATE mail.mailboxes
@@ -1116,6 +1130,7 @@ suite("mail lifecycle control plane", () => {
           WHERE id = ${resource!.id}::uuid
         `;
       });
+      releaseDiscovery.resolve();
       await expect(rediscovery).rejects.toMatchObject({
         code: "MAILBOX_TRANSPORT_CHANGED",
       });
@@ -1671,7 +1686,9 @@ suite("mail lifecycle control plane", () => {
       const submitted = await submitDueMaintenanceCommands();
       expect(submitted.recovered).toBeGreaterThanOrEqual(1);
       let state = "executing";
-      for (let attempt = 0; attempt < 100 && state !== "confirmed"; attempt += 1) {
+      // Job delivery and execution run on the Sync worker; bound the wait by time, not by iterations.
+      const deadline = Date.now() + 10_000;
+      while (state !== "confirmed" && Date.now() < deadline) {
         await Bun.sleep(20);
         const [row] = await sql<{ state: string }[]>`SELECT state FROM mail.commands WHERE id = ${command.data.id}::uuid`;
         state = row?.state ?? "missing";
