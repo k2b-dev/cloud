@@ -8,8 +8,7 @@
     "build": "bun run scripts/build.ts",
     "dev": "bun run scripts/dev.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
-    "test": "bun test --path-ignore-patterns '**/*.behavior.test.tsx' src && bun run test:dom",
-    "test:dom": "bun test --conditions=browser --preload ../../packages/ui/test/solid-dom-preload.ts ./src/Clouds.behavior.test.tsx"
+    "test": "bun test --path-ignore-patterns '**/*.behavior.test.*' src"
   },
   "dependencies": {
     "@k2b/stdlib": "catalog:",

@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-09-21
+updated: 2026-09-23
 ---
 
 # Monorepo development
@@ -291,15 +291,17 @@ architecture, the application set, formatting) and every package typecheck.
 A new rule is one module under `scripts/checks/`.
 
 The root test command runs every workspace in a separate process. It uses each
-package's `test` script when one exists, preserving package-specific builds,
-browser conditions, and preloads. Workspaces without a test script and
-root-owned tests still run in isolated Bun test processes.
+package's `test` script when one exists, preserving package-specific builds
+and preloads. Workspaces without a test script and root-owned tests still run
+in isolated Bun test processes. Each workspace's `*.behavior.test.*` files run
+in one more process with browser conditions and the Solid DOM preload; see
+[Testing](/en/docs/contributing/testing#write-behavior-tests).
 
 For a focused package:
 
 ```bash
 bun run --cwd packages/grids typecheck
-bun test packages/grids
+bun run test --filter packages/grids
 ```
 
 See [Frontend testing](/en/docs/frontend/testing) for browser-facing checks.

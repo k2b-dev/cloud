@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
-    "test": "bun test --path-ignore-patterns '**/*.behavior.test.tsx' --path-ignore-patterns '**/*.behavior.test.ts' && bun run test:dom",
+    "test": "bun test --path-ignore-patterns '**/*.behavior.test.*'",
     "test:dom": "bun scripts/test-dom.ts",
     "test:all": "bun scripts/verify.ts",
     "test:coverage": "bun test --path-ignore-patterns '**/*.behavior.test.tsx' --path-ignore-patterns '**/*.behavior.test.ts' --coverage --coverage-reporter=lcov --coverage-dir=coverage && bun run scripts/check-backend-coverage.ts coverage/lcov.info && bun run test:dom",

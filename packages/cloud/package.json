@@ -84,8 +84,7 @@
     "./styles/global.css": "./src/styles/global.css"
   },
   "scripts": {
-    "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.tsx' --path-ignore-patterns '**/*.dom.test.tsx' && bun run test:dom",
-    "test:dom": "bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts behavior.test.tsx dom.test.tsx",
+    "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {

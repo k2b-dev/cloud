@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-09-21
+updated: 2026-09-23
 ---
 
 # Testing
@@ -30,8 +30,37 @@ For one package:
 
 ```bash
 bun run --cwd packages/grids typecheck
-bun test packages/grids
+bun run test --filter packages/grids
 ```
+
+## Write behavior tests
+
+A behavior test renders Solid components into a
+[happy-dom](https://github.com/capricorn86/happy-dom) document and drives them
+like a user. Name it `*.behavior.test.ts` or `*.behavior.test.tsx` and put it
+anywhere in a workspace package. `bun run test` finds every such file and runs
+each package's behavior tests in a suite of their own, `<package> behavior`,
+with browser conditions and the Solid DOM preload
+(`packages/ui/test/solid-dom-preload.ts`), started from the repository root so
+a package's server-rendering preload does not apply. Package `test` scripts
+leave these files out with `--path-ignore-patterns '**/*.behavior.test.*'`.
+
+To run one file directly:
+
+```bash
+bun --no-env-file test --isolate --conditions=browser \
+  --preload ./packages/ui/test/solid-dom-preload.ts \
+  ./packages/core/src/pages/admin/CacheNotice.behavior.test.ts
+```
+
+Guard browser-only tests with `isServer` from `solid-js/web`, so a plain
+`bun test` skips them instead of failing. `bun run check` fails when a test
+that branches on `isServer` is not named `*.behavior.test.*`, or when the
+runner would not pick up a behavior test.
+
+Import heavy components once at module scope, not inside the first test: the
+first import runs the Solid transform over the component's source graph, and
+that time otherwise counts against the 5 s test timeout.
 
 ## Run integration tests
 

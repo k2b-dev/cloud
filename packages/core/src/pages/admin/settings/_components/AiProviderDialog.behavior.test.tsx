@@ -16,10 +16,22 @@ const profile = {
   pricing: { inputPerMillion: 2, outputPerMillion: 8 },
 };
 
+// The first import runs the Solid DOM transform over the settings form's whole source graph, which took longer
+// than the 5 s test timeout on a busy machine. Load it once, outside any test, so the timeout measures behavior.
+// The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return { Form: (await import("./CoreSettingsForm.island")).default, dialogCore: (await import("@k2b/ui")).dialogCore };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 async function setup() {
   const dom = createDomTestHarness();
-  const { default: Form } = await import("./CoreSettingsForm.island");
-  const { dialogCore } = await import("@k2b/ui");
+  const { Form, dialogCore } = modules!;
   const requests: string[] = [];
   const fetch = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(

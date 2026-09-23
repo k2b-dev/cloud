@@ -20,7 +20,9 @@ browserTest("filter bar uses search and selectable chips instead of labelled for
   try {
     expect(dom.root.querySelector('[role="search"]')).not.toBeNull();
     expect(dom.root.querySelector('input[name="resource"]')).not.toBeNull();
-    expect(dom.root.querySelector('input[name="app"]')).toBeNull();
+    // App and namespace are chips; the search form only carries them along as hidden fields.
+    expect(dom.root.querySelector('input[name="app"]:not([type="hidden"])')).toBeNull();
+    expect(dom.root.querySelector<HTMLInputElement>('input[type="hidden"][name="app"]')?.value).toBe("mail");
     const chips = dom.root.querySelectorAll(".k2b-filter-chip");
     expect(chips.length).toBe(3);
     expect(dom.root.textContent).toContain("mail");

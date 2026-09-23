@@ -5,12 +5,30 @@ import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import { quotaFixture } from "./ai-quota-fixture";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+// The first import runs the Solid DOM transform over the island's whole source graph, which dominates this
+// file and took longer than the 5 s test timeout on a busy machine. Load it once, outside any test, so the
+// timeout measures behavior. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return {
+      ui: await import("@k2b/ui"),
+      Panel: (await import("./AiQuotaAdmin.island.tsx")).default,
+      Rules: (await import("./AiQuotaRules")).default,
+      Detail: (await import("./AiQuotaDetail")).default,
+      Budget: (await import("./AiBackgroundBudget")).default,
+    };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
 if (isServer) test.skip("requires browser conditions", () => {});
 else
   test("account details load on eye click without changing the URL", async () => {
     const dom = createDomTestHarness();
-    const { default: Panel } = await import("./AiQuotaAdmin.island.tsx");
-    const { dialogCore, LocaleProvider } = await import("@k2b/ui");
+    const { Panel, ui } = modules!;
+    const { dialogCore, LocaleProvider } = ui;
     const initial = quotaFixture({
       items: [
         {
@@ -78,7 +96,7 @@ else
 if (!isServer)
   test("pagination uses server-clamped page and retains report filters", async () => {
     const dom = createDomTestHarness();
-    const { default: Panel } = await import("./AiQuotaAdmin.island.tsx");
+    const { Panel } = modules!;
     const report = quotaFixture({ total: 51, page: 2 });
     report.query = { ...report.query, page: 2, search: "Anna", model: "a" };
     const dispose = render(
@@ -99,8 +117,8 @@ if (!isServer)
 if (!isServer)
   test("rule dialog cancellation leaves the config unchanged and applying only edits the draft", async () => {
     const dom = createDomTestHarness();
-    const { default: Rules } = await import("./AiQuotaRules");
-    const { dialogCore } = await import("@k2b/ui");
+    const { Rules, ui } = modules!;
+    const { dialogCore } = ui;
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(async () => Response.json({ used: 0, reserved: 0, unknown: 0, stoppedAt: null, unit: "EUR" }), {
         preconnect: globalThis.fetch.preconnect,
@@ -134,8 +152,8 @@ if (!isServer)
 if (!isServer)
   test("reset refreshes the open modal and preserves typed grant explanations", async () => {
     const dom = createDomTestHarness();
-    const { default: Detail } = await import("./AiQuotaDetail");
-    const { prompts } = await import("@k2b/ui");
+    const { Detail, ui } = modules!;
+    const { prompts } = ui;
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
     let resets = 0,
       changed = 0,
@@ -212,8 +230,8 @@ if (!isServer)
 if (!isServer)
   test("new rule scope picker excludes free, unpriced, audio and disabled models", async () => {
     const dom = createDomTestHarness();
-    const { default: Rules } = await import("./AiQuotaRules");
-    const { dialogCore } = await import("@k2b/ui");
+    const { Rules, ui } = modules!;
+    const { dialogCore } = ui;
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(async () => Response.json({ used: 0, reserved: 0, unknown: 0, stoppedAt: null }), {
         preconnect: globalThis.fetch.preconnect,
@@ -263,7 +281,7 @@ if (!isServer)
   for (const status of [403, 409, 500])
     test(`background release HTTP ${status} reports the actual failure category`, async () => {
       const dom = createDomTestHarness();
-      const { default: Budget } = await import("./AiBackgroundBudget");
+      const { Budget } = modules!;
       const fetch = spyOn(globalThis, "fetch").mockImplementation(
         Object.assign(
           async (_url: unknown, init?: RequestInit) =>

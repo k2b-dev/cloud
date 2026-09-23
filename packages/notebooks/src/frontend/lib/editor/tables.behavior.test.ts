@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { CompletionContext } from "@codemirror/autocomplete";
+import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
 import { markdownExtension } from "./markdown";
 import { tableColumnCompletionSource } from "./table-columns";
 
@@ -36,6 +38,10 @@ describe("Notebook table escaped pipes", () => {
           extensions: [markdownExtension(), tablesExtension("ABC123")],
         }),
       });
+      // Table widgets follow the syntax tree. CodeMirror parses it within a small time budget, so on a busy runner
+      // the table is still raw here; the editor then finishes the parse after mount and rescans. Do the same now.
+      forceParsing(view, doc.length, 5000);
+      view.dispatch({ effects: refreshMarkdownDecorationsEffect.of() });
       try {
         if (sourceVisible) {
           expect(dom.root.querySelector(".cm-formula-preview")?.textContent).toContain("11");

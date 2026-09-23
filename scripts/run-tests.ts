@@ -7,6 +7,12 @@
  *   bun scripts/run-tests.ts --exclude grids    everything except suites matching "grids"
  *   bun scripts/run-tests.ts --shard 2/4        deterministic slice of the suite list
  *
+ * Browser behavior tests (`*.behavior.test.{ts,tsx}`) belong to this runner:
+ * each workspace gets one extra suite that runs them with browser conditions
+ * and the Solid DOM preload, started from the repository root so a package's
+ * own server-rendering preload in `bunfig.toml` does not apply. Package `test`
+ * scripts and the default package run leave those files out.
+ *
  * Every `bun test` this runner spawns loads `scripts/fixtures/test-infra.ts`
  * first. Package-owned `test` scripts receive it through `BUN_OPTIONS`. The
  * runtime aliases for `CLOUD_TEST_*` are exported into every child before Bun
@@ -34,6 +40,9 @@ export type Options = { integration: boolean; filter?: string; exclude?: string;
 const ignoredTestPaths = ["node_modules/", "dist/", "build/", "_ssr/"];
 const testFiles = new Bun.Glob("**/*.{test,spec}.{ts,tsx,js,jsx}");
 const integrationImport = /scripts\/fixtures\/test-infra/;
+const behaviorTest = /\.behavior\.test\.tsx?$/;
+/** Leaves browser behavior tests out of a package's own `bun test` run; the runner runs them in browser mode. */
+export const behaviorIgnore = "--path-ignore-patterns=**/*.behavior.test.*";
 
 const readPackageJson = (path: string): PackageJson => JSON.parse(readFileSync(path, "utf8")) as PackageJson;
 
@@ -54,6 +63,7 @@ export const hasIntegrationTarget = (env: Record<string, string | undefined> = p
 
 export const discoverTestSuites = async (workspaceRoot: string, options: Options = { integration: false }): Promise<TestSuite[]> => {
   const preload = ["--preload", join(workspaceRoot, "scripts", "fixtures", "test-infra.ts")];
+  const browser = ["--isolate", "--conditions=browser", "--preload", join(workspaceRoot, "packages", "ui", "test", "solid-dom-preload.ts")];
   // Integration files migrate schemas and wait on brokers in their hooks; 5 s is too short on a slow runner.
   const integrationTimeout = "30000";
   const rootPackage = readPackageJson(join(workspaceRoot, "package.json"));
@@ -74,8 +84,22 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
       }
       return;
     }
+    const files = await listTestFiles(cwd);
+    const behavior = files.filter((path) => behaviorTest.test(path));
     if (packageCommand) suites.push({ name, cwd, command: packageCommand });
-    else if ((await listTestFiles(cwd)).length > 0) suites.push({ name, cwd, command: ["bun", "test", ...preload] });
+    else if (files.length > behavior.length) suites.push({ name, cwd, command: ["bun", "test", ...preload, behaviorIgnore] });
+    if (behavior.length > 0) {
+      const command = [
+        "bun",
+        "--no-env-file",
+        `--cwd=${workspaceRoot}`,
+        "test",
+        ...preload,
+        ...browser,
+        ...behavior.map((path) => join(cwd, path)),
+      ];
+      suites.push({ name: `${name} behavior`, cwd, command });
+    }
   };
 
   for (const workspace of workspaces.toSorted()) {
@@ -163,6 +187,7 @@ const run = async (): Promise<void> => {
 
   for (const suite of suites) {
     console.log(`\n=== ${suite.name} ===`);
+    const started = performance.now();
     const child = Bun.spawn(suite.command, {
       cwd: suite.cwd,
       env: suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
@@ -171,6 +196,7 @@ const run = async (): Promise<void> => {
       stderr: "inherit",
     });
     if ((await child.exited) !== 0) failed.push(suite.name);
+    console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
   }
 
   if (!options.integration && !hasIntegrationTarget()) {
