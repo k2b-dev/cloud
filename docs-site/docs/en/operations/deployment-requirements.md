@@ -36,6 +36,7 @@ this service set.
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
 | Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming and WebSocket upgrades. Only the gateway receives public application traffic. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
+| Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
 The repository's `compose.yml` is **local development infrastructure**, not a
 production storage or exposure policy. Its host-published ports, passwords,

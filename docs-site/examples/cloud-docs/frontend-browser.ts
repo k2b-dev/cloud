@@ -1,5 +1,6 @@
 import { api } from "@k2b/cloud/browser";
 import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
 import { query } from "@k2b/stdlib/solid";
 import type { Accessor } from "solid-js";
 import type { InventoryApi } from "./frontend-server";
@@ -45,3 +46,5 @@ export const createItemQuery = (itemId: Accessor<string>, initial: { source: str
       return () => live.dispose();
     },
   });
+
+export const diagramConfig = () => mermaidConfig({ dark: document.documentElement.classList.contains("dark") });
