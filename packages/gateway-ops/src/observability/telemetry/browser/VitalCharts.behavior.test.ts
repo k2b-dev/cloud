@@ -32,7 +32,8 @@ import { createDomTestHarness } from "../../../../../ui/test/dom";
     expect(targets).toHaveLength(3);
     targets[0]!.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     await Promise.resolve();
-    const tips = dom.root.querySelectorAll('[role="tooltip"]');
+    // Each chart also has action tooltips such as "Copy data"; read the chart's own inspection tooltip.
+    const tips = Array.from(targets, (target) => target.querySelector('[role="tooltip"]'));
     expect(tips[0]!.textContent).toContain("125 ms");
     expect(tips[1]!.textContent).toContain("20 ms");
     expect(tips[2]!.textContent).not.toContain("p75");
