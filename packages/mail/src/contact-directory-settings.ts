@@ -136,6 +136,37 @@ export const canCreateDirectoryContacts = (directory: MailContactDirectory): boo
 
 export const DEFAULT_MAIL_CONTACT_DIRECTORY = resolveMailContactDirectory(MAIL_CONTACT_DIRECTORY_DEFAULTS);
 
+const MAIL_CONTACT_DIRECTORY_FIELDS = ["appId", "suggest", "resolve", "read", "listWritableBooks", "create"] as const;
+
+/** Whether a stored mapping equals the built-in Contacts defaults. */
+export const usesContactDirectoryDefaults = (config: MailContactDirectoryConfig): boolean =>
+  MAIL_CONTACT_DIRECTORY_FIELDS.every((field) => config[field].trim() === MAIL_CONTACT_DIRECTORY_DEFAULTS[field]);
+
+/**
+ * The mapping proposed when an administrator chooses a new app: per function
+ * the Contacts default ID when the app offers it as compatible, otherwise the
+ * only compatible capability, otherwise nothing. The admin dialog and `cld`
+ * use the same proposal; saving still validates it.
+ */
+export const proposeContactDirectoryConfig = (
+  appId: string,
+  compatible: Record<ContactDirectoryFunction, readonly { id: string }[]> | undefined,
+): MailContactDirectoryConfig => {
+  const pick = (fn: ContactDirectoryFunction): string => {
+    const options = compatible?.[fn] ?? [];
+    if (options.some((option) => option.id === MAIL_CONTACT_DIRECTORY_DEFAULTS[fn])) return MAIL_CONTACT_DIRECTORY_DEFAULTS[fn];
+    return options.length === 1 && options[0] ? options[0].id : "";
+  };
+  return {
+    appId,
+    suggest: pick("suggest"),
+    resolve: pick("resolve"),
+    read: pick("read"),
+    listWritableBooks: pick("listWritableBooks"),
+    create: pick("create"),
+  };
+};
+
 const settingsSnapshotSchema = z.object({
   mail: z.object({
     contact_directory: z.object({

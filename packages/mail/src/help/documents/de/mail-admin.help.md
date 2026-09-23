@@ -121,13 +121,15 @@ Die CLI bietet dieselbe Wiederherstellung: `cld mail admin mailbox list` findet 
 
 Mail verwendet die integrierte App Kontakte für Empfängervorschläge, Kontakte in den **Unterhaltungsdetails**, **Neuer Kontakt** und Kontakte, die an **Mit KI schreiben** angehängt werden. Dafür ist keine Einrichtung nötig.
 
-Um eine andere App zu verwenden, etwa eine Kundenverwaltung, öffne **Administration > Mail > Kontaktverzeichnis**. Auch dafür sind Cloud-Administrationsrechte nötig. Wähle die App und dann für jede Funktion eine ihrer Capabilities. Jede Liste bietet nur Capabilities an, die zum Kontaktverzeichnis-Vertrag passen; die Standardwerte werden vorausgefüllt, wenn die App sie anbietet.
+Um eine andere App zu verwenden, etwa eine Kundenverwaltung, öffne **Administration > Mail**. **Kontaktverzeichnis** zeigt die aktuelle App und ob sie den Contacts-Standard oder eine angepasste Zuordnung verwendet. Wähle **Konfigurieren**, um den Editor zu öffnen. Auch dafür sind Cloud-Administrationsrechte nötig. Wähle die App und dann für jede Funktion eine ihrer Capabilities. Jede Liste bietet nur Capabilities an, die zum Kontaktverzeichnis-Vertrag passen; die Standardwerte werden vorausgefüllt, wenn die App sie anbietet.
 
 - **Empfänger vorschlagen** und **Beteiligte zuordnen** sind erforderlich.
 - **Kontakt lesen** ist optional. Ohne diese Funktion meldet **E-Mail verfassen** für einen Kontakt aus einer anderen App, dass der Kontakt nicht verfügbar ist.
 - **Beschreibbare Bücher auflisten** und **Kontakt anlegen** sind optional und gehören zusammen. Ohne sie blendet Mail **Neuer Kontakt** aus.
 
 **Speichern** prüft jede Auswahl gegen die aktuellen Capabilities der App und nennt jedes Feld, das Mail nicht verwenden kann. Mail ruft die App immer mit den eigenen Rechten der jeweiligen Person auf; Personen sehen also nur Kontakte, die sie dort lesen dürfen. Ist die App gestoppt oder ändert sie sich später unpassend, sind die betroffenen Funktionen nicht verfügbar, genau wie bei nicht verfügbaren Kontakten. **Contacts-Standard verwenden** stellt die integrierte Zuordnung wieder her.
+
+`cld mail admin contact-directory show|candidates|set|reset` erledigt dasselbe im Terminal und verwendet dieselbe Prüfung; eine unpassende Zuordnung wird nicht gespeichert, und der Befehl nennt dieselben Probleme.
 
 ## Signaturen und E-Mail-Design {icon="pencil"}
 

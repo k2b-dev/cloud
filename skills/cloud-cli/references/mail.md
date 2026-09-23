@@ -39,7 +39,7 @@ Start here for mailbox setup, search, and collaboration. Continue with:
 
 - [Mail compose and drafts](mail-compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
 - [Mail automation](mail-automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, and central run operations.
-- [Mail operations](mail-operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, and provider-backed message changes.
+- [Mail operations](mail-operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, the contact directory, and provider-backed message changes.
 
 ## Safety
 

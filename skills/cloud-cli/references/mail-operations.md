@@ -63,6 +63,33 @@ grant. `revoke` requires `--yes` and removes only the selected direct entry;
 inherited access can still remain. Add a replacement administrator before
 removing the last mailbox administrator.
 
+## Choose the contact directory
+
+Mail uses the built-in Contacts app for recipient suggestions and participant
+contacts unless a Cloud administrator chooses another app. These commands use
+the same server validation as **Administration > Mail > Contact directory**:
+
+```bash
+cld --json mail admin contact-directory show
+cld --json mail admin contact-directory candidates --app crm
+cld mail admin contact-directory set --app crm --suggest customer.suggest --resolve customer.match --no-read --no-books --no-create --yes
+cld mail admin contact-directory reset --yes
+```
+
+`show` returns the stored mapping, the app name, whether it equals the Contacts
+defaults, and `issues` that currently disable Mail features. `candidates`
+lists the app's capabilities that are compatible with each function (`suggest`,
+`resolve`, `read`, `listWritableBooks`, `create`).
+
+`set` requires `--app` and `--yes`. With the current app, unset functions keep
+their capability. With a new app, they start from the same proposal as the
+dialog: the Contacts default ID when compatible, otherwise the only compatible
+capability. `--no-read`, `--no-books`, and `--no-create` leave a function
+unmapped; `--books` and `--create` work only together. Mail stores nothing
+when a mapping is incompatible: the command exits with status 1 and prints each
+field's issue, or the `{message, code, issues}` error body under `--json`.
+`reset` restores the Contacts defaults and is validated the same way.
+
 ## Discover, replace, and revoke providers
 
 Discover likely settings and inspect write-only provider records:

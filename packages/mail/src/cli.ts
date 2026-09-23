@@ -20,6 +20,12 @@ import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
 import {
+  MAIL_CONTACT_DIRECTORY_DEFAULTS,
+  type MailContactDirectoryConfig,
+  proposeContactDirectoryConfig,
+  usesContactDirectoryDefaults,
+} from "./contact-directory-settings";
+import {
   type AcquiredDraftLease,
   type AttachmentLink,
   type AttachmentLinkPage,
@@ -83,6 +89,7 @@ import {
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
 import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./service/collaboration";
+import type { ContactDirectoryAdminView } from "./service/contact-directory";
 import type {
   ConversationReference,
   ConversationReferenceConfiguration,
@@ -552,6 +559,65 @@ const adminMailboxAccessCommands = createAccessCommands({
   ...definition,
   path: ["admin", "mailbox", ...definition.path],
 }));
+
+// Contact directory: the server owns validation; the CLI only proposes and submits mappings.
+const CONTACT_DIRECTORY_PATH = "/admin/contact-directory";
+const CONTACT_DIRECTORY_ROWS = [
+  { name: "suggest", field: "suggest" },
+  { name: "resolve", field: "resolve" },
+  { name: "read", field: "read" },
+  { name: "books", field: "listWritableBooks" },
+  { name: "create", field: "create" },
+] as const;
+
+const printContactDirectoryMapping = (ctx: CloudCliContext, config: MailContactDirectoryConfig, appName: string | null): void => {
+  ctx.print(
+    `App: ${appName ? `${appName} (${config.appId})` : config.appId}; ${usesContactDirectoryDefaults(config) ? "defaults" : "custom"}`,
+  );
+  ctx.table(
+    CONTACT_DIRECTORY_ROWS.map((row) => ({ function: row.name, capability: config[row.field] || "(not used)" })),
+    [
+      { key: "function", label: "FUNCTION" },
+      { key: "capability", label: "CAPABILITY" },
+    ],
+  );
+};
+
+const contactDirectoryIssueSchema = z.object({ field: z.string(), code: z.string(), message: z.string() });
+const contactDirectoryInvalidSchema = z.object({ message: z.string(), code: z.string(), issues: z.array(contactDirectoryIssueSchema) });
+
+const printContactDirectoryIssues = (ctx: CloudCliContext, issues: readonly { field: string; message: string }[]): void => {
+  for (const issue of issues) ctx.error(`- ${issue.field}: ${issue.message}`);
+};
+
+/** Stores a mapping through the admin route. An incompatible mapping prints the server's issues and exits 1. */
+const saveContactDirectoryMapping = async (ctx: CloudCliContext, config: MailContactDirectoryConfig): Promise<number | undefined> => {
+  const response = await ctx.fetch(apiPath(CONTACT_DIRECTORY_PATH), jsonRequest("PUT", config));
+  if (response.status === 400) {
+    const invalid = contactDirectoryInvalidSchema.safeParse(
+      await response
+        .clone()
+        .json()
+        .catch(() => null),
+    );
+    if (invalid.success) {
+      if (!printStructured(ctx, invalid.data)) {
+        ctx.error(invalid.data.message);
+        printContactDirectoryIssues(ctx, invalid.data.issues);
+      }
+      return 1;
+    }
+  }
+  const saved = await ctx.readJson<MailContactDirectoryConfig>(response);
+  if (printStructured(ctx, saved)) return;
+  ctx.print("Saved the Mail contact directory.");
+  printContactDirectoryMapping(ctx, saved, null);
+};
+
+const contactDirectoryOverride = (value: string | undefined, unset: boolean, flagName: string): string | undefined => {
+  if (value !== undefined && unset) throw new Error(`Pass either --${flagName} or --no-${flagName}, not both.`);
+  return unset ? "" : value;
+};
 
 const parsePort = (value: number | undefined, fallback: number): number => value ?? fallback;
 const parseAddresses = (values: string[]): Array<{ name: null; address: string }> =>
@@ -1357,6 +1423,7 @@ export default defineCliCommands({
     subscription: "Inspect and manage mailing-list subscriptions",
     tag: "Create and manage mailbox-local tags",
     workflow: "Create, validate, and activate Mail workflows",
+    "admin contact-directory": "Choose the app Mail uses as its contact directory",
     "admin mailbox": "Inspect mailboxes and recover their access",
     "admin security": "Inspect reports and manage Mail protection settings",
     "admin storage": "Inspect and reconcile Mail storage snapshots",
@@ -2361,6 +2428,101 @@ export default defineCliCommands({
         const result = await readApi<{ queued: true }>(ctx, "/admin/storage/reconcile", jsonRequest("POST", {}));
         if (printStructured(ctx, result)) return;
         ctx.print("Queued Mail storage reconciliation. The current snapshot remains visible until the job finishes.");
+      },
+    }),
+    command("admin contact-directory show", {
+      summary: "Show the contact directory Mail uses and problems with it",
+      run: async ({ ctx }) => {
+        const view = await readApi<ContactDirectoryAdminView>(ctx, CONTACT_DIRECTORY_PATH);
+        const appName = view.apps?.find((app) => app.appId === view.config.appId)?.appName ?? null;
+        const summary = {
+          config: view.config,
+          appName,
+          usesDefaults: usesContactDirectoryDefaults(view.config),
+          catalogAvailable: view.apps !== null,
+          issues: view.issues,
+        };
+        if (printStructured(ctx, summary)) return;
+        printContactDirectoryMapping(ctx, view.config, appName);
+        if (!summary.catalogAvailable) ctx.error("The capability catalog is unavailable; the mapping could not be checked.");
+        if (view.issues.length > 0) {
+          ctx.error("Mail cannot fully use this mapping:");
+          printContactDirectoryIssues(ctx, view.issues);
+        }
+      },
+    }),
+    command("admin contact-directory candidates", {
+      summary: "List an app's capabilities that are compatible with each contact-directory function",
+      flags: { app: flag.string({ description: "Application id, for example contacts", required: true }) },
+      run: async ({ ctx, flags }) => {
+        const view = await readApi<ContactDirectoryAdminView>(ctx, CONTACT_DIRECTORY_PATH);
+        if (!view.apps) throw new Error("The capability catalog is unavailable. Try again later.");
+        const app = view.apps.find((entry) => entry.appId === flags.app);
+        if (!app) throw new Error(`${flags.app} is not installed or publishes no capabilities.`);
+        if (printStructured(ctx, app)) return;
+        ctx.print(`${app.appName} (${app.appId})`);
+        ctx.table(
+          CONTACT_DIRECTORY_ROWS.flatMap((row) =>
+            app.capabilities[row.field].length > 0
+              ? app.capabilities[row.field].map((option) => ({ function: row.name, capability: option.id, title: option.title }))
+              : [{ function: row.name, capability: "(none compatible)", title: "" }],
+          ),
+          [
+            { key: "function", label: "FUNCTION" },
+            { key: "capability", label: "CAPABILITY" },
+            { key: "title", label: "TITLE" },
+          ],
+        );
+      },
+    }),
+    command("admin contact-directory set", {
+      summary: "Choose the contact directory app and its capabilities",
+      description:
+        "Unset functions keep their current capability when --app is unchanged. For a new app they start from the same proposal as the admin dialog: the Contacts default ID when compatible, otherwise the only compatible capability. Mail validates the result before storing it.",
+      flags: {
+        app: flag.string({ description: "Application id of the contact directory", required: true }),
+        suggest: flag.string({ description: "Query for recipient suggestions (required)" }),
+        resolve: flag.string({ description: "Query that matches conversation participants (required)" }),
+        read: flag.string({ description: "Query that reads one contact" }),
+        noRead: flag.boolean({ name: "no-read", description: "Do not map a read Query" }),
+        books: flag.string({ description: "Query that lists writable books; needs --create" }),
+        noBooks: flag.boolean({ name: "no-books", description: "Do not map a writable-books Query" }),
+        create: flag.string({ description: "Action that creates a contact; needs --books" }),
+        noCreate: flag.boolean({ name: "no-create", description: "Do not map a create Action" }),
+        yes: confirmFlag("Confirm the change for every Mail user"),
+      },
+      examples: [
+        "cld mail admin contact-directory set --app crm --suggest customer.suggest --resolve customer.match --no-read --no-books --no-create --yes",
+      ],
+      run: async ({ ctx, flags }) => {
+        const overrides = {
+          suggest: flags.suggest,
+          resolve: flags.resolve,
+          read: contactDirectoryOverride(flags.read, flags.noRead, "read"),
+          listWritableBooks: contactDirectoryOverride(flags.books, flags.noBooks, "books"),
+          create: contactDirectoryOverride(flags.create, flags.noCreate, "create"),
+        };
+        const appId = flags.app;
+        if (!appId) throw new Error("Pass --app <id>.");
+        if (!flags.yes) throw new Error("Pass --yes to change the contact directory for every Mail user.");
+        const view = await readApi<ContactDirectoryAdminView>(ctx, CONTACT_DIRECTORY_PATH);
+        const config =
+          appId === view.config.appId
+            ? { ...view.config }
+            : proposeContactDirectoryConfig(appId, view.apps?.find((app) => app.appId === appId)?.capabilities);
+        for (const field of ["suggest", "resolve", "read", "listWritableBooks", "create"] as const) {
+          const value = overrides[field];
+          if (value !== undefined) config[field] = value;
+        }
+        return saveContactDirectoryMapping(ctx, config);
+      },
+    }),
+    command("admin contact-directory reset", {
+      summary: "Use the built-in Contacts app with its default capabilities",
+      flags: { yes: confirmFlag("Confirm the change for every Mail user") },
+      run: async ({ ctx, flags }) => {
+        if (!flags.yes) throw new Error("Pass --yes to reset the contact directory for every Mail user.");
+        return saveContactDirectoryMapping(ctx, { ...MAIL_CONTACT_DIRECTORY_DEFAULTS });
       },
     }),
     command("admin security reports", {

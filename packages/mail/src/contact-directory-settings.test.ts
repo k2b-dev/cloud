@@ -4,8 +4,10 @@ import {
   canCreateDirectoryContacts,
   DEFAULT_MAIL_CONTACT_DIRECTORY,
   MAIL_CONTACT_DIRECTORY_DEFAULTS,
+  proposeContactDirectoryConfig,
   requestContactDirectory,
   resolveMailContactDirectory,
+  usesContactDirectoryDefaults,
 } from "./contact-directory-settings";
 
 const crm = {
@@ -80,5 +82,41 @@ describe("Mail contact directory settings", () => {
     expect(
       canCreateDirectoryContacts(resolveMailContactDirectory({ ...crm, listWritableBooks: "segment.list", create: "customer.create" })),
     ).toBeTrue();
+  });
+});
+
+describe("contact directory proposals", () => {
+  test("proposes Contacts defaults when compatible, otherwise the only compatible capability", () => {
+    const one = (id: string) => [{ id }];
+    expect(
+      proposeContactDirectoryConfig("crm", {
+        suggest: [{ id: "contact.suggest" }, { id: "customer.suggest" }],
+        resolve: one("customer.match"),
+        read: [{ id: "customer.read" }, { id: "customer.get" }],
+        listWritableBooks: [],
+        create: one("customer.create"),
+      }),
+    ).toEqual({
+      appId: "crm",
+      suggest: "contact.suggest",
+      resolve: "customer.match",
+      read: "",
+      listWritableBooks: "",
+      create: "customer.create",
+    });
+    expect(proposeContactDirectoryConfig("missing", undefined)).toEqual({
+      appId: "missing",
+      suggest: "",
+      resolve: "",
+      read: "",
+      listWritableBooks: "",
+      create: "",
+    });
+  });
+
+  test("recognizes the Contacts defaults", () => {
+    expect(usesContactDirectoryDefaults({ ...MAIL_CONTACT_DIRECTORY_DEFAULTS })).toBe(true);
+    expect(usesContactDirectoryDefaults({ ...MAIL_CONTACT_DIRECTORY_DEFAULTS, create: "" })).toBe(false);
+    expect(usesContactDirectoryDefaults(crm)).toBe(false);
   });
 });

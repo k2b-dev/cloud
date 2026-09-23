@@ -7,7 +7,6 @@ import { mailCapabilities } from "./capabilities";
 import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import adminPage from "./frontend/admin";
-import adminContactDirectoryPage from "./frontend/admin-contact-directory";
 import adminSecurityPage from "./frontend/admin-security";
 import { publicAttachmentRoutes } from "./frontend/public-attachments";
 import { mailHelp } from "./help";
@@ -32,7 +31,6 @@ const router = new Hono<AuthContext>()
   .route("/app/mail", pageRoutes)
   .get("/admin/mail", auth.requireRole("admin", ssr.access), ...adminPage)
   .get("/admin/mail/security", auth.requireRole("admin", ssr.access), ...adminSecurityPage)
-  .get("/admin/mail/contact-directory", auth.requireRole("admin", ssr.access), ...adminContactDirectoryPage)
   .route("/share/mail", publicAttachmentRoutes);
 
 router.get("/app/mail/*", auth.requireRole("*"), (c) => ssr.error(c, 404));

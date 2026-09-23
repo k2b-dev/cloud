@@ -95,14 +95,27 @@ invitations without turning Mail into the calendar owner.
 
 Mail reads recipients and participant contacts from the built-in
 [Contacts](/en/apps/contacts) app by default; a new or upgraded installation
-needs no configuration. Cloud administrators can switch to another application
-under **Administration → Mail → Contact directory**, for example a
-customer-management app that implements the
+needs no configuration. Cloud administrators can switch to another application,
+for example a customer-management app that implements the
 [contact-directory contract](/en/docs/platform/contact-directory).
+**Administration → Mail** shows the current app and whether it uses the
+Contacts defaults or a custom mapping; **Configure** opens the editor.
 
-The form stores six Mail settings. Each capability list offers only
+The editor stores six Mail settings. Each capability list offers only
 capabilities whose published schemas match the contract, and **Save** rejects a
-mapping Mail cannot use with a message on each affected field.
+mapping Mail cannot use with a message on each affected field. **Use Contacts
+defaults** restores the built-in mapping.
+
+Administrators can do the same from a terminal. `cld` sends the mapping to the
+same server check and exits with status 1 and the same issues when Mail cannot
+use it:
+
+```bash
+cld mail admin contact-directory show
+cld mail admin contact-directory candidates --app crm
+cld mail admin contact-directory set --app crm --suggest customer.suggest --resolve customer.match --no-read --no-books --no-create --yes
+cld mail admin contact-directory reset --yes
+```
 
 | Setting | Default | Required |
 | --- | --- | --- |

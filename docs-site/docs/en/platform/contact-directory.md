@@ -161,9 +161,12 @@ Each issue names the `code` (`kind`, `idempotency`, `stream`, `input`, or
 
 ## Connect Mail to your application
 
-Administrators choose the provider under **Administration → Mail → Contact
-directory**. The form lists every application with capabilities and, for each
-function, only the compatible capabilities of the selected application.
+Administrators choose the provider in the **Contact directory** dialog on
+**Administration → Mail**, or with `cld mail admin contact-directory`. Both
+list every application with capabilities and, for each function, only the
+compatible capabilities of the selected application; `cld mail admin
+contact-directory candidates --app <id>` shows what Mail would accept from your
+application.
 `suggest` and `resolve` are required. Leave `read`, `listWritableBooks`, and
 `create` empty to hide the Mail features that need them. `listWritableBooks`
 and `create` work only together. The [Mail app page](/en/apps/mail) describes

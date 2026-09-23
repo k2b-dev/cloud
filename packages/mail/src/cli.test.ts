@@ -3041,6 +3041,129 @@ test("admin storage commands preserve snapshot and queued reconciliation contrac
   expect(requests).toEqual(["GET /api/mail/admin/storage", "POST /api/mail/admin/storage/reconcile"]);
 });
 
+test("admin contact-directory commands show, validate through the server, reset, and list candidates", async () => {
+  const contactsDefaults = {
+    appId: "contacts",
+    suggest: "contact.suggest",
+    resolve: "contact.resolve",
+    read: "contact.read",
+    listWritableBooks: "book.list",
+    create: "contact.create",
+  };
+  const crmCapabilities = {
+    suggest: [{ id: "customer.suggest", title: "Suggest customers" }],
+    resolve: [{ id: "customer.match", title: "Match customers" }],
+    read: [],
+    listWritableBooks: [],
+    create: [],
+  };
+  const view = {
+    config: contactsDefaults,
+    apps: [
+      {
+        appId: "contacts",
+        appName: "Contacts",
+        appIcon: "ti ti-address-book",
+        capabilities: {
+          suggest: [{ id: "contact.suggest", title: "Suggest contacts" }],
+          resolve: [{ id: "contact.resolve", title: "Resolve contacts" }],
+          read: [{ id: "contact.read", title: "Read contact" }],
+          listWritableBooks: [{ id: "book.list", title: "List books" }],
+          create: [{ id: "contact.create", title: "Create contact" }],
+        },
+      },
+      { appId: "crm", appName: "CRM", appIcon: "", capabilities: crmCapabilities },
+    ],
+    issues: [],
+  };
+  const invalid = {
+    message: "Mail cannot use this mapping yet.",
+    code: "CONTACT_DIRECTORY_INVALID",
+    issues: [{ field: "resolve", code: "capability_missing", message: "“Match participants”: customer.nope does not exist in this app." }],
+  };
+  const puts: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname !== "/api/mail/admin/contact-directory") return api({ message: "unexpected" }, { status: 500 });
+    if (request.method === "GET") return api(view);
+    if (request.method === "PUT") {
+      const body = await request.json();
+      puts.push(body);
+      return body.resolve === "customer.nope" ? api(invalid, { status: 400 }) : api(body);
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const admin = ["mail", "admin", "contact-directory"];
+
+  const shownJson = await runCli(origin, ["--json", ...admin, "show"]);
+  const shownText = await runCli(origin, [...admin, "show"]);
+  expect(shownJson.exitCode, shownJson.stderr).toBe(0);
+  expect(JSON.parse(shownJson.stdout)).toEqual({
+    config: contactsDefaults,
+    appName: "Contacts",
+    usesDefaults: true,
+    catalogAvailable: true,
+    issues: [],
+  });
+  expect(shownText.exitCode, shownText.stderr).toBe(0);
+  expect(shownText.stdout).toContain("App: Contacts (contacts); defaults");
+  expect(shownText.stdout).toContain("contact.suggest");
+
+  const candidatesJson = await runCli(origin, ["--json", ...admin, "candidates", "--app", "crm"]);
+  const candidatesText = await runCli(origin, [...admin, "candidates", "--app", "crm"]);
+  const unknownApp = await runCli(origin, [...admin, "candidates", "--app", "billing"]);
+  expect(candidatesJson.exitCode, candidatesJson.stderr).toBe(0);
+  expect(JSON.parse(candidatesJson.stdout)).toEqual(view.apps[1]);
+  expect(candidatesText.stdout).toContain("customer.match");
+  expect(candidatesText.stdout).toContain("(none compatible)");
+  expect(unknownApp.exitCode).not.toBe(0);
+  expect(unknownApp.stderr).toContain("billing is not installed");
+
+  const unconfirmed = await runCli(origin, [...admin, "set", "--app", "crm"]);
+  expect(unconfirmed.exitCode).not.toBe(0);
+  expect(unconfirmed.stderr).toContain("Pass --yes");
+  const conflicting = await runCli(origin, [...admin, "set", "--app", "crm", "--read", "customer.read", "--no-read", "--yes"]);
+  expect(conflicting.exitCode).not.toBe(0);
+  expect(conflicting.stderr).toContain("--read or --no-read");
+  expect(puts).toEqual([]);
+
+  // A new app starts from the dialog's proposal: the only compatible capability per function.
+  const crmMapping = { appId: "crm", suggest: "customer.suggest", resolve: "customer.match", read: "", listWritableBooks: "", create: "" };
+  const setJson = await runCli(origin, ["--json", ...admin, "set", "--app", "crm", "--yes"]);
+  const setText = await runCli(origin, [...admin, "set", "--app", "crm", "--no-read", "--yes"]);
+  expect(setJson.exitCode, setJson.stderr).toBe(0);
+  expect(JSON.parse(setJson.stdout)).toEqual(crmMapping);
+  expect(setText.exitCode, setText.stderr).toBe(0);
+  expect(setText.stdout).toContain("Saved the Mail contact directory.");
+  expect(setText.stdout).toContain("crm; custom");
+
+  const rejectedJson = await runCli(origin, ["--json", ...admin, "set", "--app", "crm", "--resolve", "customer.nope", "--yes"]);
+  const rejectedText = await runCli(origin, [...admin, "set", "--app", "crm", "--resolve", "customer.nope", "--yes"]);
+  expect(rejectedJson.exitCode).toBe(1);
+  expect(JSON.parse(rejectedJson.stdout)).toEqual(invalid);
+  expect(rejectedText.exitCode).toBe(1);
+  expect(rejectedText.stderr).toContain("Mail cannot use this mapping yet.");
+  expect(rejectedText.stderr).toContain("- resolve: “Match participants”: customer.nope does not exist in this app.");
+
+  // The same app keeps its current mapping; explicit flags replace single functions.
+  const sameApp = await runCli(origin, ["--json", ...admin, "set", "--app", "contacts", "--no-books", "--no-create", "--yes"]);
+  expect(JSON.parse(sameApp.stdout)).toEqual({ ...contactsDefaults, listWritableBooks: "", create: "" });
+
+  const resetJson = await runCli(origin, ["--json", ...admin, "reset", "--yes"]);
+  expect(resetJson.exitCode, resetJson.stderr).toBe(0);
+  expect(JSON.parse(resetJson.stdout)).toEqual(contactsDefaults);
+  expect(puts).toEqual([
+    crmMapping,
+    crmMapping,
+    { ...crmMapping, resolve: "customer.nope" },
+    { ...crmMapping, resolve: "customer.nope" },
+    { ...contactsDefaults, listWritableBooks: "", create: "" },
+    contactsDefaults,
+  ]);
+}, 60_000);
+
 test("message deletion requires explicit confirmation before the API call", async () => {
   let mutationRequested = false;
   const server = withMailbox(() => {
