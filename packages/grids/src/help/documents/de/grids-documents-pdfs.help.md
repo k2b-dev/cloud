@@ -447,7 +447,11 @@ Zusätzliche BWIP-Symbol-IDs
 
 Die Dokumentseite listet jedes generierte Dokument einer Vorlage auf. Nutze **Tabelle** für eine durchsuchbare Liste oder **Ordner**, um nach Jahr und Monat zu navigieren. Eine Suche wechselt zum Tabellenergebnis, damit passende Dokumente nicht in Ordnern verborgen bleiben.
 
-**Alle Dokumente** öffnet sich in der Ansicht **Ordner**, gruppiert nach Dokumentvorlage und anschließend Jahr. Die Suche durchsucht Dateinamen, Dokumentnummern und Tags der gesamten Base, unabhängig vom geöffneten Ordner. Beide Dokumentseiten zeigen ihre ersten Ergebnisse bereits beim Laden der Seite.
+**Alle Dokumente** listet jedes Dokument der Base, egal ob eine Vorlage, ein Workflow oder beide es erzeugt haben, in jedem Dateiformat. Die Seite öffnet sich in der Ansicht **Ordner**, gruppiert nach Dokumentvorlage oder Workflow und anschließend Jahr. Die Suche durchsucht Dateinamen, Dokumentnummern und Tags der gesamten Base, unabhängig vom geöffneten Ordner. Beide Dokumentseiten zeigen ihre ersten Ergebnisse bereits beim Laden der Seite.
+
+Filtere **Alle Dokumente** nach **Workflow**, **Vorlage**, **Datensatztabelle** und **Dateityp** und kombiniere die Filter, um die Liste einzugrenzen. **Datensatztabelle** findet nur Dokumente, die für einen Datensatz dieser Tabelle erzeugt wurden, nicht die Quellzeilen eines Workflow-Exports oder die Dateien in einem ZIP. **Sortierung** wechselt zwischen neueste zuerst (Standard), älteste zuerst und Dateiname. Eine Suche, ein Filter oder eine andere Sortierung zeigt eine Liste statt Ordnern. Die Adresse behält alles davon, sodass ein Neuladen oder ein geteilter Link dieselbe Ansicht öffnet.
+
+Ein Dokument aus einem Workflow nennt seinen Workflow; wähle den Namen, um den Lauf zu öffnen, der es erzeugt hat. Die Details eines ZIP-Dokuments listen seinen **Archivinhalt**: jede verpackte Datei, ihre Größe und das Dokument, aus dem sie stammt. Das Archiv wird nicht mit den Datensätzen dieser Dokumente verknüpft.
 
 Dokumentdetails zeigen Downloads, übernommene Zeilenanzahl und Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV bleibt Originaltext. **Freigabelinks** erstellt öffentliche Links für die gespeicherte Hauptdatei; **Technische Details** zeigt IDs und Prüfsummen. Unterdialoge führen zurück. **Weitere Aktionen → Erneut erzeugen** folgt der Ausstellungsregel und überschreibt nie das Original.
 

@@ -212,7 +212,7 @@ twice. This is not accounting certification or a payment-execution service.
 
 Use **New** in Edit mode for permitted creation actions. Table-based actions ask for a table and preselect the current one when eligible. **View** opens the existing query editor. **Documents** always expands to **All documents** and individual template destinations. Workflow email templates live under **Settings → Email templates**.
 
-**All documents** defaults to folders by document template and year. Search matches filenames, document numbers, and tags across the Base. Both the Base catalog and template document pages load their initial results on the server.
+**All documents** shows every Document of the Base in any format, whether a template, a workflow, or both produced it. It defaults to folders by document template or workflow and year. Search matches filenames, document numbers, and tags across the Base. Combinable filters narrow it by workflow, template, record table (direct record binding only, never the source rows of an export or ZIP contents), and primary file type; sort is newest first by default, or oldest first or by filename. Search, filters, and sort flatten the folders into one list and stay in the URL. Workflow Documents link to their run when the reader can open the workflow, and a ZIP Document lists its archive contents as provenance without associating the archive with the contained Documents' records. Both the Base catalog and template document pages load their initial results on the server.
 
 Open a Base's **Overview** to search its resources and use shared navigation groups.
 Base admins configure one level of ordered groups in **Settings → Navigation**; groups can mix

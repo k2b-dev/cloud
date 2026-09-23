@@ -280,6 +280,8 @@ export const gridsService = {
     listDocumentsForTemplate: documents.listDocumentsForTemplate,
     browseDocumentsForTemplate: documents.browseDocumentsForTemplate,
     browseDocumentsForBase: documents.browseDocumentsForBase,
+    catalogFacets: documents.loadDocumentCatalogFacets,
+    listArchiveContents: documents.listDocumentArchiveContents,
     summarizeDocument: documents.summarizeDocument,
     getDocument: documents.getDocument,
     getDocumentByShortId: documents.getDocumentByShortId,

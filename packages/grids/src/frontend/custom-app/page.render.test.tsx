@@ -111,6 +111,8 @@ const fixture = (): ComponentProps<typeof CustomAppPage> => {
             tableId: "TABLE1",
             recordId: "REC001",
             templateId: "DOC001",
+            workflowId: null,
+            workflowRunId: null,
             number: "RE-001",
             filename: "RE-001.pdf",
             createdAt: timestamp,

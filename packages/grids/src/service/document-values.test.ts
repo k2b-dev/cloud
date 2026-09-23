@@ -8,6 +8,11 @@ describe("document cursors", () => {
     expect(decodeDocumentCursor(encodeDocumentCursor(value))).toEqual(value);
   });
 
+  test("carries the filename keyset only for filename-sorted pages", () => {
+    const value = { createdAt: "2026-07-14T00:00:00.000Z", id: "11111111-1111-4111-8111-111111111111" };
+    expect(decodeDocumentCursor(encodeDocumentCursor(value, "a.pdf"))).toEqual({ ...value, filename: "a.pdf" });
+  });
+
   test("rejects structurally valid cursors with invalid SQL values", () => {
     const encode = (value: unknown) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
     expect(decodeDocumentCursor(encode({ createdAt: "not-a-date", id: "not-a-uuid" }))).toBeNull();

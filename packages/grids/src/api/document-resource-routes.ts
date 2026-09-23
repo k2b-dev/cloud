@@ -6,12 +6,14 @@ import { z } from "zod";
 import { DocumentProfileReferenceSchema } from "../document-profile-contracts";
 import { gridsService } from "../service";
 import { listDocumentRecordSources } from "../service/document-record-sources";
+import { documentArtifactDownloadUrl } from "./document-public-contracts";
 import {
   BaseDocumentBrowseQuerySchema,
+  BaseDocumentListQuerySchema,
+  documentCatalogFilters,
   gateDocument,
   PublicDocumentBrowseResponseSchema,
   PublicDocumentListSchema,
-  PublicDocumentPageQuerySchema,
   PublicDocumentSchema,
   projectDocuments,
 } from "./documents-api-shared";
@@ -57,7 +59,7 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       "/by-base/:baseId/browse",
       describeRoute({
         tags: ["Grids:Document"],
-        summary: "Browse Documents by template and year or search the Base",
+        summary: "Browse Documents by template and year, or search, filter and sort the Base catalog",
         responses: {
           200: jsonResponse(PublicDocumentBrowseResponseSchema, "Document browser page"),
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),
@@ -68,8 +70,10 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
         const baseId = internalIdParam(c, "baseId")!;
         const gate = await gateAt(c, { baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+        const query = c.req.valid("query");
         const page = await gridsService.document.browseDocumentsForBase({
-          ...c.req.valid("query"),
+          ...query,
+          filters: documentCatalogFilters(query),
           baseId,
           timeZone: (await getDateConfig(c)).timeZone,
         });
@@ -86,13 +90,13 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       "/by-base/:baseId",
       describeRoute({
         tags: ["Grids:Document"],
-        summary: "List Documents for a Base",
+        summary: "List, search, filter and sort Documents for a Base",
         responses: {
           200: jsonResponse(PublicDocumentListSchema, "Documents"),
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),
         },
       }),
-      v("query", PublicDocumentPageQuerySchema),
+      v("query", BaseDocumentListQuerySchema),
       async (c) => {
         const baseId = internalIdParam(c, "baseId")!;
         const gate = await gateAt(c, { baseId }, "read");
@@ -100,6 +104,9 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
         const query = c.req.valid("query");
         const page = await gridsService.document.listForBase({
           baseId,
+          q: query.q,
+          filters: documentCatalogFilters(query),
+          sort: query.sort,
           limit: query.limit,
           cursor: query.cursor || null,
         });
@@ -148,6 +155,52 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const { offset, limit } = c.req.valid("query");
         return c.json(await listDocumentRecordSources(document.id, offset, limit, undefined, currentActorViewer(c)));
+      },
+    )
+    .get(
+      "/:documentId/contents",
+      describeRoute({
+        tags: ["Grids:Document"],
+        summary: "List the files packaged in a ZIP Document",
+        description:
+          "Frozen provenance of a ZIP Document: each packaged path, its size and the stored Document artifact it came from. Other Documents have no contents.",
+        responses: {
+          200: jsonResponse(
+            z.object({
+              items: z.array(
+                z.object({
+                  path: z.string(),
+                  sizeBytes: z.number().int().nonnegative(),
+                  documentId: z.string(),
+                  artifactKey: z.string(),
+                  downloadUrl: z.string(),
+                }),
+              ),
+              total: z.number().int().nonnegative(),
+              hasMore: z.boolean(),
+            }),
+            "Archive contents page",
+          ),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+          404: jsonResponse(ErrorResponseSchema, "Document not found"),
+        },
+      }),
+      requirePublicIdParam("documentId", "document", "Document"),
+      v(
+        "query",
+        z.object({ offset: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(100).default(50) }),
+      ),
+      async (c) => {
+        const document = await gridsService.document.getDocument(internalIdParam(c, "documentId")!);
+        if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
+        const gate = await gateDocument(c, document, "read");
+        if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+        const { offset, limit } = c.req.valid("query");
+        const page = await gridsService.document.listArchiveContents(document.id, offset, limit);
+        return c.json({
+          ...page,
+          items: page.items.map((item) => ({ ...item, downloadUrl: documentArtifactDownloadUrl(item.documentId, item.artifactKey) })),
+        });
       },
     )
     .get(

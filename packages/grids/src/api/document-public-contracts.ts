@@ -3,6 +3,31 @@ import { ShortIdSchema } from "../contracts";
 
 export const PUBLIC_DOCUMENT_PAGE_LIMIT = 100;
 
+/** Sort orders of the Base-wide document catalog; `newest` is the default. */
+export const DOCUMENT_CATALOG_SORTS = ["newest", "oldest", "name"] as const;
+export type DocumentCatalogSort = (typeof DOCUMENT_CATALOG_SORTS)[number];
+
+/** A bare `type/subtype` media type such as `application/pdf`. */
+export const DocumentMediaTypeSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(127)
+  .regex(/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/, "Expected a media type such as application/pdf");
+
+const CatalogFacetSchema = z.object({ id: ShortIdSchema, name: z.string() }).strict();
+
+/** Filter values that occur in a Base's documents, for building catalog filters. */
+export const PublicDocumentCatalogFacetsSchema = z
+  .object({
+    workflows: z.array(CatalogFacetSchema),
+    templates: z.array(CatalogFacetSchema),
+    tables: z.array(CatalogFacetSchema),
+    mediaTypes: z.array(z.string()),
+  })
+  .strict();
+export type PublicDocumentCatalogFacets = z.infer<typeof PublicDocumentCatalogFacetsSchema>;
+
 const DOWNLOAD_URL_DESCRIPTION = "Authenticated same-origin download path. Not a public share; access is checked on every download.";
 
 /** Root-relative download path for a Document's stored primary artifact. */
@@ -41,6 +66,8 @@ const DocumentShapeSchema = z
     tableId: ShortIdSchema.nullable(),
     recordId: ShortIdSchema.nullable(),
     templateId: ShortIdSchema.nullable(),
+    workflowId: ShortIdSchema.nullable().describe("Workflow whose run generated the Document, if any."),
+    workflowRunId: ShortIdSchema.nullable().describe("Workflow run that generated the Document, if any."),
     number: z.string().min(1).max(200),
     filename: z.string().trim().min(1).max(255),
     createdAt: z.string().datetime(),
@@ -68,6 +95,6 @@ const hasCompleteRecordBinding = (document: Pick<z.infer<typeof DocumentShapeSch
 const bindingError = "Document record bindings must be all present or all absent";
 
 export const PublicDocumentSchema = DocumentShapeSchema.refine(hasCompleteRecordBinding, bindingError);
-export const DocumentCapabilityDataSchema = DocumentShapeSchema.omit({ tags: true, createdBy: true })
+export const DocumentCapabilityDataSchema = DocumentShapeSchema.omit({ tags: true, createdBy: true, workflowId: true, workflowRunId: true })
   .strip()
   .refine(hasCompleteRecordBinding, bindingError);

@@ -8,6 +8,8 @@ const document = (id: string): PublicDocument => ({
   tableId: "table01",
   recordId: "record1",
   templateId: "templ001",
+  workflowId: null,
+  workflowRunId: null,
   number: `DOC-${id}`,
   filename: `${id}.pdf`,
   createdAt: "2026-08-23T00:00:00.000Z",
