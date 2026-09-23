@@ -32,6 +32,7 @@ import {
 import { withShortIdDb } from "../lib/short-id";
 import { deriveReplyAddressObjects } from "../reply-recipients";
 import { requireMailboxPermission } from "./access";
+import { attachmentMimeOrder } from "./attachment-order";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { resolveDefaultSignatureSource } from "./compose-templates";
@@ -483,21 +484,6 @@ const insertActivity = async (params: {
   `;
 };
 
-/**
- * Source attachments keep their MIME order. Part paths are dot-separated part numbers ("2", "1.3",
- * "10") or generated labels ending in a position ("outbound-attachment-10"), so their numbers are
- * compared as numbers rather than as text.
- */
-const sourceAttachmentOrder = sql`
-  ARRAY(
-    SELECT digits[1]::numeric
-    FROM regexp_matches(part.part_path, '[0-9]+', 'g') WITH ORDINALITY AS part_number(digits, ordinal)
-    ORDER BY ordinal
-  ),
-  part.part_path,
-  attachment.id
-`;
-
 const copyForwardAttachments = async (params: { db: typeof sql; draftId: string; sourceMessageId: string }): Promise<Result<number>> => {
   const [invalid] = await params.db<{ invalid: boolean }[]>`
     SELECT EXISTS (
@@ -521,12 +507,12 @@ const copyForwardAttachments = async (params: { db: typeof sql; draftId: string;
       left(COALESCE(NULLIF(attachment.content_type, ''), 'application/octet-stream'), 255) AS content_type,
       blob.byte_length,
       blob.content_hash,
-      (row_number() OVER (ORDER BY ${sourceAttachmentOrder}) - 1)::int AS position
+      (row_number() OVER (ORDER BY ${attachmentMimeOrder}) - 1)::int AS position
     FROM mail.attachments attachment
     JOIN mail.message_parts part ON part.id = attachment.part_id
     JOIN mail.message_part_blobs blob ON blob.id = attachment.blob_id AND blob.complete = true
     WHERE attachment.message_id = ${params.sourceMessageId}::uuid
-    ORDER BY ${sourceAttachmentOrder}
+    ORDER BY ${attachmentMimeOrder}
   `;
   for (const attachment of source) {
     await withShortIdDb(
@@ -596,13 +582,13 @@ const sourceAttachmentPreviews = async (db: typeof sql, sourceMessageId: string 
       left(COALESCE(NULLIF(attachment.content_type, ''), 'application/octet-stream'), 255) AS content_type,
       blob.byte_length,
       blob.content_hash,
-      (row_number() OVER (ORDER BY ${sourceAttachmentOrder}) - 1)::int AS position,
+      (row_number() OVER (ORDER BY ${attachmentMimeOrder}) - 1)::int AS position,
       attachment.created_at
     FROM mail.attachments attachment
     JOIN mail.message_parts part ON part.id = attachment.part_id
     JOIN mail.message_part_blobs blob ON blob.id = attachment.blob_id AND blob.complete = true
     WHERE attachment.message_id = ${sourceMessageId}::uuid
-    ORDER BY ${sourceAttachmentOrder}
+    ORDER BY ${attachmentMimeOrder}
   `;
   return rows.map((row) => ({
     id: row.id,

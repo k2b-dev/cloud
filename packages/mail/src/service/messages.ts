@@ -4,6 +4,7 @@ import { convert } from "html-to-text";
 import { z } from "zod";
 import type { ConversationView, ConversationWorkStatus } from "../contracts";
 import type { MailSecurityAssessment } from "../security-contracts";
+import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
 import { resolveMailExecution } from "./execution";
@@ -914,15 +915,16 @@ const messageDetailAttachmentJoin = sql`
   LEFT JOIN LATERAL (
     SELECT jsonb_agg(
       jsonb_build_object(
-        'id', a.id,
-        'filename', a.filename,
-        'contentType', a.content_type,
-        'sizeBytes', a.size_bytes,
-        'contentId', a.content_id
-      ) ORDER BY a.id
+        'id', attachment.id,
+        'filename', attachment.filename,
+        'contentType', attachment.content_type,
+        'sizeBytes', attachment.size_bytes,
+        'contentId', attachment.content_id
+      ) ORDER BY ${attachmentMimeOrder}
     ) AS items
-    FROM mail.attachments a
-    WHERE a.message_id = mc.id
+    FROM mail.attachments attachment
+    JOIN mail.message_parts part ON part.id = attachment.part_id
+    WHERE attachment.message_id = mc.id
   ) attachment_rows ON true
 `;
 
