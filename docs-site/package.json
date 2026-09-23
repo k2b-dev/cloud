@@ -29,7 +29,7 @@
     "verify:docs": "bun run check:docs && bun run check:api-surface && bun run check:example-coverage && bun run check:skills && bun run check:ui-catalog && bun run check:harness && bun run typecheck && bun run typecheck:examples && CLOUD_DOCS_SITE_URL=http://localhost:3000 bun run build"
   },
   "dependencies": {
-    "@hono/standard-validator": "0.2.2",
+    "@hono/standard-validator": "0.4.0",
     "@k2b/fibel": "0.7.6",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
