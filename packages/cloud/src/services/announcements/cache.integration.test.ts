@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { buildProjectedUser } from "../session/user";
@@ -46,20 +46,27 @@ suite("shared announcement cache", () => {
     expect(await redis.get(key)).toBeNull();
   });
   test("applies scheduling and expiry to a warm shared snapshot without leaking cookie state", async () => {
-    const scheduled = await create("announcement", new Date(Date.now() + 500).toISOString());
-    const expiring = await create("banner", new Date(Date.now() - 1000).toISOString(), new Date(Date.now() + 500).toISOString());
+    // Boundaries a minute ahead stay in the future however slow the setup is; the read-time
+    // filter then crosses them on a moved wall clock while the Valkey snapshot stays warm.
+    const boundary = Date.now() + 60_000;
+    const scheduled = await create("announcement", new Date(boundary).toISOString());
+    const expiring = await create("banner", new Date(Date.now() - 1000).toISOString(), new Date(boundary).toISOString());
     const before = await announcements.active.forState({ state });
     expect(before.announcements.some((x) => x.id === scheduled.id)).toBe(false);
     expect(before.banners.some((x) => x.id === expiring.id)).toBe(true);
     const cached = await redis.get(key);
-    await Bun.sleep(550);
-    const after = await announcements.active.forState({ state });
-    expect(after.announcements.some((x) => x.id === scheduled.id)).toBe(true);
-    expect(after.banners.some((x) => x.id === expiring.id)).toBe(false);
-    expect(await redis.get(key)).toBe(cached);
-    expect(
-      (await announcements.active.forState({ state: { ...state, seenAnnouncementVersion: scheduled.version } })).announcements,
-    ).toEqual([]);
-    expect((await announcements.active.forState({ state })).announcements).toHaveLength(1);
+    setSystemTime(new Date(boundary + 1_000));
+    try {
+      const after = await announcements.active.forState({ state });
+      expect(after.announcements.some((x) => x.id === scheduled.id)).toBe(true);
+      expect(after.banners.some((x) => x.id === expiring.id)).toBe(false);
+      expect(await redis.get(key)).toBe(cached);
+      expect(
+        (await announcements.active.forState({ state: { ...state, seenAnnouncementVersion: scheduled.version } })).announcements,
+      ).toEqual([]);
+      expect((await announcements.active.forState({ state })).announcements).toHaveLength(1);
+    } finally {
+      setSystemTime();
+    }
   });
 });

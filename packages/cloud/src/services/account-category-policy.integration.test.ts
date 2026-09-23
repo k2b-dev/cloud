@@ -182,7 +182,9 @@ suite("isolated account category policy", () => {
     expect(deliveries).toHaveLength(2);
     const directory = await user("ipa");
     await magicLink.request({ email: directory.uid }, sender);
-    await Bun.sleep(50);
+    // The FreeIPA hint is sent fire-and-forget after the app URL lookup; wait for it by time.
+    const hintDeadline = Date.now() + 5_000;
+    while (ipaHints.length === 0 && Date.now() < hintDeadline) await Bun.sleep(10);
     expect(ipaHints).toEqual([directory.mail]);
     expect(deliveries).toHaveLength(2);
     const unknown = `category-missing-${crypto.randomUUID()}`;

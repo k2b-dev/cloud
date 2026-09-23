@@ -319,10 +319,18 @@ describe("createHeartbeat", () => {
       onError: () => undefined,
       onStale: (error) => stale.push(error),
     });
-    await heartbeat.start();
-    await waitUntil(() => attempts >= 2);
-    await heartbeat.stop();
-    await Bun.sleep(12);
+    // Hold wall time until stop() so a stalled poll cannot let the failing retries reach the stale
+    // deadline first; then move far past it so any retry that outlives stop() would report stale.
+    setSystemTime(new Date("2026-09-14T00:00:00Z"));
+    try {
+      await heartbeat.start();
+      await waitUntil(() => attempts >= 2);
+      await heartbeat.stop();
+      setSystemTime(new Date("2026-09-14T01:00:00Z"));
+      await Bun.sleep(12);
+    } finally {
+      setSystemTime();
+    }
 
     expect(stale).toHaveLength(0);
   });
