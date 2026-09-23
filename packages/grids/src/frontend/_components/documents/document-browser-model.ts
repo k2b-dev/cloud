@@ -66,9 +66,16 @@ export const documentCountLabel = (
   return t.countDocuments({ formatted: format.format(documents.length), more: hasMore });
 };
 
-export const documentBrowserEmptyText = (search: string, mode: DocumentBrowserMode, folderPath: string[], locale = "en"): string => {
+export const documentBrowserEmptyText = (
+  search: string,
+  mode: DocumentBrowserMode,
+  folderPath: string[],
+  locale = "en",
+  filtered = false,
+): string => {
   const t = documentMessages.resolve([locale]).t;
   if (search.trim()) return t.noMatchingDocuments;
+  if (filtered) return t.noMatchingFilteredDocuments;
   if (mode === "folders" && folderPath.length > 0) return t.emptyFolder;
   return t.noGeneratedDocuments;
 };

@@ -1,11 +1,13 @@
 export {
   browseDocumentsForBase,
   browseDocumentsForTemplate,
+  listDocumentArchiveContents,
   listDocumentSummariesForRecordByTemplates,
   listDocumentsForBase,
   listDocumentsForRecord,
   listDocumentsForTemplate,
   listDocumentsForWorkflow,
+  loadDocumentCatalogFacets,
 } from "./document-browse";
 export {
   createDocumentForRecord,

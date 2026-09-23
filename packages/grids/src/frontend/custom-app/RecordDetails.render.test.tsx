@@ -75,6 +75,8 @@ test("issued identity promotes the official number while keeping the customer an
       tableId: "TABLE1",
       recordId: "REC001",
       templateId: "DOC001",
+      workflowId: null,
+      workflowRunId: null,
       number: "RE-2026-0042",
       filename: "RE-2026-0042.pdf",
       createdAt: timestamp,

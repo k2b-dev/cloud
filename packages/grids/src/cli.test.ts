@@ -2464,10 +2464,31 @@ describe("grids CLI", () => {
     await gridsCli.run(documents.ctx);
     expect(documents.calls.map((call) => call.path)).toEqual([
       `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/documents/by-base/${baseId}?limit=25`,
+      `/api/grids/documents/by-base/${baseId}?sort=newest&limit=25`,
     ]);
     expect(documents.tables[0]?.[0]).toMatchObject({ id: documentId, number: document.number });
     expect(documents.lines).toContain("next cursor: next");
+
+    const filtered = createContext(
+      ["documents", "list", baseId],
+      { workflow: "FLOW01", template: "TMPL01", "media-type": "application/zip", sort: "name", q: "bundle" },
+      [jsonResponse(basePage), jsonResponse({ items: [], cursor: null, hasMore: false })],
+    );
+    await gridsCli.run(filtered.ctx);
+    expect(filtered.calls.at(-1)?.path).toBe(
+      `/api/grids/documents/by-base/${baseId}?q=bundle&workflow=FLOW01&template=TMPL01&mediaType=application%2Fzip&sort=name`,
+    );
+
+    const contents = createContext(["documents", "contents", documentId], { limit: "2" }, [
+      jsonResponse({
+        items: [{ path: "a/x.pdf", sizeBytes: 3, documentId: "DOC002", artifactKey: "pdf", downloadUrl: "/x" }],
+        total: 1,
+        hasMore: false,
+      }),
+    ]);
+    await gridsCli.run(contents.ctx);
+    expect(contents.calls.map((call) => call.path)).toEqual([`/api/grids/documents/${documentId}/contents?limit=2`]);
+    expect(contents.tables[0]?.[0]).toMatchObject({ path: "a/x.pdf", documentId: "DOC002" });
   });
 
   test("gets Documents and downloads a named artifact", async () => {

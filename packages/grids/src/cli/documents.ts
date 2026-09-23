@@ -1,6 +1,6 @@
 import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import type { z } from "zod";
-import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../api/document-public-contracts";
+import { DOCUMENT_CATALOG_SORTS, PUBLIC_DOCUMENT_PAGE_LIMIT } from "../api/document-public-contracts";
 import type {
   PublicDocumentBrowseResponseSchema,
   PublicDocumentListSchema,
@@ -329,18 +329,40 @@ export const documentCommands = [
     },
   }),
   command("documents list", {
-    summary: "List Documents for a Base",
+    summary: "List, search, filter and sort all Documents of a Base",
+    description:
+      "Filters combine. --workflow matches every Document of its runs; --table matches only Documents bound directly to one of its records, not source records or ZIP contents. Keep --sort when passing a cursor.",
+    examples: [
+      "cld grids documents list --base BASE_ID --workflow WORKFLOW_ID --media-type application/zip --json",
+      "cld grids documents list --base BASE_ID --table Invoices --sort oldest",
+    ],
     args: baseArgs,
     flags: {
       ...baseFlag,
+      q: flag.string({ aliases: ["query"], description: "Search filename, document number, or tags" }),
+      workflow: flag.string({ description: "Workflow public id" }),
+      template: flag.string({ description: "Document template public id" }),
+      table: flag.string({ description: "Table name or public id of the directly bound record" }),
+      mediaType: flag.string({ name: "media-type", description: "Primary file media type, for example application/pdf" }),
+      sort: flag.enum(DOCUMENT_CATALOG_SORTS, { default: "newest", description: "Sort order" }),
       cursor: flag.string({ description: "Pagination cursor" }),
       limit: flag.int({ min: 1, max: PUBLIC_DOCUMENT_PAGE_LIMIT, description: "Maximum Documents" }),
     },
     async run({ ctx, args, flags }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
+      const table = flags.table ? await resolveTable(ctx, base.id, flags.table) : null;
       const payload = await readApi<PublicDocumentList>(
         ctx,
-        `/documents/by-base/${encodeURIComponent(base.id)}${queryString({ cursor: flags.cursor, limit: flags.limit })}`,
+        `/documents/by-base/${encodeURIComponent(base.id)}${queryString({
+          q: flags.q,
+          workflow: flags.workflow ? requirePublicId(flags.workflow, "Workflow id") : undefined,
+          template: flags.template ? requirePublicId(flags.template, "Document template id") : undefined,
+          table: table?.id,
+          mediaType: flags.mediaType,
+          sort: flags.sort,
+          cursor: flags.cursor,
+          limit: flags.limit,
+        })}`,
       );
       printJsonOrTable(ctx, payload, documentRows(payload.items), [
         { key: "id", label: "ID" },
@@ -487,6 +509,34 @@ export const documentCommands = [
         { key: "recordId", label: "ID" },
         { key: "version", label: "CAPTURED VERSION" },
         { key: "deleted", label: "DELETED" },
+      ]);
+    },
+  }),
+  command("documents contents", {
+    summary: "List the files packaged in a ZIP Document",
+    description: "Frozen provenance: each packaged path, its size, and the Document artifact it came from.",
+    args: { document: arg.required({ description: "Document public id" }) },
+    flags: {
+      offset: flag.int({ min: 0, description: "Page offset" }),
+      limit: flag.int({ min: 1, max: 100, description: "Page size, maximum 100" }),
+    },
+    async run({ ctx, args, flags }) {
+      const payload = await readApi<{
+        items: Array<{ path: string; sizeBytes: number; documentId: string; artifactKey: string; downloadUrl: string }>;
+        total: number;
+        hasMore: boolean;
+      }>(
+        ctx,
+        `/documents/${encodeURIComponent(requirePublicId(args.document, "Document id"))}/contents${queryString({
+          offset: flags.offset,
+          limit: flags.limit,
+        })}`,
+      );
+      printJsonOrTable(ctx, payload, payload.items, [
+        { key: "path", label: "PATH" },
+        { key: "sizeBytes", label: "BYTES" },
+        { key: "documentId", label: "DOCUMENT" },
+        { key: "artifactKey", label: "ARTIFACT" },
       ]);
     },
   }),

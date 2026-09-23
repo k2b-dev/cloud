@@ -1,4 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
+import type { PublicDocumentCatalogFacets } from "../../../api/document-public-contracts";
 import type {
   DocumentBrowseResponse,
   DocumentSummary,
@@ -30,6 +31,7 @@ import type {
   GridsWorkflowStepRun,
   WorkflowTriggerRuntimeState,
 } from "../../../workflows/contracts";
+import type { DocumentCatalogState } from "../documents/document-catalog-url-state";
 import type { RecordsState } from "../records-view/query-url";
 import type { GridsDocumentViewMode } from "../sidebar/GridsSettingsStore";
 import type { WorkflowUrlState } from "../workflows/workflow-url-state";
@@ -135,7 +137,13 @@ type WorkspaceEmptyRoute = {
   kind: "empty";
 };
 
-type WorkspaceDocumentsRoute = { kind: "documents"; canWriteDocuments: boolean; initialBrowserPage: DocumentBrowseResponse };
+type WorkspaceDocumentsRoute = {
+  kind: "documents";
+  canWriteDocuments: boolean;
+  initialCatalog: DocumentCatalogState;
+  facets: PublicDocumentCatalogFacets;
+  initialBrowserPage: DocumentBrowseResponse;
+};
 
 type WorkspaceWorkflowsRoute = {
   kind: "workflows";

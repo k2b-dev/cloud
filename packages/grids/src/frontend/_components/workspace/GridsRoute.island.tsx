@@ -210,6 +210,9 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
                   baseId={state.base.id}
                   canWriteDocuments={route.canWriteDocuments}
                   documentTemplateLevels={state.catalog.documentTemplateLevels}
+                  linkableWorkflowIds={state.catalog.workflows.map((workflow) => workflow.id)}
+                  initialCatalog={route.initialCatalog}
+                  facets={route.facets}
                   initialBrowserPage={route.initialBrowserPage}
                 />
               );

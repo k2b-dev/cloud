@@ -166,6 +166,8 @@ const publicDocument = (row: DocumentFixture): z.infer<typeof PublicDocumentSche
   tableId: tablePublicId,
   recordId: recordPublicId,
   templateId: row.templateId === templateId ? templatePublicId : otherTemplatePublicId,
+  workflowId: null,
+  workflowRunId: null,
   number: row.documentNumber,
   filename: row.filename,
   createdAt: row.createdAt,
@@ -224,6 +226,9 @@ const expectForbidden = async (response: Response) => {
 describe("document routes", () => {
   beforeEach(() => {
     spyOn(documentBrowse, "loadDocumentDataSnapshots").mockResolvedValue(new Map());
+    spyOn(documentBrowse, "loadDocumentWorkflowOrigins").mockImplementation(
+      async (runIds) => new Map(runIds.map((runId) => [runId, { workflowId: "FLOW01", runId: "RUN001" }])),
+    );
     spyOn(documentSources, "loadDocumentRecordCounts").mockResolvedValue(new Map());
     spyOn(documentSources, "listDocumentRecordSources").mockResolvedValue({ items: [], hasMore: false });
     spyOn(publicResources, "resolvePublicId").mockImplementation(publicResourceMocks.resolvePublicId);
@@ -334,7 +339,15 @@ describe("document routes", () => {
     const projected = await projectDocuments([
       { ...summarizeDocument(document), tableId: null, recordId: null, templateId: null, snapshotId: null, workflowRunId: userId },
     ]);
-    expect(projected[0]).toMatchObject({ id: documentPublicId, baseId: basePublicId, tableId: null, recordId: null, templateId: null });
+    expect(projected[0]).toMatchObject({
+      id: documentPublicId,
+      baseId: basePublicId,
+      tableId: null,
+      recordId: null,
+      templateId: null,
+      workflowId: "FLOW01",
+      workflowRunId: "RUN001",
+    });
   });
 
   for (const [method, suffix] of [
@@ -399,6 +412,10 @@ describe("document routes", () => {
       const workflowResponse = await app().request(path(`/by-base/${basePublicId}/browse?path=workflow:FLOW01/2026`));
       expect(workflowResponse.status).toBe(200);
       expect(browseBaseInput).toMatchObject({ baseId, path: ["workflow:FLOW01", "2026"] });
+      const filtered = await app().request(path(`/by-base/${basePublicId}/browse?template=${templatePublicId}&sort=name`));
+      expect(filtered.status).toBe(200);
+      expect(browseBaseInput).toMatchObject({ baseId, filters: { templateId: templatePublicId }, sort: "name" });
+      expect((await app().request(path(`/by-base/${basePublicId}/browse?sort=name&cursor=${validCursor}`))).status).toBe(400);
     });
     test("requires base read permission before listing Documents", async () => {
       tableLevel = "none";
@@ -411,7 +428,19 @@ describe("document routes", () => {
       const response = await app().request(path(`/by-base/${basePublicId}?limit=2&cursor=${validCursor}`));
 
       expect(response.status).toBe(200);
-      expect(listBaseInput).toEqual({ baseId, limit: 2, cursor: validCursor });
+      expect(listBaseInput).toEqual({
+        baseId,
+        q: "",
+        filters: { workflowId: null, templateId: null, tableId: null, mediaType: null },
+        sort: "newest",
+        limit: 2,
+        cursor: validCursor,
+      });
+      await app().request(path(`/by-base/${basePublicId}?workflow=FLOW01&table=${tablePublicId}&mediaType=application/zip&sort=oldest`));
+      expect(listBaseInput).toMatchObject({
+        filters: { workflowId: "FLOW01", templateId: null, tableId: tablePublicId, mediaType: "application/zip" },
+        sort: "oldest",
+      });
       expect(await response.json()).toEqual({
         items: [publicDocument(document)],
         cursor: "next-base-cursor",

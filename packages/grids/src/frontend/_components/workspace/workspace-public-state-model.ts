@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { z } from "zod";
 import type { projectCustomApp, projectCustomAppSummaries } from "../../../api/custom-apps";
+import type { PublicDocumentCatalogFacets } from "../../../api/document-public-contracts";
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
 import type { PublicRecordHistoryEntry } from "../../../api/public-audit";
 import type {
@@ -23,6 +24,7 @@ import type {
 import type { RecordDisplayConfig, RecordQuery } from "../../../contracts";
 import type { BaseNavigation } from "../../../navigation-contracts";
 import type { CombinedRecordOrigin } from "../../../service";
+import type { DocumentCatalogState } from "../documents/document-catalog-url-state";
 import type {
   PublicDocument,
   PublicDocumentBrowseResponse,
@@ -180,7 +182,13 @@ export type PublicWorkspaceRoute =
       initialDocumentViewMode: GridsDocumentViewMode;
       initialBrowserPage: PublicDocumentBrowseResponse;
     }
-  | { kind: "documents"; canWriteDocuments: boolean; initialBrowserPage: PublicDocumentBrowseResponse }
+  | {
+      kind: "documents";
+      canWriteDocuments: boolean;
+      initialCatalog: DocumentCatalogState;
+      facets: PublicDocumentCatalogFacets;
+      initialBrowserPage: PublicDocumentBrowseResponse;
+    }
   | { kind: "overview" }
   | { kind: "empty" };
 

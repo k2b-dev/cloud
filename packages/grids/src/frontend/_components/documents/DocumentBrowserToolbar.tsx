@@ -12,6 +12,8 @@ type Props = {
   clearSearch: () => void;
   activeMode: "list" | "folders";
   searching: boolean;
+  /** Filters or a non-default sort flatten the catalog like a search does. */
+  filtered?: boolean;
   countLabel: string;
   onGenerate: () => void;
   onMode: (mode: ViewMode) => void;
@@ -24,11 +26,11 @@ export default function DocumentBrowserToolbar(props: Props) {
   const activeIcon = () => (props.activeMode === "folders" ? "ti ti-folder" : "ti ti-table");
   const modeItems = (): DropdownItem[] => [
     { icon: "ti ti-table", label: t().table, action: () => props.onMode("list") },
-    props.searching
+    props.searching || props.filtered
       ? {
           icon: "ti ti-folder",
           label: t().folders,
-          description: t().unavailableWhileSearching,
+          description: props.searching ? t().unavailableWhileSearching : t().unavailableWithFilters,
           disabled: true,
         }
       : { icon: "ti ti-folder", label: t().folders, action: () => props.onMode("folders") },

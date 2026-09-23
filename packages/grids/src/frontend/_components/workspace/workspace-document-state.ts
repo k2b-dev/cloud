@@ -2,6 +2,7 @@ import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../../../api/document-public-contrac
 import type { DocumentTemplate } from "../../../contracts";
 import type { Table } from "../../../service";
 import { gridsService } from "../../../service";
+import { parseDocumentCatalogUrlState } from "../documents/document-catalog-url-state";
 import { resolveWorkspaceMessages } from "./messages";
 import { resolveBaseLevel } from "./workspace-state-access";
 import { okState } from "./workspace-state-helpers";
@@ -53,15 +54,29 @@ export const loadDocumentsState = async (common: WorkspaceCommon): Promise<Grids
   if (!gridsService.permission.hasAtLeast(level, "read")) {
     return { kind: "accessDenied", title: t.accessDenied, message: t.noDocumentTemplateAccess };
   }
-  const initialBrowserPage = await gridsService.document.browseDocumentsForBase({
-    baseId: common.base.id,
-    mode: "folders",
-    path: [],
-    limit: PUBLIC_DOCUMENT_PAGE_LIMIT,
-    timeZone: common.params.dateConfig?.timeZone,
-  });
-  return okState(common, { kind: "documents", canWriteDocuments: gridsService.permission.hasAtLeast(level, "write"), initialBrowserPage }, [
-    ...common.chrome.titleBase,
-    { title: t.documents },
+  const catalog = parseDocumentCatalogUrlState(common.chrome.url.searchParams);
+  const [initialBrowserPage, facets] = await Promise.all([
+    gridsService.document.browseDocumentsForBase({
+      baseId: common.base.id,
+      q: catalog.q,
+      mode: catalog.view,
+      path: catalog.path,
+      filters: { workflowId: catalog.workflow, templateId: catalog.template, tableId: catalog.table, mediaType: catalog.mediaType },
+      sort: catalog.sort,
+      limit: PUBLIC_DOCUMENT_PAGE_LIMIT,
+      timeZone: common.params.dateConfig?.timeZone,
+    }),
+    gridsService.document.catalogFacets(common.base.id),
   ]);
+  return okState(
+    common,
+    {
+      kind: "documents",
+      canWriteDocuments: gridsService.permission.hasAtLeast(level, "write"),
+      initialCatalog: catalog,
+      facets,
+      initialBrowserPage,
+    },
+    [...common.chrome.titleBase, { title: t.documents }],
+  );
 };

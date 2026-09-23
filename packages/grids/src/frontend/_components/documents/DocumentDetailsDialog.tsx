@@ -18,16 +18,19 @@ import { apiClient } from "../../../api/client";
 import { documentAllowsPublicLinks } from "../../../document-sharing";
 import { recordDisplayTitle } from "../records/record-display";
 import { errorMessage } from "../utils/api-helpers";
+import DocumentArchiveContentsDialog from "./DocumentArchiveContentsDialog";
 import { canPreviewDocumentArtifact, openDocumentArtifactPreview } from "./DocumentArtifactPreviewDialog";
 import { openDocumentLinkDialog } from "./DocumentLinkDialog";
 import DocumentSourcesDialog from "./DocumentSourcesDialog";
-import { formatDocumentDateTime, formatDocumentRelativeTime } from "./document-workspace-utils";
+import { documentFormatLabel, formatDocumentDateTime, formatDocumentRelativeTime } from "./document-workspace-utils";
 import { documentMessages } from "./messages";
 import type { PublicDocument, PublicDocumentLink, PublicDocumentLinkListResponse } from "./public-document-types";
 
 type DocumentDetailsDialogArgs = {
   document: PublicDocument;
   templateName?: string;
+  /** Workflow that generated the Document; `href` opens its run when the viewer can see the workflow. */
+  workflowOrigin?: { name: string; href: string | null };
   canWrite: boolean;
   dateConfig?: DateContext;
   onDownload: (document: PublicDocument) => void | Promise<void>;
@@ -45,19 +48,10 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
   const t = () => documentMessages.resolve([locale()]).t;
   const document = () => props.args.document;
   const primaryArtifact = () => document().artifacts.find((artifact) => artifact.key === document().primaryArtifactKey);
-  const format = () => {
-    switch (primaryArtifact()?.mimeType) {
-      case "application/pdf":
-        return "PDF";
-      case "text/csv":
-        return "CSV";
-      case "application/json":
-        return "JSON";
-      case "application/xml":
-        return "XML";
-      default:
-        return primaryArtifact()?.mimeType ?? "";
-    }
+  const format = () => documentFormatLabel(primaryArtifact()?.mimeType);
+  const isArchive = () => {
+    const renderer = document().renderer;
+    return renderer.kind === "profile" && renderer.id === "grids.zip";
   };
   const canManageLinks = () => props.args.canWrite && documentAllowsPublicLinks(document());
   const dateConfig = () => ({ ...props.args.dateConfig, locale: locale() });
@@ -149,6 +143,32 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
               </p>
             </div>
           </div>
+          <Show when={props.args.workflowOrigin}>
+            {(origin) => (
+              <dl class="grid gap-4 text-sm sm:grid-cols-2">
+                <div>
+                  <dt class="mb-1 text-xs text-dimmed">{t().workflowRun}</dt>
+                  <dd>
+                    <Show when={origin().href} fallback={<span>{origin().name}</span>}>
+                      {(href) => (
+                        <ButtonLink
+                          variant="text"
+                          class="grids-document-source-link"
+                          size="sm"
+                          navigation="document"
+                          href={href()}
+                          aria-label={t().openWorkflowRun({ name: origin().name })}
+                        >
+                          {origin().name}
+                          <i class="ti ti-arrow-up-right" aria-hidden="true" />
+                        </ButtonLink>
+                      )}
+                    </Show>
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </Show>
           <Show when={sourceRecordHref() || templateHref()}>
             <dl class="grid gap-4 text-sm sm:grid-cols-2">
               <Show when={sourceRecordHref()}>
@@ -215,6 +235,18 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
               <span class="text-dimmed">
                 {t().sourceRecordCount({ count: document().sourceRecordCount! })} <i class="ti ti-chevron-right" aria-hidden="true" />
               </span>
+            </Button>
+          </Show>
+          <Show when={isArchive()}>
+            <Button
+              variant="ghost"
+              class="grids-document-detail-row"
+              onClick={() =>
+                dialogCore.open<void>((close) => <DocumentArchiveContentsDialog document={document()} close={close} />, panelDialogOptions)
+              }
+            >
+              <span>{t().archiveContents}</span>
+              <i class="ti ti-chevron-right ml-auto shrink-0 text-dimmed" aria-hidden="true" />
             </Button>
           </Show>
           <p class="flex items-center gap-2 text-xs text-dimmed">

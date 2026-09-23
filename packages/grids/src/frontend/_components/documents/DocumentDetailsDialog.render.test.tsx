@@ -12,6 +12,8 @@ const document: PublicDocument = {
   tableId: "TABLE1",
   recordId: "RECORD",
   templateId: "TMPL01",
+  workflowId: null,
+  workflowRunId: null,
   number: "INV-2026-1",
   filename: "invoice.pdf",
   createdAt: "2026-09-09T12:00:00Z",

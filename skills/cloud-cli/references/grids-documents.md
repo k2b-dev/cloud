@@ -281,11 +281,13 @@ Retries after capture use the stored source/configuration, not current edits.
 
 ```bash
 cld grids documents list --base BASE_ID --limit 100 --json
+cld grids documents list --base BASE_ID --workflow WORKFLOW_ID --media-type application/zip --sort oldest --json
 cld grids documents list-by-template --base BASE_ID --table Invoices --template TEMPLATE_ID --q invoice --json
 cld grids documents browse --base BASE_ID --table Invoices --template TEMPLATE_ID --mode folders --path 2026/09 --json
 cld grids documents by-record --base BASE_ID --table Invoices --record RECORD_ID --json
 cld grids documents get DOCUMENT_ID --json
 cld grids documents sources DOCUMENT_ID --offset 0 --limit 100 --json
+cld grids documents contents DOCUMENT_ID --offset 0 --limit 100 --json
 cld grids documents download DOCUMENT_ID --out document.pdf
 cld grids documents download-artifact DOCUMENT_ID xml --out invoice.xml
 ```
@@ -294,14 +296,24 @@ Download extensions above are examples: preserve the actual artifact filename an
 MIME type. `download` returns the primary stored artifact, not always PDF. Read
 `artifacts[].key` before selecting `download-artifact`; `xml` is not universal.
 
-List pages use a cursor (default 50, maximum 100). Template list/browse supports
-`--q`/`--query`, repeated `--tag`, `--cursor`, `--limit`; browse adds
-`--mode list|folders` and year/month `--path`. `documents browse` is currently a
-template-scoped command. The GUI's **All documents** instead defaults to folders
-by source/template then year and searches across the Base; discover its Base
-browse API rather than passing a Base path to the template command.
+List pages use a cursor (default 50, maximum 100). `documents list` is the
+Base-wide catalog: `--q`/`--query`, `--workflow` (every Document of its runs),
+`--template`, `--table` (name or ID; only Documents bound directly to one of its
+records, never source rows or ZIP contents), `--media-type` (primary file, such
+as `application/pdf` or `application/zip`) and `--sort newest|oldest|name`
+combine. Keep the same `--sort` when passing `--cursor`; a cursor from another
+order is rejected. Template list/browse supports `--q`/`--query`, repeated
+`--tag`, `--cursor`, `--limit`; browse adds `--mode list|folders` and year/month
+`--path`. `documents browse` is template-scoped; the GUI's **All documents**
+folders by template or workflow then year.
+
+`documents contents` pages the frozen file list of a ZIP Document: `path`,
+`sizeBytes`, the source `documentId` and `artifactKey`, and a `downloadUrl` for
+that stored artifact. It is provenance only; the archive is not associated with
+the contained Documents' records. Other Documents return no contents.
 
 Document responses include `id`, `baseId`, nullable `tableId/recordId/templateId`,
+nullable `workflowId/workflowRunId` (the run that generated it),
 `number`, `filename`, creation metadata, `tags`, `renderer`, `validationStatus`,
 `primaryArtifactKey`, `artifacts`, `sourceRecordCount`, and nullable `dataSnapshot`
 (`rowCount`, `capturedAt`). Artifact metadata contains `key`, `filename`, `mimeType`,

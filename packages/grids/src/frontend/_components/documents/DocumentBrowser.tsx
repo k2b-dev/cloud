@@ -1,14 +1,16 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, IconButton, Placeholder, prompts, ScrollArea, Tag, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, IconButton, Placeholder, prompts, ScrollArea, Tag, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { documentActionState } from "./document-browser-model";
 import { downloadDocumentFolder, FolderDownloadError } from "./document-folder-download";
 import { requestDocumentDownload } from "./document-transfer-client";
-import { formatDocumentRelativeTime } from "./document-workspace-utils";
+import { documentFileIcon, formatDocumentRelativeTime } from "./document-workspace-utils";
 import { documentMessages } from "./messages";
 import type { PublicDocument, PublicDocumentBrowseResponse, PublicDocumentFolder } from "./public-document-types";
 
 export type DocumentBreadcrumb = { label: string; path: string[] };
+/** Where a listed Document came from; `href` links a workflow origin to its run. */
+export type DocumentOrigin = { label: string; icon: string; href: string | null };
 
 type Props = {
   loading: boolean;
@@ -33,6 +35,7 @@ type Props = {
   onDownload: (document: PublicDocument) => void;
   onLoadMore: () => void;
   loadFolderPage?: (path: string[], cursor: string | null, signal: AbortSignal) => Promise<PublicDocumentBrowseResponse>;
+  originOf?: (document: PublicDocument) => DocumentOrigin | null;
 };
 
 function DocumentTags(props: { tags: string[] }) {
@@ -240,10 +243,10 @@ export default function DocumentBrowser(props: Props) {
                 <Show when={props.mode !== "folders" || props.documents.length > 0 || props.searching}>
                   <For each={props.documents}>
                     {(document) => (
-                      <div class="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2 text-sm transition-colors hover:bg-[var(--ui-paper-highlighted)]">
+                      <div class="grid w-full grid-flow-col grid-cols-[minmax(0,1fr)] auto-cols-auto items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2 text-sm transition-colors hover:bg-[var(--ui-paper-highlighted)]">
                         <button type="button" class="min-w-0 text-left" onClick={() => props.onDocument(document)}>
                           <div class="flex min-w-0 items-center gap-2">
-                            <i class="ti ti-file-type-pdf shrink-0 text-dimmed" />
+                            <i class={`${documentFileIcon(document)} shrink-0 text-dimmed`} aria-hidden="true" />
                             <span class="truncate font-medium text-primary">{document.filename}</span>
                           </div>
                           <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-dimmed">
@@ -251,6 +254,39 @@ export default function DocumentBrowser(props: Props) {
                             <DocumentTags tags={document.tags} />
                           </div>
                         </button>
+                        <Show when={props.originOf}>
+                          {(originOf) => (
+                            <span class="hidden max-w-48 min-w-0 md:block">
+                              <Show when={originOf()(document)}>
+                                {(origin) => (
+                                  <Show
+                                    when={origin().href}
+                                    fallback={
+                                      <span class="flex min-w-0 items-center gap-1 text-xs text-dimmed">
+                                        <i class={`${origin().icon} shrink-0`} aria-hidden="true" />
+                                        <span class="truncate">{origin().label}</span>
+                                      </span>
+                                    }
+                                  >
+                                    {(href) => (
+                                      <ButtonLink
+                                        variant="text"
+                                        size="sm"
+                                        navigation="document"
+                                        class="max-w-full"
+                                        href={href()}
+                                        aria-label={t().openWorkflowRun({ name: origin().label })}
+                                      >
+                                        <i class={`${origin().icon} shrink-0`} aria-hidden="true" />
+                                        <span class="truncate">{origin().label}</span>
+                                      </ButtonLink>
+                                    )}
+                                  </Show>
+                                )}
+                              </Show>
+                            </span>
+                          )}
+                        </Show>
                         <span class="hidden text-xs text-dimmed sm:block">
                           {formatDocumentRelativeTime(document.createdAt, dateConfig())}
                         </span>
