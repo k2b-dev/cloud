@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, type EditorView, WidgetType } from "@codemirror/view";
+import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
 import mermaid from "mermaid";
 import { notebookWorkspaceMessages } from "../../[id]/messages";
 import {
@@ -11,34 +12,10 @@ import {
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
 
-let isMermaidInitialized = false;
+const isDarkTheme = () => document.documentElement.classList.contains("dark");
 
-const initializeMermaid = () => {
-  if (isMermaidInitialized) return;
-  if (typeof window === "undefined" || typeof document === "undefined") return;
-
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: "base",
-    suppressErrorRendering: true,
-    themeVariables: {
-      fontFamily: "IBM Plex Mono",
-      fontSize: "10px",
-      // Keep full hex values to avoid shorthand parsing issues in strict Mermaid builds.
-      textColor: "#111827",
-      lineColor: "#6b7280",
-      primaryTextColor: "#111827",
-      secondaryTextColor: "#111827",
-      tertiaryTextColor: "#111827",
-      noteTextColor: "#111827",
-      mainBkg: "#ffffff",
-      secondBkg: "#f9fafb",
-      tertiaryColor: "#f3f4f6",
-    },
-  });
-
-  isMermaidInitialized = true;
-};
+/** Cached SVGs carry theme colors, so a theme switch must not reuse them. */
+const svgCacheKey = (code: string) => `${isDarkTheme() ? "dark" : "light"}\n${code}`;
 
 const globalSvgCache = new Map<string, { svg: string; timestamp: number }>();
 const SVG_CACHE_MAX = 50;
@@ -81,7 +58,6 @@ interface MermaidBlockParams {
 class MermaidWidget extends WidgetType {
   private code: string;
   private id: string;
-  private cacheKey: string;
   private fromPos: number;
   private renderTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -89,7 +65,6 @@ class MermaidWidget extends WidgetType {
     super();
     this.code = code;
     this.id = `mermaid-${id}`;
-    this.cacheKey = code;
     this.fromPos = fromPos;
   }
 
@@ -110,7 +85,7 @@ class MermaidWidget extends WidgetType {
 
     const wrapper = document.createElement("div");
     wrapper.className =
-      "rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 p-4 overflow-auto flex items-center justify-center";
+      "rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4 overflow-auto flex items-center justify-center";
     wrapper.style.height = "min(30vh, 400px)";
     wrapper.style.minHeight = "200px";
 
@@ -118,10 +93,10 @@ class MermaidWidget extends WidgetType {
     renderDiv.id = this.id;
     renderDiv.className = "flex justify-center items-center w-full h-full";
 
-    const cached = globalSvgCache.get(this.cacheKey);
+    const cached = globalSvgCache.get(svgCacheKey(this.code));
     if (cached && cached.svg) {
       // Cache hit: write the SVG straight in and skip the
-      // mermaid.render call entirely. The cache key is a hash of
+      // mermaid.render call entirely. The cache key is the theme plus
       // `this.code`, so a hit means the input is unchanged — a
       // re-render would just produce the same SVG. Bump the
       // timestamp so the LRU reflects "recently used", not
@@ -171,13 +146,14 @@ class MermaidWidget extends WidgetType {
 
   private async renderDiagram(element: HTMLElement) {
     try {
-      initializeMermaid();
-      const cached = globalSvgCache.get(this.cacheKey);
+      const cacheKey = svgCacheKey(this.code);
+      mermaid.initialize(mermaidConfig({ dark: isDarkTheme() }));
+      const cached = globalSvgCache.get(cacheKey);
       const now = Date.now();
       const renderId = `${this.id}-${Date.now()}`;
       const { svg } = await mermaid.render(renderId, this.code);
 
-      globalSvgCache.set(this.cacheKey, { svg, timestamp: now });
+      globalSvgCache.set(cacheKey, { svg, timestamp: now });
 
       if (globalSvgCache.size > SVG_CACHE_MAX) evictOldestSvg();
 

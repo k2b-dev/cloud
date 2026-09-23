@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design]
-updated: 2026-08-12
+updated: 2026-09-23
 ---
 
 # Styling and accessibility
@@ -146,6 +146,27 @@ Avoid fixed light backgrounds, black text, hardcoded app colors, and arbitrary
 borders. They break dark mode, focus treatment, or application theming. Do not
 override a shared component to make one screen look different; fix a recurring
 gap in the owning primitive and update its UI context and showcase.
+
+### Render Mermaid diagrams with Cloud colors
+
+Initialize Mermaid with `mermaidConfig` from `@k2b/cloud/browser/mermaid`
+instead of Mermaid's built-in themes. Pass the current theme, and render again
+after a theme change:
+
+```ts
+import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
+import mermaid from "mermaid";
+
+mermaid.initialize(mermaidConfig({ dark: document.documentElement.classList.contains("dark") }));
+const { svg } = await mermaid.render(id, source);
+```
+
+The configuration uses Cloud's surface, border, and text colors. It keeps
+`securityLevel: "strict"` and ignores diagram directives that change the
+theme, colors, CSS, or security settings. Flowchart, class, state, ER, and
+requirement diagrams use the dagre layout. An author can set `layout: elk` in
+a diagram's front matter; the ELK layout code then loads only for that diagram.
+On Safari, diagrams need Safari 17.4 or later.
 
 ## Choose surfaces deliberately
 

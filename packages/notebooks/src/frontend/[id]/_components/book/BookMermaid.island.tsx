@@ -1,3 +1,4 @@
+import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
 import { useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { enhanceBookMermaid } from "./book-mermaid";
@@ -29,28 +30,8 @@ export default function BookMermaid(props: { rootId: string }) {
         );
         return;
       }
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        suppressErrorRendering: true,
-        htmlLabels: false,
-        theme: document.documentElement.classList.contains("dark") ? "dark" : "default",
-        // Author directives cannot weaken security or inject site-wide CSS.
-        secure: [
-          "secure",
-          "securityLevel",
-          "startOnLoad",
-          "maxTextSize",
-          "maxEdges",
-          "suppressErrorRendering",
-          "htmlLabels",
-          "themeCSS",
-          "themeVariables",
-          "theme",
-          "fontFamily",
-          "altFontFamily",
-        ],
-      });
+      // SVG images cannot render HTML labels.
+      mermaid.initialize({ ...mermaidConfig({ dark: document.documentElement.classList.contains("dark") }), htmlLabels: false });
       await enhanceBookMermaid(
         root,
         async (source, id) => {
