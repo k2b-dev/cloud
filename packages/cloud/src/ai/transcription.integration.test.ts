@@ -42,7 +42,8 @@ testFor("database")("transcription failure reaches logs, trace and accounting wi
     // The existing logger is asynchronous and stores metadata through its JSON codec.
     const pattern = `%${traceId}%`;
     let entries = await sql`SELECT message, metadata FROM logging.entries WHERE metadata::text LIKE ${pattern}`;
-    for (let attempt = 0; !entries.length && attempt < 20; attempt++) {
+    const deadline = Date.now() + 5_000;
+    while (!entries.length && Date.now() < deadline) {
       await Bun.sleep(50);
       entries = await sql`SELECT message, metadata FROM logging.entries WHERE metadata::text LIKE ${pattern}`;
     }

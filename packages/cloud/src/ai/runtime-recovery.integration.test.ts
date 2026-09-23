@@ -7,8 +7,10 @@ import { aiConversations } from "./store";
 import * as stream from "./stream";
 
 const recovery = testFor("database");
+// The logger inserts fire-and-forget; wait for the row by time, not by iterations.
 const persisted = async (conversationId: string, code: string) => {
-  for (let attempt = 0; attempt < 50; attempt++) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
     const result = await logging.list({ page: 1, perPage: 10, offset: 0 }, { source: "ai:runtime", search: conversationId });
     const entry = result.entries.find((entry) => entry.metadata?.code === code);
     if (entry) return entry;

@@ -30,7 +30,8 @@ test.skipIf(process.env.ASSISTANT_TIMING_INTEGRATION !== "1")(
     try {
       for (let attempt = 0; ; attempt++) {
         try {
-          await docker("exec", name, "pg_isready", "-U", "postgres");
+          // Probe TCP: during initdb the image runs a temporary socket-only server that is then restarted.
+          await docker("exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres");
           break;
         } catch (error) {
           if (attempt >= 60) throw error;
