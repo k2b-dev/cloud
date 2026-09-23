@@ -12,7 +12,9 @@ import { createConversationComment } from "./collaboration";
 import { mergeConversations, reassignConversationMessage, splitConversation } from "./conversations";
 import { createLocalTag } from "./local-tags";
 import { createMailbox } from "./mailboxes";
+import { storeReadableBlob } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
+import { getMessage } from "./messages";
 import { mailNotificationTargetHref, resolveMailNotificationTarget } from "./notification-targets";
 import { publicIds, requirePublicId } from "./public-resources";
 import { setConversationReminder } from "./reminders";
@@ -47,6 +49,7 @@ suite("mail manual conversation threading", () => {
   const userIds: string[] = [];
   const accessIds: string[] = [];
   const mailboxIds: string[] = [];
+  const blobIds: string[] = [];
   let mailboxId = "";
   let remoteResourceId = "";
   let folderId = "";
@@ -254,6 +257,9 @@ suite("mail manual conversation threading", () => {
     }
     if (userIds.length > 0) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+    }
+    if (blobIds.length > 0) {
+      await sql`DELETE FROM mail.message_part_blobs WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${blobIds}::jsonb))`;
     }
   });
 
@@ -1545,4 +1551,50 @@ suite("mail manual conversation threading", () => {
       state_events: 0,
     });
   }, 30_000);
+
+  test("lists a message's attachments in their MIME order", async () => {
+    const [message] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (
+        short_id, mailbox_id, message_id, subject, normalized_subject, internal_date, size_bytes,
+        content_hash, hydration_status, plain_text
+      ) VALUES (
+        ${newShortId()}, ${mailboxId}::uuid, ${`<attachment-order-${suffix}@example.com>`}, 'Three files', 'three files',
+        now(), 256, ${"f".repeat(64)}, 'complete', 'See attached'
+      )
+      RETURNING id
+    `;
+    // MIME order is 2, 3, 10. The attachment ids sort the other way round, and the part paths sort
+    // as text into 10, 2, 3, so neither the id nor the plain path may decide the order.
+    const files = [
+      { partPath: "2", filename: "first.txt", id: crypto.randomUUID().replace(/^./, "f") },
+      { partPath: "3", filename: "second.txt", id: crypto.randomUUID().replace(/^./, "8") },
+      { partPath: "10", filename: "third.txt", id: crypto.randomUUID().replace(/^./, "1") },
+    ];
+    for (const file of files) {
+      const bytes = Buffer.from(`${file.filename} ${suffix}`);
+      const blob = await storeReadableBlob(Readable.from([bytes]), bytes.length);
+      blobIds.push(blob.id);
+      const [part] = await sql<{ id: string }[]>`
+        INSERT INTO mail.message_parts (
+          message_id, part_path, content_type, disposition, filename, size_bytes, blob_id, hydration_status
+        ) VALUES (
+          ${message!.id}::uuid, ${file.partPath}, 'text/plain', 'attachment', ${file.filename}, ${bytes.length}, ${blob.id}::uuid, 'complete'
+        )
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO mail.attachments (
+          id, short_id, message_id, part_id, filename, content_type, disposition, checksum, size_bytes, blob_id
+        ) VALUES (
+          ${file.id}::uuid, ${newShortId()}, ${message!.id}::uuid, ${part!.id}::uuid, ${file.filename}, 'text/plain',
+          'attachment', ${blob.contentHash}, ${bytes.length}, ${blob.id}::uuid
+        )
+      `;
+    }
+
+    const detail = await getMessage({ context: readerContext, mailboxId, messageId: message!.id });
+    expect(detail.ok).toBe(true);
+    if (!detail.ok) return;
+    expect(detail.data.attachments.map((attachment) => attachment.filename)).toEqual(files.map((file) => file.filename));
+  });
 });
