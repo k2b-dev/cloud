@@ -55,8 +55,8 @@ export const resolveIncomingAutomationPlacementTurn = async (params: {
   if (claimed) return { state: "skip", reason: "earlier_automation" };
 
   // A workflow that is not an incoming automation has no place in that order.
-  const [self] = await params.db<{ created_at: Date | string; id: string }[]>`
-    SELECT automation.created_at, automation.id
+  const [self] = await params.db<{ id: string }[]>`
+    SELECT automation.id
     FROM workflows.run run
     JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
     WHERE run.id = ${params.runId}::uuid
@@ -67,13 +67,15 @@ export const resolveIncomingAutomationPlacementTurn = async (params: {
     SELECT older.steps
     FROM workflows.run run
     JOIN mail.incoming_automations older ON older.workflow_id = run.workflow_id
+    JOIN mail.incoming_automations self ON self.id = ${self.id}::uuid
     WHERE run.app_id = 'mail'
       AND run.scope_id = ${params.mailboxId}
       AND run.mode = 'execute'
       AND run.state IN ('queued', 'running', 'waiting')
       AND run.id <> ${params.runId}::uuid
       AND run.context #>> '{preconditions,message,id}' = ${params.messageId}
-      AND (older.created_at, older.id) < (${self.created_at}::timestamptz, ${self.id}::uuid)
+      -- Compared in Postgres: created_at has microseconds, a JavaScript Date only milliseconds.
+      AND (older.created_at, older.id) < (self.created_at, self.id)
   `;
   return older.some((row) => changesPlacement(parseSteps(row.steps)))
     ? { state: "skip", reason: "earlier_automation" }

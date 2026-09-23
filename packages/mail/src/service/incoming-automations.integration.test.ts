@@ -14,6 +14,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { resolveIncomingAutomationPlacementTurn } from "./incoming-automation-order";
 import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-workload";
 import {
   createIncomingAutomation,
@@ -857,6 +858,101 @@ suite("incoming automations", () => {
     expect(attention).toEqual([]);
 
     for (const automation of [newer.data, older.data]) {
+      const [current] = await sql<{ revision: string | number }[]>`
+        SELECT revision FROM mail.incoming_automations WHERE id = ${automation.id}::uuid
+      `;
+      await deleteIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        automationId: automation.id,
+        input: { expectedRevision: Number(current!.revision) },
+      });
+    }
+  });
+
+  test("orders automations created within the same millisecond by their microseconds", async () => {
+    const [archive] = await sql<{ short_id: string }[]>`
+      SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid
+    `;
+    if (!archive) throw new Error("Failed to load the archive folder public id");
+    const sender = `microsecond-${suffix}@external.test`;
+    const scope = {
+      mode: "matching" as const,
+      conditions: { mode: "all" as const, items: [{ field: "sender_address" as const, operator: "is" as const, value: sender }] },
+    };
+    const create = async (name: string, action: { kind: "move_to_folder"; folderId: string } | { kind: "junk" }) => {
+      const created = await createIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        input: { name, enabled: true, scope, steps: [{ id: crypto.randomUUID(), kind: "mail_action", action }] },
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      return created.data;
+    };
+    const older = await create(`Microsecond move ${suffix}`, { kind: "move_to_folder", folderId: archive.short_id });
+    const newer = await create(`Microsecond junk ${suffix}`, { kind: "junk" });
+    // One millisecond, two microseconds: a JavaScript Date cannot tell them apart.
+    await sql`
+      UPDATE mail.incoming_automations
+      SET created_at = CASE id
+        WHEN ${older.id}::uuid THEN '2026-01-01T00:00:00.000100Z'::timestamptz
+        ELSE '2026-01-01T00:00:00.000900Z'::timestamptz
+      END
+      WHERE id IN (${older.id}::uuid, ${newer.id}::uuid)
+    `;
+
+    const uid = 9000 + Math.floor(Math.random() * 800);
+    await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: {
+        remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+        providerMessageId: `microsecond-${suffix}`,
+        providerThreadId: null,
+        messageId: `<microsecond-${suffix}@external.test>`,
+        inReplyTo: null,
+        references: [],
+        subject: "Microsecond automations",
+        sentAt: new Date(),
+        internalDate: new Date(),
+        sizeBytes: 128,
+        flags: [],
+        labels: [],
+        addresses: {
+          from: [{ name: "Boss", address: sender }],
+          replyTo: [],
+          to: [{ name: "Support", address: "automation@example.test" }],
+          cc: [],
+          bcc: [],
+        },
+        mimeStructure: {},
+      } as never,
+      captureWorkflowTriggers: true,
+    });
+    await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
+    const runFor = async (workflowId: string): Promise<{ id: string; message_id: string }> => {
+      const [row] = await sql<{ id: string; message_id: string }[]>`
+        SELECT run.id, run.context #>> '{preconditions,message,id}' AS message_id
+        FROM workflows.run run
+        WHERE run.workflow_id = ${workflowId}::uuid
+        ORDER BY run.created_at DESC
+        LIMIT 1
+      `;
+      if (!row) throw new Error("Automation run was not dispatched");
+      return row;
+    };
+    const olderRun = await runFor(older.workflowId);
+    const newerRun = await runFor(newer.workflowId);
+    const turnFor = (run: { id: string; message_id: string }) =>
+      resolveIncomingAutomationPlacementTurn({ db: sql, runId: run.id, mailboxId, messageId: run.message_id, folderId: inboxFolderId });
+
+    // Neither run has moved the message yet, so only the automation order decides.
+    expect(await turnFor(olderRun)).toEqual({ state: "ready" });
+    expect(await turnFor(newerRun)).toEqual({ state: "skip", reason: "earlier_automation" });
+
+    for (const automation of [newer, older]) {
       const [current] = await sql<{ revision: string | number }[]>`
         SELECT revision FROM mail.incoming_automations WHERE id = ${automation.id}::uuid
       `;

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
@@ -8,8 +9,9 @@ import type { MailRequestContext } from "./auth";
 import { reviewDraftComposeSafety, validateDraftComposeSafety } from "./compose-safety";
 import { acquireDraftLease, releaseDraftLease } from "./draft-leases";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
-import { createDraft, updateDraft } from "./drafts";
+import { createDraft, prepareDraftSeed, updateDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
+import { storeReadableBlob } from "./message-blobs";
 
 const suite = suiteFor("database", "nats");
 
@@ -39,6 +41,7 @@ suite("mail draft limits", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   const accessIds: string[] = [];
+  const blobIds: string[] = [];
   let mailboxId = "";
   let identityId = "";
   let conversationId = "";
@@ -130,6 +133,9 @@ suite("mail draft limits", () => {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
     }
     await sql`DELETE FROM mail.message_part_blobs WHERE content_hash = ${fillerHash}`;
+    if (blobIds.length > 0) {
+      await sql`DELETE FROM mail.message_part_blobs WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${blobIds}::jsonb))`;
+    }
   });
 
   test("keeps a reply editable when the thread carries more references than a MIME message can", async () => {
@@ -428,5 +434,79 @@ suite("mail draft limits", () => {
       },
     });
     expect(approved.ok).toBe(true);
+  });
+
+  test("forwards the original attachments in their MIME order", async () => {
+    const internalDate = new Date(Date.now() - 30 * 60_000);
+    const [message] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (
+        short_id, mailbox_id, message_id, subject, normalized_subject, internal_date, size_bytes,
+        content_hash, hydration_status, plain_text
+      ) VALUES (
+        ${newShortId()}, ${mailboxId}::uuid, ${`<forward-order-${suffix}@example.com>`}, 'Three files', 'three files',
+        ${internalDate}, 256, ${"e".repeat(64)}, 'complete', 'See attached'
+      )
+      RETURNING id
+    `;
+    const [conversation] = await sql<{ id: string }[]>`
+      INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_inbound_at, latest_message_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Three files', 'customer@example.com', ${internalDate}, ${internalDate})
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+      VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, ${internalDate.getTime()}, 'headers')
+    `;
+    // MIME order is 2, 3, 10. The attachment ids sort the other way round, and the part paths sort
+    // as text into 10, 2, 3, so neither the id nor the plain path may decide the order.
+    const files = [
+      { partPath: "2", filename: "first.txt", id: "ffffffff-0000-4000-8000-000000000000" },
+      { partPath: "3", filename: "second.txt", id: "88888888-0000-4000-8000-000000000000" },
+      { partPath: "10", filename: "third.txt", id: "11111111-0000-4000-8000-000000000000" },
+    ];
+    for (const file of files) {
+      const bytes = Buffer.from(`${file.filename} ${suffix}`);
+      const blob = await storeReadableBlob(Readable.from([bytes]), bytes.length);
+      blobIds.push(blob.id);
+      const [part] = await sql<{ id: string }[]>`
+        INSERT INTO mail.message_parts (
+          message_id, part_path, content_type, disposition, filename, size_bytes, blob_id, hydration_status
+        ) VALUES (
+          ${message!.id}::uuid, ${file.partPath}, 'text/plain', 'attachment', ${file.filename}, ${bytes.length}, ${blob.id}::uuid, 'complete'
+        )
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO mail.attachments (
+          id, short_id, message_id, part_id, filename, content_type, disposition, checksum, size_bytes, blob_id
+        ) VALUES (
+          ${file.id}::uuid, ${newShortId()}, ${message!.id}::uuid, ${part!.id}::uuid, ${file.filename}, 'text/plain',
+          'attachment', ${blob.contentHash}, ${bytes.length}, ${blob.id}::uuid
+        )
+      `;
+    }
+    const expected = files.map((file, position) => ({ filename: file.filename, position }));
+    const input = {
+      conversationId: conversation!.id,
+      intent: "forward" as const,
+      sourceMessageId: message!.id,
+      includeSourceAttachments: true,
+      senderIdentityId: identityId,
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "Fwd: Three files",
+      body: "Forwarding",
+    };
+
+    const seed = await prepareDraftSeed({ context: owner, mailboxId, origin: { kind: "compose", input } });
+    expect(seed.ok).toBe(true);
+    if (!seed.ok) return;
+    expect(seed.data.attachments.map(({ filename, position }) => ({ filename, position }))).toEqual(expected);
+
+    const draft = await createDraft({ context: owner, mailboxId, input: { ...input, format: "plain" } });
+    expect(draft.ok).toBe(true);
+    if (!draft.ok) return;
+    expect(draft.data.attachments.map(({ filename, position }) => ({ filename, position }))).toEqual(expected);
   });
 });
