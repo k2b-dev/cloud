@@ -4,10 +4,11 @@ import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import { ssr } from "../config";
-import { contactDirectoryMessages } from "../contact-directory-messages";
+import { requestContactDirectoryConfig } from "../contact-directory-settings";
 import type { PlatformMailboxOperationSummary } from "../contracts";
-import { type MailRequestContext, operations, storageObservability } from "../service";
+import { contactDirectory, type MailRequestContext, operations, storageObservability } from "../service";
 import { localizeMailError } from "../service/error-messages";
+import MailAdminContactDirectory from "./_components/MailAdminContactDirectory.island";
 import MailAdminMailboxActions from "./_components/MailAdminMailboxActions.island";
 import MailAdminStorageActions from "./_components/MailAdminStorageActions.island";
 import { mailPageMessages } from "./pages-messages";
@@ -40,20 +41,23 @@ export default ssr<AuthContext>(async (c) => {
   };
   const query = (c.req.query("q") ?? "").trim();
   const cursor = c.req.query("cursor") || undefined;
-  const [storageResult, operationsResult] = await Promise.all([
+  const [storageResult, operationsResult, contactDirectoryResult] = await Promise.all([
     storageObservability.getMailStorageSummary(context),
     operations.getPlatformMailOperations(context, {
       q: query || undefined,
       cursor,
       limit: PAGE_SIZE,
     }),
+    contactDirectory.loadContactDirectoryAdmin(context, requestContactDirectoryConfig(c), locale),
   ]);
   const storage = storageResult.ok ? storageResult.data : null;
   const logicalStorage = storage?.mailboxes.reduce((total, mailbox) => total + mailbox.logicalTotalBytes, 0) ?? null;
   const mailboxes = operationsResult.ok ? operationsResult.data.mailboxes : [];
-  const loadErrors = [!operationsResult.ok ? operationsResult.error : null, !storageResult.ok ? storageResult.error : null].filter(
-    (error): error is NonNullable<typeof error> => error !== null,
-  );
+  const loadErrors = [
+    !operationsResult.ok ? operationsResult.error : null,
+    !storageResult.ok ? storageResult.error : null,
+    !contactDirectoryResult.ok ? contactDirectoryResult.error : null,
+  ].filter((error): error is NonNullable<typeof error> => error !== null);
   const accessDenied = loadErrors.some((error) => error.code === "FORBIDDEN");
   if (accessDenied) return ssr.error(c, 403);
   const loadErrorDescription = [...new Set(loadErrors.map((error) => localizeMailError(error, locale).message))].join(" ");
@@ -90,9 +94,6 @@ export default ssr<AuthContext>(async (c) => {
           <div class="flex flex-wrap gap-2">
             <ButtonLink href="/admin/mail/security" variant="secondary" size="sm">
               <i class="ti ti-shield-lock" aria-hidden="true" /> {t.security}
-            </ButtonLink>
-            <ButtonLink href="/admin/mail/contact-directory" variant="secondary" size="sm">
-              <i class="ti ti-address-book" aria-hidden="true" /> {contactDirectoryMessages.resolve([locale]).t.title}
             </ButtonLink>
             <MailAdminStorageActions />
           </div>
@@ -145,6 +146,8 @@ export default ssr<AuthContext>(async (c) => {
                 sub={t.physicalContentStore}
               />
             </StatGrid>
+
+            {contactDirectoryResult.ok ? <MailAdminContactDirectory view={contactDirectoryResult.data} /> : null}
 
             {operationsResult.ok ? (
               <section class="paper overflow-hidden">

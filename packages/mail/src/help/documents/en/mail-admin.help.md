@@ -161,13 +161,15 @@ The CLI exposes the same recovery surface:
 
 Mail uses the built-in Contacts app for recipient suggestions, contacts in **Conversation details**, **New contact**, and contacts attached to **Write with AI**. Nothing needs to be configured for that.
 
-To use another app, such as a customer-management app, open **Administration > Mail > Contact directory**. This also requires Cloud **Admin** access. Choose the app, then choose one of its capabilities for each function. Each list offers only capabilities that match the contact-directory contract; the defaults are filled in when the app provides them.
+To use another app, such as a customer-management app, open **Administration > Mail**. **Contact directory** shows the current app and whether it uses the Contacts defaults or a custom mapping. Select **Configure** to open the editor. This also requires Cloud **Admin** access. Choose the app, then choose one of its capabilities for each function. Each list offers only capabilities that match the contact-directory contract; the defaults are filled in when the app provides them.
 
 - **Suggest recipients** and **Match participants** are required.
 - **Read a contact** is optional. Without it, **Compose email** from a contact in another app reports that the contact is unavailable.
 - **List writable books** and **Create a contact** are optional and belong together. Without them, Mail hides **New contact**.
 
 **Save** checks every choice against the app's current capabilities and names each field Mail cannot use. Mail always calls the app with each person's own access, so people see only the contacts they may read there. If the app is stopped or later changes incompatibly, the affected features become unavailable, just as when Contacts is unavailable. **Use Contacts defaults** restores the built-in mapping.
+
+`cld mail admin contact-directory show|candidates|set|reset` does the same from a terminal and uses the same check; an incompatible mapping is not saved and the command lists the same problems.
 
 ## Configure signatures and email design {icon="pencil"}
 
