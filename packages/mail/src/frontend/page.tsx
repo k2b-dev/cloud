@@ -1,6 +1,7 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
+import { requestContactDirectory } from "../contact-directory-settings";
 import { mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
 import type { MailRequestContext } from "../service";
 import { focus, mailboxes } from "../service";
@@ -83,6 +84,7 @@ export default ssr<AuthContext>(async (c) => {
         initialDetail={initialDetail}
         initialPinnedMailboxIds={workspacePreferences.pinnedMailboxIds}
         currentUserEmail={user.mail}
+        contactDirectory={requestContactDirectory(c)}
         dateConfig={getDateConfig(c)}
       />
     </Layout>

@@ -1,5 +1,7 @@
 import { type AssistantLaunch, type LaunchAssistantInput, launchAssistant } from "@k2b/cloud/ai/browser";
+import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { contactOpenHref } from "../../app-integration-contracts";
+import type { ContactDirectoryTarget } from "../../contact-directory-settings";
 import type { MailAddress } from "../../contracts";
 import { resolveContacts } from "./contact-capabilities";
 import { mailDraftHref } from "./mail-compose-route";
@@ -21,12 +23,6 @@ const mailTools: NonNullable<LaunchAssistantInput["preloadTools"]> = [
   { appId: "mail", kind: "query", id: "conversation.search" },
   { appId: "mail", kind: "query", id: "conversation.related" },
 ];
-
-const contactCapability: NonNullable<LaunchAssistantInput["preloadTools"]>[number] = {
-  appId: "contacts",
-  kind: "query",
-  id: "contact.resolve",
-};
 
 export const mailAssistantRecipientEmails = (recipients: readonly MailAddress[]): string[] => {
   const emails = new Set<string>();
@@ -61,11 +57,14 @@ export const mailAssistantContactResources = (emails: readonly string[], resolut
     if (matches?.size !== 1) continue;
     const contact = matches.values().next().value;
     if (!contact || attachedContactIds.has(contact.contactId)) continue;
+    // Provider IDs are opaque; attach only refs that fit Cloud's resource-reference bounds.
+    const ref = CloudResourceRefSchema.safeParse(contact.ref);
+    if (!ref.success) continue;
     attachedContactIds.add(contact.contactId);
     const href = contactOpenHref(contact.links);
     resources.push({
       type: "resource",
-      ref: { type: "contacts.contact", id: contact.contactId },
+      ref: ref.data,
       title: contact.displayName,
       icon: "ti ti-address-book",
       ...(href ? { href } : {}),
@@ -76,6 +75,8 @@ export const mailAssistantContactResources = (emails: readonly string[], resolut
 };
 
 export const launchMailDraftAssistant = async (input: {
+  /** The configured contact-directory `resolve` function, or `null` when none is mapped. */
+  contactResolve: ContactDirectoryTarget | null;
   mailboxId: string;
   returnHref: string;
   draft: {
@@ -91,9 +92,10 @@ export const launchMailDraftAssistant = async (input: {
   const emails = mailAssistantRecipientEmails([...input.draft.to, ...input.draft.cc, ...input.draft.bcc]);
   let contactsAvailable = false;
   let contactResources: AssistantResourcePart[] = [];
-  if (emails.length > 0) {
+  const contactResolve = input.contactResolve;
+  if (emails.length > 0 && contactResolve) {
     try {
-      const resolution = await resolveContacts({ emails, limit: CONTACT_RESOLVE_RESULT_LIMIT });
+      const resolution = await resolveContacts(contactResolve, { emails, limit: CONTACT_RESOLVE_RESULT_LIMIT });
       contactsAvailable = true;
       contactResources = mailAssistantContactResources(emails, resolution);
     } catch {
@@ -118,6 +120,11 @@ export const launchMailDraftAssistant = async (input: {
         ...contactResources,
       ],
     },
-    preloadTools: [...mailTools, ...(contactsAvailable ? [contactCapability] : [])],
+    preloadTools: [
+      ...mailTools,
+      ...(contactsAvailable && contactResolve
+        ? [{ appId: contactResolve.appId, kind: "query" as const, id: contactResolve.capabilityId }]
+        : []),
+    ],
   });
 };

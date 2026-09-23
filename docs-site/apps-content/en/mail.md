@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-09-09
+updated: 2026-09-23
 ---
 
 # Mail
@@ -91,6 +91,33 @@ notifications, workflow infrastructure, application discovery, and shared Help
 and administration surfaces. Mail also integrates with Spaces for calendar
 invitations without turning Mail into the calendar owner.
 
+## Choose the contact directory
+
+Mail reads recipients and participant contacts from the built-in
+[Contacts](/en/apps/contacts) app by default; a new or upgraded installation
+needs no configuration. Cloud administrators can switch to another application
+under **Administration → Mail → Contact directory**, for example a
+customer-management app that implements the
+[contact-directory contract](/en/docs/platform/contact-directory).
+
+The form stores six Mail settings. Each capability list offers only
+capabilities whose published schemas match the contract, and **Save** rejects a
+mapping Mail cannot use with a message on each affected field.
+
+| Setting | Default | Required |
+| --- | --- | --- |
+| `mail.contact_directory.app` | `contacts` | Yes |
+| `mail.contact_directory.suggest` | `contact.suggest` | Yes |
+| `mail.contact_directory.resolve` | `contact.resolve` | Yes |
+| `mail.contact_directory.read` | `contact.read` | No; empty disables **Compose email** from a contact reference |
+| `mail.contact_directory.list_writable_books` | `book.list` | No; together with `create` |
+| `mail.contact_directory.create` | `contact.create` | No; empty hides **New contact** |
+
+Mail calls the selected app as the requesting person, so that app's
+permissions decide which contacts appear. When the app is missing, stopped, or
+returns data that no longer matches the contract, Mail degrades exactly as when
+Contacts is unavailable.
+
 ## Find detailed product help
 
 Open **Help** inside Mail for account setup, search, reading, composing,
@@ -175,8 +202,8 @@ functional checks.
 ## Commands in global search
 
 **Compose email** opens the Mail compose flow. A contact-context Command first
-loads the contact with your current permissions; choose an address when the
-contact has several. Mail still asks for a writable mailbox and verified sender.
+loads the contact from the configured contact directory with your current
+permissions; choose an address when the contact has several. Mail still asks for a writable mailbox and verified sender.
 Nothing is sent automatically.
 
 Creating a task or event from a conversation now opens the existing Spaces

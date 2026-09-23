@@ -16,7 +16,7 @@ The composer is separate from the mailbox workspace. Use **Back to mailbox** to 
 
 ## Continue the draft with Assistant {icon="sparkles"}
 
-Select **Write with AI** to save the current Mail draft and open it in a new Assistant chat. Assistant starts with the draft attached as a Cloud resource and with the bounded Mail operations needed to read, update, search related history, and propose sending it. Exact readable Contacts may also be attached for unambiguous recipients; a missing or unavailable Contacts integration does not block the chat.
+Select **Write with AI** to save the current Mail draft and open it in a new Assistant chat. Assistant starts with the draft attached as a Cloud resource and with the bounded Mail operations needed to read, update, search related history, and propose sending it. Exact readable contacts from the contact directory, Contacts by default, may also be attached for unambiguous recipients; a missing or unavailable contact directory does not block the chat.
 
 The Assistant chat does not copy the message into a separate Mail draft and does not gain additional mailbox access. Mail checks your current permission whenever Assistant reads or changes the draft. Updating or sending mail is shown as an Action review; sending still requires explicit approval and Mail's normal final validation. Return to Mail through the draft link when you want to review the authoritative composer state directly.
 

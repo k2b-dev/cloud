@@ -117,6 +117,18 @@ Die CLI bietet dieselbe Wiederherstellung: `cld mail admin mailbox list` findet 
 
 **Speicher abgleichen** stellt einen Hintergrundauftrag ein. Die Seite und `cld mail admin storage show` zeigen bis zu dessen Abschluss den letzten vollständigen Stand; das Einreihen aktualisiert die Zahlen nicht synchron. Die Werte dienen der Beobachtung, sind keine Speicherquoten und erlauben keinen Zugriff auf Inhalte.
 
+## Kontaktverzeichnis wählen {icon="address-book"}
+
+Mail verwendet die integrierte App Kontakte für Empfängervorschläge, Kontakte in den **Unterhaltungsdetails**, **Neuer Kontakt** und Kontakte, die an **Mit KI schreiben** angehängt werden. Dafür ist keine Einrichtung nötig.
+
+Um eine andere App zu verwenden, etwa eine Kundenverwaltung, öffne **Administration > Mail > Kontaktverzeichnis**. Auch dafür sind Cloud-Administrationsrechte nötig. Wähle die App und dann für jede Funktion eine ihrer Capabilities. Jede Liste bietet nur Capabilities an, die zum Kontaktverzeichnis-Vertrag passen; die Standardwerte werden vorausgefüllt, wenn die App sie anbietet.
+
+- **Empfänger vorschlagen** und **Beteiligte zuordnen** sind erforderlich.
+- **Kontakt lesen** ist optional. Ohne diese Funktion meldet **E-Mail verfassen** für einen Kontakt aus einer anderen App, dass der Kontakt nicht verfügbar ist.
+- **Beschreibbare Bücher auflisten** und **Kontakt anlegen** sind optional und gehören zusammen. Ohne sie blendet Mail **Neuer Kontakt** aus.
+
+**Speichern** prüft jede Auswahl gegen die aktuellen Capabilities der App und nennt jedes Feld, das Mail nicht verwenden kann. Mail ruft die App immer mit den eigenen Rechten der jeweiligen Person auf; Personen sehen also nur Kontakte, die sie dort lesen dürfen. Ist die App gestoppt oder ändert sie sich später unpassend, sind die betroffenen Funktionen nicht verfügbar, genau wie bei nicht verfügbaren Kontakten. **Contacts-Standard verwenden** stellt die integrierte Zuordnung wieder her.
+
 ## Signaturen und E-Mail-Design {icon="pencil"}
 
 Unter **Einstellungen > Schreiben** kannst du private oder postfachweite Signaturen und Textbausteine verwalten. Weise die Postfach-Standardsignatur unter **Konten und Identitäten > Absenderidentitäten** zu. Ein persönlicher Standard unter **Schreiben** hat Vorrang.

@@ -1,6 +1,7 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
+import { requestContactDirectory } from "../../../../contact-directory-settings";
 import type { MailRequestContext } from "../../../../service";
 import { loadMailAutomaticRepliesWorkspace } from "../../../../service/automation-workspace";
 import { isAutomaticReplyPresetId } from "../../../_components/MailAutomaticReplySettings";
@@ -42,6 +43,7 @@ export default ssr<AuthContext>(async (c) => {
       <MailAutomaticRepliesPage
         data={data}
         currentUserEmail={user.mail}
+        contactDirectory={requestContactDirectory(c)}
         initialPreset={isAutomaticReplyPresetId(requestedPreset) ? requestedPreset : null}
       />
     </Layout>

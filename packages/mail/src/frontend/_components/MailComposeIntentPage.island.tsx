@@ -1,14 +1,14 @@
 import { consumeCommandLink, openCommand, registerCommandHandler } from "@k2b/cloud/browser/commands";
-import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
-import { CommandPathSchema } from "@k2b/cloud/contracts";
+import { CommandPathSchema, cloudResourceRefAppId } from "@k2b/cloud/contracts";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, NoticeCard, Placeholder, prompts, ScrollArea, Select, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { z } from "zod";
 import { apiClient } from "../../api/client";
 import { MailComposeCommandInputSchema, mailCommandMessages } from "../../commands";
+import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
+import { readContact } from "./contact-capabilities";
 import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";
 import { mailDraftReturnHref, mailDraftSeedHref } from "./mail-compose-route";
 import { mailComposerMessages } from "./mail-composer-messages";
@@ -27,6 +27,7 @@ export default function MailComposeIntentPage(props: {
   autoStart: boolean;
   mailto: string | null;
   returnHref: string | null;
+  contactDirectory: MailContactDirectory;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -49,19 +50,15 @@ export default function MailComposeIntentPage(props: {
         setReturnHref(options.returnTo ?? null);
         try {
           if (input.contact) {
-            const result = await invokeCapabilityWithDataSchema(
-              {
-                appId: "contacts",
-                capabilityId: "contact.read",
-                kind: "query",
-                input: { id: input.contact.id },
-                signal: commandAbort.signal,
-              },
-              z.object({ emails: z.array(z.object({ email: z.email(), label: z.string().nullable() })) }),
-            );
             const copy = mailCommandMessages.resolve([locale()]).t;
-            if (!result.ok || !result.data.data.emails.length) throw new Error(copy.unavailable);
-            const emails = result.data.data.emails;
+            const readTarget = props.contactDirectory.read;
+            // Only the configured directory app can read the contact; anything else is unavailable, never guessed.
+            if (!readTarget || cloudResourceRefAppId(input.contact) !== readTarget.appId) throw new Error(copy.unavailable);
+            const emails = await readContact(readTarget, input.contact.id, commandAbort.signal).then(
+              (result) => result.data.emails,
+              () => [],
+            );
+            if (!emails.length) throw new Error(copy.unavailable);
             const selected =
               emails.length === 1
                 ? emails[0]

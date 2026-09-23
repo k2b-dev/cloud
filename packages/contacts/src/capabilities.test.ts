@@ -5,7 +5,9 @@ import {
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  capabilityContractIssues,
   capabilityResultSchema,
+  contactDirectory,
   type User,
 } from "@k2b/cloud/contracts";
 import { audit } from "@k2b/cloud/services";
@@ -656,4 +658,24 @@ describe("contacts capabilities", () => {
   test("compiles the declared capability manifest", () => {
     expect(() => compileCapabilityManifest("contacts", contactsCapabilities)).not.toThrow();
   });
+});
+
+test("implements every contact-directory function with the IDs consumers use by default", () => {
+  const manifest = compileCapabilityManifest("contacts", contactsCapabilities);
+  const issues = (name: keyof typeof contactDirectory, localId: string) => {
+    const contract = contactDirectory[name];
+    if (contract.kind === "query") {
+      const operation = manifest.queries.find((entry) => entry.localId === localId);
+      if (!operation) throw new Error(`Missing ${localId}`);
+      return capabilityContractIssues(contract, { kind: "query", operation });
+    }
+    const operation = manifest.actions.find((entry) => entry.localId === localId);
+    if (!operation) throw new Error(`Missing ${localId}`);
+    return capabilityContractIssues(contract, { kind: "action", operation });
+  };
+  expect(issues("suggest", "contact.suggest")).toEqual([]);
+  expect(issues("resolve", "contact.resolve")).toEqual([]);
+  expect(issues("read", "contact.read")).toEqual([]);
+  expect(issues("listWritableBooks", "book.list")).toEqual([]);
+  expect(issues("create", "contact.create")).toEqual([]);
 });

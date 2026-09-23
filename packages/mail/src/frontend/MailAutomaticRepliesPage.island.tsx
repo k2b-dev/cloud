@@ -1,5 +1,6 @@
 import { useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
+import type { MailContactDirectory } from "../contact-directory-settings";
 import type { MailAutomaticRepliesWorkspaceData } from "../service/automation-workspace";
 import MailAutomaticReplySettings, { type AutomaticReplyPresetId } from "./_components/MailAutomaticReplySettings";
 import MailAutomationShell from "./_components/MailAutomationShell";
@@ -9,6 +10,7 @@ import { mailAutomationPageMessages } from "./mail-automation-page-messages";
 export default function MailAutomaticRepliesPage(props: {
   data: MailAutomaticRepliesWorkspaceData;
   currentUserEmail: string | null;
+  contactDirectory: MailContactDirectory;
   initialPreset: AutomaticReplyPresetId | null;
 }) {
   const locale = useLocale();
@@ -23,6 +25,7 @@ export default function MailAutomaticRepliesPage(props: {
       mailbox={props.data.mailbox}
       permission={props.data.permission}
       currentUserEmail={props.currentUserEmail}
+      contactDirectory={props.contactDirectory}
       activePage="replies"
     >
       <header>
@@ -40,6 +43,7 @@ export default function MailAutomaticRepliesPage(props: {
                 void openMailboxSettingsDialog({
                   mailboxId: props.data.mailbox.id,
                   currentUserEmail: props.currentUserEmail,
+                  contactDirectory: props.contactDirectory,
                   initialTab: "delivery",
                 })
             : undefined

@@ -2,9 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   calendarEventSchema,
   calendarInvitationImportResultSchema,
-  contactBookSchema,
   contactResolveMatchSchema,
-  contactSuggestionSchema,
   eventInvitationCommitDataSchema,
   spacesMailDestinationContextSchema,
 } from "../app-integration-contracts";
@@ -12,45 +10,40 @@ import { projectAppCapabilityError } from "./app-integrations";
 
 const legacyUuid = "11111111-1111-4111-8111-111111111111";
 
-describe("Mail Contacts integration resource IDs", () => {
-  const suggestion = {
+describe("Mail contact-directory integration", () => {
+  const match = {
+    ref: { type: "contacts.contact", id: "Cont01" },
     contactId: "Cont01",
     bookId: "Book01",
+    bookName: "Customers",
     displayName: "Ada Example",
     companyName: null,
     jobTitle: null,
+    matchedEmails: ["ada@example.test"],
     emails: [{ label: "work", email: "ada@example.test" }],
     phones: [],
     contactPointsTruncated: false,
     updatedAt: "2026-08-11T08:00:00.000Z",
+    openHref: "/app/contacts/Book01?contact=Cont01&contactBook=Book01",
   };
 
-  test("accepts only short Contact resource IDs", () => {
-    expect(contactSuggestionSchema.safeParse(suggestion).success).toBeTrue();
-    expect(contactSuggestionSchema.safeParse({ ...suggestion, contactId: legacyUuid }).success).toBeFalse();
+  test("keeps provider-owned contact IDs and links", () => {
+    expect(contactResolveMatchSchema.safeParse(match).success).toBeTrue();
     expect(
-      contactBookSchema.safeParse({
-        id: "Book01",
-        name: "Customers",
-        description: null,
-        permission: "read",
-        createdAt: "2026-08-11T08:00:00.000Z",
-        updatedAt: "2026-08-11T08:00:00.000Z",
+      contactResolveMatchSchema.safeParse({
+        ...match,
+        ref: { type: "crm.customer", id: legacyUuid },
+        contactId: legacyUuid,
+        bookId: "customers",
+        openHref: `/app/crm/customers/${legacyUuid}`,
       }).success,
     ).toBeTrue();
   });
 
-  test("requires the canonical short-ID Contact link", () => {
-    const match = {
-      ...suggestion,
-      bookName: "Customers",
-      matchedEmails: ["ada@example.test"],
-      openHref: "/app/contacts/Book01?contact=Cont01&contactBook=Book01",
-    };
-    expect(contactResolveMatchSchema.safeParse(match).success).toBeTrue();
-    expect(
-      contactResolveMatchSchema.safeParse({ ...match, openHref: `/app/contacts/${legacyUuid}?contact=${legacyUuid}` }).success,
-    ).toBeFalse();
+  test("only exposes root-relative Cloud links", () => {
+    expect(contactResolveMatchSchema.safeParse({ ...match, openHref: "https://crm.example.test/customers/1" }).success).toBeFalse();
+    expect(contactResolveMatchSchema.safeParse({ ...match, openHref: "//crm.example.test/customers/1" }).success).toBeFalse();
+    expect(contactResolveMatchSchema.safeParse({ ...match, openHref: null }).success).toBeTrue();
   });
 });
 

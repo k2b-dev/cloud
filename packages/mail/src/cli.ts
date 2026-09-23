@@ -3975,7 +3975,7 @@ export default defineCliCommands({
         if (flags.cursor) query.set("cursor", flags.cursor);
         const page = await readApi<RelatedMailPage>(
           ctx,
-          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversationId, "Conversation id")}/contacts/${args.bookId}/${args.contactId}/history?${query}`,
+          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversationId, "Conversation id")}/contacts/${encodeURIComponent(args.bookId)}/${encodeURIComponent(args.contactId)}/history?${query}`,
         );
         printTable(
           ctx,

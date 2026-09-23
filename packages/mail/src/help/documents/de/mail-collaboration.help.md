@@ -49,7 +49,7 @@ Der Postfachzugriff wird unter **Einstellungen > Zugriff** vergeben.
 
 Hat eine externe Person keinen passenden Kontakt, wähle **Als Kontakt hinzufügen**, dann ein beschreibbares Adressbuch. Mail legt den Kontakt dort mit dem angezeigten Namen und der E-Mail-Adresse an. Für eine Adresse, die bereits zu einem lesbaren Kontakt passt, wird keine Schaltfläche angezeigt. Das gilt auch für Treffer, die nicht auf der ersten Ergebnisseite stehen.
 
-Mail speichert keine Eigentumsangaben, Notizen, Bankdaten, Zugriffseinträge oder andere privaten Kontaktfelder. Beim Öffnen der Detailansicht fordert Mail von Kontakte eine begrenzte Projektion der Beteiligten an.
+Mail speichert keine Eigentumsangaben, Notizen, Bankdaten, Zugriffseinträge oder andere privaten Kontaktfelder. Beim Öffnen der Detailansicht fordert Mail von Kontakte eine begrenzte Projektion der Beteiligten an. Cloud-Administratoren können diesen Bereich auf eine andere Kontaktverzeichnis-App umstellen; siehe **Kontaktverzeichnis wählen**. **Als Kontakt hinzufügen** erscheint nur, wenn diese App das Anlegen von Kontakten unterstützt.
 
 Die CLI stellt Treffer auf Unterhaltungsebene mit `cld mail conversation related`, Kontext aus Kontakte mit `cld mail conversation context` und den gesonderten kontaktbezogenen Verlauf mit `cld mail conversation contact-history` bereit.
 

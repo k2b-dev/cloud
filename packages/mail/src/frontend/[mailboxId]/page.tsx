@@ -2,6 +2,7 @@ import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
+import { requestContactDirectory } from "../../contact-directory-settings";
 import type { MailRequestContext } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
 import { loadMailboxPageData } from "../../service/workspace";
@@ -51,6 +52,7 @@ export default ssr<AuthContext>(async (c) => {
         requestPath={requestPath(c)}
         currentUserId={user.id}
         currentUserEmail={user.mail}
+        contactDirectory={requestContactDirectory(c)}
         dateConfig={dateConfig}
         initialPreferences={workspacePreferences}
         initialUserPreferences={userPreferences}

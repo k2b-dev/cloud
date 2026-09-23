@@ -7,6 +7,7 @@ import { AppWorkspace, openSpotlightSearch, Placeholder, prompts, toast, useLoca
 import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
+import type { MailContactDirectory } from "../contact-directory-settings";
 import { MAIL_LIVE_WS_TYPE, type MailLiveClientMessage, type MailLiveServerMessage, parseMailLiveServerMessage } from "../live-events";
 import { resolveMailSearchRoute } from "../search-state";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
@@ -28,6 +29,7 @@ import MailSidebar from "./_components/MailSidebar";
 import { openMailSubscriptionDialog } from "./_components/MailSubscriptionDialog";
 import { buildMailActionInput, MAIL_ACTION_MISSING_DESTINATION, type MailActionId } from "./_components/mail-actions";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
+import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import {
   emptyMailConversationSelection,
   findMailFocusAfterRemoval,
@@ -73,12 +75,13 @@ const mailListScope = (href: string): string => {
   return `${url.pathname}${url.search}`;
 };
 
-export default function MailWorkspace(props: {
+function MailWorkspaceView(props: {
   data: MailboxPageData;
   /** Route as `pathname + search`; resolved against the browser origin, never an upstream URL. */
   requestPath: string;
   currentUserId: string;
   currentUserEmail: string | null;
+  contactDirectory: MailContactDirectory;
   dateConfig: DateContext;
   initialPreferences: MailWorkspacePreferences;
   initialUserPreferences: MailUserPreferences;
@@ -504,6 +507,7 @@ export default function MailWorkspace(props: {
       const result = await openMailboxSettingsDialog({
         mailboxId: data.mailbox.id,
         currentUserEmail: props.currentUserEmail,
+        contactDirectory: props.contactDirectory,
         initialTab,
       });
       if (disposed) return;
@@ -1606,5 +1610,13 @@ export default function MailWorkspace(props: {
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
     </AppWorkspace>
+  );
+}
+
+export default function MailWorkspace(props: Parameters<typeof MailWorkspaceView>[0]) {
+  return (
+    <MailContactDirectoryProvider value={props.contactDirectory}>
+      <MailWorkspaceView {...props} />
+    </MailContactDirectoryProvider>
   );
 }

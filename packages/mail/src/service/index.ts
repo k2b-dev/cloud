@@ -12,6 +12,7 @@ import { commandRuntime } from "./command-runtime";
 import * as commands from "./commands";
 import * as composeSafety from "./compose-safety";
 import * as composeTemplates from "./compose-templates";
+import * as contactDirectory from "./contact-directory";
 import * as conversationContext from "./conversation-context";
 import * as conversationReferences from "./conversation-reference";
 import * as conversationSummaries from "./conversation-summary";
@@ -94,6 +95,7 @@ export {
   commands,
   composeSafety,
   composeTemplates,
+  contactDirectory,
   conversationContext,
   conversationReferences,
   conversationSummaries,

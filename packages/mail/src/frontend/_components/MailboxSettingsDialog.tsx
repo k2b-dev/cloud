@@ -2,9 +2,11 @@ import { query } from "@k2b/stdlib/solid";
 import { Button, IconButton, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailboxSettingsContext } from "../../settings-context";
 import { readApiError } from "./api-response";
 import MailboxSettings from "./MailboxSettings";
+import { MailContactDirectoryProvider } from "./mail-contact-directory-context";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 const settingsDialogFrameClass = "dialog-fixed-frame flex min-h-0 flex-col overflow-hidden";
@@ -110,21 +112,28 @@ function MailboxSettingsDialog(props: MailboxSettingsDialogProps) {
   );
 }
 
-export const openMailboxSettingsDialog = async (params: {
+export const openMailboxSettingsDialog = async ({
+  contactDirectory,
+  ...params
+}: {
   mailboxId: string;
   currentUserEmail: string | null;
+  /** Dialogs render outside the island tree, so the caller hands over its resolved directory. */
+  contactDirectory: MailContactDirectory;
   initialTab?: string;
 }): Promise<MailboxSettingsDialogResult> => {
   let workspaceChanged = false;
   const outcome = await prompts.dialog<MailboxSettingsDialogOutcome>(
     (close) => (
-      <MailboxSettingsDialog
-        {...params}
-        close={close}
-        onWorkspaceChange={() => {
-          workspaceChanged = true;
-        }}
-      />
+      <MailContactDirectoryProvider value={contactDirectory}>
+        <MailboxSettingsDialog
+          {...params}
+          close={close}
+          onWorkspaceChange={() => {
+            workspaceChanged = true;
+          }}
+        />
+      </MailContactDirectoryProvider>
     ),
     { surface: "bare", header: false, size: "large", cancelBehavior: "ignore" },
   );

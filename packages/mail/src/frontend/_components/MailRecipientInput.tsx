@@ -2,6 +2,7 @@ import { IconButton, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { suggestContacts } from "./contact-capabilities";
 import { mailComposerMessages } from "./mail-composer-messages";
+import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { commitMailRecipient, shouldCommitMailRecipient } from "./mail-recipient";
 
 type RecipientSuggestion = { label: string; address: string; context: string | null };
@@ -14,6 +15,7 @@ export default function MailRecipientInput(props: {
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
+  const suggestTarget = useMailContactDirectory().suggest;
   const errorId = `${props.placeholder.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}-recipient-error`;
   const [query, setQuery] = createSignal("");
   const [suggestions, setSuggestions] = createSignal<RecipientSuggestion[]>([]);
@@ -106,7 +108,7 @@ export default function MailRecipientInput(props: {
     const value = query().trim();
     if (timer) clearTimeout(timer);
     controller?.abort();
-    if (value.length < 2) {
+    if (value.length < 2 || !suggestTarget) {
       setSuggestions([]);
       setLoading(false);
       return;
@@ -116,7 +118,7 @@ export default function MailRecipientInput(props: {
       const request = new AbortController();
       controller = request;
       try {
-        const result = await suggestContacts({ query: value, limit: 8 }, request.signal);
+        const result = await suggestContacts(suggestTarget, { query: value, limit: 8 }, request.signal);
         if (disposed || controller !== request) return;
         const seen = new Set<string>();
         setSuggestions(

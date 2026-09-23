@@ -1,6 +1,7 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
+import { requestContactDirectory } from "../../../../contact-directory-settings";
 import type { MailRequestContext } from "../../../../service";
 import { loadMailIncomingAutomationsWorkspace } from "../../../../service/automation-workspace";
 import type { IncomingAutomationPreset } from "../../../_components/MailIncomingAutomationSettings";
@@ -46,7 +47,12 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.breadcrumbIncomingMail },
       ]}
     >
-      <MailIncomingAutomationsPage data={data} currentUserEmail={user.mail} openPreset={openPreset} />
+      <MailIncomingAutomationsPage
+        data={data}
+        currentUserEmail={user.mail}
+        contactDirectory={requestContactDirectory(c)}
+        openPreset={openPreset}
+      />
     </Layout>
   );
 });

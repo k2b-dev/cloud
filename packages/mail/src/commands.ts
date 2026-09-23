@@ -1,17 +1,13 @@
+import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { i18n } from "@k2b/stdlib";
 import { z } from "zod";
 import { ResourceShortIdSchema } from "./contracts";
 
 export const MailComposeCommandInputSchema = z
   .object({
-    contact: z
-      .object({
-        type: z.literal("contacts.contact").describe("Contact resource type."),
-        id: z.string().min(1).max(100).describe("Public contact ID."),
-      })
-      .strict()
-      .optional()
-      .describe("Optional contact to read and choose a recipient from."),
+    contact: CloudResourceRefSchema.optional().describe(
+      "Optional contact from Mail's configured contact directory, such as a contacts.contact ref, to read and choose a recipient from.",
+    ),
   })
   .strict();
 export const MailDraftCalendarInputSchema = z

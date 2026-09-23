@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { z } from "zod";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 
 if (!isServer)
   test.each([
@@ -60,6 +61,44 @@ if (!isServer)
     } finally {
       dispose();
       stops.forEach((stop) => stop());
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test.each([
+    ["the built-in Contacts defaults", DEFAULT_MAIL_CONTACT_DIRECTORY, true],
+    ["a directory without create", { ...DEFAULT_MAIL_CONTACT_DIRECTORY, listWritableBooks: null, create: null }, false],
+  ])("offers New contact for an unmatched participant with %s", async (_label, directory, offered) => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async () =>
+        Response.json({
+          conversationId: "Conv01",
+          participants: [{ email: "ada@example.test", displayName: "Ada Example" }],
+          contacts: { status: "ready", items: [], matchedEmails: [], nextCursor: null },
+          spaces: { status: "ready", items: [], truncated: false },
+        }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: MailConversationContext } = await import("./MailConversationContext");
+    const { MailContactDirectoryProvider } = await import("./mail-contact-directory-context");
+    const dispose = render(
+      () => (
+        <MailContactDirectoryProvider value={directory}>
+          <MailConversationContext mailboxId="Box001" conversationId="Conv01" requestUrl="/app/mail/Box001" active />
+        </MailContactDirectoryProvider>
+      ),
+      dom.root,
+    );
+    try {
+      for (let i = 0; i < 100 && !dom.root.textContent?.includes("ada@example.test"); i++) await Bun.sleep(10);
+      expect(dom.root.textContent).toContain("ada@example.test");
+      expect(dom.root.textContent?.includes("New contact")).toBe(offered);
+    } finally {
+      dispose();
       globalThis.fetch = originalFetch;
       dom.cleanup();
     }

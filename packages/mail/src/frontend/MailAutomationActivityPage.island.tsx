@@ -1,11 +1,16 @@
 import { ButtonLink, StatCell, StatGrid, useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
+import type { MailContactDirectory } from "../contact-directory-settings";
 import type { MailAutomationActivityData } from "../service/automation-workspace";
 import MailAutomationActivityTable from "./_components/MailAutomationActivityTable";
 import MailAutomationShell from "./_components/MailAutomationShell";
 import { mailAutomationPageMessages } from "./mail-automation-page-messages";
 
-export default function MailAutomationActivityPage(props: { data: MailAutomationActivityData; currentUserEmail: string | null }) {
+export default function MailAutomationActivityPage(props: {
+  data: MailAutomationActivityData;
+  currentUserEmail: string | null;
+  contactDirectory: MailContactDirectory;
+}) {
   const locale = useLocale();
   const messages = createMemo(() => mailAutomationPageMessages.resolve([locale()]).t);
   return (
@@ -13,6 +18,7 @@ export default function MailAutomationActivityPage(props: { data: MailAutomation
       mailbox={props.data.mailbox}
       permission={props.data.permission}
       currentUserEmail={props.currentUserEmail}
+      contactDirectory={props.contactDirectory}
       activePage="activity"
     >
       <div class="flex flex-wrap items-start justify-between gap-3">

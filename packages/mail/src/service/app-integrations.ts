@@ -1,5 +1,5 @@
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
-import type { CapabilityResult } from "@k2b/cloud/contracts";
+import { type CapabilityResult, ContactDirectoryResolveDataSchema } from "@k2b/cloud/contracts";
 import type { z } from "zod";
 import {
   type CalendarAddress,
@@ -11,7 +11,6 @@ import {
   calendarInvitationResponseSchema,
   calendarResponseStateDataSchema,
   contactOpenHref,
-  contactResolveDataSchema,
   eventInvitationCommitDataSchema,
   eventInvitationPrepareDataSchema,
   spaceDetailSchema,
@@ -22,6 +21,7 @@ import {
   spacesItemSearchDataSchema,
   spacesMailDestinationsSchema,
 } from "../app-integration-contracts";
+import type { ContactDirectoryTarget } from "../contact-directory-settings";
 
 const REQUIRED_SPACES_INVITATION_QUERIES = [
   "calendar-destination.list",
@@ -180,16 +180,25 @@ const fetchAppCapability = async <T>(params: {
   return { ok: true, data: result.data };
 };
 
+const contactDirectoryUnavailable: AppIntegrationFailure = {
+  ok: false,
+  code: "CAPABILITY_NOT_FOUND",
+  message: "No contact directory is configured.",
+  status: 503,
+};
+
 export const resolveContacts = async (
   input: { emails: string[]; contactIds?: string[]; cursor?: string; limit?: number },
   request: AppIntegrationRequest,
+  target: ContactDirectoryTarget | null,
 ) => {
+  if (!target) return contactDirectoryUnavailable;
   const result = await fetchAppCapability({
-    appId: "contacts",
+    appId: target.appId,
     kind: "query",
-    capabilityId: "contact.resolve",
+    capabilityId: target.capabilityId,
     request,
-    dataSchema: contactResolveDataSchema,
+    dataSchema: ContactDirectoryResolveDataSchema,
     input,
   });
   if (!result.ok) return result;

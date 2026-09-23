@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 
 const root = mkdtempSync(join(tmpdir(), "mail-overview-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -39,6 +40,7 @@ const renderOverview = (initialFocusError: string | null = null, initialPinnedMa
       initialPinnedMailboxIds,
       initialFocusError,
       currentUserEmail: "user@example.com",
+      contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
       dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
       initialFocus: {
         items: [

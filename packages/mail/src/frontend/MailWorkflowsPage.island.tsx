@@ -1,12 +1,18 @@
 import { NoticeCard, useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
+import type { MailContactDirectory } from "../contact-directory-settings";
 import type { MailWorkflowsWorkspaceData } from "../service/automation-workspace";
 import MailAutomationShell from "./_components/MailAutomationShell";
 import { MailReferenceConfigurationCard } from "./_components/MailResponsePolicySettings";
 import MailWorkflowSettings from "./_components/MailWorkflowSettings";
 import { mailAutomationPageMessages } from "./mail-automation-page-messages";
 
-export default function MailWorkflowsPage(props: { data: MailWorkflowsWorkspaceData; currentUserEmail: string | null; openNew: boolean }) {
+export default function MailWorkflowsPage(props: {
+  data: MailWorkflowsWorkspaceData;
+  currentUserEmail: string | null;
+  contactDirectory: MailContactDirectory;
+  openNew: boolean;
+}) {
   const locale = useLocale();
   const messages = createMemo(() => mailAutomationPageMessages.resolve([locale()]).t);
   const [workflows, setWorkflows] = createSignal(props.data.workflows);
@@ -17,6 +23,7 @@ export default function MailWorkflowsPage(props: { data: MailWorkflowsWorkspaceD
       mailbox={props.data.mailbox}
       permission={props.data.permission}
       currentUserEmail={props.currentUserEmail}
+      contactDirectory={props.contactDirectory}
       activePage="workflows"
     >
       <header>
