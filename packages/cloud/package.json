@@ -100,7 +100,7 @@
     "@k2b/ssr": "0.14.0",
     "@k2b/ui": "0.5.0",
     "@k2b/stdlib": "0.25.0",
-    "@k2b/sync": "6.4.0",
+    "@k2b/sync": "6.5.0",
     "@nats-io/transport-node": "3.4.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "bun-plugin-tailwind": "0.1.2",
