@@ -27,6 +27,7 @@
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
 import { beforeAll, describe, test } from "bun:test";
+import { SQL, sql } from "bun";
 import { applyTestRuntimeEnv, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
 
 export type { InfraKind } from "./test-infra-env";
@@ -119,7 +120,6 @@ const httpReachable = async (url: string): Promise<void> => {
 
 const probes: Record<InfraKind, (target: string) => Promise<void>> = {
   database: async (target) => {
-    const { SQL } = await import("bun");
     const sql = new SQL(target);
     try {
       await sql`SELECT 1`;
@@ -187,7 +187,6 @@ export const databaseSuite = (): typeof describe => suiteFor("database");
 export const useFreshDatabase = async (prefix: string): Promise<{ url: string; name: string; drop: () => Promise<void> }> => {
   const database = await createDisposableDatabase(prefix);
   process.env.DATABASE_URL = database.url;
-  const { sql } = await import("bun");
   const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
   if (row?.name !== database.name) {
     await database.drop();
@@ -224,7 +223,6 @@ export const requireDatabaseUrl = (): string => requireInfraUrl("database");
 export const createDisposableDatabase = async (prefix: string): Promise<{ url: string; name: string; drop: () => Promise<void> }> => {
   const admin = new URL(requireDatabaseUrl());
   const name = `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}_test`;
-  const { SQL } = await import("bun");
   const sql = new SQL(admin.toString());
   try {
     await sql.unsafe(`CREATE DATABASE "${name}"`);

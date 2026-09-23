@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { SQL } from "bun";
+import { SQL, sql } from "bun";
 import { requireDatabaseUrl, testFor } from "../../../../scripts/fixtures/test-infra";
 
 // This suite never migrates the configured development database. The parent
@@ -55,7 +55,6 @@ if (!scenario) {
   }
 } else {
   test(`${scenario}: removes only the execution flag and is repeatable`, async () => {
-    const { sql } = await import("bun");
     const databaseName = process.env.NOTEBOOKS_SCRIPT_REMOVAL_DATABASE;
     if (!databaseName || !new RegExp(`^${databasePrefix}[a-f0-9]{32}_test$`).test(databaseName)) {
       throw new Error("Isolated migration child requires an exact generated database name");

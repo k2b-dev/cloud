@@ -60,7 +60,8 @@ and durable data.
 - Ship server-side files (templates, fixtures a service reads at runtime)
   under `src/assets/` and resolve them with `appAssetPath()` from
   `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in
-  the bundled image.
+  the bundled image. Import Bun built-ins statically; the minified server
+  bundle breaks `await import("bun")`.
 - Store durable state explicitly, never in process memory or container files.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable

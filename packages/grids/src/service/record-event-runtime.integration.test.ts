@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { sql } from "bun";
 import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 
 const databaseName = process.env.GRIDS_RECORD_EVENTS_DB_CHILD;
@@ -30,7 +31,6 @@ if (!databaseName) {
     if (!testInfra.database || !/^grids_events_[a-f0-9]{16}_test$/.test(databaseName)) throw new Error("Unexpected isolated database");
     const started = performance.now();
     const checkpoint = (phase: string) => console.info(`[record-event recovery] ${phase}: ${Math.round(performance.now() - started)}ms`);
-    const { sql } = await import("bun");
     const { dispatchRecordEventOutboxBatch, enqueueRecordEvent, startRecordEventOutbox, stopRecordEventOutbox } = await import(
       "./record-event-outbox"
     );
