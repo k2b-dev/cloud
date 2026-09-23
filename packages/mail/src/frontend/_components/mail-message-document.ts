@@ -100,15 +100,28 @@ export const buildMessageDocument = (
       });
       const root = document.getElementById("mail-message-root");
       const reportHeight = () => post("height", Math.ceil((root?.getBoundingClientRect().height || 0) + 2));
+      // The parent delivers permission-checked image bytes; object URLs must
+      // be created here because this opaque origin cannot load parent blob URLs.
+      const shownImages = new Set();
+      const showImages = (entries) => {
+        if (!Array.isArray(entries)) return;
+        for (const entry of entries) {
+          const attribute = entry?.kind === "cid" ? "data-mail-cid" : entry?.kind === "remote" ? "data-mail-remote-image" : "";
+          if (!attribute || typeof entry.id !== "string" || !(entry.image instanceof Blob)) continue;
+          const key = entry.kind + ":" + entry.id;
+          if (shownImages.has(key)) continue;
+          shownImages.add(key);
+          const url = URL.createObjectURL(entry.image);
+          for (const image of document.querySelectorAll("img[" + attribute + "]")) {
+            if (image.getAttribute(attribute).toLowerCase() === entry.id) image.src = url;
+          }
+        }
+      };
       addEventListener("message", (event) => {
         const data = event.data;
-        if (
-          event.source === parent &&
-          data &&
-          data.source === "cloud-mail-host" &&
-          data.channel === channel &&
-          data.type === "measure"
-        ) reportHeight();
+        if (event.source !== parent || !data || data.source !== "cloud-mail-host" || data.channel !== channel) return;
+        if (data.type === "measure") reportHeight();
+        if (data.type === "images") showImages(data.value);
       });
       if (root) new ResizeObserver(reportHeight).observe(root);
       reportHeight();

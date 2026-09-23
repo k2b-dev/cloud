@@ -8,11 +8,10 @@ import { buildMessageDocument, estimateInitialMessageBodyHeight, normalizeMessag
 import { mailMessageMessages } from "./mail-message-messages";
 import {
   type MessageBodyFormat,
+  markCidImageSources,
   normalizeContentId,
   referencedContentIds,
   referencedRemoteImageIds,
-  rewriteCidSources,
-  rewriteRemoteImageSources,
   splitPlainMessageSegments,
   splitPlainTextLinks,
 } from "./mail-message-presentation";
@@ -22,6 +21,8 @@ const MAX_INLINE_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_REMOTE_IMAGE_BYTES = 25 * 1024 * 1024;
 const REMOTE_IMAGE_WORKERS = 2;
 const REMOTE_IMAGE_REQUEST_GAP_MS = 350;
+
+type FrameImage = { kind: "cid" | "remote"; id: string; image: Blob };
 
 const sleep = (durationMs: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, durationMs));
 
@@ -60,27 +61,27 @@ export default function MailMessageBody(props: {
   // so hydration preserves the already-rendered message frame.
   const channel = `mail-message-${props.messageId}`;
   const [height, setHeight] = createSignal(estimateInitialMessageBodyHeight(props.plainText, props.html));
-  const [cidUrls, setCidUrls] = createSignal(new Map<string, string>());
-  const [remoteUrls, setRemoteUrls] = createSignal(new Map<string, string>());
+  const [loadedRemoteIds, setLoadedRemoteIds] = createSignal<ReadonlySet<string>>(new Set());
   const [remoteLoading, setRemoteLoading] = createSignal(false);
   let frame: HTMLIFrameElement | undefined;
   let remoteController: AbortController | null = null;
-  let remoteFlushTimer: ReturnType<typeof setTimeout> | null = null;
   let remoteLoadedBytes = 0;
   let disposed = false;
-  const remoteObjectUrls = new Set<string>();
+  // Loaded images stay here so a (re)loaded frame document can receive them all.
+  const frameImages: FrameImage[] = [];
   const plainSegments = createMemo(() => splitPlainMessageSegments(props.plainText ?? ""));
   const remoteImageIds = createMemo(() => {
     if (props.format !== "html" || props.linksDisabled) return [];
     const stored = new Set(props.remoteContent.imageIds.map((id) => id.toLowerCase()));
     return referencedRemoteImageIds(props.html ?? "").filter((id) => stored.has(id));
   });
-  const remoteImagesRemaining = createMemo(() => remoteImageIds().filter((id) => !remoteUrls().has(id)).length);
+  const remoteImagesRemaining = createMemo(() => remoteImageIds().filter((id) => !loadedRemoteIds().has(id)).length);
+  // The frame document never depends on loaded images: replacing srcdoc
+  // reloads the whole message. Images reach the running frame as messages.
   const documentSource = createMemo(() => {
-    const withCidImages = rewriteCidSources(props.format === "html" ? (props.html ?? "") : "", cidUrls());
     const localized = localization();
     return buildMessageDocument(
-      rewriteRemoteImageSources(withCidImages, remoteUrls()),
+      markCidImageSources(props.format === "html" ? (props.html ?? "") : ""),
       channel,
       props.linksDisabled,
       localized.locale,
@@ -98,28 +99,26 @@ export default function MailMessageBody(props: {
     props.onSelectionChange(value);
   };
 
+  const sendFrameImages = (images: FrameImage[]) => {
+    if (images.length === 0) return;
+    frame?.contentWindow?.postMessage({ source: "cloud-mail-host", channel, type: "images", value: images }, "*");
+  };
+
+  const showFrameImage = (image: FrameImage) => {
+    frameImages.push(image);
+    sendFrameImages([image]);
+  };
+
   const loadRemoteImages = async () => {
     if (remoteLoading() || remoteImagesRemaining() === 0) return;
     remoteController?.abort();
     const controller = new AbortController();
     remoteController = controller;
     setRemoteLoading(true);
-    const pending = remoteImageIds().filter((id) => !remoteUrls().has(id));
-    const loaded: Array<[string, string]> = [];
+    const pending = remoteImageIds().filter((id) => !loadedRemoteIds().has(id));
     let loadedCount = 0;
     let budgetExhausted = false;
     let cursor = 0;
-    const flushLoaded = () => {
-      if (remoteFlushTimer) clearTimeout(remoteFlushTimer);
-      remoteFlushTimer = null;
-      if (loaded.length === 0 || disposed || controller.signal.aborted) return;
-      const batch = loaded.splice(0);
-      setRemoteUrls((current) => new Map([...current, ...batch]));
-    };
-    const scheduleFlush = () => {
-      if (remoteFlushTimer) return;
-      remoteFlushTimer = setTimeout(flushLoaded, 150);
-    };
     const worker = async () => {
       while (!controller.signal.aborted && !budgetExhausted) {
         const index = cursor;
@@ -139,11 +138,9 @@ export default function MailMessageBody(props: {
             return;
           }
           remoteLoadedBytes += blob.size;
-          const objectUrl = URL.createObjectURL(blob);
-          remoteObjectUrls.add(objectUrl);
-          loaded.push([imageId, objectUrl]);
           loadedCount += 1;
-          scheduleFlush();
+          showFrameImage({ kind: "remote", id: imageId, image: blob });
+          setLoadedRemoteIds((current) => new Set(current).add(imageId));
         } catch (error) {
           if (!disposed && !controller.signal.aborted) {
             console.warn("Could not load remote email image", error);
@@ -155,7 +152,6 @@ export default function MailMessageBody(props: {
     };
     try {
       await Promise.all(Array.from({ length: Math.min(REMOTE_IMAGE_WORKERS, pending.length) }, worker));
-      flushLoaded();
       if (loadedCount === 0 && !disposed && !controller.signal.aborted) {
         void prompts.error(messages().remoteImagesFailed);
       } else if (budgetExhausted && !disposed && !controller.signal.aborted) {
@@ -199,12 +195,16 @@ export default function MailMessageBody(props: {
     frame?.contentWindow?.postMessage({ source: "cloud-mail-host", channel, type: "measure" }, "*");
   };
 
+  const handleFrameLoad = () => {
+    sendFrameImages(frameImages);
+    requestFrameMeasurement();
+  };
+
   onMount(() => {
     window.addEventListener("message", receiveMessage);
     requestAnimationFrame(requestFrameMeasurement);
     if (props.format === "plain" && props.plainText) document.addEventListener("selectionchange", reportPlainSelection);
     const controller = new AbortController();
-    const objectUrls = new Set<string>();
     const loadCidImages = async () => {
       const referenced = new Set(referencedContentIds(props.html ?? ""));
       let selectedBytes = 0;
@@ -218,7 +218,6 @@ export default function MailMessageBody(props: {
           return true;
         })
         .slice(0, MAX_INLINE_IMAGE_COUNT);
-      const entries: Array<[string, string]> = [];
       for (const attachment of selected) {
         const response = await fetch(
           `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}?inline=true`,
@@ -227,11 +226,8 @@ export default function MailMessageBody(props: {
         if (!response.ok) continue;
         const blob = await response.blob();
         if (disposed || controller.signal.aborted) return;
-        const objectUrl = URL.createObjectURL(blob);
-        objectUrls.add(objectUrl);
-        entries.push([normalizeContentId(attachment.contentId!), objectUrl]);
+        showFrameImage({ kind: "cid", id: normalizeContentId(attachment.contentId!), image: blob });
       }
-      if (!disposed) setCidUrls(new Map(entries));
     };
     if (props.format === "html" && !props.linksDisabled) {
       void loadCidImages().catch((error) => {
@@ -244,12 +240,7 @@ export default function MailMessageBody(props: {
       controller.abort();
       allowRemoteContent.abort();
       remoteController?.abort();
-      if (remoteFlushTimer) clearTimeout(remoteFlushTimer);
-      remoteFlushTimer = null;
-      for (const url of objectUrls) URL.revokeObjectURL(url);
-      for (const url of remoteObjectUrls) URL.revokeObjectURL(url);
-      objectUrls.clear();
-      remoteObjectUrls.clear();
+      frameImages.length = 0;
       window.removeEventListener("message", receiveMessage);
       document.removeEventListener("selectionchange", reportPlainSelection);
       props.onSelectionChange("");
@@ -329,7 +320,7 @@ export default function MailMessageBody(props: {
           sandbox="allow-scripts allow-popups"
           referrerpolicy="no-referrer"
           srcdoc={documentSource()}
-          onLoad={requestFrameMeasurement}
+          onLoad={handleFrameLoad}
         />
       </div>
     </Show>
