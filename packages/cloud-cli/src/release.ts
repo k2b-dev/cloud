@@ -72,6 +72,8 @@ type UpdateOptions = ReleaseSource & {
   standalone?: boolean;
   target?: CliTarget;
   verifyCosign?: boolean;
+  /** Cosign executable; defaults to `cosign` on the PATH. */
+  cosignPath?: string;
   installSkill?: boolean;
   skillsDir?: string;
   claudeSymlink?: boolean;
@@ -244,8 +246,9 @@ const verifyCosign = async (
   manifest: Uint8Array,
   downloadBase: string,
   fetchImpl: FetchImplementation,
+  cosign: string | null,
 ): Promise<"verified" | "unavailable"> => {
-  if (!Bun.which("cosign")) return "unavailable";
+  if (!cosign) return "unavailable";
   const manifestPath = await writeReleaseFile(directory, CHECKSUMS_ASSET, manifest);
   const bundle = await fetchOptionalBytes(`${downloadBase}/${CHECKSUMS_BUNDLE_ASSET}`, fetchImpl);
   const material: CosignMaterial = bundle
@@ -263,7 +266,7 @@ const verifyCosign = async (
         ),
       };
   try {
-    await execFileAsync("cosign", cosignVerifyBlobArgs(manifestPath, material));
+    await execFileAsync(cosign, cosignVerifyBlobArgs(manifestPath, material));
   } catch {
     throw new Error("Cloud CLI Cosign verification failed.");
   }
@@ -404,7 +407,7 @@ export const updateCli = async (options: UpdateOptions = {}): Promise<CliUpdateR
     const downloadBase = `${source.releaseBase}/download/${release.tag}`;
     const manifest = await fetchBytes(`${downloadBase}/${CHECKSUMS_ASSET}`, source.fetchImpl);
     const cosign =
-      options.verifyCosign === false ? "skipped" : await verifyCosign(temporaryDirectory, manifest, downloadBase, source.fetchImpl);
+      options.verifyCosign === false ? "skipped" : await verifyCosign(temporaryDirectory, manifest, downloadBase, source.fetchImpl, options.cosignPath ?? Bun.which("cosign"));
     const binary = await fetchBytes(`${downloadBase}/${target.asset}`, source.fetchImpl);
     verifyChecksum(binary, expectedChecksum(new TextDecoder().decode(manifest), target.asset));
     if (replaceInstalledBinary) {

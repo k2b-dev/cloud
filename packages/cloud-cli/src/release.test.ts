@@ -44,7 +44,7 @@ const createCosignStub = async (directory: string, exitCode = 0) => {
   await mkdir(bin, { recursive: true });
   await writeFile(join(bin, "cosign"), `#!/bin/sh\nprintf '%s\\n' "$@" > '${log}'\nexit ${exitCode}\n`, { mode: 0o755 });
   await chmod(join(bin, "cosign"), 0o755);
-  return { path: `${bin}:${process.env.PATH ?? ""}`, args: async () => (await readFile(log, "utf8")).trimEnd().split("\n") };
+  return { executable: join(bin, "cosign"), path: `${bin}:${process.env.PATH ?? ""}`, args: async () => (await readFile(log, "utf8")).trimEnd().split("\n") };
 };
 
 const cosignIdentityArgs = [
@@ -341,8 +341,6 @@ describe("Cloud CLI releases", () => {
     await writeFile(executablePath, "old binary", { mode: 0o755 });
     const cosign = await createCosignStub(directory, cosignExitCode);
     const { server, requested } = serveSignedRelease(assetName, "new binary", assets);
-    const originalPath = process.env.PATH;
-    process.env.PATH = cosign.path;
     try {
       const result = await updateCli({
         apiBase: `http://127.0.0.1:${server.port}`,
@@ -351,6 +349,7 @@ describe("Cloud CLI releases", () => {
         standalone: true,
         target: { os: "linux", arch: "x64", asset: assetName },
         installSkill: false,
+        cosignPath: cosign.executable,
         confirm: async () => true,
       }).then(
         (value) => ({ value }),
@@ -358,7 +357,6 @@ describe("Cloud CLI releases", () => {
       );
       return { result, requested, cosign, executablePath };
     } finally {
-      process.env.PATH = originalPath;
       server.stop(true);
     }
   };
