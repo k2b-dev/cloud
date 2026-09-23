@@ -52,6 +52,16 @@ const DEFAULT_RECONNECT = {
   jitterMs: 250,
 } as const;
 
+/**
+ * Deadline for one opening handshake. The handshake is a single HTTP upgrade
+ * round trip (the gateway accepts it before reaching the application), so a
+ * healthy attempt finishes far sooner. Browsers can otherwise leave a socket in
+ * `CONNECTING` indefinitely after sleep or a network change. Matching the
+ * longest default reconnect delay means a stalled attempt never blocks recovery
+ * for longer than an ordinary retry.
+ */
+const CONNECT_TIMEOUT_MS = DEFAULT_RECONNECT.maxDelayMs;
+
 const defaultCloseError = ({ code, reason }: LiveWebSocketClose): LiveWebSocketError | null => {
   if (code === 1008) return { code: reason || "access_denied", message: "Live access changed or expired." };
   if (code === 1011) return { code: reason || "internal_error", message: "Live updates failed." };
@@ -72,7 +82,8 @@ const socketUrl = (raw: string): string => {
  *
  * The app owns its wire protocol, validation, permissions, and domain updates.
  * This helper owns only browser transport lifecycle: one socket, visibility,
- * reconnect backoff, applied-cursor resume, terminal closes, and disposal.
+ * reconnect backoff, connection deadlines, recovery when the tab or network
+ * returns, applied-cursor resume, terminal closes, and disposal.
  */
 export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMessage>): LiveWebSocket => {
   const activity = options.activity ?? "visible";
@@ -81,6 +92,8 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
 
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let connectTimer: ReturnType<typeof setTimeout> | null = null;
+  let connectStartedAt = 0;
   let reconnectAttempt = 0;
   let lastAppliedCursor = options.initialCursor ?? null;
   let started = false;
@@ -120,9 +133,15 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
     }
   };
 
+  const clearConnectDeadline = () => {
+    if (connectTimer !== null) clearTimeout(connectTimer);
+    connectTimer = null;
+  };
+
   const closeSocket = (code = 1000, reason = "") => {
     const current = socket;
     socket = null;
+    clearConnectDeadline();
     if (!current || current.readyState > WebSocket.OPEN) return;
     try {
       current.close(code, reason);
@@ -135,6 +154,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
     if (terminated) return;
     terminated = true;
     clearReconnect();
+    detachRecovery();
     closeSocket(close.code, close.reason);
     setStatus("closed");
     if (!fatalSent) {
@@ -165,6 +185,13 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
     }, delay);
   };
 
+  /** Gives up on an attempt that is still connecting and schedules a retry. */
+  const abandonAttempt = (attempt: WebSocket) => {
+    if (socket !== attempt) return;
+    closeSocket();
+    scheduleReconnect();
+  };
+
   const openSocket = () => {
     if (disposed || terminated || !started || socket) return;
     if (!browserAvailable()) {
@@ -174,7 +201,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
     if (!isActive()) return;
 
     let next: WebSocket;
-    setStatus(reconnectAttempt > 0 ? "reconnecting" : "connecting");
+    setStatus(reconnectAttempt > 0 || status === "reconnecting" ? "reconnecting" : "connecting");
     try {
       next = new WebSocket(socketUrl(typeof options.url === "function" ? options.url() : options.url));
     } catch (error) {
@@ -182,9 +209,15 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
       return;
     }
     socket = next;
+    connectStartedAt = Date.now();
+    connectTimer = setTimeout(() => {
+      connectTimer = null;
+      if (next.readyState === WebSocket.CONNECTING) abandonAttempt(next);
+    }, CONNECT_TIMEOUT_MS);
 
     next.onopen = () => {
       if (socket !== next || disposed || terminated) return;
+      clearConnectDeadline();
       try {
         if (!send(options.subscribe(lastAppliedCursor))) throw new Error("Live WebSocket subscription could not be sent");
         setStatus("open");
@@ -213,6 +246,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
     next.onclose = (event) => {
       if (socket !== next) return;
       socket = null;
+      clearConnectDeadline();
       if (disposed || terminated) return;
       const closeError = classifyClose({ code: event.code, reason: event.reason.trim() });
       if (closeError) fatal(closeError, { code: event.code, reason: event.reason });
@@ -224,20 +258,53 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
         next.close();
       } catch {
         if (socket === next) {
-          socket = null;
+          closeSocket();
           scheduleReconnect();
         }
       }
     };
   };
 
-  const syncVisibility = () => {
-    if (isActive()) openSocket();
-    else {
+  /**
+   * Reconnects now when the tab or network returns. Open and closing sockets
+   * are left alone; a closing socket's close event still decides between retry
+   * and a terminal error. A handshake within its deadline is kept unless the
+   * network just returned, because it began on the network that was gone. A
+   * stalled handshake or a pending backoff is replaced by an immediate attempt
+   * whose backoff starts over.
+   */
+  const recover = (event: Event) => {
+    if (disposed || terminated || !started || !isActive()) return;
+    if (socket) {
+      if (socket.readyState !== WebSocket.CONNECTING) return;
+      if (event.type !== "online" && Date.now() - connectStartedAt < CONNECT_TIMEOUT_MS) return;
+      closeSocket();
+    }
+    clearReconnect();
+    reconnectAttempt = 0;
+    openSocket();
+  };
+
+  const syncVisibility = (event: Event) => {
+    if (isActive()) recover(event);
+    else if (activity === "visible") {
       clearReconnect();
       closeSocket(1000, "inactive");
       setStatus("paused");
     }
+  };
+
+  const attachRecovery = () => {
+    document.addEventListener("visibilitychange", syncVisibility);
+    window.addEventListener("online", recover);
+    window.addEventListener("focus", recover);
+  };
+
+  const detachRecovery = () => {
+    if (!started || !browserAvailable()) return;
+    document.removeEventListener("visibilitychange", syncVisibility);
+    window.removeEventListener("online", recover);
+    window.removeEventListener("focus", recover);
   };
 
   return {
@@ -248,7 +315,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
         fatal({ code: "unsupported", message: "Live WebSockets are not available in this browser" });
         return;
       }
-      if (activity === "visible") document.addEventListener("visibilitychange", syncVisibility);
+      attachRecovery();
       openSocket();
     },
     markApplied,
@@ -258,9 +325,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
       if (disposed) return;
       disposed = true;
       clearReconnect();
-      if (activity === "visible" && typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", syncVisibility);
-      }
+      detachRecovery();
       closeSocket();
       setStatus("closed");
     },

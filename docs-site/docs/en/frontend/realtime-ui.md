@@ -5,7 +5,7 @@ section: Frontend
 order: 870
 description: Update an open page from application events while preserving reload and recovery behavior.
 tags: [realtime, websocket, cursors]
-updated: 2026-09-15
+updated: 2026-09-23
 ---
 
 # Realtime UI
@@ -45,7 +45,8 @@ onCleanup(() => live.dispose());
 ```
 
 The helper owns one socket, visibility-aware activity, reconnect backoff,
-cursor resume, fatal close classification, and disposal.
+connection deadlines, recovery when the tab or network returns, cursor resume,
+fatal close classification, and disposal.
 
 The application owns authentication, subscription payloads, runtime
 validation, permissions, and domain updates.
@@ -56,6 +57,22 @@ subscription through `controls.send()`, and the returned connection exposes the
 same `send()` operation for later subscribe or unsubscribe messages. Keep each
 channel's recovery state independent: a durable invalidation cursor must not be
 advanced by unrelated ephemeral stream events.
+
+## Recover after interruptions
+
+With the default `activity: "visible"`, a hidden tab closes its socket and
+reports `paused`. With `activity: "always"`, the socket stays open while the
+tab is hidden.
+
+A handshake that has not opened after 10 seconds is closed and retried with
+backoff. When the tab becomes visible or the window regains focus, a stalled
+handshake or a pending backoff is replaced by an immediate attempt. When the
+browser reports `online`, a handshake still in progress is replaced too,
+because it started on the network that was gone. In both cases the backoff
+starts over. An open socket is left alone. Each new socket resubscribes from
+the last applied cursor, and `onOpen` runs again.
+
+Terminal closes and `dispose()` end recovery. Neither reconnects.
 
 ## Advance only after coverage
 

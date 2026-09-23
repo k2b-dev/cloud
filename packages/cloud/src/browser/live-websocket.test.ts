@@ -53,17 +53,23 @@ const originalDocument = globalThis.document;
 const originalWebSocket = globalThis.WebSocket;
 const originalSetTimeout = globalThis.setTimeout;
 const originalClearTimeout = globalThis.clearTimeout;
+const originalDateNow = Date.now;
 
 let document: FakeDocument;
 let timers: Array<(() => void) | null>;
 let timerDelays: number[];
+let now: number;
 
 const installBrowser = () => {
   FakeWebSocket.instances = [];
   timers = [];
   timerDelays = [];
+  now = 0;
+  Date.now = () => now;
   document = new FakeDocument();
-  (globalThis as unknown as { window: unknown }).window = { location: { origin: "http://localhost:3000" } };
+  (globalThis as unknown as { window: unknown }).window = Object.assign(new EventTarget(), {
+    location: { origin: "http://localhost:3000" },
+  });
   (globalThis as unknown as { document: unknown }).document = document;
   (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
   globalThis.setTimeout = ((callback: () => void, delay = 0) => {
@@ -96,7 +102,34 @@ afterEach(() => {
   (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
   globalThis.setTimeout = originalSetTimeout;
   globalThis.clearTimeout = originalClearTimeout;
+  Date.now = originalDateNow;
 });
+
+const pendingTimers = () => timers.filter(Boolean).length;
+const resumeEvents = ["visible", "online", "focus"] as const;
+const resume = (event: (typeof resumeEvents)[number]) => {
+  if (event === "visible") document.setVisibility("visible");
+  else window.dispatchEvent(new Event(event));
+};
+
+/** Drops an open socket while hidden and leaves the retry stuck in CONNECTING. */
+const stallReconnect = (statuses: string[] = []) => {
+  const connection = createLiveWebSocket<{ cursor: string }>({
+    url: "/api/example/ws",
+    activity: "always",
+    subscribe: (cursor) => ({ type: "subscribe", payload: { fromCursor: cursor } }),
+    parse: (raw) => JSON.parse(raw) as { cursor: string },
+    onMessage: (message, controls) => controls.markApplied(message.cursor),
+    onStatus: (status) => statuses.push(status),
+  });
+  connection.connect();
+  FakeWebSocket.instances[0]!.open();
+  FakeWebSocket.instances[0]!.message({ cursor: "7-3" });
+  document.setVisibility("hidden");
+  FakeWebSocket.instances[0]!.close(1006);
+  runNextTimer();
+  return connection;
+};
 
 describe("createLiveWebSocket", () => {
   test("clears a rejected cursor before the next subscription", () => {
@@ -281,5 +314,179 @@ describe("createLiveWebSocket", () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
     expect(timers.filter(Boolean)).toHaveLength(0);
     connection.dispose();
+  });
+
+  test.each([...resumeEvents])("recovers a stalled reconnect on %s and resumes from the applied cursor", (event) => {
+    installBrowser();
+    const statuses: string[] = [];
+    const connection = stallReconnect(statuses);
+    const stalled = FakeWebSocket.instances[1]!;
+    expect(stalled.readyState).toBe(FakeWebSocket.CONNECTING);
+
+    now = 60_000;
+    resume(event);
+
+    expect(stalled.closes).toHaveLength(1);
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    expect(pendingTimers()).toBe(1);
+    FakeWebSocket.instances[2]!.open();
+    expect(subscribeCursor(FakeWebSocket.instances[2]!)).toBe("7-3");
+    expect(statuses).toEqual(["connecting", "open", "reconnecting", "open"]);
+    expect(pendingTimers()).toBe(0);
+    connection.dispose();
+  });
+
+  test.each([...resumeEvents])("skips the pending backoff on %s and starts the next backoff over", (event) => {
+    installBrowser();
+    const connection = createLiveWebSocket({
+      url: "/api/example/ws",
+      activity: "always",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: () => null,
+      onMessage: () => undefined,
+      reconnect: { baseDelayMs: 10, maxDelayMs: 1_000, jitterMs: 0 },
+    });
+    connection.connect();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      FakeWebSocket.instances.at(-1)!.close(1006);
+      runNextTimer();
+    }
+    FakeWebSocket.instances.at(-1)!.close(1006);
+    expect(timerDelays.at(-1)).toBe(160);
+    if (event === "visible") document.setVisibility("hidden");
+
+    resume(event);
+    expect(FakeWebSocket.instances).toHaveLength(6);
+    expect(pendingTimers()).toBe(1);
+    FakeWebSocket.instances[5]!.open();
+    FakeWebSocket.instances[5]!.close(1006);
+    expect(timerDelays.at(-1)).toBe(10);
+    connection.dispose();
+  });
+
+  test("ignores repeated resume events for open, fresh, and recovered connections", () => {
+    installBrowser();
+    const connection = stallReconnect();
+    for (let round = 0; round < 3; round += 1) {
+      resume("visible");
+      resume("focus");
+    }
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(pendingTimers()).toBe(1);
+
+    now = 60_000;
+    for (let round = 0; round < 3; round += 1) {
+      resume("visible");
+      resume("focus");
+    }
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    expect(pendingTimers()).toBe(1);
+
+    FakeWebSocket.instances[2]!.open();
+    now = 120_000;
+    for (const event of resumeEvents) resume(event);
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    expect(FakeWebSocket.instances[2]!.closes).toHaveLength(0);
+    expect(pendingTimers()).toBe(0);
+    connection.dispose();
+  });
+
+  test("replaces a fresh handshake once per network return", () => {
+    installBrowser();
+    const connection = stallReconnect();
+    for (let round = 0; round < 3; round += 1) resume("online");
+
+    expect(FakeWebSocket.instances).toHaveLength(5);
+    expect(FakeWebSocket.instances.slice(1, 4).map((socket) => socket.closes.length)).toEqual([1, 1, 1]);
+    expect(FakeWebSocket.instances[4]!.readyState).toBe(FakeWebSocket.CONNECTING);
+    expect(pendingTimers()).toBe(1);
+    connection.dispose();
+  });
+
+  test("closes a handshake that misses its deadline and retries", () => {
+    installBrowser();
+    const statuses: string[] = [];
+    const connection = createLiveWebSocket({
+      url: "/api/example/ws",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: () => null,
+      onMessage: () => undefined,
+      onStatus: (status) => statuses.push(status),
+    });
+    connection.connect();
+    expect(timerDelays).toEqual([10_000]);
+
+    runNextTimer();
+    expect(FakeWebSocket.instances[0]!.closes).toHaveLength(1);
+    expect(statuses).toEqual(["connecting", "reconnecting"]);
+    expect(pendingTimers()).toBe(1);
+
+    runNextTimer();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    FakeWebSocket.instances[1]!.open();
+    expect(pendingTimers()).toBe(0);
+    expect(statuses).toEqual(["connecting", "reconnecting", "open"]);
+    connection.dispose();
+  });
+
+  test("never reconnects after a terminal close", () => {
+    installBrowser();
+    const connection = createLiveWebSocket({
+      url: "/api/example/ws",
+      activity: "always",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: () => null,
+      onMessage: () => undefined,
+    });
+    connection.connect();
+    FakeWebSocket.instances[0]!.open();
+    FakeWebSocket.instances[0]!.close(1008, "login_required");
+    now = 60_000;
+    document.setVisibility("hidden");
+    for (const event of resumeEvents) resume(event);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(pendingTimers()).toBe(0);
+  });
+
+  test("lets a closing socket report its terminal close before any resume", () => {
+    installBrowser();
+    const errors: string[] = [];
+    const connection = createLiveWebSocket({
+      url: "/api/example/ws",
+      activity: "always",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: () => null,
+      onMessage: () => undefined,
+      onFatal: (error) => errors.push(error.code),
+    });
+    connection.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.readyState = 2;
+    now = 60_000;
+    for (const event of resumeEvents) resume(event);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    socket.close(1008, "access_denied");
+    expect(errors).toEqual(["access_denied"]);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(pendingTimers()).toBe(0);
+    connection.dispose();
+  });
+
+  test("never reconnects after disposal, even while a handshake is pending", () => {
+    installBrowser();
+    const statuses: string[] = [];
+    const connection = stallReconnect(statuses);
+    connection.dispose();
+    expect(FakeWebSocket.instances[1]!.closes).toHaveLength(1);
+    expect(pendingTimers()).toBe(0);
+
+    now = 60_000;
+    for (const event of resumeEvents) resume(event);
+    connection.connect();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(pendingTimers()).toBe(0);
+    expect(statuses.at(-1)).toBe("closed");
   });
 });
