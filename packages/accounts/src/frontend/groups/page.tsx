@@ -1,7 +1,7 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
-import { getDefaultGroupScope, isAdminUser } from "@k2b/cloud/shared";
+import { getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
@@ -15,7 +15,8 @@ import NewGroup from "./NewGroup.island";
 
 /** Groups page - nav sidebar + full-page list. */
 export default ssr<AuthContext>(async (c) => {
-  const { t } = accountsMessages.resolve([getLocale(c)]);
+  const locale = getLocale(c);
+  const { t } = accountsMessages.resolve([locale]);
   const sessionUser = expectUserBackedActor(c);
   const isAdmin = isAdminUser(sessionUser);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
@@ -112,7 +113,7 @@ export default ssr<AuthContext>(async (c) => {
                     return (
                       <a href={href} class="group flex items-center gap-2 truncate font-medium text-primary">
                         <i class={`ti shrink-0 text-sm ${isManaged ? "ti-user-edit app-accent-text" : "ti-users-group text-dimmed"}`} />
-                        <span class="truncate transition-colors group-hover:app-accent-text">{group.name}</span>
+                        <span class="truncate transition-colors group-hover:app-accent-text">{groupDisplayName(group.name, locale)}</span>
                       </a>
                     );
                   }

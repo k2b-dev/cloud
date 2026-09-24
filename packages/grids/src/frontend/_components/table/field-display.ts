@@ -1,3 +1,4 @@
+import { groupDisplayName } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import { type FormatSpec, FormatSpecSchema } from "../../../contracts";
@@ -95,7 +96,9 @@ export const resolveFieldDisplay = (options: ResolveFieldDisplayOptions): FieldD
       const id = (item as { id?: unknown }).id;
       const type = (item as { type?: unknown }).type;
       if (typeof id !== "string" || (type !== "user" && type !== "group")) return [];
-      return [options.relationLabels?.[id] ?? (type === "user" ? t.privateUser : t.privateGroup)];
+      const label = options.relationLabels?.[id];
+      if (!label) return [type === "user" ? t.privateUser : t.privateGroup];
+      return [type === "group" ? groupDisplayName(label, locale) : label];
     });
     if (labels.length > 0) return { kind: "principal", text: labels.join(", ") };
     const users = values.filter((item) => item && typeof item === "object" && (item as { type?: unknown }).type === "user").length;

@@ -1,4 +1,5 @@
 import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
+import { groupDisplayName } from "@k2b/cloud/shared";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, CopyButton, prompts, Tag, TextInput, useLocale } from "@k2b/ui";
@@ -91,9 +92,9 @@ const CreateProxyClient = () => {
                         icon="ti ti-users-group"
                         size="sm"
                         onRemove={() => setGroups(groups().filter((candidate) => candidate.id !== group.id))}
-                        removeLabel={t().removeGroup({ name: group.name })}
+                        removeLabel={t().removeGroup({ name: groupDisplayName(group.name, locale()) })}
                       >
-                        {group.name}
+                        {groupDisplayName(group.name, locale())}
                       </Tag>
                     )}
                   </For>

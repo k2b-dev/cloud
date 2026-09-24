@@ -2,7 +2,7 @@ import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
-import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder } from "@k2b/ui";
+import { AppWorkspace, ButtonLink, createNavigation, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry, type MarkedEntry } from "../contracts";
@@ -35,6 +35,7 @@ const fingerprint = (items: readonly FileEntry[]) => JSON.stringify(items);
 export default function Workspace(props: { initial: WorkspaceSnapshot; preferences?: Record<string, ViewPreference>; cloudUrl: string }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
+  const locale = useLocale();
   const apiError = async (response: { json: () => Promise<unknown> }) => {
     const parsed = ErrorSchema.safeParse(await response.json().catch(() => null));
     return new Error(parsed.success ? parsed.data.message : t().unavailable);
@@ -170,7 +171,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     items: () => [
       ...snapshot().bases.items.map((base) => ({
         id: base.id,
-        label: baseLabel(base, b()),
+        label: baseLabel(base, b(), locale()),
         icon: base.kind === "users" ? "ti ti-home" : "ti ti-users",
         href: filesUrl(base.id),
         active: snapshot().selectedId === base.id,
@@ -566,12 +567,12 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                   {(base) => (
                     <AppWorkspace.NavTree.Item
                       id={treeId(base.id, "")}
-                      label={treeLabel(treeId(base.id, ""), baseLabel(base, b()))}
+                      label={treeLabel(treeId(base.id, ""), baseLabel(base, b(), locale()))}
                       icon={base.kind === "users" ? "ti ti-home" : "ti ti-users"}
                       href={filesUrl(base.id)}
                       navigation="enhanced"
-                      meta={baseLabel(base, b()) === base.name ? undefined : <span class="text-xs text-dimmed">{base.name}</span>}
-                      title={`${baseLabel(base, b()) === base.name ? base.name : `${baseLabel(base, b())} · ${base.name}`} (${t()[base.area]})`}
+                      meta={base.kind === "users" ? <span class="text-xs text-dimmed">{base.name}</span> : undefined}
+                      title={`${base.kind === "users" ? `${baseLabel(base, b(), locale())} · ${base.name}` : baseLabel(base, b(), locale())} (${t()[base.area]})`}
                       onNavigate={(event) => withSpinner(treeId(base.id, ""), () => onNavigate(event))}
                     >
                       <Show when={base.status === "existing"}>
@@ -782,7 +783,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                           defaultTitle:
                             paths.length === 1
                               ? paths[0]!.split("/").at(-1)!
-                              : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b())} (${paths.length})`,
+                              : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b(), locale())} (${paths.length})`,
                         })
                       }
                       onShareInbox={(folder) =>
@@ -790,7 +791,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                           baseId: directory().base.id,
                           kind: "inbox",
                           folder,
-                          defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b()),
+                          defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b(), locale()),
                         })
                       }
                       editor={snapshot().bases.editor}

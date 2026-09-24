@@ -10,6 +10,7 @@ import {
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
 } from "@k2b/cloud/services";
+import { groupDisplayName } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, CodeDisplay, DataTable, type DataTableColumn, Disclosure, Paper, Placeholder, StatusBadge, Tag } from "@k2b/ui";
@@ -387,7 +388,7 @@ export default ssr<AuthContext>(async (c) => {
                     if (col.id === "group")
                       return (
                         <a href={href} class="block truncate font-medium text-primary hover:underline">
-                          {group.name}
+                          {groupDisplayName(group.name, locale)}
                         </a>
                       );
                     if (col.id === "description") {
@@ -434,7 +435,7 @@ export default ssr<AuthContext>(async (c) => {
                     if (col.id === "group")
                       return (
                         <a href={href} class="block truncate font-medium text-primary hover:underline">
-                          {group.name}
+                          {groupDisplayName(group.name, locale)}
                         </a>
                       );
                     if (col.id === "description") {

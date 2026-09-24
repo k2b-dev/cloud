@@ -1,4 +1,5 @@
-import { Avatar, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
+import { groupDisplayName } from "@k2b/cloud/shared";
+import { Avatar, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 import AccountAvatar from "@/frontend/AccountAvatar";
 
@@ -24,6 +25,7 @@ type ManagersTabProps = {
 
 export default function ManagersTab(props: ManagersTabProps) {
   const messages = useAccountsMessages();
+  const locale = useLocale();
   const isEmpty = props.items.length === 0;
   const columns: DataTableColumn<EntityListItem>[] = [
     { id: "type", header: messages().type, value: (item) => item.kind, cellClass: "whitespace-nowrap" },
@@ -190,7 +192,7 @@ export default function ManagersTab(props: ManagersTabProps) {
               if (col.id === "name")
                 return (
                   <a href={href} class="block truncate font-medium text-primary hover:underline">
-                    {group.name}
+                    {groupDisplayName(group.name, locale())}
                   </a>
                 );
               if (col.id === "detail") {
@@ -203,7 +205,13 @@ export default function ManagersTab(props: ManagersTabProps) {
               if (col.id === "access") return <Tag>{group.provider === "ipa" ? "FreeIPA" : messages().local}</Tag>;
               if (col.id === "actions")
                 return props.canManage ? (
-                  <RemoveMember groupId={props.groupId} membershipRole="managers" type="group" id={group.id} label={group.name} />
+                  <RemoveMember
+                    groupId={props.groupId}
+                    membershipRole="managers"
+                    type="group"
+                    id={group.id}
+                    label={groupDisplayName(group.name, locale())}
+                  />
                 ) : null;
               return "";
             }}

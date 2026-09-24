@@ -1,7 +1,7 @@
 import { accountCategoryLabel } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { accountsAppService, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
-import { canManageAnyGroups } from "@k2b/cloud/shared";
+import { canManageAnyGroups, groupDisplayName } from "@k2b/cloud/shared";
 import { getRuntimeContext, hasDedicatedRuntimeRoute, Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, NoticeCard } from "@k2b/ui";
@@ -118,7 +118,7 @@ export default ssr<AuthContext>(async (c) => {
                     const isDirect = directGroups.includes(group);
                     const label = (
                       <>
-                        {group}
+                        {groupDisplayName(group, locale)}
                         {!isDirect && <i class="ti ti-git-branch ml-0.5 text-[10px] opacity-70" />}
                       </>
                     );
@@ -160,10 +160,12 @@ export default ssr<AuthContext>(async (c) => {
                         href={`/app/accounts/groups?scope=managed&search=${encodeURIComponent(group)}`}
                         class="tag bg-blue-100 text-blue-700 transition-colors hover:text-primary dark:bg-blue-900/50 dark:text-blue-300"
                       >
-                        {group}
+                        {groupDisplayName(group, locale)}
                       </a>
                     ) : (
-                      <span class="tag bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">{group}</span>
+                      <span class="tag bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                        {groupDisplayName(group, locale)}
+                      </span>
                     ),
                   )}
                 </div>

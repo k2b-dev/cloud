@@ -1,5 +1,18 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { AppWorkspace, Button, ButtonLink, DataTable, Format, Placeholder, prompts, StatusBadge, Tag, Tooltip, toast } from "@k2b/ui";
+import {
+  AppWorkspace,
+  Button,
+  ButtonLink,
+  DataTable,
+  Format,
+  Placeholder,
+  prompts,
+  StatusBadge,
+  Tag,
+  Tooltip,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { SharePage, ShareView } from "../contracts";
@@ -17,6 +30,7 @@ export default function SharesOverview(props: {
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
 }) {
   const b = useBrowserMessages();
+  const locale = useLocale();
   const p = useSharePasswordMessages();
   const t = useFilesMessages();
   const page = () => (Array.isArray(props.shares) ? { items: props.shares, next: null } : props.shares);
@@ -143,7 +157,7 @@ export default function SharesOverview(props: {
                   navigation="enhanced"
                   onNavigate={props.onNavigate}
                 >
-                  {baseLabel(row.base, b())}
+                  {baseLabel(row.base, b(), locale())}
                   {row.scope ? ` / ${row.scope}` : ""}
                 </ButtonLink>
               );

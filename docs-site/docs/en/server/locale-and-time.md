@@ -139,6 +139,26 @@ capabilities, widgets, Help, notifications, email, and testing live in
 
 
 
+## Display group names
+
+Account group names are often lowercase technical names such as `buchhaltung`.
+German text capitalises nouns, so render a group name for people with
+`groupDisplayName(name, locale)` from `@k2b/cloud/shared`. For German locales it
+capitalises the first letter of each word separated by whitespace or a hyphen
+(`buchhaltung` → `Buchhaltung`, `presse-team` → `Presse-Team`) and leaves the
+rest unchanged. Other locales get the name unchanged.
+
+```ts
+import { groupDisplayName } from "@k2b/cloud/shared";
+
+const label = groupDisplayName(group.name, getLocale(c)); // "Buchhaltung" for de
+```
+
+Use it only where a group name is shown: lists, detail headings, pickers,
+permission rows, and dialog text. Stored names, identifiers, URLs, search input,
+filter values, and API or JSON output keep the original name. Cloud's shared
+`EntitySearch`, `PrincipalPicker`, and `PermissionEditor` already apply it.
+
 ## Verify the boundary
 
 Request two pages concurrently with different `Accept-Language` headers: each

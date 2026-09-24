@@ -1,5 +1,6 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
 import type { Principal } from "../contracts/shared";
+import { groupDisplayName } from "../shared/account-display";
 import { accessMessages } from "./messages";
 
 export const principalKey = (p: Principal) =>
@@ -66,7 +67,7 @@ export default function PrincipalPicker(props: {
         else if (e.kind === "group")
           entries.push({
             principal: { type: "group", groupId: e.group.id },
-            label: e.group.name,
+            label: groupDisplayName(e.group.name, locale()),
             icon: "ti ti-users-group",
             description: e.group.description ?? undefined,
           });

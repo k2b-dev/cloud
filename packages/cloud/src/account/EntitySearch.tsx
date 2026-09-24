@@ -1,7 +1,8 @@
 import { timed } from "@k2b/stdlib/solid";
-import { Button, ScrollArea, TextInput } from "@k2b/ui";
+import { Button, ScrollArea, TextInput, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { createSignal, For, Show } from "solid-js";
+import { groupDisplayName } from "../shared/account-display";
 import { CloudAvatar } from "./Avatar";
 
 /**
@@ -108,6 +109,7 @@ type ApiServiceAccount = {
 };
 
 const EntitySearch = (props: EntitySearchProps) => {
+  const locale = useLocale();
   const [search, setSearch] = createSignal("");
   const [users, setUsers] = createSignal<ApiUser[]>([]);
   const [groups, setGroups] = createSignal<ApiGroup[]>([]);
@@ -270,7 +272,7 @@ const EntitySearch = (props: EntitySearchProps) => {
               {(group) => (
                 <ResultRow
                   icon="ti-users-group"
-                  title={group.name}
+                  title={groupDisplayName(group.name, locale())}
                   subtitle={group.description ?? undefined}
                   disabled={props.disabled}
                   onSelect={() =>

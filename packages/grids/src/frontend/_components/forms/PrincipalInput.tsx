@@ -1,3 +1,4 @@
+import { groupDisplayName } from "@k2b/cloud/shared";
 import { MultiSelectInput, Select, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import type { PrincipalReference } from "../../../field-types/principal";
@@ -28,7 +29,7 @@ type EntityItem =
   | { kind: "user"; user: { id: string; uid: string; displayName: string } }
   | { kind: "group"; group: { id: string; name: string } };
 
-const optionOf = (item: EntityItem): PrincipalOption =>
+const optionOf = (item: EntityItem, locale: string): PrincipalOption =>
   item.kind === "user"
     ? {
         type: "user",
@@ -38,7 +39,7 @@ const optionOf = (item: EntityItem): PrincipalOption =>
     : {
         type: "group",
         id: item.group.id,
-        label: item.group.name,
+        label: groupDisplayName(item.group.name, locale),
       };
 
 const choiceOf = (option: PrincipalOption): PrincipalChoice => ({
@@ -84,7 +85,7 @@ export default function PrincipalInput(props: {
     const response = await fetch(url, { credentials: "same-origin", signal });
     if (!response.ok) throw new Error(t().loadPrincipalsFailed);
     const body = (await response.json()) as { items?: EntityItem[] };
-    const options = (body.items ?? []).map(optionOf);
+    const options = (body.items ?? []).map((item) => optionOf(item, locale()));
     mergeOptions(options);
     return options;
   };

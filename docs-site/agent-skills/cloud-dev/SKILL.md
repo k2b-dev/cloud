@@ -129,8 +129,8 @@ SolidJS library remains independent of Cloud and application domains.
   Setting presentation inherits the application's base locale; notification
   senders pass locale metadata so `render` and `email` produce final text from
   the same canonical locale without adding locale to the domain payload.
-  Keep product text calm, direct, and precise. Localizations preserve meaning;
-  code, identifiers, paths, and exact external labels remain verbatim.
+  Keep product text calm and precise; localizations preserve meaning, while code, identifiers,
+  paths, and external labels stay verbatim. Show group names via `groupDisplayName()` (`@k2b/cloud/shared`).
   `Layout`, `AdminLayout`, and `MinimalLayout` install the SSR locale provider.
   Use `MinimalLayout` for an app-styled standalone page that needs Cloud's
   persisted locale and theme without Cloud chrome. A custom root using none of

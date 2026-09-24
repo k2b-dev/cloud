@@ -150,6 +150,17 @@ describe("FieldValue helpers", () => {
         relationLabels: { u1: "Ada", g1: "Design team" },
       }),
     ).toEqual({ kind: "principal", text: "Ada, Design team" });
+    expect(
+      resolveFieldDisplay({
+        field: participants,
+        value: [
+          { type: "user", id: "u1" },
+          { type: "group", id: "g1" },
+        ],
+        relationLabels: { u1: "ada lovelace", g1: "design team" },
+        locale: "de",
+      }),
+    ).toEqual({ kind: "principal", text: "ada lovelace, Design Team" });
     expect(resolveFieldDisplay({ field: participants, value: [{ type: "user", id: "hidden" }] })).toEqual({
       kind: "principal",
       text: "Private user",

@@ -1,4 +1,5 @@
-import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
+import { groupDisplayName } from "@k2b/cloud/shared";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 
 import { useAccountsMessages } from "../../messages";
@@ -19,6 +20,7 @@ type MemberOfTabProps = {
 
 export default function MemberOfTab(props: MemberOfTabProps) {
   const messages = useAccountsMessages();
+  const locale = useLocale();
   const hasGroups = props.items.length > 0;
   const columns: DataTableColumn<EntityListItem>[] = [
     { id: "group", header: messages().group, value: (item) => (item.kind === "group" ? item.group.name : "") },
@@ -68,7 +70,7 @@ export default function MemberOfTab(props: MemberOfTabProps) {
               if (col.id === "group")
                 return (
                   <a href={href} class="block truncate font-medium text-primary hover:underline">
-                    {group.name}
+                    {groupDisplayName(group.name, locale())}
                   </a>
                 );
               if (col.id === "description") {
@@ -81,7 +83,11 @@ export default function MemberOfTab(props: MemberOfTabProps) {
               if (col.id === "provider") return <Tag>{group.provider === "ipa" ? "FreeIPA" : messages().local}</Tag>;
               if (col.id === "actions")
                 return props.isAdmin ? (
-                  <RemoveFromGroup groupId={props.groupId} parentGroupId={group.id} parentGroupName={group.name} />
+                  <RemoveFromGroup
+                    groupId={props.groupId}
+                    parentGroupId={group.id}
+                    parentGroupName={groupDisplayName(group.name, locale())}
+                  />
                 ) : null;
               return "";
             }}
