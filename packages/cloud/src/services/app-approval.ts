@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { type SQL, sql } from "bun";
+import { lazySync } from "../_internal/process-sync";
 import { env } from "../config/env";
 import { type AccountCategory, accountCategory } from "../contracts/account-categories";
 import {
@@ -17,6 +18,7 @@ import {
 import { publicCloudOrigin } from "../shared/app-url";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { audit } from "./audit";
+import { logger } from "./logging";
 import { CORE_SETTINGS } from "./settings/core-settings";
 import { decryptValue } from "./settings/crypto";
 
@@ -136,6 +138,33 @@ type LoginRow = {
 };
 export type AppApprovalActor = { userId: string; sid: string; admin: boolean };
 export type AppDeviceEnrollmentNotice = { deviceId: string; userId: string; name: string; assisted: boolean };
+/** Best-effort wake-ups for browsers waiting on a login decision. Postgres stays authoritative. */
+export type AppLoginDecisionHints = {
+  /** Call after the decision commits. Must not throw or delay the caller. */
+  publish(requestId: string): void;
+  /** Settles on the first hint for this request, or when `signal` aborts. */
+  wait(requestId: string, signal: AbortSignal): Promise<void>;
+};
+const log = logger("app-approval");
+const decisionTopic = lazySync((sync) =>
+  sync.topic<null>({
+    id: "cloud:app-login-decisions",
+    owner: "cloud",
+    retention: { maxAgeMs: 120_000, maxBytes: 1_048_576 },
+    maxPayloadBytes: 2000,
+  }),
+);
+/** Core NATS broadcast reaches the waiting browser on any replica. */
+export const syncLoginDecisionHints: AppLoginDecisionHints = {
+  publish: (requestId) => {
+    void Promise.resolve()
+      .then(() => decisionTopic().publish({ tenantId: requestId, data: null }))
+      .catch((error) => log.warn("App login decision hint failed", { error: String(error) }));
+  },
+  wait: async (requestId, signal) => {
+    for await (const _event of decisionTopic().live({ tenantId: requestId, signal })) return;
+  },
+};
 const view = (row: DeviceRow): AppDeviceView => ({
   id: row.id,
   name: row.name,
@@ -163,6 +192,7 @@ const verify = async (key: AppDevicePublicKey, message: string, signature: strin
 export const createAppApprovalService = (
   db: SQL = sql,
   configuration = (requireEnabled = true) => readAppApprovalConfig(db, requireEnabled),
+  hints: AppLoginDecisionHints = syncLoginDecisionHints,
 ) => {
   const config = async (requireEnabled = true) => {
     const value = await configuration(requireEnabled);
@@ -409,7 +439,7 @@ export const createAppApprovalService = (
       )
         return reject("FORBIDDEN", 403);
       await cleanup();
-      return db.begin(async (tx) => {
+      const outcome = await db.begin(async (tx) => {
         const device = await activeDevice(tx, proof.deviceId, cfg.issuer);
         if (!(await verify(AppDevicePublicKeySchema.parse(device.public_key), appDeviceProofMessage(proof), signature)))
           return reject("FORBIDDEN", 403);
@@ -460,12 +490,39 @@ export const createAppApprovalService = (
         await record(tx, `login.${command.decision}`, device.user_id, device.id, { requestId: row.id });
         return { state };
       });
+      // Only after commit: the waiting browser re-reads Postgres, so a hint never grants anything.
+      if (proof.command.operation === "decide") hints.publish(proof.command.requestId);
+      return outcome;
     },
-    browserStatus: async (id: string, token: string) => {
+    /** With `hold`, a pending request is answered on its decision, its expiry, or after `hold.ms`, whichever comes first. */
+    browserStatus: async (id: string, token: string, hold?: { ms: number; signal?: AbortSignal }) => {
       const cfg = await config();
-      const [row] = await db<LoginRow[]>`SELECT * FROM auth.app_logins WHERE id=${id}::uuid AND issuer=${cfg.issuer}`;
-      if (!row || !matches(token, row.browser_hash)) return reject("UNAVAILABLE", 404);
-      return { state: new Date(row.expires_at).getTime() <= Date.now() ? "expired" : row.state, pollAfterSeconds: limits.pollSeconds };
+      const read = async () => {
+        const [row] = await db<LoginRow[]>`SELECT * FROM auth.app_logins WHERE id=${id}::uuid AND issuer=${cfg.issuer}`;
+        if (!row || !matches(token, row.browser_hash)) return reject("UNAVAILABLE", 404);
+        const expiresIn = new Date(row.expires_at).getTime() - Date.now();
+        return { state: expiresIn <= 0 ? "expired" : row.state, expiresIn };
+      };
+      const result = (state: string) => ({ state, pollAfterSeconds: limits.pollSeconds });
+      if (!hold) return result((await read()).state);
+      // Listen before the first read so a decision committed in between still wakes this request.
+      const waiting = new AbortController();
+      const ended = new Promise((resolve) => waiting.signal.addEventListener("abort", resolve, { once: true }));
+      const stop = () => waiting.abort();
+      hold.signal?.addEventListener("abort", stop, { once: true });
+      if (hold.signal?.aborted) stop();
+      const hint = hints.wait(id, waiting.signal).catch(() => {});
+      try {
+        const first = await read();
+        if (first.state !== "pending") return result(first.state);
+        const timer = setTimeout(stop, Math.min(hold.ms, first.expiresIn));
+        await Promise.race([hint, ended]);
+        clearTimeout(timer);
+        return result((await read()).state);
+      } finally {
+        hold.signal?.removeEventListener("abort", stop);
+        stop();
+      }
     },
     consumeLogin: async (id: string, token: string) => {
       const cfg = await config();

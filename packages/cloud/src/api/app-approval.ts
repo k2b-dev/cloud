@@ -113,7 +113,10 @@ export const createAppApprovalRoutes = (service: Service = appApproval) => {
     )
     .post("/login/status", v("json", AppLoginReferenceSchema), async (c) => {
       const input = c.req.valid("json");
-      return c.json(await service.browserStatus(input.requestId, input.browserSecret));
+      // Hold a pending request for one poll interval: the browser learns a decision at once,
+      // keeps its request cadence, and stays below Bun's 10-second idle timeout.
+      const hold = { ms: APP_APPROVAL_LIMITS.pollSeconds * 1000, signal: c.req.raw.signal };
+      return c.json(await service.browserStatus(input.requestId, input.browserSecret, hold));
     })
     .post(
       "/login/complete",

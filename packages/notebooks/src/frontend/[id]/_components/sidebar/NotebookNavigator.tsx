@@ -57,6 +57,13 @@ const subtree = (nodes: NoteTreeNode[], noteId: string | null): NoteTreeNode[] =
   return start ? [start, ...flattenTree(start.children)] : [];
 };
 
+const compareNotes = (mode: SortMode) => (left: NoteTreeNode, right: NoteTreeNode) => {
+  if (mode === "title") return left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
+  const leftDate = mode === "created" ? left.createdAt : left.updatedAt;
+  const rightDate = mode === "created" ? right.createdAt : right.updatedAt;
+  return rightDate.localeCompare(leftDate) || left.title.localeCompare(right.title);
+};
+
 const branchNodes = (nodes: NoteTreeNode[]): NoteTreeNode[] =>
   nodes.filter((note) => note.children.length > 0).map((note) => ({ ...note, children: branchNodes(note.children) }));
 
@@ -203,13 +210,13 @@ export default function NotebookNavigator(props: Props) {
       notes = tag ? allNotes().filter((note) => noteTags(note).includes(tag)) : [];
     }
 
-    return [...notes].sort((left, right) => {
-      if (sortMode() === "title") return left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
-      const leftDate = sortMode() === "created" ? left.createdAt : left.updatedAt;
-      const rightDate = sortMode() === "created" ? right.createdAt : right.updatedAt;
-      return rightDate.localeCompare(leftDate) || left.title.localeCompare(right.title);
-    });
+    return [...notes].sort(compareNotes(sortMode()));
   });
+
+  // Top-level notes without sub-notes have no folder, so the tree lists them after the folders; the homepage has its own entry.
+  const rootLeafNotes = createMemo(() =>
+    props.tree.filter((note) => note.children.length === 0 && note.id !== homepageNote()?.id).sort(compareNotes(sortMode())),
+  );
 
   const pinnedNote = createMemo(() => {
     const current = selection();
@@ -265,14 +272,18 @@ export default function NotebookNavigator(props: Props) {
     });
   });
 
+  const openNote = (note: NoteTreeNode) => {
+    setActiveNoteId(note.id);
+    void navigateToNotebookNote(noteHref(note));
+  };
+
   const openHomepage = () => {
     const home = homepageNote();
     if (!home) {
       void prompts.alert(t().noHomepageDescription, { title: t().noHomepage, icon: "ti ti-home" });
       return;
     }
-    setActiveNoteId(home.id);
-    void navigateToNotebookNote(noteHref(home));
+    openNote(home);
   };
 
   return props.mode !== "list" ? (
@@ -318,6 +329,16 @@ export default function NotebookNavigator(props: Props) {
               onSelect={() => select({ root: "notes", noteId: null })}
             >
               <NoteNavigationItems nodes={branchTree()} onSelect={(noteId) => select({ root: "notes", noteId })} />
+              <For each={rootLeafNotes()}>
+                {(note) => (
+                  <AppWorkspace.NavTree.Item
+                    id={noteTreeId(note.id)}
+                    label={note.title || t().untitled}
+                    icon="ti ti-file-text"
+                    onSelect={() => openNote(note)}
+                  />
+                )}
+              </For>
             </AppWorkspace.NavTree.Item>
             <AppWorkspace.NavTree.Item id="tags" label={t().tags} icon="ti ti-tags">
               <For each={props.tags}>

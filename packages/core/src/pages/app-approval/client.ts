@@ -30,27 +30,49 @@ export async function parsed<T>(response: ApprovalResponse, schema: z.ZodType<T>
   return schema.parse(await (await checked(response)).json());
 }
 
-/** One foreground request at a time. No mutation retries; disposal aborts reads. */
-export function pollApproval(read: (signal: AbortSignal) => Promise<boolean>, failed: (error: unknown) => boolean, seconds = 5) {
+/**
+ * One foreground request at a time. Requests start at least `seconds` apart, so a server that
+ * holds a read until something changes is asked again without a gap; `immediate` sends the
+ * first read at once. Hidden tabs pause and resume on return. No mutation retries; disposal
+ * aborts reads.
+ */
+export function pollApproval(
+  read: (signal: AbortSignal) => Promise<boolean>,
+  failed: (error: unknown) => boolean,
+  seconds = 5,
+  { immediate = false } = {},
+) {
   const abort = new AbortController();
+  const interval = Math.max(5, seconds) * 1000;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let delay = Math.max(5, seconds) * 1000;
-  const tick = async () => {
-    if (abort.signal.aborted) return;
-    if (document.visibilityState === "hidden") {
-      timer = setTimeout(tick, delay);
-      return;
-    }
-    try {
-      if (!(await read(abort.signal))) return;
-      delay = Math.max(5, seconds) * 1000;
-    } catch (error) {
-      if (abort.signal.aborted || !failed(error)) return;
-      delay = Math.max(Math.min(delay * 2, 60_000), error instanceof ApprovalError ? error.retryAfter * 1000 : 0);
-    }
-    if (!abort.signal.aborted) timer = setTimeout(tick, delay);
+  let running = false;
+  let delay = interval;
+  let startedAt = immediate ? Number.NEGATIVE_INFINITY : Date.now();
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = setTimeout(tick, Math.max(0, startedAt + delay - Date.now()));
   };
-  timer = setTimeout(tick, delay);
+  const tick = async () => {
+    timer = undefined;
+    if (abort.signal.aborted || running || document.visibilityState === "hidden") return;
+    running = true;
+    startedAt = Date.now();
+    try {
+      if (!(await read(abort.signal))) return abort.abort();
+      delay = interval;
+    } catch (error) {
+      if (abort.signal.aborted || !failed(error)) return abort.abort();
+      delay = Math.max(Math.min(delay * 2, 60_000), error instanceof ApprovalError ? error.retryAfter * 1000 : 0);
+    } finally {
+      running = false;
+    }
+    if (!abort.signal.aborted) schedule();
+  };
+  const resume = () => {
+    if (document.visibilityState !== "hidden" && !running && !timer && !abort.signal.aborted) schedule();
+  };
+  document.addEventListener("visibilitychange", resume, { signal: abort.signal });
+  schedule();
   return () => {
     abort.abort();
     clearTimeout(timer);
