@@ -18,10 +18,10 @@ import {
 import { createMemo, createSignal, Index, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailSearchExpression, SavedConversationViewScope } from "../../contracts";
+import { mailFolderPaths } from "../../folder-tree";
 import { type MailSearchState, serializeMailSearchState } from "../../search-state";
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
-import { mailFolderPaths } from "./mail-folder-tree";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 import {
   appendMailSearchExpression,

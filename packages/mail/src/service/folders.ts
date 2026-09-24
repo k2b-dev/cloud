@@ -304,6 +304,28 @@ export const resolveRoleFolder = async (
     const folder = rows[0]!;
     return ok({ id: folder.id, role: parsedRole.data, providerRole: folder.provider_role, configured: false });
   }
+  if (rows.length === 0 && parsedRole.data === "archive") {
+    // Gmail has no \Archive folder: archiving removes the Inbox label, which IMAP expresses as a move to \All.
+    const gmailAllMail = await db<{ id: string }[]>`
+      SELECT folder.id
+      FROM mail.folders folder
+      JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+      WHERE resource.mailbox_id = ${mailboxId}::uuid
+        AND folder.discovery_state = 'active'
+        AND folder.selectable
+        AND folder.role = 'all'
+        AND EXISTS (
+          SELECT 1
+          FROM mail.binding_folder_refs ref
+          JOIN mail.provider_bindings binding ON binding.id = ref.binding_id
+          WHERE ref.folder_id = folder.id
+            AND ref.missing_since IS NULL
+            AND binding.state <> 'revoked'
+            AND binding.capabilities ->> 'gmailExtensions' = 'true'
+        )
+    `;
+    if (gmailAllMail.length === 1) return ok({ id: gmailAllMail[0]!.id, role: "archive", providerRole: "all", configured: false });
+  }
   return rows.length === 0
     ? fail(err.badInput(`No ${parsedRole.data} folder is configured`))
     : fail(err.conflict(`Several provider folders claim the ${parsedRole.data} role; configure one explicitly`));

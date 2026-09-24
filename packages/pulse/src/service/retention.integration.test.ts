@@ -10,8 +10,11 @@ dbTest(
   "retention respects each base policy, lifecycle, sealed hours and sensitive fields",
   async () => {
     const bases = Array.from({ length: 4 }, () => crypto.randomUUID());
+    // The retained hour sits one hour past the one-day cutoff hour, so the test still holds when the wall clock
+    // crosses a full hour between setup and the second retention pass (the cutoff hour then moves up by one).
+    // The hour directly at the cutoff is inherently racy against the clock and is not asserted here.
     const [times] = await sql`SELECT date_bin('1 hour',now()-interval '3 days','1970-01-01'::timestamptz) AS old,
-    date_bin('1 hour',now()-interval '1 day','1970-01-01'::timestamptz) AS boundary,
+    date_bin('1 hour',now()-interval '1 day','1970-01-01'::timestamptz)+interval '1 hour' AS boundary,
     now()-interval '2 hours' AS recent`;
     try {
       for (const [index, base] of bases.entries()) {

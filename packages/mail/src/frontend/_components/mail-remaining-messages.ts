@@ -772,6 +772,8 @@ export const mailRemainingMessages = i18n.define({
       notRun: "Not run",
       backfillProgress: ({ accepted, total }: { accepted: number | string; total: number | string }) => `Backfill · ${accepted}/${total}`,
       completedNew: ({ count }: { count: number | string }) => `Completed · ${count} new`,
+      limitedNew: ({ count, remaining }: { count: number | string; remaining: number | string }) =>
+        `Limit reached · ${count} new, ${remaining} left`,
       failed: "Failed",
       canceled: "Canceled",
       editAutomation: "Edit automation",
@@ -1574,6 +1576,7 @@ export const mailRemainingMessages = i18n.define({
       notRun: "Nicht ausgeführt",
       backfillProgress: ({ accepted, total }) => `Nachträgliche Verarbeitung · ${accepted}/${total}`,
       completedNew: ({ count }) => `Abgeschlossen · ${count} neu`,
+      limitedNew: ({ count, remaining }) => `Limit erreicht · ${count} neu, ${remaining} offen`,
       failed: "Fehlgeschlagen",
       canceled: "Abgebrochen",
       editAutomation: "Automatisierung bearbeiten",

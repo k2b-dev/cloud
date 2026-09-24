@@ -149,9 +149,9 @@ steps:
 
 Use `mode: matching` with a condition set for sender, domain, subject, body, or attachment filters. Direct actions can move mail, mark it read, add a keyword or local tag, assign a user, set collaboration status, link an existing Spaces item, create a linked Spaces event, add an internal comment, create a reply draft, or replace the conversation summary. AI steps can generate text, classify, select multiple labels, or extract validated event data. Guided text generation receives the new message and the existing summary as structured input. `automation catalog` returns mailbox-scoped folder, tag, user, and sender-identity ids. Use `cld spaces list`, `cld spaces search`, and `cld spaces show` to discover Space, kanban, task, and event ids.
 
-The incoming-automation file is strict: unknown fields are rejected. `name` accepts 1–120 characters and new definitions default to `enabled: false` when the field is omitted.
+The incoming-automation file is strict: unknown fields are rejected. An invalid definition names each field by its path, for example `scope.conditions.items: Required. Expected a list.` The CLI checks the file before sending it. The API answers `400` with code `BAD_INPUT`, a summary `message`, and `issues: [{ field, code, message }]` in the request locale. `name` accepts 1–120 characters and new definitions default to `enabled: false` when the field is omitted.
 
-- `scope.mode: all` needs no conditions. `scope.mode: matching` requires `conditions.mode: all|any` and 1–8 unique condition items.
+- `scope.mode: all` needs no conditions. `scope.mode: matching` requires a `conditions` object with `mode: all|any` and an `items` list of 1–8 unique conditions, for example `conditions: { mode: all, items: [{ field: sender_address, operator: is, value: user@example.com }] }`.
 - Condition fields are `sender_address`, `sender_domain`, `subject`, `body_text`, and `attachment_presence`. Sender address and domain use only `operator: is`; subject and body accept `is`, `contains`, `starts_with`, or `ends_with`; attachment presence uses `is` with a boolean `value`. Address values accept 1–320 characters, domains 1–253, and subject or body values 1–1,000.
 - Step kinds are `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `ai_extract_event`, `link_space_item`, `create_space_event`, `create_reply_draft`, `add_comment`, `set_summary`, and `if`. Every step has a unique UUID in `id`.
 - Direct `mail_action` values are `junk`, `trash`, `mark_read`, `add_keyword`, `move_to_folder`, `add_local_tag`, `assign_user`, and `set_status`. Catalog-backed actions use `folderId`, `tagId`, or `userId`; status accepts `needs_action`, `waiting`, or `done`. `add_keyword.keyword` accepts 1–100 characters and must use valid provider-keyword syntax.
@@ -172,7 +172,18 @@ cld --json mail automation backfill status <automation-id> <operation-id>
 cld --json mail automation backfill cancel <automation-id> <operation-id> --yes
 ```
 
-A non-AI automation backfill walks every candidate message with a durable cursor and emits targeted events into the same workflow runtime used for new mail. `start` returns an `operationId`; use it with `status` or `cancel`. AI flows intentionally process only future mail. Cancel an active backfill before editing, disabling, or deleting its automation. Mutations require the revision shown by `automation get`; they refuse stale state instead of silently adopting the latest revision.
+A non-AI automation backfill emits targeted events for at most 100 candidate messages (the preview's `applicationLimit`) into the same workflow runtime used for new mail. `start` returns an `operationId`; use it with `status` or `cancel`.
+
+Backfill `state` is `queued`, `running`, or `waiting` while active, then one of these terminal states:
+
+- `completed`: every candidate was accepted, and `remainingCount` is `0`.
+- `limited`: this run reached the limit. `remainingCount` candidates are still open, so start another backfill to continue.
+- `failed`: see `lastError`.
+- `canceled`.
+
+`candidateCount` and `alreadyAcceptedCount` are fixed when the backfill starts, and `newlyAcceptedCount` never decreases. "Accepted" means the message was handed to the workflow runtime, not that its actions already ran; the Mail **Automations > Activity** view shows execution.
+
+AI flows intentionally process only future mail. Cancel an active backfill before editing, disabling, or deleting its automation. Mutations require the revision shown by `automation get`; they refuse stale state instead of silently adopting the latest revision.
 
 Spaces actions use an encrypted, revocable delegation created for the configuring user. Current Mail and Spaces permissions are rechecked when a run executes. Event creation is idempotent across retries. Removing all Spaces steps or deleting the automation revokes the delegation. Use `set_status: done` to complete a conversation; `needs_action` or `waiting` reopens it, while a verified new inbound message already reopens a completed conversation automatically.
 

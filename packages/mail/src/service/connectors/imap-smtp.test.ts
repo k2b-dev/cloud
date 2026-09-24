@@ -10,7 +10,28 @@ import {
   parseReferences,
   renameImapFolder,
   selectUidBatch,
+  transportDiagnostic,
 } from "./imap-smtp";
+
+describe("Provider transport diagnostics", () => {
+  test("keep the provider's TLS explanation next to the category", () => {
+    const reason = Object.assign(new Error("Hostname/IP does not match certificate's altnames: Host: mail.example.org"), {
+      code: "ERR_TLS_CERT_ALTNAME_INVALID",
+    });
+    expect(transportDiagnostic({ status: "rejected", reason })).toEqual({
+      status: "failed",
+      category: "tls",
+      message: "TLS verification failed: Hostname/IP does not match certificate's altnames: Host: mail.example.org",
+    });
+  });
+
+  test("redact the submitted password from an SMTP login failure", () => {
+    const reason = Object.assign(new Error("Invalid login: 535 5.7.8 rejected s3cret-value"), { code: "EAUTH" });
+    expect(transportDiagnostic({ status: "rejected", reason }, ["s3cret-value"]).message).toBe(
+      "Authentication failed: Invalid login: 535 5.7.8 rejected [redacted]",
+    );
+  });
+});
 
 describe("IMAP client disposal", () => {
   test("does not close a connection ImapFlow already marked unusable", async () => {

@@ -1,6 +1,7 @@
-import { v } from "@k2b/cloud/server";
+import { getLocale, v } from "@k2b/cloud/server";
 import { err, fail } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
+import { validator } from "hono-openapi";
 import { z } from "zod";
 import {
   createIncomingAutomationSchema,
@@ -11,6 +12,7 @@ import {
   startIncomingAutomationBackfillInputSchema,
   updateIncomingAutomationSchema,
 } from "../contracts";
+import { incomingAutomationIssues, summarizeIncomingAutomationIssues } from "../incoming-automation-issues";
 import { incomingAutomations, type MailRequestContext } from "../service";
 import { getCalendarSpace, listCalendarDestinations, searchSpaceItems } from "../service/app-integrations";
 import {
@@ -47,6 +49,17 @@ const respondIntegration = <T>(
       });
 const authorizeAutomationConfiguration = async (c: Context<MailApiContext>) =>
   incomingAutomations.getIncomingAutomationCatalog(requestContext(c), internalMailboxId(c));
+
+/** Validates a definition body and names every invalid field, localized, in the contact-directory issue shape. */
+const definitionJson = <S extends typeof createIncomingAutomationSchema | typeof updateIncomingAutomationSchema>(schema: S) =>
+  validator("json", schema, (result, c: Context<MailApiContext>) => {
+    if (result.success) return;
+    const parsed = schema.safeParse(result.data);
+    if (parsed.success) return;
+    const locale = getLocale(c);
+    const issues = incomingAutomationIssues(parsed.error, result.data, locale);
+    return c.json({ code: "BAD_INPUT", message: summarizeIncomingAutomationIssues(issues, locale), issues }, 400);
+  });
 
 const resolveAutomationParam = resolveMailboxResourceParam("incomingAutomations", "automationId", "Incoming automation");
 
@@ -96,7 +109,7 @@ export default new Hono<MailApiContext>()
   .post(
     "/mailboxes/:mailboxId/incoming-automations",
     v("param", mailboxParamSchema),
-    v("json", createIncomingAutomationSchema),
+    definitionJson(createIncomingAutomationSchema),
     async (c) => {
       const input = await resolvePublicRelations(internalMailboxId(c), c.req.valid("json"));
       if (!input) return respondPublic(c, fail(err.notFound("Mail resource")));
@@ -173,7 +186,7 @@ export default new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/incoming-automations/:automationId",
     resolveAutomationParam,
     v("param", automationParamSchema),
-    v("json", updateIncomingAutomationSchema),
+    definitionJson(updateIncomingAutomationSchema),
     async (c) => {
       const input = await resolvePublicRelations(internalMailboxId(c), c.req.valid("json"));
       if (!input) return respondPublic(c, fail(err.notFound("Mail resource")));

@@ -17,13 +17,14 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../commands";
 import type { ConversationView } from "../../contracts";
+import type { MailFolderTreeNode } from "../../folder-tree";
 import { serializeMailSearchState } from "../../search-state";
 import type { LocalTag } from "../../service/local-tags";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
 import { registerMailtoHandler } from "./mail-compose-route";
-import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, type MailFolderTreeNode } from "./mail-folder-tree";
+import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree } from "./mail-folder-tree";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
 
 type MailViewItem = {
@@ -300,7 +301,7 @@ export default function MailSidebar(props: {
     setCollapsedFolders(new Set(customFolderBranchIds().filter((id) => !expanded.has(id))));
   };
 
-  const folderNode = (node: MailFolderTreeNode, suffix: string, count: number | null = node.folder.unread) => {
+  const folderNode = (node: MailFolderTreeNode<MailFolderView>, suffix: string, count: number | null = node.folder.unread) => {
     const folder = node.folder;
     const hasChildren = node.children.length > 0;
     return (
@@ -343,10 +344,10 @@ export default function MailSidebar(props: {
     );
   };
 
-  const folderTreeItems = (nodes: readonly MailFolderTreeNode[], suffix: string) => (
+  const folderTreeItems = (nodes: readonly MailFolderTreeNode<MailFolderView>[], suffix: string) => (
     <For each={nodes}>{(node) => folderNode(node, suffix)}</For>
   );
-  const folderNavigation = (nodes: readonly MailFolderTreeNode[], suffix: string, ariaLabel: string) => (
+  const folderNavigation = (nodes: readonly MailFolderTreeNode<MailFolderView>[], suffix: string, ariaLabel: string) => (
     <AppWorkspace.NavTree
       ariaLabel={ariaLabel}
       selectedId={props.activeFolderId}
@@ -475,7 +476,7 @@ export default function MailSidebar(props: {
         props.viewCounts[view.id],
       ),
     );
-  const folderEntry = (node: MailFolderTreeNode): NavigationItem => {
+  const folderEntry = (node: MailFolderTreeNode<MailFolderView>): NavigationItem => {
     const folder = node.folder;
     const common = {
       id: `folder:${folder.id}`,

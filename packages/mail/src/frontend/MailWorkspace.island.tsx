@@ -8,6 +8,7 @@ import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory-settings";
+import { mailFolderPaths } from "../folder-tree";
 import { MAIL_LIVE_WS_TYPE, type MailLiveClientMessage, type MailLiveServerMessage, parseMailLiveServerMessage } from "../live-events";
 import { resolveMailSearchRoute } from "../search-state";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
@@ -40,7 +41,6 @@ import type { MailConversationToolbarActionId } from "./_components/mail-convers
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
-import { mailFolderPaths } from "./_components/mail-folder-tree";
 import {
   type MailListOptimisticField,
   type MailListOptimisticPatch,

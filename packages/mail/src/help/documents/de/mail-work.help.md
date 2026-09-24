@@ -78,7 +78,7 @@ HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-,
 
 Die oberen Aktionen wirken auf die aktive Anbieterablage der Unterhaltung:
 
-- **Archivieren** verschiebt sie in den zugeordneten Archivordner.
+- **Archivieren** verschiebt sie in den zugeordneten Archivordner. Gmail hat keinen Archivordner. Ohne Zuordnung entfernt Archivieren die Unterhaltung deshalb aus dem aktuellen Ordner, etwa dem Posteingang, und behält sie in **Alle Nachrichten**.
 - **In Junk verschieben** verschiebt sie in den zugeordneten Junk-Ordner. In Junk wird dieselbe Aktion zu **Kein Spam** und verschiebt die Unterhaltung zurück in den Posteingang.
 - **Löschen** verschiebt sie in den zugeordneten Papierkorb.
 

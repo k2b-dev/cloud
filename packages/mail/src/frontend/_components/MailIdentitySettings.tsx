@@ -19,9 +19,9 @@ import {
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ComposeTemplate, MailComposeFormat, MailPriority, SenderIdentity, SenderIdentityTransport } from "../../contracts";
+import { mailFolderPaths } from "../../folder-tree";
 import { readApiError } from "./api-response";
 import MailRecipientInput from "./MailRecipientInput";
-import { mailFolderPaths } from "./mail-folder-tree";
 import { EditorHeading, type ProviderSettingsProps } from "./mail-provider-settings-shared";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
 import { mailSettingsMessages } from "./mail-settings-messages";

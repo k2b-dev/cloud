@@ -23,6 +23,7 @@ import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-wo
 import {
   createIncomingAutomation,
   deleteIncomingAutomation,
+  getIncomingAutomationBackfill,
   listIncomingAutomationActivityMetadata,
   listIncomingAutomations,
   setIncomingAutomationEnabled,
@@ -240,6 +241,132 @@ suite("incoming automations", () => {
       expect(span?.summary.dispatched).toBe(0);
     } finally {
       await stopIncomingAutomationBackfillRuntime();
+    }
+  });
+
+  test("reports a backfill that stopped at its application limit and keeps accepted counts monotonic", async () => {
+    const sender = `limited-${suffix}@external.test`;
+    const total = 102;
+    for (let index = 0; index < total; index += 1) {
+      const uid = 20_000 + index;
+      await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: {
+          remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+          providerMessageId: `limited-${suffix}-${index}`,
+          providerThreadId: null,
+          messageId: `<limited-${suffix}-${index}@external.test>`,
+          inReplyTo: null,
+          references: [],
+          subject: `Limited backfill ${index}`,
+          sentAt: new Date(Date.now() - (index + 1) * 60_000),
+          internalDate: new Date(Date.now() - (index + 1) * 60_000),
+          sizeBytes: 128,
+          flags: [],
+          labels: [],
+          addresses: {
+            from: [{ name: "Sender", address: sender }],
+            replyTo: [],
+            to: [{ name: "Support", address: "automation@example.test" }],
+            cc: [],
+            bcc: [],
+          },
+          mimeStructure: {},
+        } as never,
+        captureWorkflowTriggers: false,
+      });
+    }
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: `Limited backfill ${suffix}`,
+        enabled: true,
+        scope: {
+          mode: "matching",
+          conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: sender }] },
+        },
+        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const runBackfill = async (revision: number) => {
+      const request = {
+        context: ownerContext,
+        mailboxId,
+        automationId: created.data.id,
+        input: { operationId: crypto.randomUUID(), expectedRevision: revision },
+      };
+      let result = await startIncomingAutomationBackfill(request);
+      const deadline = Date.now() + 20_000;
+      while (result.ok && ["queued", "running", "waiting"].includes(result.data.state) && Date.now() < deadline) {
+        await Bun.sleep(50);
+        result = await startIncomingAutomationBackfill(request);
+      }
+      if (!result.ok) throw new Error(result.error.message);
+      return { request, result: result.data };
+    };
+
+    await startIncomingAutomationBackfillRuntime();
+    try {
+      const first = await runBackfill(created.data.revision);
+      // One run applies at most 100 messages; it must not claim completion while candidates remain.
+      expect(first.result).toMatchObject({
+        state: "limited",
+        candidateCount: total,
+        alreadyAcceptedCount: 0,
+        newlyAcceptedCount: 100,
+        remainingCount: 2,
+      });
+
+      // Executing the accepted actions moves those messages out of the candidate set.
+      await sql`
+        UPDATE mail.message_placements placement
+        SET deleted_at = now()
+        FROM mail.remote_message_refs remote_ref
+        WHERE placement.remote_message_ref_id = remote_ref.id
+          AND EXISTS (
+            SELECT 1 FROM workflows.event event
+            WHERE event.app_id = 'mail'
+              AND event.scope_id = ${mailboxId}
+              AND event.dedupe_key LIKE ${`incoming-automation-existing:${created.data.id}:%`}
+              AND event.dedupe_key LIKE '%' || remote_ref.id::text
+          )
+      `;
+      const later = await getIncomingAutomationBackfill({
+        context: ownerContext,
+        mailboxId,
+        automationId: created.data.id,
+        operationId: first.request.input.operationId,
+      });
+      if (!later.ok) throw new Error(later.error.message);
+      expect(later.data).toMatchObject({
+        state: "limited",
+        candidateCount: total,
+        alreadyAcceptedCount: 0,
+        newlyAcceptedCount: 100,
+        remainingCount: 2,
+      });
+
+      const second = await runBackfill(created.data.revision);
+      expect(second.result).toMatchObject({ state: "completed", newlyAcceptedCount: 2, remainingCount: 0 });
+    } finally {
+      await stopIncomingAutomationBackfillRuntime();
+      // Leave no pending backfill events behind for later tests that dispatch this mailbox scope.
+      await sql`
+        DELETE FROM workflows.event
+        WHERE app_id = 'mail' AND scope_id = ${mailboxId}
+          AND dedupe_key LIKE ${`incoming-automation-existing:${created.data.id}:%`}
+      `;
+      await deleteIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        automationId: created.data.id,
+        input: { expectedRevision: created.data.revision },
+      });
     }
   });
 

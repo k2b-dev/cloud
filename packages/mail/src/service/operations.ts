@@ -11,6 +11,7 @@ import {
   platformMailOperationsSchema,
   type SearchBackend,
 } from "../contracts";
+import { mailFolderPaths } from "../folder-tree";
 import { isCurrentPlatformAdmin, requireMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
@@ -96,6 +97,7 @@ const encodeAttentionCursor = (row: DbAttentionCommand): string =>
 type DbFolder = {
   id: string;
   short_id: string;
+  parent_id: string | null;
   name: string;
   discovery_state: "active" | "missing" | "ambiguous";
   sync_status: string;
@@ -248,12 +250,15 @@ const loadMailboxOperations = async (
     options.includeFolderActions === false
       ? []
       : await sql<DbFolder[]>`
-          SELECT folder.id, folder.short_id, folder.name, folder.discovery_state, folder.sync_status, folder.selected_for_sync
+          SELECT folder.id, folder.short_id, folder.parent_id, folder.name, folder.discovery_state, folder.sync_status, folder.selected_for_sync
           FROM mail.folders folder
           JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
           WHERE resource.mailbox_id = ${mailboxId}::uuid
           ORDER BY lower(folder.name), folder.id
         `;
+  const folderPaths = mailFolderPaths(folders.map((folder) => ({ id: folder.id, parentId: folder.parent_id, name: folder.name })));
+  const folderPath = (folder: DbFolder): string => folderPaths.get(folder.id) ?? folder.name;
+  folders.sort((left, right) => folderPath(left).toLowerCase().localeCompare(folderPath(right).toLowerCase()));
   const attentionLimit = Math.min(Math.max(options.attentionLimit ?? 100, 1), 200);
   const attentionCommandsPage = await sql<DbAttentionCommand[]>`
     SELECT id, kind, state, attempt, last_error_code, provider_effect_started_at, created_at, updated_at
@@ -382,6 +387,7 @@ const loadMailboxOperations = async (
     folders: folders.map((folder) => ({
       id: folder.short_id,
       name: folder.name,
+      path: folderPath(folder),
       discoveryState: folder.discovery_state,
       syncStatus: folder.sync_status,
       selectedForSync: folder.selected_for_sync,

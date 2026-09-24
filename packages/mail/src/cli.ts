@@ -86,6 +86,7 @@ import {
   type WorkflowEffectBudget,
   type WorkflowValidation,
 } from "./contracts";
+import { incomingAutomationIssues } from "./incoming-automation-issues";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
 import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./service/collaboration";
@@ -475,7 +476,10 @@ const readIncomingAutomationDefinition = async (
     throw new Error("Incoming automation updates must explicitly set enabled to true or false.");
   }
   const parsed = createIncomingAutomationSchema.safeParse(definition);
-  if (!parsed.success) throw new Error(`Invalid incoming automation definition: ${parsed.error.issues[0]?.message ?? "unknown error"}`);
+  if (!parsed.success) {
+    const issues = incomingAutomationIssues(parsed.error, definition, "en");
+    throw new Error(`Invalid incoming automation definition:\n${issues.map((issue) => `- ${issue.field}: ${issue.message}`).join("\n")}`);
+  }
   return parsed.data;
 };
 
@@ -4779,7 +4783,7 @@ export default defineCliCommands({
       kind: "change_state",
       change: { removeFlags: ["flagged"] },
     }),
-    conversationActionCommand("conversation archive", "Move a conversation from one folder to the configured Archive folder", {
+    conversationActionCommand("conversation archive", "Move a conversation from one folder to the Archive folder (All Mail on Gmail)", {
       kind: "move_to_role",
       role: "archive",
     }),
@@ -6353,7 +6357,7 @@ export default defineCliCommands({
         ctx.print(
           `${result.state}: ${result.alreadyAcceptedCount + result.newlyAcceptedCount}/${result.candidateCount} accepted, ${
             result.remainingCount
-          } remaining${result.lastError ? ` · ${result.lastError}` : ""}`,
+          } remaining${result.state === "limited" ? "; run another backfill to continue" : ""}${result.lastError ? ` · ${result.lastError}` : ""}`,
         );
       },
     }),
