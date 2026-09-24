@@ -186,6 +186,23 @@ describe("@k2b/ui focus and color contract", () => {
     expect(focus?.body).toContain("background: var(--k2b-surface)");
   });
 
+  test("draws the TextInput focus ring above the autofill fill", () => {
+    const ring = rules.find((rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill):focus-within::after");
+    const invalid = rules.find(
+      (rule) => rule.selector === '.k2b-ui .k2b-text-input[data-invalid="true"]:has(> .k2b-input:autofill):focus-within::after',
+    );
+    const anchor = rules.find(
+      (rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill)" && rule.body.includes("position"),
+    );
+
+    expect(anchor?.body).toContain("position: relative");
+    expect(ring?.body).toContain("position: absolute");
+    expect(ring?.body).toContain("inset: 0");
+    expect(ring?.body).toContain("box-shadow: var(--k2b-focus-inset)");
+    expect(ring?.body).toContain("pointer-events: none");
+    expect(invalid?.body).toContain("box-shadow: inset 0 0 0 2px var(--k2b-danger-500)");
+  });
+
   test("keeps the tags editor geometry stable while its markup changes on focus", () => {
     const selector = ".k2b-ui .k2b-tags-input > input";
     const editableCss = rules
