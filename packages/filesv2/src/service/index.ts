@@ -271,7 +271,9 @@ export function createFilesService(
             gid: group.gidNumber,
           }),
         );
-    return { self, config, unix, candidates };
+    // Personal Linux groups are not offered as group areas; links that already name such a base keep working.
+    const personalGroupIds = new Set(groups.filter((group) => group.personal).map((group) => group.id));
+    return { self, config, unix, candidates, personalGroupIds };
   }
   async function checkUnix(root: RootClient, path: string, unix: UnixIdentity | null, leafRights: number) {
     if (!unix) throw new FilesError("identity_incomplete", 403);
@@ -780,7 +782,9 @@ export function createFilesService(
         // An area the operator switched off is not a failure; only enabled areas report issues to users.
         if (!state.config[area].enabled) continue;
         // Candidates follow the account provider; an area without any is not this user's storage and stays silent.
-        const items = state.candidates.filter((item) => item.area === area);
+        const items = state.candidates.filter(
+          (item) => item.area === area && !(item.kind === "groups" && state.personalGroupIds.has(item.identity_id)),
+        );
         if (!items.length) continue;
         const issue = issueFor(state.config, area, state.self.availability);
         if (issue) {

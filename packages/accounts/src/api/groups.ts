@@ -90,7 +90,8 @@ const app = new Hono<AuthContext>()
       tags: ["Groups"],
       summary: "List groups",
       description:
-        "List groups with pagination and optional search. " + "Use scope=managed, scope=member, or scope=all to choose the current view.",
+        "List groups with pagination and optional search. Use scope=managed, scope=member, or scope=all to choose the current view. " +
+        "Personal Linux groups (a user's private primary group, flagged with `personalOwner`) are left out unless include_personal=true.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(GroupsListResponseSchema, "Paginated list of groups"),
@@ -105,6 +106,7 @@ const app = new Hono<AuthContext>()
         ...SearchQuerySchema.shape,
         scope: z.enum(["managed", "member", "all"]).optional(),
         provider: z.enum(["local", "ipa"]).optional(),
+        include_personal: z.enum(["true", "false"]).optional(),
       }),
     ),
     async (c) => {
@@ -114,7 +116,7 @@ const app = new Hono<AuthContext>()
 
       const groupsPage = await accountsService.group.list({
         pagination: { page: params.page, perPage: params.perPage },
-        filter: { search: query.search },
+        filter: { search: query.search, includePersonal: query.include_personal === "true" },
         scope: {
           userId: query.scope === "all" ? undefined : user.id,
           mode: query.scope ?? "member",

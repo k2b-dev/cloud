@@ -147,6 +147,7 @@ export const search = async (query: string, options: SearchOptions): Promise<{ u
       name: row.name,
       description: row.description ?? null,
       gidnumber: row.gid_number ?? null,
+      personalOwner: null,
     }));
   }
 

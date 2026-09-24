@@ -85,12 +85,22 @@ export type LocalUser = z.infer<typeof LocalUserSchema>;
 export const UserSchema = z.discriminatedUnion("provider", [IpaUserSchema, LocalUserSchema]);
 export type User = z.infer<typeof UserSchema>;
 
+/** The user whose personal Linux group (user private group) this is. */
+export const PersonalGroupOwnerSchema = z.object({
+  id: z.uuid(),
+  uid: z.string(),
+  displayName: z.string(),
+});
+export type PersonalGroupOwner = z.infer<typeof PersonalGroupOwnerSchema>;
+
 export const BaseGroupSchema = z.object({
   id: z.uuid(),
   provider: UserProviderSchema,
   name: z.string(),
   description: z.string().nullable(),
   gidnumber: z.number().nullable(),
+  /** Set when the group is a user's personal Linux group; `null` for ordinary groups. */
+  personalOwner: PersonalGroupOwnerSchema.nullable(),
 });
 export type BaseGroup = z.infer<typeof BaseGroupSchema>;
 

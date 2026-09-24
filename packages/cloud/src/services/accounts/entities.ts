@@ -2,7 +2,7 @@ import { sql } from "bun";
 import type { EntityKind, EntityListItem, UserProfile, UserProvider } from "../../contracts/shared";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { escapeLikePattern, toPgTextArray, toPgUuidArray } from "../postgres";
-import { buildBaseGroup } from "./base-group";
+import { buildBaseGroup, personalOwnerJoin } from "./base-group";
 import { buildBaseUser } from "./base-user";
 import { buildManagedGroupScopeCondition, recursiveGroupIdsSubquery } from "./group-sql";
 
@@ -26,6 +26,11 @@ export type EntityListParams = {
   parentGroupId?: string;
   managedByUserId?: string;
   recursive?: boolean;
+  /**
+   * Personal Linux groups are left out of directory browsing and search by
+   * default. Exact `groupIds` lookups and relation filters always return them.
+   */
+  includePersonal?: boolean;
   page?: number;
   perPage?: number;
 };
@@ -415,6 +420,11 @@ export const list = async (
   const groupsAdmin = (await getFreeIpaConfig()).groupsAdmin;
   const groupsAdminLiteral = toPgTextArray(groupsAdmin);
   const spec = buildQuerySpec(params);
+  const includePersonal =
+    params.includePersonal === true ||
+    params.groupIds !== undefined ||
+    Boolean(params.memberOfGroupId || params.managerOfGroupId || params.parentGroupId || params.managedByUserId);
+  const personalCondition = includePersonal ? sql`TRUE` : sql`(kind <> 'group' OR personal_owner_id IS NULL)`;
   const visibilityCondition =
     params.visibility.type === "directory"
       ? sql`TRUE`
@@ -465,6 +475,7 @@ export const list = async (
     AND ${excludeGroupCondition}
     AND ${excludeServiceAccountCondition}
     AND ${userMemberOfGroupCondition}
+    AND ${personalCondition}
     AND (
       ${pattern}::text IS NULL
       OR (
@@ -529,6 +540,9 @@ export const list = async (
           NULL::text AS resource_id,
           NULL::uuid AS created_by,
           NULL::timestamptz AS created_at,
+          NULL::uuid AS personal_owner_id,
+          NULL::text AS personal_owner_uid,
+          NULL::text AS personal_owner_display_name,
           LOWER(COALESCE(NULLIF(u.display_name, ''), NULLIF(u.mail, ''), u.uid)) AS sort_label
         ${spec.userFrom}
         WHERE ${spec.userWhere}
@@ -558,8 +572,12 @@ export const list = async (
           NULL::text AS resource_id,
           NULL::uuid AS created_by,
           NULL::timestamptz AS created_at,
+          personal_owner.personal_owner_id,
+          personal_owner.personal_owner_uid,
+          personal_owner.personal_owner_display_name,
           LOWER(g.name) AS sort_label
         ${spec.groupFrom}
+        ${personalOwnerJoin}
         WHERE ${spec.groupWhere}
       ),
       service_account_rows AS (
@@ -590,6 +608,9 @@ export const list = async (
           sa.resource_id,
           sa.created_by,
           sa.created_at,
+          NULL::uuid AS personal_owner_id,
+          NULL::text AS personal_owner_uid,
+          NULL::text AS personal_owner_display_name,
           LOWER(sa.name) AS sort_label
         FROM auth.service_accounts sa
       ),

@@ -639,7 +639,7 @@ export const aiCapabilities = defineCapabilities({
     "entities.search": {
       title: "Find access recipients",
       description:
-        "Find visible users, groups and service accounts for permission grants. Returns exact Principal objects. Preserves the Accounts directory visibility of the current user. Public and authenticated grants are explicit principals, not search results.",
+        "Find visible users, groups and service accounts for permission grants. Returns exact Principal objects. Preserves the Accounts directory visibility of the current user. Public and authenticated grants are explicit principals, not search results. Personal Linux groups are left out; grant the person instead.",
       input: z
         .object({
           query: z.string().max(120).default("").describe("Name or account identifier to find; empty browses visible recipients."),

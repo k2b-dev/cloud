@@ -10,6 +10,7 @@ type GroupsScopeFilterProps = {
 
 const SCOPE_VALUES = new Set<GroupsListState["scope"]>(["managed", "member", "all"]);
 const PROVIDER_VALUES = new Set<Exclude<GroupsListState["provider"], never>>(["", "ipa", "local"]);
+const PERSONAL_VALUE = "personal";
 
 export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
   const messages = useAccountsMessages();
@@ -30,13 +31,18 @@ export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
         { value: "local", label: messages().local, icon: "ti ti-home" },
       ],
     },
+    {
+      label: messages().linuxSection,
+      multiple: true,
+      options: [{ value: PERSONAL_VALUE, label: messages().showPersonalGroups }],
+    },
   ];
   return (
     <FilterChip
       label={messages().view}
       icon="ti ti-adjustments-horizontal"
       options={options()}
-      value={[props.state.scope, props.state.provider]}
+      value={[props.state.scope, props.state.provider, ...(props.state.personal ? [PERSONAL_VALUE] : [])]}
       onValueChange={(value) => {
         const nextScope =
           value.find((entry): entry is GroupsListState["scope"] => SCOPE_VALUES.has(entry as GroupsListState["scope"])) ??
@@ -50,6 +56,7 @@ export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
               ...props.state,
               scope: nextScope,
               provider: nextProvider,
+              personal: value.includes(PERSONAL_VALUE),
               page: 1,
             },
             { defaultScope: props.defaultScope },

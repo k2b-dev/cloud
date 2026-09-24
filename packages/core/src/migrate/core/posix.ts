@@ -19,6 +19,8 @@ export const migratePosix = async (db: typeof sql = sql): Promise<void> => {
   `.simple();
   await db`CREATE INDEX IF NOT EXISTS user_posix_uid_number ON auth.user_posix(uid_number)`.simple();
   await db`CREATE INDEX IF NOT EXISTS user_posix_primary_gid ON auth.user_posix(primary_gid_number)`.simple();
+  // Group lists join each group's personal-group owner through this column.
+  await db`CREATE INDEX IF NOT EXISTS user_posix_primary_group ON auth.user_posix(primary_group_id) WHERE primary_group_id IS NOT NULL`.simple();
   await db`CREATE INDEX IF NOT EXISTS groups_gid_number ON auth.groups(gid_number) WHERE gid_number IS NOT NULL`.simple();
   // No foreign key on owner_id: deletion must not make an allocated ID reusable.
   await db`

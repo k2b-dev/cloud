@@ -22,6 +22,7 @@ const toBaseGroup = (row: IpaGroupRow): BaseGroup => ({
   name: row.name,
   description: row.description,
   gidnumber: row.gidNumber,
+  personalOwner: null,
 });
 
 const getIpaGroupById = async (id: string): Promise<IpaGroupRow | null> => {
@@ -142,6 +143,7 @@ export const list = async (params: {
       name: row.name as string,
       description: row.description as string | null,
       gidnumber: row.gid_number as number | null,
+      personalOwner: null,
     })),
     total,
     pagination: { page, perPage, totalPages, hasNext: page < totalPages },
@@ -377,6 +379,7 @@ export const add = async (params: {
       name: row.name as string,
       description: row.description as string | null,
       gidnumber: row.gid_number as number | null,
+      personalOwner: null,
     },
   };
 };

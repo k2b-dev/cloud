@@ -102,6 +102,27 @@ Assigned GIDs are permanent; there is no conversion back to a logical group.
 Assignment grants no sudo permission and creates no files. A group referenced as a primary group
 cannot be deleted while that identity exists.
 
+### Personal Linux groups
+
+The private primary group created for each local account is its personal Linux
+group, named after the username. Linux needs it; people do not work with it as a
+team. Group lists and pickers therefore leave personal groups out:
+
+- The Accounts group list hides them unless **View → Linux → Personal groups**
+  is on. The count above the list includes only the groups shown, and each
+  personal group names and links its owner.
+- Sharing, permission, role and membership pickers do not offer them. Grant the
+  person instead.
+- Files does not show a personal group as a group area; people use their own
+  files area instead.
+- An exact group ID or name, such as an existing grant, still resolves.
+
+The group list and entity search APIs mark such a group with `personalOwner`
+(`{ id, uid, displayName }`) and include it only with `include_personal=true`.
+Exact `group_ids` lookups and relation filters, such as a group's members,
+always return it. The CLI lists them with `cld accounts groups list
+--include-personal`.
+
 Disabling local assignment stops automatic assignment and backfill, retains existing identities and allows their
 local home/shell values to be maintained in Accounts. The administration
 inventory is only shown while assignment is enabled. Unavailable selections

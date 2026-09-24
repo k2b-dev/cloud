@@ -909,7 +909,7 @@ export const accountsAppService = {
   group: {
     list: async (config: {
       pagination?: PageParams;
-      filter?: { search?: string };
+      filter?: { search?: string; includePersonal?: boolean };
       scope?: { userId?: string; ids?: string[]; provider?: UserProvider; mode?: "all" | "member" | "managed" };
     }): Promise<Paginated<BaseGroup>> => {
       const { page, perPage } = paginate(config.pagination);
@@ -921,6 +921,7 @@ export const accountsAppService = {
         scope: config.scope?.mode,
         ids: config.scope?.ids,
         provider: config.scope?.provider,
+        includePersonal: config.filter?.includePersonal,
       });
 
       return {
@@ -1202,6 +1203,7 @@ export const accountsAppService = {
       parentGroupId?: string;
       managedByUserId?: string;
       recursive?: boolean;
+      includePersonal?: boolean;
     }): Promise<Paginated<EntityListItem>> => {
       const canSearchDirectory = config.actor.roles.includes("user");
       const usesRelationFilter = Boolean(
@@ -1232,6 +1234,7 @@ export const accountsAppService = {
         parentGroupId: config.parentGroupId,
         managedByUserId: config.managedByUserId,
         recursive: config.recursive,
+        includePersonal: config.includePersonal,
         page,
         perPage,
       });

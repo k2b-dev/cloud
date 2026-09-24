@@ -57,6 +57,7 @@ describe("group POSIX actions", () => {
           linuxEnabled,
           isPosix,
           description: null,
+          personalOwnerName: null,
           listHref: "/app/accounts/groups",
         }),
       dom.root,
