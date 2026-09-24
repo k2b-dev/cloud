@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { markdown } from "@k2b/cloud/shared";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
@@ -374,5 +375,58 @@ describe("Notebook Book HTML", () => {
     const { html } = render("@part\n## First\n\n@part\n## Second");
     expect(html).toContain('id="block-part"');
     expect(html).toContain('id="block-part-2"');
+  });
+});
+
+describe("Notebook Book display ligatures", () => {
+  const ligature = (source: string, symbol: string) => `<span class="notebook-ligature" title="${source}">${symbol}</span>`;
+
+  test("prose, headings, notices and table cells show symbols with the typed characters as title", () => {
+    const { html, headings } = render("# Flow -> done\n\na <-> b (c) 2026\n\n:::note\nx != y\n:::\n\n| a >= b |\n| --- |\n| 1 -- 2 |");
+    expect(html).toContain(`<h1 id="heading-flow-done">Flow ${ligature("-&gt;", "→")} done</h1>`);
+    expect(html).toContain(`a ${ligature("&lt;-&gt;", "↔")} b ${ligature("(c)", "©")} 2026`);
+    expect(html).toContain(`x ${ligature("!=", "≠")} y`);
+    expect(html).toContain(`a ${ligature("&gt;=", "≥")} b`);
+    expect(html).toContain(`1 ${ligature("--", "–")} 2`);
+    expect(headings).toEqual([{ id: "heading-flow-done", depth: 1, text: "Flow -> done", line: 1 }]);
+  });
+
+  test("code, math, links, HTML, front matter and notebook blocks stay literal", () => {
+    const markdown = [
+      "---",
+      "title: a -> b",
+      "---",
+      "",
+      "Inline `a -> b` and $x -> y$ and [a -> b](https://x.test/a->b) and <https://x.test/c->d> and https://x.test/e->f",
+      "",
+      "<!-- a -> b -->",
+      "",
+      "<div>a -> b</div>",
+      "",
+      "```",
+      "a -> b",
+      "```",
+      "",
+      "    indented -> code",
+      "",
+      "```mermaid",
+      "graph LR; A --> B",
+      "```",
+      "",
+      "$$",
+      "x <= y",
+      "$$",
+      "",
+      ":::data",
+      "range: 1 -> 2",
+      ":::",
+      "",
+      "An escaped a \\-> b and a lone --> arrow.",
+    ].join("\n");
+    expect(render(markdown).html).not.toContain("notebook-ligature");
+  });
+
+  test("other applications' shared Markdown output is unchanged", () => {
+    expect(markdown.renderSync("a -> b (c) 2026 != x")).toBe("<p>a -&gt; b (c) 2026 != x</p>\n");
   });
 });

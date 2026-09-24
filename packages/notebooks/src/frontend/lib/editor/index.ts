@@ -5,6 +5,7 @@ import { dataBlocksExtension } from "./data-blocks";
 import { imageExtension } from "./images";
 import { infoBlocksExtension } from "./info-blocks";
 import { katexExtension } from "./katex";
+import { ligaturesExtension } from "./ligatures";
 import { linksExtension } from "./links";
 import { listsExtension } from "./lists";
 import { markExtension } from "./mark";
@@ -28,6 +29,7 @@ export {
   infoBlocksExtension,
   initialMarkdownDecorationRefreshExtension,
   katexExtension,
+  ligaturesExtension,
   linksExtension,
   listsExtension,
   markdownExtension,
@@ -53,6 +55,7 @@ export const editor = {
   imageExtension,
   infoBlocksExtension,
   katexExtension,
+  ligaturesExtension,
   linksExtension,
   listsExtension,
   markExtension,

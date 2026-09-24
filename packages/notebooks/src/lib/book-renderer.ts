@@ -6,6 +6,7 @@ import sanitizeHtml from "sanitize-html";
 import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
 import { bookRendererMessages } from "./book-renderer-messages";
+import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
 import { closesNotice } from "./markdown-fences";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
@@ -158,8 +159,15 @@ export const renderNotebookBook = (
   };
 
   let insideLink = false;
+  // Display ligatures stay out of front matter; a link label renders like its editor pill, without them.
+  const literalText = new WeakSet<object>();
   const plainText = (html: string) =>
-    sanitizeHtml(html.replace(/<img\b[^>]*\balt="([^"]*)"[^>]*>/g, "$1"), { allowedTags: [], allowedAttributes: {} })
+    sanitizeHtml(
+      html
+        .replace(/<img\b[^>]*\balt="([^"]*)"[^>]*>/g, "$1")
+        .replace(new RegExp(`<span class="${LIGATURE_CLASS}" title="([^"]*)">[^<]*</span>`, "g"), "$1"),
+      { allowedTags: [], allowedAttributes: {} },
+    )
       .replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathLabels[Number(index)] ?? "")
       .replace(
         /&(amp|lt|gt|quot|#39);/g,
@@ -167,6 +175,11 @@ export const renderNotebookBook = (
       );
   const renderer = new Renderer();
   renderer.html = ({ text: html }) => escape(html);
+  renderer.text = function (token) {
+    if (token.type === "text" && token.tokens) return this.parser.parseInline(token.tokens);
+    if (token.type === "escape" || token.escaped || insideLink || literalText.has(token)) return Renderer.prototype.text.call(this, token);
+    return ligatureHtml(token.text);
+  };
   renderer.heading = function (token) {
     const { depth, tokens } = token;
     const body = this.parser.parseInline(tokens);
@@ -383,6 +396,12 @@ export const renderNotebookBook = (
     );
   }
   const tokens = marked.lexer(prepared.join("\n"));
+  const frontMatter = frontMatterLength(markdown);
+  for (let index = 0, position = 0; position < frontMatter && index < tokens.length; position += tokens[index]!.raw.length, index++) {
+    marked.walkTokens([tokens[index]!], (token) => {
+      literalText.add(token);
+    });
+  }
   for (const token of tokens) {
     if (token.type !== "heading") continue;
     const line = headingLines.get(token.raw.trim())?.shift();

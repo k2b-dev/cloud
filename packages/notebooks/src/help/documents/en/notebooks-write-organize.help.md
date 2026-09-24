@@ -52,6 +52,25 @@ Use short paragraphs. Keep one idea per section.
 - Keep one evening open
 ```
 
+## Typographic symbols {icon="typography"}
+
+Notebooks shows some typed sequences as one symbol when you read or edit a note. The note keeps the characters you typed, so search, export, and Assistant see them unchanged.
+
+| You type | You see |
+| --- | --- |
+| `->` `<-` `<->` | → ← ↔ |
+| `=>` `<=>` | ⇒ ⇔ |
+| `<=` `>=` `!=` `+-` | ≤ ≥ ≠ ± |
+| `(c)` `(r)` `(tm)` | © ® ™ |
+| `...` | … |
+| `--` with a space on both sides | – |
+
+:::reference
+- **See the characters:** Place the cursor on a symbol or select it to edit the typed characters. **Show Markdown source** always shows them. In Book, hover a symbol.
+- **Unchanged:** Code, math, links, HTML, data and query blocks, and front matter keep the typed characters.
+- **Keep a sequence:** Type a backslash before its first character, for example `\->`.
+:::
+
 **Readable emphasis**
 
 ## Callouts {icon="message-circle"}

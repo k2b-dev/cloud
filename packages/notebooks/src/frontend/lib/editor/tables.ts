@@ -61,6 +61,7 @@ import { isNamedBlockHandle } from "../../../lib/named-blocks";
 import { formatFormulaError, formatFormulaValue, renderPrettyTableHtml } from "../pretty-table";
 import { refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 import { splitTableLineCells, tableCellText } from "./_lib/table-cell";
+import { applyLigatures } from "./ligatures";
 
 type Align = "left" | "right" | "center" | null;
 
@@ -259,6 +260,7 @@ class TableWidget extends WidgetType {
     container.className = "cm-table-widget";
     container.setAttribute("contenteditable", "false");
     container.innerHTML = renderTable(this.data, this.notebookId);
+    applyLigatures(container);
     container.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
