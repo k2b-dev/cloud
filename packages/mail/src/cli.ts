@@ -6122,7 +6122,7 @@ export default defineCliCommands({
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const catalog = await readApi<MailWorkflowCatalogSnapshot>(ctx, `/mailboxes/${mailbox.id}/incoming-automations/catalog`);
         if (printStructured(ctx, catalog)) return;
-        ctx.print(`Folders: ${catalog.folders.map((folder) => `${folder.name} (${folder.id})`).join(", ") || "none"}`);
+        ctx.print(`Folders: ${catalog.folders.map((folder) => `${folder.path ?? folder.name} (${folder.id})`).join(", ") || "none"}`);
         ctx.print(`Cloud tags: ${(catalog.localTags ?? []).map((tag) => `${tag.name} (${tag.id})`).join(", ") || "none"}`);
         ctx.print(`Assignable users: ${catalog.assignableUsers.map((user) => `${user.name} (${user.id})`).join(", ") || "none"}`);
       },

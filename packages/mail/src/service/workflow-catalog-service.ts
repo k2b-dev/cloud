@@ -10,11 +10,28 @@ export const loadMailWorkflowCatalog = async (params: {
   db?: SqlClient;
 }): Promise<MailWorkflowCatalog> => {
   const db = params.db ?? sql;
-  const folders = await db<{ id: string; name: string; role: string }[]>`
-      SELECT DISTINCT folder.short_id AS id, folder.name, COALESCE(role_override.role, folder.role) AS role
+  const folders = await db<{ id: string; name: string; path: string; role: string }[]>`
+      WITH RECURSIVE folder_paths AS (
+        SELECT folder.id, folder.name::text AS path
+        FROM mail.folders folder
+        JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+        WHERE resource.mailbox_id = ${params.mailboxId}::uuid AND folder.parent_id IS NULL
+
+        UNION ALL
+
+        SELECT child.id, parent.path || ' / ' || child.name
+        FROM mail.folders child
+        JOIN folder_paths parent ON child.parent_id = parent.id
+      )
+      SELECT DISTINCT
+        folder.short_id AS id,
+        folder.name,
+        COALESCE(folder_path.path, folder.name) AS path,
+        COALESCE(role_override.role, folder.role) AS role
       FROM mail.folders folder
       JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
       JOIN mail.mailboxes mailbox ON mailbox.id = resource.mailbox_id
+      LEFT JOIN folder_paths folder_path ON folder_path.id = folder.id
       LEFT JOIN mail.folder_role_overrides role_override
         ON role_override.mailbox_id = mailbox.id AND role_override.folder_id = folder.id
       WHERE mailbox.id = ${params.mailboxId}::uuid

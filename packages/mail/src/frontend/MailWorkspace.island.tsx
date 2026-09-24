@@ -40,6 +40,7 @@ import type { MailConversationToolbarActionId } from "./_components/mail-convers
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
+import { mailFolderPaths } from "./_components/mail-folder-tree";
 import {
   type MailListOptimisticField,
   type MailListOptimisticPatch,
@@ -895,7 +896,10 @@ function MailWorkspaceView(props: {
   };
 
   const chooseDestinationFolder = async () => {
-    const folders = data.folders.filter((folder) => folder.selectable && folder.discoveryState === "active");
+    const paths = mailFolderPaths(data.folders);
+    const folders = data.folders
+      .filter((folder) => folder.selectable && folder.discoveryState === "active")
+      .map((folder) => ({ ...folder, path: paths.get(folder.id) ?? folder.name }));
     const selected = await openSpotlightSearch<{ folderId: string }>({
       title: t().moveToFolder,
       icon: "ti ti-folder-symlink",
@@ -904,9 +908,9 @@ function MailWorkspaceView(props: {
       resolve: ({ query }) => {
         const needle = query.trim().toLocaleLowerCase();
         return folders
-          .filter((folder) => !needle || folder.name.toLocaleLowerCase().includes(needle))
+          .filter((folder) => !needle || folder.path.toLocaleLowerCase().includes(needle))
           .map((folder) => ({
-            label: folder.name,
+            label: folder.path,
             desc: folder.role === "folder" ? t().providerFolder : folder.role,
             icon: "ti ti-folder",
             value: { folderId: folder.id },

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { MailFolderView } from "../../service/messages";
-import { buildMailFolderTree, buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree } from "./mail-folder-tree";
+import {
+  buildMailFolderTree,
+  buildVisibleMailFolderTree,
+  excludeMailFolderTreeRoles,
+  flattenMailFolderTree,
+  mailFolderPaths,
+} from "./mail-folder-tree";
 
 const folder = (id: string, overrides: Partial<MailFolderView> = {}): MailFolderView => ({
   id,
@@ -21,6 +27,18 @@ const folder = (id: string, overrides: Partial<MailFolderView> = {}): MailFolder
 });
 
 describe("Mail folder tree", () => {
+  test("names same-named folders by their full path for flat pickers", () => {
+    const paths = mailFolderPaths([
+      folder("archive-2025", { name: "Archiv", parentId: "2025" }),
+      folder("projects", { name: "Projekte", selectable: false }),
+      folder("2025", { name: "2025", parentId: "projects" }),
+      folder("archive-root", { name: "Archiv" }),
+    ]);
+
+    expect(paths.get("archive-2025")).toBe("Projekte / 2025 / Archiv");
+    expect(paths.get("archive-root")).toBe("Archiv");
+  });
+
   test("preserves provider hierarchy and input order", () => {
     const tree = buildMailFolderTree([folder("inbox"), folder("projects"), folder("client", { parentId: "projects" }), folder("archive")]);
 

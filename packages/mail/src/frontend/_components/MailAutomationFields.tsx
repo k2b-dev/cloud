@@ -270,7 +270,7 @@ export function MailAutomationActionEditor(props: {
           label={messages().destinationFolder}
           value={() => (props.action.kind === "move_to_folder" ? props.action.folderId : "")}
           onValueChange={(folderId) => props.onChange({ kind: "move_to_folder", folderId: folderId ?? "" })}
-          options={mailAutomationDestinationFolders(props.catalog).map((folder) => ({ id: folder.id, label: folder.name }))}
+          options={mailAutomationDestinationFolders(props.catalog).map((folder) => ({ id: folder.id, label: folder.path ?? folder.name }))}
         />
       </Show>
       <Show when={props.action.kind === "add_local_tag"}>

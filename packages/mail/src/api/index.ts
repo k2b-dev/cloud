@@ -515,7 +515,7 @@ const respondReassignedMessage = async <T>(c: Context<MailApiContext>, result: R
     ]),
   );
 
-const aggregateResourcePaths = (data: unknown) => {
+export const aggregateResourcePaths = (data: unknown) => {
   const paths: Array<{ path: string[]; table: Parameters<typeof projectResourcePaths>[1][number]["table"] }> = [];
   const at = (path: readonly string[]): unknown => {
     let value = data;
@@ -536,6 +536,16 @@ const aggregateResourcePaths = (data: unknown) => {
     if (!Array.isArray(values)) return;
     values.forEach((_value, index) => one([...path, String(index)], table));
   };
+  // Folder parents must share the public ID space of folder IDs, otherwise every parent lookup misses and the tree flattens.
+  const folders = (path: string[]) => {
+    many(path, "folders");
+    const values = at(path);
+    if (!Array.isArray(values)) return;
+    values.forEach((_value, index) => {
+      if (typeof at([...path, String(index), "parentId"]) === "string")
+        paths.push({ path: [...path, String(index), "parentId"], table: "folders" });
+    });
+  };
 
   one(["mailbox"], "mailboxes");
   for (const [field, table] of [
@@ -547,7 +557,7 @@ const aggregateResourcePaths = (data: unknown) => {
   ] as const) {
     if (typeof at([field]) === "string") paths.push({ path: [field], table });
   }
-  many(["folders"], "folders");
+  folders(["folders"]);
   many(["identities"], "senderIdentities");
   many(["savedViews"], "savedViews");
   many(["scheduledPage", "items"], "deliveries");
@@ -561,7 +571,7 @@ const aggregateResourcePaths = (data: unknown) => {
   many(["organization", "localTags"], "tags");
   many(["compose", "templates"], "composeTemplates");
   many(["compose", "identities"], "senderIdentities");
-  many(["admin", "folders"], "folders");
+  folders(["admin", "folders"]);
   many(["admin", "identities"], "senderIdentities");
 
   const listItems = at(["listItems"]);

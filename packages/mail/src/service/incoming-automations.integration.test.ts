@@ -12,6 +12,7 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import { snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { resolveIncomingAutomationPlacementTurn } from "./incoming-automation-order";
@@ -29,6 +30,7 @@ import {
 } from "./incoming-automations";
 import { createMailbox } from "./mailboxes";
 import { ingestEnvelope } from "./sync-runtime";
+import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import { runMailWorkflow } from "./workflow-runtime";
 
 const suite = suiteFor("database", "nats");
@@ -963,5 +965,40 @@ suite("incoming automations", () => {
         input: { expectedRevision: Number(current!.revision) },
       });
     }
+  });
+
+  test("names catalog destination folders by their path through non-selectable containers", async () => {
+    const [binding] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.provider_bindings WHERE remote_resource_id = ${remoteResourceId}::uuid
+    `;
+    if (!binding) throw new Error("Missing incoming automation provider binding");
+    const folder = async (key: string, name: string, parentId: string | null, selectable = true) => {
+      const [row] = await sql<{ id: string }[]>`
+        INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status, parent_id, selectable)
+        VALUES (
+          ${newShortId()}, ${remoteResourceId}::uuid, ${`incoming-automation-${key}-${suffix}`}, ${name}, 'other', 'current',
+          ${parentId}::uuid, ${selectable}
+        )
+        RETURNING id
+      `;
+      if (!row) throw new Error(`Failed to create folder ${key}`);
+      await sql`
+        INSERT INTO mail.binding_folder_refs (
+          binding_id, folder_id, remote_path, uid_validity, uid_next, effective_rights, last_verified_at
+        ) VALUES (
+          ${binding.id}::uuid, ${row.id}::uuid, ${`${key}-${suffix}`}, 1, 1,
+          ${selectable ? "{read,insert,move}" : "{read}"}::text[], now()
+        )
+      `;
+      return row.id;
+    };
+    const projects = await folder("projects", "Projects", null, false);
+    const year = await folder("projects-2025", "2025", projects);
+    await folder("projects-2025-archive", "Archive", year);
+
+    const catalog = snapshotMailWorkflowCatalog(await loadMailWorkflowCatalog({ context: ownerContext, mailboxId }));
+    const archives = catalog.folders.filter((entry) => entry.name === "Archive").map((entry) => entry.path);
+    expect(archives.sort()).toEqual(["Archive", "Projects / 2025 / Archive"]);
+    expect(catalog.folders.some((entry) => entry.name === "Projects")).toBe(false);
   });
 });

@@ -32,6 +32,20 @@ export const buildMailFolderTree = <T extends MailFolderView>(folders: readonly 
   return roots;
 };
 
+/** Full display paths such as `Projects / 2025 / Archive`, for flat pickers where a leaf name alone is ambiguous. */
+export const mailFolderPaths = <T extends MailFolderView>(folders: readonly T[]): Map<string, string> => {
+  const paths = new Map<string, string>();
+  const visit = (nodes: readonly MailFolderTreeNode<T>[], parentPath: string | null) => {
+    for (const node of nodes) {
+      const path = parentPath === null ? node.folder.name : `${parentPath} / ${node.folder.name}`;
+      paths.set(node.folder.id, path);
+      visit(node.children, path);
+    }
+  };
+  visit(buildMailFolderTree(folders), null);
+  return paths;
+};
+
 const visibleNode = <T extends MailFolderView>(node: MailFolderTreeNode<T>): MailFolderTreeNode<T> | null => {
   if (!node.folder.showInSidebar || node.folder.discoveryState !== "active" || node.folder.role === "all") return null;
   const children = node.children.flatMap((child) => {
