@@ -2492,7 +2492,8 @@ export const incomingAutomationBackfillSchema = z
     operationId: z.string().uuid(),
     automationId: ResourceShortIdSchema,
     workflowVersionId: z.string().uuid(),
-    state: z.enum(["queued", "running", "waiting", "completed", "failed", "canceled"]),
+    /** `limited`: the run applied its per-run limit and `remainingCount` candidates still need another backfill. */
+    state: z.enum(["queued", "running", "waiting", "completed", "limited", "failed", "canceled"]),
     candidateCount: z.number().int().nonnegative(),
     alreadyAcceptedCount: z.number().int().nonnegative(),
     newlyAcceptedCount: z.number().int().nonnegative(),

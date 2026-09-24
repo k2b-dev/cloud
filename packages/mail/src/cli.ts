@@ -6353,7 +6353,7 @@ export default defineCliCommands({
         ctx.print(
           `${result.state}: ${result.alreadyAcceptedCount + result.newlyAcceptedCount}/${result.candidateCount} accepted, ${
             result.remainingCount
-          } remaining${result.lastError ? ` · ${result.lastError}` : ""}`,
+          } remaining${result.state === "limited" ? "; run another backfill to continue" : ""}${result.lastError ? ` · ${result.lastError}` : ""}`,
         );
       },
     }),
