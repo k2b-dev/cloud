@@ -39,7 +39,7 @@ import { imapSmtpConnector } from "./connectors";
 import { resolveRoleFolder } from "./folders";
 import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
-import { withMailboxProviderOperationBarrier } from "./provider-operation-lock";
+import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 const internalCreateSenderIdentityInputSchema = createSenderIdentityInputSchema.extend({
   defaultSignatureTemplateId: z.string().uuid().nullable().optional(),
@@ -926,7 +926,7 @@ export const verifySenderIdentity = async (params: {
         return ok(mapIdentity(updated));
       }),
     );
-    return barrier.acquired ? barrier.value : fail(err.conflict("Provider work is still running; retry sender verification shortly"));
+    return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry sender verification shortly"));
   } catch (error) {
     return (error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST"
       ? fail(err.conflict("Provider state changed during sender verification; retry the operation"))

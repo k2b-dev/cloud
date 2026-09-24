@@ -1,4 +1,5 @@
 import { lazySync } from "@k2b/cloud";
+import type { ServiceError } from "@k2b/stdlib";
 import type { Lock } from "@k2b/sync";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 
@@ -66,6 +67,12 @@ const releaseMailboxProviderBarrier = async (locks: readonly Lock[]): Promise<vo
     ),
   );
 };
+
+/**
+ * Returned when a provider operation cannot take the barrier because synchronization or another
+ * provider operation still holds the mailbox. The stable code lets clients offer a plain retry.
+ */
+export const providerBusy = (message: string): ServiceError<"PROVIDER_BUSY"> => ({ code: "PROVIDER_BUSY", message, status: 409 });
 
 type ProviderOperationBarrierResult<T> = { acquired: false } | { acquired: true; value: T };
 
