@@ -507,6 +507,39 @@ describe("cloud CLI OAuth session handling", () => {
     }
   });
 
+  test("delivers multi-megabyte JSON to a slow reader before exiting with the command's code", async () => {
+    const dir = await createTempDir();
+    const pluginDir = join(dir, "cloud", "cld", "plugins", "bulk");
+    await mkdir(join(pluginDir, "dist"), { recursive: true });
+    await writeFile(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "bulk", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
+    );
+    await writeFile(
+      join(pluginDir, "dist", "cli.js"),
+      `export default { name: "bulk", summary: "Bulk output", requiresCloud: false, run: (ctx) => {
+        ctx.json({ items: Array.from({ length: 20000 }, (_, id) => ({ id, subject: "x".repeat(200) })) });
+        return 3;
+      } };`,
+    );
+
+    const proc = startCli(join(dir, "config.json"), ["plugins", "run", "bulk"], { XDG_CONFIG_HOME: dir });
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of proc.stdout) {
+      chunks.push(chunk);
+      await Bun.sleep(2);
+    }
+    const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+    const stdout = Buffer.concat(chunks).toString("utf8");
+
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(3);
+    expect(stdout.length).toBeGreaterThan(4 * 1024 * 1024);
+    const parsed = JSON.parse(stdout) as { items: { id: number }[] };
+    expect(parsed.items).toHaveLength(20000);
+    expect(parsed.items.at(-1)?.id).toBe(19999);
+  });
+
   test("login callback returns a plain-text completion message", async () => {
     const state: MockServerState = { refreshCalls: 0, authorizationCodeCalls: 0, revokeCalls: 0, meCalls: 0 };
     const server = startMockServer(state);
