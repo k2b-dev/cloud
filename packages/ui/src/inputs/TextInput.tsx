@@ -72,7 +72,8 @@ export function TextInput(props: TextInputProps): JSX.Element {
   const [passwordVisible, setPasswordVisible] = createSignal(false);
   const multiline = () => Boolean(local.multiline || local.markdown);
   const icon = () => local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : local.markdown ? "ti ti-markdown" : "ti ti-cursor-text");
-  const activeIcon = () => local.activeIcon ?? (local.variant === "ai" ? "ti ti-sparkles" : "ti ti-pencil");
+  // A custom icon stays while typing (a search field keeps its magnifier); only the default icon switches to the pencil.
+  const activeIcon = () => local.activeIcon ?? local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : "ti ti-pencil");
   const input = (next: string) => local.onValueChange?.(next);
   const commit = (next: string) => local.onValueCommit?.(next);
   const clear = () => {

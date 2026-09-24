@@ -133,3 +133,17 @@ describe("@k2b/ui canonical field contract", () => {
     }
   });
 });
+
+describe("TextInput icons", () => {
+  test("keeps a custom icon while focused and switches only the default icon to the pencil", () => {
+    const custom = renderToString(() => createComponent(TextInput, { icon: "ti ti-search", value: "" }));
+    const fallback = renderToString(() => createComponent(TextInput, { value: "" }));
+    const explicit = renderToString(() => createComponent(TextInput, { icon: "ti ti-search", activeIcon: "ti ti-pencil", value: "" }));
+
+    expect(custom.match(/ti ti-search/g)?.length).toBe(2);
+    expect(custom).not.toContain("ti-pencil");
+    expect(fallback).toContain("ti ti-cursor-text");
+    expect(fallback).toContain("ti ti-pencil");
+    expect(explicit).toContain("ti ti-pencil");
+  });
+});

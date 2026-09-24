@@ -31,6 +31,7 @@ clearing emits an empty string through both value callbacks.
 - `markdown` renders the shared `MarkdownEditor` and implies multiline input.
 - `password` adds a show or hide control.
 - `variant="ai"` changes the field treatment and default icon. It does not add AI behavior.
+- Without `icon`, the field shows a text-cursor icon that turns into a pencil while focused. A custom `icon` stays while focused unless `activeIcon` sets a different one.
 - `monospace`, `prefix`, and `suffix` adapt the field to code-like values and short units.
 
 Enter calls `onSubmit` in single-line fields and in plain multiline mode, where Shift+Enter inserts a newline. In markdown mode, <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> calls `onSubmit`; bare Enter stays available for writing.
