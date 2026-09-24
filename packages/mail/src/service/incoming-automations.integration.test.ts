@@ -9,7 +9,10 @@ import {
   wakeWorkflowRunsWaitingOn,
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
+import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import incomingAutomationRoutes from "../api/incoming-automations";
+import type { MailApiContext } from "../api/public-resource-boundary";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { snapshotMailWorkflowCatalog } from "../workflows/catalog";
@@ -1000,5 +1003,21 @@ suite("incoming automations", () => {
     const archives = catalog.folders.filter((entry) => entry.name === "Archive").map((entry) => entry.path);
     expect(archives.sort()).toEqual(["Archive", "Projects / 2025 / Archive"]);
     expect(catalog.folders.some((entry) => entry.name === "Projects")).toBe(false);
+
+    // The HTTP catalog serves the same public IDs instead of failing with 500.
+    const [mailboxRow] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    const api = new Hono<MailApiContext>()
+      .use(async (c, next) => {
+        c.set("actor", ownerContext.actor);
+        c.set("accessSubject", ownerContext.accessSubject);
+        c.set("internalMailboxId", mailboxId);
+        await next();
+      })
+      .route("/", incomingAutomationRoutes);
+    const response = await api.request(`/mailboxes/${mailboxRow!.short_id}/incoming-automations/catalog`);
+    expect(response.status).toBe(200);
+    const served = (await response.json()) as typeof catalog;
+    expect(served.folders).toEqual(catalog.folders);
+    expect(served.folders.find((entry) => entry.path === "Projects / 2025 / Archive")?.id).toMatch(/^[A-Za-z0-9_-]{6,}$/);
   });
 });
