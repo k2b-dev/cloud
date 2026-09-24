@@ -1709,7 +1709,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Get note with content",
-      description: "Get note details with Yjs snapshot (base64 encoded).",
+      description: "Get note details with current content, including live edits not yet snapshotted, and its Yjs state (base64 encoded).",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NoteWithContentSchema, "Note with content"),
@@ -1725,10 +1725,12 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const note = await notebooksService.note.getWithContentByShortId({ shortId: noteId });
-      if (!note || note.notebookId !== notebookId) {
-        return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
-      }
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
+      if (!noteCheck.ok) return respond(c, noteCheck);
+      // Include live edits the open editor has not snapshotted yet: edits and
+      // their preconditions apply to this content, not to the stored snapshot.
+      const note = await notebooksService.note.getCurrentWithContent({ id: noteCheck.data.id });
+      if (!note) return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
       const [data] = await toPublicNotes([note], notebook!.shortId);
       return respond(c, ok({ ...data!, yjsSnapshot: note.yjsSnapshot }));
     },
