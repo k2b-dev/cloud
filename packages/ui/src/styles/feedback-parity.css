@@ -94,6 +94,43 @@
   max-height: min(90vh, var(--k2b-dialog-available-height));
 }
 
+/* `full` takes the whole dialog budget. The frame never scrolls; its content
+ * owns the height (a zoomable view, a document) and scrolls itself if needed.
+ * The UA `dialog:modal` max size would otherwise leave a wider margin. */
+.k2b-ui .k2b-dialog--full {
+  width: var(--k2b-dialog-available-width);
+  height: var(--k2b-dialog-available-height);
+  max-width: none;
+  max-height: var(--k2b-dialog-available-height);
+  overflow: clip;
+}
+
+.k2b-ui .k2b-dialog--full > .k2b-dialog__viewport {
+  height: 100%;
+}
+
+.k2b-ui .k2b-dialog--full .k2b-dialog__panel {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Narrow screens have no room for a floating frame: go edge to edge and keep
+ * the chrome clear of notches and the home indicator. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-dialog--full {
+    width: 100dvw;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .k2b-ui .k2b-dialog--full .k2b-dialog__panel {
+    padding: max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px))
+      max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
+  }
+}
+
 .k2b-ui .k2b-dialog--danger {
   border-color: color-mix(in srgb, var(--k2b-danger-500) 28%, var(--k2b-border-strong));
 }

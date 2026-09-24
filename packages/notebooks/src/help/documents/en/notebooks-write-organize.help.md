@@ -76,6 +76,22 @@ Risk: waiting for final prices.
 :::
 ```
 
+**Diagrams**
+
+## Zoom and export diagrams {icon="chart-dots-3"}
+
+Write a Mermaid diagram in a code block marked `mermaid`. The editor and Book show the rendered diagram; in the editor, click it to edit its source.
+
+:::reference
+- **Zoom:** Use the plus and minus buttons, hold Ctrl or Cmd while scrolling, or pinch on a touch screen. Plain scrolling keeps scrolling the page.
+- **Move:** When zoomed in, drag the diagram or use the arrow keys. The reset button returns to the full diagram.
+- **Keyboard:** Focus the diagram, then press + and - to zoom, 0 to reset, and F to open it fullscreen.
+- **Fullscreen:** The fullscreen button opens the diagram in a large window with the same controls. Press Esc to close it.
+- **Export:** In fullscreen, **Download SVG** saves a scalable file and **Download PNG** saves an image on the theme background. The file name is the note title.
+:::
+
+In the editor, the controls appear when you point at or focus the diagram. Every diagram opens at its full size again after a reload.
+
 **Organization**
 
 ## Links, tags, and attachments {icon="link"}

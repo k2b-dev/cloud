@@ -49,7 +49,7 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 | `confirmText`, `cancelText` | Override action labels. `cancelText: false` hides the cancel button in `prompts.form`. |
 | `confirmationPhrase` | Requires an exact typed phrase before `prompts.confirm` can confirm. |
 | `variant` | Selects `primary`, `success`, or `danger` action treatment. |
-| `size` | Selects `small`, `medium`, `large`, or `wide`. |
+| `size` | Selects `small`, `medium`, `large`, `wide`, or `full`. `full` fills the viewport minus a small margin and goes edge to edge below 48rem, with safe-area padding. Its frame never scrolls, so the content fills the height and scrolls itself when needed. |
 | `surface` | Uses the standard panel or a caller-owned `bare` surface. |
 | `header` | Set to `false` when a custom dialog owns its header. |
 | `cancelBehavior` | `prompts.alert` can use `"ignore"` to keep Escape and backdrop clicks from closing it. |
@@ -211,7 +211,7 @@ await prompts.dialog<void>(
 interface DialogOptions {
   signal?: AbortSignal; title?: string; ariaLabel?: string; icon?: string; confirmText?: string;
   cancelText?: string | false; variant?: "danger" | "primary" | "success";
-  size?: "small" | "medium" | "large" | "wide"; surface?: "default" | "bare"; header?: false;
+  size?: "small" | "medium" | "large" | "wide" | "full"; surface?: "default" | "bare"; header?: false;
   cancelBehavior?: OpenDialogOptions["cancelBehavior"];
 }
 

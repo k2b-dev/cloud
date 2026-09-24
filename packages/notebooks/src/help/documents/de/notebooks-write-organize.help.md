@@ -76,6 +76,22 @@ Risiko: Die endgültigen Preise stehen noch aus.
 :::
 ```
 
+**Diagramme**
+
+## Diagramme zoomen und exportieren {icon="chart-dots-3"}
+
+Schreibe ein Mermaid-Diagramm in einen Codeblock mit der Sprache `mermaid`. Editor und Buchansicht zeigen das gerenderte Diagramm; im Editor klickst du darauf, um den Quelltext zu bearbeiten.
+
+:::reference
+- **Zoomen:** Nutze die Plus- und Minus-Schaltflächen, scrolle mit gedrückter Strg- oder Cmd-Taste oder ziehe auf einem Touchscreen zwei Finger auseinander. Normales Scrollen bewegt weiterhin die Seite.
+- **Verschieben:** Wenn du hineingezoomt hast, ziehe das Diagramm oder nutze die Pfeiltasten. Die Zurücksetzen-Schaltfläche zeigt wieder das ganze Diagramm.
+- **Tastatur:** Fokussiere das Diagramm und drücke + und - zum Zoomen, 0 zum Zurücksetzen und F für die Vollbildansicht.
+- **Vollbild:** Die Vollbild-Schaltfläche öffnet das Diagramm in einem großen Fenster mit denselben Bedienelementen. Mit Esc schließt du es.
+- **Exportieren:** In der Vollbildansicht speichert **SVG herunterladen** eine skalierbare Datei und **PNG herunterladen** ein Bild auf dem Hintergrund des Farbschemas. Der Dateiname ist der Titel der Notiz.
+:::
+
+Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es fokussierst. Nach dem Neuladen zeigt jedes Diagramm wieder seine volle Größe.
+
 **Organisation**
 
 ## Links, Tags und Anhänge {icon="link"}
