@@ -31,7 +31,7 @@ import {
 import { publishMailMailboxEvent } from "./events";
 import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
 import { pauseDeletedMailboxExecution, pauseMailboxTransport } from "./mailbox-lifecycle";
-import { withMailboxProviderOperationBarrier } from "./provider-operation-lock";
+import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type DbMailbox = {
   id: string;
@@ -552,7 +552,7 @@ export const deleteMailbox = async (context: MailRequestContext, mailboxId: stri
         });
       });
       if (!barrier.acquired) {
-        const conflict = err.conflict("Mailbox provider work is still running; retry deletion shortly");
+        const conflict = providerBusy("Mailbox provider work is still running; retry deletion shortly");
         throw Object.assign(new Error(conflict.message), conflict);
       }
     },
