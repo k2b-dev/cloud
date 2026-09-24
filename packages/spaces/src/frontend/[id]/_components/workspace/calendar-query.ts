@@ -1,3 +1,4 @@
+import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { documentNavigate, listenPopState, navigate } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import { prompts, useLocale } from "@k2b/ui";
@@ -137,7 +138,7 @@ export const useSpacesCalendarQuery = (params: {
   });
 
   createEffect(() => {
-    if (!pending() && view.error() instanceof SpacesViewUnavailableError) window.location.reload();
+    if (!pending() && view.error() instanceof SpacesViewUnavailableError) reloadOnce(`spaces:view:${window.location.pathname}`);
   });
 
   const start = (rawHref: string, history: PendingNavigation["history"]) => {

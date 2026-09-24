@@ -14,6 +14,13 @@ const log = logger("spaces:websocket");
 const ACCESS_REFRESH_INTERVAL_MS = 8_000;
 const MAX_CLIENT_MESSAGE_LENGTH = 16_000;
 const MAX_PENDING_MESSAGES = 8;
+/**
+ * Close code for a thrown lookup (session, access, public ID, or stream
+ * cursor), which is an infrastructure failure rather than an access decision.
+ * The live client reconnects on 1012 with backoff and the new subscription
+ * checks access again; 1011 would end live updates and reload the page.
+ */
+const RETRYABLE_CLOSE_CODE = 1012;
 
 type WsPhase = "open" | "subscribed" | "closing";
 
@@ -116,11 +123,11 @@ const startAccessRefresh = (ctx: WsContext, spaceId: string, spaceShortId: strin
       startAccessRefresh(ctx, spaceId, spaceShortId);
     } catch (error) {
       if (ctx.phase !== "subscribed" || ctx.spaceId !== spaceId) return;
-      log.error("Space WebSocket access refresh failed", {
+      log.error("Space WebSocket access refresh failed; closing so the client reconnects", {
         spaceId,
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "internal_error", ctx.messages.liveAccessRefreshFailed, 1011);
+      closeWithError(ctx, "temporarily_unavailable", ctx.messages.liveAccessRefreshFailed, RETRYABLE_CLOSE_CODE);
     }
   }, ACCESS_REFRESH_INTERVAL_MS);
 };
@@ -254,11 +261,11 @@ const app = new Hono().get(
         processing = processing
           .then(() => handleMessage(current, raw))
           .catch((error) => {
-            log.error("Space WebSocket message handling failed", {
+            log.error("Space WebSocket subscription failed; closing so the client reconnects", {
               spaceId: current.spaceId,
               error: error instanceof Error ? error.message : String(error),
             });
-            closeWithError(current, "internal_error", current.messages.liveSubscriptionFailed, 1011);
+            closeWithError(current, "temporarily_unavailable", current.messages.liveSubscriptionFailed, RETRYABLE_CLOSE_CODE);
           })
           .finally(() => {
             pendingMessages = Math.max(0, pendingMessages - 1);

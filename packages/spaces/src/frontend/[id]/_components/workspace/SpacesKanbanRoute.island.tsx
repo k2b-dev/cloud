@@ -1,3 +1,4 @@
+import { reloadOnce } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Button, ScrollArea, useLocale } from "@k2b/ui";
@@ -45,7 +46,7 @@ export default function SpacesKanbanRoute(props: Props) {
   });
   const state = () => (view.data()?.source === source() ? view.data()! : { buckets: props.initialBuckets, wormholes: props.wormholes });
   createEffect(() => {
-    if (view.error() instanceof SpacesViewUnavailableError) window.location.reload();
+    if (view.error() instanceof SpacesViewUnavailableError) reloadOnce(`spaces:view:${window.location.pathname}`);
   });
 
   return (

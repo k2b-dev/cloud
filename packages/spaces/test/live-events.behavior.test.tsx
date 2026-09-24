@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -7,6 +7,7 @@ import { subscribeToSpacesDataInvalidation } from "../src/frontend/[id]/_compone
 type Controls = { markApplied: (cursor: string | null) => void; terminate: () => void };
 type LiveOptions = {
   onMessage: (message: never, controls: Controls) => void;
+  onFatal: (error: { code: string; message: string }) => void;
   subscribe: (cursor: string | null) => unknown;
 };
 
@@ -97,5 +98,28 @@ describe("Spaces live events", () => {
     dispose();
     stop();
     dom.cleanup();
+  });
+
+  test("a fatal live failure that persists across loads reloads once, then offers a manual reload", async () => {
+    const dom = createDomTestHarness();
+    const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
+    const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
+    try {
+      // Every load mounts the island afresh; sessionStorage survives the reload.
+      for (let load = 0; load < 3; load += 1) {
+        const dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0" }), dom.root);
+        options.onFatal({ code: "internal_error", message: "Live updates failed." });
+        await flush();
+        if (load < 2) dispose();
+      }
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(dom.root.textContent).toContain("Live updates are unavailable right now");
+      const button = Array.from(dom.root.querySelectorAll("button")).find((candidate) => candidate.textContent === "Reload");
+      button?.click();
+      expect(reload).toHaveBeenCalledTimes(2);
+    } finally {
+      reload.mockRestore();
+      dom.cleanup();
+    }
   });
 });
