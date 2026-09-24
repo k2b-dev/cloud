@@ -191,7 +191,9 @@ describe("@k2b/ui focus and color contract", () => {
     const invalid = rules.find(
       (rule) => rule.selector === '.k2b-ui .k2b-text-input[data-invalid="true"]:has(> .k2b-input:autofill):focus-within::after',
     );
-    const anchor = rules.find((rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill)" && rule.body.includes("position"));
+    const anchor = rules.find(
+      (rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill)" && rule.body.includes("position"),
+    );
 
     expect(anchor?.body).toContain("position: relative");
     expect(ring?.body).toContain("position: absolute");
