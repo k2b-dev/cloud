@@ -86,6 +86,7 @@ import {
   type WorkflowEffectBudget,
   type WorkflowValidation,
 } from "./contracts";
+import { incomingAutomationIssues } from "./incoming-automation-issues";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
 import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./service/collaboration";
@@ -475,7 +476,10 @@ const readIncomingAutomationDefinition = async (
     throw new Error("Incoming automation updates must explicitly set enabled to true or false.");
   }
   const parsed = createIncomingAutomationSchema.safeParse(definition);
-  if (!parsed.success) throw new Error(`Invalid incoming automation definition: ${parsed.error.issues[0]?.message ?? "unknown error"}`);
+  if (!parsed.success) {
+    const issues = incomingAutomationIssues(parsed.error, definition, "en");
+    throw new Error(`Invalid incoming automation definition:\n${issues.map((issue) => `- ${issue.field}: ${issue.message}`).join("\n")}`);
+  }
   return parsed.data;
 };
 

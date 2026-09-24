@@ -27,6 +27,7 @@ import {
   type UpdateIncomingAutomation,
   updateIncomingAutomationSchema,
 } from "../contracts";
+import { incomingAutomationIssues, summarizeIncomingAutomationIssues } from "../incoming-automation-issues";
 import { withShortIdDb } from "../lib/short-id";
 import { type MailWorkflowCatalogSnapshot, snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
@@ -1042,7 +1043,9 @@ export const createIncomingAutomation = async (params: {
   input: CreateIncomingAutomation;
 }): Promise<Result<IncomingAutomation>> => {
   const parsed = createIncomingAutomationSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid incoming automation"));
+  if (!parsed.success) {
+    return fail(err.badInput(summarizeIncomingAutomationIssues(incomingAutomationIssues(parsed.error, params.input))));
+  }
   const automationId = crypto.randomUUID();
   const name = normalizeName(parsed.data.name);
   const scope = normalizeAutomationScope(parsed.data.scope);
@@ -1151,7 +1154,9 @@ export const updateIncomingAutomation = async (params: {
   input: UpdateIncomingAutomation;
 }): Promise<Result<IncomingAutomation>> => {
   const parsed = updateIncomingAutomationSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid incoming automation"));
+  if (!parsed.success) {
+    return fail(err.badInput(summarizeIncomingAutomationIssues(incomingAutomationIssues(parsed.error, params.input))));
+  }
   const name = normalizeName(parsed.data.name);
   const scope = normalizeAutomationScope(parsed.data.scope);
   if (!scope.ok) return scope;

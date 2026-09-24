@@ -4748,6 +4748,34 @@ test("sender commands cover preview and durable existing-message backfills", asy
   });
 }, 20_000);
 
+test("incoming automation create names every invalid field before calling the API", async () => {
+  const requests: string[] = [];
+  const server = withMailbox((request) => {
+    requests.push(`${request.method} ${new URL(request.url).pathname}`);
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const step = { id: "11111111-1111-4111-8111-111111111111", kind: "mail_action", action: { kind: "trash" } };
+  const condition = { field: "sender_address", operator: "is", value: "user@example.com" };
+  const create = (definition: unknown) =>
+    runCli(origin, ["--json", "mail", "automation", "create", "--mailbox", MAILBOX_ID, "--definition-stdin"], JSON.stringify(definition));
+
+  const listConditions = await create({ name: "Trash", scope: { mode: "matching", conditions: [condition] }, steps: [step] });
+  const wrongInnerKey = await create({
+    name: "Trash",
+    scope: { mode: "matching", conditions: { mode: "all", conditions: [condition] } },
+    steps: [step],
+  });
+
+  expect(listConditions.exitCode).toBe(1);
+  expect(listConditions.stderr).toContain("scope.conditions: Expected an object, got a list.");
+  expect(wrongInnerKey.exitCode).toBe(1);
+  expect(wrongInnerKey.stderr).toContain("scope.conditions.items: Required. Expected a list.");
+  expect(wrongInnerKey.stderr).toContain("scope.conditions.conditions: Unknown field.");
+  expect(requests.filter((request) => request.includes("incoming-automations"))).toEqual([]);
+});
+
 test("incoming automation CRUD accepts complete mixed-flow definitions and preserves revision fences", async () => {
   const definition = {
     name: "Example sender",
