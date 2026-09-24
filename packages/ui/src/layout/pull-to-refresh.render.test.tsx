@@ -29,7 +29,9 @@ describe("PullToRefresh", () => {
     expect(html).toContain('data-state="idle"');
     expect(html).toContain("--k2b-pull-to-refresh-distance:0px");
     expect(html).toContain('class="k2b-pull-to-refresh__indicator" role="status" aria-live="polite"');
-    expect(html).toContain('<i class="ti ti-refresh" aria-hidden="true"></i><span class="k2b-sr-only"></span>');
+    expect(html).toContain(
+      '<span class="k2b-pull-to-refresh__icon" aria-hidden="true"><i class="ti ti-refresh"></i></span><span class="k2b-sr-only"></span>',
+    );
     expect(html).toMatch(/k2b-pull-to-refresh__indicator[\s\S]*k2b-scroll-area[^>]*>Inbox rows/);
   });
 
@@ -47,6 +49,6 @@ describe("PullToRefresh", () => {
     expect(indicator).toContain("pointer-events: none");
     expect(indicator).toContain("transform: translate(-50%, calc(var(--k2b-pull-to-refresh-distance) - 100%))");
     expect(reduced).toContain(".k2b-ui .k2b-pull-to-refresh__indicator {\n    transition: none;");
-    expect(reduced).toContain(".k2b-ui .k2b-pull-to-refresh__indicator > i {\n    transform: none;");
+    expect(reduced).toContain(".k2b-ui .k2b-pull-to-refresh__icon {\n    transform: none;");
   });
 });

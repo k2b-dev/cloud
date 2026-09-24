@@ -186,7 +186,9 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
       style={{ "--k2b-pull-to-refresh-distance": `${distance()}px`, "--k2b-pull-to-refresh-progress": String(progress()) }}
     >
       <div class="k2b-pull-to-refresh__indicator" role="status" aria-live="polite">
-        <i class={state() === "refreshing" ? "ti ti-loader-2 k2b-spin" : "ti ti-refresh"} aria-hidden="true" />
+        <span class="k2b-pull-to-refresh__icon" aria-hidden="true">
+          <i class={state() === "refreshing" ? "ti ti-loader-2 k2b-spin" : "ti ti-refresh"} />
+        </span>
         <span class="k2b-sr-only">{state() === "refreshing" ? (props.label ?? messages().refreshing) : ""}</span>
       </div>
       {props.children}
