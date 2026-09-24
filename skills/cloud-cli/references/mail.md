@@ -261,6 +261,15 @@ cld --json mail search --body overdue --body reminder --or --cursor <next-cursor
 cld --json mail search --attachment-name invoice --comment approved --tag Priority
 ```
 
+`--folder` restricts results to one folder and accepts a folder id or an exact
+folder name (case-insensitive) from `cld --json mail folders`. A name shared by
+several folders matches all of them; pass the id to select exactly one. A value
+that matches no folder fails with `Unknown folder` instead of returning an empty
+result. `--match` does not apply to `--folder`. In a JSON expression, use
+`{ "type": "folder_id", "folderId": "<folder-id>" }` for the same filter; an
+unknown `folderId` fails as not found. The `text` field `folder` remains a
+folder-name text search and can match nothing.
+
 `--any` searches all indexed Mail fields, including extracted attachment text.
 `--body` searches only the email body, while `--attachment-name` searches only
 the filename. Attachment extraction runs asynchronously after the message is

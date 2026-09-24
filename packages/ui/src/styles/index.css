@@ -2055,7 +2055,10 @@
     opacity 160ms ease-out;
 }
 
-.k2b-ui .k2b-pull-to-refresh__indicator > i {
+/* The pull progress turns the wrapper, never the icon: a static transform on
+   the `.k2b-spin` element would become the implicit start keyframe. */
+.k2b-ui .k2b-pull-to-refresh__icon {
+  display: flex;
   transform: rotate(calc(var(--k2b-pull-to-refresh-progress) * 360deg));
 }
 
@@ -2079,7 +2082,7 @@
     transition: none;
   }
 
-  .k2b-ui .k2b-pull-to-refresh__indicator > i {
+  .k2b-ui .k2b-pull-to-refresh__icon {
     transform: none;
   }
 }
@@ -3088,7 +3091,13 @@
   }
 }
 
+/* An explicit start keeps the spin independent of any transform the element
+   already carries; an implicit one would interpolate from that value. */
 @keyframes k2b-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
   to {
     transform: rotate(360deg);
   }

@@ -13,7 +13,7 @@ import {
   updateIncomingAutomationSchema,
 } from "../contracts";
 import { incomingAutomationIssues, summarizeIncomingAutomationIssues } from "../incoming-automation-issues";
-import { incomingAutomations, type MailRequestContext, publicResources } from "../service";
+import { incomingAutomations, type MailRequestContext } from "../service";
 import { getCalendarSpace, listCalendarDestinations, searchSpaceItems } from "../service/app-integrations";
 import {
   internalMailboxId,
@@ -63,51 +63,13 @@ const definitionJson = <S extends typeof createIncomingAutomationSchema | typeof
 
 const resolveAutomationParam = resolveMailboxResourceParam("incomingAutomations", "automationId", "Incoming automation");
 
-export const projectIncomingAutomationCatalog = async (
-  resultPromise: ReturnType<typeof incomingAutomations.getIncomingAutomationCatalog>,
-) => {
-  const result = await resultPromise;
-  if (!result.ok) return result;
-  const [folders, senderIdentities, localTags] = await Promise.all([
-    publicResources.publicIds(
-      "folders",
-      result.data.folders.map((entry) => entry.id),
-    ),
-    publicResources.publicIds(
-      "senderIdentities",
-      (result.data.senderIdentities ?? []).map((entry) => entry.id),
-    ),
-    publicResources.publicIds(
-      "tags",
-      (result.data.localTags ?? []).map((entry) => entry.id),
-    ),
-  ]);
-  return {
-    ok: true as const,
-    data: {
-      ...result.data,
-      folders: result.data.folders.map((entry) => ({ ...entry, id: publicResources.requirePublicId(folders, entry.id) })),
-      senderIdentities: (result.data.senderIdentities ?? []).map((entry) => ({
-        ...entry,
-        id: publicResources.requirePublicId(senderIdentities, entry.id),
-      })),
-      localTags: (result.data.localTags ?? []).map((entry) => ({
-        ...entry,
-        id: publicResources.requirePublicId(localTags, entry.id),
-      })),
-    },
-  };
-};
-
 export default new Hono<MailApiContext>()
   .get("/mailboxes/:mailboxId/incoming-automations", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, incomingAutomations.listIncomingAutomations(requestContext(c), internalMailboxId(c)), "incomingAutomations"),
   )
   .get("/mailboxes/:mailboxId/incoming-automations/catalog", v("param", mailboxParamSchema), async (c) =>
-    respondPublic(
-      c,
-      projectIncomingAutomationCatalog(incomingAutomations.getIncomingAutomationCatalog(requestContext(c), internalMailboxId(c))),
-    ),
+    // The catalog is already in public-ID space; the service returns short IDs.
+    respondPublic(c, incomingAutomations.getIncomingAutomationCatalog(requestContext(c), internalMailboxId(c))),
   )
   .get(
     "/mailboxes/:mailboxId/incoming-automations/spaces/items",

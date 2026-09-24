@@ -7,6 +7,7 @@ import {
   projectPublicRelations,
   projectPublicResult,
   projectResourcePaths,
+  resolvePublicRelations,
   respondPublic,
 } from "./public-resource-boundary";
 
@@ -22,6 +23,20 @@ describe("Mail public response projection", () => {
       code: "NOT_FOUND",
       message: "Das Postfach wurde nicht gefunden",
     });
+  });
+
+  test("resolves nested search folder IDs inside the mailbox and rejects unknown folders", async () => {
+    const internalFolderId = "00000000-0000-4000-8000-000000000001";
+    const resolve = spyOn(publicResources, "resolveMailboxPublicIds").mockImplementation(async (_table, _mailboxId, values) =>
+      values.every((value) => value === "Fold01") ? values.map(() => internalFolderId) : null,
+    );
+    const request = (folderId: string) => ({
+      expression: { type: "not", expression: { type: "folder_id", folderId } },
+    });
+
+    expect(await resolvePublicRelations("mailbox-internal", request("Fold01"))).toEqual(request(internalFolderId));
+    expect(resolve).toHaveBeenCalledWith("folders", "mailbox-internal", ["Fold01"]);
+    expect(await resolvePublicRelations("mailbox-internal", request("HM3ntB"))).toBeNull();
   });
 
   test("preserves already-public resource IDs", async () => {

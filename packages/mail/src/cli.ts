@@ -974,7 +974,7 @@ const searchTermFlags = {
     description: "Search conversation references; repeatable",
     separator: "\0",
   }),
-  folder: flag.stringList({ description: "Search remote folders; repeatable", separator: "\0" }),
+  folder: flag.stringList({ description: "Only messages in this folder, by id or exact name; repeatable", separator: "\0" }),
   tag: flag.stringList({ description: "Search Cloud-local tags; repeatable", separator: "\0" }),
   keyword: flag.stringList({
     description: "Search remote provider keywords; repeatable",
@@ -1079,7 +1079,19 @@ type SearchTermFlagValues = {
   expression: Parameters<typeof readCliInput>[0];
 };
 
-const buildSimpleSearchExpression = (flags: SearchTermFlagValues): MailSearchExpression => {
+const folderFilter = (folders: MailFolderView[], value: string): MailSearchExpression => {
+  const byId = folders.find((folder) => folder.id === value);
+  const matches = byId ? [byId] : folders.filter((folder) => folder.name.toLowerCase() === value.toLowerCase());
+  if (matches.length === 0) throw new Error(`Unknown folder "${value}". Pass a folder id or name from \`cld mail folders\`.`);
+  const [first, ...rest] = matches.map((folder): MailSearchExpression => ({ type: "folder_id", folderId: folder.id }));
+  return rest.length === 0 ? first! : { type: "or", expressions: [first!, ...rest] };
+};
+
+const buildSimpleSearchExpression = async (
+  ctx: CloudCliContext,
+  mailboxId: string,
+  flags: SearchTermFlagValues,
+): Promise<MailSearchExpression> => {
   const terms: MailSearchExpression[] = [];
   const fields = [
     ["any", "any"],
@@ -1095,23 +1107,30 @@ const buildSimpleSearchExpression = (flags: SearchTermFlagValues): MailSearchExp
     ["attachmentName", "attachment_name"],
     ["comment", "comment"],
     ["reference", "reference"],
-    ["folder", "folder"],
     ["tag", "tag"],
     ["keyword", "keyword"],
   ] as const;
   for (const [flagName, field] of fields) {
     for (const query of flags[flagName]) terms.push({ type: "text", field, query, match: flags.match ?? "words" });
   }
+  if (flags.folder.length > 0) {
+    const folders = await readApi<MailFolderView[]>(ctx, `/mailboxes/${mailboxId}/folders`);
+    for (const value of flags.folder) terms.push(folderFilter(folders, value));
+  }
   if (terms.length === 0) throw new Error("Pass at least one search term such as --any, --subject, --body, or --from.");
   return terms.length === 1 ? terms[0]! : flags.or ? { type: "or", expressions: terms } : { type: "and", expressions: terms };
 };
 
-const resolveSearchExpression = async (flags: SearchTermFlagValues): Promise<MailSearchExpression> => {
+const resolveSearchExpression = async (
+  ctx: CloudCliContext,
+  mailboxId: string,
+  flags: SearchTermFlagValues,
+): Promise<MailSearchExpression> => {
   const input = await readCliInput(flags.expression, {
     label: "search expression",
     trimFinalNewline: true,
   });
-  if (!input) return buildSimpleSearchExpression(flags);
+  if (!input) return buildSimpleSearchExpression(ctx, mailboxId, flags);
   if (
     [
       flags.any,
@@ -3045,7 +3064,7 @@ export default defineCliCommands({
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const result = await searchMessages(ctx, mailbox.id, {
-          expression: await resolveSearchExpression(flags),
+          expression: await resolveSearchExpression(ctx, mailbox.id, flags),
           sort: flags.sort,
           cursor: flags.cursor,
           limit: flags.limit,
@@ -3428,7 +3447,7 @@ export default defineCliCommands({
       },
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const expression = await resolveSearchExpression(flags);
+        const expression = await resolveSearchExpression(ctx, mailbox.id, flags);
         const hit = await pollUntil<MessageSearchHit | null>({
           load: async (signal) =>
             (await searchMessages(ctx, mailbox.id, { expression, sort: "newest", limit: 1 }, signal)).items[0] ?? null,

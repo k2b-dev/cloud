@@ -640,6 +640,73 @@ test("search preserves commas inside repeated free-text terms", async () => {
   });
 });
 
+test("search --folder filters by folder id or exact name and rejects unknown folders", async () => {
+  const folder = (id: string, name: string, parentId: string | null = null) => ({
+    id,
+    parentId,
+    name,
+    role: "other",
+    providerRole: "other",
+    configuredRole: null,
+    selectable: true,
+    showInSidebar: true,
+    namespaceKinds: ["personal"],
+    discoveryState: "active",
+    missingSince: null,
+    syncStatus: "ready",
+    total: 1,
+    unread: 0,
+  });
+  const requestBodies: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/folders`)
+      return api([folder(FOLDER_ID, "Developer"), folder("Foldr2", "Archive"), folder("Foldr3", "archive", "Foldr2")]);
+    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/search`) {
+      requestBodies.push(await request.json());
+      return api({ items: [], nextCursor: null, backend: "native" });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const search = (...folders: string[]) =>
+    runCli(`http://127.0.0.1:${server.port}`, [
+      "--json",
+      "mail",
+      "search",
+      "--mailbox",
+      MAILBOX_ID,
+      ...folders.flatMap((value) => ["--folder", value]),
+    ]);
+
+  const byId = await search(FOLDER_ID);
+  expect(byId.exitCode, byId.stderr).toBe(0);
+  expect(requestBodies.at(-1)).toMatchObject({ expression: { type: "folder_id", folderId: FOLDER_ID } });
+
+  const byName = await search("developer", "Archive");
+  expect(byName.exitCode, byName.stderr).toBe(0);
+  expect(requestBodies.at(-1)).toMatchObject({
+    expression: {
+      type: "and",
+      expressions: [
+        { type: "folder_id", folderId: FOLDER_ID },
+        {
+          type: "or",
+          expressions: [
+            { type: "folder_id", folderId: "Foldr2" },
+            { type: "folder_id", folderId: "Foldr3" },
+          ],
+        },
+      ],
+    },
+  });
+
+  const unknown = await search("HM3ntB");
+  expect(unknown.exitCode).not.toBe(0);
+  expect(JSON.parse(unknown.stderr).error.message).toContain('Unknown folder "HM3ntB"');
+  expect(requestBodies).toHaveLength(2);
+});
+
 test("mailbox short-id resolution uses the direct resource endpoint independently of the bounded list", async () => {
   const requests: string[] = [];
   const server = Bun.serve({

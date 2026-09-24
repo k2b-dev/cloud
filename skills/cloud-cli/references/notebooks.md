@@ -250,7 +250,7 @@ cld notebooks read --notebook <notebook-id> --note <note-id> --number-lines --bl
 cld notebooks read --notebook <notebook-id> --note <note-id> --json
 ```
 
-Use `note` for metadata, `content` for raw Markdown, and `read --json` for edit metadata (`updatedAt`, `contentHash`, line count, and named blocks).
+Use `note` for metadata, `content` for raw Markdown, and `read --json` for edit metadata (`updatedAt`, `contentHash`, line count, and named blocks). Reads include changes from an editor that is open in the browser, so the returned hashes match what `edit` checks. A note that someone is typing in can still change between your read and your edit; a block hash only rejects changes to the block you edit.
 
 ### Create and organize notes
 
