@@ -208,6 +208,8 @@ type IncomingAutomationBackfillInput = {
   workflowVersionId: string;
   scope: MailAutomationScope;
   cutoffAt: string;
+  /** Candidate and already-accepted counts frozen at start, so reported progress stays monotonic. */
+  startCounts?: { candidates: number; accepted: number };
 };
 
 type IncomingAutomationBackfillItem = {
@@ -707,7 +709,8 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
     retry: { maxAttempts: 3, backoffMs: [1_000, 2_000, 4_000] },
     // One backfill applies at most EXISTING_MESSAGE_APPLICATION_LIMIT messages —
     // the same ceiling the preview advertises. There is no cursor: anything
-    // beyond the first batch stays in `remainingCount` for a later backfill.
+    // beyond the first batch stays in `remainingCount`, the operation reports
+    // `limited`, and a later backfill continues with the next batch.
     pull: async ({ input, limit }) => {
       await loadCurrentBackfillAutomation(input, sql);
       const rows = await sql<{ remote_message_ref_id: string }[]>`
@@ -803,20 +806,31 @@ const loadIncomingAutomationBackfillCounts = async (
   return { candidates: Number(row?.candidates ?? 0), accepted: Number(row?.accepted ?? 0) };
 };
 
+/**
+ * Backfill progress for one operation:
+ *
+ * - `candidateCount` and `alreadyAcceptedCount` are frozen when the operation starts.
+ * - `newlyAcceptedCount` is the pump's durable dispatch counter, so it never decreases, even
+ *   when executed actions move accepted messages out of the candidate set.
+ * - `remainingCount` counts cutoff candidates that still have no accepted event for this version.
+ * - The pump reports `completed` after its single bounded batch. If candidates remain, that
+ *   batch hit the per-run application limit and the operation reports `limited` instead.
+ */
 const mapIncomingAutomationBackfill = async (
   state: PumpState<IncomingAutomationBackfillInput, never>,
 ): Promise<IncomingAutomationBackfill> => {
-  const counts = await loadIncomingAutomationBackfillCounts(state.input);
-  const newlyAcceptedCount = Math.min(state.dispatched, counts.accepted);
+  const live = await loadIncomingAutomationBackfillCounts(state.input);
+  const start = state.input.startCounts ?? { candidates: live.candidates, accepted: Math.max(0, live.accepted - state.dispatched) };
+  const remainingCount = Math.max(0, live.candidates - live.accepted);
   return {
     operationId: state.input.operationId,
     automationId: state.input.automationId,
     workflowVersionId: state.input.workflowVersionId,
-    state: state.status,
-    candidateCount: counts.candidates,
-    alreadyAcceptedCount: Math.max(0, counts.accepted - newlyAcceptedCount),
-    newlyAcceptedCount,
-    remainingCount: Math.max(0, counts.candidates - counts.accepted),
+    state: state.status === "completed" && remainingCount > 0 ? "limited" : state.status,
+    candidateCount: start.candidates,
+    alreadyAcceptedCount: start.accepted,
+    newlyAcceptedCount: state.dispatched,
+    remainingCount,
     failureCount: state.failureCount,
     lastError: state.lastError ?? null,
     createdAt: new Date(state.createdAt).toISOString(),
@@ -943,17 +957,18 @@ export const startIncomingAutomationBackfill = async (params: {
             });
             try {
               await assertLeaseActive();
+              const input: IncomingAutomationBackfillInput = {
+                operationId: parsed.data.operationId,
+                mailboxId: params.mailboxId,
+                automationId: automation.id,
+                workflowId: automation.workflowId,
+                workflowVersionId: automation.workflowVersionId,
+                scope: automation.scope,
+                cutoffAt: new Date().toISOString(),
+              };
               await pump.start({
                 key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),
-                input: {
-                  operationId: parsed.data.operationId,
-                  mailboxId: params.mailboxId,
-                  automationId: automation.id,
-                  workflowId: automation.workflowId,
-                  workflowVersionId: automation.workflowVersionId,
-                  scope: automation.scope,
-                  cutoffAt: new Date().toISOString(),
-                },
+                input: { ...input, startCounts: await loadIncomingAutomationBackfillCounts(input) },
               });
             } catch (error) {
               // The span was opened before the pump run existed; close it so it does not dangle.

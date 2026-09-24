@@ -172,7 +172,18 @@ cld --json mail automation backfill status <automation-id> <operation-id>
 cld --json mail automation backfill cancel <automation-id> <operation-id> --yes
 ```
 
-A non-AI automation backfill walks every candidate message with a durable cursor and emits targeted events into the same workflow runtime used for new mail. `start` returns an `operationId`; use it with `status` or `cancel`. AI flows intentionally process only future mail. Cancel an active backfill before editing, disabling, or deleting its automation. Mutations require the revision shown by `automation get`; they refuse stale state instead of silently adopting the latest revision.
+A non-AI automation backfill emits targeted events for at most 100 candidate messages (the preview's `applicationLimit`) into the same workflow runtime used for new mail. `start` returns an `operationId`; use it with `status` or `cancel`.
+
+Backfill `state` is `queued`, `running`, or `waiting` while active, then one of these terminal states:
+
+- `completed`: every candidate was accepted, and `remainingCount` is `0`.
+- `limited`: this run reached the limit. `remainingCount` candidates are still open, so start another backfill to continue.
+- `failed`: see `lastError`.
+- `canceled`.
+
+`candidateCount` and `alreadyAcceptedCount` are fixed when the backfill starts, and `newlyAcceptedCount` never decreases. "Accepted" means the message was handed to the workflow runtime, not that its actions already ran; the Mail **Automations > Activity** view shows execution.
+
+AI flows intentionally process only future mail. Cancel an active backfill before editing, disabling, or deleting its automation. Mutations require the revision shown by `automation get`; they refuse stale state instead of silently adopting the latest revision.
 
 Spaces actions use an encrypted, revocable delegation created for the configuring user. Current Mail and Spaces permissions are rechecked when a run executes. Event creation is idempotent across retries. Removing all Spaces steps or deleting the automation revokes the delegation. Use `set_status: done` to complete a conversation; `needs_action` or `waiting` reopens it, while a verified new inbound message already reopens a completed conversation automatically.
 
