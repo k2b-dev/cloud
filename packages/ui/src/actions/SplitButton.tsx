@@ -2,7 +2,7 @@ import { type JSX, Show, splitProps } from "solid-js";
 import { Button, type ButtonProps } from "./Button";
 import { Dropdown, type DropdownItem, type DropdownPosition } from "./Dropdown";
 
-export type SplitButtonProps = ButtonProps & {
+export type SplitButtonProps = Omit<ButtonProps, "align"> & {
   /** Actions shown from the secondary menu trigger. */
   items: readonly DropdownItem[];
   /** Optional selection menu in place of the primary immediate action. */

@@ -121,7 +121,7 @@ const AttachmentPicker = (props: Props) => {
             <For each={list.data() ?? []}>
               {(att) => (
                 <li>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => pick(att)} class="w-full justify-start text-left text-xs">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => pick(att)} align="start" class="w-full text-xs">
                     <i
                       class={`ti ${fileIcons.getFileIcon({ name: att.filename, type: "file", mimeType: att.mimeType })} text-sm shrink-0`}
                     />

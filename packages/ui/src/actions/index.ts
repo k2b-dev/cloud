@@ -1,4 +1,4 @@
-export type { ButtonLinkProps, ButtonProps, ButtonSize, ButtonVariant, IconButtonLinkProps, IconButtonProps } from "./Button";
+export type { ButtonAlign, ButtonLinkProps, ButtonProps, ButtonSize, ButtonVariant, IconButtonLinkProps, IconButtonProps } from "./Button";
 export { Button, ButtonLink, IconButton, IconButtonLink } from "./Button";
 export type { ContextMenuProps } from "./ContextMenu";
 export { ContextMenu } from "./ContextMenu";

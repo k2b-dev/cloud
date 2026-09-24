@@ -133,7 +133,8 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
                 variant={selected() === null ? "subtle" : "ghost"}
                 size="sm"
                 onClick={() => setSelected(null)}
-                class="w-full justify-start text-left"
+                align="start"
+                class="w-full"
               >
                 <i class="ti ti-home text-xs mr-1.5" />
                 {t().rootLevel}
@@ -145,7 +146,8 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
                     variant={selected() === target.id ? "subtle" : "ghost"}
                     size="sm"
                     onClick={() => setSelected(target.id)}
-                    class="w-full justify-start text-left"
+                    align="start"
+                    class="w-full"
                   >
                     <i class="ti ti-file-text text-xs mr-1.5" />
                     {getNodeDepthLabel(target, allFlat)}

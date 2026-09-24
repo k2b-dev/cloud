@@ -345,7 +345,8 @@ function SelectedAccessList(props: {
               type="button"
               variant="secondary"
               size="sm"
-              class="w-full justify-start"
+              align="start"
+              class="w-full"
               onClick={() => props.setUsers((current) => removeById(user.id, current))}
             >
               <i class="ti ti-user" />
@@ -361,7 +362,8 @@ function SelectedAccessList(props: {
               type="button"
               variant="secondary"
               size="sm"
-              class="w-full justify-start"
+              align="start"
+              class="w-full"
               onClick={() => props.setGroups((current) => removeById(group.id, current))}
             >
               <i class="ti ti-users-group" />

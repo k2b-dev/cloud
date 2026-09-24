@@ -311,7 +311,7 @@ function BatchDialog(props: { close: () => void }) {
                       <Button
                         size="sm"
                         variant="subtle"
-                        class="justify-start"
+                        align="start"
                         aria-label={messages().removeLabel({ name: user.label })}
                         onClick={() => remove<SelectedUser>(user.id, setUsers)}
                       >
@@ -341,7 +341,7 @@ function BatchDialog(props: { close: () => void }) {
                       <Button
                         size="sm"
                         variant="subtle"
-                        class="justify-start"
+                        align="start"
                         aria-label={messages().removeLabel({ name: group.label })}
                         onClick={() => remove<SelectedGroup>(group.id, setGroups)}
                       >

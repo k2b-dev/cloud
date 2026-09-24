@@ -1312,6 +1312,19 @@
   min-width: 0;
 }
 
+/* Row-style content: the label fills the button, so a `flex: 1` child pushes
+ * trailing content to the end and `min-width: 0` lets long text truncate. */
+.k2b-ui .k2b-button[data-align="start"] {
+  justify-content: flex-start;
+  text-align: start;
+}
+
+.k2b-ui .k2b-button[data-align="start"] > .k2b-button__label {
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+}
+
 .k2b-ui .k2b-icon-button {
   width: 2rem;
   padding: 0;

@@ -380,7 +380,8 @@ export default function VersionHistory(props: Props) {
                     variant={selectedVersionId() === version.id ? "subtle" : "ghost"}
                     size="sm"
                     onClick={() => selectVersion(version.id)}
-                    class="w-full justify-start text-left"
+                    align="start"
+                    class="w-full"
                     aria-pressed={selectedVersionId() === version.id}
                   >
                     <i class="ti ti-history text-[11px] text-dimmed" />
