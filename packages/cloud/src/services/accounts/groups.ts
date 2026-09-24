@@ -5,7 +5,7 @@ import { getServiceIpaSession } from "../ipa/service-account";
 import { toPgUuidArray } from "../postgres";
 import { providers } from "../providers";
 import type { AccountsActor } from "./authz";
-import { buildBaseGroup } from "./base-group";
+import { buildBaseGroup, personalOwnerJoin } from "./base-group";
 import { buildManagedGroupScopeCondition, buildMemberGroupScopeCondition } from "./group-sql";
 import * as localGroups from "./local-groups";
 import { posix } from "./posix";
@@ -16,9 +16,10 @@ type GroupListScope = "all" | "member" | "managed";
 
 const getGroup = async (id: string): Promise<BaseGroup | null> => {
   const [row] = await sql<DbRow[]>`
-    SELECT id, provider, name, description, gid_number
-    FROM auth.groups
-    WHERE id = ${id}::uuid
+    SELECT g.id, g.provider, g.name, g.description, g.gid_number, personal_owner.*
+    FROM auth.groups g
+    ${personalOwnerJoin()}
+    WHERE g.id = ${id}::uuid
   `;
   if (!row) return null;
   return buildBaseGroup(row);
@@ -30,6 +31,8 @@ const listCanonical = async (params: {
   scope?: GroupListScope;
   search?: string;
   provider?: UserProvider;
+  /** Personal Linux groups are left out of browsing and search unless requested; an explicit `ids` lookup always returns them. */
+  includePersonal?: boolean;
   page?: number;
   perPage?: number;
 }): Promise<{
@@ -45,6 +48,7 @@ const listCanonical = async (params: {
   const scope = params.scope ?? (params.userId ? "member" : "all");
   const scopeUserId = params.userId ?? "00000000-0000-0000-0000-000000000000";
   const idsCondition = ids.length === 0 ? sql`TRUE` : sql`g.id = ANY(${toPgUuidArray(ids)}::uuid[])`;
+  const includePersonal = params.includePersonal === true || params.ids !== undefined;
 
   if (params.ids && params.ids.length === 0) {
     return {
@@ -60,10 +64,12 @@ const listCanonical = async (params: {
   }
 
   const rows = await sql<DbRow[]>`
-    SELECT g.id, g.provider, g.name, g.description, g.gid_number, COUNT(*) OVER() AS total
+    SELECT g.id, g.provider, g.name, g.description, g.gid_number, personal_owner.*, COUNT(*) OVER() AS total
     FROM auth.groups g
+    ${personalOwnerJoin()}
     WHERE (${params.provider ?? null}::text IS NULL OR g.provider = ${params.provider ?? null})
       AND ${idsCondition}
+      AND (${includePersonal} = true OR personal_owner.personal_owner_id IS NULL)
       AND (
         ${scope === "all"} = true
         OR ${params.userId ?? null}::uuid IS NULL
@@ -99,6 +105,8 @@ export const list = async (params: {
   scope?: GroupListScope;
   search?: string;
   provider?: UserProvider;
+  /** Personal Linux groups are left out of browsing and search unless requested; an explicit `ids` lookup always returns them. */
+  includePersonal?: boolean;
   page?: number;
   perPage?: number;
 }) => {

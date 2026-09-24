@@ -69,6 +69,8 @@ type BaseGroup = {
   name: string;
   description: string | null;
   gidnumber: number | null;
+  /** Absent from servers that predate personal Linux groups. */
+  personalOwner?: { id: string; uid: string; displayName: string } | null;
 };
 
 type EntityListItem =
@@ -309,6 +311,7 @@ const groupRows = (items: BaseGroup[]) =>
     name: group.name,
     provider: group.provider,
     posix: group.gidnumber === null ? "no" : "yes",
+    personal: group.personalOwner?.uid ?? "",
     description: truncate(group.description, 70),
     id: group.id,
   }));
@@ -404,7 +407,7 @@ const listUsers = (ctx: CloudCliContext, query?: { search?: string; provider?: U
 
 const listGroups = (
   ctx: CloudCliContext,
-  query?: { search?: string; provider?: UserProvider; scope?: "all" | "member" | "managed"; page?: number },
+  query?: { search?: string; provider?: UserProvider; scope?: "all" | "member" | "managed"; includePersonal?: boolean; page?: number },
 ) =>
   apiGet<GroupsResponse>(
     ctx,
@@ -414,6 +417,7 @@ const listGroups = (
       search: query?.search,
       provider: query?.provider,
       scope: query?.scope,
+      include_personal: query?.includePersonal,
     })}`,
   );
 
@@ -485,7 +489,8 @@ const resolveGroupRef = async (ctx: CloudCliContext, ref: string): Promise<BaseG
   const seen: BaseGroup[] = [];
   const exactMatches: BaseGroup[] = [];
   for (;;) {
-    const response = await listGroups(ctx, { search: isUuid(ref) ? undefined : ref, scope: "all", page });
+    // A reference names one group exactly, so personal Linux groups resolve too.
+    const response = await listGroups(ctx, { search: isUuid(ref) ? undefined : ref, scope: "all", includePersonal: true, page });
     seen.push(...response.groups);
     const matches = response.groups.filter((group) => group.id === ref || group.name === ref);
     exactMatches.push(...matches);
@@ -877,16 +882,27 @@ export default defineCliCommands({
         search: flag.string({ aliases: ["q"], description: "Search group name or description" }),
         provider: flag.enum(PROVIDERS),
         scope: flag.enum(["all", "member", "managed"] as const, { default: "member" }),
+        includePersonal: flag.boolean({
+          name: "include-personal",
+          description: "Also list personal Linux groups (each user's private primary group)",
+        }),
       },
       async run({ ctx, flags }) {
         const response = await apiGet<GroupsResponse>(
           ctx,
-          `/groups${queryString({ ...pageQuery(flags), search: flags.search, provider: flags.provider, scope: flags.scope })}`,
+          `/groups${queryString({
+            ...pageQuery(flags),
+            search: flags.search,
+            provider: flags.provider,
+            scope: flags.scope,
+            include_personal: flags.includePersonal,
+          })}`,
         );
         printJsonOrTable(ctx, response, groupRows(response.groups), [
           { key: "name" },
           { key: "provider" },
           { key: "posix" },
+          { key: "personal" },
           { key: "description" },
           { key: "id" },
         ]);
@@ -901,6 +917,7 @@ export default defineCliCommands({
           { key: "name" },
           { key: "provider" },
           { key: "posix" },
+          { key: "personal" },
           { key: "description" },
           { key: "id" },
         ]);

@@ -46,7 +46,10 @@ Users contain `{ id, provider, username, profile, posix }`. `posix` is either
 `{ uidNumber, primaryGidNumber }` or `null` when attributes are missing,
 incomplete or owned by a different provider. The primary GID is the stored
 primary GID; it is never inferred from the UID. Groups contain
-`{ id, provider, name, gidNumber }`, including logical groups with a null GID.
+`{ id, provider, name, gidNumber, personal }`, including logical groups with a
+null GID. `personal` is `true` for a user's personal Linux group (their stored
+primary group); applications should not offer it as a shared group area or
+recipient.
 An IPA user can also receive local groups through direct or nested membership.
 Group management alone does not confer membership.
 

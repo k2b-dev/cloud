@@ -75,8 +75,10 @@ export default ssr<AuthContext>(async (c) => {
       access: { userId: sessionUser.id, isAdmin: true },
       filter: { status: "pending" },
     }),
+    // The user's own memberships include their personal Linux group, like the direct list by ID below.
     accountsService.group.list({
       pagination: { page: 1, perPage: 1000 },
+      filter: { includePersonal: true },
       scope: { userId: id, mode: "member" },
     }),
     accountsService.group.list({

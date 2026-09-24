@@ -97,21 +97,30 @@ export default ssr<AuthContext>(async (c) => {
           {/* Groups */}
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <LinkCard
-              href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "managed" }, { defaultScope: defaultGroupScope })}
+              href={buildGroupsUrl(
+                { search: "", page: 1, provider: "", scope: "managed", personal: false },
+                { defaultScope: defaultGroupScope },
+              )}
               title={t.managedByMe}
               description={t.groupCount({ count: managedGroups.total })}
               icon="ti ti-shield"
               color="violet"
             />
             <LinkCard
-              href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "member" }, { defaultScope: defaultGroupScope })}
+              href={buildGroupsUrl(
+                { search: "", page: 1, provider: "", scope: "member", personal: false },
+                { defaultScope: defaultGroupScope },
+              )}
               title={t.myGroups}
               description={t.groupCount({ count: memberGroups.total })}
               icon="ti ti-users-group"
               color="blue"
             />
             <LinkCard
-              href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "all" }, { defaultScope: defaultGroupScope })}
+              href={buildGroupsUrl(
+                { search: "", page: 1, provider: "", scope: "all", personal: false },
+                { defaultScope: defaultGroupScope },
+              )}
               title={t.allGroups}
               description={t.groupCount({ count: allGroups.total })}
               icon="ti ti-layout-grid"

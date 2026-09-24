@@ -16,7 +16,8 @@ export type AccountIdentityUser = {
   profile: UserProfile;
   posix: { uidNumber: number; primaryGidNumber: number } | null;
 };
-export type AccountIdentityGroup = { id: string; provider: UserProvider; name: string; gidNumber: number | null };
+/** `personal` marks a user's personal Linux group (their stored primary group). */
+export type AccountIdentityGroup = { id: string; provider: UserProvider; name: string; gidNumber: number | null; personal: boolean };
 export type AccountIdentityPage<T> = { items: T[]; nextCursor: string | null };
 export type AccountIdentityAvailability = { localLinuxEnabled: boolean; freeipaEnabled: boolean };
 type InventoryFilter = { provider: UserProvider; after?: string; id?: string; name?: string };
@@ -119,8 +120,10 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
     return current;
   };
   const groupRows = async (filter: SQLQuery) => {
-    const rows = await db<{ id: string; provider: UserProvider; name: string; gid_number: number | null }[]>`
-      SELECT g.id, g.provider, g.name, g.gid_number FROM auth.groups g
+    const rows = await db<{ id: string; provider: UserProvider; name: string; gid_number: number | null; personal: boolean }[]>`
+      SELECT g.id, g.provider, g.name, g.gid_number,
+        EXISTS(SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id) AS personal
+      FROM auth.groups g
       WHERE ${filter} ORDER BY g.id LIMIT ${PAGE_SIZE + 1}
     `;
     return rows.map(
@@ -129,6 +132,7 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
         provider: row.provider,
         name: row.name,
         gidNumber: positiveId(row.gid_number) ? row.gid_number : null,
+        personal: row.personal,
       }),
     );
   };

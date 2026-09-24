@@ -56,3 +56,11 @@ Konto- und Zugriffsänderungen werden im Audit-Protokoll erfasst. Nutze bei der 
 Wähle beim Anlegen einer lokalen Gruppe **Als POSIX-Gruppe erstellen**, um eine feste GID zu vergeben. Die Option ist standardmäßig aus und setzt aktivierte lokale Linux-Identitäten in der Administration voraus. Ohne diese Option bleibt die Gruppe eine logische Gruppe. Schlägt die Vergabe fehl, wird keine Gruppe erstellt.
 
 Bei einer bestehenden Gruppe wählst du **In POSIX-Gruppe umwandeln** im Aktionsmenü. Nur Administratoren dürfen eine GID vergeben. Die Vergabe lässt sich nicht rückgängig machen. FreeIPA verwaltet seine Gruppen unabhängig davon. Beide Aktionen legen keine Dateien an.
+
+## Persönliche Linux-Gruppen {icon="user"}
+
+Wenn ein lokales Konto eine Linux-Identität erhält, legt Cloud dafür auch eine persönliche Linux-Gruppe an. Sie trägt den Benutzernamen des Kontos und ist dessen primäre Gruppe. Linux braucht sie, sie ist aber kein Team.
+
+Die Gruppenliste blendet persönliche Linux-Gruppen aus. Um sie zu sehen, öffne **Ansicht** und wähle **Linux → Persönliche Gruppen**. Die Anzahl über der Liste zählt nur die angezeigten Gruppen. Jede persönliche Gruppe ist mit **Persönlich · von** und dem Namen der Person markiert; der Name verweist auf deren Konto.
+
+Eine persönliche Linux-Gruppe kann nicht gelöscht werden, solange sie die primäre Gruppe ihrer Person ist. Gruppenauswahlen, etwa beim Teilen, bei Berechtigungen und bei **Zu Gruppe hinzufügen**, bieten persönliche Gruppen nicht an. Wähle stattdessen die Person.

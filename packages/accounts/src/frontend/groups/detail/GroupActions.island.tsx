@@ -14,6 +14,8 @@ type GroupActionsProps = {
   isPosix: boolean;
   linuxEnabled: boolean;
   description: string | null;
+  /** Owner of a personal Linux group; the server refuses to delete such a group. */
+  personalOwnerName: string | null;
   listHref: string;
 };
 
@@ -150,6 +152,9 @@ export default function GroupActions(props: GroupActionsProps) {
               label: messages().delete,
               action: handleDelete,
               variant: "danger" as const,
+              disabled: props.personalOwnerName !== null,
+              description:
+                props.personalOwnerName !== null ? messages().personalGroupDeleteBlocked({ name: props.personalOwnerName }) : undefined,
             },
           ],
         },

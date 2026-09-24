@@ -78,6 +78,7 @@ test("directory descriptions stay inside the shared search contract", async () =
             name: "Team",
             description: "x".repeat(4000),
             gidnumber: null,
+            personalOwner: null,
           },
         },
       ],

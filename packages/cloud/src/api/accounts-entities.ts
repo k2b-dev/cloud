@@ -41,6 +41,7 @@ const QuerySchema = z
     parent_group_id: z.uuid().optional(),
     managed_by_user_id: z.uuid().optional(),
     recursive: z.enum(["true", "false"]).optional(),
+    include_personal: z.enum(["true", "false"]).optional(),
   })
   .refine(
     (value) => {
@@ -98,7 +99,7 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
       tags: ["Accounts"],
       summary: "List mixed users and groups",
       description:
-        "List visible users and groups with SQL-backed filtering and pagination. Guest accounts see only themselves and their effective groups; relation filters require a full user account.",
+        "List visible users and groups with SQL-backed filtering and pagination. Guest accounts see only themselves and their effective groups; relation filters require a full user account. Personal Linux groups (a user's private primary group, flagged with `personalOwner`) are left out unless `include_personal=true`; exact `group_ids` lookups and relation filters always return them.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(EntitiesListResponseSchema, "Paginated mixed entity list"),
@@ -159,6 +160,7 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
         parentGroupId: query.parent_group_id,
         managedByUserId: query.managed_by_user_id,
         recursive: query.recursive === "true",
+        includePersonal: query.include_personal === "true",
       });
 
       return respond(c, {

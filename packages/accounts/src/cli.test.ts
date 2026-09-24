@@ -123,6 +123,24 @@ describe("accounts CLI", () => {
     }
   });
 
+  test("lists personal Linux groups only with --include-personal and names their owner", async () => {
+    const personal = {
+      ...group({ id: "g2", name: "qdt" }),
+      gidnumber: 200001,
+      personalOwner: { id: "u1", uid: "qdt", displayName: "Quinn" },
+    };
+    const hidden = createContext(["groups", "list"], {}, [jsonResponse({ groups: [{ ...group({}), personalOwner: null }], pagination })]);
+    await accountsCli.run(hidden.ctx);
+    expect(hidden.calls[0]?.path).toBe("/api/accounts/groups?page=1&per_page=50&scope=member");
+
+    const shown = createContext(["groups", "list"], { "include-personal": true, scope: "all" }, [
+      jsonResponse({ groups: [personal], pagination }),
+    ]);
+    await accountsCli.run(shown.ctx);
+    expect(shown.calls[0]?.path).toBe("/api/accounts/groups?page=1&per_page=50&scope=all&include_personal=true");
+    expect(shown.tables[0]).toEqual([expect.objectContaining({ name: "qdt", personal: "qdt" })]);
+  });
+
   test("creates a local POSIX group in one request", async () => {
     const { ctx, calls } = createContext(["groups", "create", "staff"], { provider: "local", posix: true }, [
       jsonResponse({ ...group({ name: "staff" }), provider: "local", gidnumber: 200000 }),
@@ -213,7 +231,7 @@ describe("accounts CLI", () => {
     await accountsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all",
+      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all&include_personal=true",
       "/api/accounts/entities?page=1&per_page=100&search=alice&kinds=user",
       "/api/accounts/groups/g1/members",
     ]);
@@ -286,7 +304,7 @@ describe("accounts CLI", () => {
 
     await expect(accountsCli.run(ctx)).rejects.toThrow('User "Sam Example" is ambiguous');
     expect(calls.map((call) => call.path)).toEqual([
-      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all",
+      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all&include_personal=true",
       "/api/accounts/entities?page=1&per_page=100&search=Sam+Example&kinds=user",
       "/api/accounts/entities?page=2&per_page=100&search=Sam+Example&kinds=user",
     ]);
@@ -306,8 +324,8 @@ describe("accounts CLI", () => {
 
     await expect(accountsCli.run(ctx)).rejects.toThrow('Group "team" is ambiguous');
     expect(calls.map((call) => call.path)).toEqual([
-      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all",
-      "/api/accounts/groups?page=2&per_page=100&search=team&scope=all",
+      "/api/accounts/groups?page=1&per_page=100&search=team&scope=all&include_personal=true",
+      "/api/accounts/groups?page=2&per_page=100&search=team&scope=all&include_personal=true",
     ]);
   });
 

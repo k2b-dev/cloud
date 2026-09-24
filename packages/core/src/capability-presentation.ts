@@ -31,7 +31,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "entities.search": {
           title: "Empfänger für Zugriffsrechte suchen",
           description:
-            "Sucht sichtbare Benutzer, Gruppen und Dienstkonten für Berechtigungen. Öffentliche und angemeldete Benutzer sind explizite Empfänger und keine Suchergebnisse.",
+            "Sucht sichtbare Benutzer, Gruppen und Dienstkonten für Berechtigungen. Öffentliche und angemeldete Benutzer sind explizite Empfänger und keine Suchergebnisse. Persönliche Linux-Gruppen sind ausgenommen; berechtige stattdessen die Person.",
           input: {
             query: "Name oder Kontokennung; leer werden sichtbare Empfänger aufgelistet.",
             types: "Gewünschte Empfängertypen; ohne Angabe werden alle sichtbaren Typen berücksichtigt.",

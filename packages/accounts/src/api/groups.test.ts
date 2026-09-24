@@ -5,7 +5,7 @@ import { session } from "@k2b/cloud/services/session";
 import groups from "./groups";
 
 const id = "11111111-1111-4111-8111-111111111111";
-const group = { id, provider: "local" as const, name: "research-team", description: null, gidnumber: 200000 };
+const group = { id, provider: "local" as const, name: "research-team", description: null, gidnumber: 200000, personalOwner: null };
 const user: User = {
   id,
   uid: "admin",

@@ -91,6 +91,7 @@ test("existing group notices use canonical name and provider; deletion retains i
     provider: "ipa",
     description: null,
     gidnumber: null,
+    personalOwner: null,
   });
   try {
     expect(await (await post({ action: "group.member.add", id: "group-id", relatedId: "member-id" })).json()).toEqual({

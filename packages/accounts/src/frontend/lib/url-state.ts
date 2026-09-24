@@ -7,6 +7,7 @@ export type QueryKeys = {
 
 export type GroupQueryKeys = QueryKeys & {
   scope: string;
+  personal: string;
 };
 
 const USERS_QUERY_KEYS: QueryKeys = {
@@ -21,6 +22,7 @@ const GROUPS_QUERY_KEYS: GroupQueryKeys = {
   page: "page",
   provider: "provider",
   scope: "scope",
+  personal: "personal",
 };
 
 /**
@@ -32,6 +34,7 @@ export const GROUPS_CONTEXT_QUERY_KEYS: GroupQueryKeys = {
   page: "list_page",
   provider: "list_provider",
   scope: "list_scope",
+  personal: "list_personal",
 };
 
 export type UsersListState = {
@@ -46,6 +49,8 @@ export type GroupsListState = {
   page: number;
   provider: "" | "local" | "ipa";
   scope: "managed" | "member" | "all";
+  /** Show personal Linux groups, which are hidden by default. */
+  personal: boolean;
 };
 
 type GroupsStateOptions = {
@@ -151,6 +156,7 @@ export const parseGroupsListState = (
     page?: number | string | null;
     provider?: string | null;
     scope?: string | null;
+    personal?: string | null;
   },
   options: GroupsStateOptions = {},
 ): GroupsListState => {
@@ -162,6 +168,7 @@ export const parseGroupsListState = (
     page: parsePage(input.page),
     provider: input.provider === "local" || input.provider === "ipa" ? input.provider : "",
     scope: normalizedScope,
+    personal: input.personal === "1",
   };
 };
 
@@ -174,6 +181,7 @@ const parseGroupsListStateFromParams = (params: URLSearchParams, options: Groups
       page: params.get(keys.page),
       provider: keys.provider ? params.get(keys.provider) : null,
       scope: params.get(keys.scope),
+      personal: params.get(keys.personal),
     },
     options,
   );
@@ -187,6 +195,7 @@ const writeGroupsListState = (params: URLSearchParams, state: GroupsListState, o
   writeIfNonDefault(params, keys.page, String(state.page), "1");
   if (keys.provider) writeIfNonDefault(params, keys.provider, state.provider, "");
   writeIfNonDefault(params, keys.scope, state.scope, defaultScope);
+  if (state.personal) params.set(keys.personal, "1");
 };
 
 export const buildGroupsUrl = (
@@ -201,7 +210,7 @@ export const buildGroupsUrl = (
 };
 
 export const buildGroupsPageBaseUrl = (
-  state: Pick<GroupsListState, "search" | "provider" | "scope">,
+  state: Pick<GroupsListState, "search" | "provider" | "scope" | "personal">,
   options: {
     basePath?: string;
   } & GroupsStateOptions = {},
@@ -213,6 +222,7 @@ export const buildGroupsPageBaseUrl = (
   writeIfNonDefault(params, keys.search, state.search, "");
   if (keys.provider) writeIfNonDefault(params, keys.provider, state.provider, "");
   writeIfNonDefault(params, keys.scope, state.scope, defaultScope);
+  if (state.personal) params.set(keys.personal, "1");
 
   const query = params.toString();
   const basePath = options.basePath ?? "/app/accounts/groups";

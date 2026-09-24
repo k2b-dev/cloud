@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import type { BaseGroup, GroupMember, MutationResult, UserProvider } from "../../contracts/shared";
 import { escapeLikePattern, isUniqueViolation } from "../postgres";
+import { buildBaseGroup, personalOwnerJoin } from "./base-group";
 
 type DbRow = Record<string, unknown>;
 
@@ -18,6 +19,7 @@ const toBaseGroup = (row: LocalGroupRow): BaseGroup => ({
   name: row.name,
   description: row.description,
   gidnumber: row.gidNumber,
+  personalOwner: null,
 });
 
 const getLocalGroupById = async (id: string): Promise<LocalGroupRow | null> => {
@@ -73,8 +75,13 @@ const wouldCreateLocalGroupCycle = async (params: { parentGroupId: string; child
 };
 
 export const get = async (params: { id: string }): Promise<BaseGroup | null> => {
-  const row = await getLocalGroupById(params.id);
-  return row ? toBaseGroup(row) : null;
+  const [row] = await sql<DbRow[]>`
+    SELECT g.id, g.provider, g.name, g.description, g.gid_number, personal_owner.*
+    FROM auth.groups g
+    ${personalOwnerJoin()}
+    WHERE g.id = ${params.id}::uuid AND g.provider = 'local'
+  `;
+  return row ? buildBaseGroup(row) : null;
 };
 
 export const create = async (params: { name: string; description?: string }, db: typeof sql = sql): Promise<MutationResult<BaseGroup>> => {
@@ -119,8 +126,9 @@ export const list = async (params: { page?: number; perPage?: number; search?: s
   `;
   const total = Number(countRow?.count ?? 0);
   const rows = await sql<DbRow[]>`
-    SELECT id, provider, name, description, gid_number
+    SELECT g.id, g.provider, g.name, g.description, g.gid_number, personal_owner.*
     FROM auth.groups g
+    ${personalOwnerJoin()}
     WHERE g.provider = 'local'
       AND (${pattern}::text IS NULL OR LOWER(g.name) LIKE ${pattern} ESCAPE '\\' OR LOWER(g.description) LIKE ${pattern} ESCAPE '\\')
     ORDER BY g.name
@@ -128,15 +136,7 @@ export const list = async (params: { page?: number; perPage?: number; search?: s
   `;
 
   return {
-    groups: rows.map((row) =>
-      toBaseGroup({
-        id: row.id as string,
-        provider: row.provider as "local",
-        name: row.name as string,
-        description: row.description as string | null,
-        gidNumber: row.gid_number as number | null,
-      }),
-    ),
+    groups: rows.map(buildBaseGroup),
     total,
     pagination: {
       page,

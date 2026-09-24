@@ -34,7 +34,7 @@ suite("public account identity reads against isolated Postgres", () => {
     await db`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await db`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), uid text UNIQUE NOT NULL, provider text NOT NULL, profile text NOT NULL, admin boolean NOT NULL DEFAULT false, account_expires timestamptz)`.simple();
-    await db`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, managed_by text, uid_number integer, primary_gid_number integer)`.simple();
+    await db`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, managed_by text, uid_number integer, primary_gid_number integer, primary_group_id uuid)`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, provider text NOT NULL, gid_number integer)`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id),PRIMARY KEY(user_id,group_id))`.simple();
     await db`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid REFERENCES auth.groups(id),child_group_id uuid REFERENCES auth.groups(id),PRIMARY KEY(parent_group_id,child_group_id))`.simple();
@@ -131,6 +131,16 @@ suite("public account identity reads against isolated Postgres", () => {
     expect((await service.groups(actor)).items.map((item) => item.id).sort()).toEqual([direct, parent, external].sort());
     await db`DELETE FROM auth.user_groups_v2 WHERE group_id=${direct}::uuid`;
     expect((await service.groups(actor)).items.map((item) => item.id)).toEqual([external]);
+  });
+  test("effective groups flag the personal Linux group stored as a user's primary group", async () => {
+    const actor = await user("owner");
+    const personal = await group("owner", "local", 200007);
+    const team = await group("team", "local", 200008);
+    await db`INSERT INTO auth.user_groups_v2 VALUES(${actor.user.id}::uuid,${personal}::uuid),(${actor.user.id}::uuid,${team}::uuid)`;
+    await db`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id) VALUES(${actor.user.id}::uuid,'local',200007,200007,${personal}::uuid)`;
+    const items = (await service.groups(actor)).items;
+    expect(items.find((item) => item.id === personal)).toMatchObject({ name: "owner", personal: true });
+    expect(items.find((item) => item.id === team)).toMatchObject({ name: "team", personal: false });
   });
   test("groups and inventories paginate without omitting records beyond fifty", async () => {
     const actor = await user("admin", "local", true);

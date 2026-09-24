@@ -54,3 +54,11 @@ Account and access changes are recorded in Audit Log. Use the service-account fi
 When creating a local group, select **Create as POSIX group** to assign a stable GID. The option is off by default and requires local Linux identities to be enabled in Administration. Without it, the group remains a logical group. If assignment fails, no group is created.
 
 For an existing group, choose **Convert to POSIX** in its actions. Only administrators can assign a GID, and the assignment cannot be undone. FreeIPA manages its groups independently. No files are created by either action.
+
+## Personal Linux groups {icon="user"}
+
+When a local account gets a Linux identity, Cloud also creates a personal Linux group for it. The group has the account's username and is the account's primary group. Linux needs it, but it is not a team.
+
+The group list hides personal Linux groups. To show them, open **View** and choose **Linux → Personal groups**. The count above the list includes only the groups shown. Each personal group is marked **Personal · of** followed by the owner's name, which links to that account.
+
+A personal Linux group can't be deleted while it is its owner's primary group. Group pickers, such as sharing, permissions and **Add to group**, don't offer personal groups. Choose the person instead.

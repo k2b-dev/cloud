@@ -14,6 +14,7 @@ import AccountsWorkspace from "../../AccountsWorkspace";
 
 import { buildGroupsUrl, GROUPS_CONTEXT_QUERY_KEYS, parseGroupsListState } from "../../lib/url-state";
 import { accountsMessages } from "../../messages";
+import PersonalGroupTag from "../PersonalGroupTag";
 import GroupActions from "./GroupActions.island";
 import {
   buildGroupDetailPageBaseUrl,
@@ -42,6 +43,7 @@ export default ssr<AuthContext>(async (c) => {
       page: c.req.query("list_page"),
       provider: c.req.query("list_provider"),
       scope: c.req.query("list_scope"),
+      personal: c.req.query("list_personal"),
     },
     { keys: GROUPS_CONTEXT_QUERY_KEYS, defaultScope },
   );
@@ -256,6 +258,13 @@ export default ssr<AuthContext>(async (c) => {
                 <h1 class="text-xl font-semibold tracking-tight text-primary">{group.name}</h1>
                 {group && <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>}
                 {group.gidnumber && <Tag>POSIX</Tag>}
+                {group.personalOwner && (
+                  <PersonalGroupTag
+                    owner={group.personalOwner}
+                    label={t.personalGroupOf({ name: group.personalOwner.displayName })}
+                    linkToOwner={isAdmin}
+                  />
+                )}
               </div>
               <p class="mt-1 truncate text-xs text-dimmed">
                 {group.description || t.noDescription}
@@ -270,6 +279,7 @@ export default ssr<AuthContext>(async (c) => {
                 isPosix={group.gidnumber !== null}
                 linuxEnabled={linuxEnabled}
                 description={group.description}
+                personalOwnerName={group.personalOwner?.displayName ?? null}
                 listHref={groupsListHref}
               />
             )}

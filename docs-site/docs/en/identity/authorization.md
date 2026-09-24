@@ -379,7 +379,8 @@ For assignment forms that need identity selection without permission levels,
 use `PrincipalPicker` from `@k2b/cloud/access/ui`. Its `onSelect` callback returns
 a `Principal` and display name; the consumer owns persistence and authorization.
 Pass `existing` to exclude already selected principals. Users and groups are
-searched through Accounts after two characters. All signed-in users are
+searched through Accounts after two characters; personal Linux groups are left
+out, so people are granted directly. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
 Public and service-account selection require `allowPublic` and
 `allowServiceAccounts` respectively. This picker grants no access itself.

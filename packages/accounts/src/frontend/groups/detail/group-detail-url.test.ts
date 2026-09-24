@@ -14,6 +14,7 @@ const listState: GroupsListState = {
   page: 2,
   provider: "ipa",
   scope: "managed",
+  personal: false,
 };
 
 describe("group detail URL helpers", () => {

@@ -706,7 +706,7 @@ suite("Files service and durable bindings", () => {
     await sql`CREATE TABLE IF NOT EXISTS audit.events(id bigserial primary key,action text,outcome text,actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
-    await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer)`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid,home_directory text,login_shell text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
@@ -1812,6 +1812,27 @@ suite("Files service and durable bindings", () => {
     const alice = await service.bases(ipa);
     expect(alice.issues).toEqual([]);
     expect(alice.items.map((item) => [item.area, item.kind, item.name])).toEqual([["freeipa", "users", "alice"]]);
+  });
+  test("a personal Linux group is not offered as a group area while real group areas stay visible", async () => {
+    const actor = await user("quinn");
+    directory("cloud", "users/quinn", 200001, 200004);
+    directory("cloud", "groups/quinn", 0, 200004);
+    directory("cloud", "groups/team", 0, 200003);
+    const [personal] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.groups(name,provider,gid_number) VALUES('quinn','local',200004) RETURNING id`;
+    const [team] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','local',200003) RETURNING id`;
+    await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${personal!.id}),(${id(actor)},${team!.id})`;
+    await sql`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id,home_directory,login_shell)
+      VALUES(${id(actor)},'local',200001,200004,${personal!.id},'/home/quinn','/bin/bash')`;
+    const bases = await service.bases(actor);
+    expect(bases.issues).toEqual([]);
+    expect(bases.items.map((item) => [item.area, item.kind, item.name])).toEqual([
+      ["cloud", "users", "quinn"],
+      ["cloud", "groups", "team"],
+    ]);
   });
   test("guest and global Cloud prerequisite denial occurs before leases", async () => {
     const guest = await user("guest", "local", false, "guest");
