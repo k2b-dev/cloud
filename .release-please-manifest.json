@@ -1,5 +1,5 @@
 {
-  ".": "0.15.0",
-  "packages/cloud": "0.12.0",
-  "packages/ui": "0.5.1"
+  ".": "0.16.0",
+  "packages/cloud": "0.13.0",
+  "packages/ui": "0.6.0"
 }
