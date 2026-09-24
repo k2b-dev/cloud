@@ -31,7 +31,8 @@ export const mailAutomationActionLabel = (action: MailAutomationAction, catalog:
   if (action.kind === "mark_read") return "Mark as read";
   if (action.kind === "add_keyword") return `Add keyword ${action.keyword}`;
   if (action.kind === "move_to_folder") {
-    return `Move to ${catalog.folders.find((folder) => folder.id === action.folderId)?.name ?? "folder"}`;
+    const folder = catalog.folders.find((candidate) => candidate.id === action.folderId);
+    return `Move to ${folder?.path ?? folder?.name ?? "folder"}`;
   }
   if (action.kind === "add_local_tag") {
     return `Add tag ${catalog.localTags?.find((tag) => tag.id === action.tagId)?.name ?? "tag"}`;

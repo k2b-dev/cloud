@@ -20,7 +20,7 @@ import { apiClient } from "../../api/client";
 import type { ConfigurableFolderRole, MailCommand } from "../../contracts";
 import type { MailAdminFolderView } from "../../service/folders";
 import { readApiError } from "./api-response";
-import { buildMailFolderTree, flattenMailFolderTree } from "./mail-folder-tree";
+import { buildMailFolderTree, flattenMailFolderTree, mailFolderPaths } from "./mail-folder-tree";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 type FolderSelectOption = {
@@ -131,24 +131,27 @@ function FolderEditor(props: {
   const closeSafely = async () => {
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
-  const parentOptions = createMemo<FolderSelectOption[]>(() => [
-    {
-      id: TOP_LEVEL_FOLDER_ID,
-      label: messages().topLevel,
-      description: messages().topLevelDescription,
-      icon: "ti ti-folders",
-    },
-    ...flattenMailFolderTree(buildMailFolderTree(props.folders))
-      .filter(({ folder }) => folder.canCreateChildren)
-      .map(({ folder, depth }) => ({
-        id: folder.id,
-        label: `${"- ".repeat(depth)}${folder.name}`,
-        description: `${folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder}${
-          folder.showInSidebar ? "" : ` · ${messages().hiddenInSidebar}`
-        }`,
-        icon: folder.namespaceKinds.includes("shared") ? "ti ti-users" : "ti ti-folder",
-      })),
-  ]);
+  const parentOptions = createMemo<FolderSelectOption[]>(() => {
+    const paths = mailFolderPaths(props.folders);
+    return [
+      {
+        id: TOP_LEVEL_FOLDER_ID,
+        label: messages().topLevel,
+        description: messages().topLevelDescription,
+        icon: "ti ti-folders",
+      },
+      ...flattenMailFolderTree(buildMailFolderTree(props.folders))
+        .filter(({ folder }) => folder.canCreateChildren)
+        .map(({ folder }) => ({
+          id: folder.id,
+          label: paths.get(folder.id) ?? folder.name,
+          description: `${folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder}${
+            folder.showInSidebar ? "" : ` · ${messages().hiddenInSidebar}`
+          }`,
+          icon: folder.namespaceKinds.includes("shared") ? "ti ti-users" : "ti ti-folder",
+        })),
+    ];
+  });
   const selectedParentLabel = () => parentOptions().find((option) => option.id === (parentFolderId() ?? TOP_LEVEL_FOLDER_ID))?.label;
   const fetchParentOptions = async (query: string, signal: AbortSignal): Promise<FolderSelectOption[]> =>
     filterFolderOptions(parentOptions(), query, signal);
@@ -266,16 +269,17 @@ export default function MailFolderSettings(props: {
   ]);
   const [pendingFolderId, setPendingFolderId] = createSignal<string | null>(null);
   const rows = createMemo(() => flattenMailFolderTree(buildMailFolderTree(props.folders)));
-  const roleFolderOptions = createMemo<FolderSelectOption[]>(() =>
-    props.folders
+  const roleFolderOptions = createMemo<FolderSelectOption[]>(() => {
+    const paths = mailFolderPaths(props.folders);
+    return props.folders
       .filter((folder) => folder.selectable && folder.discoveryState === "active")
       .map((folder) => ({
         id: folder.id,
-        label: folder.name,
+        label: paths.get(folder.id) ?? folder.name,
         description: folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder,
         icon: "ti ti-folder",
-      })),
-  );
+      }));
+  });
   const fetchRoleFolderOptions = async (query: string, signal: AbortSignal): Promise<FolderSelectOption[]> =>
     filterFolderOptions(roleFolderOptions(), query, signal);
   const refresh = async () => {

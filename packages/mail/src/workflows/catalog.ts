@@ -1,6 +1,8 @@
 export type MailWorkflowFolderCatalogEntry = {
   id: string;
   name: string;
+  /** Display path including parent folders, such as `Projects / 2025 / Archive`. */
+  path?: string;
   role?: string;
 };
 

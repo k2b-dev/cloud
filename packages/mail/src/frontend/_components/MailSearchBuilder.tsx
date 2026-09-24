@@ -21,6 +21,7 @@ import type { MailSearchExpression, SavedConversationViewScope } from "../../con
 import { type MailSearchState, serializeMailSearchState } from "../../search-state";
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
+import { mailFolderPaths } from "./mail-folder-tree";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 import {
   appendMailSearchExpression,
@@ -103,9 +104,11 @@ function MailSearchConditionEditor(props: {
   const fetchFolders = async (_query: string, signal: AbortSignal) => {
     const response = await apiClient.mailboxes[":mailboxId"].folders.$get({ param: { mailboxId: props.mailboxId } }, { init: { signal } });
     if (!response.ok) throw new Error(await readApiError(response, messages().couldNotLoadMailboxFolders));
-    return (await response.json())
+    const folders = await response.json();
+    const paths = mailFolderPaths(folders);
+    return folders
       .filter((folder) => folder.selectable)
-      .map((folder) => ({ id: folder.id, label: folder.name, description: folder.role, icon: "ti ti-folder" }));
+      .map((folder) => ({ id: folder.id, label: paths.get(folder.id) ?? folder.name, description: folder.role, icon: "ti ti-folder" }));
   };
   const fetchLocalTags = async (query: string, signal: AbortSignal) => {
     const response = await apiClient.mailboxes[":mailboxId"]["local-tags"].$get(

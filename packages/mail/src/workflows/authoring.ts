@@ -14,23 +14,25 @@ const uniqueEntries = <T extends MailWorkflowCatalogEntry>(index: MailWorkflowCa
 
 export const buildMailWorkflowCompletions = (source: string, caret: number, catalog: MailWorkflowCatalog): WorkflowCompletionItem[] => {
   const context = workflowCompletionContext(source, caret);
+  if (context.key === "folder") {
+    // Same-named folders under different parents are ambiguous by name; show the path and insert the stable ID instead.
+    return uniqueEntries(catalog.folders).map((folder) => {
+      const reference = catalog.folders.ambiguous.has(folder.name) ? folder.id : folder.name;
+      return workflowCompletionItem(context, "source", folder.path ?? folder.name, JSON.stringify(reference), folder.id);
+    });
+  }
   const entries =
-    context.key === "folder"
-      ? uniqueEntries(catalog.folders)
-      : context.key === "tag"
-        ? uniqueEntries(catalog.localTags)
-        : context.key === "sender"
-          ? uniqueEntries(catalog.senderIdentities)
-          : context.key === "user"
-            ? [
-                ...new Map(
-                  [...uniqueEntries(catalog.assignableUsers), ...uniqueEntries(catalog.notificationUsers)].map((entry) => [
-                    entry.id,
-                    entry,
-                  ]),
-                ).values(),
-              ]
-            : null;
+    context.key === "tag"
+      ? uniqueEntries(catalog.localTags)
+      : context.key === "sender"
+        ? uniqueEntries(catalog.senderIdentities)
+        : context.key === "user"
+          ? [
+              ...new Map(
+                [...uniqueEntries(catalog.assignableUsers), ...uniqueEntries(catalog.notificationUsers)].map((entry) => [entry.id, entry]),
+              ).values(),
+            ]
+          : null;
   if (entries) {
     return entries.map((entry) => workflowCompletionItem(context, "source", entry.name, JSON.stringify(entry.name), entry.id));
   }

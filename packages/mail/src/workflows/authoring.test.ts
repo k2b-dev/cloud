@@ -28,6 +28,23 @@ describe("Mail workflow authoring completions", () => {
     ]);
   });
 
+  test("labels folders by path and inserts the ID when the name is ambiguous", () => {
+    const folders = buildMailWorkflowCatalog({
+      folders: [
+        { id: "folder-1", name: "Archiv", path: "Projekte / 2025 / Archiv" },
+        { id: "folder-2", name: "Archiv", path: "Projekte / 2024 / Archiv" },
+        { id: "folder-3", name: "Team inbox", path: "Team inbox" },
+      ],
+      assignableUsers: [],
+    });
+    const source = "steps:\n  - moveMessage:\n      folder: ";
+    expect(buildMailWorkflowCompletions(source, source.length, folders).map(({ label, insertText }) => [label, insertText])).toEqual([
+      ["Projekte / 2025 / Archiv", '"folder-1"'],
+      ["Projekte / 2024 / Archiv", '"folder-2"'],
+      ["Team inbox", '"Team inbox"'],
+    ]);
+  });
+
   test("combines assignable and notification users without duplicate ids", () => {
     const source = "steps:\n  - notify:\n      user: ";
     expect(buildMailWorkflowCompletions(source, source.length, catalog).map((item) => item.label)).toEqual(["Ada", "Grace"]);

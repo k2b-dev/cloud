@@ -21,6 +21,7 @@ import { apiClient } from "../../api/client";
 import type { ComposeTemplate, MailComposeFormat, MailPriority, SenderIdentity, SenderIdentityTransport } from "../../contracts";
 import { readApiError } from "./api-response";
 import MailRecipientInput from "./MailRecipientInput";
+import { mailFolderPaths } from "./mail-folder-tree";
 import { EditorHeading, type ProviderSettingsProps } from "./mail-provider-settings-shared";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
 import { mailSettingsMessages } from "./mail-settings-messages";
@@ -73,6 +74,10 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
   const selectableFolders = createMemo(() =>
     props.admin.folders.filter((folder) => folder.selectable && folder.discoveryState === "active"),
   );
+  const folderOptions = createMemo(() => {
+    const paths = mailFolderPaths(props.admin.folders);
+    return selectableFolders().map((folder) => ({ id: folder.id, label: paths.get(folder.id) ?? folder.name, icon: "ti ti-folder" }));
+  });
   const activeBindings = createMemo(() => props.admin.bindings.filter((binding) => binding.state === "active"));
   const mailboxSignatures = createMemo(() =>
     props.mailboxSignatures.filter((template) => template.kind === "signature" && template.scope === "mailbox"),
@@ -705,7 +710,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   description={messages().sentFolderDescription}
                   value={sentFolderId}
                   onValueChange={setSentFolderId}
-                  options={selectableFolders().map((folder) => ({ id: folder.id, label: folder.name, icon: "ti ti-folder" }))}
+                  options={folderOptions()}
                   clearable
                 />
                 <Select
@@ -713,7 +718,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   description={messages().draftsFolderDescription}
                   value={draftsFolderId}
                   onValueChange={setDraftsFolderId}
-                  options={selectableFolders().map((folder) => ({ id: folder.id, label: folder.name, icon: "ti ti-folder" }))}
+                  options={folderOptions()}
                   clearable
                 />
                 <Show
