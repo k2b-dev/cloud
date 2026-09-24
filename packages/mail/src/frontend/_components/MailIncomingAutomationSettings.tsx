@@ -1944,6 +1944,16 @@ export default function MailIncomingAutomationSettings(props: {
             }
             if (backfill.state === "completed")
               return <StatusBadge tone="ok" label={messages().completedNew({ count: formatNumber(backfill.newlyAcceptedCount) })} />;
+            if (backfill.state === "limited")
+              return (
+                <StatusBadge
+                  tone="warning"
+                  label={messages().limitedNew({
+                    count: formatNumber(backfill.newlyAcceptedCount),
+                    remaining: formatNumber(backfill.remainingCount),
+                  })}
+                />
+              );
             if (backfill.state === "failed") return <StatusBadge tone="warning" label={messages().failed} />;
             return <StatusBadge tone="neutral" label={messages().canceled} />;
           }
