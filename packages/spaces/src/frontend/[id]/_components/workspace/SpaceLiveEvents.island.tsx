@@ -1,11 +1,14 @@
 import { createLiveWebSocket } from "@k2b/cloud/browser/live";
-import { onCleanup, onMount } from "solid-js";
+import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { Button, NoticeCard } from "@k2b/ui";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import {
   parseSpaceLiveServerMessage,
   SPACE_LIVE_WS_TYPE,
   type SpaceLiveClientMessage,
   type SpaceLiveServerMessage,
 } from "../../../../live-events";
+import { useSpaceMessages } from "../../messages";
 import { createSpacesLiveCursorQueue, invalidateSpacesData } from "./workspace-events";
 
 type Props = {
@@ -14,8 +17,14 @@ type Props = {
 };
 
 export default function SpaceLiveEvents(props: Props) {
+  const t = useSpaceMessages();
+  const [unavailable, setUnavailable] = createSignal(false);
   onMount(() => {
     let disposed = false;
+    // A condition that persists across loads must not reload the page forever.
+    const reload = () => {
+      if (!disposed && !reloadOnce(`spaces:live:${props.spaceId}`)) setUnavailable(true);
+    };
     const connection = createLiveWebSocket<SpaceLiveServerMessage>({
       url: "/api/spaces/ws",
       initialCursor: props.initialCursor,
@@ -40,7 +49,7 @@ export default function SpaceLiveEvents(props: Props) {
         if (message.type === SPACE_LIVE_WS_TYPE.event) {
           const eventType = message.payload.event.type;
           if (eventType.startsWith("space.") || eventType === "access.changed") {
-            window.location.reload();
+            reload();
             return;
           }
           const domains = eventType.startsWith("item.") ? (["view", "detail"] as const) : (["view", "wormholes"] as const);
@@ -51,18 +60,14 @@ export default function SpaceLiveEvents(props: Props) {
           controls.terminate({ code: message.payload.code, message: message.payload.message });
         }
       },
-      onFatal: () => {
-        if (!disposed) window.location.reload();
-      },
+      onFatal: reload,
     });
     const applyCursor = createSpacesLiveCursorQueue({
       invalidate: (domains, cursor, itemId) => (disposed ? Promise.resolve() : invalidateSpacesData(domains, cursor, itemId)),
       markApplied: (cursor) => {
         if (!disposed) connection.markApplied(cursor);
       },
-      onFailure: () => {
-        if (!disposed) window.location.reload();
-      },
+      onFailure: reload,
     });
 
     connection.connect();
@@ -72,5 +77,15 @@ export default function SpaceLiveEvents(props: Props) {
     });
   });
 
-  return null;
+  return (
+    <Show when={unavailable()}>
+      <div class="mb-[var(--ui-space-shell)] shrink-0" role="status">
+        <NoticeCard tone="neutral" icon="ti ti-refresh" title={t.liveUpdatesUnavailable}>
+          <Button variant="secondary" class="mt-3" onClick={() => window.location.reload()}>
+            {t.reload}
+          </Button>
+        </NoticeCard>
+      </div>
+    </Show>
+  );
 }

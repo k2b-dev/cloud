@@ -1,3 +1,4 @@
+import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { documentNavigate, listenPopState, navigate } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
@@ -93,7 +94,7 @@ export const useSpacesListQuery = (props: { initialSource: string; initialItemsR
     }
   });
   createEffect(() => {
-    if (view.error() instanceof SpacesViewUnavailableError) window.location.reload();
+    if (view.error() instanceof SpacesViewUnavailableError) reloadOnce(`spaces:view:${window.location.pathname}`);
   });
 
   const open = (href: string, history: "replace" | "popstate" = "replace") => {

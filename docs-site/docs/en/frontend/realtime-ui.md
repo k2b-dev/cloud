@@ -102,6 +102,11 @@ Close codes `1011` and `1013` are also terminal by default. Return `null` from
 a custom `classifyClose` handler only when the application can safely
 reconnect.
 
+On the server, close with `1012` when a lookup throws because infrastructure
+is briefly unavailable, for example the stream cursor or the session store.
+The client reconnects with backoff, and the new subscription checks access
+again. Keep `1008` for access decisions.
+
 ## Preserve reload behavior
 
 The gateway reports abnormal upstream disconnects and failed upstream connection
@@ -110,6 +115,23 @@ Explicit application close codes, including terminal `1011`, are preserved.
 
 The URL must still identify the visible resource and view. A reload asks the
 server for a fresh authorized result.
+
+Reload automatically, from a live event, a terminal close, or a failed
+invalidation, only through `reloadOnce(key)` from `@k2b/cloud/browser/reload`.
+It reloads at most once per key within 30 seconds in the tab, so a condition
+that persists after the reload cannot reload the page in a loop. When it
+returns `false`, keep the page usable and offer a reload button instead:
+
+```ts
+import { reloadOnce } from "@k2b/cloud/browser/reload";
+
+onFatal: () => {
+  if (!reloadOnce(`tasks:live:${boardId}`)) setLiveUnavailable(true);
+},
+```
+
+`reloadOnce` also returns `false` when `sessionStorage` is unavailable. A
+reload that follows an explicit user action does not need the guard.
 
 Do not keep the only copy of edits or selected resources in the socket client.
 
