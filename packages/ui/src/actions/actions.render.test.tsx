@@ -225,6 +225,36 @@ describe("@k2b/ui complete action migrations", () => {
     expect(wrapped[0]).toContain("Creating a new client");
   });
 
+  test("start-aligns row content across buttons and links with a filling label", () => {
+    expect(renderToString(() => createComponent(Button, { children: "Save" }))).not.toContain("data-align");
+    expect(renderToString(() => createComponent(Button, { align: "center", children: "Save" }))).not.toContain("data-align");
+    const rows = [
+      renderToString(() => createComponent(Button, { align: "start", children: "Maria Kolb" })),
+      renderToString(() => createComponent(ButtonLink, { align: "start", href: "/users/1", children: "Maria Kolb" })),
+      renderToString(() =>
+        createComponent(ButtonLink, {
+          align: "start",
+          href: "/users/1",
+          navigation: "enhanced",
+          onNavigate: () => {},
+          children: "Maria Kolb",
+        }),
+      ),
+    ];
+    for (const html of rows) {
+      expect(html).toContain('data-align="start"');
+      expect(html).not.toMatch(/\salign=/);
+    }
+
+    const button = rule('.k2b-ui .k2b-button[data-align="start"]');
+    expect(button).toContain("justify-content: flex-start");
+    expect(button).toContain("text-align: start");
+    const label = rule('.k2b-ui .k2b-button[data-align="start"] > .k2b-button__label');
+    expect(label).toContain("flex: 1 1 auto");
+    expect(label).toContain("min-width: 0");
+    expect(label).toContain("justify-content: flex-start");
+  });
+
   test("renders surface-free text actions through the shared button contract", () => {
     const button = renderToString(() => createComponent(Button, { size: "xs", variant: "text", children: "More" }));
     const link = renderToString(() => createComponent(ButtonLink, { href: "/more", size: "sm", variant: "text", children: "More" }));

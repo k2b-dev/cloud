@@ -62,6 +62,26 @@ actions when space is limited. Set `wrap` on `Button` or `ButtonLink` for
 deliberately long or rich content that should wrap within the available width.
 This also applies to buttons composed through `SplitButton`.
 
+Button content is centered by default. Set `align="start"` on `Button` or
+`ButtonLink` for a full-width row, such as a result or selection list. The row
+content then starts at the leading edge, and the label fills the button. A
+`min-w-0 flex-1` text block pushes trailing content, such as an action icon or
+a tag, to the end. With `truncate`, long text ends in an ellipsis before it can
+push that trailing content out. Button styles always win over utility classes,
+so `justify-start` on a button has no effect; use `align` instead. `SplitButton`
+does not take `align`.
+
+```tsx
+<Button variant="ghost" align="start" class="w-full" onClick={select}>
+  <Avatar name="Maria Kolb" size="sm" />
+  <span class="min-w-0 flex-1">
+    <span class="block truncate">Maria Kolb</span>
+    <span class="block truncate text-xs">maria@example.com</span>
+  </span>
+  <i class="ti ti-plus" aria-hidden="true" />
+</Button>
+```
+
 Hover preserves each variant's color hierarchy. Pressing an immediate action adds a subtle inward scale without adding shadow depth or changing layout; a split button's main action moves the compound control, while its menu trigger opens without scaling. Reduced-motion preferences keep the color feedback without the scale.
 
 Use `SplitButton` when one immediate action has closely related alternatives. The main segment remains a native button; the icon-only segment opens the existing `DropdownItem` menu contract. `variant`, `size`, `disabled`, and `loading` apply to both segments. `menuLabel` is required as the secondary trigger's accessible name.

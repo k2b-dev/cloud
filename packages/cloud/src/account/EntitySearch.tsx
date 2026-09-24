@@ -339,7 +339,7 @@ const ResultRow = (props: {
   disabled?: boolean;
   onSelect: () => void;
 }) => (
-  <Button onClick={props.onSelect} disabled={props.disabled} variant="ghost" class="w-full justify-start gap-3 text-left">
+  <Button onClick={props.onSelect} disabled={props.disabled} variant="ghost" align="start" class="w-full">
     <Show
       when={props.avatar}
       fallback={

@@ -829,12 +829,12 @@ export default function MailComposer(props: {
           />
           <div class="flex flex-col gap-2">
             <Show when={props.calendarIntegrationAvailable}>
-              <Button variant="secondary" type="button" class="w-full justify-start" onClick={() => close("calendar")}>
+              <Button variant="secondary" type="button" align="start" class="w-full" onClick={() => close("calendar")}>
                 <i class="ti ti-calendar-plus" aria-hidden="true" />
                 {t().addCalendarInvitation}
               </Button>
             </Show>
-            <Button variant="secondary" type="button" class="w-full justify-start" onClick={() => close("delivery")}>
+            <Button variant="secondary" type="button" align="start" class="w-full" onClick={() => close("delivery")}>
               <i class="ti ti-mail-cog" aria-hidden="true" />
               {t().deliveryOptions}
               <Show when={deliveryOptionsSummary().length > 0}>

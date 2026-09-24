@@ -263,7 +263,7 @@ export default function FileDetailPanel(props: FileDetailPanelProps) {
                     {(entry) => {
                       const label = () => (entry.icon === "ti ti-eye" && canOpenFileInline(currentFile()) ? t().preview : entry.label);
                       return entry.variant === "danger" ? (
-                        <Button variant="danger" size="sm" class="justify-start" title={entry.label} onClick={() => runAction(entry)}>
+                        <Button variant="danger" size="sm" align="start" title={entry.label} onClick={() => runAction(entry)}>
                           {entry.icon && <i class={entry.icon} aria-hidden="true" />}
                           <span>{label()}</span>
                         </Button>

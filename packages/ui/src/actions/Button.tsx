@@ -4,10 +4,13 @@ import { Tooltip, type TooltipPlacement } from "../feedback/Tooltip";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "text" | "subtle" | "input" | "warning" | "danger" | "success" | "ai";
 export type ButtonSize = "xs" | "sm" | "md" | "lg";
+export type ButtonAlign = "center" | "start";
 
 export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
   /** Allow a deliberately long or rich label to wrap. Defaults to false. */
   wrap?: boolean;
+  /** Start-align the content and let the label fill the button, for full-width rows. Defaults to `"center"`. */
+  align?: ButtonAlign;
   loading?: boolean;
   loadingLabel?: string;
   size?: ButtonSize;
@@ -20,6 +23,8 @@ export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
 export type ButtonLinkProps = Omit<JSX.AnchorHTMLAttributes<HTMLAnchorElement>, "onClick"> & {
   /** Allow a deliberately long or rich label to wrap. Defaults to false. */
   wrap?: boolean;
+  /** Start-align the content and let the label fill the button, for full-width rows. Defaults to `"center"`. */
+  align?: ButtonAlign;
   navigation?: "document" | "enhanced";
   onClick?: JSX.EventHandlerUnion<HTMLAnchorElement, MouseEvent>;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
@@ -49,6 +54,7 @@ export function Button(props: ButtonProps): JSX.Element {
     "type",
     "variant",
     "wrap",
+    "align",
   ]);
   let target: HTMLButtonElement | undefined;
   const setRef = (element: HTMLButtonElement) => {
@@ -65,6 +71,7 @@ export function Button(props: ButtonProps): JSX.Element {
       data-size={local.size ?? "md"}
       data-variant={local.variant ?? "primary"}
       data-wrap={local.wrap || undefined}
+      data-align={local.align === "start" ? "start" : undefined}
       disabled={local.disabled || local.loading}
       aria-busy={local.loading ? "true" : undefined}
     >
@@ -112,6 +119,7 @@ export function ButtonLink(props: ButtonLinkProps): JSX.Element {
     "tooltipPlacement",
     "variant",
     "wrap",
+    "align",
   ]);
   let target: HTMLAnchorElement | undefined;
   const setRef = (element: HTMLAnchorElement) => {
@@ -138,6 +146,7 @@ export function ButtonLink(props: ButtonLinkProps): JSX.Element {
           data-size={local.size ?? "md"}
           data-variant={local.variant ?? "primary"}
           data-wrap={local.wrap || undefined}
+          data-align={local.align === "start" ? "start" : undefined}
           onClick={local.onClick}
           onNavigate={local.onNavigate}
           replace={local.replace}
@@ -160,6 +169,7 @@ export function ButtonLink(props: ButtonLinkProps): JSX.Element {
         data-size={local.size ?? "md"}
         data-variant={local.variant ?? "primary"}
         data-wrap={local.wrap || undefined}
+        data-align={local.align === "start" ? "start" : undefined}
         onClick={local.onClick}
       >
         {content}
