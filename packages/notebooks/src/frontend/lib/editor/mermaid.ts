@@ -4,13 +4,16 @@ import { RangeSet } from "@codemirror/state";
 import { Decoration, type EditorView, WidgetType } from "@codemirror/view";
 import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
 import mermaid from "mermaid";
-import { notebookWorkspaceMessages } from "../../[id]/messages";
+import { createComponent, createSignal } from "solid-js";
+import { render } from "solid-js/web";
+import { deriveNoteTitle, hasUsableNoteTitle } from "../../../lib/note-title";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
+import { MermaidEditorPreview, type MermaidPreviewState } from "./mermaid-preview";
 
 const isDarkTheme = () => document.documentElement.classList.contains("dark");
 
@@ -19,20 +22,6 @@ const svgCacheKey = (code: string) => `${isDarkTheme() ? "dark" : "light"}\n${co
 
 const globalSvgCache = new Map<string, { svg: string; timestamp: number }>();
 const SVG_CACHE_MAX = 50;
-
-/** Constrain the first <svg> child of `host` so diagrams fit their
- *  wrapper without overflowing. Called from both render paths
- *  (cache-hit + fresh mermaid render); extracted to keep the two
- *  in sync. */
-const applySvgConstraints = (host: HTMLElement): void => {
-  const svg = host.querySelector("svg");
-  if (!svg) return;
-  svg.style.maxWidth = "90%";
-  svg.style.maxHeight = "90%";
-  svg.style.width = "auto";
-  svg.style.height = "auto";
-  svg.style.objectFit = "contain";
-};
 
 /** Single-pass min-by-timestamp over the cache. The previous
  *  `Array.from(...).sort()[0]` allocated + sorted the whole map
@@ -60,6 +49,7 @@ class MermaidWidget extends WidgetType {
   private id: string;
   private fromPos: number;
   private renderTimer: ReturnType<typeof setTimeout> | null = null;
+  private dispose?: () => void;
 
   constructor({ code, id, fromPos }: MermaidBlockParams) {
     super();
@@ -76,47 +66,51 @@ class MermaidWidget extends WidgetType {
     const container = document.createElement("div");
     container.className = "cm-mermaid-widget !m-0";
     container.setAttribute("contenteditable", "false");
-    container.onmousedown = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+    const edit = () => {
       view.dispatch({ selection: { anchor: this.fromPos }, scrollIntoView: true });
       view.focus();
     };
+    // At fit a press edits the source, as it always has. Zoomed in, a press
+    // may start a pan, so only a click without dragging edits.
+    const zoomedIn = () => container.querySelector(".k2b-zoom-pan[data-zoomed]") !== null;
+    const onControl = (event: Event) => event.target instanceof Element && event.target.closest("button") !== null;
+    container.onmousedown = (event) => {
+      if (onControl(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!zoomedIn()) edit();
+    };
+    container.onclick = (event) => {
+      if (!onControl(event) && zoomedIn()) edit();
+    };
 
     const wrapper = document.createElement("div");
-    wrapper.className =
-      "rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4 overflow-auto flex items-center justify-center";
+    wrapper.className = "rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] overflow-hidden";
     wrapper.style.height = "min(30vh, 400px)";
     wrapper.style.minHeight = "200px";
 
-    const renderDiv = document.createElement("div");
-    renderDiv.id = this.id;
-    renderDiv.className = "flex justify-center items-center w-full h-full";
-
     const cached = globalSvgCache.get(svgCacheKey(this.code));
-    if (cached && cached.svg) {
-      // Cache hit: write the SVG straight in and skip the
-      // mermaid.render call entirely. The cache key is the theme plus
-      // `this.code`, so a hit means the input is unchanged — a
-      // re-render would just produce the same SVG. Bump the
-      // timestamp so the LRU reflects "recently used", not
-      // "recently fetched".
-      renderDiv.innerHTML = cached.svg;
-      applySvgConstraints(renderDiv);
-      cached.timestamp = Date.now();
-    } else {
-      const loading = notebookWorkspaceMessages.resolve([document.documentElement.lang]).t.loadingDiagram;
-      renderDiv.innerHTML = `
-        <div class="flex items-center gap-2 text-gray-500">
-          <i class="ti ti-loader animate-spin"></i>
-          <span class="text-sm">${loading}</span>
-        </div>`;
-      // Only schedule the expensive mermaid.render (~50–200ms
-      // Dagre layout) when there is nothing cached to display.
-      this.debouncedRender(renderDiv);
-    }
+    // Cache hit: show the SVG straight away and skip mermaid.render. The key is
+    // the theme plus `this.code`, so a re-render would produce the same SVG.
+    // Bump the timestamp so the LRU reflects "recently used".
+    if (cached) cached.timestamp = Date.now();
+    const [state, setState] = createSignal<MermaidPreviewState>(cached ? { kind: "ready", svg: cached.svg } : { kind: "loading" });
+    this.dispose = render(
+      () =>
+        createComponent(MermaidEditorPreview, {
+          state,
+          title: () => {
+            const markdown = view.state.doc.toString();
+            return hasUsableNoteTitle(markdown) ? deriveNoteTitle(markdown) : null;
+          },
+          exportSvg: () => this.renderExportSvg(),
+        }),
+      wrapper,
+    );
+    // Only schedule the expensive mermaid.render (~50–200ms Dagre layout)
+    // when there is nothing cached to display.
+    if (!cached) this.debouncedRender(setState);
 
-    wrapper.appendChild(renderDiv);
     container.appendChild(wrapper);
     return container;
   }
@@ -125,70 +119,52 @@ class MermaidWidget extends WidgetType {
    *  deleted the code block, scrolled it out of the viewport, or
    *  the doc changed enough to invalidate the decoration). Without
    *  this, the 500ms debounced timer keeps a reference to the
-   *  detached element and fires `element.innerHTML = svg` on a
-   *  node that is no longer in the document — wasted work that
-   *  piles up on rapid edits. */
+   *  detached element and renders into a node that is no longer in
+   *  the document — wasted work that piles up on rapid edits. */
   override destroy(_dom: HTMLElement) {
     if (this.renderTimer) {
       clearTimeout(this.renderTimer);
       this.renderTimer = null;
     }
+    this.dispose?.();
+    this.dispose = undefined;
   }
 
-  private debouncedRender(element: HTMLElement) {
+  private debouncedRender(setState: (state: MermaidPreviewState) => void) {
     if (this.renderTimer) clearTimeout(this.renderTimer);
 
     this.renderTimer = setTimeout(() => {
       this.renderTimer = null;
-      this.renderDiagram(element);
+      void this.renderDiagram(setState);
     }, 500);
   }
 
-  private async renderDiagram(element: HTMLElement) {
+  private async renderDiagram(setState: (state: MermaidPreviewState) => void) {
     try {
       const cacheKey = svgCacheKey(this.code);
       mermaid.initialize(mermaidConfig({ dark: isDarkTheme() }));
-      const cached = globalSvgCache.get(cacheKey);
-      const now = Date.now();
       const renderId = `${this.id}-${Date.now()}`;
       const { svg } = await mermaid.render(renderId, this.code);
 
-      globalSvgCache.set(cacheKey, { svg, timestamp: now });
+      globalSvgCache.set(cacheKey, { svg, timestamp: Date.now() });
 
       if (globalSvgCache.size > SVG_CACHE_MAX) evictOldestSvg();
 
-      if (!cached || cached.svg !== svg) {
-        element.innerHTML = svg;
-        element.className = "flex justify-center items-center w-full h-full";
-        applySvgConstraints(element);
-      }
+      if (this.dispose) setState({ kind: "ready", svg });
     } catch (error) {
-      const t = notebookWorkspaceMessages.resolve([document.documentElement.lang]).t;
-      element.replaceChildren();
-      const box = document.createElement("div");
-      box.className = "flex flex-col items-center gap-2 text-red-500 p-4";
+      if (this.dispose) setState({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
 
-      const icon = document.createElement("i");
-      icon.className = "ti ti-alert-circle text-2xl";
-
-      const label = document.createElement("span");
-      label.className = "text-sm font-mono";
-      label.textContent = t.invalidMermaid;
-
-      const details = document.createElement("details");
-      details.className = "text-xs text-gray-500 max-w-full";
-
-      const summary = document.createElement("summary");
-      summary.className = "cursor-pointer hover:text-gray-700 dark:hover:text-gray-300";
-      summary.textContent = t.showErrorDetails;
-
-      const pre = document.createElement("pre");
-      pre.className = "mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded text-left overflow-x-auto";
-      pre.textContent = error instanceof Error ? error.message : String(error);
-
-      details.append(summary, pre);
-      box.append(icon, label, details);
-      element.appendChild(box);
+  /** Exports need SVG text labels: HTML labels (foreignObject) taint a canvas and
+   *  render poorly outside a browser. Restore the preview config afterwards. */
+  private async renderExportSvg(): Promise<string> {
+    const config = mermaidConfig({ dark: isDarkTheme() });
+    mermaid.initialize({ ...config, htmlLabels: false });
+    try {
+      return (await mermaid.render(`${this.id}-export-${Date.now()}`, this.code)).svg;
+    } finally {
+      mermaid.initialize(config);
     }
   }
 

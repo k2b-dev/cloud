@@ -1,3 +1,7 @@
+import { createComponent } from "solid-js";
+import { render } from "solid-js/web";
+import { MermaidViewport } from "../../../lib/mermaid-viewport";
+
 /** Enhance static source figures without ever mounting returned SVG as live DOM. */
 export async function enhanceBookMermaid(
   root: HTMLElement,
@@ -9,6 +13,7 @@ export async function enhanceBookMermaid(
   const active = () => !signal.aborted && root.isConnected;
   if (!active()) return;
   signal.addEventListener("abort", () => cleanups.splice(0).forEach((cleanup) => cleanup()), { once: true });
+  const title = root.getAttribute("aria-label");
   for (const figure of Array.from(root.querySelectorAll<HTMLElement>(".notebook-book-mermaid"))) {
     if (!active()) return;
     const pre = figure.querySelector("pre");
@@ -30,11 +35,33 @@ export async function enhanceBookMermaid(
       const svg = await renderSvg(code.textContent ?? "", `book-mermaid-${crypto.randomUUID()}`);
       if (!active()) return;
       const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-      const image = document.createElement("img");
-      image.alt = caption?.textContent ?? "";
-      image.className = "notebook-book-diagram";
-      image.style.maxWidth = "100%";
-      image.style.height = "auto";
+      const createImage = () => {
+        const image = document.createElement("img");
+        image.alt = caption?.textContent ?? "";
+        image.className = "notebook-book-diagram";
+        image.src = url;
+        return image;
+      };
+      // SVG image context disables scripts, embedded document access and click
+      // bindings. Do not replace this sink with innerHTML or bindFunctions.
+      const image = createImage();
+      let inline: HTMLImageElement | undefined = image;
+      const host = document.createElement("div");
+      const dispose = render(
+        () =>
+          createComponent(MermaidViewport, {
+            class: "notebook-book-diagram-view",
+            // The first call mounts the tracked inline image; fullscreen gets its own copy.
+            diagram: () => {
+              const next = inline ?? createImage();
+              inline = undefined;
+              return next;
+            },
+            title,
+            exportSvg: () => svg,
+          }),
+        host,
+      );
       const details = document.createElement("details");
       const summary = document.createElement("summary");
       summary.textContent = caption?.textContent ?? "";
@@ -46,17 +73,16 @@ export async function enhanceBookMermaid(
         figure.append(details);
       };
       image.onerror = () => {
-        image.remove();
+        dispose();
+        host.remove();
         fail();
       };
-      // SVG image context disables scripts, embedded document access and click
-      // bindings. Do not replace this sink with innerHTML or bindFunctions.
-      image.src = url;
-      figure.prepend(image);
+      figure.prepend(host);
       cleanups.push(() => {
         image.onload = null;
         image.onerror = null;
-        image.remove();
+        dispose();
+        host.remove();
         if (caption) figure.append(caption);
         figure.append(pre);
         details.remove();

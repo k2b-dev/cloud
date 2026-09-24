@@ -32,7 +32,9 @@ import {
   TemplatePreview,
   TemplateSampleData,
   TextInput,
+  toast,
   useLocale,
+  ZoomPanViewport,
 } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -380,6 +382,62 @@ const MediaDemo = () => {
   );
 };
 
+const demoDiagram = () => (
+  <svg viewBox="0 0 480 160" width="480" height="160" role="img" aria-label="Request flow" style={{ color: "var(--k2b-text)" }}>
+    <g fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="10" y="60" width="100" height="40" rx="6" />
+      <rect x="190" y="20" width="100" height="40" rx="6" />
+      <rect x="190" y="100" width="100" height="40" rx="6" />
+      <rect x="370" y="60" width="100" height="40" rx="6" />
+      <path d="M110 80 L190 40 M110 80 L190 120 M290 40 L370 80 M290 120 L370 80" />
+    </g>
+    <g fill="currentColor" font-size="13" text-anchor="middle" font-family="inherit">
+      <text x="60" y="85">
+        Request
+      </text>
+      <text x="240" y="45">
+        Cache
+      </text>
+      <text x="240" y="125">
+        Database
+      </text>
+      <text x="420" y="85">
+        Response
+      </text>
+    </g>
+  </svg>
+);
+
+const ZoomPanDemo = () => (
+  <DemoCard
+    id="zoom-pan"
+    chip={{ kind: "component", name: "ZoomPanViewport", from: "@k2b/ui" }}
+    description="A diagram that zooms to 8×, pans above fit, and opens fullscreen with caller-owned export actions."
+    code={`<ZoomPanViewport
+  label="Diagram"
+  fullscreen={{
+    title: "Request flow",
+    content: () => <Diagram />,
+    actions: [{ label: "Download SVG", icon: "ti ti-download", onSelect: downloadSvg }],
+  }}
+>
+  <Diagram />
+</ZoomPanViewport>`}
+  >
+    <ZoomPanViewport
+      label="Request flow diagram"
+      style={{ "box-shadow": "inset 0 0 0 1px var(--k2b-border)" }}
+      fullscreen={{
+        title: "Request flow",
+        content: demoDiagram,
+        actions: [{ label: "Download SVG", icon: "ti ti-download", onSelect: () => void toast("The application supplies the export.") }],
+      }}
+    >
+      {demoDiagram()}
+    </ZoomPanViewport>
+  </DemoCard>
+);
+
 type DemoFile = {
   encoding: "utf8" | "base64";
   content: string;
@@ -703,6 +761,7 @@ const demos: DemoSection = {
   media: () => (
     <DemoGrid columns="one">
       <MediaDemo />
+      <ZoomPanDemo />
     </DemoGrid>
   ),
   files: () => (

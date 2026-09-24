@@ -20,7 +20,8 @@ export interface DialogOptions {
   confirmText?: string;
   cancelText?: string | false;
   variant?: "danger" | "primary" | "success";
-  size?: "small" | "medium" | "large" | "wide";
+  /** `full` fills the available viewport and becomes edge-to-edge on narrow screens. */
+  size?: "small" | "medium" | "large" | "wide" | "full";
   surface?: "default" | "bare";
   header?: false;
   cancelBehavior?: OpenDialogOptions["cancelBehavior"];

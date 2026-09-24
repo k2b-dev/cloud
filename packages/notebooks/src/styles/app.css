@@ -147,6 +147,12 @@
   max-width: 100%;
   height: auto;
 }
+/* Zoomable diagram: an inset frame shows the pan bounds without lifting the figure. */
+.notebook-book-content .notebook-book-diagram-view {
+  margin: 1.25rem 0 0.5rem;
+  background: var(--ui-surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--ui-border);
+}
 .notebook-book-content :is(.md-table-wrap, .notebook-book-query) {
   overflow-x: auto;
 }
