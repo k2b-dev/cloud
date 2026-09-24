@@ -7,6 +7,13 @@ import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/brow
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 
+/** Only a stable, machine-readable code reaches the dialog; server prose never does. */
+const safeErrorCode = async (res: { status: number; json: () => Promise<unknown> }): Promise<string> => {
+  const body = await res.json().catch(() => null);
+  const code = body && typeof body === "object" && "code" in body ? body.code : null;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : `HTTP ${res.status}`;
+};
+
 type Props = {
   initialPasskeys: WebAuthnPasskey[];
   surface?: "paper" | "section";
@@ -88,16 +95,44 @@ export default function PasskeysSettings(props: Props) {
     onError: (err) => prompts.error(err.message),
   });
 
-  const deleteMutation = mutations.create<void, { id: string; name: string }, { id: string }>({
-    onBefore: (vars) => ({ id: vars.id }),
+  /** Reloads the list from the server; keeps the current list when the reload itself fails. */
+  const reload = async (): Promise<boolean> => {
+    try {
+      const res = await apiClient.me.passkeys.$get();
+      if (!res.ok) return false;
+      setPasskeys((await res.json()).items);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const dropLocally = (id: string) => setPasskeys(passkeys().filter((passkey) => passkey.id !== id));
+
+  const deleteFailure = (status: number): string => {
+    if (status === 401) return t().passkeyDeleteSessionExpired;
+    if (status === 403) return t().passkeyDeleteForbidden;
+    if (status === 404) return t().passkeyDeleteNotFound;
+    return t().passkeyDeleteFailed;
+  };
+
+  const deleteMutation = mutations.create<void, { id: string; name: string }>({
     mutation: async (vars) => {
-      const res = await apiClient.me.passkeys[":id"].$delete({ param: { id: vars.id } });
-      if (!res.ok) {
-        throw new Error(t().passkeyDeleteFailed);
+      const res = await apiClient.me.passkeys[":id"].$delete({ param: { id: vars.id } }).catch(() => null);
+      if (!res) {
+        // No response: the deletion may or may not have happened, so show the server's state.
+        await reload();
+        throw new Error(t().passkeyDeleteUnconfirmed);
       }
-    },
-    onSuccess: (_, ctx) => {
-      if (ctx?.id) setPasskeys(passkeys().filter((passkey) => passkey.id !== ctx.id));
+      // After a confirmed deletion the server's list is the truth; fall back to the local list offline.
+      if (res.ok) {
+        if (!(await reload())) dropLocally(vars.id);
+        return;
+      }
+      const code = await safeErrorCode(res);
+      // The delete is owner-scoped, so 404 means this account has no such passkey (any more).
+      if (res.status === 404 && !(await reload())) dropLocally(vars.id);
+      throw new Error(`${deleteFailure(res.status)} ${t().errorCode({ code })}`);
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -167,6 +202,7 @@ export default function PasskeysSettings(props: Props) {
                   variant="ghost"
                   size="sm"
                   class="shrink-0 text-red-600 dark:text-red-400"
+                  disabled={deleteMutation.loading()}
                   onClick={() => remove(passkey)}
                 >
                   <i class="ti ti-trash" />

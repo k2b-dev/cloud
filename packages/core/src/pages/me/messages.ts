@@ -149,7 +149,13 @@ export const accountMessages = i18n.define({
       passkeysUnsupported: "This browser does not support passkeys.",
       passkeyRegistrationFailed: "Failed to start passkey registration.",
       passkeyAddFailed: "Failed to add passkey.",
-      passkeyDeleteFailed: "Failed to delete passkey.",
+      passkeyDeleteFailed: "Cloud could not delete the passkey, so it is still active. Try again in a moment.",
+      passkeyDeleteSessionExpired: "Your session has expired, so the passkey is still active. Sign in again and retry.",
+      passkeyDeleteForbidden: "This sign-in cannot manage passkeys, so the passkey is still active. Sign in to Cloud directly and retry.",
+      passkeyDeleteNotFound: "This passkey no longer exists; it was probably removed already. The list has been refreshed.",
+      passkeyDeleteUnconfirmed:
+        "The connection failed before Cloud confirmed the deletion. Check your connection and reload the page to see whether the passkey is still active.",
+      errorCode: ({ code }: { code: string }) => `Error code: ${code}`,
       deletePasskeyConfirm: ({ name }: { name: string }) => `Delete "${name}"? This passkey will no longer sign in to your account.`,
       deletePasskey: "Delete passkey",
       passkeys: "Passkeys",
@@ -495,7 +501,15 @@ export const accountMessages = i18n.define({
       passkeysUnsupported: "Dieser Browser unterstützt keine Passkeys.",
       passkeyRegistrationFailed: "Die Passkey-Registrierung konnte nicht gestartet werden.",
       passkeyAddFailed: "Der Passkey konnte nicht hinzugefügt werden.",
-      passkeyDeleteFailed: "Der Passkey konnte nicht gelöscht werden.",
+      passkeyDeleteFailed: "Cloud konnte den Passkey nicht löschen, er ist also weiterhin aktiv. Versuche es gleich noch einmal.",
+      passkeyDeleteSessionExpired:
+        "Deine Sitzung ist abgelaufen, der Passkey ist also weiterhin aktiv. Melde dich erneut an und versuche es noch einmal.",
+      passkeyDeleteForbidden:
+        "Mit dieser Anmeldung lassen sich keine Passkeys verwalten, der Passkey ist also weiterhin aktiv. Melde dich direkt bei Cloud an und versuche es noch einmal.",
+      passkeyDeleteNotFound: "Diesen Passkey gibt es nicht mehr; er wurde vermutlich bereits entfernt. Die Liste wurde aktualisiert.",
+      passkeyDeleteUnconfirmed:
+        "Die Verbindung ist abgebrochen, bevor Cloud das Löschen bestätigt hat. Prüfe deine Verbindung und lade die Seite neu, um zu sehen, ob der Passkey noch aktiv ist.",
+      errorCode: ({ code }) => `Fehlercode: ${code}`,
       deletePasskeyConfirm: ({ name }) =>
         `„${name}“ löschen? Dieser Passkey kann danach nicht mehr zur Anmeldung bei deinem Konto verwendet werden.`,
       deletePasskey: "Passkey löschen",
