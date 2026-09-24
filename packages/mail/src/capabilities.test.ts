@@ -830,6 +830,59 @@ describe("mail capabilities", () => {
     });
   });
 
+  test("names the move destination by its full folder path", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+    } as never);
+    const folder = (id: string, name: string, parentId: string | null) => ({
+      id,
+      parentId,
+      name,
+      role: "custom",
+      providerRole: "custom",
+      configuredRole: null,
+      selectable: true,
+      showInSidebar: true,
+      namespaceKinds: ["personal" as const],
+      discoveryState: "active" as const,
+      missingSince: null,
+      syncStatus: "current",
+      total: 0,
+      unread: 0,
+    });
+    spyOn(messages, "listFolders").mockResolvedValue({
+      ok: true,
+      data: [
+        folder(internalFolderCId, "Archiv", null),
+        folder(internalFolderId, "Archiv", internalFolderBId),
+        folder(internalFolderBId, "2025", internalFolderAId),
+        folder(internalFolderAId, "Projekte", null),
+      ],
+    });
+
+    const review = await mailCapabilities.actions["conversation.move"].review(
+      ConversationMoveInputSchema.parse({
+        mailboxId,
+        target: { conversationId, sourceFolderId: folderAId },
+        destination: { kind: "folder", folderId },
+      }),
+      context,
+    );
+
+    expect(review).toMatchObject({
+      ok: true,
+      data: {
+        message: "Move Release follow-up to Projekte / 2025 / Archiv.",
+        details: [
+          { label: "Conversation", value: "Release follow-up" },
+          { label: "Destination", value: "Projekte / 2025 / Archiv" },
+        ],
+      },
+    });
+  });
+
   test("shows the current and replacement comment directly in the review", async () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
     spyOn(messages, "listConversationMessages").mockResolvedValue({

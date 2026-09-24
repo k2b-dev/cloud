@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { buildMailFolderTree, mailFolderPaths } from "../../folder-tree";
 import type { MailFolderView } from "../../service/messages";
-import {
-  buildMailFolderTree,
-  buildVisibleMailFolderTree,
-  excludeMailFolderTreeRoles,
-  flattenMailFolderTree,
-  mailFolderPaths,
-} from "./mail-folder-tree";
+import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree } from "./mail-folder-tree";
 
 const folder = (id: string, overrides: Partial<MailFolderView> = {}): MailFolderView => ({
   id,

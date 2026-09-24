@@ -18,9 +18,10 @@ import {
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConfigurableFolderRole, MailCommand } from "../../contracts";
+import { buildMailFolderTree, mailFolderPaths } from "../../folder-tree";
 import type { MailAdminFolderView } from "../../service/folders";
 import { readApiError } from "./api-response";
-import { buildMailFolderTree, flattenMailFolderTree, mailFolderPaths } from "./mail-folder-tree";
+import { flattenMailFolderTree } from "./mail-folder-tree";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 type FolderSelectOption = {

@@ -22,6 +22,7 @@ import { mailCapabilityMessages } from "./capability-messages";
 import { mailCapabilityPresentation } from "./capability-presentation";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
 import type { Mailbox, MailDraft, MailSearchExpression, MailSubscriptionSummary } from "./contracts";
+import { mailFolderPaths } from "./folder-tree";
 import {
   activityPublic,
   attachmentExtraction,
@@ -2844,10 +2845,7 @@ const actionDefinitions = {
         if (!folderId.ok) return folderId;
         const folders = await messages.listFolders(requestContext(context), scope.data.id);
         if (!folders.ok) return folders;
-        destination = truncateText(
-          folders.data.find((folder) => folder.id === folderId.data)?.name ?? input.destination.folderId,
-          200,
-        ).text;
+        destination = truncateText(mailFolderPaths(folders.data).get(folderId.data) ?? input.destination.folderId, 200).text;
       }
       return ok({
         message: t.moveConversationReview({ subject: conversation.data.subject, destination }),
