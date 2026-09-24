@@ -754,10 +754,13 @@ server. Requests can be cancelled, are bounded by configured Gotenberg limits
 and a 64 MiB transfer ceiling, and store no result automatically. A PDF/A-3b
 with XML and Factur-X metadata is not a certificate of invoice validity.
 
-Studio also includes stdlib 0.24 `camt` and `einvoice` alongside `money`, `datev`
+Studio also includes stdlib `camt` and `einvoice` alongside `money`, `datev`
 and `sepa`. Read camt.052.001.08 reports, calculate exact invoice totals,
-generate supported ZUGFeRD CII EN16931 XML, or read invoice XML directly or from
-PDF attachments. PDF invoice reading extracts embedded XML; it is not OCR.
+generate supported ZUGFeRD CII EN16931 XML, including zero-rated, exempt,
+reverse-charge, intra-EU, export and out-of-scope VAT, or read invoice XML
+directly or from PDF attachments. An incoming read mode also accepts received
+CII XRechnung invoices with discounts and prepayments and lists unmapped
+fields. PDF invoice reading extracts embedded XML; it is not OCR.
 No WASM/XSD checker is included. Parsers preserve declared incoming values;
 the app still owns reconciliation, numbering and manual decisions.
 

@@ -40,7 +40,7 @@
     "catalog": {
       "@firecrawl/anydoc": "0.2.4",
       "@k2b/ssr": "0.14.0",
-      "@k2b/stdlib": "0.25.0",
+      "@k2b/stdlib": "0.26.0",
       "@k2b/sync": "6.5.0",
       "@nats-io/jetstream": "3.4.0",
       "@nats-io/transport-node": "3.4.0",
@@ -102,7 +102,7 @@
     "release:preflight": "bun scripts/prod-upgrade-preflight.ts"
   },
   "devDependencies": {
-    "@k2b/stdlib": "0.25.0",
+    "@k2b/stdlib": "0.26.0",
     "jose": "6.2.12",
     "zod": "4.6.5",
     "@biomejs/biome": "2.5.14",

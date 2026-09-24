@@ -209,8 +209,8 @@ export const createGermanEInvoiceProfile = (dependencies: { render?: Render } = 
   title: "German E-Invoice (ZUGFeRD EN 16931)",
   description:
     "Outgoing EUR invoices using ZUGFeRD 2.5 / Factur-X 1.09 EN 16931. Technical validation is not tax or legal approval. The issuer is responsible for invoice content and suitability for the intended use.",
-  rendererVersion: "stdlib-0.25.0-gotenberg-8.36.0-factur-x",
-  validatorVersion: "stdlib-0.25.0-input-rules",
+  rendererVersion: "stdlib-0.26.0-gotenberg-8.36.0-factur-x",
+  validatorVersion: "stdlib-0.26.0-input-rules",
   primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
   input: germanEInvoiceSnapshotSchema,
   formatNumber: ({ value, issuedAt }) => `RE-${issuedAt.getUTCFullYear()}-${String(value).padStart(6, "0")}`,
