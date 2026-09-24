@@ -1374,6 +1374,8 @@ export const mailboxOperatorOperationsSchema = z
       z.object({
         id: ResourceShortIdSchema,
         name: z.string().min(1).max(1000),
+        /** Display path including parent folders, such as `Projects / 2025 / Archive`. */
+        path: z.string().min(1),
         discoveryState: z.enum(["active", "missing", "ambiguous"]),
         syncStatus: z.string(),
         selectedForSync: z.boolean(),

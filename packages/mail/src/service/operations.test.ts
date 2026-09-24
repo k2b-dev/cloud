@@ -108,6 +108,7 @@ describe("Mail operator read model contract", () => {
     const folder = {
       id: "fld001",
       name: "Inbox",
+      path: "Inbox",
       discoveryState: "active" as const,
       syncStatus: "current",
       selectedForSync: true,

@@ -713,7 +713,9 @@ export default function MailOperationalSettings(props: {
                       {(folder) => (
                         <div class="flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-3 py-2">
                           <span class="min-w-0 flex-1 text-xs text-secondary">
-                            <span class="block truncate font-medium text-primary">{folder.name}</span>
+                            <span class="block truncate font-medium text-primary" title={folder.path}>
+                              {folder.path}
+                            </span>
                             <span>
                               {stateLabel(folder.discoveryState)} · {stateLabel(folder.syncStatus)}
                             </span>
