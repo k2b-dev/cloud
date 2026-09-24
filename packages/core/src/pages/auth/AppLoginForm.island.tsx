@@ -1,5 +1,5 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
-import { Button, ButtonLink, NoticeCard, TextInput, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, NoticeCard, Placeholder, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
@@ -18,6 +18,8 @@ export default function AppLoginForm(props: {
   const [identifier, setIdentifier] = createSignal("");
   const [pending, setPending] = createSignal<z.infer<typeof AppLoginStartResultSchema>>();
   const [busy, setBusy] = createSignal(false);
+  // Terminal: the session exists and navigation has started. The form must not return.
+  const [signedIn, setSignedIn] = createSignal(false);
   const [error, setError] = createSignal<unknown>();
   const [message, setMessage] = createSignal<"expired" | "denied" | "uncertain" | "retrying">();
   const storageKey = `cloud.app-login:${props.category}:${props.redirectTo ?? "/"}`;
@@ -55,14 +57,17 @@ export default function AppLoginForm(props: {
           setBusy(true);
           try {
             await checked(await approvalApi.login.complete.$post({ json }, approvalRequestOptions()));
-            if (!disposed) window.location.assign(afterSignInHref(props.redirectTo));
           } catch {
-            if (!disposed) setMessage("uncertain");
-          } finally {
             if (!disposed) {
               setBusy(false);
               setPending(undefined);
+              setMessage("uncertain");
             }
+            return false;
+          }
+          if (!disposed) {
+            setSignedIn(true);
+            window.location.assign(afterSignInHref(props.redirectTo));
           }
         } else {
           setPending(undefined);
@@ -80,6 +85,8 @@ export default function AppLoginForm(props: {
         return true;
       },
       request.pollAfterSeconds,
+      // The status endpoint holds a pending request until the decision lands.
+      { immediate: true },
     );
   };
   onMount(() => {
@@ -129,53 +136,55 @@ export default function AppLoginForm(props: {
           </NoticeCard>
         )}
       </Show>
-      <Show
-        when={pending()}
-        fallback={
-          <form
-            class="flex flex-col gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void start();
-            }}
-          >
-            <TextInput
-              class="auth-login-identifier"
-              label={t().identifier}
-              placeholder={t().identifierPlaceholder}
-              value={identifier}
-              onValueChange={setIdentifier}
-              autocomplete="username"
-              icon=""
-              activeIcon=""
-              required
-              maxLength={254}
-            />
-            <Button type="submit" class="auth-login-action w-full justify-center" loading={busy()} disabled={!identifier().trim()}>
-              {t().signIn}
-            </Button>
-          </form>
-        }
-      >
-        {(request) => (
-          <div class="flex flex-col gap-5">
-            <div class="text-center" role="status" aria-live="polite">
-              <p class="text-sm text-dimmed">{t().waiting}</p>
-              <span class="sr-only">{t().comparison}</span>
-              <p class="py-6 text-4xl sm:text-5xl font-mono tabular-nums tracking-widest">{request().comparison}</p>
-            </div>
-            <Button
-              variant="secondary"
-              disabled={busy()}
-              onClick={() => {
-                clear();
-                setMessage(undefined);
+      <Show when={!signedIn()} fallback={<Placeholder state="loading" title={t().signedIn} />}>
+        <Show
+          when={pending()}
+          fallback={
+            <form
+              class="flex flex-col gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void start();
               }}
             >
-              {t().cancelWait}
-            </Button>
-          </div>
-        )}
+              <TextInput
+                class="auth-login-identifier"
+                label={t().identifier}
+                placeholder={t().identifierPlaceholder}
+                value={identifier}
+                onValueChange={setIdentifier}
+                autocomplete="username"
+                icon=""
+                activeIcon=""
+                required
+                maxLength={254}
+              />
+              <Button type="submit" class="auth-login-action w-full justify-center" loading={busy()} disabled={!identifier().trim()}>
+                {t().signIn}
+              </Button>
+            </form>
+          }
+        >
+          {(request) => (
+            <div class="flex flex-col gap-5">
+              <div class="text-center" role="status" aria-live="polite">
+                <p class="text-sm text-dimmed">{t().waiting}</p>
+                <span class="sr-only">{t().comparison}</span>
+                <p class="py-6 text-4xl sm:text-5xl font-mono tabular-nums tracking-widest">{request().comparison}</p>
+              </div>
+              <Button
+                variant="secondary"
+                disabled={busy()}
+                onClick={() => {
+                  clear();
+                  setMessage(undefined);
+                }}
+              >
+                {t().cancelWait}
+              </Button>
+            </div>
+          )}
+        </Show>
       </Show>
       <Show when={!busy() ? props.fallback : undefined}>
         {(fallback) => (

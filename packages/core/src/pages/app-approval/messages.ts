@@ -28,6 +28,7 @@ export const appApprovalMessages = i18n.define({
       signIn: "Sign in with app",
       signInHint: "Use an app already paired with this Cloud account. Without a paired app, use the alternative sign-in below.",
       waiting: "Compare this code with your app, then confirm there.",
+      signedIn: "Signed in – continuing…",
       comparison: "Comparison code",
       startOver: "Start again",
       cancelled: "Cancelled",
@@ -118,6 +119,7 @@ export const appApprovalMessages = i18n.define({
       signInHint:
         "Nutze eine bereits mit diesem Cloud-Account gekoppelte App. Ohne gekoppelte App nutze die alternative Anmeldung darunter.",
       waiting: "Vergleiche diesen Code mit deiner App und bestätige dort.",
+      signedIn: "Angemeldet – weiter …",
       comparison: "Vergleichscode",
       startOver: "Neu starten",
       cancelled: "Abgebrochen",
