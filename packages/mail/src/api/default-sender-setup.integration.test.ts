@@ -84,6 +84,7 @@ suite("Mail default sender setup through the API", () => {
   let connectionId = "";
   let bindingId = "";
   let remoteResourceId = "";
+  let verifyAccessToken: { mockRestore: () => void } | undefined;
 
   const request = (token: string, path: string, init: { method: string; body: unknown; locale?: string }) =>
     app.request(`/mailboxes/${mailboxShortId}${path}`, {
@@ -112,7 +113,7 @@ suite("Mail default sender setup through the API", () => {
     if (!owner || !reader || !outsider) throw new Error("Failed to create sender setup users");
     userIds.push(owner.id, reader.id, outsider.id);
     tokens.set("owner", owner).set("reader", reader).set("outsider", outsider);
-    spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) => {
+    verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) => {
       const user = tokens.get(token);
       return user ? { kind: "user", payload: {}, user, scopes: [] } : null;
     });
@@ -162,6 +163,7 @@ suite("Mail default sender setup through the API", () => {
   });
 
   afterAll(async () => {
+    verifyAccessToken?.mockRestore();
     if (mailboxId) await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     if (userIds.length > 0) await sql`DELETE FROM auth.users WHERE id IN ${sql(userIds)}`;
   });
