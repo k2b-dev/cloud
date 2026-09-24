@@ -8,7 +8,7 @@ import {
   type NotificationBatchRecipientStatus,
   notificationBatches,
 } from "@k2b/cloud/services";
-import { formatNumber } from "@k2b/cloud/shared";
+import { formatNumber, groupDisplayName } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import {
@@ -301,7 +301,7 @@ export default ssr<AuthContext>(async (c) => {
                       {selectionGroups.map((group) => (
                         <span class="chip max-w-full" title={group.name}>
                           <i class="ti ti-users-group" />
-                          <span class="truncate">{group.name}</span>
+                          <span class="truncate">{groupDisplayName(group.name, locale)}</span>
                         </span>
                       ))}
                       {selectionGroupIds.length > previewSelectionGroupIds.length ? (

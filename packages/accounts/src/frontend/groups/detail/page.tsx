@@ -1,7 +1,7 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
-import { canManageGroup, getDefaultGroupScope, isAdminUser } from "@k2b/cloud/shared";
+import { canManageGroup, getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { ButtonLink, NoticeCard, Tag } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
@@ -28,7 +28,8 @@ import MemberOfTab from "./MemberOfTab";
 import MembersTab from "./MembersTab";
 
 export default ssr<AuthContext>(async (c) => {
-  const { t } = accountsMessages.resolve([getLocale(c)]);
+  const locale = getLocale(c);
+  const { t } = accountsMessages.resolve([locale]);
   const groupId = c.req.param("id");
   const user = expectUserBackedActor(c);
   const accountsActor = toAccountsActor(user);
@@ -235,7 +236,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.start, href: "/" },
         { title: t.accounts, href: "/app/accounts" },
         { title: t.groups, href: "/app/accounts/groups" },
-        { title: group.name },
+        { title: groupDisplayName(group.name, locale) },
       ]}
     >
       <AccountsWorkspace
@@ -255,7 +256,7 @@ export default ssr<AuthContext>(async (c) => {
           <div class="flex flex-wrap items-start justify-between gap-3 py-2" style="view-transition-name: accounts-group-title">
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">
-                <h1 class="text-xl font-semibold tracking-tight text-primary">{group.name}</h1>
+                <h1 class="text-xl font-semibold tracking-tight text-primary">{groupDisplayName(group.name, locale)}</h1>
                 {group && <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>}
                 {group.gidnumber && <Tag>POSIX</Tag>}
                 {group.personalOwner && (

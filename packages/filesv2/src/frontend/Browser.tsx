@@ -20,6 +20,7 @@ import {
   TextInput,
   type ToastHandle,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
@@ -105,6 +106,7 @@ export default function Browser(props: {
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
+  const locale = useLocale();
   const assets = useAssetMessages();
   const baseId = () => props.directory.base.id;
   const baseIdentity = () => JSON.stringify([baseId(), props.directory.base.locationKey]);
@@ -648,7 +650,7 @@ export default function Browser(props: {
             type: "info",
             content: () => (
               <InlineGuidance icon="ti ti-folder">
-                <span class="break-all">{`${baseLabel(props.directory.base, b())} / ${folder()}`.replace(/ \/ $/, "")}</span>
+                <span class="break-all">{`${baseLabel(props.directory.base, b(), locale())} / ${folder()}`.replace(/ \/ $/, "")}</span>
               </InlineGuidance>
             ),
           },
@@ -1062,7 +1064,7 @@ export default function Browser(props: {
     const value = searchText().trim();
     if (value !== (props.directory.query ?? "")) props.onSearch?.(value || null);
   };
-  const parentOf = (path: string) => parentPath(path) || baseLabel(props.directory.base, b());
+  const parentOf = (path: string) => parentPath(path) || baseLabel(props.directory.base, b(), locale());
   const detailOpen = () => selectedPaths().length > 0;
   const addItems = () =>
     !canCreate()
@@ -1202,7 +1204,7 @@ export default function Browser(props: {
                 type="search"
                 icon="ti ti-search"
                 placeholder={b().search}
-                aria-label={b().searchIn(folder().split("/").at(-1) || baseLabel(props.directory.base, b()))}
+                aria-label={b().searchIn(folder().split("/").at(-1) || baseLabel(props.directory.base, b(), locale()))}
                 value={searchText()}
                 onValueChange={setSearchText}
                 onSubmit={submitSearch}

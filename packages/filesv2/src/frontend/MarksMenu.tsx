@@ -1,4 +1,4 @@
-import { AppWorkspace, Button, Format, IconButton, Placeholder, prompts, ScrollArea } from "@k2b/ui";
+import { AppWorkspace, Button, Format, IconButton, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkedEntry } from "../contracts";
@@ -12,6 +12,7 @@ type MarksOptions = { kind: MarksKind; onOpen: (entry: MarkedEntry) => void; rev
 /** The same authorized, lazily loaded catalog is used by desktop previews and the mobile dialog. */
 export function MarksMenu(props: MarksOptions & { open: boolean; close: () => void; modal?: boolean }) {
   const b = useBrowserMessages();
+  const locale = useLocale();
   const [items, setItems] = createSignal<MarkedEntry[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal(false);
@@ -51,7 +52,7 @@ export function MarksMenu(props: MarksOptions & { open: boolean; close: () => vo
       props.kind === "recent"
         ? c.markedAt.localeCompare(a.markedAt)
         : a.entry.name.localeCompare(c.entry.name, undefined, { numeric: true, sensitivity: "base" }) ||
-          baseLabel(a.base, b()).localeCompare(baseLabel(c.base, b())),
+          baseLabel(a.base, b(), locale()).localeCompare(baseLabel(c.base, b(), locale())),
     ),
   );
   const duplicates = createMemo(() => {
@@ -96,7 +97,9 @@ export function MarksMenu(props: MarksOptions & { open: boolean; close: () => vo
                   props.close();
                   props.onOpen(item);
                 }}
-                description={(duplicates().get(item.entry.name) ?? 0) > 1 ? `${baseLabel(item.base, b())} / ${item.entry.path}` : undefined}
+                description={
+                  (duplicates().get(item.entry.name) ?? 0) > 1 ? `${baseLabel(item.base, b(), locale())} / ${item.entry.path}` : undefined
+                }
                 meta={
                   props.kind === "recent" ? (
                     <Format.RelativeTime value={item.markedAt} base={now()} title={new Date(item.markedAt).toLocaleString()} />

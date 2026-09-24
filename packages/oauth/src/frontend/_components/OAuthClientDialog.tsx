@@ -1,4 +1,5 @@
 import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
+import { groupDisplayName } from "@k2b/cloud/shared";
 import { Button, CheckboxCard, NoticeCard, PanelDialog, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { CreateOAuthClient, OAuthClient, OAuthScope, UpdateOAuthClient } from "@/contracts";
@@ -367,7 +368,7 @@ function SelectedAccessList(props: {
               onClick={() => props.setGroups((current) => removeById(group.id, current))}
             >
               <i class="ti ti-users-group" />
-              <span class="min-w-0 flex-1 truncate text-left">{group.label}</span>
+              <span class="min-w-0 flex-1 truncate text-left">{groupDisplayName(group.label, locale())}</span>
               <span class="text-[10px] uppercase text-dimmed">{group.provider}</span>
               <i class="ti ti-x text-dimmed" />
             </Button>

@@ -1,6 +1,7 @@
+import { groupDisplayName } from "@k2b/cloud/shared";
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Dropdown, prompts, toast } from "@k2b/ui";
+import { Dropdown, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import { ErrorResponseSchema } from "@/contracts";
@@ -22,6 +23,9 @@ type GroupActionsProps = {
 /** Per-group action dropdown menu. */
 export default function GroupActions(props: GroupActionsProps) {
   const messages = useAccountsMessages();
+  const locale = useLocale();
+  // Dialog and toast text only; the action notice receives the stored name.
+  const displayName = () => groupDisplayName(props.name, locale());
   const deleteMutation = mutations.create<void, string>({
     mutation: async (id) => {
       const res = await apiClient.groups[":id"].$delete({ param: { id } });
@@ -31,7 +35,9 @@ export default function GroupActions(props: GroupActionsProps) {
       }
     },
     onSuccess: async () => {
-      toast.success(messages().groupDeletedFrom({ name: props.name, provider: props.provider === "ipa" ? "FreeIPA" : messages().local }));
+      toast.success(
+        messages().groupDeletedFrom({ name: displayName(), provider: props.provider === "ipa" ? "FreeIPA" : messages().local }),
+      );
       await showAccountActionNotice({ action: "group.delete", id: props.id, name: props.name, provider: props.provider }, messages());
       navigateTo(props.listHref);
     },
@@ -97,7 +103,7 @@ export default function GroupActions(props: GroupActionsProps) {
     if (confirmingPosix() || posixMutation.loading() || (props.provider === "local" && !props.linuxEnabled)) return;
     setConfirmingPosix(true);
     try {
-      const confirmed = await prompts.confirm(messages().posixConfirm({ name: props.name }), {
+      const confirmed = await prompts.confirm(messages().posixConfirm({ name: displayName() }), {
         title: messages().makePosix,
         icon: "ti ti-transform",
         confirmText: messages().convert,
@@ -111,7 +117,7 @@ export default function GroupActions(props: GroupActionsProps) {
 
   const handleDelete = async () => {
     const confirmed = await prompts.confirm(messages().deleteGroupExplanation({ freeIpa: props.provider === "ipa" }), {
-      title: messages().deleteGroupQuestion({ name: props.name }),
+      title: messages().deleteGroupQuestion({ name: displayName() }),
       icon: "ti ti-trash",
       confirmText: messages().delete,
       cancelText: messages().cancel,

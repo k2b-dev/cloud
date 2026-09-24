@@ -1,7 +1,8 @@
-import { Button, dialogCore, InlineGuidance, PanelDialog, Placeholder, panelDialogOptions } from "@k2b/ui";
+import { Button, dialogCore, InlineGuidance, PanelDialog, Placeholder, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { type BaseSummary, ErrorSchema, type FileEntry } from "../contracts";
+import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
@@ -31,6 +32,7 @@ function DestinationPicker(props: {
   close: (value: (Destination & { copy: boolean }) | null) => void;
 }) {
   const b = useBrowserMessages();
+  const locale = useLocale();
   const t = useFilesMessages();
   const [location, setLocation] = createSignal<Location>({ baseId: props.sourceBaseId, folder: props.initialFolder });
   const bases = () => props.bases.filter((base) => base.status === "existing");
@@ -133,7 +135,7 @@ function DestinationPicker(props: {
                   variant={crumbs().length ? "text" : "subtle"}
                   onClick={() => setLocation({ baseId: current().id, folder: "" })}
                 >
-                  {current().name}
+                  {baseLabel(current(), b(), locale())}
                 </Button>
               </>
             )}
@@ -168,7 +170,9 @@ function DestinationPicker(props: {
             fallback={
               <For each={bases()}>
                 {(item) =>
-                  tile(item.kind === "users" ? "ti ti-home" : "ti ti-users", item.name, () => setLocation({ baseId: item.id, folder: "" }))
+                  tile(item.kind === "users" ? "ti ti-home" : "ti ti-users", baseLabel(item, b(), locale()), () =>
+                    setLocation({ baseId: item.id, folder: "" }),
+                  )
                 }
               </For>
             }

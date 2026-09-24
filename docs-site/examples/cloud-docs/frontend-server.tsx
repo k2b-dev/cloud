@@ -1,8 +1,9 @@
 import { defineApp } from "@k2b/cloud";
-import { type AuthContext, auth } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
+import { groupDisplayName } from "@k2b/cloud/shared";
 import { createUrlFilter, Layout, oneOf, page, text } from "@k2b/cloud/ssr";
 import { StatusBadge } from "@k2b/ui";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 
 export const inventoryRoutes = new Hono().get("/items/:id", (c) => c.json({ id: c.req.param("id"), name: "Example" }));
 
@@ -47,3 +48,10 @@ const inventoryPage = ssr<AuthContext>(async (c) => {
 export const inventoryPageRoutes = new Hono<AuthContext>()
   .get("/", auth.requireRole("user", ssr.access), ...inventoryPage)
   .get("/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+
+/** Rendered text only; links and API output keep the stored group name. */
+export const GroupHeading = (props: { c: Context<AuthContext>; name: string }) => (
+  <h1>
+    <a href={`/app/example/groups/${encodeURIComponent(props.name)}`}>{groupDisplayName(props.name, getLocale(props.c))}</a>
+  </h1>
+);

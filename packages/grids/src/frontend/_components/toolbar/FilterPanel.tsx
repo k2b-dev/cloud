@@ -1,4 +1,5 @@
 import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
+import { groupDisplayName } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
@@ -457,7 +458,7 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
         resolved.set(item.user.id, { id: item.user.id, type: "user", label: item.user.displayName || item.user.uid });
       }
       if (item.kind === "group" && item.group) {
-        resolved.set(item.group.id, { id: item.group.id, type: "group", label: item.group.name });
+        resolved.set(item.group.id, { id: item.group.id, type: "group", label: groupDisplayName(item.group.name, locale()) });
       }
     }
     setOptions((current) => current.map((option) => resolved.get(option.id) ?? option));
@@ -468,7 +469,7 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
       principal.type === "user"
         ? { id: principal.userId, type: "user", label: principal.displayName || principal.uid }
         : principal.type === "group"
-          ? { id: principal.groupId, type: "group", label: principal.name }
+          ? { id: principal.groupId, type: "group", label: groupDisplayName(principal.name, locale()) }
           : null;
     if (!option) return;
     const next = [...options().filter((item) => item.id !== option.id), option];

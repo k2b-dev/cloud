@@ -3,6 +3,7 @@ import { IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from
 import { createSignal, For, Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal } from "../contracts/shared";
+import { groupDisplayName } from "../shared/account-display";
 import { accessMessages } from "./messages";
 import PrincipalPicker from "./PrincipalPicker";
 
@@ -112,8 +113,8 @@ const resolveEntryDisplay = (
   return defaults[permission] ?? defaults.none;
 };
 
-const getEntryDisplayName = (entry: AccessEntry, t: ReturnType<typeof accessMessages.resolve>["t"]): string => {
-  if (entry.displayName) return entry.displayName;
+const getEntryDisplayName = (entry: AccessEntry, t: ReturnType<typeof accessMessages.resolve>["t"], locale: string): string => {
+  if (entry.displayName) return entry.principal.type === "group" ? groupDisplayName(entry.displayName, locale) : entry.displayName;
   if (entry.principal.type === "authenticated") return t.allUsers;
   if (entry.principal.type === "public") return t.public;
   if (entry.principal.type === "user") return entry.principal.userId;
@@ -184,7 +185,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
 
   const revokeMut = mutation.create<string | null, AccessEntry>({
     mutation: async (entry) => {
-      const displayName = getEntryDisplayName(entry, t());
+      const displayName = getEntryDisplayName(entry, t(), locale());
       const confirmed = await prompts.confirm(t().removeAccessConfirm({ name: displayName }), {
         title: t().removeAccess,
         variant: "danger",
@@ -263,7 +264,7 @@ function AccessEntryRow(props: {
 }) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
-  const displayName = () => getEntryDisplayName(props.entry, t());
+  const displayName = () => getEntryDisplayName(props.entry, t(), locale());
   const display = () => resolveEntryDisplay(props.entry.permission, props.allowed, t());
   const isInteractive = () =>
     props.canEdit && !props.disabled && !props.singlePicker && props.allowed.some((option) => option.level === props.entry.permission);

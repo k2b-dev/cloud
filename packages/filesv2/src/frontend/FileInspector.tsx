@@ -296,7 +296,7 @@ export default function FileInspector(props: {
                           term: t().location,
                           description: (
                             <span class="break-all" title={`${props.base.name} / ${item().path}`}>
-                              {`${baseLabel(props.base, t())} / ${item().path}`}
+                              {`${baseLabel(props.base, t(), locale())} / ${item().path}`}
                             </span>
                           ),
                         },

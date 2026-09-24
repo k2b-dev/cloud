@@ -1,6 +1,6 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
-import { formatDate } from "@k2b/cloud/shared";
+import { formatDate, groupDisplayName } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { DataTable, type DataTableColumn, NoticeCard, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../config";
@@ -78,7 +78,7 @@ export default ssr<AuthContext>(async (c) => {
                     <div class="flex flex-wrap gap-1">
                       {client.allowedGroups.map((group) => (
                         <span class="rounded bg-cyan-100 px-1.5 py-0.5 text-[10px] text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400">
-                          {group.name}
+                          {groupDisplayName(group.name, locale)}
                         </span>
                       ))}
                     </div>
