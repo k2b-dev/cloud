@@ -166,7 +166,7 @@ Variables created inside a branch do not escape that branch. Defining the same v
 | `removeKeyword` | `message`, `keyword` | Removes a portable provider keyword |
 | `moveMessage` | `message`, `folder` | Moves the message to an accessible provider folder |
 | `copyMessage` | `message`, `folder` | Copies the message to an accessible provider folder |
-| `archiveMessage` | `message` | Moves the message to the mailbox archive folder |
+| `archiveMessage` | `message` | Moves the message to the mailbox archive folder; on Gmail without a mapped archive folder, to **All Mail**, like the Archive action |
 | `trashMessage` | `message` | Moves the message to the mailbox trash folder |
 | `junkMessage` | `message` | Moves the message to the mailbox junk folder |
 | `addFlag` / `removeFlag` | `message`, `flag` | Changes `seen`, `answered`, `flagged`, or `draft` through the provider command journal |

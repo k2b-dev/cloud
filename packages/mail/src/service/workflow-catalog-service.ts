@@ -1,7 +1,8 @@
 import { sql } from "bun";
-import { buildMailWorkflowCatalog, type MailWorkflowCatalog } from "../workflows/catalog";
+import { buildMailWorkflowCatalog, type MailWorkflowCatalog, type MailWorkflowFolderCatalogEntry } from "../workflows/catalog";
 import type { MailRequestContext } from "./auth";
 import { listCurrentMailboxUsers } from "./collaborators";
+import { resolveRoleFolder } from "./folders";
 import type { SqlClient } from "./workflow-data";
 
 export const loadMailWorkflowCatalog = async (params: {
@@ -10,7 +11,7 @@ export const loadMailWorkflowCatalog = async (params: {
   db?: SqlClient;
 }): Promise<MailWorkflowCatalog> => {
   const db = params.db ?? sql;
-  const folders = await db<{ id: string; name: string; path: string; role: string }[]>`
+  const folderRows = await db<{ folder_id: string; id: string; name: string; path: string; role: string }[]>`
       WITH RECURSIVE folder_paths AS (
         SELECT folder.id, folder.name::text AS path
         FROM mail.folders folder
@@ -24,6 +25,7 @@ export const loadMailWorkflowCatalog = async (params: {
         JOIN folder_paths parent ON child.parent_id = parent.id
       )
       SELECT DISTINCT
+        folder.id AS folder_id,
         folder.short_id AS id,
         folder.name,
         COALESCE(folder_path.path, folder.name) AS path,
@@ -54,6 +56,16 @@ export const loadMailWorkflowCatalog = async (params: {
         )
       ORDER BY folder.short_id
     `;
+  // archiveMessage binds the folder that resolves the archive role, exactly like the archive action,
+  // including Gmail's All Mail fallback when no archive folder is mapped.
+  const archive = await resolveRoleFolder(params.mailboxId, "archive", db);
+  const folders = folderRows.map(({ folder_id, ...folder }): MailWorkflowFolderCatalogEntry => {
+    if (!archive.ok) return folder;
+    if (folder_id === archive.data.id) return { ...folder, role: "archive" };
+    // A configured archive folder shadows any other folder that claims the role.
+    const { role, ...rest } = folder;
+    return role === "archive" ? rest : folder;
+  });
   const senderIdentities = await db<{ id: string; name: string }[]>`
       SELECT short_id AS id, display_name || ' <' || from_address || '>' AS name
       FROM mail.sender_identities
