@@ -21,10 +21,17 @@ import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ProviderConnection, SenderIdentity } from "../../contracts";
 import type { DiscoveredMailConfiguration } from "../../service/onboarding-discovery";
-import { readApiError } from "./api-response";
+import { isProviderBusy, readApiError, readApiFailure } from "./api-response";
 import { connectionEditorDialogOptions, type ProviderSettingsProps } from "./mail-provider-settings-shared";
 import { deriveDefaultSenderSetupState } from "./mail-provider-setup";
 import { mailSettingsMessages } from "./mail-settings-messages";
+
+type SendingSetupIssue = { reason: string; busy: boolean };
+
+const sendingSetupIssue = (error: unknown, fallback: string): SendingSetupIssue => ({
+  reason: error instanceof Error ? error.message : fallback,
+  busy: isProviderBusy(error),
+});
 
 const connectionStatusTone = (status: ProviderConnection["status"]): StatusTone => {
   if (status === "active") return "ok";
@@ -60,6 +67,8 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
   const [savesSentAutomatically, setSavesSentAutomatically] = createSignal(false);
   const [discoverySource, setDiscoverySource] = createSignal<string | null>(null);
   const [editorBaseline, setEditorBaseline] = createSignal("");
+  const [editorBusy, setEditorBusy] = createSignal(false);
+  const [sendingIssue, setSendingIssue] = createSignal<SendingSetupIssue | null>(null);
   let closeConnectionDialog: (() => void) | null = null;
   const currentConnection = createMemo(() => props.admin.connections.find((connection) => connection.status !== "revoked"));
   const currentBinding = createMemo(() => {
@@ -73,6 +82,8 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     const state = senderSetupState();
     return state.kind === "optional" || state.kind === "needs-verification" ? state : null;
   });
+  // A failed setup stays visible until it succeeds or the account is ready by other means.
+  const visibleSendingIssue = createMemo(() => (currentConnection() && senderSetupState().kind !== "ready" ? sendingIssue() : null));
   const editorValue = () =>
     JSON.stringify({
       replacingConnectionId: replacingConnectionId(),
@@ -186,7 +197,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       },
       { init: { signal: abortSignal } },
     );
-    if (!response.ok) throw new Error(await readApiError(response, messages().defaultIdentitySetupFailed));
+    if (!response.ok) throw await readApiFailure(response, messages().defaultIdentitySetupFailed);
     return response.json();
   };
 
@@ -194,7 +205,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     connectionId: string,
     setupSenderAfterAttach: boolean,
     abortSignal?: AbortSignal,
-  ): Promise<{ senderCreated: boolean; setupError: string | null }> => {
+  ): Promise<{ senderCreated: boolean; setupError: string | null; sendingIssue: SendingSetupIssue | null }> => {
     const bindingResponse = await apiClient.mailboxes[":mailboxId"].bindings.$post(
       {
         param: { mailboxId: props.mailbox.id },
@@ -207,25 +218,26 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       return {
         senderCreated: false,
         setupError: messages().incomingSetupNeedsAttention({ reason }),
+        sendingIssue: null,
       };
     }
     const binding = await bindingResponse.json();
-    if (!setupSenderAfterAttach) return { senderCreated: false, setupError: null };
+    if (!setupSenderAfterAttach) return { senderCreated: false, setupError: null, sendingIssue: null };
     try {
       await requestDefaultSenderSetup(binding.id, abortSignal);
-      return { senderCreated: true, setupError: null };
+      return { senderCreated: true, setupError: null, sendingIssue: null };
     } catch (error) {
-      return {
-        senderCreated: false,
-        setupError: messages().sendingSetupNeedsAttention({
-          reason: error instanceof Error ? error.message : messages().defaultIdentitySetupFailed,
-        }),
-      };
+      // Receiving is connected at this point; only the sender step failed and can be retried on its own.
+      return { senderCreated: false, setupError: null, sendingIssue: sendingSetupIssue(error, messages().defaultIdentitySetupFailed) };
     }
   };
 
-  const connect = mutation.create<{ senderCreated: boolean; setupError: string | null; replaced: boolean }, void>({
+  const connect = mutation.create<
+    { senderCreated: boolean; setupError: string | null; sendingIssue: SendingSetupIssue | null; replaced: boolean },
+    void
+  >({
     mutation: async (_input, { abortSignal }) => {
+      setEditorBusy(false);
       const input = {
         name: name().trim(),
         email: email().trim(),
@@ -250,13 +262,15 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
             },
             { init: { signal: abortSignal } },
           );
-      if (!connectionResponse.ok) throw new Error(await readApiError(connectionResponse, messages().providerVerificationFailed));
+      if (!connectionResponse.ok) throw await readApiFailure(connectionResponse, messages().providerVerificationFailed);
       const created = await connectionResponse.json();
-      if (replacementId) return { senderCreated: false, setupError: null, replaced: true };
+      if (replacementId) return { senderCreated: false, setupError: null, sendingIssue: null, replaced: true };
       return { ...(await attachConnection(created.connection.id, createSender(), abortSignal)), replaced: false };
     },
     onSuccess: (result) => {
-      if (!result.setupError) {
+      setSendingIssue(result.sendingIssue);
+      if (result.sendingIssue) toast(messages().providerConnectedSendingPending);
+      else if (!result.setupError) {
         toast.success(
           result.replaced
             ? messages().connectedAccountUpdated
@@ -276,7 +290,9 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     },
     onError: (error) => {
       void props.onReload();
-      prompts.error(error.message);
+      // Busy is not a verification result: keep the dialog and its entries and offer the same request again.
+      if (isProviderBusy(error)) setEditorBusy(true);
+      else prompts.error(error.message);
     },
   });
 
@@ -297,6 +313,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     },
     onSuccess: async (revoked) => {
       if (!revoked) return;
+      setSendingIssue(null);
       toast.success(messages().providerConnectionRemoved);
       props.onWorkspaceChange();
       await props.onReload();
@@ -304,7 +321,10 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     onError: (error) => prompts.error(error.message),
   });
 
-  const finishSetup = mutation.create<{ senderCreated: boolean; setupError: string | null }, string>({
+  const finishSetup = mutation.create<
+    { senderCreated: boolean; setupError: string | null; sendingIssue: SendingSetupIssue | null },
+    string
+  >({
     mutation: (connectionId, { abortSignal }) => attachConnection(connectionId, false, abortSignal),
     onSuccess: (result) => {
       if (!result.setupError) toast.success(result.senderCreated ? messages().providerAndIdentityConnected : messages().providerConnected);
@@ -318,11 +338,12 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
   const setupSender = mutation.create<SenderIdentity, string>({
     mutation: (bindingId, { abortSignal }) => requestDefaultSenderSetup(bindingId, abortSignal),
     onSuccess: (identity) => {
+      setSendingIssue(null);
       toast.success(messages().readyToSend({ address: identity.fromAddress }));
       props.onWorkspaceChange();
       void props.onReload();
     },
-    onError: (error) => prompts.error(messages().receivingRemainsActive({ reason: error.message })),
+    onError: (error) => setSendingIssue(sendingSetupIssue(error, messages().defaultIdentitySetupFailed)),
   });
   onCleanup(() => {
     discover.abort();
@@ -333,6 +354,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
   });
 
   const openConnectionEditor = async () => {
+    setEditorBusy(false);
     setEditing(true);
     try {
       await dialogCore.open<void>((close) => {
@@ -346,6 +368,23 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
               close={() => void closeEditor()}
             />
             <PanelDialog.Body>
+              <Show when={editorBusy()}>
+                <NoticeCard tone="info" icon="ti ti-refresh" role="status" title={messages().synchronizationRunning}>
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span>{messages().editorSynchronizationRunning}</span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      disabled={!canSubmit() || connect.loading()}
+                      onClick={() => connect.mutate()}
+                    >
+                      <i class={connect.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" />
+                      {messages().retry}
+                    </Button>
+                  </div>
+                </NoticeCard>
+              </Show>
               <PanelDialog.Section title={messages().account} subtitle={messages().accountSubtitle} icon="ti ti-at">
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <TextInput
@@ -507,6 +546,31 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     }
   };
 
+  const sendingSetupActions = () => (
+    <div class="flex flex-wrap items-center gap-2">
+      <CheckboxCard
+        label={messages().providerSavesSent}
+        description={messages().providerSavesSentDescription}
+        value={savesSentAutomatically}
+        onValueChange={setSavesSentAutomatically}
+        disabled={setupSender.loading()}
+      />
+      <Button
+        variant="secondary"
+        size="sm"
+        type="button"
+        disabled={!currentBinding() || setupSender.loading() || props.reloading}
+        onClick={() => {
+          const binding = currentBinding();
+          if (binding) setupSender.mutate(binding.id);
+        }}
+      >
+        <i class={setupSender.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-send"} aria-hidden="true" />
+        {messages().setUpSending}
+      </Button>
+    </div>
+  );
+
   return (
     <div class="flex flex-col gap-2">
       <Show
@@ -603,41 +667,34 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
           </div>
         )}
       </Show>
-      <Show when={senderSetupPrompt()}>
-        {(state) => (
-          <Placeholder
-            align="left"
-            state={state().kind === "needs-verification" ? "error" : "empty"}
-            icon={state().kind === "needs-verification" ? "ti ti-alert-circle" : "ti ti-send-off"}
-            title={state().kind === "needs-verification" ? messages().sendingNeedsVerification : messages().sendingNotConfigured}
-            description={
-              state().kind === "needs-verification" ? messages().retrySendingSetupDescription : messages().receivingOnlyDescription
-            }
-            action={
-              <div class="flex flex-wrap items-center gap-2">
-                <CheckboxCard
-                  label={messages().providerSavesSent}
-                  description={messages().providerSavesSentDescription}
-                  value={savesSentAutomatically}
-                  onValueChange={setSavesSentAutomatically}
-                  disabled={setupSender.loading()}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  type="button"
-                  disabled={!currentBinding() || setupSender.loading() || props.reloading}
-                  onClick={() => {
-                    const binding = currentBinding();
-                    if (binding) setupSender.mutate(binding.id);
-                  }}
-                >
-                  <i class={setupSender.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-send"} aria-hidden="true" />
-                  {messages().setUpSending}
-                </Button>
-              </div>
-            }
-          />
+      <Show
+        when={visibleSendingIssue()}
+        fallback={
+          <Show when={senderSetupPrompt()}>
+            {(state) => (
+              <Placeholder
+                align="left"
+                state={state().kind === "needs-verification" ? "error" : "empty"}
+                icon={state().kind === "needs-verification" ? "ti ti-alert-circle" : "ti ti-send-off"}
+                title={state().kind === "needs-verification" ? messages().sendingNeedsVerification : messages().sendingNotConfigured}
+                description={
+                  state().kind === "needs-verification" ? messages().retrySendingSetupDescription : messages().receivingOnlyDescription
+                }
+                action={sendingSetupActions()}
+              />
+            )}
+          </Show>
+        }
+      >
+        {(issue) => (
+          <NoticeCard
+            tone={issue().busy ? "info" : "warning"}
+            role={issue().busy ? "status" : "alert"}
+            title={messages().sendingSetupPending}
+            detail={`${issue().busy ? messages().synchronizationRunningRetry : messages().sendingSetupFailed({ reason: issue().reason })} ${messages().sendingSetupNoReconnect}`}
+          >
+            {sendingSetupActions()}
+          </NoticeCard>
         )}
       </Show>
     </div>
