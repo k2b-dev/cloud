@@ -43,20 +43,34 @@ export default function Inventory(props: {
       getRowId={(row) => `${row.identityId ?? "directory"}:${row.path}`}
       empty={<Placeholder description={a().noEntries} />}
       renderCell={({ row, col }) => {
-        if (col.id === "name")
-          return row.actions.browse ? (
-            <ButtonLink
-              size="sm"
-              variant="text"
-              navigation="enhanced"
-              onNavigate={props.onNavigate}
-              href={adminHref(props.location, { name: row.name, path: "", after: undefined })}
-            >
-              {row.name}
-            </ButtonLink>
-          ) : (
-            row.name
+        if (col.id === "name") {
+          const label = row.displayName ?? row.name;
+          return (
+            <div class="min-w-0">
+              {row.actions.browse ? (
+                <ButtonLink
+                  size="xs"
+                  variant="text"
+                  navigation="enhanced"
+                  onNavigate={props.onNavigate}
+                  href={adminHref(props.location, { name: row.name, path: "", after: undefined })}
+                >
+                  {label}
+                </ButtonLink>
+              ) : (
+                label
+              )}
+              <Show
+                when={row.displayName !== null}
+                fallback={<div class="text-xs text-dimmed">{row.kind === "users" ? a().unknownAccount : a().unknownGroup}</div>}
+              >
+                <Show when={row.displayName !== row.name}>
+                  <div class="truncate font-mono text-xs text-dimmed">{row.name}</div>
+                </Show>
+              </Show>
+            </div>
           );
+        }
         if (col.id === "status") return <DirectoryStatus status={row.status} />;
         if (col.id === "path") return <code class="break-all text-xs">{row.path}</code>;
         return (

@@ -800,6 +800,15 @@ function filesCommands(locale?: string) {
           printRows(ctx, ctx.options.output === "jsonl" ? result.items : result, result.items, [
             { key: "identityId", label: "ID" },
             { key: "name", label: "Name" },
+            {
+              key: "displayName",
+              label: t({ en: "Display name", de: "Anzeigename" }),
+              value: (entry) =>
+                entry.displayName ??
+                (entry.kind === "users"
+                  ? t({ en: "unknown account", de: "unbekanntes Konto" })
+                  : t({ en: "unknown group", de: "unbekannte Gruppe" })),
+            },
             { key: "path", label: t({ en: "Path", de: "Pfad" }) },
             { key: "status", label: "Status" },
             { key: "reason", label: t({ en: "Reason", de: "Grund" }) },

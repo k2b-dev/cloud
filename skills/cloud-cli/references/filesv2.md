@@ -220,7 +220,9 @@ cld filesv2 admin adopt <identity-uuid> --area cloud --kind users --yes --json
 configuration, availability, the current root's capabilities/statistics, one
 page of directory entries, `next`, and `issue`. `--search` and `--status` filter
 on the server; pass the same filters when following a cursor. Entries include
-`uid`, `gid`, and the current allowed `actions`. Statuses are `existing`,
+`uid`, `gid`, `displayName` (the account or group display name, `null` when
+no identity exists for the directory name), and the current allowed `actions`.
+`--search` matches display names, names, and paths. Statuses are `existing`,
 `missing`, `unassigned`, `conflict`, `unknown`, `orphaned`, and `retired`.
 Root capabilities include `managed` and `executionEnabled`. File/directory
 counts and byte totals are known only for complete observed scans. The

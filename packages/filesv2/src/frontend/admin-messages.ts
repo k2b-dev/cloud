@@ -118,6 +118,8 @@ export const adminMessages = i18n.define({
       dirtyLeave: "Discard your unsaved settings before leaving this view?",
       emptyArchive: "No archived directories on this page.",
       noEntries: "No entries match this view.",
+      unknownAccount: "Unknown account",
+      unknownGroup: "Unknown group",
       collabora: "Collabora Online",
       collaboraPurpose: "Edit office documents in the browser",
       collaboraExplanation:
@@ -253,6 +255,8 @@ export const adminMessages = i18n.define({
       dirtyLeave: "Ungespeicherte Einstellungen vor dem Verlassen dieser Ansicht verwerfen?",
       emptyArchive: "Keine archivierten Verzeichnisse auf dieser Seite.",
       noEntries: "Keine Einträge für diese Ansicht.",
+      unknownAccount: "Unbekanntes Konto",
+      unknownGroup: "Unbekannte Gruppe",
       collabora: "Collabora Online",
       collaboraPurpose: "Office-Dokumente im Browser bearbeiten",
       collaboraExplanation:
