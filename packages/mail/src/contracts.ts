@@ -669,7 +669,7 @@ export type MailSearchField = z.infer<typeof mailSearchFieldSchema>;
 export const mailSearchTermSchema = z
   .object({
     type: z.literal("text").describe("Text search expression."),
-    field: mailSearchFieldSchema.describe("Mail field to search."),
+    field: mailSearchFieldSchema.describe("Mail field to search. `folder` matches folder names; use folder_id to filter by folder ID."),
     query: z.string().trim().min(1).max(500).describe("Text to match."),
     match: z.enum(["words", "phrase", "contains", "exact"]).default("words").describe("Text matching mode."),
   })
@@ -715,7 +715,7 @@ export const mailSearchAllSchema = z.object({ type: z.literal("all").describe("M
 export const mailSearchFolderIdSchema = z
   .object({
     type: z.literal("folder_id").describe("Folder search expression."),
-    folderId: ResourceShortIdSchema.describe("Stable folder ID."),
+    folderId: ResourceShortIdSchema.describe("Stable folder ID from the folder list; an unknown ID fails instead of matching nothing."),
   })
   .strict();
 export const mailSearchLocalTagIdSchema = z
