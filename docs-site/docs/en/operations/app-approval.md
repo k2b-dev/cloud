@@ -222,11 +222,14 @@ An unpaired or unknown account does not get a distinct error: use another
 existing sign-in method if no paired app receives the request.
 
 The waiting Cloud page displays the comparison code. Open the paired app and
-approve only a request you started whose code matches. Cloud checks in the
-foreground no faster than every five seconds, backs off on connection errors,
-and stops at a terminal state. Requests have a 30-second UI network timeout.
-The browser completes an approved login once and visits `/auth/continue` with
-its validated local `redirectTo`. Core requests explicit first-use legal
+approve only a request you started whose code matches. The page continues as
+soon as you approve: it keeps one status request open, and Cloud answers it
+the moment the app decides. The page starts at most one status request every
+five seconds, pauses while it is in the background and checks again on return,
+backs off on connection errors, and stops at a terminal state. Requests have a
+30-second UI network timeout. The browser completes an approved login once,
+keeps showing that you are signed in, and visits `/auth/continue` with its
+validated local `redirectTo`. Core requests explicit first-use legal
 acceptance if needed, then follows the return URL. A newly issued session
 without acceptance cannot authorize application or API access. The PWA does
 not collect this acceptance. A lost completion response requires checking the session by reloading or
@@ -262,9 +265,14 @@ explicit confirmation and comparison with the initiating browser's code. The
 authenticator receives no browser secret, session cookie, user API token,
 FreeIPA password or Kerberos ticket.
 
-The Cloud browser polls `POST /login/status` with `{requestId, browserSecret}`.
+The Cloud browser calls `POST /login/status` with `{requestId, browserSecret}`.
 States are `pending`, `approved`, `denied`, `consumed`, or `expired`; after cleanup
-an expired request may instead be unavailable. Once approved, call
+an expired request may instead be unavailable. While the request is pending,
+Cloud holds the response for up to `pollAfterSeconds`, or until the request
+expires, and answers as soon as the app approves or denies it on any Core
+replica. The wake-up travels over Sync; the answer is always read from
+Postgres. Start the next status request no sooner than `pollAfterSeconds`
+after the previous one started. Once approved, call
 `POST /login/complete` with that body. Success is HTTP 204 with the normal
 HttpOnly Cloud session cookie, never a token in JSON. Completion is atomic and
 one-use. A lost response or failed session issuance requires a new login.

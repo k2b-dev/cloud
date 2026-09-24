@@ -19,7 +19,13 @@ import {
   appDeviceProofMessage,
   appPairingProofMessage,
 } from "../contracts/app-approval";
-import { type AppApprovalActor, type AppApprovalConfig, createAppApprovalService, readAppApprovalConfig } from "./app-approval";
+import {
+  type AppApprovalActor,
+  type AppApprovalConfig,
+  type AppLoginDecisionHints,
+  createAppApprovalService,
+  readAppApprovalConfig,
+} from "./app-approval";
 import { createIdentityPublicRoutes } from "./identity";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { createTestSession } from "./session/session.test-fixture";
@@ -38,8 +44,18 @@ const keys = async () => {
 suite("isolated app approval protocol", () => {
   let server: Server<unknown>;
   let cfg: AppApprovalConfig;
-  const service = createAppApprovalService(sql, async () => cfg);
-  const cloudB = createAppApprovalService(sql, async () => ({ ...cfg, issuer: "https://second-cloud.example.test" }));
+  // In-process stand-in for the Sync broadcast between replicas.
+  const decided = new EventTarget();
+  const hints: AppLoginDecisionHints = {
+    publish: (requestId) => decided.dispatchEvent(new Event(requestId)),
+    wait: (requestId, signal) =>
+      new Promise<void>((resolve) => {
+        decided.addEventListener(requestId, () => resolve(), { once: true, signal });
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      }),
+  };
+  const service = createAppApprovalService(sql, async () => cfg, hints);
+  const cloudB = createAppApprovalService(sql, async () => ({ ...cfg, issuer: "https://second-cloud.example.test" }), hints);
   const routes = createAppApprovalRoutes(service);
   const post = (path: string, body: unknown, token?: string, origin = cfg.issuer) =>
     routes.request(path, {
@@ -238,6 +254,31 @@ suite("isolated app approval protocol", () => {
     ]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect((await service.browserStatus(started.requestId, started.browserSecret)).state).toBe("consumed");
+  });
+
+  test("a held browser status answers on the app decision, at expiry, or at its bound", async () => {
+    const owner = await account(),
+      device = await enroll(owner);
+    const started = await service.startLogin(owner.uid, "login");
+    let since = performance.now();
+    expect((await service.browserStatus(started.requestId, started.browserSecret, { ms: 200 })).state).toBe("pending");
+    expect(performance.now() - since).toBeGreaterThanOrEqual(190);
+    await expect(service.browserStatus(started.requestId, "wrong-secret", { ms: 30_000 })).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    const client = new AbortController();
+    const gone = service.browserStatus(started.requestId, started.browserSecret, { ms: 30_000, signal: client.signal });
+    client.abort();
+    expect((await gone).state).toBe("pending");
+    const held = service.browserStatus(started.requestId, started.browserSecret, { ms: 30_000 });
+    await Bun.sleep(50);
+    since = performance.now();
+    await approve(device, started.requestId);
+    expect((await held).state).toBe("approved");
+    expect(performance.now() - since).toBeLessThan(1_000);
+    const expiring = await service.startLogin(owner.uid, "login");
+    await sql`UPDATE auth.app_logins SET expires_at=now()+interval '300 milliseconds' WHERE id=${expiring.requestId}::uuid`;
+    since = performance.now();
+    expect((await service.browserStatus(expiring.requestId, expiring.browserSecret, { ms: 30_000 })).state).toBe("expired");
+    expect(performance.now() - since).toBeLessThan(5_000);
   });
 
   test("two Clouds and two accounts cannot reuse keys, requests, or signatures", async () => {

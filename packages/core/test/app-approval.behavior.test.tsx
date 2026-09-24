@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -528,28 +528,112 @@ describe("Cloud app approval UI", () => {
     expect(dom.document.body.querySelector('[role="alert"]')).toBeNull();
     expect(dom.document.body.textContent).toContain("The device can now approve Cloud sign-ins");
   }, 15000);
-  test("foreground polling waits at least five seconds, stops while hidden, and aborts on disposal", async () => {
+  test("foreground reads start at least five seconds apart, pause while hidden, and abort on disposal", async () => {
+    jest.useFakeTimers();
     const dom = createDomTestHarness();
     const { pollApproval } = await import("../src/pages/app-approval/client");
     let hidden = true;
     Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
     let signal: AbortSignal | undefined;
-    const read = mock(async (value: AbortSignal) => {
+    let answer = (_again: boolean) => {};
+    const starts: number[] = [];
+    const t0 = Date.now();
+    const read = mock((value: AbortSignal) => {
       signal = value;
-      return true;
+      starts.push(Date.now() - t0);
+      return new Promise<boolean>((resolve) => {
+        answer = resolve;
+      });
     });
     const stop = pollApproval(read, () => true, 0);
     cleanup = () => {
       stop();
       dom.cleanup();
+      jest.useRealTimers();
     };
-    expect(read).not.toHaveBeenCalled();
-    await Bun.sleep(5100);
+    jest.advanceTimersByTime(10_000);
     expect(read).not.toHaveBeenCalled();
     hidden = false;
-    await Bun.sleep(5100);
-    expect(read).toHaveBeenCalledTimes(1);
+    dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
+    jest.advanceTimersByTime(1); // zero-delay timers take one millisecond
+    expect(starts).toEqual([10_001]);
+    // A read the server held for a full interval is followed at once.
+    jest.advanceTimersByTime(5_000);
+    answer(true);
+    await flush();
+    jest.advanceTimersByTime(1);
+    expect(starts).toEqual([10_001, 15_002]);
+    // A quick answer waits for the rest of the interval.
+    jest.advanceTimersByTime(1_000);
+    answer(true);
+    await flush();
+    jest.advanceTimersByTime(3_999);
+    expect(starts).toHaveLength(2);
+    jest.advanceTimersByTime(1);
+    expect(starts).toEqual([10_001, 15_002, 20_002]);
     stop();
     expect(signal?.aborted).toBe(true);
-  }, 15000);
+  });
+  test("an approval continues at once and the form never returns before navigation", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    const t0 = Date.now();
+    dom.window.sessionStorage.setItem("cloud.app-login:login:/app/files", JSON.stringify(login()));
+    let decide = (_response: Response) => {};
+    status.mockImplementation(
+      // Long poll: the server answers when the app decides.
+      () =>
+        new Promise<Response>((resolve) => {
+          decide = resolve;
+        }),
+    );
+    let navigatedAt: number | undefined;
+    const assign = spyOn(dom.window.location, "assign").mockImplementation(() => {
+      navigatedAt = Date.now() - t0;
+    });
+    const forms: Node[] = [];
+    const observer = new dom.window.MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node.nodeName === "FORM" || (node as unknown as Element).querySelector?.("form")) forms.push(node as unknown as Node);
+    });
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    const dispose = render(
+      () =>
+        createComponent(Login, {
+          category: "login",
+          redirectTo: "/app/files",
+          fallback: { href: "/auth/login?credential=legacy", label: "Email recovery" },
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      observer.disconnect();
+      dispose();
+      dom.cleanup();
+      jest.useRealTimers();
+    };
+    await flush();
+    expect(dom.root.textContent).toContain("123456");
+    observer.observe(dom.root, { childList: true, subtree: true });
+    jest.advanceTimersByTime(1);
+    expect(status).toHaveBeenCalledTimes(1);
+    // The app approves two seconds later; no further read or timer is needed to continue.
+    jest.advanceTimersByTime(2_000);
+    const decidedAt = Date.now() - t0;
+    decide(Response.json({ state: "approved", pollAfterSeconds: 5 }));
+    await flush();
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith("/auth/continue?redirectTo=%2Fapp%2Ffiles");
+    expect(navigatedAt).toBe(decidedAt);
+    // Navigation takes its time; the page keeps the confirmed state meanwhile.
+    jest.advanceTimersByTime(30_000);
+    await flush();
+    expect(dom.root.querySelector("form")).toBeNull();
+    expect(forms).toEqual([]);
+    expect(dom.root.textContent).toContain("Signed in – continuing…");
+    expect(dom.root.textContent).not.toContain("Email recovery");
+    expect(status).toHaveBeenCalledTimes(1);
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
 });
