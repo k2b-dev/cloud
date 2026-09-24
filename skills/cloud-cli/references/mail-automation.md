@@ -304,7 +304,7 @@ Steps may use `if`/`then`/`else` and `switch`/`cases`/`default`. The shared pars
 | `removeKeyword` | `message`, `keyword` | Remove a portable provider keyword |
 | `moveMessage` | `message`, accessible folder name or id in `folder` | Move through the durable provider journal |
 | `copyMessage` | `message`, accessible folder name or id in `folder` | Copy through the durable provider journal |
-| `archiveMessage` | `message` | Move to the configured Archive role |
+| `archiveMessage` | `message` | Move to the configured Archive role; on Gmail without a mapped archive folder, to `[Gmail]/All Mail` like conversation archive |
 | `trashMessage` | `message` | Move to the configured Trash role |
 | `junkMessage` | `message` | Move to the configured Junk role |
 | `addFlag` | `message`, `seen`, `answered`, `flagged`, or `draft` in `flag` | Add one standard provider flag |

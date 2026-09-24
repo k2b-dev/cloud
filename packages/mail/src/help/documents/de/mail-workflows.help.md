@@ -166,7 +166,7 @@ Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zw
 | `removeKeyword` | `message`, `keyword` | Entfernt ein übertragbares Anbieter-Schlüsselwort |
 | `moveMessage` | `message`, `folder` | Verschiebt die Nachricht in einen zugänglichen Anbieterordner |
 | `copyMessage` | `message`, `folder` | Kopiert die Nachricht in einen zugänglichen Anbieterordner |
-| `archiveMessage` | `message` | Verschiebt die Nachricht in den Archivordner des Postfachs |
+| `archiveMessage` | `message` | Verschiebt die Nachricht in den Archivordner des Postfachs; bei Gmail ohne zugeordneten Archivordner wie die Aktion Archivieren nach **Alle Nachrichten** |
 | `trashMessage` | `message` | Verschiebt die Nachricht in den Papierkorbordner des Postfachs |
 | `junkMessage` | `message` | Verschiebt die Nachricht in den Spamordner des Postfachs |
 | `addFlag` / `removeFlag` | `message`, `flag` | Ändert `seen`, `answered`, `flagged` oder `draft` über das Befehlsjournal des Anbieters |

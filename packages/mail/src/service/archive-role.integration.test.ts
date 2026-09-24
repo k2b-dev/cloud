@@ -8,6 +8,7 @@ import type { MailRequestContext } from "./auth";
 import { clearFolderRole, resolveRoleFolder, setFolderRole } from "./folders";
 import { createMailbox } from "./mailboxes";
 import { createConversationTriageCommands } from "./triage";
+import { validateMailWorkflowSource } from "./workflow-definition-service";
 
 const suite = suiteFor("database", "nats");
 
@@ -176,6 +177,38 @@ suite("mail archive role", () => {
       WHERE id = ${archived.data.commands[0]!.id}::uuid
     `;
     expect(payload).toEqual({ source: inboxId, destination: allMailId });
+  });
+
+  test("lets archive automations use Gmail's All Mail like the archive action", async () => {
+    await setGmail(true);
+    // The automation catalog lists folders of a binding verified for the current secret revision.
+    await sql`
+      UPDATE mail.provider_bindings binding
+      SET verified_secret_revision = connection.secret_revision
+      FROM mail.provider_connections connection
+      WHERE binding.id = ${bindingId}::uuid AND connection.id = binding.connection_id
+    `;
+    const [allMail] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.folders WHERE id = ${allMailId}::uuid`;
+    const validation = await validateMailWorkflowSource({
+      context,
+      mailboxId,
+      source: [
+        "inputs:",
+        "  message:",
+        "    type: mailMessage",
+        "    required: true",
+        "triggers:",
+        "  messageReceived:",
+        "    with:",
+        '      message: "${{ trigger.message }}"',
+        "steps:",
+        "  - archiveMessage:",
+        "      message: inputs.message",
+      ].join("\n"),
+    });
+    expect(validation.diagnostics).toEqual([]);
+    expect(validation.valid).toBe(true);
+    expect(JSON.stringify(validation.boundPlan)).toContain(allMail!.short_id);
   });
 
   test("prefers a configured archive folder on Gmail", async () => {
