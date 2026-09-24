@@ -192,6 +192,18 @@ class CliError extends Error {
   }
 }
 
+// All output goes through the process streams, never `console.log`/`console.error`.
+// Once any module touches `process.stdout` (picocolors does at import), Bun's
+// console writes to a pipe drop everything past the pipe buffer. Stream writes
+// queue until the reader drains them, and the process stays alive until they
+// are flushed.
+const printLine = (value = "") => {
+  process.stdout.write(`${value}\n`);
+};
+const printErrorLine = (value = "") => {
+  process.stderr.write(`${value}\n`);
+};
+
 const isFlag = (value: string | undefined): boolean => Boolean(value?.startsWith("-"));
 
 const setFlag = (flags: CloudCliFlags, name: string, value: CloudCliFlagValue) => {
@@ -425,7 +437,7 @@ const removeFd0Secret = async (name: string, scope: string | undefined): Promise
   try {
     await execFileAsync("fd0", args, { timeout: TOKEN_TIMEOUT_MS });
   } catch (error) {
-    console.error(`Warning: failed to remove OAuth refresh token from fd0: ${error instanceof Error ? error.message : String(error)}`);
+    printErrorLine(`Warning: failed to remove OAuth refresh token from fd0: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
 
@@ -632,15 +644,15 @@ const refreshOAuthSession = async (profileName: string, server: string, force = 
       await saveConfig(config);
     } catch (error) {
       if (refreshTokenStoredInFd0) {
-        console.error(`Warning: refreshed OAuth token, but failed to persist profile metadata: ${(error as Error).message}`);
+        printErrorLine(`Warning: refreshed OAuth token, but failed to persist profile metadata: ${(error as Error).message}`);
         return token.access_token;
       }
 
       await revokeOAuthRefreshToken(server, token.refresh_token).catch((revokeError) => {
-        console.error(`Warning: failed to revoke unpersisted refresh token: ${(revokeError as Error).message}`);
+        printErrorLine(`Warning: failed to revoke unpersisted refresh token: ${(revokeError as Error).message}`);
       });
       await removeLocalOAuthSession(profileName).catch((removeError) => {
-        console.error(`Warning: failed to remove invalid local OAuth session: ${(removeError as Error).message}`);
+        printErrorLine(`Warning: failed to remove invalid local OAuth session: ${(removeError as Error).message}`);
       });
       throw error;
     }
@@ -829,7 +841,7 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
         await saveConfig(config);
       });
       if (value !== undefined && !hadPersistentToken) {
-        console.error(
+        printErrorLine(
           `Warning: saved a default for profile "${options.profile}", but this profile has no persistent token provider. Run \`cld profile set ${options.profile} --server ${options.server} --token-file <path>\` or pass a token/env token on future calls.`,
         );
       }
@@ -842,24 +854,24 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
     fetch: (path, init = {}) => fetchWithAuth(path, init),
     readJson,
     print: (value = "") => {
-      console.log(value);
+      printLine(value);
     },
     write: (value) =>
       new Promise<void>((resolve, reject) => {
         process.stdout.write(value, (error) => (error ? reject(error) : resolve()));
       }),
     error: (value) => {
-      console.error(value);
+      printErrorLine(value);
     },
     json: (value) => {
-      console.log(JSON.stringify(value, null, 2));
+      printLine(JSON.stringify(value, null, 2));
     },
     jsonLine: (value) => {
-      console.log(JSON.stringify(value));
+      printLine(JSON.stringify(value));
     },
     table: (rows, columns) => {
       const rendered = renderTable(rows, columns);
-      if (rendered) console.log(rendered);
+      if (rendered) printLine(rendered);
     },
   };
 };
@@ -1007,7 +1019,7 @@ const confirmCliUpdate = async (message: string): Promise<boolean> => {
 const runUpdateCommand = async (args: string[], locale: string): Promise<number> => {
   const parsed = parseArgs(args);
   if (isModuleHelpRequest(parsed.args, parsed.flags)) {
-    console.log(updateHelp(locale));
+    printLine(updateHelp(locale));
     return 0;
   }
   if (parsed.args.length > 0)
@@ -1042,7 +1054,7 @@ const runUpdateCommand = async (args: string[], locale: string): Promise<number>
           ? "; Claude Code symlink skipped because the target already exists"
           : "";
   if (result.release.version === cliVersion) {
-    console.log(
+    printLine(
       result.skill === "installed"
         ? `cld ${cliVersion} is up to date; Cloud CLI skill updated${claude}.`
         : `cld ${cliVersion} is already up to date${claude}.`,
@@ -1056,14 +1068,14 @@ const runUpdateCommand = async (args: string[], locale: string): Promise<number>
         ? "SHA-256 verified; Cosign unavailable"
         : "SHA-256 verified";
   const skill = result.skill === "installed" ? "; Cloud CLI skill updated" : "";
-  console.log(`Updated cld to ${result.release.version} (${verification}${skill}${claude}).`);
+  printLine(`Updated cld to ${result.release.version} (${verification}${skill}${claude}).`);
   return 0;
 };
 
 /** Run one built-in or plugin module with the shared context. */
 const runModule = async (module: CloudCliModule, moduleArgs: string[], global: GlobalArgs): Promise<number> => {
   if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
-    console.log(
+    printLine(
       module.help?.(global.locale) ??
         `${module.name}: ${global.locale.toLowerCase().startsWith("de") ? (germanModuleSummaries.get(module.name) ?? module.summary) : module.summary}`,
     );
@@ -1119,7 +1131,7 @@ Verzeichnis: ${pluginsDirectory()}
 
 const warnSkippedPlugin = (plugin: PluginInfo, locale: string): void => {
   if (plugin.status === "shadowed") {
-    console.error(
+    printErrorLine(
       text(
         locale,
         `cld: plugin "${plugin.id}" shadowed by a built-in command, use \`cld plugins run ${plugin.id}\``,
@@ -1128,7 +1140,7 @@ const warnSkippedPlugin = (plugin: PluginInfo, locale: string): void => {
     );
     return;
   }
-  console.error(
+  printErrorLine(
     text(
       locale,
       `cld: plugin "${plugin.id}" skipped (${plugin.status}): ${plugin.message}`,
@@ -1176,14 +1188,14 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
   const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y"]));
   const [command, target, ...extra] = parsed.args;
   if (!command || isModuleHelpRequest(parsed.args, parsed.flags)) {
-    console.log(pluginsHelp(locale));
+    printLine(pluginsHelp(locale));
     return 0;
   }
   const output = takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : global.output;
   const allowedFlags = new Set(command === "install" ? ["json", "jsonl", "yes", "y"] : ["json", "jsonl"]);
   const unsupportedFlag = Object.keys(parsed.flags).find((flag) => !allowedFlags.has(flag));
   if (unsupportedFlag) throw new CliError(`Unknown plugins option "--${unsupportedFlag}".`);
-  const printJson = (value: unknown) => console.log(output === "jsonl" ? JSON.stringify(value) : JSON.stringify(value, null, 2));
+  const printJson = (value: unknown) => printLine(output === "jsonl" ? JSON.stringify(value) : JSON.stringify(value, null, 2));
 
   if (command === "list" && !target) {
     const { plugins } = await loadPlugins(reservedNames);
@@ -1192,9 +1204,9 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     } else if (output === "json") {
       printJson({ directory: pluginsDirectory(), plugins });
     } else if (plugins.length === 0) {
-      console.log(text(locale, `No plugins installed in ${pluginsDirectory()}.`, `Keine Plugins in ${pluginsDirectory()} installiert.`));
+      printLine(text(locale, `No plugins installed in ${pluginsDirectory()}.`, `Keine Plugins in ${pluginsDirectory()} installiert.`));
     } else {
-      console.log(
+      printLine(
         renderTable(plugins, [
           { key: "id", label: "ID" },
           { key: "package", label: text(locale, "PACKAGE", "PAKET") },
@@ -1215,7 +1227,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     try {
       const { manifest, source } = staged;
       const label = `${manifest.package}@${manifest.version}`;
-      console.error(
+      printErrorLine(
         text(
           locale,
           `Plugin ${label} from ${source} runs inside cld with your Cloud credentials.`,
@@ -1226,7 +1238,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         !takeBooleanFlag(parsed.flags, "yes", "y") &&
         !(await confirmPluginInstall(text(locale, "Install it?", "Installieren?"), locale))
       ) {
-        console.error(text(locale, "Plugin installation cancelled.", "Plugin-Installation abgebrochen."));
+        printErrorLine(text(locale, "Plugin installation cancelled.", "Plugin-Installation abgebrochen."));
         return 1;
       }
       const { id, replaced } = await commitPlugin(staged, reservedNames).catch((error) =>
@@ -1235,7 +1247,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       if (output !== "text") {
         printJson({ id, package: manifest.package, version: manifest.version, source, replaced });
       } else {
-        console.log(
+        printLine(
           text(
             locale,
             `${replaced ? "Replaced" : "Installed"} plugin "${id}" (${label}). Run \`cld ${id} help\`.`,
@@ -1254,7 +1266,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       throw new CliError(`Plugin "${target}" is not installed.`, 1, `Plugin "${target}" ist nicht installiert.`);
     }
     if (output !== "text") printJson({ id: target, removed: true });
-    else console.log(text(locale, `Removed plugin "${target}".`, `Plugin "${target}" entfernt.`));
+    else printLine(text(locale, `Removed plugin "${target}".`, `Plugin "${target}" entfernt.`));
     return 0;
   }
 
@@ -1268,7 +1280,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
 const runProfileCommand = async (args: string[], locale: string): Promise<number> => {
   const [command, maybeName, ...rest] = args;
   if (!command || command === "help") {
-    console.log(profileHelp(locale));
+    printLine(profileHelp(locale));
     return 0;
   }
 
@@ -1293,7 +1305,7 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
                 ? "command"
                 : "",
     }));
-    console.log(
+    printLine(
       renderTable(rows, [
         { key: "current", label: "" },
         { key: "name", label: text(locale, "PROFILE", "PROFIL") },
@@ -1308,7 +1320,7 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
     const name = resolveProfileName(config, maybeName);
     const profile = config.profiles[name];
     if (!profile) throw new CliError(`Profile "${name}" does not exist.`);
-    console.log(
+    printLine(
       JSON.stringify(
         {
           name,
@@ -1338,7 +1350,7 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
       latestConfig.currentProfile = maybeName;
       await saveConfig(latestConfig);
     });
-    console.log(text(locale, `Using profile "${maybeName}".`, `Profil "${maybeName}" wird verwendet.`));
+    printLine(text(locale, `Using profile "${maybeName}".`, `Profil "${maybeName}" wird verwendet.`));
     return 0;
   }
 
@@ -1370,7 +1382,7 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
         try {
           displacedRefreshToken = await readOAuthRefreshToken(existing.oauth);
         } catch (error) {
-          console.error(`Warning: could not read replaced OAuth refresh token for remote revocation: ${(error as Error).message}`);
+          printErrorLine(`Warning: could not read replaced OAuth refresh token for remote revocation: ${(error as Error).message}`);
         }
       }
 
@@ -1395,7 +1407,7 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
       if (setsAuthProvider && existing.oauth) {
         if (existing.server && displacedRefreshToken) {
           await revokeOAuthRefreshToken(existing.server, displacedRefreshToken).catch((error) => {
-            console.error(`Warning: failed to revoke the replaced OAuth login: ${(error as Error).message}`);
+            printErrorLine(`Warning: failed to revoke the replaced OAuth login: ${(error as Error).message}`);
           });
         }
         const displacedFd0 = existing.oauth.refreshTokenFd0;
@@ -1403,7 +1415,7 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
         if (displacedFd0 && !reusesDisplacedFd0) await removeFd0Secret(displacedFd0.name, displacedFd0.scope);
       }
 
-      console.log(text(locale, `Saved profile "${name}" to ${CONFIG_PATH}.`, `Profil "${name}" wurde unter ${CONFIG_PATH} gespeichert.`));
+      printLine(text(locale, `Saved profile "${name}" to ${CONFIG_PATH}.`, `Profil "${name}" wurde unter ${CONFIG_PATH} gespeichert.`));
       return 0;
     });
   }
@@ -1437,13 +1449,13 @@ const openBrowser = async (url: string, locale: string): Promise<void> => {
   try {
     await execFileAsync(opener.command, opener.args, { timeout: 5_000 });
   } catch {
-    console.log(text(locale, `Open this URL in your browser:\n${url}`, `Öffne diese URL im Browser:\n${url}`));
+    printLine(text(locale, `Open this URL in your browser:\n${url}`, `Öffne diese URL im Browser:\n${url}`));
   }
 };
 
 const promptToOpenBrowser = async (url: string, signal: AbortSignal, locale: string): Promise<void> => {
   if (!process.stdin.isTTY) {
-    console.log(
+    printLine(
       text(
         locale,
         "Waiting for the OAuth callback. Open the URL above in a browser.",
@@ -1466,7 +1478,7 @@ const promptToOpenBrowser = async (url: string, signal: AbortSignal, locale: str
     await openBrowser(url, locale);
   } catch (error) {
     if ((error as { name?: string }).name !== "AbortError") {
-      console.error(`Warning: could not open browser: ${(error as Error).message}`);
+      printErrorLine(`Warning: could not open browser: ${(error as Error).message}`);
     }
   } finally {
     rl.close();
@@ -1575,10 +1587,10 @@ const waitForOAuthCode = async (
   const url = authorizationUrl.toString();
 
   try {
-    console.log(text(locale, `Login URL:\n${url}`, `Anmelde-URL:\n${url}`));
+    printLine(text(locale, `Login URL:\n${url}`, `Anmelde-URL:\n${url}`));
     if (open) void promptToOpenBrowser(url, promptAbort.signal, locale);
     else
-      console.log(
+      printLine(
         text(
           locale,
           "Waiting for the OAuth callback. Open the URL above in a browser.",
@@ -1690,7 +1702,7 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
           const replacedDisplacedSecret = displacedFd0?.name === refreshTokenFd0.name && displacedFd0.scope === refreshTokenFd0.scope;
           if (replacedDisplacedSecret && displacedRefreshToken !== null) {
             await writeFd0Secret(refreshTokenFd0.name, refreshTokenFd0.scope, displacedRefreshToken).catch((restoreError) => {
-              console.error(`Warning: failed to restore the previous fd0 refresh token: ${(restoreError as Error).message}`);
+              printErrorLine(`Warning: failed to restore the previous fd0 refresh token: ${(restoreError as Error).message}`);
             });
           } else {
             await removeFd0Secret(refreshTokenFd0.name, refreshTokenFd0.scope);
@@ -1701,7 +1713,7 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
 
       if (displacedRefreshToken && latestProfile.server && displacedSession) {
         await revokeOAuthRefreshToken(latestProfile.server, displacedRefreshToken).catch((error) => {
-          console.error(`Warning: failed to revoke the previous OAuth login: ${(error as Error).message}`);
+          printErrorLine(`Warning: failed to revoke the previous OAuth login: ${(error as Error).message}`);
         });
       }
       const displacedFd0 = displacedSession?.refreshTokenFd0;
@@ -1714,12 +1726,12 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   } catch (error) {
     if (!persisted) {
       await revokeOAuthRefreshToken(normalizedServer, token.refresh_token).catch((revokeError) => {
-        console.error(`Warning: failed to revoke the unpersisted OAuth login: ${(revokeError as Error).message}`);
+        printErrorLine(`Warning: failed to revoke the unpersisted OAuth login: ${(revokeError as Error).message}`);
       });
     }
     throw error;
   }
-  console.log(
+  printLine(
     text(
       global.locale,
       `Logged in to ${normalizedServer} as profile "${name}".`,
@@ -1737,9 +1749,7 @@ const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<num
     const latestConfig = await loadConfig();
     const profile = latestConfig.profiles?.[name];
     if (!profile?.oauth) {
-      console.log(
-        text(global.locale, `Profile "${name}" is not logged in with OAuth.`, `Profil "${name}" ist nicht über OAuth angemeldet.`),
-      );
+      printLine(text(global.locale, `Profile "${name}" is not logged in with OAuth.`, `Profil "${name}" ist nicht über OAuth angemeldet.`));
       return 0;
     }
 
@@ -1747,12 +1757,12 @@ const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<num
     try {
       refreshToken = await readOAuthRefreshToken(profile.oauth);
     } catch (error) {
-      console.error(`Warning: could not read refresh token for remote revocation: ${(error as Error).message}`);
+      printErrorLine(`Warning: could not read refresh token for remote revocation: ${(error as Error).message}`);
     }
 
     if (profile.server && refreshToken) {
       await revokeOAuthRefreshToken(profile.server, refreshToken).catch((error) => {
-        console.error(`Warning: ${(error as Error).message} Removing local credentials anyway.`);
+        printErrorLine(`Warning: ${(error as Error).message} Removing local credentials anyway.`);
       });
     }
 
@@ -1761,7 +1771,7 @@ const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<num
     }
     delete profile.oauth;
     await saveConfig(latestConfig);
-    console.log(text(global.locale, `Logged out profile "${name}".`, `Profil "${name}" wurde abgemeldet.`));
+    printLine(text(global.locale, `Logged out profile "${name}".`, `Profil "${name}" wurde abgemeldet.`));
     return 0;
   });
 };
@@ -1793,22 +1803,22 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
     refreshTokenStorage: profile?.oauth?.refreshTokenFd0 ? `fd0:${profile.oauth.refreshTokenFd0.name}` : profile?.oauth ? "config" : null,
   };
 
-  if (global.output === "json" || takeBooleanFlag(parsed.flags, "json")) console.log(JSON.stringify(payload, null, 2));
+  if (global.output === "json" || takeBooleanFlag(parsed.flags, "json")) printLine(JSON.stringify(payload, null, 2));
   else {
-    console.log(`${text(global.locale, "Profile", "Profil")}: ${payload.profile}`);
-    console.log(`Server: ${payload.server || "-"}`);
-    console.log(`${text(global.locale, "Auth", "Authentifizierung")}: ${payload.kind}`);
+    printLine(`${text(global.locale, "Profile", "Profil")}: ${payload.profile}`);
+    printLine(`Server: ${payload.server || "-"}`);
+    printLine(`${text(global.locale, "Auth", "Authentifizierung")}: ${payload.kind}`);
     if (payload.accessTokenExpiresAt)
-      console.log(`${text(global.locale, "Access token expires", "Access-Token läuft ab")}: ${payload.accessTokenExpiresAt}`);
+      printLine(`${text(global.locale, "Access token expires", "Access-Token läuft ab")}: ${payload.accessTokenExpiresAt}`);
     if (payload.refreshTokenStorage)
-      console.log(`${text(global.locale, "Refresh token storage", "Speicherort des Refresh-Tokens")}: ${payload.refreshTokenStorage}`);
+      printLine(`${text(global.locale, "Refresh token storage", "Speicherort des Refresh-Tokens")}: ${payload.refreshTokenStorage}`);
   }
   return 0;
 };
 
 export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (argv.length === 1 && ["--version", "-V", "version"].includes(argv[0]!)) {
-    console.log(`cld ${cliVersion} (${cliCommit})`);
+    printLine(`cld ${cliVersion} (${cliCommit})`);
     return 0;
   }
   const global = parseGlobalArgs(argv);
@@ -1817,7 +1827,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (!moduleName || moduleName === "help" || moduleName === "--help" || moduleName === "-h") {
     const { modules: pluginModules, plugins } = await loadPlugins(reservedNames);
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, global.locale);
-    console.log(helpText(global.locale, pluginModules));
+    printLine(helpText(global.locale, pluginModules));
     return 0;
   }
 
@@ -1862,6 +1872,12 @@ const errorPayload = (error: unknown, exitCode: number) => {
 if (import.meta.main && Bun.argv[2] === "--internal-code-host" && process.send) {
   await startCliCodeHostProcess();
 } else if (import.meta.main) {
+  // A reader that stops early (`cld … | head`) wants no more output; that is not a crash.
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") throw error;
+    });
+  }
   main().then(
     (code) => {
       process.exitCode = code;
@@ -1870,7 +1886,7 @@ if (import.meta.main && Bun.argv[2] === "--internal-code-host" && process.send) 
       const exitCode = error instanceof CliError ? error.exitCode : 1;
       if (wantsJsonError(Bun.argv.slice(2))) {
         const payload = errorPayload(error, exitCode);
-        console.error(Bun.argv.includes("--jsonl") ? JSON.stringify(payload) : JSON.stringify(payload, null, 2));
+        printErrorLine(Bun.argv.includes("--jsonl") ? JSON.stringify(payload) : JSON.stringify(payload, null, 2));
       } else {
         let locale = "en";
         try {
@@ -1878,7 +1894,7 @@ if (import.meta.main && Bun.argv[2] === "--internal-code-host" && process.send) 
         } catch {
           locale = envLocale() ?? "en";
         }
-        console.error(error instanceof CliError ? error.localizedMessage(locale) : error instanceof Error ? error.message : String(error));
+        printErrorLine(error instanceof CliError ? error.localizedMessage(locale) : error instanceof Error ? error.message : String(error));
       }
       process.exitCode = exitCode;
     },
