@@ -21,7 +21,7 @@ import { coreSettings } from "./settings/api";
 const CHALLENGE_TTL_SECONDS = 300;
 const REGISTRATION_CHALLENGE_PREFIX = "webauthn:registration:";
 const AUTHENTICATION_CHALLENGE_PREFIX = "webauthn:authentication:";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const log = logger("auth:webauthn");
 
 type DbPasskeyRow = {
