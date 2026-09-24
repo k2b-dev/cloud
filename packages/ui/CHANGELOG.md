@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.5.1...npm-ui-v0.6.0) (2026-09-24)
+
+
+### Features
+
+* **notebooks:** zoom, pan, and open Mermaid diagrams fullscreen ([#194](https://github.com/k2b-dev/cloud/issues/194)) ([b88ac25](https://github.com/k2b-dev/cloud/commit/b88ac253479f3ba01676383fe06107cd31813614))
+
+
+### Bug Fixes
+
+* **ui:** align entity search results left with the action on the right ([#192](https://github.com/k2b-dev/cloud/issues/192)) ([8f34e22](https://github.com/k2b-dev/cloud/commit/8f34e22db573839de5831992d8f9a5d6e00a9ed1))
+* **ui:** keep a custom TextInput icon while the field is focused ([#199](https://github.com/k2b-dev/cloud/issues/199)) ([07f0a5b](https://github.com/k2b-dev/cloud/commit/07f0a5b08bfef32777a2cac2cd53a5b5d84b08db))
+* **ui:** keep the TextInput focus ring visible over browser autofill ([#188](https://github.com/k2b-dev/cloud/issues/188)) ([714e658](https://github.com/k2b-dev/cloud/commit/714e6585b7bb5913afcebaa6605ac1875ff34bf5))
+* **ui:** spin the pull-to-refresh indicator and calm the Mail search summary link ([#217](https://github.com/k2b-dev/cloud/issues/217)) ([ac77eb7](https://github.com/k2b-dev/cloud/commit/ac77eb7e98855eb3e146a8b4afcfabd4a03afbe8))
+
 ## [0.5.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.5.0...npm-ui-v0.5.1) (2026-09-23)
 
 

@@ -3,6 +3,41 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.16.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.15.0...cloud-v0.16.0) (2026-09-24)
+
+
+### Features
+
+* **accounts:** capitalise group names for display in German ([#202](https://github.com/k2b-dev/cloud/issues/202)) ([08b34e9](https://github.com/k2b-dev/cloud/commit/08b34e9a5d7e57da8d406a88b1c85644ba7cb0b1))
+* **accounts:** hide personal Linux groups from group lists and pickers by default ([#197](https://github.com/k2b-dev/cloud/issues/197)) ([1e640c4](https://github.com/k2b-dev/cloud/commit/1e640c453cdb83bb87f8f405cb93b843f71ac475))
+* **filesv2:** show display names next to usernames in the directory admin list ([#195](https://github.com/k2b-dev/cloud/issues/195)) ([e893392](https://github.com/k2b-dev/cloud/commit/e8933925fe6c47d606f424732c491eb038c7d223))
+* **mail:** name folders by path in move approvals and folder maintenance ([#223](https://github.com/k2b-dev/cloud/issues/223)) ([71da4a2](https://github.com/k2b-dev/cloud/commit/71da4a2dd0401006405ca5a9f34ff4a36a571e28))
+* **notebooks:** show typographic ligatures for arrows and symbols ([#196](https://github.com/k2b-dev/cloud/issues/196)) ([52b0d0b](https://github.com/k2b-dev/cloud/commit/52b0d0b3c04e4105b92dbee6a5c5fbf5032e5085))
+* **notebooks:** zoom, pan, and open Mermaid diagrams fullscreen ([#194](https://github.com/k2b-dev/cloud/issues/194)) ([b88ac25](https://github.com/k2b-dev/cloud/commit/b88ac253479f3ba01676383fe06107cd31813614))
+
+
+### Bug Fixes
+
+* **cli:** flush complete output before exiting ([#212](https://github.com/k2b-dev/cloud/issues/212)) ([4937f49](https://github.com/k2b-dev/cloud/commit/4937f4990ff76834352f4f47aad2e5248a0d91c6))
+* **cloud:** bound automatic page reloads so live errors cannot loop ([#221](https://github.com/k2b-dev/cloud/issues/221)) ([cd513d8](https://github.com/k2b-dev/cloud/commit/cd513d8f4220612a966ffc5517d4e4e05dd944b5))
+* **core:** delete passkeys reliably and explain failures ([#203](https://github.com/k2b-dev/cloud/issues/203)) ([b72e51f](https://github.com/k2b-dev/cloud/commit/b72e51f6c3ec1b2004be0509c400f1787abe13d6))
+* **core:** finish app sign-in immediately without flashing the form ([#191](https://github.com/k2b-dev/cloud/issues/191)) ([074825d](https://github.com/k2b-dev/cloud/commit/074825df64a25681787b848be83b668dd37c044b))
+* **mail:** archive Gmail conversations to All Mail ([#218](https://github.com/k2b-dev/cloud/issues/218)) ([204e6b2](https://github.com/k2b-dev/cloud/commit/204e6b2826ecd063e4e050e353c396008fa11a6c)), closes [#211](https://github.com/k2b-dev/cloud/issues/211)
+* **mail:** filter search by folder id and reject unknown folders ([#215](https://github.com/k2b-dev/cloud/issues/215)) ([354d486](https://github.com/k2b-dev/cloud/commit/354d486c7178aadb977bb1f1dfcbfb8947aa9fa3)), closes [#209](https://github.com/k2b-dev/cloud/issues/209)
+* **mail:** let archive automations use Gmail's All Mail ([#225](https://github.com/k2b-dev/cloud/issues/225)) ([f5c0734](https://github.com/k2b-dev/cloud/commit/f5c0734950aa6d52202cc11e5f9ff8e6483fc68b))
+* **mail:** name the invalid field in automation definition errors ([#220](https://github.com/k2b-dev/cloud/issues/220)) ([82c7079](https://github.com/k2b-dev/cloud/commit/82c7079b9308b99c4511d84a0c5df8569cb71b44)), closes [#208](https://github.com/k2b-dev/cloud/issues/208)
+* **mail:** report limited backfills and keep their progress monotonic ([#219](https://github.com/k2b-dev/cloud/issues/219)) ([11ac285](https://github.com/k2b-dev/cloud/commit/11ac2854f791ce4221887c64a7ebf64498c422cf)), closes [#207](https://github.com/k2b-dev/cloud/issues/207)
+* **mail:** serve the automation catalog without a 500 ([#214](https://github.com/k2b-dev/cloud/issues/214)) ([357be49](https://github.com/k2b-dev/cloud/commit/357be499d2196583ba4b490b87fea82f4c757ae9)), closes [#206](https://github.com/k2b-dev/cloud/issues/206)
+* **mail:** set up the default sender after connecting and explain partial success ([#205](https://github.com/k2b-dev/cloud/issues/205)) ([58fd537](https://github.com/k2b-dev/cloud/commit/58fd537e3ed2de2c0a59574de5ed0def68c1f080)), closes [#198](https://github.com/k2b-dev/cloud/issues/198)
+* **mail:** show IMAP folders as a tree again ([#204](https://github.com/k2b-dev/cloud/issues/204)) ([778fb9c](https://github.com/k2b-dev/cloud/commit/778fb9cf0cf2e19dd4a34d3740ff6b5708e1f8b0)), closes [#200](https://github.com/k2b-dev/cloud/issues/200)
+* **mail:** show the provider's error detail with invalid-input messages ([#222](https://github.com/k2b-dev/cloud/issues/222)) ([6b82311](https://github.com/k2b-dev/cloud/commit/6b82311ec309b484205256a14abeb72479dbc770))
+* **notebooks:** let the CLI edit notes that are open in the editor ([#213](https://github.com/k2b-dev/cloud/issues/213)) ([8f8fcb8](https://github.com/k2b-dev/cloud/commit/8f8fcb84344407e78fff33b253775c2dbc36caab))
+* **notebooks:** show top-level notes without sub-notes in the navigator ([#190](https://github.com/k2b-dev/cloud/issues/190)) ([20c790f](https://github.com/k2b-dev/cloud/commit/20c790f3b8322bef6f9059c84524ea8174c58ff3))
+* **ui:** align entity search results left with the action on the right ([#192](https://github.com/k2b-dev/cloud/issues/192)) ([8f34e22](https://github.com/k2b-dev/cloud/commit/8f34e22db573839de5831992d8f9a5d6e00a9ed1))
+* **ui:** keep a custom TextInput icon while the field is focused ([#199](https://github.com/k2b-dev/cloud/issues/199)) ([07f0a5b](https://github.com/k2b-dev/cloud/commit/07f0a5b08bfef32777a2cac2cd53a5b5d84b08db))
+* **ui:** keep the TextInput focus ring visible over browser autofill ([#188](https://github.com/k2b-dev/cloud/issues/188)) ([714e658](https://github.com/k2b-dev/cloud/commit/714e6585b7bb5913afcebaa6605ac1875ff34bf5))
+* **ui:** spin the pull-to-refresh indicator and calm the Mail search summary link ([#217](https://github.com/k2b-dev/cloud/issues/217)) ([ac77eb7](https://github.com/k2b-dev/cloud/commit/ac77eb7e98855eb3e146a8b4afcfabd4a03afbe8))
+
 ## [0.15.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.14.1...cloud-v0.15.0) (2026-09-23)
 
 
