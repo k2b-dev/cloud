@@ -8,7 +8,7 @@ import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } 
 import { imapSmtpConnector } from "./connectors";
 import { EndpointPolicyError } from "./connectors/endpoint-policy";
 import { logDatabaseFailure } from "./database-errors";
-import { withMailboxProviderOperationBarrier } from "./provider-operation-lock";
+import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
 
@@ -247,7 +247,7 @@ export const createProviderConnection = async (params: {
         return ok({ connection, verification: verification.data });
       });
     });
-    return barrier.acquired ? barrier.value : fail(err.conflict("Provider work is still running; retry connection creation shortly"));
+    return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry connection creation shortly"));
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
       return fail(err.conflict("Provider state changed during connection verification; retry the operation"));
@@ -333,7 +333,7 @@ export const refreshProviderConnectionLimits = async (params: {
         return ok(mapConnection(updated));
       });
     });
-    return barrier.acquired ? barrier.value : fail(err.conflict("Provider work is still running; retry the limit refresh shortly"));
+    return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry the limit refresh shortly"));
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
       return fail(err.conflict("Provider state changed during the limit refresh; retry the operation"));
@@ -558,7 +558,7 @@ export const replaceProviderConnection = async (params: {
         return ok({ connection, verification: verification.data });
       });
     });
-    return barrier.acquired ? barrier.value : fail(err.conflict("Provider work is still running; retry credential replacement shortly"));
+    return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry credential replacement shortly"));
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
       return fail(err.conflict("Provider state changed during credential verification; retry the operation"));
@@ -649,7 +649,7 @@ export const revokeProviderConnection = async (context: MailRequestContext, conn
         return ok();
       }),
     );
-    return barrier.acquired ? barrier.value : fail(err.conflict("Provider work is still running; retry revocation shortly"));
+    return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry revocation shortly"));
   } catch {
     return fail(err.internal("Failed to revoke provider connection"));
   }
