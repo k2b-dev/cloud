@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
-import type { RequestActor } from "@k2b/cloud/server";
+import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { Filegate, FilegateError } from "@k2b/filegate";
 import { sql } from "bun";
@@ -139,6 +139,7 @@ suite("real Filegate directory lifecycle", () => {
     };
     service = createFilesService({
       identities,
+      displayNames: resolveDisplayNames,
       bindings,
       readConfiguration: async () => configuration,
       writeConfiguration: async (value) => {

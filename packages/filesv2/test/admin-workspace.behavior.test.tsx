@@ -293,6 +293,7 @@ describe("Filesv2 admin workspace", () => {
       area: "cloud",
       kind: "users",
       name: "old-user",
+      displayName: null,
       path: "users/old-user",
       status: "orphaned",
       reason: null,
@@ -387,6 +388,7 @@ describe("Filesv2 admin workspace", () => {
       area: "cloud",
       kind: "users",
       name: "alice",
+      displayName: "Alice Example",
       path: "users/alice",
       status: "missing",
       reason: "missing",
@@ -394,7 +396,14 @@ describe("Filesv2 admin workspace", () => {
       gid: null,
       actions: { create: true, adopt: false, browse: false, archive: false, delete: false, retire: false },
     };
-    const inaccessible = { ...row, identityId: null, name: "bob", path: "users/bob", actions: { ...row.actions, create: false } };
+    const inaccessible = {
+      ...row,
+      identityId: null,
+      name: "bob",
+      displayName: null,
+      path: "users/bob",
+      actions: { ...row.actions, create: false },
+    };
     let actions!: ReturnType<typeof createAdminActions>;
     const dispose = render(() => {
       actions = createAdminActions({

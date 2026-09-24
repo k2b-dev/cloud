@@ -26,7 +26,7 @@ Index, Versionshistorie, Managed-Modus und Unix-Ausführung werden in Filegate k
 
 ## Verzeichnisse prüfen {icon="folders"}
 
-Wähle Bereich und **Nutzer** oder **Gruppen**. Suche nach Namen oder filtere nach Zustand. **Aktualisieren** liest den aktuellen Dateisystembestand einschließlich manuell auf dem Server angelegter Verzeichnisse. FreeIPA-Verzeichnisse werden auch bei aktivem Index direkt im Dateisystem gelesen. Mit Filegate 6.1 liest auch die FreeIPA-Dateinamensuche den aktuellen Dateisystembestand unter der Unix-Identität des Nutzers, unabhängig vom Index. Unlesbare Teilbäume brechen die Suche ab. **Nächste Seite** setzt die Bestandsanzeige fort.
+Wähle Bereich und **Nutzer** oder **Gruppen**. Jedes Verzeichnis zeigt den Anzeigenamen des Kontos und darunter den Benutzernamen; ein Verzeichnis ohne passendes Konto oder passende Gruppe ist als **Unbekanntes Konto** oder **Unbekannte Gruppe** markiert. Suche nach Anzeigename, Benutzername oder Pfad, oder filtere nach Zustand. **Aktualisieren** liest den aktuellen Dateisystembestand einschließlich manuell auf dem Server angelegter Verzeichnisse. FreeIPA-Verzeichnisse werden auch bei aktivem Index direkt im Dateisystem gelesen. Mit Filegate 6.1 liest auch die FreeIPA-Dateinamensuche den aktuellen Dateisystembestand unter der Unix-Identität des Nutzers, unabhängig vom Index. Unlesbare Teilbäume brechen die Suche ab. **Nächste Seite** setzt die Bestandsanzeige fort.
 
 - **Vorhanden:** Das Verzeichnis ist für sein ermitteltes Konto verfügbar.
 - **Fehlt:** Das erwartete Verzeichnis ist nicht vorhanden.

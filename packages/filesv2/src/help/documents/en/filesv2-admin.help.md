@@ -26,7 +26,7 @@ Index, version history, managed mode, and Unix execution come from Filegate. Fre
 
 ## Inspect Directories {icon="folders"}
 
-Select the area and **Users** or **Groups**. Search by name or filter by state. **Refresh** reads the current filesystem, including directories created manually on the server. FreeIPA browsing uses live filesystem access even with indexing enabled. With Filegate 6.1, FreeIPA filename search also reads the current filesystem under the user's Unix identity, independently of the index. Unreadable subtrees fail the search. Use **Next page** to continue the inventory.
+Select the area and **Users** or **Groups**. Each directory shows the account's display name with the username below it; a directory without a matching account or group is marked **Unknown account** or **Unknown group**. Search by display name, username, or path, or filter by state. **Refresh** reads the current filesystem, including directories created manually on the server. FreeIPA browsing uses live filesystem access even with indexing enabled. With Filegate 6.1, FreeIPA filename search also reads the current filesystem under the user's Unix identity, independently of the index. Unreadable subtrees fail the search. Use **Next page** to continue the inventory.
 
 - **Present:** the directory is available for its identified account.
 - **Missing:** the expected directory is absent.

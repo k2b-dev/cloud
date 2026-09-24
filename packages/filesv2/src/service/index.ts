@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RequestActor } from "@k2b/cloud/server";
+import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import {
   type AccountIdentityGroup,
   type AccountIdentityPage,
@@ -133,6 +133,7 @@ const issueFor = (config: Config, area: Area, availability: Availability) =>
 export function createFilesService(
   deps = {
     identities: accountIdentities,
+    displayNames: resolveDisplayNames,
     bindings,
     readConfiguration,
     writeConfiguration,
@@ -1476,11 +1477,22 @@ export function createFilesService(
       // Leave response time within the HTTP idle window even when FreeIPA is slow.
       const deadline = Date.now() + 5_000;
       const signal = AbortSignal.timeout(5_000);
-      const matchesSearch = (name: string, path: string) =>
-        !input.q || `${name} ${path}`.toLocaleLowerCase().includes(input.q.toLocaleLowerCase());
+      // Display names are presentation only; one batched lookup per identity page keeps search on them cheap.
+      const names = new Map<string, string>();
+      const resolveNames = async (ids: string[]) => {
+        const missing = [...new Set(ids)].filter((id) => !names.has(id));
+        if (missing.length === 0) return;
+        const principal = (id: string): Principal =>
+          input.kind === "users" ? { type: "user", userId: id } : { type: "group", groupId: id };
+        for (const resolved of await deps.displayNames(missing.map((id) => ({ id, principal: principal(id) }))))
+          names.set(resolved.id, resolved.displayName);
+      };
+      const matchesSearch = (name: string, path: string, identityId: string | null) =>
+        !input.q ||
+        `${name} ${(identityId && names.get(identityId)) || ""} ${path}`.toLocaleLowerCase().includes(input.q.toLocaleLowerCase());
       const include = (item: InventoryEntry) => {
         if (input.status && item.status !== input.status) return;
-        if (!matchesSearch(item.name, item.path)) return;
+        if (!matchesSearch(item.name, item.path, item.identityId)) return;
         output.items.push(item);
       };
       const entry = async (name: string, identityId: string | null, knownCandidate: Candidate | null): Promise<InventoryEntry> => {
@@ -1553,6 +1565,7 @@ export function createFilesService(
           kind: input.kind,
           identityId,
           name,
+          displayName: null,
           path,
           status,
           reason,
@@ -1581,11 +1594,13 @@ export function createFilesService(
               ? await deps.identities.inventory(actor, { kind: "users", provider: areaProvider(input.area), after: cursor })
               : await deps.identities.inventory(actor, { kind: "groups", provider: areaProvider(input.area), after: cursor });
           if (page.items.length === 0) cursor = page.nextCursor ?? "fs:";
+          const eligible = (identity: AccountIdentityUser | AccountIdentityGroup) =>
+            !(("gidNumber" in identity && identity.gidNumber === null) || ("profile" in identity && identity.profile !== "user"));
+          await resolveNames(page.items.filter(eligible).map((identity) => identity.id));
           for (const [index, identity] of page.items.entries()) {
             if (Date.now() >= deadline || output.items.length >= PAGE_SIZE) break;
             cursor = index === page.items.length - 1 ? (page.nextCursor ?? "fs:") : identity.id;
-            if (("gidNumber" in identity && identity.gidNumber === null) || ("profile" in identity && identity.profile !== "user"))
-              continue;
+            if (!eligible(identity)) continue;
             const item = candidate(
               config,
               input.area,
@@ -1599,7 +1614,7 @@ export function createFilesService(
                   }
                 : { id: identity.id, name: identity.name, uid: null, gid: identity.gidNumber },
             );
-            if (!matchesSearch(item.name, item.path)) continue;
+            if (!matchesSearch(item.name, item.path, item.identity_id)) continue;
             try {
               include(await entry(item.name, item.identity_id, item));
             } catch {
@@ -1608,6 +1623,7 @@ export function createFilesService(
                 kind: input.kind,
                 identityId: item.identity_id,
                 name: item.name,
+                displayName: null,
                 path: item.path,
                 status: "unknown",
                 reason: "unavailable",
@@ -1638,7 +1654,7 @@ export function createFilesService(
                   ? writeFilesystemCursor(page.next)
                   : null
                 : writeFilesystemCursor(after, index + 1);
-            if (!matchesSearch(name, node.path)) {
+            if (!matchesSearch(name, node.path, null)) {
               cursor = nextCursor;
               continue;
             }
@@ -1667,6 +1683,9 @@ export function createFilesService(
         cursor = input.after ?? "";
       }
       output.next = cursor;
+      // Filesystem-only rows with an ineligible identity were not part of an identity page.
+      await resolveNames(output.items.flatMap((item) => (item.identityId ? [item.identityId] : [])));
+      for (const item of output.items) item.displayName = (item.identityId && names.get(item.identityId)) || null;
       return output;
     },
     async adopt(actor: RequestActor, input: { area: Area; kind: BaseKind; identityId: string }) {

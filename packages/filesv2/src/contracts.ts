@@ -232,6 +232,8 @@ export type RootSummary = {
 export type InventoryEntry = {
   identityId: string | null;
   name: string;
+  /** Account or group display name; null when no identity exists for `name`. */
+  displayName: string | null;
   path: string;
   kind: BaseKind;
   area: Area;

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { getProcessSync, type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
-import type { RequestActor } from "@k2b/cloud/server";
+import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { type ExecutionIdentity, Filegate, type Node, type WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
@@ -620,6 +620,7 @@ suite("Files service and durable bindings", () => {
     },
     { preconnect: fetch.preconnect },
   );
+  const displayNameLookups: Principal[][] = [];
   const service = createFilesService({
     identities: {
       ...accountIdentities,
@@ -627,6 +628,10 @@ suite("Files service and durable bindings", () => {
         reconciliations++;
         return accountIdentities.reconcile(...args);
       },
+    },
+    displayNames: <T extends { principal: Principal }>(entries: T[]) => {
+      displayNameLookups.push(entries.map((entry) => entry.principal));
+      return resolveDisplayNames(entries);
     },
     bindings,
     readConfiguration: async () => config,
@@ -746,6 +751,7 @@ suite("Files service and durable bindings", () => {
     leases = 0;
     downloadRequests.length = 0;
     reconciliations = 0;
+    displayNameLookups.length = 0;
     for (const root of ["cloud", "freeipa"]) {
       directory(root, ".", 0, 0, "0755");
       directory(root, "users", 0, 0, "0755");
@@ -1852,6 +1858,7 @@ suite("Files service and durable bindings", () => {
           return { state: "unknown", reason: "provider_unavailable" };
         },
       },
+      displayNames: resolveDisplayNames,
       bindings,
       readConfiguration: async () => config,
       writeConfiguration: async () => {
@@ -1883,6 +1890,34 @@ suite("Files service and durable bindings", () => {
     const result = await service.admin(admin, { area: "cloud", kind: "users", q: "needle", status: "missing" });
     expect(result.items.map((item) => item.name)).toEqual(["needle"]);
     expect(result.next).toBeNull();
+  });
+  test("inventory resolves display names in one batch, searches them and marks directories without an owner", async () => {
+    const admin = await user("admin", "local", true);
+    const alice = await user("alice");
+    await user("bob");
+    await sql`UPDATE auth.users SET display_name='Alice Example' WHERE id=${id(alice)}::uuid`;
+    directory("cloud", "users/alice");
+    directory("cloud", "users/ghost");
+    const result = await service.admin(admin, { area: "cloud", kind: "users" });
+    expect(displayNameLookups).toHaveLength(1);
+    expect(displayNameLookups[0]).toHaveLength(3);
+    expect(Object.fromEntries(result.items.map((item) => [item.name, item.displayName]))).toEqual({
+      admin: "admin",
+      alice: "Alice Example",
+      bob: "bob",
+      ghost: null,
+    });
+    expect(result.items.find((item) => item.name === "ghost")).toMatchObject({ identityId: null, status: "orphaned" });
+    for (const q of ["alice example", "ALI"])
+      expect((await service.admin(admin, { area: "cloud", kind: "users", q })).items.map((item) => item.name)).toEqual(["alice"]);
+    await sql`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','local',200003)`;
+    const groups = await service.admin(admin, { area: "cloud", kind: "groups" });
+    expect(groups.items.map((item) => [item.name, item.displayName])).toEqual([["team", "team"]]);
+  });
+  test("inventory display names are resolved only for administrators", async () => {
+    const member = await user("member");
+    await expect(service.admin(member, { area: "cloud", kind: "users" })).rejects.toBeDefined();
+    expect(displayNameLookups).toHaveLength(0);
   });
   test("inventory cursors resume partial filesystem pages without losing or duplicating entries", async () => {
     const admin = await user("admin", "local", true);
