@@ -8,6 +8,7 @@ import {
   cursorZoneStateField,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
+import { applyLigatures } from "./ligatures";
 
 type BlockType = "note" | "info" | "success" | "warning" | "danger";
 
@@ -113,6 +114,7 @@ class InfoBlockWidget extends WidgetType {
     const contentDiv = document.createElement("div");
     contentDiv.className = NOTICE_CARD_CLASSES.body;
     contentDiv.innerHTML = renderContent(this.blockData.content);
+    applyLigatures(contentDiv);
 
     content.appendChild(label);
     content.appendChild(contentDiv);

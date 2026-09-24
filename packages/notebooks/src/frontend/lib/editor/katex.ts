@@ -9,6 +9,7 @@ import {
   cursorZoneStateField,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
+import { blockMathPattern, inlineMathPattern } from "./_lib/math-syntax";
 
 // =============================================================================
 // Module-scoped render cache
@@ -264,8 +265,8 @@ const buildKatexDecorations = (state: EditorState): CursorZoneState => {
     }
   };
 
-  scanMath(/\$\$([^$]+)\$\$|\\\[(.*?)\\\]/gs, (latex, from) => new BlockMathWidget(latex, from), true);
-  scanMath(/(?<!\$)\$(?!\$)([^\n$]+)\$(?!\$)|\\\(([^)\n]*?)\\\)/g, (latex) => new InlineMathWidget(latex), false);
+  scanMath(blockMathPattern(), (latex, from) => new BlockMathWidget(latex, from), true);
+  scanMath(inlineMathPattern(), (latex) => new InlineMathWidget(latex), false);
 
   return {
     decorations: decorations.length > 0 ? RangeSet.of(decorations, true) : Decoration.none,

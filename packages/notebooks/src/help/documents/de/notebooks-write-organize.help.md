@@ -52,6 +52,25 @@ Schreibe kurze Absätze. Behandle in jedem Abschnitt nur ein Thema.
 - Einen Abend freihalten
 ```
 
+## Typografische Zeichen {icon="typography"}
+
+Notizbücher zeigen einige getippte Zeichenfolgen als ein Zeichen an, wenn du eine Notiz liest oder bearbeitest. Die Notiz behält die getippten Zeichen, deshalb sehen Suche, Export und Assistant sie unverändert.
+
+| Du tippst | Du siehst |
+| --- | --- |
+| `->` `<-` `<->` | → ← ↔ |
+| `=>` `<=>` | ⇒ ⇔ |
+| `<=` `>=` `!=` `+-` | ≤ ≥ ≠ ± |
+| `(c)` `(r)` `(tm)` | © ® ™ |
+| `...` | … |
+| `--` mit Leerzeichen auf beiden Seiten | – |
+
+:::reference
+- **Zeichen sehen:** Setze den Cursor auf ein Zeichen oder markiere es, um die getippten Zeichen zu bearbeiten. **Markdown-Quelltext anzeigen** zeigt sie immer. Im Buch zeigt sie ein Tooltip, wenn du mit der Maus auf das Zeichen zeigst.
+- **Unverändert:** Code, Formeln, Links, HTML, Daten- und Abfrageblöcke sowie Front Matter behalten die getippten Zeichen.
+- **Zeichenfolge behalten:** Setze einen Backslash vor das erste Zeichen, zum Beispiel `\->`.
+:::
+
 **Gut lesbare Hervorhebung**
 
 ## Hinweisblöcke {icon="message-circle"}
