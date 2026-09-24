@@ -598,6 +598,52 @@
   }
 }
 
+/* The structured search summary is one quiet link-like button. Unlayered,
+   because the shared `.k2b-ui` button reset is unlayered and would otherwise
+   restore the inherited font size. The whole row is the click target; hover
+   only underlines the text so nothing shifts or recolours under the pointer. */
+.k2b-ui .mail-search-summary {
+  display: flex;
+  min-width: 0;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.375rem;
+  /* Negative margins keep the icon aligned with the search field and the row
+     height close to the text line while the target stays 32px tall. */
+  margin: -0.25rem -0.375rem;
+  padding: 0.25rem 0.375rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.k2b-ui .mail-search-summary > i {
+  flex: none;
+  color: var(--app-accent);
+}
+
+.k2b-ui .mail-search-summary__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-underline-offset: 0.2em;
+}
+
+.k2b-ui .mail-search-summary:hover .mail-search-summary__text {
+  text-decoration-line: underline;
+}
+
+.k2b-ui .mail-search-summary:focus-visible {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: 0;
+}
+
 /* Overview edges are clipped by the shell. Keep this outside layers, like the
    standalone workspace styles it overrides; other workspaces retain shadows. */
 .k2b-ui .mail-focus-workspace,

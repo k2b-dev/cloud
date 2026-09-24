@@ -10,7 +10,7 @@ the refresh icon slides in from above by the damped pull distance and turns
 with the progress. Past 64 px of damped travel (the same distance Android's
 swipe-to-refresh uses) the indicator switches to the accent color; releasing
 there, or overscrolling that far with a wheel, calls `onRefresh` once and shows
-a spinner until the returned promise settles. A shorter pull, an upward move,
+a continuously spinning loader until the returned promise settles. A shorter pull, an upward move,
 or a cancelled pointer resets without a call.
 
 ## Import
@@ -54,8 +54,8 @@ The indicator is a polite live region that announces `label` (or the shared
 "Refreshing" message) only while the refresh runs; it is otherwise silent and
 takes no pointer events. The gesture is an enhancement: keep a keyboard-reachable
 refresh next to it, such as an existing refresh or retry button or the page
-reload. Under `prefers-reduced-motion`, the indicator neither eases nor turns;
-it still appears at the pull distance and shows the busy spinner state.
+reload. Under `prefers-reduced-motion`, the indicator neither eases, turns, nor spins;
+it still appears at the pull distance and shows a static loader icon while busy.
 
 ## Runtime
 

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { isServer, render } from "solid-js/web";
+import { cssDeclarations, readShippedCssRules } from "../src/styles/css-contract-test-helpers";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
 type Deferred = { promise: Promise<void>; resolve: () => void };
@@ -222,6 +225,47 @@ else {
     } finally {
       disabled.dispose();
       disabledDom.cleanup();
+    }
+  });
+
+  test("the refreshing spinner owns its rotation while the pull progress turns a separate wrapper", async () => {
+    const dom = createDomTestHarness();
+    dom.root.classList.add("k2b-ui");
+    const view = await mount(dom);
+    try {
+      view.touch("touchstart", view.row, 100);
+      view.touch("touchmove", view.row, 240);
+      view.touch("touchend", view.row, 240);
+      expect(view.state()).toBe("refreshing");
+
+      const spinner = view.root.querySelector<HTMLElement>(".k2b-spin")!;
+      const stylesDir = resolve(import.meta.dir, "../src/styles");
+      const matching = (element: Element) =>
+        readShippedCssRules(stylesDir).filter((rule) => {
+          if (rule.context || rule.selector.includes("::")) return false;
+          try {
+            return element.matches(rule.selector);
+          } catch {
+            return false;
+          }
+        });
+      const spinnerRules = matching(spinner);
+      const progressRules = matching(spinner.parentElement!).filter((rule) =>
+        cssDeclarations(rule.body)
+          .get("transform")
+          ?.some((value) => value.includes("--k2b-pull-to-refresh-progress")),
+      );
+
+      expect(spinnerRules.some((rule) => cssDeclarations(rule.body).get("animation")?.[0]?.includes("k2b-spin"))).toBe(true);
+      // A static transform on the spinning element becomes the implicit start keyframe and freezes the spin.
+      expect(spinnerRules.filter((rule) => cssDeclarations(rule.body).has("transform")).map((rule) => rule.selector)).toEqual([]);
+      expect(progressRules).toHaveLength(1);
+      expect(readFileSync(resolve(stylesDir, "index.css"), "utf8")).toMatch(
+        /@keyframes k2b-spin \{\s*from \{\s*transform: rotate\(0deg\);\s*\}\s*to \{\s*transform: rotate\(360deg\);/,
+      );
+    } finally {
+      view.dispose();
+      dom.cleanup();
     }
   });
 }

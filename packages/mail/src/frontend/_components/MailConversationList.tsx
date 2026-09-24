@@ -374,13 +374,13 @@ export default function MailConversationList(props: {
           {(summary) => (
             <button
               type="button"
-              class="flex min-w-0 items-center gap-1.5 text-left text-xs text-dimmed hover:text-primary"
+              class="mail-search-summary"
+              aria-label={`${messages().editStructuredSearch}: ${summary()}`}
               title={summary()}
               onClick={openAdvancedSearch}
             >
-              <i class="ti ti-filter-check shrink-0 text-[var(--app-accent)]" aria-hidden="true" />
-              <span class="truncate">{summary()}</span>
-              <span class="sr-only">{messages().editStructuredSearch}</span>
+              <i class="ti ti-filter-check" aria-hidden="true" />
+              <span class="mail-search-summary__text">{summary()}</span>
             </button>
           )}
         </Show>
