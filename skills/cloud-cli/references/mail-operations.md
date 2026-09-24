@@ -240,6 +240,8 @@ cld --json mail folder role clear archive
 
 Supported roles are `sent`, `drafts`, `trash`, `archive`, and `junk`. Role changes affect how later Mail operations resolve semantic destinations.
 
+Gmail has no `\Archive` folder. When a Gmail mailbox has no archive folder and no mapping, conversation archive moves the messages out of the source folder to `[Gmail]/All Mail` (`\All`), which removes that Gmail label, such as Inbox. A mapped archive folder always takes precedence. Other providers still fail with `No archive folder is configured` until you map one.
+
 ## Change one remote message
 
 Use the public message `id` and source `folderId` from `message get` or `conversation messages`. The API resolves that exact active provider placement inside the mailbox; provider placement UUIDs are never public selectors. Additive commands preserve unrelated concurrent state:

@@ -4783,7 +4783,7 @@ export default defineCliCommands({
       kind: "change_state",
       change: { removeFlags: ["flagged"] },
     }),
-    conversationActionCommand("conversation archive", "Move a conversation from one folder to the configured Archive folder", {
+    conversationActionCommand("conversation archive", "Move a conversation from one folder to the Archive folder (All Mail on Gmail)", {
       kind: "move_to_role",
       role: "archive",
     }),

@@ -78,7 +78,7 @@ HTML messages keep a bounded set of layout, typography, color, spacing, and tabl
 
 The top actions operate on the conversation's active provider placement:
 
-- **Archive** moves it to the mapped archive folder.
+- **Archive** moves it to the mapped archive folder. Gmail has no archive folder, so without a mapping Archive removes the conversation from the current folder, such as Inbox, and keeps it in **All Mail**.
 - **Move to junk** moves it to the mapped junk folder. In Junk, the same action becomes **Not spam** and moves the conversation back to Inbox.
 - **Delete** moves it to the mapped trash folder.
 
