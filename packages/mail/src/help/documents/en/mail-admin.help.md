@@ -52,6 +52,10 @@ Use **Find settings** first. Open **Manual server settings** if discovery is una
 
 Mail reports IMAP and SMTP verification independently. An IMAP failure blocks synchronization and an SMTP failure blocks sending; correct the reported transport before retrying.
 
+When you connect an account with **Use this address for sending**, Mail first connects receiving and then sets up the default sender. If only the sender step fails, the connected account shows **Receiving is connected; sending is not set up yet** together with the reason. Receiving keeps working. Select **Set up sending** to retry on the existing connection; you don't need to reconnect the account or enter the password again.
+
+If Mail reports **Synchronization is running**, synchronization or another provider operation is using the account at that moment. Wait a moment and try again; the connection dialog keeps your entries.
+
 Removing the connection disconnects transport. It does not delete provider mail or the retained Cloud mailbox data.
 
 ## Manage sending identities {icon="send"}

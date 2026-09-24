@@ -11,7 +11,7 @@ import { logDatabaseFailure } from "./database-errors";
 import { getProviderConnection, type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { compareProviderEvidence, type EvidenceComparison, providerServerKey } from "./provider-identity";
-import { withMailboxProviderOperationBarrier } from "./provider-operation-lock";
+import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
 
@@ -1137,7 +1137,7 @@ export const attachProviderBinding = async (params: {
         return ok(mapBinding(binding));
       });
     });
-    return barrier.acquired ? barrier.value : fail(err.conflict("Provider work is still running; retry binding shortly"));
+    return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry binding shortly"));
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
       return fail(err.conflict("Provider state changed during binding verification; retry the operation"));
