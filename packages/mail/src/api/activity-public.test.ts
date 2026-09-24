@@ -1,8 +1,10 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { publicResources } from "../service";
 import type { PublicActivityItem } from "../service/activity-public";
 import { projectActivityResult } from "./activity-public";
+
+afterEach(() => mock.restore());
 
 describe("Mail activity API projection", () => {
   test("projects resource targets and metadata without exposing missing UUIDs", async () => {

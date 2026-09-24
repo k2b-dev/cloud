@@ -2,7 +2,7 @@ import { Readable } from "node:stream";
 import { CloudResourceRefSchema, ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
 import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type Context, Hono } from "hono";
+import { type Context, Hono, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -708,6 +708,9 @@ const resolveReceivedAttachmentParam = resolveMailboxResourceParam("attachments"
 const resolveDraftParam = resolveMailboxResourceParam("drafts", "draftId", "Draft");
 const resolveDraftAttachmentParam = resolveMailboxResourceParam("draftAttachments", "attachmentId", "Attachment");
 const resolveSenderIdentityParam = resolveMailboxResourceParam("senderIdentities", "senderIdentityId", "Sender identity");
+// `default/setup` is a fixed route below the same prefix; `default` is never a sender identity ID.
+const resolveNestedSenderIdentityParam = async (c: Context<MailApiContext>, next: Next) =>
+  c.req.param("senderIdentityId") === "default" ? next() : resolveSenderIdentityParam(c, next);
 const resolveCommentParam = resolveMailboxResourceParam("comments", "commentId", "Comment");
 const resolveSavedViewParam = resolveMailboxResourceParam("savedViews", "viewId", "Saved view");
 const resolveComposeTemplateParam = resolveMailboxResourceParam("composeTemplates", "templateId", "Compose template");
@@ -730,7 +733,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .use("/mailboxes/:mailboxId/drafts/:draftId/attachments/:attachmentId", resolveDraftAttachmentParam)
   .use("/mailboxes/:mailboxId/drafts/:draftId/attachments/:attachmentId/*", resolveDraftAttachmentParam)
   .use("/mailboxes/:mailboxId/sender-identities/:senderIdentityId", resolveSenderIdentityParam)
-  .use("/mailboxes/:mailboxId/sender-identities/:senderIdentityId/*", resolveSenderIdentityParam)
+  .use("/mailboxes/:mailboxId/sender-identities/:senderIdentityId/*", resolveNestedSenderIdentityParam)
   .use("/mailboxes/:mailboxId/conversations/:conversationId/comments/:commentId", resolveCommentParam)
   .use("/mailboxes/:mailboxId/conversations/:conversationId/comments/:commentId/*", resolveCommentParam)
   .use("/mailboxes/:mailboxId/notification-targets/reminder/:sourceId", resolveReminderNotificationSourceParam)

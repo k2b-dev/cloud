@@ -50,6 +50,10 @@ Verwende zunächst **Einstellungen suchen**. Öffne **Manuelle Servereinstellung
 
 Mail meldet die IMAP- und SMTP-Prüfung getrennt. Eine fehlgeschlagene IMAP-Prüfung blockiert die Synchronisierung, eine fehlgeschlagene SMTP-Prüfung den Versand. Behebe den gemeldeten Transportfehler vor einem neuen Versuch. Das Entfernen der Verbindung trennt den Transport, löscht aber weder E-Mails beim Anbieter noch die in Cloud aufbewahrten Postfachdaten.
 
+Wenn du ein Konto mit **Diese Adresse zum Senden verwenden** verbindest, richtet Mail zuerst den Empfang und danach die Standard-Absenderidentität ein. Schlägt nur dieser zweite Schritt fehl, zeigt das verbundene Konto **Empfang verbunden, Versand ist noch nicht eingerichtet** mit dem Grund. Der Empfang funktioniert weiter. Wähle **Versand einrichten**, um die Einrichtung mit der bestehenden Verbindung erneut zu versuchen. Du musst das Konto nicht neu verbinden und das Passwort nicht erneut eingeben.
+
+Meldet Mail **Synchronisierung läuft**, verwendet gerade eine Synchronisierung oder ein anderer Anbietervorgang das Konto. Warte einen Moment und versuche es erneut; der Verbindungsdialog behält deine Eingaben.
+
 ## Absenderidentitäten verwalten {icon="send"}
 
 Unter **Einstellungen > Konten und Identitäten > Absenderidentitäten** werden die Versandkontexte für alle Personen im Postfach verwaltet. Verwende getrennte Identitäten, wenn dieselbe Adresse unterschiedliche Vorgaben für private, hochschulbezogene oder geschäftliche E-Mails benötigt.

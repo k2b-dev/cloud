@@ -3,6 +3,7 @@ type HumanFacingError = { code: string; message: string; status: number };
 const genericGermanMessage = (error: HumanFacingError): string => {
   if (error.code === "BAD_INPUT") return "Die Eingabe ist ungültig";
   if (error.code === "NOT_FOUND") return "Die angeforderte Mail-Ressource wurde nicht gefunden";
+  if (error.code === "PROVIDER_BUSY") return "Die Synchronisierung läuft gerade. Versuche es in einem Moment erneut.";
   if (error.code === "CONFLICT") return "Der aktuelle Stand hat sich geändert. Lade die Daten neu und versuche es erneut.";
   if (error.code === "FORBIDDEN") return "Du hast nicht die erforderliche Berechtigung";
   if (error.status === 429) return "Zu viele Anfragen. Versuche es gleich erneut.";
