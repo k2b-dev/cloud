@@ -18,7 +18,7 @@ const getGroup = async (id: string): Promise<BaseGroup | null> => {
   const [row] = await sql<DbRow[]>`
     SELECT g.id, g.provider, g.name, g.description, g.gid_number, personal_owner.*
     FROM auth.groups g
-    ${personalOwnerJoin}
+    ${personalOwnerJoin()}
     WHERE g.id = ${id}::uuid
   `;
   if (!row) return null;
@@ -66,7 +66,7 @@ const listCanonical = async (params: {
   const rows = await sql<DbRow[]>`
     SELECT g.id, g.provider, g.name, g.description, g.gid_number, personal_owner.*, COUNT(*) OVER() AS total
     FROM auth.groups g
-    ${personalOwnerJoin}
+    ${personalOwnerJoin()}
     WHERE (${params.provider ?? null}::text IS NULL OR g.provider = ${params.provider ?? null})
       AND ${idsCondition}
       AND (${includePersonal} = true OR personal_owner.personal_owner_id IS NULL)

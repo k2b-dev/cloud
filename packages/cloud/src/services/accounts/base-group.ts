@@ -7,8 +7,9 @@ type DbRow = Record<string, unknown>;
  * Joins the owner of a personal Linux group (the group stored as a user's
  * `auth.user_posix.primary_group_id`) onto `auth.groups g` as
  * `personal_owner_id`, `personal_owner_uid`, and `personal_owner_display_name`.
+ * A function, so importing this module never binds Bun's default `sql` handle.
  */
-export const personalOwnerJoin = sql`
+export const personalOwnerJoin = () => sql`
   LEFT JOIN LATERAL (
     SELECT
       owner.id AS personal_owner_id,

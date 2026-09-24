@@ -577,7 +577,7 @@ export const list = async (
           personal_owner.personal_owner_display_name,
           LOWER(g.name) AS sort_label
         ${spec.groupFrom}
-        ${personalOwnerJoin}
+        ${personalOwnerJoin()}
         WHERE ${spec.groupWhere}
       ),
       service_account_rows AS (

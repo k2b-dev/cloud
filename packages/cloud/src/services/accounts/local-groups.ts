@@ -78,7 +78,7 @@ export const get = async (params: { id: string }): Promise<BaseGroup | null> => 
   const [row] = await sql<DbRow[]>`
     SELECT g.id, g.provider, g.name, g.description, g.gid_number, personal_owner.*
     FROM auth.groups g
-    ${personalOwnerJoin}
+    ${personalOwnerJoin()}
     WHERE g.id = ${params.id}::uuid AND g.provider = 'local'
   `;
   return row ? buildBaseGroup(row) : null;
@@ -128,7 +128,7 @@ export const list = async (params: { page?: number; perPage?: number; search?: s
   const rows = await sql<DbRow[]>`
     SELECT g.id, g.provider, g.name, g.description, g.gid_number, personal_owner.*
     FROM auth.groups g
-    ${personalOwnerJoin}
+    ${personalOwnerJoin()}
     WHERE g.provider = 'local'
       AND (${pattern}::text IS NULL OR LOWER(g.name) LIKE ${pattern} ESCAPE '\\' OR LOWER(g.description) LIKE ${pattern} ESCAPE '\\')
     ORDER BY g.name
