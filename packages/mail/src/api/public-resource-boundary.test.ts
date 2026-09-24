@@ -2,6 +2,8 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { publicResources } from "../service";
+import { imapSmtpConnector, transportDiagnostic } from "../service/connectors/imap-smtp";
+import { verifyProviderConnection } from "../service/provider-connections";
 import {
   type MailApiContext,
   projectPublicRelations,
@@ -22,6 +24,47 @@ describe("Mail public response projection", () => {
     expect(await response.json()).toEqual({
       code: "NOT_FOUND",
       message: "Das Postfach wurde nicht gefunden",
+    });
+  });
+
+  test("shows the provider's login failure detail with a German invalid-input error", async () => {
+    const password = "correct horse battery staple";
+    const imapFailure = Object.assign(new Error("Command failed"), {
+      authenticationFailed: true,
+      serverResponseCode: "AUTHENTICATIONFAILED",
+      responseText: `Invalid credentials for ${password} (Failure)`,
+    });
+    spyOn(imapSmtpConnector, "verify").mockRejectedValue(
+      Object.assign(new Error("IMAP: Authentication failed; SMTP: Verified"), {
+        code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED",
+        diagnostics: {
+          imap: transportDiagnostic({ status: "rejected", reason: imapFailure }, [password]),
+          smtp: transportDiagnostic({ status: "fulfilled", value: null }),
+        },
+      }),
+    );
+    const endpoint = { host: "mail.example.org", port: 993, tlsMode: "implicit" as const };
+    const app = new Hono<MailApiContext>().post("/", (c) =>
+      respondPublic(
+        c,
+        verifyProviderConnection({
+          name: "Team",
+          email: "team@example.org",
+          username: "team@example.org",
+          imap: endpoint,
+          smtp: { ...endpoint, port: 465 },
+          secret: { kind: "password", password },
+        }),
+      ),
+    );
+
+    const response = await app.request("/", { method: "POST", headers: { "Accept-Language": "de-DE" } });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      code: "BAD_INPUT",
+      message:
+        "Die Eingabe ist ungültig: IMAP: Authentication failed: AUTHENTICATIONFAILED Invalid credentials for [redacted] (Failure); SMTP: Verified",
     });
   });
 

@@ -27,6 +27,7 @@ import type {
   SmtpTransportCapabilities,
 } from "../../contracts";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS, extractMessageProtocolFacts } from "../message-protocol";
+import { providerErrorDetail } from "../provider-errors";
 import type {
   ConnectorAddress,
   ConnectorChangeListener,
@@ -445,13 +446,16 @@ const discoverLimits = async (config: ProviderConnectionInput): Promise<Provider
   return { checkedAt, imap, smtp };
 };
 
-export const transportDiagnostic = (result: PromiseSettledResult<unknown>): ProviderTransportDiagnostic => {
+export const transportDiagnostic = (
+  result: PromiseSettledResult<unknown>,
+  secrets: readonly string[] = [],
+): ProviderTransportDiagnostic => {
   if (result.status === "fulfilled") return { status: "verified", category: null, message: "Verified" };
-  const error = result.reason as { code?: unknown; message?: unknown } | null;
+  const error = result.reason as { code?: unknown; message?: unknown; authenticationFailed?: unknown } | null;
   const code = typeof error?.code === "string" ? error.code.toUpperCase() : "";
   const message = typeof error?.message === "string" ? error.message.toLowerCase() : "";
   const category =
-    code.includes("AUTH") || message.includes("auth") || message.includes("credential")
+    error?.authenticationFailed === true || code.includes("AUTH") || message.includes("auth") || message.includes("credential")
       ? "authentication"
       : code.includes("CERT") || code.includes("TLS") || message.includes("certificate") || message.includes("tls")
         ? "tls"
@@ -470,7 +474,8 @@ export const transportDiagnostic = (result: PromiseSettledResult<unknown>): Prov
           : category === "unavailable"
             ? "Server could not be reached"
             : "Verification failed";
-  return { status: "failed", category, message: safeMessage };
+  const detail = providerErrorDetail(result.reason, secrets);
+  return { status: "failed", category, message: detail ? `${safeMessage}: ${detail}` : safeMessage };
 };
 
 export const verifyImapSmtpTransports = async (
@@ -481,7 +486,11 @@ export const verifyImapSmtpTransports = async (
     verifyImap(config),
     Promise.all([verifySmtp(config), discoverSmtpLimits(config)]).then(([, limits]) => limits),
   ]);
-  const diagnostics = { imap: transportDiagnostic(imap), smtp: transportDiagnostic(smtp) } satisfies ProviderTransportDiagnostics;
+  const secrets = [config.secret.password];
+  const diagnostics = {
+    imap: transportDiagnostic(imap, secrets),
+    smtp: transportDiagnostic(smtp, secrets),
+  } satisfies ProviderTransportDiagnostics;
   if (imap.status === "rejected" || smtp.status === "rejected") return { verification: null, diagnostics };
   const accountId = sha256(`${config.imap.host.toLowerCase()}\n${imap.value.authenticatedPrincipal.toLowerCase()}`);
   return {
