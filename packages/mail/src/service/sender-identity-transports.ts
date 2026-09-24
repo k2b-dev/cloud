@@ -16,6 +16,7 @@ import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { imapSmtpConnector } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
 import { logDatabaseFailure } from "./database-errors";
+import { providerErrorDetail } from "./provider-errors";
 
 const log = logger("mail:sender-identity-transports");
 
@@ -76,12 +77,18 @@ const mailboxTransport = (limitSnapshot: unknown): SenderIdentityTransport => {
   };
 };
 
-const safeTransportError = (error: unknown): string => {
+const safeTransportError = (error: unknown, secret: ProviderSecret): string => {
   const code = String((error as { code?: unknown } | null)?.code ?? "").toUpperCase();
-  if (code === "EAUTH" || code.includes("AUTH")) return "SMTP authentication failed";
-  if (code.includes("CERT") || code.includes("TLS")) return "SMTP TLS verification failed";
-  if (code.includes("ENDPOINT")) return "SMTP endpoint policy rejected the server";
-  return "SMTP server could not be verified";
+  const message =
+    code === "EAUTH" || code.includes("AUTH")
+      ? "SMTP authentication failed"
+      : code.includes("CERT") || code.includes("TLS")
+        ? "SMTP TLS verification failed"
+        : code.includes("ENDPOINT")
+          ? "SMTP endpoint policy rejected the server"
+          : "SMTP server could not be verified";
+  const detail = providerErrorDetail(error, [secret.password]);
+  return detail ? `${message}: ${detail}` : message;
 };
 
 export const upsertSenderIdentityTransport = async (params: {
@@ -138,7 +145,7 @@ export const upsertSenderIdentityTransport = async (params: {
   try {
     capabilities = await imapSmtpConnector.verifySmtp(runtime);
   } catch (error) {
-    return fail(err.badInput(safeTransportError(error)));
+    return fail(err.badInput(safeTransportError(error, secret)));
   }
 
   let encryptedSecret: string;

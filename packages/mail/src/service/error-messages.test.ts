@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { err } from "@k2b/stdlib";
-import { localizeMailError } from "./error-messages";
+import { localizeMailError, MAX_ERROR_DETAIL_LENGTH, safeErrorDetail } from "./error-messages";
 import { providerBusy } from "./provider-operation-lock";
 
 describe("Mail service messages", () => {
@@ -14,8 +14,38 @@ describe("Mail service messages", () => {
 
   test("uses a useful German fallback and leaves other locales unchanged", () => {
     const error = err.badInput("A new provider constraint");
-    expect(localizeMailError(error, "de-DE")).toEqual({ ...error, message: "Die Eingabe ist ungültig" });
+    expect(localizeMailError(error, "de-DE")).toEqual({ ...error, message: "Die Eingabe ist ungültig: A new provider constraint" });
     expect(localizeMailError(error, "fr")).toBe(error);
+  });
+
+  test("keeps the provider's explanation after the German invalid-input text", () => {
+    const error = err.badInput("Provider authentication failed: AUTHENTICATIONFAILED Invalid credentials (Failure)");
+    expect(localizeMailError(error, "de")).toEqual({
+      ...error,
+      message: "Die Eingabe ist ungültig: Provider authentication failed: AUTHENTICATIONFAILED Invalid credentials (Failure)",
+    });
+    expect(localizeMailError(err.badInput(" \n "), "de").message).toBe("Die Eingabe ist ungültig");
+  });
+
+  test("never shows credentials in an error detail", () => {
+    const password = "hunter2-correct-horse";
+    const detail = safeErrorDetail(
+      `535 rejected ${password} for AUTH PLAIN AHVzZXJAZXhhbXBsZS5vcmcAaHVudGVyMg== password=hunter2 Bearer abc.def token: xyz ${"QUJD".repeat(10)}`,
+      [password],
+    );
+    expect(detail).toBe(
+      "535 rejected [redacted] for AUTH PLAIN [redacted] password=[redacted] Bearer [redacted] token=[redacted] [redacted]",
+    );
+    const localized = localizeMailError(err.badInput("Invalid login: AUTH PLAIN AHVzZXIAc2VjcmV0"), "de").message;
+    expect(localized).toBe("Die Eingabe ist ungültig: Invalid login: AUTH PLAIN [redacted]");
+  });
+
+  test("bounds long error details", () => {
+    const localized = localizeMailError(err.badInput(`TLS failed ${"x ".repeat(1_000)}`), "de").message;
+    const detail = localized.slice("Die Eingabe ist ungültig: ".length);
+    expect(detail.length).toBeLessThanOrEqual(MAX_ERROR_DETAIL_LENGTH);
+    expect(detail.length).toBeGreaterThan(MAX_ERROR_DETAIL_LENGTH - 5);
+    expect(detail.endsWith("…")).toBe(true);
   });
 
   test("names running synchronization instead of a generic conflict", () => {

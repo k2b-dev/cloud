@@ -8,6 +8,7 @@ import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } 
 import { imapSmtpConnector } from "./connectors";
 import { EndpointPolicyError } from "./connectors/endpoint-policy";
 import { logDatabaseFailure } from "./database-errors";
+import { providerErrorDetail } from "./provider-errors";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
@@ -88,7 +89,7 @@ const mapConnection = (row: DbProviderConnection): ProviderConnection => ({
   updatedAt: toIso(row.updated_at),
 });
 
-const normalizeProviderError = (error: unknown): ServiceError => {
+const normalizeProviderError = (error: unknown, secrets: readonly string[] = []): ServiceError => {
   if (isServiceError(error)) return error;
   if (error instanceof EndpointPolicyError) return err.badInput(error.message);
   const value = error as {
@@ -103,15 +104,17 @@ const normalizeProviderError = (error: unknown): ServiceError => {
     const smtp = typeof value.diagnostics.smtp?.message === "string" ? value.diagnostics.smtp.message : "Verification failed";
     return err.badInput(`IMAP: ${imap}; SMTP: ${smtp}`);
   }
+  const detail = providerErrorDetail(error, secrets);
+  const withDetail = (message: string): ServiceError => err.badInput(detail ? `${message}: ${detail}` : message);
   const code = typeof value?.code === "string" ? value.code.toUpperCase() : "";
   if (value?.authenticationFailed === true || code === "EAUTH" || code.includes("AUTH")) {
-    return err.badInput("Provider authentication failed");
+    return withDetail("Provider authentication failed");
   }
   if (value?.tlsFailed === true || code.includes("CERT") || code.includes("TLS")) {
-    return err.badInput("Provider TLS verification failed");
+    return withDetail("Provider TLS verification failed");
   }
   if (["ETIMEDOUT", "ECONNREFUSED", "ECONNECTION", "ESOCKET", "EHOSTUNREACH", "ENETUNREACH", "EDNS"].includes(code)) {
-    return err.badInput("Could not connect to the provider endpoint");
+    return withDetail("Could not connect to the provider endpoint");
   }
   return err.badInput("Provider verification failed");
 };
@@ -143,7 +146,7 @@ export const verifyProviderConnection = async (input: ProviderConnectionInput): 
   try {
     return ok(await imapSmtpConnector.verify(input));
   } catch (error) {
-    return fail(normalizeProviderError(error));
+    return fail(normalizeProviderError(error, [input.secret.password]));
   }
 };
 
