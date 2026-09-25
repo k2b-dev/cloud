@@ -168,7 +168,7 @@ describe("cloud CLI OAuth session handling", () => {
     expect(german.exitCode).toBe(0);
     expect(german.stdout).toContain("Verwendung:");
     expect(german.stdout).toContain("--jsonl");
-    expect(german.stdout).toContain("notebooks list");
+    expect(german.stdout).toContain("notebooks ls");
   });
 
   test("uses CLD_LOCALE only when no explicit locale is present", async () => {

@@ -159,7 +159,7 @@ Run the CLI from this checkout when testing the development server:
 
 ```bash
 bun run dev:cld -- apps list --json
-bun run dev:cld -- notebooks list
+bun run dev:cld -- notebooks ls
 ```
 
 The alias executes `packages/cloud-cli/src/index.ts` and targets
