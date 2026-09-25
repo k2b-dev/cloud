@@ -44,6 +44,11 @@ for (const target of selectedTargets) {
     // Playwright references this optional BiDi adapter lazily; Code Mode uses CDP.
     external: ["chromium-bidi/*"],
     minify: true,
+    // Startup: each built-in module is its own chunk, loaded only by its
+    // command, and precompiled bytecode skips parsing at every launch.
+    format: "esm",
+    splitting: true,
+    bytecode: true,
   });
 
   if (!result.success) {

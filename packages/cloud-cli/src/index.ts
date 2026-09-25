@@ -13,28 +13,10 @@ import type {
   CloudCliTableColumn,
 } from "@k2b/cloud/cli";
 import { localizeCloudCliText, resolveCloudCliLocale } from "@k2b/cloud/cli";
-import accountCliModule from "@k2b/cloud/cli/account";
-import adminCliModule from "@k2b/cloud/cli/admin";
-import appsCliModule from "@k2b/cloud/cli/apps";
-import capabilitiesCliModule from "@k2b/cloud/cli/capabilities";
-import accountsCliModule from "@k2b/cloud-app-accounts/cli";
-import apiDocsCliModule from "@k2b/cloud-app-api-docs/cli";
-import assistantCliModule, { startCliCodeHostProcess } from "@k2b/cloud-app-assistant/cli";
-import contactsCliModule from "@k2b/cloud-app-contacts/cli";
-import faqCliModule from "@k2b/cloud-app-faq/cli";
-import filesv2CliModule from "@k2b/cloud-app-filesv2/cli";
-import gridsCliModule from "@k2b/cloud-app-grids/cli";
-import ipaHostsCliModule from "@k2b/cloud-app-ipa-hosts/cli";
-import mailCliModule from "@k2b/cloud-app-mail/cli";
-import notebooksCliModule from "@k2b/cloud-app-notebooks/cli";
-import oauthCliModule from "@k2b/cloud-app-oauth/cli";
-import pulseCliModule from "@k2b/cloud-app-pulse/cli";
-import spacesCliModule from "@k2b/cloud-app-spaces/cli";
-import toolsCliModule from "@k2b/cloud-app-tools/cli";
-import venueCliModule from "@k2b/cloud-app-venue/cli";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
 import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken } from "./config";
+import { builtInModules, isBuiltInModuleName } from "./modules";
 import {
   commitPlugin,
   loadPlugin,
@@ -117,33 +99,9 @@ const BOOLEAN_FLAGS = new Set(["json", "jsonl"]);
 const cliVersion = typeof __CLD_VERSION__ === "string" ? __CLD_VERSION__ : "0.0.0-dev";
 const cliCommit = typeof __CLD_COMMIT__ === "string" ? __CLD_COMMIT__ : "unknown";
 
-const modules: CloudCliModule[] = [
-  accountCliModule,
-  accountsCliModule,
-  adminCliModule,
-  apiDocsCliModule,
-  appsCliModule,
-  capabilitiesCliModule,
-  assistantCliModule,
-  contactsCliModule,
-  faqCliModule,
-  filesv2CliModule,
-  gridsCliModule,
-  ipaHostsCliModule,
-  mailCliModule,
-  notebooksCliModule,
-  oauthCliModule,
-  pulseCliModule,
-  spacesCliModule,
-  toolsCliModule,
-  venueCliModule,
-];
-
-const moduleByName = new Map(modules.map((module) => [module.name, module]));
-
 /** Top-level names that plugins can never take over. */
 const reservedNames: ReadonlySet<string> = new Set([
-  ...moduleByName.keys(),
+  ...Object.keys(builtInModules),
   "help",
   "version",
   "login",
@@ -156,27 +114,12 @@ const reservedNames: ReadonlySet<string> = new Set([
 
 const text = (locale: string, en: string, de: string): string => localizeCloudCliText(locale, { en, de });
 
-const germanModuleSummaries = new Map<string, string>([
-  ["account", "Eigenes Konto verwalten."],
-  ["accounts", "Konten, Gruppen und Zugriffe verwalten."],
-  ["admin", "Cloud-Betrieb verwalten."],
-  ["api-docs", "Registrierte HTTP-APIs untersuchen."],
-  ["apps", "Installierte Anwendungen anzeigen."],
-  ["capabilities", "Registrierte Capabilities untersuchen und ausführen."],
-  ["assistant", "Mit Assistant arbeiten."],
-  ["contacts", "Kontakte verwalten."],
-  ["faq", "FAQ-Einträge verwalten."],
-  ["filesv2", "Dateien und Ablagen verwalten."],
-  ["grids", "Grids-Daten und -Konfiguration verwalten."],
-  ["ipa-hosts", "FreeIPA-Hosts verwalten."],
-  ["mail", "Mail verwalten."],
-  ["notebooks", "Notizbücher und Notizen verwalten."],
-  ["oauth", "OAuth-Clients verwalten."],
-  ["pulse", "Pulse-Daten und -Dashboards verwalten."],
-  ["spaces", "Spaces und Arbeitselemente verwalten."],
-  ["tools", "Lokale Cloud-Werkzeuge verwenden."],
-  ["venue", "Veranstaltungsorte verwalten."],
-]);
+/** One-line module summary; built-in modules answer without being imported. */
+const moduleSummary = (name: string, fallback: string, locale: string): string => {
+  if (!isBuiltInModuleName(name)) return fallback;
+  const { summary, germanSummary } = builtInModules[name];
+  return text(locale, summary, germanSummary);
+};
 
 class CliError extends Error {
   constructor(
@@ -878,6 +821,11 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
   };
 };
 
+const moduleList = (locale: string, pluginModules: CloudCliModule[]): string =>
+  [...Object.entries(builtInModules).map(([name, module]) => ({ name, summary: module.summary })), ...pluginModules]
+    .map((module) => `  ${module.name.padEnd(12)} ${moduleSummary(module.name, module.summary, locale)}`)
+    .join("\n");
+
 const helpText = (locale: string, pluginModules: CloudCliModule[]): string =>
   text(
     locale,
@@ -906,7 +854,7 @@ Global options:
   --jsonl                 Stream one JSON event per line where supported
 
 Modules:
-${[...modules, ...pluginModules].map((module) => `  ${module.name.padEnd(12)} ${module.summary}`).join("\n")}
+${moduleList(locale, pluginModules)}
 
 Examples:
   cld login --server http://localhost:3000
@@ -940,7 +888,7 @@ Globale Optionen:
   --jsonl                 Ein kompaktes JSON-Ereignis pro Zeile ausgeben
 
 Module:
-${[...modules, ...pluginModules].map((module) => `  ${module.name.padEnd(12)} ${germanModuleSummaries.get(module.name) ?? module.summary}`).join("\n")}
+${moduleList(locale, pluginModules)}
 
 Beispiele:
   cld login --server http://localhost:3000
@@ -1128,10 +1076,7 @@ const runUpdateCommand = async (args: string[], locale: string): Promise<number>
 /** Run one built-in or plugin module with the shared context. */
 const runModule = async (module: CloudCliModule, moduleArgs: string[], global: GlobalArgs): Promise<number> => {
   if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
-    printLine(
-      module.help?.(global.locale) ??
-        `${module.name}: ${global.locale.toLowerCase().startsWith("de") ? (germanModuleSummaries.get(module.name) ?? module.summary) : module.summary}`,
-    );
+    printLine(module.help?.(global.locale) ?? `${module.name}: ${moduleSummary(module.name, module.summary, global.locale)}`);
     return 0;
   }
 
@@ -2045,13 +1990,13 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (moduleName === "update") return runUpdateCommand(moduleArgs, global.locale);
   if (moduleName === "plugins") return runPluginsCommand(moduleArgs, global);
 
-  const module =
-    moduleByName.get(moduleName) ??
-    (reservedNames.has(moduleName)
+  const module = isBuiltInModuleName(moduleName)
+    ? (await builtInModules[moduleName].load()).default
+    : reservedNames.has(moduleName)
       ? undefined
       : await loadPlugin(moduleName).catch((error) =>
           pluginFailure(error, `Plugin "${moduleName}" cannot run`, `Plugin "${moduleName}" kann nicht ausgeführt werden`),
-        ));
+        );
   if (!module)
     throw new CliError(
       `Unknown module "${moduleName}". Run \`cld help\`.`,
@@ -2077,6 +2022,7 @@ const errorPayload = (error: unknown, exitCode: number) => {
 };
 
 if (import.meta.main && Bun.argv[2] === "--internal-code-host" && process.send) {
+  const { startCliCodeHostProcess } = await import("@k2b/cloud-app-assistant/cli");
   await startCliCodeHostProcess();
 } else if (import.meta.main) {
   // A reader that stops early (`cld … | head`) wants no more output; that is not a crash.
