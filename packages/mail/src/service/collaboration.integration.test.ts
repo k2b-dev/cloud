@@ -13,10 +13,10 @@ import {
   listActivity,
   listAssignableUsers,
   listConversationComments,
-  updateConversationCollaboration,
   updateConversationComment,
 } from "./collaboration";
 import type { ConnectorEnvelope } from "./connectors";
+import { updateConversationCollaboration } from "./conversation-assignments";
 import { getConversationSummary, updateConversationSummary } from "./conversation-summary";
 import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { createMailbox } from "./mailboxes";
@@ -197,6 +197,7 @@ suite("mail collaboration backend", () => {
     expect(users.data.map((user) => user.id)).not.toContain(reader.id);
     expect(users.data.map((user) => user.id)).not.toContain(outsider.id);
     const deniedState = await updateConversationCollaboration({
+      locale: "en",
       context: readerContext,
       mailboxId,
       conversationId,
@@ -206,6 +207,7 @@ suite("mail collaboration backend", () => {
     if (!deniedState.ok) expect(deniedState.error.status).toBe(403);
 
     const invalidAssignee = await updateConversationCollaboration({
+      locale: "en",
       context: writerContext,
       mailboxId,
       conversationId,
@@ -222,6 +224,7 @@ suite("mail collaboration backend", () => {
     })();
     const future = new Date(Date.now() + 60 * 60_000).toISOString();
     const waiting = await updateConversationCollaboration({
+      locale: "en",
       context: writerContext,
       mailboxId,
       conversationId,
@@ -250,6 +253,7 @@ suite("mail collaboration backend", () => {
     expect(liveEvent.data.conversationId).not.toBe(conversationId);
 
     const stale = await updateConversationCollaboration({
+      locale: "en",
       context: writerContext,
       mailboxId,
       conversationId,
@@ -262,6 +266,7 @@ suite("mail collaboration backend", () => {
     expect(snoozedCounts.ok && snoozedCounts.data.waiting).toBe(0);
 
     const unsnoozed = await updateConversationCollaboration({
+      locale: "en",
       context: writerContext,
       mailboxId,
       conversationId,
@@ -400,6 +405,7 @@ suite("mail collaboration backend", () => {
     }
 
     const completed = await updateConversationCollaboration({
+      locale: "en",
       context: writerContext,
       mailboxId,
       conversationId,
@@ -410,6 +416,7 @@ suite("mail collaboration backend", () => {
     expect(completed.data).toMatchObject({ workStatus: "done", snoozedUntil: null, revision: 4 });
 
     const manuallyReopened = await updateConversationCollaboration({
+      locale: "en",
       context: writerContext,
       mailboxId,
       conversationId,
@@ -421,6 +428,7 @@ suite("mail collaboration backend", () => {
       revision: 5,
     });
     const completedAgain = await updateConversationCollaboration({
+      locale: "en",
       context: writerContext,
       mailboxId,
       conversationId,
