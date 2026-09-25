@@ -207,6 +207,19 @@ describe("Notebook Book HTML", () => {
     expect(html).not.toContain("scripts");
   });
 
+  test("notices show their tone colour only and name the type for screen readers", () => {
+    const tones = { note: "neutral", info: "info", success: "success", warning: "warning", danger: "danger" } as const;
+    for (const locale of ["en", "de"]) {
+      const { t } = bookRendererMessages.resolve([locale]);
+      for (const [kind, tone] of Object.entries(tones) as [keyof typeof tones, string][]) {
+        const { html } = render(`:::${kind}\nBody\n:::`, locale);
+        expect(html).toBe(
+          `<aside class="k2b-notice-card" data-tone="${tone}" role="note"><span class="sr-only">${t[kind]}: </span><div class="k2b-notice-card__body"><p>Body</p>\n</div></aside>`,
+        );
+      }
+    }
+  });
+
   test("invalid and unclosed data is not silently discarded", () => {
     expect(render(":::data\nbroken\n:::").html).toContain("Invalid block");
     const { html } = render(":::data\nkey: value");

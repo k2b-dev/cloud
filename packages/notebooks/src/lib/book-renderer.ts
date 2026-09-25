@@ -1,5 +1,5 @@
 import { dates, highlight, text } from "@k2b/stdlib";
-import { NOTICE_CARD_CLASSES, NOTICE_CARD_ICONS, type NoticeTone } from "@k2b/ui";
+import { NOTICE_CARD_CLASSES, type NoticeTone } from "@k2b/ui";
 import katex from "katex";
 import { Marked, Renderer } from "marked";
 import sanitizeHtml from "sanitize-html";
@@ -390,7 +390,8 @@ export const renderNotebookBook = (
         }
         const noticeKind = kind as NoticeKind;
         const tone: NoticeTone = NOTICE_TONES[noticeKind];
-        return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${tone}"><div class="${NOTICE_CARD_CLASSES.inner}"><i class="${NOTICE_CARD_ICONS[tone]} ${NOTICE_CARD_CLASSES.icon}" aria-hidden="true"></i><div class="${NOTICE_CARD_CLASSES.content}"><p class="${NOTICE_CARD_CLASSES.title}">${escape(t[noticeKind])}</p><div class="${NOTICE_CARD_CLASSES.body}">${marked.parse(body, { async: false })}</div></div></aside>`;
+        // Notices show their tone colour only; the type name remains for screen readers.
+        return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${tone}" role="note"><span class="sr-only">${escape(t[noticeKind])}: </span><div class="${NOTICE_CARD_CLASSES.body}">${marked.parse(body, { async: false })}</div></aside>`;
       }),
       "",
     );

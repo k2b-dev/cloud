@@ -11,6 +11,10 @@
  * `:::warning Before deleting`.
  *
  * Supported types: note, info, success, warning, danger
+ *
+ * `notices: "minimal"` renders only the tone colour: no icon and no automatic
+ * label. The type name stays available to screen readers, and an explicit
+ * title is still shown.
  */
 
 import { NOTICE_CARD_CLASSES, NOTICE_CARD_ICONS, type NoticeTone } from "@k2b/ui";
@@ -50,7 +54,9 @@ const renderInlineContent = (content: string): string => {
     .replace(/\n/g, "<br>");
 };
 
-export function infoBlocksExtension(): MarkedExtension {
+export type NoticeStyle = "card" | "minimal";
+
+export function infoBlocksExtension(notices: NoticeStyle = "card"): MarkedExtension {
   return {
     extensions: [
       {
@@ -78,9 +84,14 @@ export function infoBlocksExtension(): MarkedExtension {
           const blockType = token.blockType as BlockType;
           const config = blockConfig[blockType];
           const content = escapeHtml(token.content as string);
-          const title = escapeHtml((token.title as string | undefined) ?? config.label);
           const renderedContent = renderInlineContent(content);
 
+          if (notices === "minimal") {
+            const title = token.title ? `<p class="${NOTICE_CARD_CLASSES.title}">${escapeHtml(token.title as string)}</p>` : "";
+            return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${config.tone}" role="note"><span class="sr-only">${config.label}: </span>${title}<div class="${NOTICE_CARD_CLASSES.body}">${renderedContent}</div></aside>`;
+          }
+
+          const title = escapeHtml((token.title as string | undefined) ?? config.label);
           return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${config.tone}">
   <div class="${NOTICE_CARD_CLASSES.inner}">
     <i class="${NOTICE_CARD_ICONS[config.tone]} ${NOTICE_CARD_CLASSES.icon}" aria-hidden="true"></i>

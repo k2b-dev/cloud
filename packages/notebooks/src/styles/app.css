@@ -101,6 +101,16 @@
 .notebook-book-content :is(p, ul, ol, pre, blockquote, table, .md-table-wrap, .md-data-block, .notebook-book-query, .notebook-book-toc) {
   margin-block: 1rem;
 }
+/* Notices carry only their tone colour; the body's outer margins would read as an empty header row. */
+.notebook-book-content .k2b-notice-card {
+  margin-block: 1rem;
+}
+.notebook-book-content .k2b-notice-card__body > :first-child {
+  margin-top: 0;
+}
+.notebook-book-content .k2b-notice-card__body > :last-child {
+  margin-bottom: 0;
+}
 .notebook-book-content ul {
   list-style: disc;
   padding-left: 1.5rem;

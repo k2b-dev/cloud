@@ -11,7 +11,7 @@ import { markdownClient } from "./client";
 import { codeExtension } from "./extensions/code";
 import { guidedHelpExtension } from "./extensions/guided-help";
 import { imagesExtension } from "./extensions/images";
-import { infoBlocksExtension } from "./extensions/info-blocks";
+import { infoBlocksExtension, type NoticeStyle } from "./extensions/info-blocks";
 import { katexExtension } from "./extensions/katex";
 import { linksExtension } from "./extensions/links";
 import { markExtension } from "./extensions/mark";
@@ -22,7 +22,7 @@ import { taskListExtension } from "./extensions/task-list";
 // Create a configured marked instance
 type MarkdownProfile = "content" | "help";
 
-const createMarked = (profile: MarkdownProfile = "content") => {
+const createMarked = (profile: MarkdownProfile = "content", notices: NoticeStyle = "card") => {
   const marked = new Marked();
 
   marked.use({
@@ -32,7 +32,7 @@ const createMarked = (profile: MarkdownProfile = "content") => {
 
   // Apply extensions in order
   // Note: katexExtension must come before codeExtension to handle ```math blocks
-  marked.use(infoBlocksExtension());
+  marked.use(infoBlocksExtension(notices));
   marked.use(taskListExtension());
   marked.use(tablesExtension());
   marked.use(linksExtension({ internalTarget: profile === "help" ? "_self" : "_blank" }));
@@ -48,7 +48,15 @@ const createMarked = (profile: MarkdownProfile = "content") => {
 };
 
 const marked = createMarked();
+const minimalNoticeMarked = createMarked("content", "minimal");
 const helpMarked = createMarked("help");
+
+export type MarkdownRenderOptions = {
+  /** `"minimal"` shows notices as tone colour only; the type name stays for screen readers. */
+  notices?: NoticeStyle;
+};
+
+const markedFor = (options: MarkdownRenderOptions): Marked => (options.notices === "minimal" ? minimalNoticeMarked : marked);
 
 const sanitizeRenderedHtml = (html: string): string =>
   sanitizeHtml(html, {
@@ -91,6 +99,7 @@ const sanitizeRenderedHtml = (html: string): string =>
       "*": ["aria-hidden", "aria-label", "class", "data-help-icon", "data-tone", "id", "title"],
       a: ["href", "name", "rel", "target", "title"],
       annotation: ["encoding"],
+      aside: [{ name: "role", multiple: false, values: ["note"] }],
       code: ["class"],
       div: ["class", "data-block-name", "style"],
       img: ["alt", "class", "height", "loading", "src", "title", "width", "style"],
@@ -146,10 +155,10 @@ const sanitizeRenderedHtml = (html: string): string =>
  * @see MarkdownView component for displaying the rendered HTML
  * @see initMarkdownEnhancements for client-side Mermaid support
  */
-export function renderMarkdown(content: string): string {
+export function renderMarkdown(content: string, options: MarkdownRenderOptions = {}): string {
   if (!content || typeof content !== "string") return "";
 
-  const html = marked.parse(content);
+  const html = markedFor(options).parse(content);
   if (typeof html !== "string") return "";
 
   return sanitizeRenderedHtml(html);
@@ -158,10 +167,10 @@ export function renderMarkdown(content: string): string {
 /**
  * Render markdown to HTML synchronously.
  */
-export function renderMarkdownSync(content: string): string {
+export function renderMarkdownSync(content: string, options: MarkdownRenderOptions = {}): string {
   if (!content || typeof content !== "string") return "";
 
-  const html = marked.parse(content);
+  const html = markedFor(options).parse(content);
   if (typeof html !== "string") return "";
 
   return sanitizeRenderedHtml(html);
