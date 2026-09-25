@@ -2,6 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { sanitizeIncomingMailHtml, sanitizeIncomingMailHtmlWithRemoteImages } from "./message-hydration";
 
 describe("incoming mail HTML", () => {
+  test("keeps inline-block buttons so their padding shows, but never hides content", () => {
+    const sanitized = sanitizeIncomingMailHtml(
+      '<a href="https://example.com" style="display: inline-block; padding: 14px 36px; color: white;">Sign in</a><div style="display:none">hidden</div>',
+    );
+
+    expect(sanitized).toMatch(/display:\s*inline-block/);
+    expect(sanitized).toContain("padding:14px 36px");
+    expect(sanitized).not.toContain("display:none");
+  });
+
   test("keeps table cell and button backgrounds so white button text stays readable", () => {
     const sanitized = sanitizeIncomingMailHtml(`
       <table><tr><td bgcolor="#141413" style="border-radius:10px;background:#141413;">
