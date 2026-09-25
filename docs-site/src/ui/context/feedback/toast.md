@@ -27,7 +27,7 @@ toast.success("File uploaded");
 toast.error("Upload failed");
 ```
 
-The first argument is the description. The default titles are `Info`, `Success`, and `Error`.
+The first argument is the description. The default titles follow the document locale (`<html lang>`), like other `@k2b/ui` built-in strings: `Info`, `Success`, and `Error` in English, `Information`, `Erfolg`, and `Fehler` in German. An explicit `title` always wins.
 
 ## Properties
 

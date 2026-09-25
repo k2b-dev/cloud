@@ -445,6 +445,39 @@ describe("@k2b/ui feedback runtime", () => {
     expect(await formResult).toBeNull();
     dom.cleanup();
   });
+
+  test("default toast titles follow the document locale and an explicit title wins", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const titles = () =>
+      Array.from(dom.document.querySelectorAll("[data-k2b-toast]:not([data-closing]) .k2b-toast__title"), (title) => title.textContent);
+
+    dom.document.documentElement.setAttribute("lang", "en");
+    toast("Note", { duration: 0 });
+    toast.success("Saved", { duration: 0 });
+    toast.error("Failed", { duration: 0 });
+    expect(titles()).toEqual(["Info", "Success", "Error"]);
+    toast.dismissAll();
+
+    dom.document.documentElement.setAttribute("lang", "de");
+    toast("Hinweis", { duration: 0 });
+    toast.success("Gespeichert", { duration: 0 });
+    const failure = toast.error("Fehlgeschlagen", { duration: 0 });
+    expect(titles()).toEqual(["Information", "Erfolg", "Fehler"]);
+
+    failure.update("Wieder da", { variant: "success" });
+    expect(titles().at(-1)).toBe("Erfolg");
+    toast.dismissAll();
+
+    toast.success("Saved", { title: "Success", duration: 0 });
+    toast.error("Failed", { title: "Konnte nicht speichern", duration: 0 });
+    expect(titles()).toEqual(["Success", "Konnte nicht speichern"]);
+
+    dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
   test("progress toasts update in place and distinguish cancelling from dismissing", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
