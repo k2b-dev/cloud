@@ -30,7 +30,7 @@
     "@types/subset-font": "2.3.0",
     "@types/web-push": "3.6.4",
     "babel-preset-solid": "1.9.15",
-    "subset-font": "2.7.0",
+    "subset-font": "2.9.0",
     "typescript": "catalog:",
     "web-push": "3.6.7"
   }
