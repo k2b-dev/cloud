@@ -9,6 +9,7 @@ import * as comments from "./comments";
 import * as exporter from "./export";
 import * as favorites from "./favorites";
 import * as links from "./links";
+import * as notePaths from "./note-paths";
 import * as noteQuery from "./note-query";
 import * as noteRefs from "./note-refs";
 import * as notebooks from "./notebooks";
@@ -172,6 +173,12 @@ export const notebooksService = {
     resolveIdsToShortIds: notes.resolveIdsToShortIds,
     resolveShortIdsToNotebookShortIds: notes.resolveShortIdsToNotebookShortIds,
     getTree: notes.getTree,
+    /** `<notebook>:<path>` addresses and the content-free outline used by the CLI mirror. */
+    paths: {
+      outline: notePaths.listOutline,
+      resolve: notePaths.resolvePath,
+      create: notePaths.createAtPath,
+    },
     create: notes.create,
     update: notes.update,
     editContent: notes.editContent,

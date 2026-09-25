@@ -37,6 +37,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
@@ -44,6 +45,7 @@ import { InvalidActivityCursorError } from "../service/activity";
 import { loadBookBlockPreview } from "../service/book";
 import { loadBookRoute } from "../service/book-route";
 import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
+import type { NotePathCandidate, NotePathProblem } from "../service/note-paths";
 import { loadEditableNoteRouteData } from "../service/route-state";
 import { notebookApiMessages } from "./messages";
 import {
@@ -77,6 +79,7 @@ const CreateNotebookSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
   icon: z.string().max(50).optional(),
+  welcomeNote: z.boolean().optional().describe("Seed the welcome note; defaults to true. The CLI creates empty notebooks."),
 });
 
 const UpdateNotebookSchema = z
@@ -245,8 +248,37 @@ const WorkspaceStateSchema = z.object({
 
 const CreateNoteSchema = z.object({
   parentId: ResourceShortIdSchema.optional().describe("Parent note ID"),
+  parentPath: z
+    .string()
+    .max(NOTE_PATH_MAX_LENGTH)
+    .optional()
+    .describe(
+      "Parent path, relative to parentId or the notebook root. When present, a title that already exists among the target siblings is refused with 409.",
+    ),
+  createParents: z.boolean().optional().describe("Create missing parentPath segments as notes titled after the segment"),
   position: z.number().int().min(0).optional(),
   contentMd: z.string().optional(),
+});
+
+const NoteOutlineEntrySchema = z.object({
+  id: ResourceShortIdSchema,
+  parentId: ResourceShortIdSchema.nullable(),
+  title: z.string(),
+  hasChildren: z.boolean(),
+  updatedAt: z.string(),
+});
+
+const NoteOutlineQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional().default(1),
+  per_page: z.coerce.number().int().min(1).max(1_000).optional().default(1_000),
+});
+
+const ResolveNotePathQuerySchema = z.object({
+  path: z.string().max(NOTE_PATH_MAX_LENGTH).describe("Notebook-relative address path such as `operations/backup`"),
+});
+
+const ResolvedNoteSchema = NoteSchema.extend({
+  path: z.string().describe("Address path: title slugs joined by `/`"),
 });
 
 const UpdateNoteSchema = z.object({
@@ -753,6 +785,40 @@ const requireNoteInNotebook = async (notebookId: string, noteShortId: string, lo
   return ok(note);
 };
 
+const formatPathCandidates = (candidates: NotePathCandidate[]): string =>
+  candidates.map((candidate) => `${candidate.path} (${candidate.shortId})`).join(", ");
+
+/** Render a path problem with its candidates in the request locale. */
+const notePathProblemResult = (
+  c: Context<AuthContext>,
+  problem:
+    | NotePathProblem
+    | { kind: "title-exists"; title: string; candidates: NotePathCandidate[] }
+    | { kind: "failed"; error: string; status: Extract<MutationResult<never>, { ok: false }>["status"] },
+) => {
+  const t = messages(c);
+  switch (problem.kind) {
+    case "invalid":
+      return fail(err.badInput(t.notePathInvalid({ maxLength: NOTE_PATH_MAX_LENGTH, maxSegments: NOTE_PATH_MAX_SEGMENTS })));
+    case "missing":
+      return fail(notFoundMessage(t.notePathMissing({ segment: problem.segment, parentPath: problem.parentPath })));
+    case "ambiguous":
+      return fail({
+        code: "CONFLICT" as const,
+        message: t.notePathAmbiguous({ segment: problem.segment, candidates: formatPathCandidates(problem.candidates) }),
+        status: 409 as const,
+      });
+    case "title-exists":
+      return fail({
+        code: "CONFLICT" as const,
+        message: t.noteTitleExists({ title: problem.title, candidates: formatPathCandidates(problem.candidates) }),
+        status: 409 as const,
+      });
+    case "failed":
+      return localizeMutationResult<never>({ ok: false, error: problem.error, status: problem.status }, getLocale(c));
+  }
+};
+
 const resolveParentShortIds = async (notes: Array<{ parentId: string | null }>) =>
   notebooksService.note.resolveIdsToShortIds({ ids: notes.flatMap((note) => (note.parentId ? [note.parentId] : [])) });
 
@@ -943,8 +1009,14 @@ const app = new Hono<AuthContext>()
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
       const user = userResult.data;
-      const data = c.req.valid("json");
-      return respond(c, toPublicNotebookResult(notebooksService.notebook.create({ data, creatorId: user.id }), getLocale(c)));
+      const { welcomeNote, ...data } = c.req.valid("json");
+      return respond(
+        c,
+        toPublicNotebookResult(
+          notebooksService.notebook.create({ data, creatorId: user.id, seedWelcome: welcomeNote ?? true }),
+          getLocale(c),
+        ),
+      );
     },
   )
 
@@ -1001,6 +1073,32 @@ const app = new Hono<AuthContext>()
           pagination: createPagination(pagination, result.total),
         }),
       );
+    },
+  )
+
+  // Resolve a note by its globally unique ID. This static route must stay
+  // before `/:id` so Hono does not interpret "notes" as a notebook id.
+  .get(
+    "/notes/:noteId",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Get note by ID",
+      description: "Get note details without content by note ID alone. The response names the note's notebook.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteSchema, "Note details"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Note not found"),
+      },
+    }),
+    async (c) => {
+      const found = await notebooksService.note.getByShortId({ shortId: c.req.param("noteId")! });
+      const notebook = found ? await notebooksService.notebook.get({ id: found.notebookId }) : null;
+      if (!found || !notebook) return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
+      const { error } = await checkNotebookAccess(c, notebook.shortId);
+      if (error) return error;
+      const [data] = await toPublicNotes([found], notebook.shortId);
+      return respond(c, ok(data!));
     },
   )
 
@@ -1434,19 +1532,94 @@ const app = new Hono<AuthContext>()
     },
   )
 
+  // Content-free outline for path addressing and the CLI mirror
+  .get(
+    "/:id/outline",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Get note outline",
+      description: "List every note of a notebook without content, in stable ID order and bounded pages.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({
+            data: z.array(NoteOutlineEntrySchema),
+            pagination: PaginationResponseSchema,
+          }),
+          "Paginated note outline",
+        ),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    v("query", NoteOutlineQuerySchema),
+    async (c) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const query = c.req.valid("query");
+      const entries = await notebooksService.note.paths.outline({ notebookId: notebook!.id });
+      const offset = (query.page - 1) * query.per_page;
+      const pageEntries = entries.slice(offset, offset + query.per_page);
+      const shortIds = new Map(entries.map((entry) => [entry.id, entry.shortId]));
+      return respond(
+        c,
+        ok({
+          data: pageEntries.map((entry) => ({
+            id: entry.shortId,
+            parentId: entry.parentId ? (shortIds.get(entry.parentId) ?? null) : null,
+            title: entry.title,
+            hasChildren: entry.hasChildren,
+            updatedAt: entry.updatedAt,
+          })),
+          pagination: createPagination({ page: query.page, perPage: query.per_page, offset }, entries.length),
+        }),
+      );
+    },
+  )
+
+  // Resolve an address path to one note
+  .get(
+    "/:id/resolve",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Resolve note path",
+      description:
+        "Resolve a notebook-relative address path. Each segment matches the child notes whose title has the same slug; a segment that matches several notes fails with the candidates.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(ResolvedNoteSchema, "Resolved note"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid path"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "No note matches the path"),
+        409: jsonResponse(ErrorResponseSchema, "The path matches several notes"),
+      },
+    }),
+    v("query", ResolveNotePathQuerySchema),
+    async (c) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const result = await notebooksService.note.paths.resolve({ notebookId: notebook!.id, path: c.req.valid("query").path });
+      if (!result.ok) return respond(c, notePathProblemResult(c, result.problem));
+      const [data] = await toPublicNotes([result.note], notebook!.shortId);
+      return respond(c, ok({ ...data!, path: result.path }));
+    },
+  )
+
   // Create Note
   .post(
     "/:id/notes",
     describeRoute({
       tags: ["Notebooks"],
       summary: "Create note",
-      description: "Create a new note in a notebook.",
+      description:
+        "Create a new note in a notebook. With parentPath, the parent is resolved by address path and a title that already exists among the new siblings is refused.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NoteSchema, "Created note"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook or parent path not found"),
+        409: jsonResponse(ErrorResponseSchema, "Parent path is ambiguous or the title already exists there"),
       },
     }),
     v("json", CreateNoteSchema),
@@ -1463,11 +1636,26 @@ const app = new Hono<AuthContext>()
         if (!parentResult.ok) return respond(c, parentResult);
         parentId = parentResult.data.id;
       }
+      if (data.parentPath !== undefined) {
+        const created = await notebooksService.note.paths.create({
+          notebookId,
+          parentId: parentId ?? null,
+          parentPath: data.parentPath,
+          createParents: data.createParents ?? false,
+          contentMd: data.contentMd,
+          creatorId: user?.id ?? null,
+          actor: getNotebookActivityActor(c),
+          dateConfig: getDateConfig(c),
+        });
+        if (!created.ok) return respond(c, notePathProblemResult(c, created.problem));
+        const [note] = await toPublicNotes([created.note], notebook!.shortId);
+        return respond(c, ok(note!));
+      }
       return respond(
         c,
         toPublicNoteResult(
           notebooksService.note.create({
-            data: { ...data, notebookId, parentId },
+            data: { contentMd: data.contentMd, position: data.position, notebookId, parentId },
             creatorId: user?.id ?? null,
             actor: getNotebookActivityActor(c),
             dateConfig: getDateConfig(c),
