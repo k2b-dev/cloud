@@ -67,6 +67,12 @@ const catalog = i18n.define({
       changeTagsReview: ({ subject }: { subject: string }) => `Change tags on ${subject}.`,
       assignReview: ({ subject, assignee }: { subject: string; assignee: string }) => `Assign ${subject} to ${assignee}.`,
       unassignReview: ({ subject }: { subject: string }) => `Remove the assignee from ${subject}.`,
+      assignBatchReview: ({ count, assignee }: { count: number; assignee: string }) =>
+        `Assign ${count} ${count === 1 ? "conversation" : "conversations"} to ${assignee}.`,
+      unassignBatchReview: ({ count }: { count: number }) =>
+        `Remove the assignee from ${count} ${count === 1 ? "conversation" : "conversations"}.`,
+      conversations: "Conversations",
+      moreConversations: ({ count }: { count: number }) => `${count} more`,
       statusReview: ({ subject, done }: { subject: string; done: boolean }) =>
         `${done ? "Mark" : "Reopen"} ${subject}${done ? " done" : ""}.`,
       snoozeReview: ({ subject }: { subject: string }) => `Show ${subject} later.`,
@@ -105,6 +111,10 @@ const catalog = i18n.define({
       movedConversation: ({ subject, destination }: { subject: string; destination: string }) => `Moved “${subject}” to ${destination}.`,
       assignedConversation: ({ subject, assignee }: { subject: string; assignee: string }) => `Assigned “${subject}” to ${assignee}.`,
       unassignedConversation: ({ subject }: { subject: string }) => `Cleared the assignment of “${subject}”.`,
+      assignedConversations: ({ count, assignee, missing }: { count: number; assignee: string; missing: number }) =>
+        `Assigned ${count} ${count === 1 ? "conversation" : "conversations"} to ${assignee}.${missing > 0 ? ` ${missing} not found.` : ""}`,
+      unassignedConversations: ({ count, missing }: { count: number; missing: number }) =>
+        `Cleared the assignment of ${count} ${count === 1 ? "conversation" : "conversations"}.${missing > 0 ? ` ${missing} not found.` : ""}`,
       completedConversation: ({ subject }: { subject: string }) => `Completed “${subject}”.`,
       reopenedConversation: ({ subject }: { subject: string }) => `Reopened “${subject}”.`,
       snoozedConversation: ({ subject }: { subject: string }) => `Moved “${subject}” to Later.`,
@@ -230,6 +240,10 @@ const catalog = i18n.define({
       changeTagsReview: ({ subject }) => `Tags von ${subject} ändern.`,
       assignReview: ({ subject, assignee }) => `${subject} ${assignee} zuweisen.`,
       unassignReview: ({ subject }) => `Zuweisung von ${subject} entfernen.`,
+      assignBatchReview: ({ count, assignee }) => `${count} ${count === 1 ? "Unterhaltung" : "Unterhaltungen"} ${assignee} zuweisen.`,
+      unassignBatchReview: ({ count }) => `Zuweisung von ${count} ${count === 1 ? "Unterhaltung" : "Unterhaltungen"} entfernen.`,
+      conversations: "Unterhaltungen",
+      moreConversations: ({ count }) => `${count} weitere`,
       statusReview: ({ subject, done }) => `${subject} als ${done ? "erledigt" : "offen"} markieren.`,
       snoozeReview: ({ subject }) => `${subject} später anzeigen.`,
       clearSnoozeReview: ({ subject }) => `${subject} jetzt wieder anzeigen.`,
@@ -267,6 +281,10 @@ const catalog = i18n.define({
       movedConversation: ({ subject, destination }) => `„${subject}“ nach ${destination} verschoben.`,
       assignedConversation: ({ subject, assignee }) => `„${subject}“ ${assignee} zugewiesen.`,
       unassignedConversation: ({ subject }) => `Zuweisung von „${subject}“ entfernt.`,
+      assignedConversations: ({ count, assignee, missing }) =>
+        `${count} ${count === 1 ? "Unterhaltung" : "Unterhaltungen"} ${assignee} zugewiesen.${missing > 0 ? ` ${missing} nicht gefunden.` : ""}`,
+      unassignedConversations: ({ count, missing }) =>
+        `Zuweisung von ${count} ${count === 1 ? "Unterhaltung" : "Unterhaltungen"} entfernt.${missing > 0 ? ` ${missing} nicht gefunden.` : ""}`,
       completedConversation: ({ subject }) => `„${subject}“ als erledigt markiert.`,
       reopenedConversation: ({ subject }) => `„${subject}“ wieder geöffnet.`,
       snoozedConversation: ({ subject }) => `„${subject}“ nach „Später“ verschoben.`,

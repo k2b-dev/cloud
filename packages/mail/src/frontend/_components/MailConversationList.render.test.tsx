@@ -50,6 +50,7 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       onToggleSelection: () => {},
       onClearSelection: () => {},
       onAddTags: () => {},
+      onAssign: () => {},
       onBulkAction: () => {},
       onItemAction: () => {},
       onManageTags: () => {},

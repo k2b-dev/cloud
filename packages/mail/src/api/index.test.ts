@@ -10,6 +10,15 @@ describe("Mail API composition", () => {
     expect(mailboxRoute).toBeDefined();
   });
 
+  test("reaches bulk assignment before the conversation id resolver can claim `assign`", () => {
+    const assign = api.routes.findIndex((route) => route.method === "POST" && route.path === "/mailboxes/:mailboxId/conversations/assign");
+    const conversationResolver = api.routes.findIndex(
+      (route) => route.method === "ALL" && route.path === "/mailboxes/:mailboxId/conversations/:conversationId",
+    );
+    expect(assign).toBeGreaterThanOrEqual(0);
+    expect(conversationResolver).toBeGreaterThan(assign);
+  });
+
   test("exposes explicit platform-admin mailbox recovery routes", () => {
     expect(api.routes.some((route) => route.method === "GET" && route.path === "/admin/mailboxes/:mailboxId/operations")).toBe(true);
     expect(api.routes.some((route) => route.method === "GET" && route.path === "/admin/mailboxes/:mailboxId/access")).toBe(true);

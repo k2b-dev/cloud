@@ -441,6 +441,17 @@ cld --json mail conversation update \
 cld --json mail conversation activity <conversation-id>
 ```
 
+Assign up to 50 conversations of one mailbox to one person at once, or clear their assignee. `--to` takes a user ID, an exact username from `conversation users`, `me`, or `none`:
+
+```bash
+cld --json mail conversation assign \
+  --conversation <conversation-id>,<second-conversation-id> \
+  --to maria
+cld mail conversation assign --conversation <conversation-id> --to none
+```
+
+The result lists every conversation as `ok` or `not_found`; the command exits with status 1 when any conversation was not found in the mailbox. Unlike `conversation update`, it needs no revision: assigning the current assignee again changes nothing. The new assignee receives one notification for the whole batch, not one per conversation. Assigning yourself or clearing the assignee sends none.
+
 People can mark a conversation with `--done` or clear Done with `--reopen`. Mail derives `needs_action` and `waiting` from verified mail flow: incoming mail needs action, while a confirmed human reply waits for someone else. Automatic or ambiguous mail does not invent a next step. Done and reopen clear an active snooze, so change completion and snooze in separate commands.
 
 Resolve permission-scoped Contacts from server-derived conversation participants:
@@ -538,7 +549,7 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 | Access | `access list|search-principals|grant|set|revoke` |
 | Discovery | `provider discover|list`, `binding list|attach`, `identity list|add|setup-default|configure|verify|disable`, `folders`, `status` |
 | Read and search | `focus`, `search`, `message get|wait|inspect|source|edit-as-new|resend`, `conversation list|get|messages|counts`, `remote-content list|allow-sender|allow-domain|remove` |
-| Collaboration | `conversation collaboration|update|users|activity|context|related|contact-history`, `tag ...`, `conversation tag ...`, `comment list|add|edit|delete`, `reminder get|set|cancel` |
+| Collaboration | `conversation collaboration|update|assign|users|activity|context|related|contact-history`, `tag ...`, `conversation tag ...`, `comment list|add|edit|delete`, `reminder get|set|cancel` |
 | Views and repair | `saved-view list|get|create|update|delete|conversations`, `conversation split|merge|reassign-message` |
 
 Provider-backed read, unread, flag, folder, attachment, and maintenance commands are documented in [Mail operations](mail-operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](mail-compose.md).

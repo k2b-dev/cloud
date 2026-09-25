@@ -60,7 +60,9 @@ New incoming mail always changes the conversation to **Needs action** and remove
 
 Use **Move to folder** from the conversation actions or Mail commands to choose a destination with the keyboard, pointer, or touch. On desktop you can also drag a conversation row onto a selectable folder in the left navigation. Mail queues the move and synchronization confirms the provider result.
 
-To operate on several conversations, select their checkboxes. Hold Shift while selecting another checkbox or conversation row to select the loaded range between them. Mail limits one selection to 50 conversations so provider work remains observable. The selection toolbar can mark, flag, archive, move, junk, or delete the selected conversations. If only some commands can be queued, Mail keeps the failed conversations selected and reports each failure explicitly.
+To operate on several conversations, select their checkboxes. Hold Shift while selecting another checkbox or conversation row to select the loaded range between them. Mail limits one selection to 50 conversations so provider work remains observable. The selection toolbar can add tags, archive, mark as read, assign, and move the selected conversations; **More** also marks them unread, flags them, removes flags, moves them to junk, or moves them to the trash. If only some commands can be queued, Mail keeps the failed conversations selected and reports each failure explicitly.
+
+Select **Assign** to give the selected conversations to one person. Choose **Assign to me**, **Unassign**, or search the people who can write in this mailbox. Mail confirms how many conversations changed and offers **Undo**, which removes the assignee again rather than restoring the earlier one. The new assignee receives one notification for the whole selection. If a conversation no longer belongs to the mailbox, Mail names how many were not changed.
 
 ## Read a complete thread {icon="route"}
 

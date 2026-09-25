@@ -79,6 +79,7 @@ export default function MailConversationList(props: {
   onToggleSelection: (item: MailListItem, range: boolean) => void;
   onClearSelection: () => void;
   onAddTags: () => void | Promise<void>;
+  onAssign: () => void | Promise<void>;
   onBulkAction: (actionId: MailActionId) => void | Promise<void>;
   onItemAction: (item: MailListItem, actionId: MailActionId) => void | Promise<void>;
   onManageTags: (item: MailListItem) => void | Promise<void>;
@@ -336,6 +337,7 @@ export default function MailConversationList(props: {
             busy={props.loading}
             onClear={props.onClearSelection}
             onAddTags={props.onAddTags}
+            onAssign={props.onAssign}
             onAction={props.onBulkAction}
           />
         </Show>

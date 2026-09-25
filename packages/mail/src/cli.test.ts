@@ -1169,6 +1169,65 @@ test("conversation tag add exposes bounded additive bulk assignment", async () =
   });
 });
 
+test("conversation assign resolves me, usernames, and none and reports missing conversations", async () => {
+  const bodies: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/api/me") return api({ id: USER_ID, uid: "ada" });
+    if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/assignable-users`) {
+      expect(url.searchParams.get("search")).toBe("Grace");
+      return api([
+        { id: USER_ID, uid: "ada", displayName: "Ada", avatarHash: null, permission: "write", description: "ada" },
+        { id: COMMAND_ID, uid: "grace", displayName: "Grace", avatarHash: null, permission: "write", description: "grace" },
+      ]);
+    }
+    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations/assign`) {
+      const body = (await request.json()) as { conversationIds: string[]; assigneeUserId: string | null };
+      bodies.push(body);
+      return api({
+        assignee: body.assigneeUserId ? { id: body.assigneeUserId, uid: "grace", displayName: "Grace", avatarHash: null } : null,
+        results: body.conversationIds.map((conversationId) => ({
+          conversationId,
+          status: conversationId === SOURCE_CONVERSATION_ID ? "not_found" : "ok",
+        })),
+      });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const assign = (to: string, ...conversations: string[]) =>
+    runCli(`http://127.0.0.1:${server.port}`, [
+      "mail",
+      "conversation",
+      "assign",
+      "--mailbox",
+      MAILBOX_ID,
+      ...conversations.flatMap((conversation) => ["--conversation", conversation]),
+      "--to",
+      to,
+    ]);
+
+  const toMe = await assign("me", `${CONVERSATION_ID},${REMINDER_ID}`);
+  expect(toMe.exitCode, toMe.stderr).toBe(0);
+  expect(toMe.stdout).toContain("Assigned 2 conversation(s) to Grace (grace).");
+  const byUsername = await assign("Grace", CONVERSATION_ID, SOURCE_CONVERSATION_ID);
+  expect(byUsername.exitCode).toBe(1);
+  expect(byUsername.stderr).toContain(`${SOURCE_CONVERSATION_ID}: not found in this mailbox`);
+  const none = await assign("none", CONVERSATION_ID);
+  expect(none.exitCode, none.stderr).toBe(0);
+  expect(none.stdout).toContain("Cleared the assignee of 1 conversation(s).");
+  expect(bodies).toEqual([
+    { conversationIds: [CONVERSATION_ID, REMINDER_ID], assigneeUserId: USER_ID },
+    { conversationIds: [CONVERSATION_ID, SOURCE_CONVERSATION_ID], assigneeUserId: COMMAND_ID },
+    { conversationIds: [CONVERSATION_ID], assigneeUserId: null },
+  ]);
+
+  const tooMany = await assign("none", Array.from({ length: 51 }, (_, index) => `Cv${String(index).padStart(4, "0")}`).join(","));
+  expect(tooMany.exitCode).not.toBe(0);
+  expect(tooMany.stderr).toContain("Pass at most 50 unique conversations.");
+  expect(bodies).toHaveLength(3);
+});
+
 test("reference config set preserves unspecified settings", async () => {
   let requestBody: unknown;
   const current = {

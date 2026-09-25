@@ -4,6 +4,7 @@ import {
   composeSafetyApprovalSchema,
   composeSafetyReviewSchema,
   draftEditableContentInputSchema,
+  MAIL_CONVERSATION_BATCH_LIMIT,
   type MailSearchExpression,
   mailAddressSchema,
   mailComposeFormatSchema,
@@ -947,6 +948,31 @@ export const ConversationAssignInputSchema = z
   .object({
     ...CollaborationMutationBaseShape,
     assigneeUserId: UuidSchema.nullable().describe("User UUID to assign, or null to unassign."),
+  })
+  .strict();
+export const ConversationAssignBatchInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    conversationIds: z
+      .array(ConversationIdInputSchema)
+      .min(1)
+      .max(MAIL_CONVERSATION_BATCH_LIMIT)
+      .refine((ids) => new Set(ids).size === ids.length, "Conversation IDs must be unique")
+      .describe(`Up to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations of this mailbox.`),
+    assigneeUserId: UuidSchema.nullable().describe("User UUID to assign, or null to unassign."),
+  })
+  .strict();
+export const ConversationAssignBatchDataSchema = z
+  .object({
+    assignee: CollaboratorDataSchema.nullable(),
+    results: z.array(
+      z
+        .object({
+          conversationId: ResourceShortIdSchema,
+          status: z.enum(["ok", "not_found"]).describe("not_found: the ID is not a conversation of this mailbox."),
+        })
+        .strict(),
+    ),
   })
   .strict();
 export const ConversationStatusUpdateInputSchema = z

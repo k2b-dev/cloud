@@ -29,7 +29,9 @@ import { observeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
 import { openMailSubscriptionDialog } from "./_components/MailSubscriptionDialog";
 import { buildMailActionInput, MAIL_ACTION_MISSING_DESTINATION, type MailActionId } from "./_components/mail-actions";
+import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
+import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import {
   emptyMailConversationSelection,
@@ -1347,7 +1349,42 @@ function MailWorkspaceView(props: {
     return manageConversationTagsMutation.mutate(item);
   };
 
+  const assignSelectionMutation = mutation.create<void, string[]>({
+    mutation: (conversationIds, { abortSignal }) =>
+      runMailBulkAssignment(
+        conversationIds,
+        {
+          chooseAssignee: () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
+          assign: async (ids, assigneeUserId) => {
+            const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
+              param: { mailboxId },
+              json: { conversationIds: ids, assigneeUserId },
+            });
+            if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
+            return response.json();
+          },
+          clearSelection: () => {
+            setConversationSelection(emptyMailConversationSelection());
+            setSelectionMode(false);
+          },
+          refresh: () => captureMailWorkspaceRefreshError(requireWorkspaceReconcile),
+          success: (message, undo) =>
+            toast.success(message, undo ? { duration: 8_000, action: { label: undo.label, onClick: undo.run } } : undefined),
+          error: (message, title) => void prompts.error(message, title ? { title } : undefined),
+          active: () => !abortSignal.aborted && !disposed,
+        },
+        t(),
+      ),
+    onError: (error) => prompts.error(error.message),
+  });
+  const assignSelection = () => {
+    const conversationIds = [...selectedConversationIds()];
+    if (!canWrite() || actionPending() || conversationIds.length === 0) return Promise.resolve();
+    return assignSelectionMutation.mutate(conversationIds);
+  };
+
   structureMutationLoading = () =>
+    assignSelectionMutation.loading() ||
     mergeConversationMutation.loading() ||
     reassignMessageMutation.loading() ||
     splitMessageMutation.loading() ||
@@ -1360,6 +1397,7 @@ function MailWorkspaceView(props: {
     splitMessageMutation.abort();
     addTagsMutation.abort();
     manageConversationTagsMutation.abort();
+    assignSelectionMutation.abort();
   });
 
   let consumedOpenIntent = -1;
@@ -1483,6 +1521,7 @@ function MailWorkspaceView(props: {
                     onToggleSelection={toggleConversationSelection}
                     onClearSelection={clearConversationSelection}
                     onAddTags={addTagsToSelection}
+                    onAssign={assignSelection}
                     onBulkAction={runAction}
                     onItemAction={(item, actionId) => {
                       const target = actionTargetForItem(item, actionId);
