@@ -6,7 +6,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
-import { assignConversations } from "./conversation-assignments";
+import { assignConversations, updateConversationCollaboration } from "./conversation-assignments";
 import { createMailbox } from "./mailboxes";
 
 const suite = suiteFor("database", "nats");
@@ -34,7 +34,7 @@ const contextFor = (user: TestUser): MailRequestContext => ({
   requestId: `mail-assignment-${user.uid}`,
 });
 
-suite("mail bulk conversation assignment", () => {
+suite("mail conversation assignment", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   const mailboxIds: string[] = [];
@@ -206,6 +206,46 @@ suite("mail bulk conversation assignment", () => {
     const [notice] = await assignmentNotices(owner.id);
     expect(notice?.title).toBe("A conversation was assigned to you");
     expect(notice?.target_href).toMatch(new RegExp(`\\?conversation=${ids[1]}$`));
+  });
+
+  test("notifies on single assignment after commit and stays silent for self, unassignment, and unchanged assignees", async () => {
+    const first = await createConversation(mailboxId, "Single assignment");
+    const second = await createConversation(mailboxId, "Single assignment EN");
+    const update = async (
+      user: TestUser,
+      conversation: { id: string },
+      input: { assigneeUserId?: string | null; completion?: "done" },
+      locale = "en",
+    ) => {
+      const [row] = await sql<{ revision: string | number }[]>`SELECT revision FROM mail.conversations WHERE id = ${conversation.id}::uuid`;
+      const result = await updateConversationCollaboration({
+        context: contextFor(user),
+        mailboxId,
+        conversationId: conversation.id,
+        input: { expectedRevision: Number(row!.revision), ...input },
+        locale,
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data;
+    };
+    const noticesFor = async (userId: string, conversation: { shortId: string }) =>
+      (await assignmentNotices(userId)).filter((notice) => notice.target_href?.endsWith(`?conversation=${conversation.shortId}`));
+
+    const assigned = await update(owner, first, { assigneeUserId: writer.id }, "de");
+    expect(assigned.assignee?.id).toBe(writer.id);
+    const [notice] = await noticesFor(writer.id, first);
+    expect(notice?.title).toBe("Dir wurde eine Unterhaltung zugewiesen");
+    expect(notice?.idempotency_key).toMatch(/^assignment:\d+$/);
+
+    // The same assignee alongside another change, then unassignment and self-assignment, send nothing.
+    await update(owner, first, { assigneeUserId: writer.id, completion: "done" });
+    await update(owner, first, { assigneeUserId: null });
+    await update(writer, first, { assigneeUserId: writer.id });
+    expect(await noticesFor(writer.id, first)).toHaveLength(1);
+
+    await update(owner, second, { assigneeUserId: writer.id });
+    const english = await noticesFor(writer.id, second);
+    expect(english.map((item) => item.title)).toEqual(["A conversation was assigned to you"]);
   });
 
   test("denies readers and ineligible assignees as a whole and bounds the batch", async () => {

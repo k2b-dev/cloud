@@ -106,6 +106,7 @@ import {
   commands,
   composeSafety,
   composeTemplates,
+  conversationAssignments,
   conversationContext,
   conversationSummaries,
   conversations,
@@ -1736,10 +1737,11 @@ const mailOperationsApi = new Hono<MailApiContext>()
       };
       return respondPublic(
         c,
-        collaboration.updateConversationCollaboration({
+        conversationAssignments.updateConversationCollaboration({
           context: requestContext(c),
           ...params,
           input: await internalInput(c, c.req.valid("json")),
+          locale: getLocale(c),
         }),
       );
     },

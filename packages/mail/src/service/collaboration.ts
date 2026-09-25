@@ -390,6 +390,8 @@ export const getConversationCollaboration = async (params: {
   return state ? ok(state) : fail(err.notFound("Conversation"));
 };
 
+type ConversationCollaborationMutation = CollaborationMutation<ConversationCollaboration> & { assigneeChanged: boolean };
+
 const applyConversationCollaborationInTransaction = async (params: {
   context: MailRequestContext | null;
   mailboxId: string;
@@ -398,7 +400,7 @@ const applyConversationCollaborationInTransaction = async (params: {
   db: SqlClient;
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
-}): Promise<Result<CollaborationMutation<ConversationCollaboration>>> => {
+}): Promise<Result<ConversationCollaborationMutation>> => {
   const [current] = await params.db<CollaborationRow[]>`
     SELECT
       c.id,
@@ -506,7 +508,7 @@ const applyConversationCollaborationInTransaction = async (params: {
     nextSnoozedUntil === toNullableIso(current.snoozed_until);
   if (unchanged) {
     const state = await loadCollaboration(params.mailboxId, params.conversationId, params.db);
-    return state ? ok({ value: state, event: null }) : fail(err.notFound("Conversation"));
+    return state ? ok({ value: state, event: null, assigneeChanged: false }) : fail(err.notFound("Conversation"));
   }
 
   await params.db`
@@ -554,6 +556,7 @@ const applyConversationCollaborationInTransaction = async (params: {
       targetId: params.conversationId,
       activityId,
     },
+    assigneeChanged: nextAssignee !== current.assignee_user_id,
   });
 };
 
@@ -565,7 +568,7 @@ export const updateConversationCollaborationInTransaction = async (params: {
   db: SqlClient;
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
-}): Promise<Result<CollaborationMutation<ConversationCollaboration>>> => {
+}): Promise<Result<ConversationCollaborationMutation>> => {
   const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", params.db);
   return allowed.ok ? applyConversationCollaborationInTransaction(params) : allowed;
 };
@@ -591,18 +594,45 @@ export const updateWorkflowConversationCollaborationInTransaction = async (param
   });
 };
 
-export const updateConversationCollaboration = async (params: {
+/**
+ * Updates one conversation and reports an assignee change for the caller's
+ * notification. Use `conversationAssignments.updateConversationCollaboration`,
+ * which also notifies the new assignee.
+ */
+export const applyConversationCollaboration = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   conversationId: string;
   input: UpdateConversationCollaboration;
-}): Promise<Result<ConversationCollaboration>> => {
+}): Promise<Result<{ collaboration: ConversationCollaboration; assignment: ConversationAssignmentChange | null }>> => {
+  let result: Result<{ mutation: ConversationCollaborationMutation; assignment: ConversationAssignmentChange | null }>;
   try {
-    const result = await sql.begin((tx) => updateConversationCollaborationInTransaction({ ...params, db: tx }));
-    return finishMutation(result);
+    result = await sql.begin(async (tx) => {
+      const applied = await updateConversationCollaborationInTransaction({ ...params, db: tx });
+      if (!applied.ok) return applied;
+      if (!applied.data.assigneeChanged || !applied.data.event) return ok({ mutation: applied.data, assignment: null });
+      const [names] = await tx<{ mailbox_short_id: string; mailbox_name: string; conversation_short_id: string }[]>`
+        SELECT m.short_id AS mailbox_short_id, m.name AS mailbox_name, c.short_id AS conversation_short_id
+        FROM mail.conversations c
+        JOIN mail.mailboxes m ON m.id = c.mailbox_id
+        WHERE c.id = ${params.conversationId}::uuid
+      `;
+      if (!names) return fail(err.notFound("Conversation"));
+      return ok({
+        mutation: applied.data,
+        assignment: {
+          mailbox: { shortId: names.mailbox_short_id, name: names.mailbox_name },
+          conversationIds: [names.conversation_short_id],
+          activityIds: [applied.data.event.activityId],
+        },
+      });
+    });
   } catch {
     return fail(err.internal("Failed to update conversation collaboration"));
   }
+  if (!result.ok) return result;
+  const collaboration = await finishMutation(ok(result.data.mutation));
+  return collaboration.ok ? ok({ collaboration: collaboration.data, assignment: result.data.assignment }) : collaboration;
 };
 
 export type ConversationAssignmentStatus = "ok" | "not_found";
@@ -613,7 +643,7 @@ export type ConversationAssignmentResult = {
   results: Array<{ conversationId: string; status: ConversationAssignmentStatus }>;
 };
 
-/** The changes a committed bulk assignment made, for the caller's single notification. */
+/** The changes a committed assignment made, for its single notification. */
 export type ConversationAssignmentChange = {
   mailbox: { shortId: string; name: string };
   /** Public ids of the conversations whose assignee actually changed. */

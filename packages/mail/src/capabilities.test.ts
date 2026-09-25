@@ -1101,7 +1101,7 @@ describe("mail capabilities", () => {
       ok: true,
       data: { conversationId: internalConversationId, conversationRevision: 5, tags: [{ ...tagFixture, id: internalConversationId }] },
     } as never);
-    spyOn(collaboration, "updateConversationCollaboration").mockResolvedValue({ ok: true, data: collaborationFixture } as never);
+    spyOn(conversationAssignments, "updateConversationCollaboration").mockResolvedValue({ ok: true, data: collaborationFixture } as never);
     spyOn(conversationAssignments, "assignConversations").mockResolvedValue({
       ok: true,
       data: {

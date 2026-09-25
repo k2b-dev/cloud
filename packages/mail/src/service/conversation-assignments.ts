@@ -1,12 +1,19 @@
 import { logger, notifications } from "@k2b/cloud/services";
 import { ok, type Result } from "@k2b/stdlib";
 import { app } from "../config";
+import type { UpdateConversationCollaboration } from "../contracts";
 import { type MailRequestContext, userBackedActor } from "./auth";
-import { applyConversationAssignments, type ConversationAssignmentChange, type ConversationAssignmentResult } from "./collaboration";
+import {
+  applyConversationAssignments,
+  applyConversationCollaboration,
+  type ConversationAssignmentChange,
+  type ConversationAssignmentResult,
+  type ConversationCollaboration,
+} from "./collaboration";
 
 const log = logger("mail:assignments");
 
-/** Sends one notification for a committed batch; self-assignment and unassignment stay silent. */
+/** Sends one notification for a committed assignment; self-assignment, unassignment, and unchanged assignees stay silent. */
 const notifyAssignee = async (params: {
   context: MailRequestContext;
   assigneeUserId: string | null;
@@ -58,4 +65,25 @@ export const assignConversations = async (params: {
   if (!applied.ok) return applied;
   await notifyAssignee({ ...params, change: applied.data.change });
   return ok(applied.data.result);
+};
+
+/**
+ * Updates one conversation's assignee, completion, or snooze and notifies a
+ * newly assigned person the same way `assignConversations` does.
+ */
+export const updateConversationCollaboration = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  conversationId: string;
+  input: UpdateConversationCollaboration;
+  /** Locale for the notification; the request locale at a request seam. */
+  locale: string;
+}): Promise<Result<ConversationCollaboration>> => {
+  const applied = await applyConversationCollaboration(params);
+  if (!applied.ok) return applied;
+  const { collaboration, assignment } = applied.data;
+  if (assignment) {
+    await notifyAssignee({ ...params, assigneeUserId: collaboration.assignee?.id ?? null, change: assignment });
+  }
+  return ok(collaboration);
 };

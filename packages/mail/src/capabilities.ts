@@ -3042,7 +3042,7 @@ const actionDefinitions = {
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       return mapResult(
-        await collaboration.updateConversationCollaboration({
+        await conversationAssignments.updateConversationCollaboration({
           context: requestContext(context),
           mailboxId: scope.data.mailbox.id,
           conversationId: scope.data.conversationId,
@@ -3050,6 +3050,7 @@ const actionDefinitions = {
             expectedRevision: input.expectedRevision,
             assigneeUserId: input.assigneeUserId,
           },
+          locale: context.locale,
         }),
         (item) => ({ ...item, conversationId: input.conversationId }),
         (item) => ({
@@ -3163,11 +3164,12 @@ const actionDefinitions = {
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       return mapResult(
-        await collaboration.updateConversationCollaboration({
+        await conversationAssignments.updateConversationCollaboration({
           context: requestContext(context),
           mailboxId: scope.data.mailbox.id,
           conversationId: scope.data.conversationId,
           input: { expectedRevision: input.expectedRevision, completion: input.status },
+          locale: context.locale,
         }),
         (item) => ({ ...item, conversationId: input.conversationId }),
         () => ({
@@ -3215,11 +3217,12 @@ const actionDefinitions = {
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       return mapResult(
-        await collaboration.updateConversationCollaboration({
+        await conversationAssignments.updateConversationCollaboration({
           context: requestContext(context),
           mailboxId: scope.data.mailbox.id,
           conversationId: scope.data.conversationId,
           input: { expectedRevision: input.expectedRevision, snoozedUntil: input.snoozedUntil },
+          locale: context.locale,
         }),
         (item) => ({ ...item, conversationId: input.conversationId }),
         () => ({
