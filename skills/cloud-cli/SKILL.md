@@ -11,7 +11,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 
 ## Start
 
-1. On a new machine, sign in with `cld login --server <Cloud URL>`. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`.
+1. On a new machine, sign in with `cld login --server <Cloud URL>`. On a machine without a browser, such as a server reached over SSH, use `cld login --server <Cloud URL> --device`. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`. Read [Sign-in and profiles](references/sign-in.md) for details.
 2. Run `cld apps list --json` before choosing an app command. It shows the live Cloud apps available to the current user; use `--search <text>` to narrow the list.
 3. Run `cld help` to discover installed CLI modules, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Modules of third-party apps come from `cld` plugins; `cld plugins list` shows which are installed and whether they load.
 4. Use the default profile unless the task names another instance; pass `--profile <name>` only when needed.
@@ -19,6 +19,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 ## Agent workflow
 
 - Stay on the user's selected profile unless they name another Cloud instance.
+- When you operate a headless box (SSH, container, CI runner) and `cld` is not signed in, run `cld login --server <Cloud URL> --device` and relay the printed URL and code to the user; they approve it in their own browser. Never ask the user for a password or token instead.
 - Read before changing content. Use IDs returned by list or get commands when a name is not unique.
 - Use `--json` whenever the next action depends on one complete response. Use `--jsonl` for supported list commands when processing items as a stream. Keep normal output for simple inspection.
 - Pass structured or multiline content through a command's file or stdin option instead of trying to escape it in a shell argument.
@@ -29,6 +30,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 
 Read the app reference for the current task. Follow specialized links inside it only when that operation needs the deeper API; do not preload every linked reference.
 
+- Read [Sign-in and profiles](references/sign-in.md) to sign in with a browser or a device code, keep several Cloud instances in profiles, and store refresh tokens in fd0.
 - Read [Account](references/account.md) to manage the signed-in user's profile, personal API keys, SSH keys, and account extension.
 - Read [API Docs](references/api-docs.md) to discover and inspect the live HTTP APIs published by Cloud apps.
 - Read [CLI plugins](references/plugins.md) to list, install, or remove `cld` plugins that add third-party app commands.
