@@ -5,10 +5,46 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # Deprecations and migrations
+
+## Contacts CLI commands
+
+`cld contacts` now uses the shared command verbs and addresses contacts by
+ID or `<book>:<name>`. The old command names are removed without aliases;
+scripts must switch to the new names. The `--book` and `--contact` flags and
+the local default book (`use`, `current`) are gone: pass the book in every
+address. `show --email <address>` finds a contact by email. Contact JSON input
+is `--from <file|->` instead of `--json-input` and `--stdin`; note text is
+`--from <file|->` or `--content <text>` instead of `--file` and `--stdin`.
+Destructive commands need `--yes` without a terminal. See
+[Contacts](/en/apps/contacts#automate-contacts-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `books` | `ls` |
+| `use`, `current` | removed; pass the book in every address |
+| `book` | `show <book>:` |
+| `create-book [--use]`, `update-book`, `delete-book` | `books add`, `books update`, `books delete` |
+| `list` | `ls <book>` (`--q`, `--tag`) |
+| `get` | `show <contact>`, `show --email <address>` |
+| `create` | `add <book>[:<name>]` |
+| `update` | `set <contact>` |
+| `move --target-book` | `mv <contact> <book>` |
+| `delete` | `rm <contact>` |
+| `notes`, `note`, `update-note`, `delete-note` | `notes list`, `add`, `update`, `delete` |
+| `tags`, `create-tag`, `update-tag`, `delete-tag` | `tags list <book>`, `tags add\|update\|delete <book>:<tag>` |
+| `import-preview` | `import <book> --from <file\|-> --dry-run` |
+| `--query` | `--q` |
+| `--output` | `--out` |
+| `--firstName`, `--per_page`, and other camelCase or snake_case aliases, `--parent-contact` | the kebab-case flag (`--first-name`, `--per-page`), `--parent` |
+
+`import` without `--dry-run` now creates the previewed contacts, skipping
+matches unless `--include-duplicates` is given. `search`, `tree`, `export`,
+and the `access` group keep their names. The Contacts API adds
+`GET /api/contacts/resolve`. No stored data changes.
 
 ## Notebooks CLI commands
 
