@@ -1,4 +1,5 @@
 import { getK2bPortalRoot } from "../internal/portal";
+import { resolveUiMessages } from "../intl/messages";
 
 export type ToastVariant = "default" | "success" | "error";
 
@@ -38,26 +39,29 @@ const CONTAINER_ATTRIBUTE = "data-k2b-toast-container";
 type VariantStyle = {
   tone: "info" | "success" | "danger";
   iconClass: string;
-  defaultTitle: string;
+  titleKey: "info" | "success" | "error";
 };
 
 const VARIANT_STYLES: Record<ToastVariant, VariantStyle> = {
   default: {
     tone: "info",
     iconClass: "ti-info-circle",
-    defaultTitle: "Info",
+    titleKey: "info",
   },
   success: {
     tone: "success",
     iconClass: "ti-check",
-    defaultTitle: "Success",
+    titleKey: "success",
   },
   error: {
     tone: "danger",
     iconClass: "ti-x",
-    defaultTitle: "Error",
+    titleKey: "error",
   },
 };
+
+/** Default titles follow the document locale, like the other imperative `@k2b/ui` surfaces. */
+const defaultTitle = (variant: ToastVariant): string => resolveUiMessages()[VARIANT_STYLES[variant].titleKey];
 
 const normalizedIconClass = (iconClass: string): string => {
   const tokens = iconClass
@@ -182,7 +186,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
 
   const titleElement = document.createElement("div");
   titleElement.className = "k2b-toast__title";
-  titleElement.textContent = options?.title ?? VARIANT_STYLES[currentVariant].defaultTitle;
+  titleElement.textContent = options?.title ?? defaultTitle(currentVariant);
   const descriptionElement = document.createElement("div");
   descriptionElement.className = "k2b-toast__description";
   descriptionElement.textContent = description;
@@ -292,7 +296,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "title")) {
       titleElement.textContent = nextOptions.title ?? "";
     } else if (variantChanged) {
-      titleElement.textContent = VARIANT_STYLES[currentVariant].defaultTitle;
+      titleElement.textContent = defaultTitle(currentVariant);
     }
     if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "action")) renderAction(nextOptions.action);
     if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "duration")) {
