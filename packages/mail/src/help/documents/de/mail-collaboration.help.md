@@ -12,7 +12,7 @@ Die Unterhaltungsansicht zeigt wichtige Änderungen durch Zusammenarbeit und Wor
 
 ## Zuständigkeit und nächsten Schritt einheitlich verwenden {icon="route"}
 
-- **Zuständig** nennt die Person, die aktuell für die Unterhaltung verantwortlich ist.
+- **Zuständig** nennt die Person, die aktuell für die Unterhaltung verantwortlich ist. Um mehrere Unterhaltungen einer Person zu übertragen, wähle sie in der Liste aus und wähle **Zuweisen**; die zuständige Person erhält für die ganze Auswahl eine einzige Benachrichtigung.
 - **Nächster Schritt** wird von Mail abgeleitet. **Aktion erforderlich** bedeutet, dass das Team die Unterhaltung prüfen oder bearbeiten muss. **Wartet auf Antwort** bedeutet, dass eine bestätigte menschliche Antwort gesendet wurde und der nächste Schritt bei einer anderen Person liegt.
 - **Als erledigt markieren** ist der einzige manuelle Bearbeitungsstatus. Wähle ihn, wenn aktuell nichts mehr zu tun ist, und entferne ihn, um die Unterhaltung wieder zu öffnen. Mail leitet den nächsten Schritt dann aus der neuesten verifizierten Nachricht ab.
 - **Später anzeigen** entfernt die Unterhaltung vorübergehend aus der aktiven Arbeit, ohne ihren nächsten Schritt zu ändern. Verwende diese Funktion, wenn die nächste Prüfung von einem Zeitpunkt und nicht von einer anderen Person abhängt. Bis zum gewählten Zeitpunkt liegt die Unterhaltung unter **Später**; eine neue eingehende E-Mail blendet sie sofort wieder ein.

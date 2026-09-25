@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import automaticReplyRoutes from "./automatic-replies";
+import conversationAssignmentRoutes from "./conversation-assignment";
 import conversationReferenceRoutes from "./conversation-references";
 import incomingAutomationRoutes from "./incoming-automations";
 import localTagRoutes from "./local-tags";
@@ -11,6 +12,7 @@ export default new Hono<MailApiContext>()
   .use("/mailboxes/:mailboxId/*", resolveMailboxParam)
   .route("/", incomingAutomationRoutes)
   .route("/", localTagRoutes)
+  .route("/", conversationAssignmentRoutes)
   .route("/", conversationReferenceRoutes)
   .route("/", automaticReplyRoutes)
   .route("/", remoteContentRoutes)

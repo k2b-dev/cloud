@@ -29,6 +29,7 @@ import {
   collaboration,
   commands,
   composeSafety,
+  conversationAssignments,
   conversationContext,
   conversationSummaries,
   drafts,
@@ -3059,6 +3060,76 @@ const actionDefinitions = {
           ),
           ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
+      );
+    },
+  },
+  "conversation.assign.batch": {
+    title: "Assign conversations",
+    description:
+      "Assign up to 50 conversations of one mailbox to one eligible mailbox member, or clear their assignee. Reports each conversation as ok or not_found; the assignee gets one notification.",
+    input: c.ConversationAssignBatchInputSchema,
+    data: c.ConversationAssignBatchDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    approval: "rememberable",
+    review: async (input: z.output<typeof c.ConversationAssignBatchInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const scope = await resolveMailboxScope(input.mailboxId);
+      if (!scope.ok) return scope;
+      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
+      if (!access.ok) return access;
+      const assignee = input.assigneeUserId
+        ? await collaboration.listCurrentUsers({
+            mailboxId: scope.data.id,
+            userIds: [input.assigneeUserId],
+            minimumPermission: "write",
+            limit: 1,
+          })
+        : [];
+      if (input.assigneeUserId && !assignee[0]) return fail(err.badInput("Assignee must have current write access to this mailbox"));
+      const shown = input.conversationIds.slice(0, 3);
+      const subjects = (
+        await Promise.all(shown.map((conversationId) => requireConversationForReview(input.mailboxId, conversationId, context)))
+      ).flatMap((conversation) => (conversation.ok ? [conversation.data.subject] : []));
+      const hidden = input.conversationIds.length - shown.length;
+      const count = input.conversationIds.length;
+      return ok({
+        message: assignee[0] ? t.assignBatchReview({ count, assignee: assignee[0].displayName }) : t.unassignBatchReview({ count }),
+        details: [
+          {
+            label: t.conversations,
+            value: i18n.formatList(hidden > 0 ? [...subjects, t.moreConversations({ count: hidden })] : subjects, context.locale),
+          },
+          { label: t.assignee, value: assignee[0] ? `${assignee[0].displayName} · ${assignee[0].uid}` : t.unassigned },
+        ],
+        approvalScope: mailboxApprovalScope(input.mailboxId),
+      });
+    },
+    run: async (input: z.output<typeof c.ConversationAssignBatchInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const scope = await resolveMailboxScope(input.mailboxId);
+      if (!scope.ok) return scope;
+      return mapResult(
+        await conversationAssignments.assignConversations({
+          context: requestContext(context),
+          mailboxId: scope.data.id,
+          conversationIds: input.conversationIds,
+          assigneeUserId: input.assigneeUserId,
+          locale: context.locale,
+        }),
+        (result) => result,
+        (result) => {
+          const count = result.results.filter((item) => item.status === "ok").length;
+          const missing = result.results.length - count;
+          return {
+            summary: capabilitySummary(
+              result.assignee
+                ? t.assignedConversations({ count, assignee: result.assignee.displayName, missing })
+                : t.unassignedConversations({ count, missing }),
+            ),
+          };
+        },
       );
     },
   },

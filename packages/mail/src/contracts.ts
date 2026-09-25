@@ -10,6 +10,9 @@ import { z } from "zod";
 import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
 
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
+/** Upper bound for one multi-conversation request; the list selection shares it. */
+export const MAIL_CONVERSATION_BATCH_LIMIT = 50;
+
 export const ResourceShortIdSchema = z
   .string()
   .regex(/^[0-9A-Za-z]{6}$/)
@@ -1755,6 +1758,18 @@ export const updateConversationCollaborationSchema = z
   );
 export type UpdateConversationCollaboration = z.infer<typeof updateConversationCollaborationSchema>;
 
+export const assignConversationsSchema = z
+  .object({
+    conversationIds: z
+      .array(ResourceShortIdSchema)
+      .min(1)
+      .max(MAIL_CONVERSATION_BATCH_LIMIT)
+      .refine((ids) => new Set(ids).size === ids.length, "Conversation ids must be unique"),
+    assigneeUserId: z.string().uuid().nullable(),
+  })
+  .strict();
+export type AssignConversations = z.infer<typeof assignConversationsSchema>;
+
 export const updateConversationSummarySchema = z
   .object({
     expectedSummaryRevision: z.number().int().positive(),
@@ -1808,7 +1823,7 @@ export type SetConversationLocalTags = z.infer<typeof setConversationLocalTagsSc
 
 export const addConversationLocalTagsSchema = z
   .object({
-    conversationIds: z.array(ResourceShortIdSchema).min(1).max(50),
+    conversationIds: z.array(ResourceShortIdSchema).min(1).max(MAIL_CONVERSATION_BATCH_LIMIT),
     tagIds: z.array(ResourceShortIdSchema).min(1).max(50),
   })
   .strict()

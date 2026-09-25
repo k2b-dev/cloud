@@ -12,7 +12,7 @@ The conversation reader places meaningful collaboration and workflow changes qui
 
 ## Use ownership and follow-up consistently {icon="route"}
 
-- **Assignee** names the person currently responsible for the conversation.
+- **Assignee** names the person currently responsible for the conversation. To hand several conversations to one person, select them in the list and choose **Assign**; the assignee gets one notification for the whole selection.
 - **Next step** is derived by Mail. **Needs action** means the team must review or act. **Waiting for reply** means a confirmed human reply was sent and the next step belongs to someone else.
 - **Mark as done** is the only manual follow-up state. Select it when no current action remains; clear it to reopen the conversation. Mail then derives the next step from the latest verified message.
 - **Show later** temporarily removes the conversation from active work without changing its next step. Use it when the next review depends on time rather than another person. The conversation stays under **Later** until the selected time; new incoming mail makes it appear immediately.

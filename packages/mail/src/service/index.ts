@@ -13,6 +13,7 @@ import * as commands from "./commands";
 import * as composeSafety from "./compose-safety";
 import * as composeTemplates from "./compose-templates";
 import * as contactDirectory from "./contact-directory";
+import * as conversationAssignments from "./conversation-assignments";
 import * as conversationContext from "./conversation-context";
 import * as conversationReferences from "./conversation-reference";
 import * as conversationSummaries from "./conversation-summary";
@@ -96,6 +97,7 @@ export {
   composeSafety,
   composeTemplates,
   contactDirectory,
+  conversationAssignments,
   conversationContext,
   conversationReferences,
   conversationSummaries,

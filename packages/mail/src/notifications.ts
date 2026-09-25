@@ -13,6 +13,7 @@ import { i18n } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { z } from "zod";
+import { MAIL_CONVERSATION_BATCH_LIMIT } from "./contracts";
 import { SHORT_ID_REGEX } from "./lib/short-id";
 import { hasCurrentMailboxUserPermission } from "./service/collaborators";
 import type { CollaborationNotificationKind } from "./service/notification-outbox";
@@ -32,8 +33,20 @@ const presentation = (label: string, description: string) => ({ baseLocale: "en"
 const notificationMessages = i18n.define({
   baseLocale: "en",
   messages: {
-    en: { reminderTitle: "Mail reminder", reminderFallback: "A conversation reminder is due." },
-    de: { reminderTitle: "Mail-Erinnerung", reminderFallback: "Eine Erinnerung für eine Unterhaltung ist fällig." },
+    en: {
+      reminderTitle: "Mail reminder",
+      reminderFallback: "A conversation reminder is due.",
+      assignedTitle: ({ count }: { count: number }) =>
+        count === 1 ? "A conversation was assigned to you" : `${count} conversations were assigned to you`,
+      assignedBody: ({ mailbox, by }: { mailbox: string; by: string | null }) => (by ? `${by} in ${mailbox}` : mailbox),
+    },
+    de: {
+      reminderTitle: "Mail-Erinnerung",
+      reminderFallback: "Eine Erinnerung für eine Unterhaltung ist fällig.",
+      assignedTitle: ({ count }) =>
+        count === 1 ? "Dir wurde eine Unterhaltung zugewiesen" : `${count} Unterhaltungen wurden dir zugewiesen`,
+      assignedBody: ({ mailbox, by }) => (by ? `${by} in ${mailbox}` : mailbox),
+    },
   },
 });
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
@@ -44,6 +57,12 @@ const notificationData = z.object({
   conversationId: publicResourceId,
   sourceId: publicResourceId,
   subject: z.string(),
+});
+const assignmentNotificationData = z.object({
+  mailboxId: publicResourceId,
+  mailboxName: z.string(),
+  conversationIds: z.array(publicResourceId).min(1).max(MAIL_CONVERSATION_BATCH_LIMIT),
+  assignedBy: z.string().nullable(),
 });
 const workflowNotificationData = z.object({
   mailboxId: publicResourceId,
@@ -63,6 +82,20 @@ export const NOTIFICATIONS = {
       title: text(locale).reminderTitle,
       body: subject || text(locale).reminderFallback,
       targetHref: mailNotificationTargetHref({ mailboxId, kind: "reminder", sourceId }),
+    }),
+  }),
+  conversationsAssigned: notification({
+    recipient: "user",
+    label: "Mail assignments",
+    description: "One notification when someone assigns conversations to you.",
+    presentation: presentation("Mail-Zuweisungen", "Eine Benachrichtigung, wenn dir jemand Unterhaltungen zuweist."),
+    delivery: { recommended: ["browser"] },
+    data: assignmentNotificationData,
+    render: ({ mailboxId, mailboxName, conversationIds, assignedBy }, { locale }) => ({
+      title: text(locale).assignedTitle({ count: conversationIds.length }),
+      body: text(locale).assignedBody({ mailbox: mailboxName, by: assignedBy }),
+      targetHref:
+        conversationIds.length === 1 ? `/app/mail/${mailboxId}?conversation=${conversationIds[0]}` : `/app/mail/${mailboxId}?view=mine`,
     }),
   }),
   workflowNotice: notification({

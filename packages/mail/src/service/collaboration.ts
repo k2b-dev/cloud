@@ -8,7 +8,7 @@ import type {
   UpdateConversationCollaboration,
   UpdateConversationComment,
 } from "../contracts";
-import { createConversationCommentSchema } from "../contracts";
+import { createConversationCommentSchema, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import { requireMailboxPermission } from "./access";
 import { projectActivityItems } from "./activity-public";
@@ -603,6 +603,124 @@ export const updateConversationCollaboration = async (params: {
   } catch {
     return fail(err.internal("Failed to update conversation collaboration"));
   }
+};
+
+export type ConversationAssignmentStatus = "ok" | "not_found";
+
+export type ConversationAssignmentResult = {
+  assignee: MailCollaborator | null;
+  /** One entry per requested conversation, in request order, keyed by its public id. */
+  results: Array<{ conversationId: string; status: ConversationAssignmentStatus }>;
+};
+
+/** The changes a committed bulk assignment made, for the caller's single notification. */
+export type ConversationAssignmentChange = {
+  mailbox: { shortId: string; name: string };
+  /** Public ids of the conversations whose assignee actually changed. */
+  conversationIds: string[];
+  activityIds: string[];
+};
+
+/**
+ * Assigns or unassigns many conversations of one mailbox in one transaction.
+ * Every conversation goes through the single-conversation collaboration path,
+ * so permissions, assignee eligibility, and per-conversation activity stay
+ * identical. Mail permissions are mailbox-wide: a caller without write access
+ * fails the whole request, while ids that are not in this mailbox report
+ * `not_found`. Use `conversationAssignments.assignConversations`, which also
+ * notifies the assignee once.
+ */
+export const applyConversationAssignments = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  /** Public conversation ids, as the transport received them. */
+  conversationIds: readonly string[];
+  assigneeUserId: string | null;
+}): Promise<Result<{ result: ConversationAssignmentResult; change: ConversationAssignmentChange }>> => {
+  if (params.conversationIds.length === 0 || params.conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT) {
+    return fail(err.badInput(`Pass 1 to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations`));
+  }
+  const requestedIds = [...new Set(params.conversationIds)];
+  type ChangeEvent = NonNullable<CollaborationMutation<ConversationCollaboration>["event"]>;
+  type Committed = {
+    assignee: MailCollaborator | null;
+    found: Set<string>;
+    events: ChangeEvent[];
+    changedIds: string[];
+    mailbox: { shortId: string; name: string };
+  };
+  let result: Result<Committed>;
+  try {
+    result = await sql.begin(async (tx): Promise<Result<Committed>> => {
+      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", tx);
+      if (!allowed.ok) return allowed;
+      const [mailbox] = await tx<{ short_id: string; name: string }[]>`
+        SELECT short_id, name FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid
+      `;
+      if (!mailbox) return fail(err.notFound("Mailbox"));
+      const [assigneeUser] = params.assigneeUserId
+        ? await listCurrentUsers({
+            mailboxId: params.mailboxId,
+            db: tx,
+            userIds: [params.assigneeUserId],
+            minimumPermission: "write",
+            limit: 1,
+          })
+        : [];
+      if (params.assigneeUserId && !assigneeUser) return fail(err.badInput("Assignee must have current write access to this mailbox"));
+      // Stable lock order prevents concurrent bulk assignments from deadlocking.
+      const rows = await tx<{ id: string; short_id: string; revision: string | number }[]>`
+        SELECT id, short_id, revision
+        FROM mail.conversations
+        WHERE mailbox_id = ${params.mailboxId}::uuid
+          AND short_id IN (SELECT value FROM jsonb_array_elements_text(${requestedIds}::jsonb))
+        ORDER BY id
+        FOR UPDATE
+      `;
+      const events: ChangeEvent[] = [];
+      const changedIds: string[] = [];
+      for (const row of rows) {
+        const applied = await applyConversationCollaborationInTransaction({
+          context: params.context,
+          mailboxId: params.mailboxId,
+          conversationId: row.id,
+          input: { expectedRevision: Number(row.revision), assigneeUserId: params.assigneeUserId },
+          db: tx,
+        });
+        if (!applied.ok) return applied;
+        if (applied.data.event) {
+          events.push(applied.data.event);
+          changedIds.push(row.short_id);
+        }
+      }
+      return ok({
+        assignee: assigneeUser ? collaboratorFromAccessUser(assigneeUser) : null,
+        found: new Set(rows.map((row) => row.short_id)),
+        events,
+        changedIds,
+        mailbox: { shortId: mailbox.short_id, name: mailbox.name },
+      });
+    });
+  } catch {
+    return fail(err.internal("Failed to assign conversations"));
+  }
+  if (!result.ok) return result;
+  const committed = result.data;
+  for (const event of committed.events) await publishMailCollaborationEvent(event);
+  return ok({
+    result: {
+      assignee: committed.assignee,
+      results: params.conversationIds.map((conversationId) => ({
+        conversationId,
+        status: committed.found.has(conversationId) ? "ok" : "not_found",
+      })),
+    },
+    change: {
+      mailbox: committed.mailbox,
+      conversationIds: committed.changedIds,
+      activityIds: committed.events.map((event) => event.activityId),
+    },
+  });
 };
 
 export const releaseDueSnoozes = async (batchSize = 500): Promise<number> => {

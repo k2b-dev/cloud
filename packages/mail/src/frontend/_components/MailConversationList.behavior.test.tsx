@@ -36,6 +36,7 @@ const listProps = (requestUrl: string) => ({
   onToggleSelection: () => {},
   onClearSelection: () => {},
   onAddTags: () => {},
+  onAssign: () => {},
   onBulkAction: () => {},
   onItemAction: () => {},
   onManageTags: () => {},

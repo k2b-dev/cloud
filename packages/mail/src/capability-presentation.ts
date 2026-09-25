@@ -409,6 +409,16 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             assigneeUserId: "Benutzer UUID zum Zuweisen oder Null zum Aufheben der Zuweisung.",
           },
         },
+        "conversation.assign.batch": {
+          title: "Konversationen zuweisen",
+          description:
+            "Weisen Sie bis zu 50 Konversationen eines Postfachs einem berechtigten Postfachmitglied zu oder entfernen Sie die Zuweisung. Meldet jede Konversation als ok oder not_found; die zugewiesene Person erhält eine Benachrichtigung.",
+          input: {
+            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
+            conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
+            assigneeUserId: "Benutzer UUID zum Zuweisen oder Null zum Aufheben der Zuweisung.",
+          },
+        },
         "conversation.comment.create": {
           title: "Internen Kommentar erstellen",
           description: "Fügen Sie einer Konversation einen internen Teamkommentar hinzu.",

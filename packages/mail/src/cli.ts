@@ -52,6 +52,7 @@ import {
   draftEditableContentInputSchema,
   type IncomingAutomationBackfill,
   type IncomingAutomationMatchPreview,
+  MAIL_CONVERSATION_BATCH_LIMIT,
   type Mailbox,
   type MailboxComposeStyle,
   type MailboxHealth,
@@ -89,7 +90,13 @@ import {
 import { incomingAutomationIssues } from "./incoming-automation-issues";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
 import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
-import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./service/collaboration";
+import type {
+  ConversationAssignmentResult,
+  ConversationCollaboration,
+  ConversationComment,
+  MailActivityEvent,
+  MailAssignableUser,
+} from "./service/collaboration";
 import type { ContactDirectoryAdminView } from "./service/contact-directory";
 import type {
   ConversationReference,
@@ -1025,6 +1032,18 @@ const printCollaboration = (ctx: CloudCliContext, value: ConversationCollaborati
 
 const collaborationPath = (mailboxId: string, conversationId: string): string =>
   `/mailboxes/${mailboxId}/conversations/${requireMailResourceId(conversationId, "Conversation id")}/collaboration`;
+
+const resolveAssigneeUserId = async (ctx: CloudCliContext, mailboxId: string, target: string): Promise<string | null> => {
+  if (target === "none") return null;
+  if (target === "me") return (await ctx.readJson<{ id: string }>(await ctx.fetch("/api/me"))).id;
+  if (LEGACY_UUID_PATTERN.test(target)) return target;
+  const query = new URLSearchParams({ search: target, limit: "200" });
+  const users = await readApi<MailAssignableUser[]>(ctx, `/mailboxes/${mailboxId}/assignable-users?${query}`);
+  const match = users.find((user) => user.uid.toLowerCase() === target.toLowerCase());
+  if (!match)
+    throw new Error(`No person with username "${target}" can be assigned in this mailbox. List them with \`cld mail conversation users\`.`);
+  return match.id;
+};
 
 const printCollaborators = (ctx: CloudCliContext, users: MailAssignableUser[]): void =>
   printTable(
@@ -4334,6 +4353,47 @@ export default defineCliCommands({
         if (flags.search) query.set("search", flags.search);
         const users = await readApi<MailAssignableUser[]>(ctx, `/mailboxes/${mailbox.id}/assignable-users?${query}`);
         printCollaborators(ctx, users);
+      },
+    }),
+    command("conversation assign", {
+      summary: "Assign up to 50 conversations to one person, or clear their assignee",
+      flags: {
+        ...mailboxFlag,
+        conversation: flag.stringList({
+          description: "Conversation id; repeatable or comma-separated; maximum 50",
+        }),
+        to: flag.string({
+          required: true,
+          description: "User id, exact username, `me`, or `none` to unassign",
+        }),
+      },
+      run: async ({ ctx, flags }) => {
+        const conversationIds = [...new Set(flags.conversation)];
+        if (conversationIds.length === 0) throw new Error("Pass at least one --conversation.");
+        if (conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT) {
+          throw new Error(`Pass at most ${MAIL_CONVERSATION_BATCH_LIMIT} unique conversations.`);
+        }
+        requireMailResourceIds(conversationIds, "Conversation id");
+        const target = flags.to?.trim() ?? "";
+        if (!target) throw new Error("Pass --to with a user id, username, `me`, or `none`.");
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const assigneeUserId = await resolveAssigneeUserId(ctx, mailbox.id, target);
+        const result = await readApi<ConversationAssignmentResult>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations/assign`,
+          jsonRequest("POST", { conversationIds, assigneeUserId }),
+        );
+        const missing = result.results.filter((item) => item.status !== "ok");
+        if (!printStructured(ctx, result)) {
+          const count = result.results.length - missing.length;
+          ctx.print(
+            result.assignee
+              ? `Assigned ${count} conversation(s) to ${result.assignee.displayName} (${result.assignee.uid}).`
+              : `Cleared the assignee of ${count} conversation(s).`,
+          );
+          for (const item of missing) ctx.error(`${item.conversationId}: not found in this mailbox`);
+        }
+        return missing.length > 0 ? 1 : undefined;
       },
     }),
     command("conversation counts", {
