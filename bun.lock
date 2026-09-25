@@ -133,7 +133,7 @@
     },
     "packages/cloud": {
       "name": "@k2b/cloud",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
         "@hono/standard-validator": "0.2.2",
@@ -141,7 +141,7 @@
         "@k2b/ssr": "0.14.0",
         "@k2b/stdlib": "0.26.0",
         "@k2b/sync": "6.5.0",
-        "@k2b/ui": "0.5.1",
+        "@k2b/ui": "0.6.0",
         "@modelcontextprotocol/sdk": "1.30.0",
         "@napi-rs/canvas": "1.0.9",
         "@nats-io/transport-node": "3.4.0",
@@ -187,7 +187,7 @@
     },
     "packages/cloud-cli": {
       "name": "@k2b/cloud-cli",
-      "version": "0.15.0",
+      "version": "0.16.0",
       "bin": {
         "cld": "src/index.ts",
       },
@@ -623,7 +623,7 @@
     },
     "packages/ui": {
       "name": "@k2b/ui",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "dependencies": {
         "@fontsource/ibm-plex-mono": "5.3.0",
         "@fontsource/ibm-plex-sans": "5.3.0",
@@ -693,7 +693,10 @@
       "dependencies": {
         "@k2b/cloud": "workspace:*",
         "@k2b/stdlib": "catalog:",
+        "@k2b/sync": "catalog:",
         "@k2b/ui": "workspace:*",
+        "@nats-io/transport-node": "catalog:",
+        "hono": "catalog:",
         "qr-scanner": "1.4.2",
         "solid-js": "catalog:",
         "zod": "catalog:",
@@ -701,12 +704,15 @@
       "devDependencies": {
         "@babel/core": "8.0.6",
         "@babel/preset-typescript": "8.0.1",
+        "@nats-io/jetstream": "catalog:",
         "@types/babel__core": "7.20.5",
         "@types/bun": "catalog:",
         "@types/subset-font": "2.3.0",
+        "@types/web-push": "3.6.4",
         "babel-preset-solid": "1.9.15",
         "subset-font": "2.7.0",
         "typescript": "catalog:",
+        "web-push": "3.6.7",
       },
     },
   },

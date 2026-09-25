@@ -1,7 +1,7 @@
 /**
  * Generates `.env.example`, `.env.prod.example` and the configuration
- * reference from the environment registries: `packages/cloud/src/config/env.ts`
- * and every `packages/<app>/src/env.ts`.
+ * reference from the environment registries: `packages/cloud/src/config/env.ts`,
+ * every `packages/<app>/src/env.ts` and the Cloud Login server's `pwas/pwa-auth/server/env.ts`.
  *
  *   bun scripts/generate-config-docs.ts          write the three files
  *   bun scripts/generate-config-docs.ts --check  exit 1 when they are stale
@@ -27,7 +27,10 @@ const registrySchema = z.object({
 
 const loadRegistries = async (): Promise<Registry[]> => {
   const registries: Registry[] = [{ name: "Platform", source: "packages/cloud/src/config/env.ts", specs: env.$specs }];
-  const paths = [...new Glob("packages/*/src/env.ts").scanSync({ cwd: root })].sort();
+  const paths = [
+    ...new Glob("packages/*/src/env.ts").scanSync({ cwd: root }),
+    ...new Glob("pwas/*/server/env.ts").scanSync({ cwd: root }),
+  ].sort();
   for (const path of paths) {
     if (path.startsWith("packages/cloud/")) continue;
     const parsed = registrySchema.safeParse(await import(`${root}${path}`));

@@ -23,7 +23,8 @@ RUN bun packages/ui/scripts/build.ts \
   && bun run --cwd pwas/pwa-auth typecheck \
   && bun run --cwd pwas/pwa-auth test \
   && bun test packages/cloud/src/browser/app-approval-vault.test.ts \
-  && bun run --cwd pwas/pwa-auth build
+  && bun run --cwd pwas/pwa-auth build \
+  && bun build pwas/pwa-auth/scripts/serve.ts --target=bun --minify --outfile pwas/pwa-auth/server-dist/scripts/serve.js
 
 FROM oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61
 
@@ -35,7 +36,8 @@ ENV NODE_ENV=production \
     CLOUD_VERSION=$CLOUD_VERSION \
     CLOUD_RELEASE=$CLOUD_RELEASE
 COPY --from=build /workspace/pwas/pwa-auth/dist ./dist
-COPY --from=build /workspace/pwas/pwa-auth/scripts/serve.ts ./scripts/serve.ts
+# One bundled server file: the static app plus optional push (Postgres, NATS).
+COPY --from=build /workspace/pwas/pwa-auth/server-dist/scripts/serve.js ./scripts/serve.js
 USER bun
 EXPOSE 3000
-CMD ["bun", "scripts/serve.ts"]
+CMD ["bun", "scripts/serve.js"]

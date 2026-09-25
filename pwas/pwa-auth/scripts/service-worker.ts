@@ -14,6 +14,16 @@ export async function writeServiceWorker(dist: string) {
   ];
   const hash = new Bun.CryptoHasher("sha256");
   for (const path of shell) hash.update(await Bun.file(resolve(dist, path === "/" ? "index.html" : path.slice(1))).arrayBuffer());
+  // Push handlers ship inside the worker script itself, never as a cached asset.
+  const push = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "../src/push-worker.ts")],
+    target: "browser",
+    format: "iife",
+    minify: true,
+    define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  });
+  const pushSource = push.success ? await push.outputs[0]?.text() : undefined;
+  if (!pushSource) throw new AggregateError(push.logs, "Service worker push handlers failed to build");
   const version = hash.digest("hex").slice(0, 20);
   await Bun.write(
     resolve(dist, "sw.js"),
@@ -49,6 +59,6 @@ self.addEventListener("fetch", event => {
     return cached || new Response("App files unavailable. Reopen Cloud Login online.", { status: 503, headers: { "Content-Type": "text/plain" } });
   })());
 });
-`,
+${pushSource}`,
   );
 }

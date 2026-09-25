@@ -27,5 +27,7 @@ a service worker. Use the same origin in your development Cloud's settings.
 - [Development and browser tests](DEVELOPMENT.md)
 - [Release process](../../docs-site/docs/en/contributing/release-process.md) and [Run Cloud Login](../../docs-site/docs/en/operations/cloud-login.md)
 
-The app is a standalone static website. It uses the public Cloud app-approval
-SDK and `@k2b/ui`; no central account server or database is required.
+The app is a standalone website. It uses the public Cloud app-approval SDK and
+`@k2b/ui`; no central account server is required. Push notifications are
+optional and need Postgres and NATS on the server; see
+[Send push notifications](../../docs-site/docs/en/operations/cloud-login.md#send-push-notifications).

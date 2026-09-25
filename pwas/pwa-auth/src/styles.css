@@ -390,3 +390,45 @@ body.k2b-ui textarea {
 .auth-dialog-actions--end {
   justify-content: flex-end;
 }
+
+/* Push onboarding sits above the main content without taking its space. */
+.auth-main:has(> .auth-push-card) {
+  grid-template-rows: auto 1fr;
+  row-gap: 1.5rem;
+}
+.auth-push-card {
+  width: 100%;
+  max-width: 33rem;
+  margin-inline: auto;
+  align-self: start;
+}
+.auth-push-card p[role="alert"] {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+}
+.auth-push-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.auth-push-card .k2b-button {
+  min-height: 44px;
+}
+.auth-push-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.auth-push-steps {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
