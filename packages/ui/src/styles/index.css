@@ -8323,6 +8323,14 @@
 .k2b-ui .k2b-bottom-sheet-viewport > .k2b-panel-dialog {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* A closing footer owns the safe area, so its surface reaches the physical edge
+ * while its actions stay above the home indicator. */
+.k2b-ui .k2b-bottom-sheet-viewport > .k2b-panel-dialog:has(> .k2b-panel-dialog__footer:last-child) {
+  padding-bottom: 0;
+}
+.k2b-ui .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
 .k2b-ui .k2b-bottom-sheet__handle {
   display: grid;
   flex: 0 0 32px;

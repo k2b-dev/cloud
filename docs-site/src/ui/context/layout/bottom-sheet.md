@@ -34,18 +34,27 @@ as well. Set `handle={false}` to omit the handle, or `dismissLabel` to override
 its inherited locale label.
 
 `Header`, `Body`, `Footer`, `Section`, and `Tabs` use the same props as
-`PanelDialog`. The sheet keeps one body scrollport, safe-area bottom padding,
-a bounded viewport height, and a short entrance animation that respects reduced
-motion. It is also usable on desktop; the host decides when to open it.
+`PanelDialog`. The sheet keeps one body scrollport, a bounded viewport height,
+and a short entrance animation that respects reduced motion. It is also usable
+on desktop; the host decides when to open it.
+
+The sheet sits on the bottom edge and respects the bottom safe area. When a
+`Footer` is the last part of the sheet, the footer carries that inset: its
+surface reaches the physical screen edge and its actions stay above the home
+indicator. Otherwise, the sheet pads its content by the inset. Installed web
+apps need `viewport-fit=cover` in their viewport meta tag for the inset to
+apply.
 
 ## Accessibility
 
 Use a visible header title and meaningful dismiss labels. The native dialog
 provides modal focus containment; the shared core restores focus on close.
-Initial focus goes to the first input in the sheet and otherwise stays on the
-dialog itself; the handle never receives it, so a sheet that opens without a
-user gesture shows no focus ring. Both the handle and header close control are
-keyboard-accessible and show a ring on keyboard focus.
+Initial focus goes to the first input in the sheet and otherwise moves to the
+dialog itself, which never draws a ring. The handle never keeps initial focus,
+even though native `showModal()` focuses it first, so a sheet that opens
+without a user gesture (for example from a notification) shows no focus ring.
+The handle, header close control, and footer actions stay in the tab order and
+show a ring on keyboard focus.
 
 ## Runtime
 

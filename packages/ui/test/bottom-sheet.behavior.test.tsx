@@ -48,8 +48,15 @@ describe("BottomSheet", () => {
     dom.cleanup();
   });
 
-  test("initial focus skips the handle and lands on the first input when there is one", async () => {
+  test("initial focus lands on the ring-less dialog, never the handle, and on the first input when there is one", async () => {
     const dom = createDomTestHarness();
+    // WebKit's showModal() focuses the first focusable descendant (the handle);
+    // iOS then treats that programmatic focus as visible. Reproduce that here.
+    const nativeShowModal = dom.window.HTMLDialogElement.prototype.showModal;
+    dom.window.HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      nativeShowModal.call(this);
+      this.querySelector<HTMLElement>("button:not([disabled]), input, [tabindex]:not([tabindex='-1'])")?.focus();
+    };
     const { default: BottomSheet, bottomSheetOptions } = await import("../src/layout/BottomSheet");
     const core = createDialogCore();
     let closeSheet = () => {};
@@ -66,7 +73,14 @@ describe("BottomSheet", () => {
       );
     }, bottomSheetOptions);
     await Bun.sleep(20);
-    expect(dom.document.activeElement?.classList.contains("k2b-bottom-sheet__handle")).toBe(false);
+    const dialog = dom.document.querySelector("dialog")!;
+    expect(dom.document.activeElement).toBe(dialog);
+    // The dialog is a programmatic focus target only; handle and actions stay tab stops.
+    expect(dialog.tabIndex).toBe(-1);
+    expect(dom.document.querySelector<HTMLButtonElement>(".k2b-bottom-sheet__handle")!.tabIndex).toBe(0);
+    for (const button of Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".k2b-panel-dialog__footer button"))) {
+      expect(button.tabIndex).toBe(0);
+    }
     closeSheet();
     await buttonsOnly;
     const withInput = core.open((close, context) => {
@@ -83,6 +97,7 @@ describe("BottomSheet", () => {
     expect(dom.document.activeElement?.getAttribute("aria-label")).toBe("Find an app");
     closeSheet();
     await withInput;
+    dom.window.HTMLDialogElement.prototype.showModal = nativeShowModal;
     dom.cleanup();
   });
 
