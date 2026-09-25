@@ -16,6 +16,16 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 3. Run `cld help` to discover installed CLI modules, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Modules of third-party apps come from `cld` plugins; `cld plugins list` shows which are installed and whether they load.
 4. Use the default profile unless the task names another instance; pass `--profile <name>` only when needed.
 
+## How every `cld` module is organized
+
+Modules share one command shape, so you can guess the basics before reading a reference; `cld <app> help` confirms it.
+
+- **Verbs:** `ls` lists, `show` or `stat` shows metadata, `cat` prints content, `add` or `write` creates, `set` or `edit` changes, `mv` moves or renames, `cp` copies, `rm` deletes. Secondary resources sit in a plural group with `list`, `add`, `update`, and `delete`, such as `comments list`.
+- **Addresses:** a resource argument takes its ID, `<container>:<path>` (container by ID or exact name), or, where the module keeps a local copy, a file path inside it. An ambiguous name fails with every candidate as `path (id)`; retry with one of the IDs. Nothing is guessed.
+- **Flags:** `--json` on every command, `--yes` for destructive or irreversible actions, `--from <file|->` for content, `--out <path>` for downloads. A command exits `0` only when it did everything; otherwise `1`.
+
+The app references below remain authoritative for each module's exact commands and JSON shapes.
+
 ## Agent workflow
 
 - Stay on the user's selected profile unless they name another Cloud instance.
