@@ -9,6 +9,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     enrolled_by UUID REFERENCES auth.users(id) ON DELETE SET NULL, notified_at TIMESTAMPTZ,
     UNIQUE(issuer, user_id, public_key)
   )`.simple();
+  // Opaque authenticator push token; it can only trigger a wake-up notification.
+  await db`ALTER TABLE auth.app_devices ADD COLUMN IF NOT EXISTS push_token TEXT`.simple();
   await db`CREATE INDEX IF NOT EXISTS app_devices_owner ON auth.app_devices(issuer, user_id, created_at, id)`.simple();
   await db`CREATE TABLE IF NOT EXISTS auth.app_pairings (
     id UUID PRIMARY KEY, issuer TEXT NOT NULL, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,

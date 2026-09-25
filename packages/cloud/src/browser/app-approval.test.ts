@@ -77,11 +77,21 @@ describe("public authenticator browser SDK", () => {
         await verify(key, appDeviceProofMessage(request.proof), request.signature);
         expect(nonces.has(request.proof.jti)).toBe(false);
         nonces.add(request.proof.jti);
-        const operation = request.proof.command.operation;
+        const command = request.proof.command;
+        if (command.operation === "push") expect(command.token).toBe("T".repeat(43));
         return Response.json(
-          operation === "pending"
+          command.operation === "pending"
             ? { requests: [], pollAfterSeconds: 5 }
-            : { state: operation === "revoke" ? "revoked" : request.proof.command.decision === "approve" ? "approved" : "denied" },
+            : {
+                state:
+                  command.operation === "revoke"
+                    ? "revoked"
+                    : command.operation === "push"
+                      ? "updated"
+                      : command.decision === "approve"
+                        ? "approved"
+                        : "denied",
+              },
         );
       },
     });
@@ -94,8 +104,9 @@ describe("public authenticator browser SDK", () => {
     const login = { requestId: id, challenge: secret, comparison: "000123", createdAt: new Date().toISOString(), expiresAt: expiresAt() };
     await client.decide(device, login, "approve");
     await client.decide(device, login, "deny");
+    await client.push(device, "T".repeat(43));
     await client.revoke(device);
-    expect(nonces.size).toBe(5);
+    expect(nonces.size).toBe(6);
     const count = calls.length;
     await expect(client.pending({ ...device, issuer: "https://other.example" })).rejects.toThrow();
     await expect(client.claim({ ...payload(), issuer: "https://other.example" }, key, "Phone")).rejects.toThrow();

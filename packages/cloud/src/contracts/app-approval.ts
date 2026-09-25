@@ -53,6 +53,8 @@ export const AppDeviceMutationSchema = z.discriminatedUnion("operation", [
 export const AppDeviceCommandSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("pending") }).strict(),
   z.object({ operation: z.literal("revoke") }).strict(),
+  /** Stores the authenticator's opaque push token for sign-in wake-ups on this device. */
+  z.object({ operation: z.literal("push"), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict(),
   z
     .object({
       operation: z.literal("decide"),
@@ -91,6 +93,7 @@ export const appDeviceProofMessage = (proof: AppDeviceProof): string => {
     proof.expiresAt,
     c.operation,
     ...(c.operation === "decide" ? [c.requestId, c.challenge, c.comparison, c.decision] : []),
+    ...(c.operation === "push" ? [c.token] : []),
   ]);
 };
 export const appPairingProofMessage = (issuer: string, claim: Omit<z.infer<typeof AppPairingClaimSchema>, "signature">): string =>
@@ -182,7 +185,7 @@ export const AppDeviceResponseSchema = z.union([
       pollAfterSeconds: z.number().positive(),
     })
     .strict(),
-  z.object({ state: z.enum(["approved", "denied", "revoked"]) }).strict(),
+  z.object({ state: z.enum(["approved", "denied", "revoked", "updated"]) }).strict(),
 ]);
 export const AppLoginStartResultSchema = z
   .object({ requestId: Id, browserSecret: Secret, comparison: Comparison, expiresAt: DateTime, pollAfterSeconds: z.number().positive() })

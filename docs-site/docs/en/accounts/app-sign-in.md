@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1084
 description: Connect Cloud to its trusted authenticator website and prepare a first sign-in.
 tags: [accounts, administration, authentication]
-updated: 2026-09-09
+updated: 2026-09-25
 ---
 
 # Set up app sign-in
@@ -64,7 +64,8 @@ when replacing an untrusted authenticator.
 2. On Cloud's login page, choose your account type if a selector is shown.
    Login and FreeIPA start with app sign-in; Guests start with email and can
    switch to the app. Enter your username or an email that identifies one account.
-3. Keep the login page open and open your authenticator.
+3. Keep the login page open and open your authenticator, or tap its
+   notification if you turned notifications on.
 4. Unlock the app, compare the request with the waiting login page, and approve
    only if the codes match and you started the request.
 
@@ -76,8 +77,15 @@ accounts or the password alternative for FreeIPA. Existing passkeys remain
 available at the bottom of the page. If your email is shared by multiple
 accounts, use your username for app sign-in.
 
-Before offering app sign-in to your users, check pairing, approval, denial and
-lost-device recovery on the browsers and devices your organization supports.
+Cloud Login can notify paired phones about new sign-in requests. For that,
+Cloud needs outbound HTTPS to the authenticator origin, and the authenticator
+must have [push notifications](/en/docs/operations/cloud-login#send-push-notifications)
+configured. Notifications contain only the Cloud address and an opaque
+request reference.
+
+Before offering app sign-in to your users, check pairing, approval, denial,
+notifications and lost-device recovery on the browsers and devices your
+organization supports.
 
 ## Configure from the CLI
 

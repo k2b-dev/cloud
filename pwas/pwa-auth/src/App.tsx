@@ -25,6 +25,11 @@ export function App(props: { preferences: Preferences }) {
   // A tapped notification names the sign-in request to show first.
   const [focusRequest, setFocusRequest] = createSignal<string>();
   createEffect(() => rememberLocale(props.preferences.locale()));
+  // Each paired Cloud learns this phone's push token over its signed device channel.
+  createEffect(() => {
+    const token = push.token();
+    if (token && vault.status() === "open" && auth.bindings().some((binding) => binding.pushToken !== token)) void auth.syncPush(token);
+  });
   let pairingOpen = false;
   let unlockOpen = false;
   const showUnlock = async () => {

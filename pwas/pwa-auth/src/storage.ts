@@ -4,6 +4,8 @@ export interface Binding extends AppApprovalDevice {
   id: string;
   label: string;
   name: string;
+  /** Push token this Cloud last accepted for sign-in wake-ups. */
+  pushToken?: string;
 }
 export interface Enrollment {
   comparison?: string;
@@ -33,7 +35,7 @@ const enrollmentSchema = z.object({
   deviceId: z.string().optional(),
   confirmed: z.boolean().optional(),
 });
-const bindingSchema = enrollmentSchema.extend({ deviceId: z.string() });
+const bindingSchema = enrollmentSchema.extend({ deviceId: z.string(), pushToken: z.string().optional() });
 async function read<T>(name: string, id: string, record: SealedRecord, validate: (v: unknown) => T) {
   const owner = currentSession();
   if (record.vault !== owner.id) throw new Error("storage");

@@ -23,6 +23,7 @@ import {
   type AppApprovalActor,
   type AppApprovalConfig,
   type AppLoginDecisionHints,
+  type AppLoginPushSender,
   createAppApprovalService,
   readAppApprovalConfig,
 } from "./app-approval";
@@ -54,7 +55,15 @@ suite("isolated app approval protocol", () => {
         signal.addEventListener("abort", () => resolve(), { once: true });
       }),
   };
-  const service = createAppApprovalService(sql, async () => cfg, hints);
+  // Stand-in for Cloud Login's POST /push/notify; records what would leave the Cloud.
+  const pushes: { appOrigin: string; body: Parameters<AppLoginPushSender>[1]; committed: boolean }[] = [];
+  let pushStatus = 202;
+  const pushSender: AppLoginPushSender = async (appOrigin, body) => {
+    const [row] = await sql`SELECT 1 FROM auth.app_logins WHERE id=${body.requestRef}::uuid`;
+    pushes.push({ appOrigin, body, committed: Boolean(row) });
+    return pushStatus;
+  };
+  const service = createAppApprovalService(sql, async () => cfg, hints, pushSender);
   const cloudB = createAppApprovalService(sql, async () => ({ ...cfg, issuer: "https://second-cloud.example.test" }), hints);
   const routes = createAppApprovalRoutes(service);
   const post = (path: string, body: unknown, token?: string, origin = cfg.issuer) =>
@@ -279,6 +288,59 @@ suite("isolated app approval protocol", () => {
     since = performance.now();
     expect((await service.browserStatus(expiring.requestId, expiring.browserSecret, { ms: 30_000 })).state).toBe("expired");
     expect(performance.now() - since).toBeLessThan(5_000);
+  });
+
+  test("a sign-in wakes the owner's paired phones after commit with only the Cloud and request id", async () => {
+    const owner = await account();
+    const other = await account();
+    const device = await enroll(owner);
+    const second = await enroll(owner);
+    const stranger = await enroll(other);
+    const token = "P".repeat(43);
+    expect(await service.deviceCommand(await proof(device, { operation: "push", token }))).toEqual({ state: "updated" });
+    // The same phone paired twice holds one token: one wake-up, not two.
+    await service.deviceCommand(await proof(second, { operation: "push", token }));
+    await service.deviceCommand(await proof(stranger, { operation: "push", token: "S".repeat(43) }));
+    const until = async (check: () => boolean | Promise<boolean>) => {
+      for (let i = 0; i < 100 && !(await check()); i++) await Bun.sleep(20);
+    };
+    pushes.length = 0;
+    pushStatus = 202;
+    const started = await service.startLogin(owner.uid, "login");
+    await until(() => pushes.length > 0);
+    await Bun.sleep(50);
+    expect(pushes).toEqual([
+      { appOrigin: cfg.appOrigin, body: { token, cloudOrigin: cfg.issuer, requestRef: started.requestId }, committed: true },
+    ]);
+    const [login] = await sql<{ challenge: string }[]>`SELECT challenge FROM auth.app_logins WHERE id=${started.requestId}::uuid`;
+    for (const secret of [started.browserSecret, started.comparison, login!.challenge, owner.uid, owner.mail])
+      expect(JSON.stringify(pushes)).not.toContain(secret);
+
+    pushes.length = 0;
+    await service.startLogin(`missing-${crypto.randomUUID()}`, "login");
+    await Bun.sleep(100);
+    expect(pushes).toEqual([]);
+
+    pushStatus = 410;
+    await service.startLogin(owner.uid, "login");
+    const tokens = () =>
+      sql<
+        { push_token: string | null }[]
+      >`SELECT push_token FROM auth.app_devices WHERE id IN (${device.id}::uuid, ${second.id}::uuid, ${stranger.id}::uuid) ORDER BY push_token NULLS FIRST`;
+    await until(async () => (await tokens())[1]?.push_token === null);
+    expect((await tokens()).map((row) => row.push_token)).toEqual([null, null, "S".repeat(43)]);
+    pushes.length = 0;
+    await service.startLogin(owner.uid, "login");
+    await Bun.sleep(100);
+    expect(pushes).toEqual([]);
+
+    // Push tokens are strict, signed parameters.
+    const tampered = await proof(device, { operation: "push", token });
+    tampered.proof.command = { operation: "push", token: "Q".repeat(43) };
+    await expect(service.deviceCommand(tampered)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const invalid = await proof(device, { operation: "push", token });
+    const body = { ...invalid, proof: { ...invalid.proof, command: { operation: "push", token: "short" } } };
+    expect((await post("/device", body, undefined, cfg.appOrigin)).status).toBe(400);
   });
 
   test("two Clouds and two accounts cannot reuse keys, requests, or signatures", async () => {

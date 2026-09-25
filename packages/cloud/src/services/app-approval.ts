@@ -145,6 +145,19 @@ export type AppLoginDecisionHints = {
   /** Settles on the first hint for this request, or when `signal` aborts. */
   wait(requestId: string, signal: AbortSignal): Promise<void>;
 };
+/** Best-effort sign-in wake-ups through the trusted authenticator; returns the HTTP status. */
+export type AppLoginPushSender = (appOrigin: string, body: { token: string; cloudOrigin: string; requestRef: string }) => Promise<number>;
+export const fetchPushSender: AppLoginPushSender = async (appOrigin, body) => {
+  const response = await fetch(`${appOrigin}/push/notify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    redirect: "error",
+    signal: AbortSignal.timeout(5_000),
+  });
+  await response.body?.cancel();
+  return response.status;
+};
 const log = logger("app-approval");
 const decisionTopic = lazySync((sync) =>
   sync.topic<null>({
@@ -193,6 +206,7 @@ export const createAppApprovalService = (
   db: SQL = sql,
   configuration = (requireEnabled = true) => readAppApprovalConfig(db, requireEnabled),
   hints: AppLoginDecisionHints = syncLoginDecisionHints,
+  push: AppLoginPushSender = fetchPushSender,
 ) => {
   const config = async (requireEnabled = true) => {
     const value = await configuration(requireEnabled);
@@ -243,6 +257,24 @@ export const createAppApprovalService = (
     if (!device || device.revoked_at) return reject("FORBIDDEN", 403);
     await eligible(tx, device.user_id);
     return device;
+  };
+
+  /** Runs after the login commit and never delays or fails it. The body names only
+   * this Cloud and the request id; a 410 means the phone's subscription is gone. */
+  const wake = async (cfg: AppApprovalConfig, userId: string, requestId: string) => {
+    try {
+      const rows = await db<{ push_token: string }[]>`SELECT DISTINCT push_token FROM auth.app_devices
+        WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND revoked_at IS NULL AND push_token IS NOT NULL LIMIT ${limits.devicesPerAccount}`;
+      await Promise.all(
+        rows.map(async ({ push_token: token }) => {
+          const status = await push(cfg.appOrigin, { token, cloudOrigin: cfg.issuer, requestRef: requestId });
+          if (status === 410)
+            await db`UPDATE auth.app_devices SET push_token=NULL WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND push_token=${token}`;
+        }),
+      );
+    } catch (error) {
+      log.warn("App login push wake-up failed", { error: error instanceof Error ? error.name : "UnknownError" });
+    }
   };
 
   return {
@@ -399,6 +431,7 @@ export const createAppApprovalService = (
         challenge = secret(),
         code = comparison(),
         expiresAt = future(limits.loginSeconds);
+      let owner: string | undefined;
       await db.begin(async (tx) => {
         const candidates = await tx<
           AccountRow[]
@@ -422,7 +455,10 @@ export const createAppApprovalService = (
         // public shape and a decoy pending transaction; no account enumeration.
         await tx`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,expires_at)
           VALUES (${id}::uuid,${cfg.issuer},${candidate?.id ?? null}::uuid,${candidate?.auth_epoch ?? null},${category},${hash(browserSecret)},${challenge},${code},${expiresAt})`;
+        owner = candidate?.id;
       });
+      // Not awaited: decoy and real requests answer alike, and push is only a wake-up.
+      if (owner) void wake(cfg, owner, id);
       return { requestId: id, browserSecret, comparison: code, expiresAt: iso(expiresAt), pollAfterSeconds: limits.pollSeconds };
     },
     deviceCommand: async (request: AppDeviceRequest) => {
@@ -448,6 +484,10 @@ export const createAppApprovalService = (
         if (!used.length) return reject("CONFLICT", 409);
         await tx`UPDATE auth.app_devices SET last_used_at=now() WHERE id=${device.id}::uuid`;
         const command = proof.command;
+        if (command.operation === "push") {
+          await tx`UPDATE auth.app_devices SET push_token=${command.token} WHERE id=${device.id}::uuid`;
+          return { state: "updated" as const };
+        }
         if (command.operation === "revoke") {
           await tx`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${device.id}::uuid`;
           await record(tx, "device.revoke", device.user_id, device.id);
