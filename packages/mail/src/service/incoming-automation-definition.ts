@@ -9,7 +9,7 @@ import type {
   WorkflowEffectBudget,
 } from "../contracts";
 import { summarizeIncomingAutomationIssues } from "../incoming-automation-issues";
-import { getMailWorkflowCatalogRef, type MailWorkflowCatalogIndex, type MailWorkflowFolderCatalogEntry } from "../workflows/catalog";
+import { getMailWorkflowCatalogRef, type MailWorkflowCatalog } from "../workflows/catalog";
 
 const messageInput = () => ({
   sender: "${{ inputs.message.fromAddress }}",
@@ -239,26 +239,37 @@ const visitSteps = (steps: MailAutomationStep[], visitor: (step: MailAutomationS
   }
 };
 
-/** Rewrites each guided move destination, given by public ID or exact name, to the folder's public ID. */
-export const resolveIncomingAutomationFolders = (
+/** Rewrites each guided move destination and local tag, given by public ID or exact name, to its public ID. */
+export const resolveIncomingAutomationReferences = (
   steps: MailAutomationStep[],
-  folders: MailWorkflowCatalogIndex<MailWorkflowFolderCatalogEntry>,
+  catalog: Pick<MailWorkflowCatalog, "folders" | "localTags">,
 ): Result<MailAutomationStep[]> => {
+  const unresolved = (field: string, code: string, message: string) =>
+    fail(err.badInput(summarizeIncomingAutomationIssues([{ field, code, message }])));
   const resolve = (sequence: MailAutomationStep[], path: string): Result<MailAutomationStep[]> => {
     const resolved: MailAutomationStep[] = [];
     for (const [index, step] of sequence.entries()) {
       const at = `${path}.${index}`;
       if (step.kind === "mail_action" && step.action.kind === "move_to_folder") {
         const reference = step.action.folderId;
-        const folder = getMailWorkflowCatalogRef(folders, reference);
+        const folder = getMailWorkflowCatalogRef(catalog.folders, reference);
         if (!folder) {
-          const message = folders.ambiguous.has(reference)
+          const message = catalog.folders.ambiguous.has(reference)
             ? `Several folders are named "${reference}"; use the folder ID.`
             : `Unknown or inaccessible folder "${reference}".`;
-          const field = `${at}.action.folderId`;
-          return fail(err.badInput(summarizeIncomingAutomationIssues([{ field, code: "unknown_folder", message }])));
+          return unresolved(`${at}.action.folderId`, "unknown_folder", message);
         }
         resolved.push({ ...step, action: { ...step.action, folderId: folder.id } });
+      } else if (step.kind === "mail_action" && step.action.kind === "add_local_tag") {
+        const reference = step.action.tagId;
+        const tag = getMailWorkflowCatalogRef(catalog.localTags, reference);
+        if (!tag) {
+          const message = catalog.localTags.ambiguous.has(reference)
+            ? `Several local tags are named "${reference}"; use the tag ID.`
+            : `Unknown local tag "${reference}".`;
+          return unresolved(`${at}.action.tagId`, "unknown_tag", message);
+        }
+        resolved.push({ ...step, action: { ...step.action, tagId: tag.id } });
       } else if (step.kind === "if") {
         const then = resolve(step.then, `${at}.then`);
         if (!then.ok) return then;

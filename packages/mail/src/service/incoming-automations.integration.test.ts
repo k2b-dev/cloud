@@ -1207,4 +1207,104 @@ suite("incoming automations", () => {
       'Invalid incoming automation definition: steps.0.action.folderId: Unknown or inaccessible folder "No such folder".',
     );
   });
+
+  test("creates guided add_local_tag and create_reply_draft automations over HTTP for real tag and sender identity IDs", async () => {
+    // Real public IDs are mixed-case; the reported failure only hit IDs that are not uppercase-only.
+    let tagId = newShortId();
+    while (!/[a-z]/.test(tagId) || !/[A-Z]/.test(tagId)) tagId = newShortId();
+    const tagName = `Triage ${suffix}`;
+    await sql`
+      INSERT INTO mail.local_tags (short_id, mailbox_id, name, normalized_name, created_by_actor_kind, created_by_actor_id)
+      VALUES (${tagId}, ${mailboxId}::uuid, ${tagName}, ${tagName.toLowerCase()}, 'user', ${userIds[0]}::uuid)
+    `;
+    const senderIdentityId = newShortId();
+    await sql`
+      INSERT INTO mail.sender_identities (short_id, mailbox_id, from_address, label, status, automation_policy)
+      VALUES (${senderIdentityId}, ${mailboxId}::uuid, ${`replies-${suffix}@example.org`}, 'Replies', 'verified', 'mailbox')
+    `;
+    const [mailboxRow] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    const api = new Hono<MailApiContext>()
+      .use(async (c, next) => {
+        c.set("actor", ownerContext.actor);
+        c.set("accessSubject", ownerContext.accessSubject);
+        c.set("internalMailboxId", mailboxId);
+        await next();
+      })
+      .route("/", incomingAutomationRoutes);
+    const create = (name: string, steps: unknown[]) =>
+      api.request(`/mailboxes/${mailboxRow!.short_id}/incoming-automations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          scope: {
+            mode: "matching",
+            conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: `triage-${suffix}@example.org` }] },
+          },
+          steps,
+        }),
+      });
+    const classified = (tag: string) => {
+      const classifierId = crypto.randomUUID();
+      return [
+        {
+          id: classifierId,
+          kind: "ai_classify",
+          instructions: "Choose a category",
+          choices: [
+            { name: "Important", description: "Needs attention" },
+            { name: "Routine", description: "Routine mail" },
+          ],
+        },
+        {
+          id: crypto.randomUUID(),
+          kind: "if",
+          condition: { sourceStepId: classifierId, operator: "equals", value: "Important" },
+          then: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_local_tag", tagId: tag } }],
+          else: [],
+        },
+      ];
+    };
+    type Created = { message?: string; steps?: Array<{ then?: Array<{ action: { tagId: string } }>; senderIdentityId?: string }> };
+    const created = async (response: Response) => {
+      const body = (await response.json()) as Created;
+      expect({ status: response.status, message: body.message }).toEqual({ status: 200, message: undefined });
+      return body;
+    };
+
+    expect((await created(await create(`Tag by ID ${suffix}`, classified(tagId)))).steps?.[1]?.then?.[0]?.action.tagId).toBe(tagId);
+    // An exact tag name resolves like the canonical addLocalTag action and is stored as the public ID.
+    expect((await created(await create(`Tag by name ${suffix}`, classified(tagName)))).steps?.[1]?.then?.[0]?.action.tagId).toBe(tagId);
+
+    const rejected = async (response: Response) => {
+      expect(response.status).toBe(400);
+      return ((await response.json()) as { message: string }).message;
+    };
+    expect(await rejected(await create(`Tag unknown ${suffix}`, classified("No such tag")))).toBe(
+      'Invalid incoming automation definition: steps.1.then.0.action.tagId: Unknown local tag "No such tag".',
+    );
+    // A name and an ID of the same tag on one path are the same tag once resolved.
+    const tagTwice = [
+      { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_local_tag", tagId: tagName } },
+      { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_local_tag", tagId } },
+    ];
+    expect(await rejected(await create(`Tag twice ${suffix}`, tagTwice))).toBe(
+      "Invalid incoming automation definition: steps.1.action: One reachable path cannot add the same tag twice",
+    );
+
+    // Marking read changes the provider message; setting the status is a separate, local slot on the same path.
+    await created(
+      await create(`Read and status ${suffix}`, [
+        { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } },
+        { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "set_status", status: "done" } },
+      ]),
+    );
+
+    const draft = await created(
+      await create(`Reply draft ${suffix}`, [
+        { id: crypto.randomUUID(), kind: "create_reply_draft", senderIdentityId, body: { kind: "custom", value: "Thanks, we are on it." } },
+      ]),
+    );
+    expect(draft.steps?.[0]?.senderIdentityId).toBe(senderIdentityId);
+  });
 });

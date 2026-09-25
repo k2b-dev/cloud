@@ -2041,9 +2041,10 @@ export const mailAutomationActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("trash") }).strict(),
   z.object({ kind: z.literal("mark_read") }).strict(),
   z.object({ kind: z.literal("add_keyword"), keyword: mailKeywordSchema }).strict(),
-  // A folder public ID or exact name, like the canonical moveMessage action; stored as the public ID.
+  // Folder and tag references take a public ID or exact name, like the canonical moveMessage and
+  // addLocalTag actions; they are stored as the public ID.
   z.object({ kind: z.literal("move_to_folder"), folderId: z.string().trim().min(1).max(500) }).strict(),
-  z.object({ kind: z.literal("add_local_tag"), tagId: ResourceShortIdSchema }).strict(),
+  z.object({ kind: z.literal("add_local_tag"), tagId: z.string().trim().min(1).max(500) }).strict(),
   z.object({ kind: z.literal("assign_user"), userId: z.string().uuid() }).strict(),
   z.object({ kind: z.literal("set_status"), status: conversationWorkStatusSchema }).strict(),
 ]);
@@ -2351,7 +2352,8 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
           if (providerMutation && state.providerMutation) {
             context.addIssue({
               code: "custom",
-              message: "One reachable path can contain only one provider message action",
+              message:
+                "Another step on this path already changes the message on the provider; keep one, or put them in the then and else branches of one if",
               path: [...stepPath, "action"],
             });
           }

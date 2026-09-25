@@ -8,7 +8,7 @@ import {
   buildIncomingAutomationWorkflowSource,
   incomingAutomationBudget,
   incomingAutomationHasAi,
-  resolveIncomingAutomationFolders,
+  resolveIncomingAutomationReferences,
 } from "./incoming-automation-definition";
 
 const classifyId = "00000000-0000-4000-8000-000000000001";
@@ -249,41 +249,55 @@ describe("incoming automation workflow compiler", () => {
   });
 });
 
-describe("guided move destinations", () => {
-  const folders = buildMailWorkflowCatalog({
+describe("guided catalog references", () => {
+  const catalog = buildMailWorkflowCatalog({
     folders: [
       { id: "QkyqJ9", name: "IT & Entwicklung" },
       { id: "Arch01", name: "Archive", path: "Archive" },
       { id: "Arch02", name: "Archive", path: "Projects / Archive" },
     ],
     assignableUsers: [],
-  }).folders;
-  const move = (folderId: string): MailAutomationStep => ({
+    localTags: [
+      { id: "NUC3rG", name: "Rechnungen" },
+      { id: "ecnRzz", name: "Support" },
+      { id: "uXAuku", name: "Support" },
+    ],
+  });
+  const branch = (action: Extract<MailAutomationStep, { kind: "mail_action" }>["action"]): MailAutomationStep => ({
     id: "00000000-0000-4000-8000-000000000031",
     kind: "if",
     condition: { sourceStepId: classifyId, operator: "equals", value: "Important" },
     then: [],
-    else: [{ id: "00000000-0000-4000-8000-000000000032", kind: "mail_action", action: { kind: "move_to_folder", folderId } }],
+    else: [{ id: "00000000-0000-4000-8000-000000000032", kind: "mail_action", action }],
   });
-  const destination = (folderId: string): string => {
-    const resolved = resolveIncomingAutomationFolders([move(folderId)], folders);
+  const resolvedAction = (action: Extract<MailAutomationStep, { kind: "mail_action" }>["action"]): string => {
+    const resolved = resolveIncomingAutomationReferences([branch(action)], catalog);
     if (!resolved.ok) return resolved.error.message;
-    const [branch] = resolved.data;
-    const [step] = branch?.kind === "if" ? branch.else : [];
-    return step?.kind === "mail_action" && step.action.kind === "move_to_folder" ? step.action.folderId : "";
+    const [step] = resolved.data[0]?.kind === "if" ? resolved.data[0].else : [];
+    if (step?.kind !== "mail_action") return "";
+    if (step.action.kind === "move_to_folder") return step.action.folderId;
+    return step.action.kind === "add_local_tag" ? step.action.tagId : "";
   };
+  const destination = (folderId: string) => resolvedAction({ kind: "move_to_folder", folderId });
+  const tag = (tagId: string) => resolvedAction({ kind: "add_local_tag", tagId });
 
   test("stores the public ID for an ID or an exact name, also inside branches", () => {
     expect(destination("QkyqJ9")).toBe("QkyqJ9");
     expect(destination("IT & Entwicklung")).toBe("QkyqJ9");
+    expect(tag("NUC3rG")).toBe("NUC3rG");
+    expect(tag("Rechnungen")).toBe("NUC3rG");
   });
 
-  test("names the field for an unknown or ambiguous folder", () => {
+  test("names the field for an unknown or ambiguous folder or tag", () => {
     expect(destination("Newsletter")).toBe(
       'Invalid incoming automation definition: steps.0.else.0.action.folderId: Unknown or inaccessible folder "Newsletter".',
     );
     expect(destination("Archive")).toBe(
       'Invalid incoming automation definition: steps.0.else.0.action.folderId: Several folders are named "Archive"; use the folder ID.',
+    );
+    expect(tag("ABC123")).toBe('Invalid incoming automation definition: steps.0.else.0.action.tagId: Unknown local tag "ABC123".');
+    expect(tag("Support")).toBe(
+      'Invalid incoming automation definition: steps.0.else.0.action.tagId: Several local tags are named "Support"; use the tag ID.',
     );
   });
 });

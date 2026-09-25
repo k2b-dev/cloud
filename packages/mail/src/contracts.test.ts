@@ -478,7 +478,8 @@ describe("incoming automation contracts", () => {
       ],
     });
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.error.issues.some((issue) => issue.message.includes("only one provider message action"))).toBe(true);
+    if (!result.success)
+      expect(result.error.issues.some((issue) => issue.message.includes("already changes the message on the provider"))).toBe(true);
     expect(
       createIncomingAutomationSchema.safeParse({
         name: "Single-result multi routing",
