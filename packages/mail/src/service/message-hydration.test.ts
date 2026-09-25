@@ -2,6 +2,30 @@ import { describe, expect, test } from "bun:test";
 import { sanitizeIncomingMailHtml, sanitizeIncomingMailHtmlWithRemoteImages } from "./message-hydration";
 
 describe("incoming mail HTML", () => {
+  test("keeps common template layout styles and drops positioning and hiding styles", () => {
+    const sanitized = sanitizeIncomingMailHtml(
+      '<table style="table-layout:fixed;border-spacing:0;border-top-left-radius:8px;min-width:320px"><tr><td style="text-transform:uppercase;word-break:break-word;float:left;overflow:hidden;height:40px">x</td></tr></table>' +
+        '<div style="position:absolute;z-index:9;visibility:hidden;opacity:0;float:inherit;overflow:scroll">y</div>',
+    );
+
+    for (const kept of [
+      "table-layout:fixed",
+      "border-spacing:0",
+      "border-top-left-radius:8px",
+      "min-width:320px",
+      "text-transform:uppercase",
+      "word-break:break-word",
+      "float:left",
+      "overflow:hidden",
+      "height:40px",
+    ]) {
+      expect(sanitized).toContain(kept);
+    }
+    for (const dropped of ["position", "z-index", "visibility", "opacity", "float:inherit", "overflow:scroll"]) {
+      expect(sanitized).not.toContain(dropped);
+    }
+  });
+
   test("keeps inline-block buttons so their padding shows, but never hides content", () => {
     const sanitized = sanitizeIncomingMailHtml(
       '<a href="https://example.com" style="display: inline-block; padding: 14px 36px; color: white;">Sign in</a><div style="display:none">hidden</div>',
