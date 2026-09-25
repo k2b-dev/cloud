@@ -78,7 +78,8 @@ const germanRefinementMessages: Record<string, string> = {
   "Event-data outputs can only be used by a create-event step":
     "Termindaten können nur von einem Schritt verwendet werden, der einen Termin erstellt.",
   "Condition value must be one of the AI choices": "Der Bedingungswert muss eine der KI-Auswahlmöglichkeiten sein.",
-  "One reachable path can contain only one provider message action": "Ein Pfad kann nur eine Aktion am Postfach des Anbieters enthalten.",
+  "Another step on this path already changes the message on the provider; keep one, or put them in the then and else branches of one if":
+    "Ein anderer Schritt auf diesem Pfad ändert die Nachricht bereits beim Anbieter. Behalte nur einen oder verteile sie auf den then- und else-Zweig einer Bedingung.",
   "One reachable path can assign only once": "Ein Pfad kann nur einmal zuweisen.",
   "One reachable path can set status only once": "Ein Pfad kann den Status nur einmal setzen.",
   "One reachable path cannot add the same tag twice": "Ein Pfad kann denselben Tag nicht zweimal hinzufügen.",

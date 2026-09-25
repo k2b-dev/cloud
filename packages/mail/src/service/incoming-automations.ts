@@ -44,7 +44,7 @@ import {
   incomingAutomationBudget,
   incomingAutomationHasAi,
   incomingAutomationHasSpaces,
-  resolveIncomingAutomationFolders,
+  resolveIncomingAutomationReferences,
 } from "./incoming-automation-definition";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
@@ -368,16 +368,30 @@ const rejectOwnSenderTargets = async (params: {
   return identity ? fail(err.badInput("Incoming automations apply only to incoming mail; remove the mailbox's own sender address")) : ok();
 };
 
-/** Guided moves name their destination by public ID or exact name, resolved like the canonical moveMessage action. */
-const resolveMoveDestinations = async (
-  context: MailRequestContext,
-  mailboxId: string,
-  steps: MailAutomationStep[],
-  db: SqlClient,
-): Promise<Result<MailAutomationStep[]>> => {
-  if (!incomingAutomationActions(steps).some((action) => action.kind === "move_to_folder")) return ok(steps);
-  const catalog = await loadMailWorkflowCatalog({ context, mailboxId, db });
-  return resolveIncomingAutomationFolders(steps, catalog.folders);
+/**
+ * Guided moves and local tags name their target by public ID or exact name, resolved like the canonical
+ * moveMessage and addLocalTag actions. The resolved definition is validated again: a name and an ID can
+ * reference the same tag on one path.
+ */
+const resolveCatalogReferences = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  definition: { steps: MailAutomationStep[] };
+  schema: typeof createIncomingAutomationSchema | typeof updateIncomingAutomationSchema;
+  db: SqlClient;
+}): Promise<Result<MailAutomationStep[]>> => {
+  const { steps } = params.definition;
+  if (!incomingAutomationActions(steps).some((action) => action.kind === "move_to_folder" || action.kind === "add_local_tag")) {
+    return ok(steps);
+  }
+  const catalog = await loadMailWorkflowCatalog({ context: params.context, mailboxId: params.mailboxId, db: params.db });
+  const resolved = resolveIncomingAutomationReferences(steps, catalog);
+  if (!resolved.ok) return resolved;
+  const definition = { ...params.definition, steps: resolved.data };
+  const checked = params.schema.safeParse(definition);
+  return checked.success
+    ? resolved
+    : fail(err.badInput(summarizeIncomingAutomationIssues(incomingAutomationIssues(checked.error, definition))));
 };
 
 const protectMailboxSenders = async (params: {
@@ -1082,7 +1096,15 @@ export const createIncomingAutomation = async (params: {
   try {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
-      const steps = unwrap(await resolveMoveDestinations(params.context, params.mailboxId, parsed.data.steps, tx));
+      const steps = unwrap(
+        await resolveCatalogReferences({
+          context: params.context,
+          mailboxId: params.mailboxId,
+          definition: parsed.data,
+          schema: createIncomingAutomationSchema,
+          db: tx,
+        }),
+      );
       const actions = incomingAutomationActions(steps);
       unwrap(
         await rejectOwnSenderTargets({
@@ -1193,7 +1215,15 @@ export const updateIncomingAutomation = async (params: {
   try {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
-      const steps = unwrap(await resolveMoveDestinations(params.context, params.mailboxId, parsed.data.steps, tx));
+      const steps = unwrap(
+        await resolveCatalogReferences({
+          context: params.context,
+          mailboxId: params.mailboxId,
+          definition: parsed.data,
+          schema: updateIncomingAutomationSchema,
+          db: tx,
+        }),
+      );
       const actions = incomingAutomationActions(steps);
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
       if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
