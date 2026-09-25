@@ -110,19 +110,18 @@ export default new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/incoming-automations",
     v("param", mailboxParamSchema),
     definitionJson(createIncomingAutomationSchema),
-    async (c) => {
-      const input = await resolvePublicRelations(internalMailboxId(c), c.req.valid("json"));
-      if (!input) return respondPublic(c, fail(err.notFound("Mail resource")));
-      return respondPublic(
+    // Guided definitions stay in public-ID space: their folder, tag, and sender identity
+    // references are the workflow source's references.
+    async (c) =>
+      respondPublic(
         c,
         incomingAutomations.createIncomingAutomation({
           context: requestContext(c),
           mailboxId: internalMailboxId(c),
-          input,
+          input: c.req.valid("json"),
         }),
         "incomingAutomations",
-      );
-    },
+      ),
   )
   .post(
     "/mailboxes/:mailboxId/incoming-automations/preview",
@@ -187,19 +186,16 @@ export default new Hono<MailApiContext>()
     resolveAutomationParam,
     v("param", automationParamSchema),
     definitionJson(updateIncomingAutomationSchema),
-    async (c) => {
-      const input = await resolvePublicRelations(internalMailboxId(c), c.req.valid("json"));
-      if (!input) return respondPublic(c, fail(err.notFound("Mail resource")));
-      return respondPublic(
+    async (c) =>
+      respondPublic(
         c,
         incomingAutomations.updateIncomingAutomation({
           context: requestContext(c),
           ...internalParams(c, c.req.valid("param")),
-          input,
+          input: c.req.valid("json"),
         }),
         "incomingAutomations",
-      );
-    },
+      ),
   )
   .patch(
     "/mailboxes/:mailboxId/incoming-automations/:automationId/enabled",

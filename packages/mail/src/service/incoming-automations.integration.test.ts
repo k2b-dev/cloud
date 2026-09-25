@@ -1147,4 +1147,64 @@ suite("incoming automations", () => {
     expect(served.folders).toEqual(catalog.folders);
     expect(served.folders.find((entry) => entry.path === "Projects / 2025 / Archive")?.id).toMatch(/^[A-Za-z0-9_-]{6,}$/);
   });
+
+  test("creates guided move_to_folder automations over HTTP for real folder names and IDs", async () => {
+    const [binding] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.provider_bindings WHERE remote_resource_id = ${remoteResourceId}::uuid
+    `;
+    if (!binding) throw new Error("Missing incoming automation provider binding");
+    const folder = async (key: string, name: string) => {
+      const [row] = await sql<{ id: string; short_id: string }[]>`
+        INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+        VALUES (${newShortId()}, ${remoteResourceId}::uuid, ${`incoming-automation-${key}-${suffix}`}, ${name}, 'other', 'current')
+        RETURNING id, short_id
+      `;
+      if (!row) throw new Error(`Failed to create folder ${key}`);
+      await sql`
+        INSERT INTO mail.binding_folder_refs (
+          binding_id, folder_id, remote_path, uid_validity, uid_next, effective_rights, last_verified_at
+        ) VALUES (${binding.id}::uuid, ${row.id}::uuid, ${`${key}-${suffix}`}, 1, 1, '{read,insert,move}'::text[], now())
+      `;
+      return row.short_id;
+    };
+    const it = await folder("it", "IT & Entwicklung");
+    const newsletter = await folder("newsletter", "Newsletter");
+    const [mailboxRow] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    const api = new Hono<MailApiContext>()
+      .use(async (c, next) => {
+        c.set("actor", ownerContext.actor);
+        c.set("accessSubject", ownerContext.accessSubject);
+        c.set("internalMailboxId", mailboxId);
+        await next();
+      })
+      .route("/", incomingAutomationRoutes);
+    const create = (name: string, folderId: string) =>
+      api.request(`/mailboxes/${mailboxRow!.short_id}/incoming-automations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          scope: {
+            mode: "matching",
+            conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: `news-${suffix}@example.org` }] },
+          },
+          steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId } }],
+        }),
+      });
+    const folderOf = async (response: Response) => {
+      const body = (await response.json()) as { message?: string; steps?: Array<{ action: { folderId: string } }> };
+      expect({ status: response.status, message: body.message }).toEqual({ status: 200, message: undefined });
+      return body.steps?.[0]?.action.folderId;
+    };
+
+    expect(await folderOf(await create(`Move by ID ${suffix}`, it))).toBe(it);
+    // An exact folder name resolves like the canonical moveMessage action and is stored as the public ID.
+    expect(await folderOf(await create(`Move by name ${suffix}`, "Newsletter"))).toBe(newsletter);
+
+    const unknown = await create(`Move unknown ${suffix}`, "No such folder");
+    expect(unknown.status).toBe(400);
+    expect(((await unknown.json()) as { message: string }).message).toBe(
+      'Invalid incoming automation definition: steps.0.action.folderId: Unknown or inaccessible folder "No such folder".',
+    );
+  });
 });

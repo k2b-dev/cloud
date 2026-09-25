@@ -1,3 +1,4 @@
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { stringify } from "yaml";
 import type {
   MailAutomationAction,
@@ -7,6 +8,8 @@ import type {
   MailAutomationStep,
   WorkflowEffectBudget,
 } from "../contracts";
+import { summarizeIncomingAutomationIssues } from "../incoming-automation-issues";
+import { getMailWorkflowCatalogRef, type MailWorkflowCatalogIndex, type MailWorkflowFolderCatalogEntry } from "../workflows/catalog";
 
 const messageInput = () => ({
   sender: "${{ inputs.message.fromAddress }}",
@@ -234,6 +237,41 @@ const visitSteps = (steps: MailAutomationStep[], visitor: (step: MailAutomationS
     visitSteps(step.then, visitor);
     visitSteps(step.else, visitor);
   }
+};
+
+/** Rewrites each guided move destination, given by public ID or exact name, to the folder's public ID. */
+export const resolveIncomingAutomationFolders = (
+  steps: MailAutomationStep[],
+  folders: MailWorkflowCatalogIndex<MailWorkflowFolderCatalogEntry>,
+): Result<MailAutomationStep[]> => {
+  const resolve = (sequence: MailAutomationStep[], path: string): Result<MailAutomationStep[]> => {
+    const resolved: MailAutomationStep[] = [];
+    for (const [index, step] of sequence.entries()) {
+      const at = `${path}.${index}`;
+      if (step.kind === "mail_action" && step.action.kind === "move_to_folder") {
+        const reference = step.action.folderId;
+        const folder = getMailWorkflowCatalogRef(folders, reference);
+        if (!folder) {
+          const message = folders.ambiguous.has(reference)
+            ? `Several folders are named "${reference}"; use the folder ID.`
+            : `Unknown or inaccessible folder "${reference}".`;
+          const field = `${at}.action.folderId`;
+          return fail(err.badInput(summarizeIncomingAutomationIssues([{ field, code: "unknown_folder", message }])));
+        }
+        resolved.push({ ...step, action: { ...step.action, folderId: folder.id } });
+      } else if (step.kind === "if") {
+        const then = resolve(step.then, `${at}.then`);
+        if (!then.ok) return then;
+        const otherwise = resolve(step.else, `${at}.else`);
+        if (!otherwise.ok) return otherwise;
+        resolved.push({ ...step, then: then.data, else: otherwise.data });
+      } else {
+        resolved.push(step);
+      }
+    }
+    return ok(resolved);
+  };
+  return resolve(steps, "steps");
 };
 
 export const incomingAutomationHasAi = (steps: MailAutomationStep[]): boolean => {

@@ -44,6 +44,7 @@ import {
   incomingAutomationBudget,
   incomingAutomationHasAi,
   incomingAutomationHasSpaces,
+  resolveIncomingAutomationFolders,
 } from "./incoming-automation-definition";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
@@ -365,6 +366,18 @@ const rejectOwnSenderTargets = async (params: {
     LIMIT 1
   `;
   return identity ? fail(err.badInput("Incoming automations apply only to incoming mail; remove the mailbox's own sender address")) : ok();
+};
+
+/** Guided moves name their destination by public ID or exact name, resolved like the canonical moveMessage action. */
+const resolveMoveDestinations = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  steps: MailAutomationStep[],
+  db: SqlClient,
+): Promise<Result<MailAutomationStep[]>> => {
+  if (!incomingAutomationActions(steps).some((action) => action.kind === "move_to_folder")) return ok(steps);
+  const catalog = await loadMailWorkflowCatalog({ context, mailboxId, db });
+  return resolveIncomingAutomationFolders(steps, catalog.folders);
 };
 
 const protectMailboxSenders = async (params: {
@@ -1065,11 +1078,12 @@ export const createIncomingAutomation = async (params: {
   const name = normalizeName(parsed.data.name);
   const scope = normalizeAutomationScope(parsed.data.scope);
   if (!scope.ok) return scope;
-  const actions = incomingAutomationActions(parsed.data.steps);
   const conditions = scopeConditions(scope.data);
   try {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
+      const steps = unwrap(await resolveMoveDestinations(params.context, params.mailboxId, parsed.data.steps, tx));
+      const actions = incomingAutomationActions(steps);
       unwrap(
         await rejectOwnSenderTargets({
           mailboxId: params.mailboxId,
@@ -1094,8 +1108,8 @@ export const createIncomingAutomation = async (params: {
         }),
       );
       const actor = requestActor(params.context);
-      const mandate = incomingAutomationHasSpaces(parsed.data.steps)
-        ? unwrap(await createAutomationMandate(params.context, automationId, parsed.data.steps, tx))
+      const mandate = incomingAutomationHasSpaces(steps)
+        ? unwrap(await createAutomationMandate(params.context, automationId, steps, tx))
         : null;
       if (mandate && !parsed.data.enabled) unwrap(await syncAutomationMandateEnabled(params.context, mandate.id, false, tx));
       const workflow = unwrap(
@@ -1108,8 +1122,8 @@ export const createIncomingAutomation = async (params: {
           description: "Managed by Mail incoming automations.",
           priority: 50,
           managedBy: "incoming_automation",
-          source: buildIncomingAutomationWorkflowSource({ scope: scope.data, steps: parsed.data.steps }),
-          effectBudget: incomingAutomationBudget(parsed.data.steps),
+          source: buildIncomingAutomationWorkflowSource({ scope: scope.data, steps }),
+          effectBudget: incomingAutomationBudget(steps),
           enabled: parsed.data.enabled,
         }),
       );
@@ -1129,7 +1143,7 @@ export const createIncomingAutomation = async (params: {
           ${name},
           lower(regexp_replace(${name}, '\\s+', ' ', 'g')),
           ${scope.data}::jsonb,
-          ${parsed.data.steps}::jsonb,
+          ${steps}::jsonb,
           ${parsed.data.enabled},
           ${actor.kind},
           ${actor.id}::uuid,
@@ -1175,11 +1189,12 @@ export const updateIncomingAutomation = async (params: {
   const name = normalizeName(parsed.data.name);
   const scope = normalizeAutomationScope(parsed.data.scope);
   if (!scope.ok) return scope;
-  const actions = incomingAutomationActions(parsed.data.steps);
   const conditions = scopeConditions(scope.data);
   try {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
+      const steps = unwrap(await resolveMoveDestinations(params.context, params.mailboxId, parsed.data.steps, tx));
+      const actions = incomingAutomationActions(steps);
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
       if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
       unwrap(
@@ -1197,8 +1212,7 @@ export const updateIncomingAutomation = async (params: {
           db: tx,
         }),
       );
-      const definitionChanged =
-        sha256Json(current.scope) !== sha256Json(scope.data) || sha256Json(current.steps) !== sha256Json(parsed.data.steps);
+      const definitionChanged = sha256Json(current.scope) !== sha256Json(scope.data) || sha256Json(current.steps) !== sha256Json(steps);
       const enabledChanged = current.enabled !== parsed.data.enabled;
       const changed = current.name !== name || definitionChanged || enabledChanged;
       if (!changed) {
@@ -1207,12 +1221,12 @@ export const updateIncomingAutomation = async (params: {
       if (definitionChanged && current.mandateId && !userBackedActor(params.context)) {
         unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
       }
-      const needsSpaces = incomingAutomationHasSpaces(parsed.data.steps);
+      const needsSpaces = incomingAutomationHasSpaces(steps);
       let mandateId = current.mandateId;
       if (needsSpaces && current.mandateId) {
-        if (definitionChanged) unwrap(await updateAutomationMandate(params.context, current.mandateId, parsed.data.steps, tx));
+        if (definitionChanged) unwrap(await updateAutomationMandate(params.context, current.mandateId, steps, tx));
       } else if (needsSpaces) {
-        mandateId = unwrap(await createAutomationMandate(params.context, params.automationId, parsed.data.steps, tx)).id;
+        mandateId = unwrap(await createAutomationMandate(params.context, params.automationId, steps, tx)).id;
       } else if (!needsSpaces) {
         if (current.mandateId) unwrap(await revokeAutomationMandate(current.mandateId, "Spaces actions removed", tx));
         mandateId = null;
@@ -1232,8 +1246,8 @@ export const updateIncomingAutomation = async (params: {
             description: "Managed by Mail incoming automations.",
             priority: 50,
             managedBy: "incoming_automation",
-            source: buildIncomingAutomationWorkflowSource({ scope: scope.data, steps: parsed.data.steps }),
-            effectBudget: incomingAutomationBudget(parsed.data.steps),
+            source: buildIncomingAutomationWorkflowSource({ scope: scope.data, steps }),
+            effectBudget: incomingAutomationBudget(steps),
             enabled: parsed.data.enabled,
           }),
         );
@@ -1254,7 +1268,7 @@ export const updateIncomingAutomation = async (params: {
           name = ${name},
           normalized_name = lower(regexp_replace(${name}, '\\s+', ' ', 'g')),
           scope = ${scope.data}::jsonb,
-          steps = ${parsed.data.steps}::jsonb,
+          steps = ${steps}::jsonb,
           enabled = ${parsed.data.enabled},
           latest_backfill_operation_id = CASE WHEN ${definitionChanged} THEN NULL ELSE latest_backfill_operation_id END,
           mandate_id = ${needsSpaces ? mandateId : null}::uuid,

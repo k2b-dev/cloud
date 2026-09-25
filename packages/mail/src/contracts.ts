@@ -2041,7 +2041,8 @@ export const mailAutomationActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("trash") }).strict(),
   z.object({ kind: z.literal("mark_read") }).strict(),
   z.object({ kind: z.literal("add_keyword"), keyword: mailKeywordSchema }).strict(),
-  z.object({ kind: z.literal("move_to_folder"), folderId: ResourceShortIdSchema }).strict(),
+  // A folder public ID or exact name, like the canonical moveMessage action; stored as the public ID.
+  z.object({ kind: z.literal("move_to_folder"), folderId: z.string().trim().min(1).max(500) }).strict(),
   z.object({ kind: z.literal("add_local_tag"), tagId: ResourceShortIdSchema }).strict(),
   z.object({ kind: z.literal("assign_user"), userId: z.string().uuid() }).strict(),
   z.object({ kind: z.literal("set_status"), status: conversationWorkStatusSchema }).strict(),
