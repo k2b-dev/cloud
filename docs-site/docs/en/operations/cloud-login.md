@@ -5,14 +5,15 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-09-09
+updated: 2026-09-25
 ---
 
 # Run Cloud Login
 
 Cloud Login is a standalone authenticator for one or more Cloud accounts. It connects
 directly to each paired Cloud and uses a separate device key for each pairing.
-It does not require a central account or session server.
+It does not require a central account or session server. Its server can
+optionally send push notifications that wake the app for new sign-in requests.
 
 The project deployment address is [cloud-login.pwa.k2b.dev](https://cloud-login.pwa.k2b.dev).
 For installation and everyday use, see [Cloud Login](/en/apps/cloud-login).
@@ -24,7 +25,9 @@ Cloud Login ships with every Cloud release as `ghcr.io/k2b-dev/cloud-pwa-auth:vX
 Pin the digest from the release's `release.json` in your deployment; see
 [Release process](/en/docs/contributing/release-process). The image
 supports AMD64 and ARM64, listens on port 3000, and exposes `/health`.
-It runs without a database, volume, Cloud credentials or runtime dependencies.
+Without push configuration it runs without a database, volume, Cloud
+credentials or runtime dependencies. [Push notifications](#send-push-notifications)
+additionally need Postgres and NATS JetStream.
 
 Put it behind HTTPS at the root of one dedicated, stable origin. Preserve its
 cache and content-type headers. The container supports a read-only filesystem
@@ -54,6 +57,103 @@ hashed assets during rollout.
 In each Cloud, enable app approval and configure this exact authenticator origin
 as described in [Set up app sign-in](/en/docs/accounts/app-sign-in).
 Changing either origin requires reviewing the existing pairings.
+
+## Send push notifications
+
+Push notifications are optional. They only wake the phone: the app still loads
+every request through the signed Cloud connection, and approving still needs
+the code comparison. Without push, everything works as before; users open the
+app to see pending requests.
+
+A browser push subscription belongs to one VAPID key, so the Cloud Login
+server, not each Cloud, owns the key pair and sends every notification. One
+Cloud Login deployment therefore serves all Clouds its users pair with.
+
+### Configure the server
+
+Generate the key pair once and keep it stable:
+
+```sh
+bunx web-push generate-vapid-keys
+```
+
+| Variable | Value |
+| --- | --- |
+| `CLOUD_LOGIN_VAPID_PUBLIC_KEY` | Public key from the command above. |
+| `CLOUD_LOGIN_VAPID_PRIVATE_KEY` | Private key. Store it as a secret. |
+| `CLOUD_LOGIN_VAPID_SUBJECT` | Operator contact for push services, `mailto:ops@example.org` or an `https://` URL. |
+| `DATABASE_URL` | Postgres connection. Cloud Login creates the `cloud_login` schema at startup. |
+| `NATS_SERVERS` | NATS JetStream servers, as for Cloud. `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE` work the same way. |
+| `SYNC_NAMESPACE` | For example `cloud-login`. Use a namespace of its own when sharing a NATS cluster with a Cloud. |
+| `SYNC_REPLICAS` | `1`, `3` or `5` JetStream replicas; default `3`. |
+
+Set all three VAPID variables or none. With none, push is off and the
+`/push/*` routes answer 404; the app then shows notifications as not supported.
+With them, the server refuses to start when Postgres or NATS is missing, or
+when the private key does not match the public key. Several replicas can run
+at once: they share the database and the NATS queue. See the
+[configuration reference](./configuration.md#application-pwa-auth).
+
+Changing the private key invalidates every phone's subscription. Users then
+reconnect under **Notifications**. Back up the key with your other secrets.
+
+### Network and data
+
+The server needs outbound HTTPS to the browsers' push services, for example
+`fcm.googleapis.com` (Chrome, Edge, Android), `*.push.apple.com` (Safari,
+iPhone, iPad), `updates.push.services.mozilla.com` (Firefox) and
+`*.notify.windows.com`. It only connects to public addresses. Each Cloud needs
+outbound HTTPS to the Cloud Login origin.
+
+`cloud_login.push_subscriptions` stores one row per phone: the push
+endpoint and its public encryption keys, a SHA-256 hash of the push token,
+creation time, last successful delivery and a failure count. It stores no
+Cloud, account or request data. `cloud_login.push_rate_limits` holds short-lived
+counters keyed by hashes; old windows are removed every minute.
+
+A notification is encrypted for the phone (RFC 8291) and contains only the
+Cloud origin and an opaque request reference. The phone shows
+“Sign-in request for cloud.example.org”; codes, secrets and account names
+never pass through Cloud Login's server or the push service.
+
+### Delivery and limits
+
+Clouds send wake-ups to `POST /push/notify`. The server queues them in NATS
+JetStream and answers at once. A worker delivers each one with a five-minute
+push TTL and high urgency. Temporary failures are retried after 2, 10 and 30
+seconds; a message that still fails lands in the queue's dead-letter store
+and increments the subscription's failure count. A push service answer of 404
+or 410 deletes the subscription, so the next notification for its token
+answers 410 and the Cloud forgets the token. The same sign-in request wakes a
+phone once, however often a Cloud retries.
+
+| Limit | Value |
+| --- | --- |
+| Wake-ups per push token | 30 per five minutes |
+| Requests per caller address | 3,000 per five minutes for `/push/notify` and `/push/test` |
+| New subscriptions per caller address | 30 per five minutes |
+| Request body | 1 KiB for notifications, 4 KiB for subscriptions |
+
+The five-minute window matches the lifetime of a sign-in request. Callers are
+identified like in Cloud: by the first `X-Forwarded-For` address, then
+`X-Real-IP`, then the connection. Sanitize forwarding headers at your ingress.
+Exceeded limits answer 429 with `Retry-After`.
+
+### Push API
+
+All bodies are JSON with no extra fields. Responses use `Cache-Control: no-store`.
+
+| Request | Result |
+| --- | --- |
+| `GET /push/config` | `{publicKey}` for `PushManager.subscribe`. |
+| `POST /push/subscriptions` with a `PushSubscription` JSON | 201 `{token}`. The token is a random 256-bit capability. Subscribing the same endpoint again replaces its previous token. Push endpoints must be public HTTPS URLs. |
+| `DELETE /push/subscriptions/:token` | 204, also for unknown tokens. |
+| `POST /push/notify` with `{token, cloudOrigin, requestRef}` | 202 queued, or 410 when the token is unknown or its subscription expired. `requestRef` has 1–64 URL-safe characters. |
+| `POST /push/test` with `{token}` | 202 or 410; sends a test notification. |
+
+Anyone holding a push token can make that phone show a sign-in notification,
+up to its rate limit, but cannot read or approve anything. Treat tokens like
+other device data.
 
 ## Protect the app
 
@@ -154,11 +254,30 @@ browser data has no automatic recovery: sign in with another supported method,
 revoke the old device and pair again. Do not assume that browser tabs, installed
 apps and embedded browsers share storage; pair in the app you will actually use.
 
-The dots menu also offers language, appearance, and installation guidance.
-Approvals need an internet connection. Open the app to see pending requests;
-there are no push notifications. Before making the app available to your
-organization, check camera access, installation and switching between Cloud
-and the app on the devices and browsers you support.
+The dots menu also offers notifications, language, appearance, and installation guidance.
+Approvals need an internet connection. Before making the app available to your
+organization, check camera access, installation, notifications and switching
+between Cloud and the app on the devices and browsers you support.
+
+## Turn on notifications
+
+When the server offers push, an installed app shows a **Turn on notifications**
+card on first launch. The permission prompt appears only after a tap on
+**Turn on**; the app never asks on its own. **Not now** hides the card, and
+**Notifications** in the menu shows the status at any time:
+
+| Status | Meaning and action |
+| --- | --- |
+| Active | This device is registered. **Send test notification** checks the whole chain. |
+| Not requested yet | **Ask again** shows the browser's permission prompt. |
+| Not allowed | The browser blocked notifications and cannot ask again. The app lists the steps for the system or browser settings, for example **Settings › Notifications › Cloud Login** on iPhone. |
+| Not connected | Allowed, but registration failed. **Connect again** retries. |
+| App not installed | iPhone and iPad allow web push only for apps on the Home Screen, from iOS 16.4. **Show steps** explains **Add to Home Screen**. |
+| Not supported | The browser or this Cloud Login server offers no push. |
+
+Tapping a notification opens Cloud Login, or focuses it, and shows that
+request first once the app is unlocked. Notifications are not guaranteed:
+the phone, its battery saver or the push service may delay or drop them.
 
 For troubleshooting, open **Settings** and note the version shown below the
 appearance control. Release images show their tag and source revision; local

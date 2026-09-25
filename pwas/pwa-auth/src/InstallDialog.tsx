@@ -77,6 +77,9 @@ function InstallDialog(props: { installation: Installation; close: () => void })
                             )}
                           </For>
                         </ol>
+                        <Show when={state.platform === "apple-mobile"}>
+                          <p class="auth-install-note">{t().pushInstallNote}</p>
+                        </Show>
                         <Show when={state.platform === "generic" || state.platform === "android"}>
                           <p class="auth-install-note">{t().browserUnavailable}</p>
                         </Show>

@@ -2,8 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "customConditions": ["browser"]
+    "customConditions": ["browser"],
+    "paths": {
+      "@k2b/cloud/contracts/*": ["../../packages/cloud/src/contracts/*"],
+      "@k2b/cloud/services/*": ["../../packages/cloud/src/services/*"]
+    }
   },
-  "include": ["src", "scripts"],
+  "include": ["src", "scripts", "server"],
   "exclude": ["dist", "node_modules"]
 }

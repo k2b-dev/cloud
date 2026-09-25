@@ -8,12 +8,15 @@
     "build": "bun run scripts/build.ts",
     "dev": "bun run scripts/dev.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
-    "test": "bun test --path-ignore-patterns '**/*.behavior.test.*' src"
+    "test": "bun test --path-ignore-patterns '**/*.behavior.test.*' src server"
   },
   "dependencies": {
-    "@k2b/stdlib": "catalog:",
-    "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
+    "@k2b/stdlib": "catalog:",
+    "@k2b/sync": "catalog:",
+    "@k2b/ui": "workspace:*",
+    "@nats-io/transport-node": "catalog:",
+    "hono": "catalog:",
     "qr-scanner": "1.4.2",
     "solid-js": "catalog:",
     "zod": "catalog:"
@@ -21,11 +24,14 @@
   "devDependencies": {
     "@babel/core": "8.0.6",
     "@babel/preset-typescript": "8.0.1",
+    "@nats-io/jetstream": "catalog:",
     "@types/babel__core": "7.20.5",
     "@types/bun": "catalog:",
     "@types/subset-font": "2.3.0",
+    "@types/web-push": "3.6.4",
     "babel-preset-solid": "1.9.15",
     "subset-font": "2.7.0",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "web-push": "3.6.7"
   }
 }

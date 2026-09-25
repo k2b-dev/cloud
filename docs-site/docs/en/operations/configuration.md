@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-09-21
+updated: 2026-09-25
 ---
 
 # Configuration reference
@@ -73,3 +73,13 @@ Declared in `packages/gateway/src/env.ts`.
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
 | `GATEWAY_INSTANCE_ID` | string | runtime | unset | no | Stable identity of this gateway router instance in the registry; defaults to `HOSTNAME`, then `gateway-router`. |
+
+## Application: pwa-auth
+
+Declared in `pwas/pwa-auth/server/env.ts`.
+
+| Variable | Type | Scope | Default | Required | Description |
+| --- | --- | --- | --- | --- | --- |
+| `CLOUD_LOGIN_VAPID_PUBLIC_KEY` | string | runtime | unset | no | Cloud Login only: VAPID public key for sign-in push notifications; generate the pair once with `bunx web-push generate-vapid-keys`. Unset disables push. |
+| `CLOUD_LOGIN_VAPID_PRIVATE_KEY` | string | secret | unset | no | Cloud Login only: VAPID private key matching `CLOUD_LOGIN_VAPID_PUBLIC_KEY`; changing it invalidates every phone's push subscription. |
+| `CLOUD_LOGIN_VAPID_SUBJECT` | string | runtime | unset | no | Cloud Login only: operator contact sent to push services, as `mailto:` or `https://` URL. |

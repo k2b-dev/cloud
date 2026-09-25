@@ -124,7 +124,7 @@ function Disconnect(props: { auth: Authenticator; binding: Binding; close: () =>
     </PanelDialog>
   );
 }
-export function Clouds(props: { auth: Authenticator; preferences: Preferences }) {
+export function Clouds(props: { auth: Authenticator; preferences: Preferences; focus?: () => string | undefined; focused?: () => void }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const [sheetOpen, setSheetOpen] = createSignal(false);
@@ -177,7 +177,11 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences })
     const keys = new Set(queue.map((item) => item.key));
     for (const key of seen) if (!keys.has(key)) seen.delete(key);
     if (sheetOpen() || !props.auth.online()) return;
-    const next = queue.find((item) => !seen.has(item.key));
+    // A tapped notification reopens its request even after the sheet was dismissed.
+    const focus = props.focus?.();
+    const focused = focus ? queue.find((item) => item.request.requestId === focus) : undefined;
+    if (focused) props.focused?.();
+    const next = focused ?? queue.find((item) => !seen.has(item.key));
     if (next) void open(next.binding, next.request);
   });
   return (

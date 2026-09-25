@@ -15,6 +15,28 @@ The production server listens on port 3000 unless `PORT` is set. It requires
 only Bun and the built `dist/` directory. Use an isolated origin for production
 worker tests so they do not affect development storage.
 
+## Push notifications
+
+`server/` holds the optional push service: `env.ts` (VAPID configuration
+registry), `push.ts` (Postgres tables, rate limits, NATS queue and delivery),
+`routes.ts` (`/push/*`) and `start.ts` (startup). `scripts/serve.ts` serves the
+static app and mounts the routes; the image bundles it into one file.
+`src/push-worker.ts` is bundled into `sw.js` and shows notifications;
+`src/push.ts` and `src/Notifications.tsx` own permission, subscription and
+the settings UI. The development server has no push routes, so the app shows
+notifications as not supported there.
+
+The service test runs against a fresh `_test` database and NATS, and delivers
+through the real Web Push transport to a local fake push service:
+
+```sh
+CLOUD_TEST_DATABASE_URL=postgres://…/<name>_test CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
+  bun test pwas/pwa-auth/server/push.integration.test.ts
+```
+
+It never contacts a real push service. Real delivery to iPhone, Android and
+desktop browsers still needs device acceptance with a deployed HTTPS origin.
+
 ## UI and language
 
 Use public `@k2b/ui` controls and tokens. English and German messages live in

@@ -6,8 +6,11 @@ import { openDialog } from "./dialog";
 import { openInstallDialog } from "./InstallDialog";
 import { authMessages } from "./i18n";
 import { createInstallation } from "./install";
+import { openNotifications, PushCard } from "./Notifications";
 import { Pairing } from "./Pairing";
 import type { Preferences } from "./preferences";
+import { createPush, rememberLocale } from "./push";
+import { OPEN_REQUEST_MESSAGE } from "./push-worker";
 import { openSecurity } from "./Security";
 import { openSettings } from "./Settings";
 import { createVault } from "./vault";
@@ -18,6 +21,10 @@ export function App(props: { preferences: Preferences }) {
   const installation = createInstallation();
   const vault = createVault();
   const auth = createAuthenticator(vault);
+  const push = createPush(installation);
+  // A tapped notification names the sign-in request to show first.
+  const [focusRequest, setFocusRequest] = createSignal<string>();
+  createEffect(() => rememberLocale(props.preferences.locale()));
   let pairingOpen = false;
   let unlockOpen = false;
   const showUnlock = async () => {
@@ -86,6 +93,25 @@ export function App(props: { preferences: Preferences }) {
     }
   });
   onMount(() => {
+    const requested = new URLSearchParams(location.search).get("request");
+    if (requested) {
+      setFocusRequest(requested);
+      history.replaceState(history.state, "", location.pathname + location.hash);
+    }
+    const opened = (event: MessageEvent) => {
+      const data: unknown = event.data;
+      if (
+        data &&
+        typeof data === "object" &&
+        "type" in data &&
+        data.type === OPEN_REQUEST_MESSAGE &&
+        "ref" in data &&
+        typeof data.ref === "string"
+      )
+        setFocusRequest(data.ref);
+    };
+    navigator.serviceWorker?.addEventListener("message", opened);
+    onCleanup(() => navigator.serviceWorker?.removeEventListener("message", opened));
     const link = consumePairingLocation();
     if (link) setPendingLink(link);
     else if (installation.shouldIntroduce()) void showInstall();
@@ -122,6 +148,13 @@ export function App(props: { preferences: Preferences }) {
               },
             ]
           : []),
+        {
+          label: t().notifications,
+          icon: "ti ti-bell",
+          action: () => {
+            void openNotifications(push, installation, props.preferences, () => void showInstall());
+          },
+        },
         {
           label: t().settings,
           icon: "ti ti-adjustments",
@@ -200,6 +233,9 @@ export function App(props: { preferences: Preferences }) {
         <Show when={!auth.online()}>
           <p role="status">{t().offline}</p>
         </Show>
+        <Show when={vault.status() === "open" || vault.status() === "empty"}>
+          <PushCard push={push} installation={installation} showInstall={() => void showInstall()} />
+        </Show>
         <Show
           when={vault.status() === "open" || vault.status() === "empty"}
           fallback={
@@ -242,7 +278,7 @@ export function App(props: { preferences: Preferences }) {
               </section>
             }
           >
-            <Clouds auth={auth} preferences={props.preferences} />
+            <Clouds auth={auth} preferences={props.preferences} focus={focusRequest} focused={() => setFocusRequest(undefined)} />
           </Show>
         </Show>
       </main>
