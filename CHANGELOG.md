@@ -3,6 +3,26 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.17.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.16.0...cloud-v0.17.0) (2026-09-25)
+
+
+### Features
+
+* **cli:** sign in on headless machines with cld login --device ([#236](https://github.com/k2b-dev/cloud/issues/236)) ([199850f](https://github.com/k2b-dev/cloud/commit/199850f6b6ea191063f6ab8a808eeba27cc0b5f2))
+* **cloud:** send sign-in push hints to paired devices ([#232](https://github.com/k2b-dev/cloud/issues/232)) ([7227cff](https://github.com/k2b-dev/cloud/commit/7227cff17d30bb31ed7ae8bedfc327e934aa27dc))
+* **mail:** assign many conversations at once ([#238](https://github.com/k2b-dev/cloud/issues/238)) ([eb3c9ff](https://github.com/k2b-dev/cloud/commit/eb3c9ff21fdd080eb10fe2d626523c85d5022685))
+* **notebooks:** show callout blocks with colour only ([#226](https://github.com/k2b-dev/cloud/issues/226)) ([e75336d](https://github.com/k2b-dev/cloud/commit/e75336dc59f29d0b9f80a3b2bd58ae9039132ea1))
+* **oauth:** support the device authorization grant ([#235](https://github.com/k2b-dev/cloud/issues/235)) ([2ef8d79](https://github.com/k2b-dev/cloud/commit/2ef8d795797a82767c74b47e61c006b3e463d736))
+* **pwa-auth:** wake Cloud Login with push notifications ([#230](https://github.com/k2b-dev/cloud/issues/230)) ([ffe639a](https://github.com/k2b-dev/cloud/commit/ffe639ac4c6ee5fb26022c65e10a14fcb177b6c5))
+
+
+### Bug Fixes
+
+* **mail:** accept real folder ids in guided move_to_folder automations ([#227](https://github.com/k2b-dev/cloud/issues/227)) ([8d743e5](https://github.com/k2b-dev/cloud/commit/8d743e5392a3e6efa5d162b099574b0222a64474)), closes [#216](https://github.com/k2b-dev/cloud/issues/216)
+* **mail:** accept tag names and name unknown tags in guided add_local_tag automations ([#234](https://github.com/k2b-dev/cloud/issues/234)) ([b495d3f](https://github.com/k2b-dev/cloud/commit/b495d3fc4d6405d9a9d9fb4a9636061af8791537)), closes [#231](https://github.com/k2b-dev/cloud/issues/231)
+* **notebooks:** show toolbar focus as a blue icon instead of a clipped ring ([#229](https://github.com/k2b-dev/cloud/issues/229)) ([7f1e04f](https://github.com/k2b-dev/cloud/commit/7f1e04ff006a3f1f4670a3c5cbd72aad6e5b04c3))
+* **ui:** localize default toast titles ([#239](https://github.com/k2b-dev/cloud/issues/239)) ([9bcf6e9](https://github.com/k2b-dev/cloud/commit/9bcf6e90b02f7da8d7a123977cb3f45a2079befe))
+
 ## [0.16.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.15.0...cloud-v0.16.0) (2026-09-24)
 
 

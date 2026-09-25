@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.6.0...npm-ui-v0.6.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **ui:** localize default toast titles ([#239](https://github.com/k2b-dev/cloud/issues/239)) ([9bcf6e9](https://github.com/k2b-dev/cloud/commit/9bcf6e90b02f7da8d7a123977cb3f45a2079befe))
+
 ## [0.6.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.5.1...npm-ui-v0.6.0) (2026-09-24)
 
 
