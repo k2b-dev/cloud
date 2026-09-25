@@ -152,8 +152,12 @@ All bodies are JSON with no extra fields. Responses use `Cache-Control: no-store
 | `POST /push/test` with `{token}` | 202 or 410; sends a test notification. |
 
 Anyone holding a push token can make that phone show a sign-in notification,
-up to its rate limit, but cannot read or approve anything. Treat tokens like
-other device data.
+up to its rate limit, but cannot read or approve anything. The app hands its
+token only to the Clouds it is paired with, through each Cloud's signed device
+channel, and again whenever the token changes. Revoking a device in Cloud or
+through **Disconnect Cloud** stops its wake-ups. **Only remove from this app**
+does not revoke the device, so that Cloud keeps sending wake-ups until you
+revoke it there.
 
 ## Protect the app
 
@@ -275,6 +279,9 @@ card on first launch. The permission prompt appears only after a tap on
 | App not installed | iPhone and iPad allow web push only for apps on the Home Screen, from iOS 16.4. **Show steps** explains **Add to Home Screen**. |
 | Not supported | The browser or this Cloud Login server offers no push. |
 
+After notifications are on, the app sends its push token to every paired
+Cloud the next time it is unlocked, and to newly paired Clouds right after
+pairing. Clouds without push support keep working without notifications.
 Tapping a notification opens Cloud Login, or focuses it, and shows that
 request first once the app is unlocked. Notifications are not guaranteed:
 the phone, its battery saver or the push service may delay or drop them.

@@ -167,6 +167,37 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     }));
     channel.postMessage("changed");
   };
+  // One attempt per Cloud and token per app session; older Clouds reject the command.
+  const pushAttempts = new Set<string>();
+  let pushSyncing = false;
+  /** Hands the push token to each paired Cloud over its signed device channel. */
+  const syncPush = async (token: string) => {
+    if (pushSyncing || vault.status() !== "open" || !navigator.onLine) return;
+    pushSyncing = true;
+    let saved = false;
+    try {
+      for (const binding of bindings()) {
+        const attempt = `${binding.id}:${token}`;
+        if (binding.pushToken === token || pushAttempts.has(attempt)) continue;
+        pushAttempts.add(attempt);
+        try {
+          const owner = vault.session();
+          await (await client(binding.issuer)).push(binding, token);
+          owner.check();
+          const latest = (await storage.bindings()).find((b) => b.id === binding.id);
+          if (latest) {
+            await storage.saveBinding({ ...latest, pushToken: token });
+            saved = true;
+          }
+        } catch {
+          // Offline, locked or an older Cloud: push stays off for it; the app still polls.
+        }
+      }
+    } finally {
+      pushSyncing = false;
+    }
+    if (saved) await changed();
+  };
   const revoke = async (binding: Binding) => {
     const owner = vault.session();
     const api = await client(binding.issuer);
@@ -197,6 +228,7 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     client,
     decide,
     revoke,
+    syncPush,
     rename: async (binding: Binding, label: string) => {
       const latest = (await storage.bindings()).find((b) => b.id === binding.id);
       if (!latest || !label.trim() || label.length > 80) throw new Error("storage");

@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-09-08
+updated: 2026-09-25
 ---
 
 # Integrate an authenticator website
@@ -259,6 +259,7 @@ The authenticator sends signed commands to `POST /device`:
 | `{operation:"pending"}` | `{requests, pollAfterSeconds}` for this device's account and Cloud only. Each request contains `requestId`, `challenge`, `comparison`, `createdAt`, `expiresAt`. |
 | `{operation:"decide", requestId, challenge, comparison, decision:"approve"}` | `{state:"approved"}`. With `decision:"deny"`, returns `{state:"denied"}`. |
 | `{operation:"revoke"}` | `{state:"revoked"}` for the signing device only. |
+| `{operation:"push", token}` | `{state:"updated"}`. Stores the authenticator's opaque push token (43 URL-safe characters) for this device; a new token replaces the old one. Clouds without this command answer 400. |
 
 Fetching pending requests must **never** approve them automatically. Require
 explicit confirmation and comparison with the initiating browser's code. The
@@ -276,6 +277,34 @@ after the previous one started. Once approved, call
 `POST /login/complete` with that body. Success is HTTP 204 with the normal
 HttpOnly Cloud session cookie, never a token in JSON. Completion is atomic and
 one-use. A lost response or failed session issuance requires a new login.
+
+### Wake the paired phone
+
+A device that sent a push token gets a wake-up for each sign-in request of its
+account. After the login request commits, Core calls the configured
+authenticator origin once per distinct token:
+
+```http
+POST <authenticator origin>/push/notify
+Content-Type: application/json
+
+{"token":"…","cloudOrigin":"https://cloud.example.org","requestRef":"<requestId>"}
+```
+
+The body carries only the Cloud's issuer and the login request ID. It never
+carries the comparison code, challenge, browser secret, account name or email.
+The call runs in the background with a five-second timeout: it never delays
+`/login/start`, and unknown, disabled or throttled accounts, which receive a
+decoy request, never trigger one. Core does not retry; Cloud Login queues and
+retries delivery itself. An answer of 410 means the phone's subscription is
+gone, so Core clears that token from the account's devices. Revoked devices
+are never woken.
+
+Push is only a hint. The authenticator still loads requests with a signed
+`pending` command and needs the usual comparison and approval. Each Cloud
+needs outbound HTTPS to the authenticator origin. See
+[Send push notifications](./cloud-login.md#send-push-notifications) for the
+authenticator side.
 
 ## Sign the versioned payload
 
@@ -299,6 +328,7 @@ every call, including polls. Times are Unix seconds. Sign:
 ```
 
 For `decide`, append `requestId, challenge, comparison, decision` to the array.
+For `push`, append `token`.
 All operation parameters are covered. Public `@k2b/cloud/contracts`
 exports include `appDeviceProofMessage`, `appPairingProofMessage`, request/response schemas
 and `APP_APPROVAL_PROTOCOL`, `APP_APPROVAL_PATH`, `APP_APPROVAL_LIMITS`. These
@@ -329,7 +359,7 @@ pairings and five outstanding logins per account/Cloud, twenty active devices,
 twenty device records per page and 8 KiB request bodies. These bound storage,
 cryptographic work and response sizes. Poll at most once every five seconds
 while foregrounded, stop on terminal states, and back off on errors. Background
-PWA execution or push delivery is not guaranteed.
+PWA execution is not guaranteed, and push wake-ups are best effort.
 
 The existing Cloud IP rate limit applies. Operators must sanitize forwarded IP
 headers at the trusted ingress. IP throttling returns HTTP 429 with Retry-After.

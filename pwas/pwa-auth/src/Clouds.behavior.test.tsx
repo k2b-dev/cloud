@@ -44,6 +44,7 @@ test("login requests use the shared sheet and dismiss without approving", async 
       setRequests([]);
     },
     revoke: noop,
+    syncPush: noop,
     forget: noop,
     rename: noop,
   };
