@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-09-07
+updated: 2026-09-25
 ---
 
 # Notebooks
@@ -238,18 +238,51 @@ Notebooks adopts.
 
 ## Automate Notebooks from the terminal
 
-Notebooks provides a native CLI module for notes, discussions, search,
-attachments, access, exports, and snapshots. Start with read commands:
+The `cld notebooks` CLI reads and writes notes, and keeps a notebook as a
+local folder of Markdown files. A command that takes a note accepts exactly
+three address forms:
+
+1. a **note ID** such as `ns98Kq`, unique across notebooks and stable across
+   renames and moves;
+2. **`<notebook>:<path>`** such as `"Kolb Antik Doku":betrieb/backup`, where the
+   notebook is an ID or exact name and each path segment is the slug of a
+   child note's title;
+3. a **file inside a pulled mirror**, such as `~/docs-mirror/betrieb/backup.md`,
+   resolved through the mirror manifest.
+
+A slug is the lowercase title with `ä ö ü ß` written as `ae oe ue ss`, other
+accents dropped, and every other run of characters joined into one `-`.
+Titles and notebook names are not unique: when a name or path segment matches
+several notes, the command fails and lists every candidate with its path and
+ID instead of guessing.
 
 ```bash
-cld notebooks list --json
-cld notebooks search --all --query "launch plan" --json
-cld notebooks comments --notebook abc123 --note def456 --json
+cld notebooks ls
+cld notebooks cat "Kolb Antik Doku":betrieb/backup --json
+cld notebooks write "Kolb Antik Doku":betrieb/restore --from restore.md --parents
+cld notebooks pull "Kolb Antik Doku" ~/docs-mirror
 ```
 
-Run `cld notebooks help` for the available resources. Run
+`write` replaces a note or creates it when the path does not exist yet; the
+title always comes from the first `# Heading`. `pull` mirrors a notebook
+one-way: a note without children is `<slug>.md`, a note with children is a
+folder with `index.md` for its own content, and attachments are stored in
+`_attachments/` with relative links. When siblings share a title, their file
+names carry the note ID, as in `backup--Ab12Cd.md`; this suffix exists only in
+the mirror. Each file starts with `id`, `title`, and `updatedAt` front matter,
+and `.cld-notebook.json` records one `path`, `contentHash`, and `updatedAt`
+per note.
+
+Changes go back through `write`, `edit`, `mv`, and `rm`, which update the
+mirror immediately. Writes through a mirror file are rejected with 409 when the
+note changed on the server since the last pull. `pull` downloads only changed
+notes, follows renames, moves, and deletions, and never overwrites a file with
+local changes: it lists such files and exits 1 unless `--force` is given.
+
+Run `cld notebooks help` for the full command set and
 `cld notebooks <command> --help` before editing content, changing access, or
-running a snapshot.
+running a snapshot. The Cloud CLI agent skill describes the Markdown mirror
+workflow, including moving a Git documentation folder into a notebook.
 
 ## Deployment requirements
 

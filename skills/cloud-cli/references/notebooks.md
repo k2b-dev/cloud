@@ -4,28 +4,29 @@
 
 Notebooks are collaborative workspaces for structured, real-time synchronized notes. Notes remain readable Markdown while links, tags, attachments, named data blocks, queries, and formulas add navigation and summaries.
 
-Use `cld notebooks` to discover knowledge, maintain notes safely, manage notebook access, and move portable data in or out of Cloud. Use the browser when a task depends on live collaborative editing or visual layout; use the CLI for deterministic reads, searches, edits, exports, and administration.
+Use `cld notebooks` to read and write notes by ID or path, keep a notebook as a local folder of Markdown files, search knowledge, manage access, and export data. Use the browser when a task depends on live collaborative editing or visual layout.
 
 ## Contents
 
 - [Core model](#core-model)
 - [Markdown knowledge conventions](#markdown-knowledge-conventions)
 - [Declarative summaries](#declarative-summaries)
+- [Address notes](#address-notes)
 - [Agent workflow](#agent-workflow)
-- [Resolve notebooks and notes](#resolve-notebooks-and-notes)
+- [Notebook as a local folder](#notebook-as-a-local-folder)
+- [Read and write notes](#read-and-write-notes)
 - [Search and discovery](#search-and-discovery)
-- [Read and edit notes](#read-and-edit-notes)
 - [Named blocks](#named-blocks)
 - [Attachments, versions, and exports](#attachments-versions-and-exports)
 - [Access, API keys, and snapshots](#access-api-keys-and-snapshots)
-- [Complete command reference](#complete-command-reference)
+- [Command reference](#command-reference)
 - [JSON contracts](#json-contracts)
 - [Further references](#further-references)
 
 ## Core model
 
-- A **notebook** is the access and organization boundary. Its `id` is the immutable six-character id used by APIs, URLs, and automation.
-- A **note** has Markdown content, tags, an optional parent, timestamps, and an optional permanent lock. Its displayed title is a stored projection of the first H1 or, when no H1 exists, the first visible content line. Notes are addressed by a short id and can link to each other.
+- A **notebook** is the access and organization boundary. Its `id` is the immutable six-character ID used by APIs, URLs, and automation. Notebook names are not unique.
+- A **note** has Markdown content, tags, an optional parent, timestamps, and an optional permanent lock. Its displayed title is a stored projection of the first H1 or, when no H1 exists, the first visible content line. Notes are addressed by ID, by notebook path, or by a file in a pulled mirror (see [Address notes](#address-notes)), and can link to each other.
 - A **named block** is a stable region inside Markdown, such as a table, list, data object, or section. Block-aware edits avoid replacing unrelated note content.
 - An **attachment** belongs to a notebook and can be referenced from notes with an `attach://<short-id>` link.
 - A **version** is a historical note snapshot. Restoration writes a version into an existing empty target note rather than overwriting arbitrary current content.
@@ -66,7 +67,7 @@ The editor can render callouts and other Markdown extensions, but CLI agents sho
 
 ## Declarative summaries
 
-Use `:::toc` for the current note's headings and `:::query` for lists or tables of notes. Both render in Book and in the editor preview. Their configuration remains Markdown, so normal CLI read/edit commands can manage it.
+Use `:::toc` for the current note's headings and `:::query` for lists or tables of notes. Both render in Book and in the editor preview. Their configuration remains Markdown, so `cat`, `write`, and `edit` manage it.
 
 Place data, query, and TOC directives at document level, outside lists, quotes, code examples, and other blocks. Nested examples are not evaluated.
 
@@ -133,157 +134,164 @@ TOC depths range from 1 to 6, defaulting to 1 and 6, with `min-depth` no greater
 ### Validate a saved page or draft
 
 ```bash
-cld notebooks preview --notebook <ref> --note <ref> --json
-cld notebooks preview --notebook <ref> --note <ref> --file ./draft.md --json
+cld notebooks preview <note> --json
+cld notebooks preview <note> --from ./draft.md --json
 ```
 
-Preview requires a user-backed sign-in credential; notebook resource-bound API keys are not supported. Omit the content source to preview the saved page with read access. Supply exactly one of `--content`, `--file`, or `--stdin` to preview a complete draft; this requires write access and an unlocked note. Draft preview never saves. It evaluates queries against saved note data and builds the contents list from the draft headings.
+Preview requires a user-backed sign-in credential; notebook resource-bound API keys are not supported. Without `--from` or `--content`, it previews the saved page with read access. With a draft it requires write access and an unlocked note, and it never saves. It evaluates queries against saved note data and builds the contents list from the draft headings.
 
-The JSON result contains `markdown`, rendered `blocks` (`line`, `html`), `headings` (`id`, `line`), and `diagnostics` (`line`, `message`). Source lines are 1-based. `headings` includes only headings with an exact source position; it is not a complete inventory of nested headings. Diagnostics produce exit code 1 while retaining the JSON result; a clean preview returns 0. Check diagnostics before applying a draft with `edit` and an edit precondition.
+The JSON result contains `markdown`, rendered `blocks` (`line`, `html`), `headings` (`id`, `line`), and `diagnostics` (`line`, `message`). Source lines are 1-based. `headings` includes only headings with an exact source position. Diagnostics produce exit code 1 while retaining the JSON result; a clean preview returns 0. Check diagnostics before applying a draft with `write` or `edit`.
+
+## Address notes
+
+Every command that takes a `<note>` accepts exactly three forms:
+
+1. **Note ID**, such as `ns98Kq`. IDs are unique across all notebooks, survive renames and moves, and need no notebook prefix.
+2. **`<notebook>:<path>`**, such as `"Kolb Antik Doku":betrieb/backup`. The notebook part is a notebook ID or its exact name. The path is resolved on the server through the note tree, so it works without a mirror.
+3. **A file inside a pulled mirror**, such as `~/docs-mirror/betrieb/backup.md` or `betrieb/backup.md` inside the mirror folder. It is resolved only through the mirror manifest. A mirror folder, such as `~/docs-mirror/betrieb`, addresses the note whose own content is `~/docs-mirror/betrieb/index.md`.
+
+A path segment matches the child notes whose title has the same slug:
+
+- letters are lowercased; `ä ö ü ß` become `ae oe ue ss`; other accents are dropped;
+- every other run of characters becomes one `-`, without leading or trailing `-`; at most 80 characters;
+- a title without letters or digits becomes `untitled`.
+
+So `Übersicht & Größe`, `übersicht & größe`, and `uebersicht-groesse` name the same note. Titles and notebook names are not unique. When a segment or a notebook name matches more than one candidate, the command fails and lists every candidate with its path and ID; it never guesses. Use the ID from that list.
+
+Notebook-scoped commands (`ls`, `tree`, `pull`, `tags`, `export`, `update`, and the `attachments`, `api-keys`, `snapshots`, and `access` groups) take `<notebook>` as ID or exact name, or a mirror folder. In `ls`, `tree`, and `cp`, `<notebook>:<path>` narrows to a note. `<notebook>:` with an empty path addresses the notebook itself, for example `cld notebooks stat Docs:`.
 
 ## Agent workflow
 
 1. Confirm the selected Cloud profile with `cld profile list` when the target instance is not obvious.
-2. Discover accessible notebooks with `cld notebooks list --json`.
-3. Resolve a notebook and inspect its tree before editing:
+2. Find the notebook with `cld notebooks ls --json`, then look at its structure with `cld notebooks tree <notebook>`.
+3. Search before creating duplicate knowledge: `cld notebooks search "deployment rollback" --notebook <notebook> --json`.
+4. Read the note with `cld notebooks cat <note> --json` and keep `contentHash` and `blocks`.
+5. Prefer a named-block or line edit with `edit` over replacing the whole note. Pass the returned hash as `--if-content-hash` or `--if-block-hash`.
+6. Run risky edits with `--dry-run` first, then repeat without it.
+7. Read the result again. A successful request does not prove the intended Markdown structure.
 
-   ```bash
-   cld notebooks get --notebook <notebook-id> --json
-   cld notebooks tree --notebook <notebook-id> --json
-   ```
+For many notes, or when you want to use normal file tools, pull the notebook into a folder instead: see the next section.
 
-4. Search before creating duplicate knowledge:
+Use `--json` whenever a later action depends on the output. Pass multiline Markdown with `--from <file>` or `--from -` (stdin) instead of shell escaping.
 
-   ```bash
-   cld notebooks search --notebook <notebook-id> --q "deployment rollback" --json
-   ```
+## Notebook as a local folder
 
-5. Read the exact note and retain its hashes:
+`cld notebooks pull <notebook> <dir>` mirrors a notebook into a folder of Markdown files. The mirror is one-way: it is for reading with any local tool (`rg`, an editor, another agent). Every change goes back through `write`, `edit`, `mv`, or `rm`; the CLI then updates the local files and the manifest immediately.
 
-   ```bash
-   cld notebooks read --notebook <notebook-id> --note <note-id> --json
-   ```
+### Layout
 
-6. Prefer a named-block or line-range edit over replacing the complete note. Pass the returned `contentHash`, `updatedAt`, or block `hash` as a precondition.
-7. Run risky transformations with `--dry-run`, inspect the JSON result, then repeat without `--dry-run`.
-8. Read the result after writing. Never assume a successful request produced the intended Markdown structure.
-
-Use `--json` whenever a later action depends on output. Use `--file` or `--stdin` for multiline Markdown instead of shell escaping.
-
-## Resolve notebooks and notes
-
-### Notebook references
-
-Commands accept a notebook short id or exact name. An exact name must be unique. Persist only the `id` returned by `list --json` in automation.
-
-```bash
-cld notebooks list --json
-cld notebooks get --notebook 8nP4xA --json
-cld notebooks get --notebook "Engineering handbook" --json
+```text
+docs-mirror/
+  .cld-notebook.json              manifest
+  _attachments/Ab12Cd-plan.png    notebook files
+  betrieb/
+    index.md                      own content of the note "Betrieb"
+    backup.md                     leaf note "Backup"
+    checkliste--Xy12Zw.md         two siblings share the title "Checkliste"
+    checkliste--Qr34St.md
+  readme.md
 ```
 
-`cld notebooks use <notebook>` stores a default notebook for later commands. `cld notebooks current --json` shows it. Explicit `--notebook` flags are safer in unattended workflows because they do not depend on local profile state.
+- A note without children is `<slug>.md`. A note with children is a folder whose own content is `<slug>/index.md`.
+- When siblings share a slug, each file name carries the note ID: `<slug>--<id>.md` or `<slug>--<id>/`. A note whose slug is `index` always gets the suffix. The suffix exists only in mirror names; `<notebook>:<path>` never accepts it. A mirror file path always works as an address.
+- Attachments are downloaded to `_attachments/<id>-<file name>`. In the files, `attach://<id>` links become relative paths such as `../_attachments/Ab12Cd-plan.png`; writing a file back turns them into `attach://` links again. `note://` links stay as they are.
+- Each file starts with minimal front matter, followed by the exact note content:
 
-### Note references
+  ```markdown
+  ---
+  id: Ab12Cd
+  title: "Backup und Restore"
+  updatedAt: 2026-09-25T10:00:00.000Z
+  ---
+  # Backup und Restore
+  ```
 
-A note can be resolved by short id, exact title, or a notebook-relative path. Path segments resolve by exact title or short id in the note tree.
+  `write` removes this front matter again. Other front matter in your content is kept as content.
+- `.cld-notebook.json` records the server, the notebook, and for each note its `path`, `contentHash`, and `updatedAt`: one entry per note, nothing else. Do not edit it.
 
-Titles are not edited separately. Change the first H1 or first visible line through `edit`; reads, search results, paths, and navigation then use the updated projected title.
+### Pull again
+
+Run `cld notebooks pull <dir>` (or `pull <notebook> <dir>`) at any time. Only notes whose `updatedAt` changed are downloaded; renamed and moved notes move their files, and files of deleted notes are removed. Pull reads the saved state; a change that someone is typing in the browser appears after the editor saves it, a few seconds later. `cat` always shows the live content.
+
+A file whose content differs from the manifest hash has local changes. Pull never overwrites or deletes such a file: it lists it with the reason and exits 1. A file with local changes whose note only moved moves along with its changes. `pull --force` discards local changes and makes the folder match the server.
+
+Pull into a new or empty folder only; it refuses a non-empty folder without a manifest. For an empty notebook it writes just the manifest.
+
+### Move a Git docs folder into a notebook
+
+`cld notebooks create` makes an empty notebook. Pull it into a new folder, then write every file of the source folder to the same relative path inside the mirror:
 
 ```bash
-cld notebooks note --notebook 8nP4xA --note rnbk02 --json
-cld notebooks note --notebook 8nP4xA --note "Operations/Database/Recovery" --json
+cld notebooks create "Kolb Antik Doku"
+cld notebooks pull "Kolb Antik Doku" ~/docs-mirror
+cd ~/Git/kolb-antik-docs
+for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/${f#./} --from "$f" --parents; done
 ```
 
-Exact titles can be ambiguous. Prefer ids from `tree`, `notes`, or `search` output. Use explicit `--notebook` and `--note` flags in agent commands; the optional positional shorthand is convenient for humans but easier to misread.
+- `--parents` creates missing folder notes, like `mkdir -p`; a folder note is titled after its folder name.
+- The note title is the file's first `# Heading`. A file without one gets its file name as its heading.
+- The file lands under the slug of its title, not its original name: `runbooks/create-rocky-vm.md` with `# Create a Rocky Linux VM` becomes `runbooks/create-a-rocky-linux-vm.md`. The CLI prints the final mirror path.
+- A `README.md` becomes an ordinary note titled after its heading. To make a file the content of its folder note, write it to `<folder>/index.md`; note that its heading then renames the folder, so write such files last or keep the heading equal to the folder name.
+- Running the loop again does not duplicate notes: a new file whose title already exists in that folder is refused with the existing path and ID. Update existing notes through their mirror files instead.
+- Run the loop sequentially. Parallel writes that create the same missing folder can create that folder twice.
+- Relative links between the Git files (`../x.md`, images) are copied verbatim; fix them afterward with `note://` or `attach://` links (`cld notebooks attach` prints one).
 
-## Search and discovery
+The loop takes well under a second per file.
 
-### Search one notebook
+### Daily edit workflow
 
 ```bash
-cld notebooks search \
-  --notebook <notebook-id> \
-  --q "invoice reconciliation" \
-  --tags finance,monthly \
-  --updated-after 2026-07-01T00:00:00Z \
-  --page 1 \
-  --per-page 50 \
-  --json
+cld notebooks pull ~/docs-mirror                  # refresh
+rg -l "backup" ~/docs-mirror                      # read with local tools
+$EDITOR ~/docs-mirror/betrieb/backup.md           # change a file
+cld notebooks write ~/docs-mirror/betrieb/backup.md   # upload it; the file is refreshed
+cld notebooks write ~/docs-mirror/betrieb/neu.md --content "# Neu" --parents   # new note
+cld notebooks mv ~/docs-mirror/betrieb/neu.md ~/docs-mirror/archiv/   # move into a folder note
+cld notebooks rm ~/docs-mirror/archiv/neu.md --yes
 ```
 
-`--tags` is comma-separated and all supplied tags must match. Timestamp filters accept ISO timestamps:
+- `write <mirror file>` without `--from` uploads the file itself.
+- Writes and edits through a mirror file are checked against the manifest `contentHash`. If the note changed on the server since your pull, the write fails with 409 "changed elsewhere, pull first". Then `pull` reports the file as changed on both sides: copy your version aside, run `pull --force`, merge, and write again.
+- `edit` through a mirror file refuses a file with unsaved local changes; write the file first.
+- Changing the first heading renames the file; moving changes its folder. The mirror follows immediately.
 
-- `--created-after`, `--created-before`
-- `--updated-after`, `--updated-before`
+## Read and write notes
 
-### Search every accessible notebook
+### Read
 
 ```bash
-cld notebooks search --all --q "customer escalation" --json
+cld notebooks cat <note>                    # raw Markdown, pipeable
+cld notebooks cat <note> --numbered         # with 1-based line numbers
+cld notebooks cat <note> --blocks           # named block summary
+cld notebooks cat <note> --json             # content plus contentHash, lineCount, blocks
+cld notebooks stat <note> --json            # metadata only
 ```
 
-Global results include notebook identity so the next read can be scoped precisely. Do not combine `--all` with a target notebook.
+`cat` reads the live content, including changes from an editor that is open in the browser, so its `contentHash` matches what `write` and `edit` check. A note someone is typing in can still change between your read and your write.
 
-### Browse structure and relationships
-
-```bash
-cld notebooks tree --notebook <notebook-id> --json
-cld notebooks notes --notebook <notebook-id> --parent <parent-note> --json
-cld notebooks tags --notebook <notebook-id> --json
-cld notebooks tag-notes --notebook <notebook-id> release --json
-cld notebooks backlinks --notebook <notebook-id> --note <note-id> --json
-cld notebooks graph --notebook <notebook-id>
-```
-
-Use `tree` for hierarchy, `backlinks` for incoming references, and `graph` for the complete note-link graph.
-
-## Read and edit notes
-
-### Read forms
+### Write a whole note
 
 ```bash
-cld notebooks note --notebook <notebook-id> --note <note-id> --json
-cld notebooks note --notebook <notebook-id> --note <note-id> --content --json
-cld notebooks content --notebook <notebook-id> --note <note-id>
-cld notebooks read --notebook <notebook-id> --note <note-id> --number-lines --blocks
-cld notebooks read --notebook <notebook-id> --note <note-id> --json
-```
+cld notebooks write "Docs:betrieb/backup" --from backup.md --parents
+cld notebooks write ns98Kq --from - --if-content-hash "$HASH" <<'MD'
+# Backup
 
-Use `note` for metadata, `content` for raw Markdown, and `read --json` for edit metadata (`updatedAt`, `contentHash`, line count, and named blocks). Reads include changes from an editor that is open in the browser, so the returned hashes match what `edit` checks. A note that someone is typing in can still change between your read and your edit; a block hash only rejects changes to the block you edit.
-
-### Create and organize notes
-
-```bash
-cld notebooks create-note --notebook <notebook-id> --stdin <<'MD'
-# Incident review
-
-## Summary
-
+Nightly at 02:00.
 MD
-
-cld notebooks move-note --notebook <notebook-id> --note <note-id> --parent "Operations/Incidents"
-cld notebooks move-note --notebook <notebook-id> --note <note-id> --position 0
-cld notebooks copy-note --notebook <notebook-id> --note <note-id> --target-notebook <target-id>
 ```
 
-Exactly one of `--content`, `--file`, or `--stdin` can supply initial content. Without content, Notebooks creates an H1 from the notebook's default note title template. To rename a note safely, edit its first H1 with the same hash or timestamp preconditions used for any other content change.
+`write` replaces the whole content, or creates the note when the address does not exist yet. A new note is created below the parent path; the last path segment only provides the fallback title. A title that already exists among the new siblings is refused with the existing candidates, so paths stay unambiguous. An address that matches several notes is refused, too.
 
-The default is `New Document`. Change it with `cld notebooks update --notebook <ref> --default-note-title-template '<liquid>'`. The template receives `notebook.id`, `notebook.name`, `note.id`, `note.depth`, `parent.exists`, `parent.id`, `parent.title`, `parent.path`, `date`, `time`, `datetime`, and `timezone`. Resource ids in the template are short ids. Its first non-empty rendered line becomes the initial H1.
+The title always comes from the first `# Heading`. Without one, `write` adds the file name (new notes) or the current title (existing notes) as the heading. To rename a note, change its heading or use `mv`.
 
-### Safe edit operations
+For an ID or `<notebook>:<path>` target, pass `--if-content-hash` from a previous `cat --json` to avoid overwriting someone else's change. A conflict exits 1 with "changed elsewhere".
 
-Each `edit` invocation performs exactly one operation. Line ranges are 1-based and inclusive; duplicate block indices are 0-based.
+### Edit precisely
+
+Each `edit` performs exactly one operation. Line ranges are 1-based and inclusive; duplicate block indices are 0-based.
 
 ```bash
-# Append a section only if the note still has the content read earlier.
-cld notebooks edit \
-  --notebook <notebook-id> \
-  --note <note-id> \
-  --append \
-  --stdin \
-  --if-content-hash <content-hash> \
-  --dry-run <<'MD'
+cld notebooks edit <note> --append --if-content-hash "$HASH" --dry-run --from - <<'MD'
 
 ## Follow-up
 
@@ -291,62 +299,55 @@ cld notebooks edit \
 MD
 ```
 
-Available operations:
+Operations:
 
-- `--set-content`: replace the whole note.
 - `--append` / `--prepend`: add Markdown at the end or beginning.
 - `--replace-lines start:end` / `--delete-lines start:end`.
 - `--insert-before-line N` / `--insert-after-line N`.
-- `--replace-block <name>` / `--append-block <name>` / `--prepend-block <name>`.
+- `--replace-block <name>` / `--append-block <name>` / `--prepend-block <name>`, with `--type <type>`, `--index <n>`, and `--include-handle`.
 
-Block operations also accept `--type <type>`, `--index <zero-based-index>`, and `--include-handle`. Preconditions are:
+Content comes from `--from <file|->` or `--content <text>`. Preconditions: `--if-updated-at <ISO>`, `--if-content-hash <hash>`, `--if-block-hash <hash>`. Use the narrowest one: a block hash permits unrelated edits elsewhere in the note. To replace the whole note, use `write`.
 
-- `--if-updated-at <ISO timestamp>`: reject any intervening note update.
-- `--if-content-hash <hash>`: reject if the complete body changed.
-- `--if-block-hash <hash>`: reject if the selected block body changed.
-
-Use the narrowest applicable precondition. A block hash permits unrelated edits elsewhere in the note while still protecting the block being changed.
-
-### Locks, favorites, and deletion
+### Organize
 
 ```bash
-cld notebooks favorite --notebook <notebook-id> --note <note-id>
-cld notebooks favorites --notebook <notebook-id> --json
-cld notebooks unfavorite --notebook <notebook-id> --note <note-id>
-cld notebooks lock-note --notebook <notebook-id> --note <note-id> --yes
-cld notebooks delete-note --notebook <notebook-id> --note <note-id> --yes
+cld notebooks mv <note> "Docs:betrieb"                     # into an existing note
+cld notebooks mv <note> "Docs:betrieb/Backup und Restore"  # move and rename
+cld notebooks mv <note> "Docs:"                            # to the top level
+cld notebooks cp <note> "Archive:2026"                     # copy into another notebook
+cld notebooks rm <note> --yes                              # delete with all children
+cld notebooks lock <note> --yes                            # permanent lock
+cld notebooks favorites add <note>
 ```
 
-A lock is permanent. Deleting a note also deletes its children. Both operations require explicit user intent and `--yes`.
+`mv` moves into the target when it names an existing note, like `mv file dir/`. Otherwise the last target segment becomes the new title below its parent path. Moving between notebooks is not supported; use `cp` and `rm`. `rm` and `lock` ask for confirmation in a terminal and require `--yes` otherwise. A lock is permanent.
+
+New notes without content get their H1 from the notebook's default note title template (default `New Document`). Change it with `cld notebooks update <notebook> --default-note-title-template '<liquid>'`. The template receives `notebook.id`, `notebook.name`, `note.id`, `note.depth`, `parent.exists`, `parent.id`, `parent.title`, `parent.path`, `date`, `time`, `datetime`, and `timezone`.
+
+## Search and discovery
+
+```bash
+cld notebooks search "invoice reconciliation" --json
+cld notebooks search "deploy" --notebook Docs --tags finance,monthly --updated-after 2026-07-01T00:00:00Z --json
+cld notebooks ls                         # notebooks
+cld notebooks ls Docs:betrieb            # child notes
+cld notebooks tree Docs                  # the whole tree
+cld notebooks tags Docs --json
+cld notebooks backlinks <note> --json
+cld notebooks graph Docs
+```
+
+Search covers every accessible notebook unless `--notebook` narrows it. `--tags` is comma-separated and all tags must match. Time filters are `--created-after`, `--created-before`, `--updated-after`, and `--updated-before` with ISO timestamps. Results include the notebook so the next command can use the note ID directly.
 
 ## Named blocks
 
-Named blocks let an agent address structured Markdown without rewriting the rest of the note. `read --json` lists discovered blocks; `block` returns one block with a stable hash.
+Named blocks let an agent address structured Markdown without rewriting the rest of the note. `cat --json` lists discovered blocks; `cat --block <name>` returns one block with a stable hash.
 
 ```bash
-cld notebooks block \
-  --notebook <notebook-id> \
-  --note <note-id> \
-  "release-checklist" \
-  --type list \
-  --json
-```
-
-Supported block classifications are `table`, `list`, `data`, `section`, and `unknown`. A name may occur more than once; select a duplicate with `--index`.
-
-A safe block update is:
-
-```bash
-block_json="$(cld notebooks block --notebook "$NB" --note "$NOTE" status --type data --json)"
+block_json="$(cld notebooks cat <note> --block status --type data --json)"
 block_hash="$(printf '%s' "$block_json" | jq -r '.block.hash')"
 
-cld notebooks edit \
-    --notebook "$NB" \
-    --note "$NOTE" \
-    --replace-block status \
-    --type data \
-    --if-block-hash "$block_hash" \
-    --stdin <<'MD'
+cld notebooks edit <note> --replace-block status --type data --if-block-hash "$block_hash" --from - <<'MD'
 :::data
 state: ready
 owner: ops
@@ -354,280 +355,87 @@ owner: ops
 MD
 ```
 
-For data blocks, `block` returns the inner data text, but `--replace-block` replaces the whole block including the opening and closing delimiters. It preserves `@status` unless `--include-handle` is set. Include the `:::data` lines in the replacement; bare JSON would remove the data block.
+Supported block types are `table`, `list`, `data`, `section`, and `unknown`. A name may occur more than once; select a duplicate with `--index`. For data blocks, `cat --block` returns the inner data text, but `--replace-block` replaces the whole block including its delimiters and keeps `@status` unless `--include-handle` is set. Include the `:::data` lines in the replacement.
 
 ## Attachments, versions, and exports
 
-### Attachments
-
 ```bash
-cld notebooks attachments --notebook <notebook-id> --json
-cld notebooks upload-attachment --notebook <notebook-id> ./diagram.png --json
-cld notebooks attachment --notebook <notebook-id> <attachment-id> --json
-cld notebooks attachment-usage --notebook <notebook-id> <attachment-id> --json
-cld notebooks download-attachment --notebook <notebook-id> <attachment-id> --output-file ./diagram.png
-cld notebooks delete-attachment --notebook <notebook-id> <attachment-id> --yes
+cld notebooks attach <note> ./diagram.png          # prints ![diagram.png](attach://Ab12Cd)
+cld notebooks attachments list Docs --json
+cld notebooks attachments download Docs Ab12Cd --out ./diagram.png
+cld notebooks attachments delete Docs Ab12Cd --yes
+cld notebooks versions list <note> --json
+cld notebooks versions cat <note> <version-id>
+cld notebooks versions restore <note> <version-id> --into <empty-note>
+cld notebooks templates
+cld notebooks create "Team handbook" --template <template-id>
+cld notebooks export Docs --out ./docs.zip
 ```
 
-Before deleting an attachment, inspect `attachment-usage`; deletion can leave broken `attach://` references in notes.
-
-### Versions
-
-```bash
-cld notebooks versions --notebook <notebook-id> --note <note-id> --json
-cld notebooks version --notebook <notebook-id> --note <note-id> <version-id> --content --json
-cld notebooks restore-version --notebook <notebook-id> --note <source-note> <version-id> --target <empty-target-note>
-```
-
-The restore target must be an existing empty note. This makes restoration explicit and preserves the current note instead of silently overwriting it.
-
-### Templates and export
-
-```bash
-cld notebooks templates --json
-cld notebooks create-from-template <template-id> --name "Team handbook" --use --json
-cld notebooks export --notebook <notebook-id> --output-file ./team-handbook.zip
-```
-
-The ZIP export is portable notebook data. Notebook, note, parent, and attachment ids in its metadata are short ids. Keep it secure if notes or attachments contain private information.
+`attach` uploads a file to the note's notebook and prints a ready-to-paste Markdown link; paste it with `edit` or into a mirror file. Attachments belong to the notebook, so `attach Docs: ./file.pdf` works without a note. `attachments delete` shows how many notes link the file before it asks. A version restore needs an existing empty target note, so the current note is never overwritten. The ZIP export is portable notebook data; keep it secure.
 
 ## Access, API keys, and snapshots
 
-### Access management
-
 ```bash
-cld notebooks access list <notebook-id> --json
+cld notebooks access list Docs --json
 cld notebooks access search-principals "operations" --kind group --json
-cld notebooks access grant <notebook-id> --group <group-id> --permission write --json
-cld notebooks access set <notebook-id> --group <group-id> --permission read --json
-cld notebooks access revoke <notebook-id> --access-id <access-id> --yes
+cld notebooks access grant Docs --group <group-id> --permission write --json
+cld notebooks access set Docs --group <group-id> --permission read --json
+cld notebooks access revoke Docs --access-id <access-id> --yes
+cld notebooks api-keys create Docs automation --permission write --json
+cld notebooks api-keys list Docs --json
+cld notebooks api-keys revoke Docs <key-id> --yes
+cld notebooks snapshots show Docs
+cld notebooks snapshots set Docs --enabled true --endpoint https://s3.example.com --region eu-central-1 --bucket backups \
+  --access-key-id "$ACCESS_KEY" --secret-access-key "$SECRET_KEY"
+cld notebooks snapshots run Docs
+cld notebooks snapshots logs Docs --json
 ```
 
-Permissions are `read`, `write`, or `admin`. `grant` accepts exactly one principal selector: `--user`, `--group`, or `--authenticated`. `set` and `revoke` address a grant by `--access-id` or by one principal selector; `set` is suitable for idempotent reconciliation. Add `--include-service-accounts` to `access list` when those grants matter.
+Permissions are `read`, `write`, or `admin`. The token from `api-keys create` is shown once; store it in the intended secret manager and never in a note or log. Snapshot reads are redacted; pass secrets through shell variables, not literals.
 
-### Resource-bound API keys
+## Command reference
 
-```bash
-cld notebooks api-keys --notebook <notebook-id> --json
-cld notebooks create-api-key --notebook <notebook-id> "automation" --permission write --json
-cld notebooks revoke-api-key --notebook <notebook-id> <credential-id> --yes
-```
+All commands support the global options `--json`, `--profile`, `--server`, and `--token`. Run `cld notebooks <command> --help` for flags.
 
-The raw token returned by `create-api-key` is shown once. Store it immediately in the intended secret manager; never place it in a note or logs. `--expires-at` accepts an optional ISO timestamp.
-
-### S3 snapshots
-
-```bash
-cld notebooks snapshot --notebook <notebook-id> --json
-cld notebooks update-snapshot \
-  --notebook <notebook-id> \
-  --enabled true \
-  --endpoint https://s3.example.com \
-  --region eu-central-1 \
-  --bucket notebook-backups \
-  --access-key-id "$ACCESS_KEY" \
-  --secret-access-key "$SECRET_KEY"
-cld notebooks run-snapshot --notebook <notebook-id> --json
-cld notebooks snapshot-logs --notebook <notebook-id> --json
-```
-
-Snapshot reads are redacted. Pass secrets through environment-backed shell variables, not command history literals.
-
-## Complete command reference
-
-All commands support the global Cloud CLI options, including `--json`, `--profile`, `--server`, and `--token`. Run `cld notebooks <command> --help` for generated flag help.
-
-### Notebooks
-
-| Command | Canonical form | Purpose |
-|---|---|---|
-| `list` | `cld notebooks list [--q text] [--page N] [--per-page N]` | List accessible notebooks. |
-| `use` | `cld notebooks use <notebook>` | Store the local default notebook. |
-| `current` | `cld notebooks current` | Show the default notebook. |
-| `get` | `cld notebooks get --notebook <ref>` | Show one notebook. |
-| `create` | `cld notebooks create <name> [--description text] [--icon icon] [--use]` | Create a notebook. |
-| `update` | `cld notebooks update --notebook <ref> [settings]` | Change notebook details, homepage, default note title, or default view. |
-| `delete` | `cld notebooks delete --notebook <ref> --yes` | Delete the notebook and all content. |
-| `templates` | `cld notebooks templates` | List built-in notebook templates. |
-| `create-from-template` | `cld notebooks create-from-template <template-id> [--name name] [--use]` | Create a notebook from a built-in template. |
-
-`update` accepts `--name`, `--description`, `--clear-description`, `--icon`, `--clear-icon`, `--homepage <note-ref>`, `--clear-homepage`, `--default-note-title-template <liquid>`, and `--default-presentation-mode book|write|readonly`. The default view applies to writers and admins; readers always open Book.
-
-### Notes and navigation
-
-| Command | Canonical form | Purpose |
-|---|---|---|
-| `tree` | `cld notebooks tree --notebook <ref>` | Show the note tree. |
-| `notes` | `cld notebooks notes --notebook <ref> [--q text] [--parent note]` | List notes, optionally under one parent. |
-| `search` | `cld notebooks search (--notebook <ref> \| --all) [filters]` | Full-text and filtered note search. |
-| `note` | `cld notebooks note --notebook <ref> --note <ref> [--content]` | Show note metadata. |
-| `content` | `cld notebooks content --notebook <ref> --note <ref>` | Print raw Markdown. |
-| `read` | `cld notebooks read --notebook <ref> --note <ref> [--number-lines] [--blocks]` | Read content and edit metadata. |
-| `create-note` | `cld notebooks create-note --notebook <ref> [content source] [--parent note]` | Create a note; its title is derived from content or the notebook default template. |
-| `move-note` | `cld notebooks move-note --notebook <ref> --note <ref> [--parent note] [--position N]` | Move a note; omit `--parent` to move it to the root. |
-| `copy-note` | `cld notebooks copy-note --notebook <ref> --note <ref> --target-notebook <ref> [--parent note]` | Copy a note to another notebook. |
-| `delete-note` | `cld notebooks delete-note --notebook <ref> --note <ref> --yes` | Delete a note and its children. |
-| `lock-note` | `cld notebooks lock-note --notebook <ref> --note <ref> --yes` | Permanently lock a note. |
-| `favorite` | `cld notebooks favorite --notebook <ref> --note <ref>` | Add a favorite. |
-| `unfavorite` | `cld notebooks unfavorite --notebook <ref> --note <ref>` | Remove a favorite. |
-| `favorites` | `cld notebooks favorites --notebook <ref>` | List favorite note ids. |
-| `backlinks` | `cld notebooks backlinks --notebook <ref> --note <ref>` | List notes linking to a note. |
-| `graph` | `cld notebooks graph --notebook <ref>` | Print the note-link graph as JSON. |
-| `tags` | `cld notebooks tags --notebook <ref>` | List tags and usage counts. |
-| `tag-notes` | `cld notebooks tag-notes --notebook <ref> <tag>` | List notes carrying a tag. |
-
-### Editing and blocks
-
-| Command | Canonical form | Purpose |
-|---|---|---|
-| `block` | `cld notebooks block --notebook <ref> --note <ref> <name> [--type type] [--index N]` | Read one named block and its hash. |
-| `edit` | `cld notebooks edit --notebook <ref> --note <ref> <one operation> <content source> [precondition] [--dry-run]` | Apply one safe Markdown edit. |
-| `preview` | `cld notebooks preview --notebook <ref> --note <ref> [content source]` | Validate query and TOC blocks in a saved page or unsaved draft. |
-
-Content sources are `--content`, `--file/-f`, or `--stdin`. See [Safe edit operations](#safe-edit-operations) for every edit operation and precondition.
-
-### Comments
-
-| Command | Canonical form | Purpose |
-|---|---|---|
-| `comments` | `cld notebooks comments --notebook <ref> --note <ref> [--page N] [--per-page N]` | List note comments. |
-| `add-comment` | `cld notebooks add-comment --notebook <ref> --note <ref> <content source>` | Add a Markdown comment. |
-| `update-comment` | `cld notebooks update-comment --notebook <ref> --note <ref> <comment-id> <content source>` | Edit your recent comment. |
-| `delete-comment` | `cld notebooks delete-comment --notebook <ref> --note <ref> <comment-id> --yes` | Delete your recent comment. |
-
-### Versions, attachments, export, and credentials
-
-| Command | Canonical form | Purpose |
-|---|---|---|
-| `versions` | `cld notebooks versions --notebook <ref> --note <ref>` | List note versions. |
-| `version` | `cld notebooks version --notebook <ref> --note <ref> <version-id> [--content]` | Show one version. |
-| `restore-version` | `cld notebooks restore-version --notebook <ref> --note <ref> <version-id> --target <empty-note>` | Restore into an empty note. |
-| `attachments` | `cld notebooks attachments --notebook <ref>` | List attachments. |
-| `attachment` | `cld notebooks attachment --notebook <ref> <attachment>` | Show attachment metadata. |
-| `upload-attachment` | `cld notebooks upload-attachment --notebook <ref> <file>` | Upload a file. |
-| `download-attachment` | `cld notebooks download-attachment --notebook <ref> <attachment> --output-file <path>` | Download a file. |
-| `attachment-usage` | `cld notebooks attachment-usage --notebook <ref> <attachment>` | Count referencing notes. |
-| `delete-attachment` | `cld notebooks delete-attachment --notebook <ref> <attachment> --yes` | Delete an attachment. |
-| `export` | `cld notebooks export --notebook <ref> --output-file <zip>` | Export a portable ZIP. |
-| `api-keys` | `cld notebooks api-keys --notebook <ref>` | List notebook API keys. |
-| `create-api-key` | `cld notebooks create-api-key --notebook <ref> <name> --permission read\|write\|admin [--expires-at ISO]` | Create a resource-bound key. |
-| `revoke-api-key` | `cld notebooks revoke-api-key --notebook <ref> <credential-id> --yes` | Revoke a key. |
-| `snapshot` | `cld notebooks snapshot --notebook <ref>` | Show redacted snapshot settings. |
-| `update-snapshot` | `cld notebooks update-snapshot --notebook <ref> [settings]` | Update S3 snapshot settings. |
-| `snapshot-logs` | `cld notebooks snapshot-logs --notebook <ref>` | List recent snapshot runs. |
-| `run-snapshot` | `cld notebooks run-snapshot --notebook <ref>` | Run a snapshot now. |
-
-### Access subcommands
-
-| Command | Canonical form | Purpose |
-|---|---|---|
-| `access list` | `cld notebooks access list [notebook] [--include-service-accounts]` | List grants. |
-| `access grant` | `cld notebooks access grant [notebook] <principal> --permission read\|write\|admin` | Create a grant. |
-| `access set` | `cld notebooks access set [notebook] (--access-id id\|<principal>) --permission read\|write\|admin` | Reconcile a grant. |
-| `access revoke` | `cld notebooks access revoke [notebook] (--access-id id\|<principal>) --yes` | Revoke a grant. |
-| `access search-principals` | `cld notebooks access search-principals <query> [--kind user\|group] [--page N] [--per-page N]` | Find principal ids. |
+| Command | Purpose |
+|---|---|
+| `ls [<notebook>[:<path>]]` | Notebooks, or the children of a notebook or note. |
+| `tree <notebook>[:<path>]` | Note tree. |
+| `cat <note>` | Live content; `--json`, `--numbered`, `--blocks`, `--block <name>`. |
+| `stat <note>` / `stat <notebook>:` | Metadata. |
+| `search [query]` | Full-text, tag, and time search; `--notebook` narrows it. |
+| `write <note>` | Replace content or create the note; `--from`, `--content`, `--parents`, `--if-content-hash`. |
+| `edit <note>` | One precise edit with preconditions and `--dry-run`. |
+| `preview <note>` | Validate query and TOC blocks of the saved page or a draft. |
+| `mv <note> <target>` | Move and/or rename. |
+| `cp <note> <notebook>[:<path>]` | Copy into another notebook. |
+| `rm <note>` | Delete with children; confirmation or `--yes`. |
+| `lock <note>` | Permanent lock; confirmation or `--yes`. |
+| `attach <note> <file>` | Upload and print a Markdown link. |
+| `pull [<notebook>] <dir>` | One-way Markdown mirror; `--force`. |
+| `tags`, `backlinks`, `graph` | Tags, incoming links, link graph. |
+| `create <name>` | Empty notebook, or `--template <id>`. |
+| `templates`, `update`, `delete`, `export` | Notebook templates, settings, deletion, ZIP export. |
+| `comments list\|add\|update\|delete` | Note discussion. |
+| `versions list\|cat\|restore` | Note history. |
+| `attachments list\|download\|delete` | Notebook files. |
+| `favorites list\|add\|remove` | Your favorite notes. |
+| `api-keys list\|create\|revoke` | Notebook-bound API keys. |
+| `snapshots show\|set\|logs\|run` | S3 snapshots. |
+| `access list\|grant\|set\|revoke\|search-principals` | Direct access grants. |
 
 ## JSON contracts
 
-Treat JSON fields as the command contract and avoid parsing human tables. The examples intentionally show only fields normally needed to chain commands; returned objects also contain descriptive and audit metadata.
+Treat JSON fields as the contract and tolerate additional fields.
 
-### Paged results
-
-```json
-{
-  "data": [
-    {
-      "id": "8nP4xA",
-      "name": "Engineering handbook"
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "per_page": 50,
-    "total": 1,
-    "has_next": false
-  }
-}
-```
-
-Continue with `page + 1` while `has_next` is true. List, scoped search, notes, tag notes, and versions use this `{ data, pagination }` envelope.
-
-### Global search hit
-
-```json
-{
-  "data": [
-    {
-      "note": {
-        "id": "rnbk02",
-        "title": "Database recovery",
-        "updatedAt": "2026-07-12T08:30:00.000Z"
-      },
-      "notebook": {
-        "id": "8nP4xA",
-        "name": "Engineering handbook"
-      },
-      "snippet": "...restore the latest verified backup..."
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "per_page": 50,
-    "total": 1,
-    "has_next": false
-  }
-}
-```
-
-Global search includes notebook identity. Scoped search returns note objects directly because the notebook is already known.
-
-### Read result
-
-```json
-{
-  "notebook": { "id": "8nP4xA", "name": "Engineering handbook" },
-  "note": { "id": "rnbk02", "title": "Database recovery", "updatedAt": "2026-07-12T08:30:00.000Z" },
-  "content": "# Database recovery\n",
-  "contentHash": "sha256-hex-value",
-  "lineCount": 1,
-  "blocks": [
-    { "name": "status", "type": "data", "index": 0, "startLine": 4, "endLine": 8, "hash": "block-hash" }
-  ]
-}
-```
-
-Use `note.updatedAt` or `contentHash` as an edit precondition. Each block summary contains its own `hash` for a narrower block precondition.
-
-### Block and API-key results
-
-```json
-{
-  "note": { "id": "rnbk02", "title": "Database recovery" },
-  "block": {
-    "name": "status",
-    "type": "data",
-    "index": 0,
-    "startLine": 4,
-    "endLine": 8,
-    "hash": "block-hash",
-    "content": "state: ready"
-  }
-}
-```
-
-```json
-{
-  "credential": {
-    "id": "credential-uuid",
-    "name": "automation",
-    "permission": "write",
-    "expiresAt": null
-  },
-  "token": "shown-once-secret"
-}
-```
-
-Store the raw token immediately; later list calls return metadata, not that token. Read only fields needed for the task and tolerate additional fields.
+- `ls` without a notebook returns `{ data: Notebook[], pagination }`. With a notebook it returns `{ notebook: { id, name }, parentId, data: [{ id, title, hasChildren, updatedAt }] }`. `tree` returns the same with nested `children`.
+- `search`, `versions list` return `{ data, pagination }`; continue with `--page` while `pagination.has_next` is true. Search hits are `{ note, notebook: { id, name }, snippet }`.
+- `cat --json` returns `{ note, content, contentHash, lineCount, blocks: [{ name, type, line, startLine, endLine, hash }] }`; `cat --block --json` returns `{ note, block: { name, type, index, startLine, endLine, hash, content } }`.
+- `write --json` returns `{ action: "created" | "updated" | "unchanged", note, contentHash, mirrorPath? }`. `edit --json` returns `{ note, content, changed, beforeHash, afterHash, blocks, mirrorPath? }`. `mv --json` returns `{ note, mirrorPath? }`.
+- `pull --json` returns `{ root, notebook, notes, written, removed, kept: [{ path, reason }], attachments: { downloaded, removed } }`. Reasons are `local-changes`, `changed-on-both-sides`, `deleted-on-server`, and `path-occupied`.
+- `attach --json` returns `{ attachment, markdown }`.
+- Errors in `--json` mode are printed to stderr as `{ "error": { "message", "status", "exitCode" } }`.
 
 ## Further references
 

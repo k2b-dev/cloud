@@ -69,10 +69,10 @@ const editingServer = () => {
 test("updates only valid default presentation modes", async () => {
   const { server, writes } = editingServer();
   for (const mode of ["book", "write", "readonly"]) {
-    const result = await runCli(server, ["notebooks", "update", "--notebook", "wiki01", "--default-presentation-mode", mode]);
+    const result = await runCli(server, ["notebooks", "update", "wiki01", "--default-presentation-mode", mode]);
     expect(result.exitCode).toBe(0);
   }
-  const invalid = await runCli(server, ["notebooks", "update", "--notebook", "wiki01", "--default-presentation-mode", "edit"]);
+  const invalid = await runCli(server, ["notebooks", "update", "wiki01", "--default-presentation-mode", "edit"]);
   expect(invalid.exitCode).toBe(1);
   expect(writes).toEqual([
     { defaultPresentationMode: "book" },
@@ -86,12 +86,9 @@ test("rejects ambiguous edit operations before a write", async () => {
   const result = await runCli(server, [
     "notebooks",
     "edit",
-    "--notebook",
-    "wiki01",
-    "--note",
     "note01",
     "--append",
-    "--set-content",
+    "--prepend",
     "--content",
     ":::query\nsource: notes\n:::",
   ]);
@@ -107,18 +104,7 @@ test("rejects malformed edit line selectors instead of truncating them", async (
     ["--replace-lines", "1:2oops"],
     ["--insert-before-line", "2.5"],
   ]) {
-    const result = await runCli(server, [
-      "notebooks",
-      "edit",
-      "--notebook",
-      "wiki01",
-      "--note",
-      "note01",
-      flag!,
-      value!,
-      "--content",
-      ":::toc\n:::",
-    ]);
+    const result = await runCli(server, ["notebooks", "edit", "note01", flag!, value!, "--content", ":::toc\n:::"]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Invalid");
   }
@@ -131,9 +117,6 @@ test("dry-run honors the same updatedAt precondition as saved edits", async () =
     "--json",
     "notebooks",
     "edit",
-    "--notebook",
-    "wiki01",
-    "--note",
     "note01",
     "--append",
     "--content",
@@ -143,7 +126,7 @@ test("dry-run honors the same updatedAt precondition as saved edits", async () =
   ];
   const stale = await runCli(server, [...args, "2020-01-01T00:00:00.000Z"]);
   expect(stale.exitCode).toBe(1);
-  expect(stale.stderr).toContain("updatedAt changed");
+  expect(stale.stderr).toContain("changed elsewhere");
   const current = await runCli(server, [...args, noteFixture.updatedAt]);
   expect(current.exitCode).toBe(0);
   expect(JSON.parse(current.stdout).content).toContain(":::toc\n:::");
@@ -164,7 +147,7 @@ test("preview uses saved content by default and preserves empty or populated dra
     fetch: async (request) => {
       const path = new URL(request.url).pathname;
       if (request.method === "GET" && path === "/api/notebooks/wiki01") return Response.json(notebookFixture);
-      if (request.method === "GET" && path === "/api/notebooks/wiki01/notes/note01") return Response.json(noteFixture);
+      if (request.method === "GET" && path === "/api/notebooks/notes/note01") return Response.json(noteFixture);
       if (request.method === "POST" && path === "/api/notebooks/wiki01/notes/note01/block-preview") {
         bodies.push(await request.json());
         return Response.json(preview);
@@ -174,16 +157,7 @@ test("preview uses saved content by default and preserves empty or populated dra
   });
   servers.push(server);
   for (const input of [[], ["--content", ""], ["--content", ":::query\nsource: notes\n:::\n"]]) {
-    const result = await runCli(`http://127.0.0.1:${server.port}`, [
-      "--json",
-      "notebooks",
-      "preview",
-      "--notebook",
-      "wiki01",
-      "--note",
-      "note01",
-      ...input,
-    ]);
+    const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "notebooks", "preview", "note01", ...input]);
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(preview);
   }
@@ -203,16 +177,14 @@ test("preview rejects competing draft sources before contacting the server", asy
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "notebooks",
     "preview",
-    "--notebook",
-    "wiki01",
-    "--note",
     "note01",
     "--content",
     ":::toc\n:::",
-    "--stdin",
+    "--from",
+    "draft.md",
   ]);
   expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("only one of --content, --file, or --stdin");
+  expect(result.stderr).toContain("only one of --from or --content");
   expect(requests).toEqual([]);
 });
 
@@ -231,15 +203,7 @@ test("preview retains machine-readable diagnostics while returning a failure exi
     },
   });
   servers.push(server);
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
-    "--json",
-    "notebooks",
-    "preview",
-    "--notebook",
-    "wiki01",
-    "--note",
-    "note01",
-  ]);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "notebooks", "preview", "note01"]);
   expect(result.exitCode).toBe(1);
   expect(JSON.parse(result.stdout)).toEqual(preview);
 });
@@ -287,7 +251,6 @@ test("global search forwards full-text and structured filters", async () => {
     "notebooks",
     "search",
     "postgres search",
-    "--all",
     "--tags",
     "architecture,database",
     "--updated-after",
@@ -306,14 +269,30 @@ test("global search forwards full-text and structured filters", async () => {
   expect(result.stdout).not.toContain("shortId");
 });
 
-test("destructive notebook deletion requires explicit confirmation", async () => {
-  const server = Bun.serve({ port: 0, fetch: () => Response.json({ message: "unexpected" }, { status: 500 }) });
+test("destructive commands require confirmation before any request", async () => {
+  const requests: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      requests.push(request.url);
+      return Response.json({ message: "unexpected" }, { status: 500 });
+    },
+  });
   servers.push(server);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["notebooks", "delete", "wiki01"]);
-
-  expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("without --yes");
+  for (const args of [
+    ["delete", "wiki01"],
+    ["rm", "note01"],
+    ["lock", "note01"],
+    ["comments", "delete", "note01", "cmt001"],
+    ["attachments", "delete", "wiki01", "att001"],
+    ["api-keys", "revoke", "wiki01", "key001"],
+  ]) {
+    const result = await runCli(`http://127.0.0.1:${server.port}`, ["notebooks", ...args]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Pass --yes");
+  }
+  expect(requests).toEqual([]);
 });
 
 test("resolves exact names through search without sending them as resource ids", async () => {
@@ -330,7 +309,7 @@ test("resolves exact names through search without sending them as resource ids",
   });
   servers.push(server);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "notebooks", "get", "--notebook", "Wiki"]);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "notebooks", "stat", "Wiki:"]);
 
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
@@ -357,7 +336,7 @@ test("does not send legacy UUID notebook refs to the resource reader", async () 
   });
   servers.push(server);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["notebooks", "get", "--notebook", legacyUuid]);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["notebooks", "stat", `${legacyUuid}:`]);
 
   expect(result.exitCode).toBe(1);
   expect(requestUrls).toHaveLength(1);
@@ -367,13 +346,15 @@ test("does not send legacy UUID notebook refs to the resource reader", async () 
   expect(requestUrl.pathname).not.toContain(legacyUuid);
 });
 
-test("create-note sends markdown without a separate title", async () => {
+test("write creates a missing path note with its Markdown title", async () => {
   const createBodies: Record<string, unknown>[] = [];
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/api/notebooks/wiki01") return Response.json(notebookFixture);
+      if (request.method === "GET" && url.pathname === "/api/notebooks/wiki01/resolve")
+        return Response.json({ message: "No note" }, { status: 404 });
       if (request.method === "POST" && url.pathname === "/api/notebooks/wiki01/notes") {
         createBodies.push((await request.json()) as Record<string, unknown>);
         return Response.json({
@@ -399,16 +380,16 @@ test("create-note sends markdown without a separate title", async () => {
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "notebooks",
-    "create-note",
-    "--notebook",
-    "wiki01",
+    "write",
+    "wiki01:reviews/incident",
     "--content",
     "# Incident review\n",
+    "--parents",
   ]);
 
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
-  expect(createBodies).toEqual([{ contentMd: "# Incident review\n" }]);
+  expect(createBodies).toEqual([{ parentPath: "reviews", createParents: true, contentMd: "# Incident review\n" }]);
 });
 
 test("update forwards the default note title template", async () => {
@@ -431,7 +412,6 @@ test("update forwards the default note title template", async () => {
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "notebooks",
     "update",
-    "--notebook",
     "wiki01",
     "--default-note-title-template",
     "{{ date }} Journal",
@@ -464,7 +444,7 @@ test("adds a comment through resolved public notebook and note ids", async () =>
     fetch: async (request) => {
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/api/notebooks/wiki01") return Response.json(notebookFixture);
-      if (request.method === "GET" && url.pathname === "/api/notebooks/wiki01/notes/note01") return Response.json(note);
+      if (request.method === "GET" && url.pathname === "/api/notebooks/notes/note01") return Response.json(note);
       if (request.method === "POST" && url.pathname === "/api/notebooks/wiki01/notes/note01/comments") {
         const body = await request.json();
         requests.push({ method: request.method, path: url.pathname, body });
@@ -490,10 +470,8 @@ test("adds a comment through resolved public notebook and note ids", async () =>
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "--json",
     "notebooks",
-    "add-comment",
-    "--notebook",
-    "wiki01",
-    "--note",
+    "comments",
+    "add",
     "note01",
     "--content",
     "Please clarify the escalation path.",
@@ -509,4 +487,81 @@ test("adds a comment through resolved public notebook and note ids", async () =>
     },
   ]);
   expect(result.stdout).toContain('"id": "cmt001"');
+});
+
+test("write reads stdin from --from - and adds the current title when the content has no heading", async () => {
+  const patches: unknown[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === "GET" && path === "/api/notebooks/notes/note01") return Response.json(noteFixture);
+      if (request.method === "PATCH" && path === "/api/notebooks/wiki01/notes/note01/content") {
+        const body = (await request.json()) as { operations: Array<{ content: string }> };
+        patches.push(body);
+        const content = body.operations[0]!.content;
+        return Response.json({ note: noteFixture, content, changed: true, beforeHash: "a", afterHash: "b", blocks: [] });
+      }
+      return Response.json({ message: "not found" }, { status: 404 });
+    },
+  });
+  servers.push(server);
+  const proc = Bun.spawn({
+    cmd: [
+      process.execPath,
+      "run",
+      "../cloud-cli/src/index.ts",
+      "--server",
+      `http://127.0.0.1:${server.port}`,
+      "--token",
+      "test-token",
+      "notebooks",
+      "write",
+      "note01",
+      "--from",
+      "-",
+      "--if-content-hash",
+      "sha256:abc",
+    ],
+    cwd: new URL("..", import.meta.url).pathname,
+    stdin: new Blob(["Just a line\n"]),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+  expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+  expect(patches).toEqual([{ operations: [{ kind: "set-content", content: "# Handbook\n\nJust a line\n" }], ifContentHash: "sha256:abc" }]);
+});
+
+test("a hash conflict explains that the note changed elsewhere", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === "GET" && path === "/api/notebooks/notes/note01") return Response.json(noteFixture);
+      return Response.json({ message: "Content hash mismatch" }, { status: 409 });
+    },
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "notebooks",
+    "write",
+    "note01",
+    "--content",
+    "# X\n",
+    "--if-content-hash",
+    "sha256:old",
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("changed elsewhere");
+  expect(result.stderr).toContain("pull");
+});
+
+test("help lists the new command set in English and German", async () => {
+  const english = await runCli("http://127.0.0.1:9", ["notebooks", "help"]);
+  for (const name of ["ls", "tree", "cat", "write", "edit", "mv", "rm", "pull", "attach", "versions", "comments"])
+    expect(english.stdout).toContain(name);
+  expect(english.stdout).not.toContain("create-note");
+  const german = await runCli("http://127.0.0.1:9", ["--locale", "de", "notebooks", "help"]);
+  expect(german.stdout).toContain("Notizbuch");
 });

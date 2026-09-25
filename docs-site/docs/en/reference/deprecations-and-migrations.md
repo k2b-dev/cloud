@@ -5,10 +5,52 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-16
+updated: 2026-09-25
 ---
 
 # Deprecations and migrations
+
+## Notebooks CLI commands
+
+`cld notebooks` was rebuilt around note addresses and a local Markdown mirror.
+The old command names are removed without aliases; scripts must switch to the
+new names. Notes are addressed as a note ID, `<notebook>:<path>`, or a file in
+a pulled mirror instead of `--notebook` and `--note` flags, and the local
+default notebook (`use`, `current`) is gone. Content input is `--from <file|->`
+or `--content <text>` instead of `--file`, `--stdin`, and `--content`. See
+[Notebooks](/en/apps/notebooks#automate-notebooks-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `list` | `ls` |
+| `use`, `current` | removed; pass the notebook in every address |
+| `get` | `stat <notebook>:` |
+| `notes` | `ls <notebook>[:<path>]` |
+| `note`, `content`, `read` | `stat <note>`, `cat <note>` (`--json`, `--numbered`, `--blocks`) |
+| `block` | `cat <note> --block <name>` |
+| `create-note` | `write <notebook>:<path> [--parents]` |
+| `edit --set-content` | `write <note>` |
+| `move-note` | `mv <note> <target>` |
+| `copy-note` | `cp <note> <notebook>[:<path>]` |
+| `delete-note` | `rm <note>` |
+| `lock-note` | `lock <note>` |
+| `search --all`, `tag-notes` | `search [query] [--notebook] [--tags]` |
+| `favorite`, `unfavorite`, `favorites` | `favorites add`, `favorites remove`, `favorites list` |
+| `comments`, `add-comment`, `update-comment`, `delete-comment` | `comments list`, `add`, `update`, `delete` |
+| `versions`, `version`, `restore-version` | `versions list`, `versions cat`, `versions restore --into` |
+| `upload-attachment` | `attach <note> <file>` |
+| `attachments`, `download-attachment`, `delete-attachment` | `attachments list`, `download`, `delete` |
+| `attachment`, `attachment-usage` | `attachments list --json`, usage shown by `attachments delete` |
+| `create-from-template` | `create <name> --template <id>` |
+| `api-keys`, `create-api-key`, `revoke-api-key` | `api-keys list`, `create`, `revoke` |
+| `snapshot`, `update-snapshot`, `snapshot-logs`, `run-snapshot` | `snapshots show`, `set`, `logs`, `run` |
+| `--output-file` | `--out` |
+
+`cld notebooks create` now creates an empty notebook without the welcome note;
+the web UI still seeds it. The Notebooks API adds `GET /api/notebooks/notes/:noteId`,
+`GET /api/notebooks/:id/outline`, and `GET /api/notebooks/:id/resolve`, and
+`POST /api/notebooks/:id/notes` accepts `parentPath` and `createParents`. No
+stored data changes.
 
 ## Workflow action costs
 

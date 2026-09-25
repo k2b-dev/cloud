@@ -118,7 +118,7 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
       text.insert(text.length, "typed in browser\n");
       await typed;
 
-      // `cld notebooks read` sees the unsnapshotted edit, so its hash guards the next edit.
+      // `cld notebooks cat` sees the unsnapshotted edit, so its hash guards the next edit.
       const current = await read();
       expect(current.contentMd).toBe("# Plan\n\nfirst\ntyped in browser\n");
       const response = await app.request(path, {

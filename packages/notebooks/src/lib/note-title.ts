@@ -56,7 +56,7 @@ const closesFence = (line: string, fence: Fence): boolean => {
   return new RegExp(`^\\s{0,3}${marker}{${fence.length},}\\s*$`).test(line);
 };
 
-const findNoteTitleCandidate = (markdown: string | null | undefined): string | null => {
+const findNoteTitleCandidate = (markdown: string | null | undefined): { text: string; heading: boolean } | null => {
   const lines = (markdown ?? "").replace(/\r\n?/g, "\n").split("\n");
   let fence: Fence | null = null;
   let fallback: string | null = null;
@@ -78,13 +78,13 @@ const findNoteTitleCandidate = (markdown: string | null | undefined): string | n
     const atxHeading = line.match(/^\s{0,3}#(?:[\t ]+|$)(.*)$/);
     if (atxHeading) {
       const heading = atxHeading[1]?.replace(/[\t ]+#+[\t ]*$/, "") ?? "";
-      if (normalizeNoteTitle(heading, "")) return heading;
+      if (normalizeNoteTitle(heading, "")) return { text: heading, heading: true };
       previousContentLine = null;
       continue;
     }
 
     if (/^\s{0,3}=+\s*$/.test(line) && previousContentLine !== null) {
-      if (normalizeNoteTitle(previousContentLine, "")) return previousContentLine;
+      if (normalizeNoteTitle(previousContentLine, "")) return { text: previousContentLine, heading: true };
       previousContentLine = null;
       continue;
     }
@@ -99,15 +99,19 @@ const findNoteTitleCandidate = (markdown: string | null | undefined): string | n
     }
   }
 
-  return fallback;
+  return fallback === null ? null : { text: fallback, heading: false };
 };
 
 export const hasUsableNoteTitle = (markdown: string | null | undefined): boolean => {
   const candidate = findNoteTitleCandidate(markdown);
-  return candidate !== null && normalizeNoteTitle(candidate, "").length > 0;
+  return candidate !== null && normalizeNoteTitle(candidate.text, "").length > 0;
 };
 
-export const deriveNoteTitle = (markdown: string | null | undefined): string => normalizeNoteTitle(findNoteTitleCandidate(markdown) ?? "");
+/** True when the title comes from a level-1 heading rather than the first content line. */
+export const hasNoteTitleHeading = (markdown: string | null | undefined): boolean => findNoteTitleCandidate(markdown)?.heading ?? false;
+
+export const deriveNoteTitle = (markdown: string | null | undefined): string =>
+  normalizeNoteTitle(findNoteTitleCandidate(markdown)?.text ?? "");
 
 export const createInitialNoteMarkdown = (title: string, content = ""): string => {
   const heading = `# ${normalizeNoteTitle(title)}\n`;

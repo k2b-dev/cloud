@@ -204,7 +204,8 @@ const printErrorLine = (value = "") => {
   process.stderr.write(`${value}\n`);
 };
 
-const isFlag = (value: string | undefined): boolean => Boolean(value?.startsWith("-"));
+/** A lone `-` is a value (stdin), not a flag: `--from -`. */
+const isFlag = (value: string | undefined): boolean => value !== "-" && Boolean(value?.startsWith("-"));
 
 const setFlag = (flags: CloudCliFlags, name: string, value: CloudCliFlagValue) => {
   const existing = flags[name];
@@ -910,9 +911,9 @@ ${[...modules, ...pluginModules].map((module) => `  ${module.name.padEnd(12)} ${
 Examples:
   cld login --server http://localhost:3000
   cld login --server https://cloud.example --device
-  cld --server http://localhost:3000 --token cld_... notebooks list
+  cld --server http://localhost:3000 --token cld_... notebooks ls
   cld profile set --server http://localhost:3000 --fd0 cloud-local-token --fd0-scope my-scope
-  cld notebooks tree <notebook>
+  cld notebooks cat <notebook>:<path>
 `,
     `cld
 
@@ -944,9 +945,9 @@ ${[...modules, ...pluginModules].map((module) => `  ${module.name.padEnd(12)} ${
 Beispiele:
   cld login --server http://localhost:3000
   cld login --server https://cloud.example --device
-  cld --server http://localhost:3000 --token cld_... notebooks list
+  cld --server http://localhost:3000 --token cld_... notebooks ls
   cld profile set --server http://localhost:3000 --fd0 cloud-local-token --fd0-scope my-scope
-  cld notebooks tree <notebook>
+  cld notebooks cat <notebook>:<path>
 `,
   );
 
