@@ -4,7 +4,12 @@ import type { MailAutomationStep } from "../contracts";
 import { bindMailWorkflow } from "../workflows/binder";
 import { buildMailWorkflowCatalog } from "../workflows/catalog";
 import { mailWorkflows } from "../workflows/module";
-import { buildIncomingAutomationWorkflowSource, incomingAutomationBudget, incomingAutomationHasAi } from "./incoming-automation-definition";
+import {
+  buildIncomingAutomationWorkflowSource,
+  incomingAutomationBudget,
+  incomingAutomationHasAi,
+  resolveIncomingAutomationFolders,
+} from "./incoming-automation-definition";
 
 const classifyId = "00000000-0000-4000-8000-000000000001";
 describe("incoming automation workflow compiler", () => {
@@ -241,5 +246,44 @@ describe("incoming automation workflow compiler", () => {
       }),
     );
     expect(bound.ok).toBe(true);
+  });
+});
+
+describe("guided move destinations", () => {
+  const folders = buildMailWorkflowCatalog({
+    folders: [
+      { id: "QkyqJ9", name: "IT & Entwicklung" },
+      { id: "Arch01", name: "Archive", path: "Archive" },
+      { id: "Arch02", name: "Archive", path: "Projects / Archive" },
+    ],
+    assignableUsers: [],
+  }).folders;
+  const move = (folderId: string): MailAutomationStep => ({
+    id: "00000000-0000-4000-8000-000000000031",
+    kind: "if",
+    condition: { sourceStepId: classifyId, operator: "equals", value: "Important" },
+    then: [],
+    else: [{ id: "00000000-0000-4000-8000-000000000032", kind: "mail_action", action: { kind: "move_to_folder", folderId } }],
+  });
+  const destination = (folderId: string): string => {
+    const resolved = resolveIncomingAutomationFolders([move(folderId)], folders);
+    if (!resolved.ok) return resolved.error.message;
+    const [branch] = resolved.data;
+    const [step] = branch?.kind === "if" ? branch.else : [];
+    return step?.kind === "mail_action" && step.action.kind === "move_to_folder" ? step.action.folderId : "";
+  };
+
+  test("stores the public ID for an ID or an exact name, also inside branches", () => {
+    expect(destination("QkyqJ9")).toBe("QkyqJ9");
+    expect(destination("IT & Entwicklung")).toBe("QkyqJ9");
+  });
+
+  test("names the field for an unknown or ambiguous folder", () => {
+    expect(destination("Newsletter")).toBe(
+      'Invalid incoming automation definition: steps.0.else.0.action.folderId: Unknown or inaccessible folder "Newsletter".',
+    );
+    expect(destination("Archive")).toBe(
+      'Invalid incoming automation definition: steps.0.else.0.action.folderId: Several folders are named "Archive"; use the folder ID.',
+    );
   });
 });
