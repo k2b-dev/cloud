@@ -18,6 +18,7 @@ export const clientEditorValues = (client?: OAuthClient) => ({
   specific: client?.accessMode === "specific",
   allowedUserIds: client?.accessUsers.map((user) => user.id) ?? [],
   allowedGroupIds: client?.accessGroups.map((group) => group.id) ?? [],
+  allowDeviceGrant: client?.allowDeviceGrant ?? false,
 });
 
 export type ClientEditorValues = ReturnType<typeof clientEditorValues>;
@@ -36,4 +37,5 @@ export const clientEditorUpdate = (values: ClientEditorValues) =>
     accessMode: values.specific ? "specific" : "profiles",
     allowedUserIds: values.specific ? values.allowedUserIds : [],
     allowedGroupIds: values.specific ? values.allowedGroupIds : [],
+    allowDeviceGrant: values.allowDeviceGrant,
   }) satisfies UpdateOAuthClient;

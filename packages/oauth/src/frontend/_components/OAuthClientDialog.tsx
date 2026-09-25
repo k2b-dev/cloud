@@ -84,6 +84,7 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
   const [specific, setSpecific] = createSignal(initial.specific);
   const [scopes, setScopes] = createSignal<OAuthScope[]>(initial.scopes);
   const [isPublic, setIsPublic] = createSignal(client()?.isPublic ?? false);
+  const [allowDeviceGrant, setAllowDeviceGrant] = createSignal(initial.allowDeviceGrant);
   const [users, setUsers] = createSignal<SelectedUser[]>(selectedUsersFromClient(client()));
   const [groups, setGroups] = createSignal<SelectedGroup[]>(selectedGroupsFromClient(client()));
 
@@ -142,6 +143,7 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
       specific: specific(),
       allowedUserIds: users().map((user) => user.id),
       allowedGroupIds: groups().map((group) => group.id),
+      allowDeviceGrant: isPublic() && allowDeviceGrant(),
     });
 
     if (props.mode === "create") {
@@ -222,6 +224,16 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
                 variant="input"
                 value={isPublic}
                 onValueChange={setIsPublic}
+              />
+            </Show>
+            <Show when={isPublic()}>
+              <CheckboxCard
+                label={t().deviceGrant}
+                description={t().deviceGrantDescription}
+                icon="ti ti-terminal-2"
+                variant="input"
+                value={allowDeviceGrant}
+                onValueChange={setAllowDeviceGrant}
               />
             </Show>
           </PanelDialog.Section>

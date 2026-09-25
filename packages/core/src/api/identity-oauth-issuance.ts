@@ -13,8 +13,9 @@ const UUID = z.string().uuid();
 const bounded = z.string().min(1).max(2_048);
 const AuthorizationCodeGrantSchema = z.object({ kind: z.literal("authorization_code"), code: bounded, nonce: UUID }).strict();
 const RefreshTokenGrantSchema = z.object({ kind: z.literal("refresh_token"), tokenId: UUID, nonce: UUID }).strict();
+const DeviceCodeGrantSchema = z.object({ kind: z.literal("device_code"), deviceAuthorizationId: UUID, nonce: UUID }).strict();
 const ClientCredentialsGrantSchema = z.object({ kind: z.literal("client_credentials"), grantId: UUID, nonce: UUID }).strict();
-const UserGrantSchema = z.discriminatedUnion("kind", [AuthorizationCodeGrantSchema, RefreshTokenGrantSchema]);
+const UserGrantSchema = z.discriminatedUnion("kind", [AuthorizationCodeGrantSchema, RefreshTokenGrantSchema, DeviceCodeGrantSchema]);
 const common = { expiresIn: z.literal(3_600) };
 const OAuthTokenRequestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("user_access"), grant: UserGrantSchema, ...common }).strict(),
@@ -127,6 +128,23 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           AND authority_issued_at IS NULL
           AND expires_at >= now()
         RETURNING client_id, user_id, scopes, audiences, resource, nonce
+      `;
+      grant = row ?? null;
+    } else if (params.request.grant.kind === "device_code") {
+      // Only a consumed authorization of a client that still allows the device grant can mint tokens.
+      const [row] = await db<GrantRow[]>`
+        UPDATE oauth.device_authorizations device
+        SET authority_issued_at = now()
+        FROM oauth.clients client
+        WHERE device.id = ${params.request.grant.deviceAuthorizationId}::uuid
+          AND device.authority_nonce = ${params.request.grant.nonce}::uuid
+          AND device.status = 'consumed'
+          AND device.authority_issued_at IS NULL
+          AND device.expires_at > now()
+          AND client.client_id = device.client_id
+          AND client.is_public
+          AND client.allow_device_grant
+        RETURNING device.client_id, device.user_id, device.scopes, device.audiences, NULL::text AS resource, NULL::text AS nonce
       `;
       grant = row ?? null;
     } else {

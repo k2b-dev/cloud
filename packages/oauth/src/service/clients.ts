@@ -33,6 +33,7 @@ type DbClient = {
   access_mode: string;
   registration_kind: string;
   is_public: boolean;
+  allow_device_grant: boolean;
   created_at: Date;
   created_by: string | null;
 };
@@ -85,6 +86,7 @@ const mapToClient = (row: DbClient, access: AccessPrincipals = { users: [], grou
   accessGroups: access.groups,
   registrationKind: row.registration_kind as OAuthClientRegistrationKind,
   isPublic: row.is_public,
+  allowDeviceGrant: row.allow_device_grant,
   createdAt: row.created_at.toISOString(),
   createdBy: row.created_by,
 });
@@ -216,7 +218,7 @@ export const list = async (params: { limit: number; offset: number; query?: stri
       OR position(lower(${query}) in lower(COALESCE(description, ''))) > 0
   `;
   const rows = await sql<DbClient[]>`
-    SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, created_at, created_by
+    SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, allow_device_grant, created_at, created_by
     FROM oauth.clients
     WHERE ${query}::text IS NULL
       OR position(lower(${query}) in lower(name)) > 0
@@ -247,7 +249,7 @@ export const summary = async (): Promise<{ total: number; public: number; dynami
 export const get = async (params: { id: string; db?: typeof sql }): Promise<OAuthClient | null> => {
   const db = params.db ?? sql;
   const [row] = await db<DbClient[]>`
-    SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, created_at, created_by
+    SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, allow_device_grant, created_at, created_by
     FROM oauth.clients
     WHERE id = ${params.id}
   `;
@@ -258,7 +260,7 @@ export const get = async (params: { id: string; db?: typeof sql }): Promise<OAut
 
 const getForUpdate = async (params: { id: string; db: typeof sql }): Promise<OAuthClient | null> => {
   const [row] = await params.db<DbClient[]>`
-    SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, created_at, created_by
+    SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, allow_device_grant, created_at, created_by
     FROM oauth.clients
     WHERE id = ${params.id}
     FOR UPDATE
@@ -273,7 +275,7 @@ const getForUpdate = async (params: { id: string; db: typeof sql }): Promise<OAu
  */
 export const getByClientId = async (params: { clientId: string }): Promise<OAuthClient | null> => {
   const [row] = await sql<DbClient[]>`
-    SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, created_at, created_by
+    SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, allow_device_grant, created_at, created_by
     FROM oauth.clients
     WHERE client_id = ${params.clientId}
   `;
@@ -319,10 +321,12 @@ export const create = async (params: {
     isPublic: data.isPublic,
   });
   if (!serviceAccountResult.ok) return serviceAccountResult;
+  const deviceGrantResult = validateDeviceGrant({ allowDeviceGrant: data.allowDeviceGrant ?? false, isPublic: data.isPublic });
+  if (!deviceGrantResult.ok) return deviceGrantResult;
 
   return sql.begin(async (tx) => {
     const [row] = await tx<DbClient[]>`
-      INSERT INTO oauth.clients (name, description, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, is_public, client_secret_hash, created_by)
+      INSERT INTO oauth.clients (name, description, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, is_public, allow_device_grant, client_secret_hash, created_by)
       VALUES (
         ${data.name},
         ${data.description ?? null},
@@ -334,10 +338,11 @@ export const create = async (params: {
         ${allowedProfilesLiteral}::text[],
         ${accessMode},
         ${data.isPublic},
+        ${data.allowDeviceGrant ?? false},
         ${clientSecretHash},
         ${actor.id}
       )
-      RETURNING id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, created_at, created_by
+      RETURNING id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, allow_device_grant, created_at, created_by
     `;
 
     if (!row) return { ok: false, error: "Failed to create client", status: 500 } as const;
@@ -352,7 +357,7 @@ export const create = async (params: {
         outcome: "allowed",
         actor: { userId: actor.id, uid: actor.uid, provider: actor.provider, roles: actor.roles },
         target: { type: "oauth_client", id: created.id, label: created.name },
-        metadata: { clientId: created.clientId, isPublic: created.isPublic },
+        metadata: { clientId: created.clientId, isPublic: created.isPublic, allowDeviceGrant: created.allowDeviceGrant },
       },
       tx,
     );
@@ -394,7 +399,7 @@ export const registerDynamic = async (params: { name: string; redirectUris: stri
         NULL,
         NULL
       )
-      RETURNING id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, created_at, created_by
+      RETURNING id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, allow_device_grant, created_at, created_by
     `;
     if (!row) throw new Error("Failed to register dynamic OAuth client");
 
@@ -478,6 +483,9 @@ export const update = async (params: {
     if (!principalResult.ok) return principalResult;
     const serviceAccountResult = await validateServiceAccountBinding({ serviceAccountId, isPublic: existing.isPublic });
     if (!serviceAccountResult.ok) return serviceAccountResult;
+    const allowDeviceGrant = data.allowDeviceGrant ?? existing.allowDeviceGrant;
+    const deviceGrantResult = validateDeviceGrant({ allowDeviceGrant, isPublic: existing.isPublic });
+    if (!deviceGrantResult.ok) return deviceGrantResult;
 
     await tx`
       UPDATE oauth.clients
@@ -490,7 +498,8 @@ export const update = async (params: {
         audiences = ${audiencesLiteral}::text[],
         service_account_id = ${serviceAccountId}::uuid,
         allowed_profiles = ${allowedProfilesLiteral}::text[],
-        access_mode = ${accessMode}
+        access_mode = ${accessMode},
+        allow_device_grant = ${allowDeviceGrant}
       WHERE id = ${id}
     `;
 
@@ -501,7 +510,7 @@ export const update = async (params: {
         outcome: "allowed",
         actor: { userId: actor.id, uid: actor.uid, provider: actor.provider, roles: actor.roles },
         target: { type: "oauth_client", id: existing.id, label: data.name ?? existing.name },
-        metadata: { clientId: existing.clientId },
+        metadata: { clientId: existing.clientId, allowDeviceGrant },
       },
       tx,
     );
@@ -598,7 +607,7 @@ export const regenerateSecret = async (params: {
  */
 export const validateCredentials = async (params: { clientId: string; clientSecret?: string }): Promise<OAuthClient | null> => {
   const [row] = await sql<(DbClient & { client_secret_hash: string | null })[]>`
-    SELECT id, name, description, client_id, client_secret_hash, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, created_at, created_by
+    SELECT id, name, description, client_id, client_secret_hash, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, allow_device_grant, created_at, created_by
     FROM oauth.clients
     WHERE client_id = ${params.clientId}
   `;
@@ -695,6 +704,15 @@ export const canAuthorizeUser = async (params: { client: OAuthClient; userId: st
 
   return row?.allowed === true;
 };
+
+/** The device grant has no redirect to bind a code to, so only public clients may opt in. */
+const validateDeviceGrant = (params: { allowDeviceGrant: boolean; isPublic: boolean }): MutationResult<void> =>
+  params.allowDeviceGrant && !params.isPublic
+    ? { ok: false, error: "Only public clients can use the device authorization grant", status: 400 }
+    : { ok: true, data: undefined };
+
+/** Whether a client may start and redeem RFC 8628 device authorizations. */
+export const canUseDeviceGrant = (client: OAuthClient): boolean => client.isPublic && client.allowDeviceGrant;
 
 const validateServiceAccountBinding = async (params: {
   serviceAccountId: string | null;

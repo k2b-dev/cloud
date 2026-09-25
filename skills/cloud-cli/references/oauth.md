@@ -26,7 +26,7 @@ cld oauth clients create \
   --scope profile
 ```
 
-Use `--public` only for a client that cannot keep a secret. Confidential clients print their secret once at creation or regeneration; store it before continuing. Use `cld oauth clients update <client> --help` to change redirect URIs, allowed scopes, profiles, users, groups, or the linked service account.
+Use `--public` only for a client that cannot keep a secret. Add `--device-grant` to a public client that signs in on machines without a browser (RFC 8628 device codes); `clients update <client> --disable-device-grant` turns it off again. Confidential clients cannot use the device grant. Confidential clients print their secret once at creation or regeneration; store it before continuing. Use `cld oauth clients update <client> --help` to change redirect URIs, allowed scopes, profiles, users, groups, or the linked service account.
 
 ## Sensitive changes
 

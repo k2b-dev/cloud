@@ -18,6 +18,7 @@ const client = (overrides: Partial<OAuthClient> = {}): OAuthClient => ({
   accessGroups: [],
   registrationKind: "managed",
   isPublic: false,
+  allowDeviceGrant: false,
   createdAt: "2026-09-15T00:00:00Z",
   createdBy: null,
   ...overrides,

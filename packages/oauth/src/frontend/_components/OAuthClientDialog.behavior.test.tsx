@@ -20,6 +20,7 @@ const client = (overrides: Partial<OAuthClient> = {}): OAuthClient => ({
   accessGroups: [],
   registrationKind: "managed",
   isPublic: false,
+  allowDeviceGrant: false,
   createdAt: "2026-09-15T00:00:00Z",
   createdBy: null,
   ...overrides,
@@ -123,6 +124,47 @@ describe("OAuth client editor DOM", () => {
       close?.click();
       expect(closed).toBe(0);
       expect(submissions).toHaveLength(1);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("device sign-in is offered only for public clients and saves its choice", async () => {
+    const dom = createDomTestHarness();
+    delegateEvents(["click", "input", "change"], dom.document);
+    const { default: OAuthClientDialog } = await import("./OAuthClientDialog");
+    const submissions: UpdateOAuthClient[] = [];
+    const confidential = render(
+      () => <OAuthClientDialog mode="edit" client={client()} close={() => {}} loading={() => false} onSubmit={async () => {}} />,
+      dom.root,
+    );
+    expect(dom.root.textContent).not.toContain("Device sign-in");
+    confidential();
+
+    const dispose = render(
+      () => (
+        <OAuthClientDialog
+          mode="edit"
+          client={client({ isPublic: true, accessMode: "profiles", accessUsers: [] })}
+          close={() => {}}
+          loading={() => false}
+          onSubmit={async (value) => {
+            submissions.push(value);
+          }}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const card = Array.from(dom.root.querySelectorAll("label")).find((node) => node.textContent?.includes("Device sign-in"));
+      const checkbox = card?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      if (!checkbox) throw new Error("Device sign-in checkbox missing");
+      expect(checkbox.checked).toBe(false);
+      checkbox.click();
+      button(dom.root, "Save").click();
+      await Promise.resolve();
+      expect(submissions[0]?.allowDeviceGrant).toBe(true);
     } finally {
       dispose();
       dom.cleanup();

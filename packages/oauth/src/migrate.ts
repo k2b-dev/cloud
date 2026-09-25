@@ -63,6 +63,10 @@ export const migrate = async (): Promise<void> => {
     ADD COLUMN IF NOT EXISTS authorized_at TIMESTAMPTZ
   `.simple();
   await sql`
+    ALTER TABLE oauth.clients
+    ADD COLUMN IF NOT EXISTS allow_device_grant BOOLEAN NOT NULL DEFAULT false
+  `.simple();
+  await sql`
     DO $$
     DECLARE
       delete_action "char";
@@ -317,6 +321,36 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ oauth client credentials authority grants");
 
+  // RFC 8628 device authorizations. Only hashes of the device and user codes are stored.
+  await sql`
+    CREATE TABLE IF NOT EXISTS oauth.device_authorizations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      device_code_hash TEXT NOT NULL UNIQUE,
+      user_code_hash TEXT NOT NULL UNIQUE,
+      client_id TEXT NOT NULL REFERENCES oauth.clients(client_id) ON DELETE CASCADE,
+      scopes TEXT[] NOT NULL,
+      audiences TEXT[] NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      decided_at TIMESTAMPTZ,
+      authority_nonce UUID,
+      authority_issued_at TIMESTAMPTZ,
+      CONSTRAINT oauth_device_authorizations_status_check CHECK (status IN ('pending', 'approved', 'denied', 'consumed')),
+      CONSTRAINT oauth_device_authorizations_decision_check CHECK (status = 'pending' OR user_id IS NOT NULL)
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_oauth_device_authorizations_expires
+    ON oauth.device_authorizations(expires_at)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_oauth_device_authorizations_client
+    ON oauth.device_authorizations(client_id)
+  `.simple();
+  console.log("  ✓ oauth.device_authorizations table");
+
   await sql`
     DO $$
     BEGIN
@@ -332,6 +366,7 @@ export const migrate = async (): Promise<void> => {
           access_mode = 'profiles',
           registration_kind = 'first_party',
           is_public = true,
+          allow_device_grant = true,
           client_secret_hash = NULL
         WHERE client_id = 'cloud-cli';
       ELSIF EXISTS (
@@ -352,6 +387,7 @@ export const migrate = async (): Promise<void> => {
           access_mode = 'profiles',
           registration_kind = 'first_party',
           is_public = true,
+          allow_device_grant = true,
           client_secret_hash = NULL
         WHERE name = 'Cloud CLI'
           AND registration_kind <> 'dynamic';
@@ -366,7 +402,8 @@ export const migrate = async (): Promise<void> => {
           allowed_profiles,
           access_mode,
           registration_kind,
-          is_public
+          is_public,
+          allow_device_grant
         )
         VALUES (
           'Cloud CLI',
@@ -378,6 +415,7 @@ export const migrate = async (): Promise<void> => {
           ARRAY['user', 'guest'],
           'profiles',
           'first_party',
+          true,
           true
         );
       END IF;
