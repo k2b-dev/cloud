@@ -285,6 +285,23 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(feedbackCss).toContain(".k2b-ui .k2b-dialog__close:focus-visible {");
     expect(indexCss).toContain(".k2b-ui .k2b-bottom-sheet__handle:focus-visible {");
     expect(indexCss).not.toMatch(/\.k2b-bottom-sheet__handle:focus\s*\{/);
+    const buttonRule = indexCss.match(/\.k2b-ui \.k2b-button:focus-visible \{([^}]*)\}/)?.[1] ?? "";
+    expect(buttonRule).toMatch(/outline:\s*2px solid var\(--k2b-focus-ring\)/);
+  });
+
+  test("extends a closing bottom sheet footer through the bottom safe area", () => {
+    const sheet = ".k2b-ui .k2b-bottom-sheet-viewport > .k2b-panel-dialog";
+    const escape = (selector: string) => selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rule = (selector: string) => indexCss.match(new RegExp(`${escape(selector)} \\{([^}]*)\\}`))?.[1] ?? "";
+    // The footer, not the panel below it, carries the inset: its surface reaches the edge.
+    expect(rule(`${sheet}:has(> .k2b-panel-dialog__footer:last-child)`)).toMatch(/padding-bottom:\s*0;/);
+    expect(rule(`${sheet} > .k2b-panel-dialog__footer:last-child`)).toMatch(
+      /padding-bottom:\s*calc\(1rem \+ env\(safe-area-inset-bottom, 0px\)\);/,
+    );
+    // Sheets without a closing footer keep the inset on the panel.
+    expect(rule(sheet)).toMatch(/padding-bottom:\s*env\(safe-area-inset-bottom, 0px\);/);
+    expect(rule(".k2b-ui .k2b-dialog.k2b-bottom-sheet-frame")).toMatch(/bottom:\s*0;/);
+    expect(rule(".k2b-ui .k2b-dialog.k2b-bottom-sheet-frame")).toMatch(/border-bottom:\s*0;/);
   });
 
   test("scrolls panel dialog bodies instead of shrinking their content", () => {

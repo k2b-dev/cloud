@@ -52,8 +52,8 @@
   z-index: 100;
 }
 
-/* The dialog element only receives focus programmatically (showModal without
- * an initial target); it is never a tab stop, so it never shows a ring. */
+/* The dialog element only receives focus programmatically (a bottom sheet
+ * without an input); it is never a tab stop, so it never shows a ring. */
 .k2b-ui .k2b-dialog:focus {
   outline: none;
 }

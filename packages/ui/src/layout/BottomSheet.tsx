@@ -3,12 +3,18 @@ import type { OpenDialogOptions } from "../feedback/dialog-core";
 import { useUiMessages } from "../intl/messages";
 import PanelDialog from "./PanelDialog";
 
-/** Initial focus goes to the first input of the top sheet; the drag handle never
- * takes it, so a sheet that opens without a user gesture shows no focus ring. */
-const sheetInitialFocus = (dialog: HTMLDialogElement): HTMLElement | null =>
-  dialog.lastElementChild?.querySelector<HTMLElement>(
+/** Initial focus goes to the first input of the top sheet, otherwise to the
+ * dialog element itself. Native `showModal()` focuses the first focusable
+ * descendant, which is the drag handle; iOS shows a ring for that programmatic
+ * focus, so the sheet moves it to the ring-less dialog before the next paint. */
+const sheetInitialFocus = (dialog: HTMLDialogElement): HTMLElement => {
+  const input = dialog.lastElementChild?.querySelector<HTMLElement>(
     "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])",
-  ) ?? null;
+  );
+  if (input) return input;
+  dialog.tabIndex = -1;
+  return dialog;
+};
 
 export const bottomSheetOptions = {
   panelClassName: "k2b-dialog k2b-bottom-sheet-frame",
