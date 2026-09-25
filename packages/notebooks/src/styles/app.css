@@ -65,6 +65,22 @@
     transition: none;
   }
 }
+/* The formatting strip scrolls horizontally, so it clips anything painted
+   outside a button. Keyboard focus therefore stays inside the button: a blue
+   icon on a faint blue tint instead of the shared outer ring. The selector
+   outranks the ghost hover rule so focus stays visible under the pointer. */
+.k2b-ui .notebooks-editor-toolbar .k2b-button.k2b-icon-button:not(:disabled):focus-visible {
+  outline: none;
+  box-shadow: none;
+  color: var(--k2b-focus-ring);
+  background: color-mix(in srgb, var(--k2b-focus-ring) 12%, transparent);
+}
+@media (forced-colors: active) {
+  .k2b-ui .notebooks-editor-toolbar .k2b-button.k2b-icon-button:not(:disabled):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
 .notebook-book-content {
   width: 100%;
   max-width: 80ch;
