@@ -16,9 +16,9 @@ const tones = {
   warning: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
 } as const;
 
-function Heading(props: { icon: string; tone: keyof typeof tones; title: string; children?: JSX.Element }) {
+function Heading(props: { icon: string; tone: keyof typeof tones; title: string; last?: boolean; children?: JSX.Element }) {
   return (
-    <div class="mb-5 flex items-start gap-3">
+    <div class={`flex items-start gap-3 ${props.last ? "" : "mb-5"}`}>
       <span
         class={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] ${tones[props.tone]}`}
         aria-hidden="true"
@@ -102,12 +102,12 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
             {(view) => (
               <Switch>
                 <Match when={view().outcome === "approved"}>
-                  <Heading icon="ti ti-circle-check" tone="success" title={t().deviceApprovedTitle}>
+                  <Heading icon="ti ti-circle-check" tone="success" title={t().deviceApprovedTitle} last>
                     <p class="mt-1 text-sm text-dimmed">{t().deviceApprovedBody}</p>
                   </Heading>
                 </Match>
                 <Match when={view().outcome === "denied"}>
-                  <Heading icon="ti ti-circle-x" tone="danger" title={t().deviceDeniedTitle}>
+                  <Heading icon="ti ti-circle-x" tone="danger" title={t().deviceDeniedTitle} last>
                     <p class="mt-1 text-sm text-dimmed">{t().deviceDeniedBody}</p>
                   </Heading>
                 </Match>
@@ -120,7 +120,7 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
                   </ButtonLink>
                 </Match>
                 <Match when={view().outcome === "blocked"}>
-                  <Heading icon="ti ti-lock" tone="danger" title={t().authorizationFailed}>
+                  <Heading icon="ti ti-lock" tone="danger" title={t().authorizationFailed} last>
                     <p class="mt-1 text-sm text-dimmed">{view().message}</p>
                   </Heading>
                 </Match>
