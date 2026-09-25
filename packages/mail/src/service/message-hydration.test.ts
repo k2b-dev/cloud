@@ -2,6 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { sanitizeIncomingMailHtml, sanitizeIncomingMailHtmlWithRemoteImages } from "./message-hydration";
 
 describe("incoming mail HTML", () => {
+  test("keeps table cell and button backgrounds so white button text stays readable", () => {
+    const sanitized = sanitizeIncomingMailHtml(`
+      <table><tr><td bgcolor="#141413" style="border-radius:10px;background:#141413;">
+        <p style="background: #141413; color: #ffffff;"><a href="https://example.com/sign-in" style="color: white;">Sign in</a></p>
+      </td></tr></table>
+      <div style="background: url(https://tracker.example/pixel.png)">tracked</div>`);
+
+    expect(sanitized).toContain('bgcolor="#141413"');
+    expect(sanitized).toContain("background:#141413");
+    expect(sanitized).toMatch(/background:\s*#141413;\s*color:\s*#ffffff/);
+    expect(sanitized).not.toContain("tracker.example");
+  });
+
   test("removes executable content and remote tracking images", () => {
     const sanitized = sanitizeIncomingMailHtml(`
       <script>alert('xss')</script>

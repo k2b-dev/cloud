@@ -1,4 +1,6 @@
 export const EMAIL_INLINE_STYLE_PROPERTIES = [
+  // Email templates set button and cell colours with the `background` shorthand; url() stays blocked by the value rule.
+  "background",
   "background-color",
   "border",
   "border-bottom",

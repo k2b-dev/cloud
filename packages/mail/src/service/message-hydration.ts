@@ -113,10 +113,11 @@ const incomingAllowedAttributes: Record<string, string[]> = {
   blockquote: ["class", "type", "style"],
   div: ["class", "style"],
   img: ["src", "alt", "title", "width", "height", "data-mail-remote-image", "style"],
-  table: ["cellpadding", "cellspacing", "width", "align", "border", "style"],
-  td: ["width", "align", "valign", "colspan", "rowspan", "style"],
-  th: ["width", "align", "valign", "colspan", "rowspan", "style"],
-  tr: ["align", "valign", "style"],
+  // `bgcolor` is how table-based email layouts colour cells and buttons, often alongside white text.
+  table: ["cellpadding", "cellspacing", "width", "align", "border", "bgcolor", "style"],
+  td: ["width", "align", "valign", "colspan", "rowspan", "bgcolor", "style"],
+  th: ["width", "align", "valign", "colspan", "rowspan", "bgcolor", "style"],
+  tr: ["align", "valign", "bgcolor", "style"],
 };
 
 const MAX_REMOTE_IMAGE_COUNT = 64;
