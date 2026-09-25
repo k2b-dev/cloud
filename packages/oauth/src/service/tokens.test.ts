@@ -703,6 +703,7 @@ suite("OAuth resource access tokens", () => {
       accessGroups: [],
       registrationKind: "managed",
       isPublic: true,
+      allowDeviceGrant: false,
       createdAt: new Date().toISOString(),
       createdBy: null,
     } satisfies OAuthClient;

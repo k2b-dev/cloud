@@ -12,9 +12,11 @@ import {
   DynamicClientRegistrationRequestSchema,
   DynamicClientRegistrationResponseSchema,
   ErrorResponseSchema,
+  type OAuthClient,
   type OAuthScope,
 } from "@/contracts";
 import { oauth } from "./service/oauth";
+import type { OAuthUserGrantReference } from "./service/token-authority";
 
 const log = logger("oauth");
 
@@ -28,6 +30,7 @@ const DEFAULT_AUTHORIZATION_SCOPES: OAuthScope[] = ["openid"];
 const PKCE_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 const DYNAMIC_REGISTRATION_MAX_BYTES = 8 * 1024;
 const OAUTH_FORM_MAX_BYTES = 16 * 1024;
+const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const isOAuthScope = (value: string): value is OAuthScope => OAUTH_SCOPES.includes(value as OAuthScope);
 
 const parseScopes = (value: string | undefined): string[] =>
@@ -139,7 +142,37 @@ const TokenBodySchema = z.discriminatedUnion("grant_type", [
     scope: z.string().optional(),
     resource: z.string().optional(),
   }),
+  z.object({
+    grant_type: z.literal(DEVICE_CODE_GRANT_TYPE),
+    device_code: z.string().min(1).max(256),
+    client_id: z.string().min(1).optional(),
+    client_secret: z.string().optional(),
+    resource: z.string().optional(),
+  }),
 ]);
+
+const DeviceAuthorizationBodySchema = z.object({
+  client_id: z.string().min(1).optional(),
+  client_secret: z.string().optional(),
+  scope: z.string().optional(),
+});
+
+const DeviceAuthorizationResponseSchema = z.object({
+  device_code: z.string(),
+  user_code: z.string(),
+  verification_uri: z.string(),
+  verification_uri_complete: z.string(),
+  expires_in: z.number(),
+  interval: z.number(),
+});
+
+const DEVICE_POLL_ERROR_DESCRIPTIONS = {
+  invalid_grant: "Device code is invalid, expired, or already used",
+  authorization_pending: "The user has not yet approved or denied the request",
+  slow_down: "Polling too fast; increase the interval by 5 seconds",
+  access_denied: "The user denied the request",
+  expired_token: "Device code has expired; start a new sign-in",
+} as const;
 
 const TokenResponseSchema = z.object({
   access_token: z.string(),
@@ -246,6 +279,74 @@ const RevokeTokenBodySchema = z.object({
   client_id: z.string().min(1).optional(),
   client_secret: z.string().optional(),
 });
+
+/**
+ * Issue user tokens for a consumed single-use grant (authorization code or device code)
+ * after re-checking that the client, account, and access rules still allow it.
+ */
+const issueUserGrant = async (
+  c: Context<AuthContext>,
+  grant: {
+    client: OAuthClient;
+    userId: string;
+    scopes: OAuthScope[];
+    audiences: string[];
+    resource: string | null;
+    authorityGrant: OAuthUserGrantReference;
+    grantName: "Authorization code" | "Device code";
+  },
+) => {
+  const { client } = grant;
+  const issuer = await getIssuer();
+  try {
+    const allowedAudiences = new Set(["cloud", client.clientId, ...client.audiences]);
+    if (
+      grant.scopes.some((scope) => !client.scopes.includes(scope)) ||
+      (client.registrationKind !== "dynamic" && grant.audiences.some((audience) => !allowedAudiences.has(audience))) ||
+      !oauth.clients.validateResource(client, grant.resource ?? undefined, issuer)
+    ) {
+      return tokenError(c, "invalid_grant", `${grant.grantName} grant is no longer allowed`);
+    }
+    const user = await accounts.users.get({ id: grant.userId });
+    if (
+      !user ||
+      isAccountExpired(user.accountExpires) ||
+      !(await isAccountCategoryAllowed(user)) ||
+      !(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))
+    ) {
+      return tokenError(c, "access_denied", "User is not allowed to access this client", 403);
+    }
+
+    const tokens = await oauth.tokens.createTokens({
+      userId: grant.userId,
+      client,
+      scopes: grant.scopes,
+      audiences: grant.audiences,
+      resource: grant.resource,
+      authorityGrant: grant.authorityGrant,
+      issueRefreshToken: true,
+    });
+
+    return c.json({
+      access_token: tokens.accessToken,
+      token_type: "Bearer" as const,
+      expires_in: tokens.expiresIn,
+      ...(tokens.idToken ? { id_token: tokens.idToken } : {}),
+      scope: tokens.scope,
+      ...(tokens.refreshToken ? { refresh_token: tokens.refreshToken } : {}),
+    });
+  } catch (err) {
+    if (err instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
+      return tokenError(c, "invalid_grant", `${grant.grantName} grant is no longer allowed`);
+    }
+    log.error("Failed to generate tokens", {
+      error: err instanceof Error ? err.message : String(err),
+      clientId: client.clientId,
+      userId: grant.userId,
+    });
+    return tokenError(c, "server_error", "Token generation failed. Please try again or contact an administrator.", 500);
+  }
+};
 
 /** OAuth 2.0 / OpenID Connect routes mounted at root-level standard paths. */
 const app = new Hono<AuthContext>()
@@ -463,11 +564,62 @@ const app = new Hono<AuthContext>()
     },
   )
   .post(
+    "/oauth/device_authorization",
+    describeRoute({
+      tags: ["OAuth"],
+      summary: "Device authorization endpoint",
+      description:
+        "Starts an RFC 8628 device authorization for a public client that is enabled for the device grant. The user approves the returned user code at the verification URI.",
+      responses: {
+        200: jsonResponse(DeviceAuthorizationResponseSchema, "Device authorization"),
+        400: jsonResponse(TokenErrorResponseSchema, "Invalid request"),
+        401: jsonResponse(TokenErrorResponseSchema, "Invalid client"),
+        413: jsonResponse(TokenErrorResponseSchema, "Request body too large"),
+      },
+    }),
+    noStore,
+    rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }),
+    oauthFormLimit,
+    openApiValidator("form", DeviceAuthorizationBodySchema, (result, c: Context<AuthContext>) => {
+      if (!result.success) return tokenError(c, "invalid_request", "Device authorization request validation failed");
+    }),
+    async (c) => {
+      const body = c.req.valid("form");
+      const credentials = resolveClientCredentials(c.req.header("Authorization"), body);
+      if (!credentials.ok) {
+        return credentials.error === "invalid_client"
+          ? invalidClient(c, credentials.description)
+          : tokenError(c, credentials.error, credentials.description);
+      }
+      const client = await oauth.clients.validateCredentials({ clientId: credentials.clientId, clientSecret: credentials.clientSecret });
+      if (!client) return invalidClient(c);
+      if (!oauth.clients.canUseDeviceGrant(client)) {
+        return tokenError(c, "unauthorized_client", "Client is not allowed to use the device authorization grant");
+      }
+      const scopes = resolveRequestedScopes(client.scopes, body.scope);
+      if (!scopes) return tokenError(c, "invalid_scope", "Requested scope is not allowed for this client");
+
+      const issuer = await getIssuer();
+      const started = await oauth.device.create({ client, scopes });
+      const userCode = oauth.device.formatUserCode(started.userCode);
+      const verificationUri = `${issuer}/oauth/device`;
+      return c.json({
+        device_code: started.deviceCode,
+        user_code: userCode,
+        verification_uri: verificationUri,
+        verification_uri_complete: `${verificationUri}?user_code=${encodeURIComponent(userCode)}`,
+        expires_in: started.expiresIn,
+        interval: started.interval,
+      });
+    },
+  )
+  .post(
     "/oauth/token",
     describeRoute({
       tags: ["OAuth"],
       summary: "Token endpoint",
-      description: "Exchange authorization code for access token and optionally id_token.",
+      description:
+        "Exchange an authorization code, refresh token, client credentials, or approved device code for an access token and optionally id_token.",
       responses: {
         200: jsonResponse(TokenResponseSchema, "Token response"),
         400: jsonResponse(TokenErrorResponseSchema, "Invalid request"),
@@ -612,6 +764,24 @@ const app = new Hono<AuthContext>()
         });
       }
 
+      if (body.grant_type === DEVICE_CODE_GRANT_TYPE) {
+        if (!oauth.clients.canUseDeviceGrant(client)) {
+          return tokenError(c, "unauthorized_client", "Client is not allowed to use the device authorization grant");
+        }
+        if (body.resource) return tokenError(c, "invalid_target", "The device grant does not accept a resource");
+        const result = await oauth.device.poll({ deviceCode: body.device_code, clientId: client.clientId });
+        if (!result.ok) return tokenError(c, result.error, DEVICE_POLL_ERROR_DESCRIPTIONS[result.error]);
+        return issueUserGrant(c, {
+          client,
+          userId: result.userId,
+          scopes: result.scopes,
+          audiences: result.audiences,
+          resource: null,
+          authorityGrant: result.authorityGrant,
+          grantName: "Device code",
+        });
+      }
+
       const { code, redirect_uri, code_verifier } = body;
 
       const result = await oauth.codes.consume({
@@ -627,55 +797,15 @@ const app = new Hono<AuthContext>()
         return tokenError(c, "invalid_grant", "Invalid or expired authorization code");
       }
 
-      const issuer = await getIssuer();
-      try {
-        const allowedAudiences = new Set(["cloud", result.client.clientId, ...result.client.audiences]);
-        if (
-          result.scopes.some((scope) => !result.client.scopes.includes(scope)) ||
-          (result.client.registrationKind !== "dynamic" && result.audiences.some((audience) => !allowedAudiences.has(audience))) ||
-          !oauth.clients.validateResource(result.client, result.resource ?? undefined, issuer)
-        ) {
-          return tokenError(c, "invalid_grant", "Authorization code grant is no longer allowed");
-        }
-        const user = await accounts.users.get({ id: result.userId });
-        if (
-          !user ||
-          isAccountExpired(user.accountExpires) ||
-          !(await isAccountCategoryAllowed(user)) ||
-          !(await oauth.clients.canAuthorizeUser({ client: result.client, userId: user.id, profile: user.profile }))
-        ) {
-          return tokenError(c, "access_denied", "User is not allowed to access this client", 403);
-        }
-
-        const tokens = await oauth.tokens.createTokens({
-          userId: result.userId,
-          client: result.client,
-          scopes: result.scopes,
-          audiences: result.audiences,
-          resource: result.resource,
-          authorityGrant: result.authorityGrant,
-          issueRefreshToken: true,
-        });
-
-        return c.json({
-          access_token: tokens.accessToken,
-          token_type: "Bearer" as const,
-          expires_in: tokens.expiresIn,
-          ...(tokens.idToken ? { id_token: tokens.idToken } : {}),
-          scope: tokens.scope,
-          ...(tokens.refreshToken ? { refresh_token: tokens.refreshToken } : {}),
-        });
-      } catch (err) {
-        if (err instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
-          return tokenError(c, "invalid_grant", "Authorization code grant is no longer allowed");
-        }
-        log.error("Failed to generate tokens", {
-          error: err instanceof Error ? err.message : String(err),
-          clientId: client_id,
-          userId: result.userId,
-        });
-        return tokenError(c, "server_error", "Token generation failed. Please try again or contact an administrator.", 500);
-      }
+      return issueUserGrant(c, {
+        client: result.client,
+        userId: result.userId,
+        scopes: result.scopes,
+        audiences: result.audiences,
+        resource: result.resource,
+        authorityGrant: result.authorityGrant,
+        grantName: "Authorization code",
+      });
     },
   )
   .post(

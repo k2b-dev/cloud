@@ -5,7 +5,7 @@ section: Platform
 order: 320
 description: OAuth 2.0 and OpenID Connect clients, callbacks, scopes, access rules, and secrets.
 tags: [oauth, oidc, identity]
-updated: 2026-09-15
+updated: 2026-09-25
 ---
 
 # OAuth
@@ -19,6 +19,9 @@ callbacks, scopes, access rules, and secret lifecycle separate.
 - Register one client for each external application and environment.
 - Choose a public client for software that cannot keep a secret, or a
   confidential client for a protected server-side application.
+- Turn on **Device sign-in** for a public client that runs where no browser is
+  available, such as a command-line tool on a server. People then approve it
+  by entering a short code at `/oauth/device`.
 - Register exact sign-in and optional logout callback URLs.
 - Limit the scopes, account profiles, users, and groups that may authorize the
   client.

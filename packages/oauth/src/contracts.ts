@@ -62,6 +62,7 @@ export const OAuthClientSchema = z.object({
   accessGroups: z.array(OAuthAccessGroupSchema),
   registrationKind: OAuthClientRegistrationKindSchema,
   isPublic: z.boolean(),
+  allowDeviceGrant: z.boolean(),
   createdAt: z.string(),
   createdBy: z.string().nullable(),
 });
@@ -97,6 +98,7 @@ export const CreateOAuthClientSchema = z.object({
   allowedUserIds: IdListSchema.default([]),
   allowedGroupIds: IdListSchema.default([]),
   isPublic: z.boolean().default(false),
+  allowDeviceGrant: z.boolean().optional(),
 });
 
 export const UpdateOAuthClientSchema = z.object({
@@ -111,6 +113,7 @@ export const UpdateOAuthClientSchema = z.object({
   accessMode: OAuthAccessModeSchema.optional(),
   allowedUserIds: IdListSchema.optional(),
   allowedGroupIds: IdListSchema.optional(),
+  allowDeviceGrant: z.boolean().optional(),
 });
 
 export type OAuthClient = z.infer<typeof OAuthClientSchema>;

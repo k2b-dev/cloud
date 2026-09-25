@@ -3,15 +3,17 @@ title: OAuth clients and flows
 navTitle: OAuth
 section: Identity and access
 order: 355
-description: Configure OAuth clients and choose authorization code or client credentials.
+description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-09-07
+updated: 2026-09-25
 ---
 
 # OAuth clients and flows
 
-Use authorization code when an integration acts for a person. Use client
-credentials when a service acts on one application resource.
+Use authorization code when an integration acts for a person. Use the device
+authorization grant when that person signs in on a machine without a usable
+browser, such as a server reached over SSH. Use client credentials when a
+service acts on one application resource.
 
 Both flows use the platform identity model. Applications receive `actor` and
 `accessSubject`; they do not verify OAuth tokens themselves.
@@ -24,8 +26,9 @@ Cloud has three client origins:
   7591 and authorized through explicit user consent.
 
 The first-party `cld` command uses Cloud's protected `cloud-cli` registration
-for login, refresh, and logout. It does not dynamically register or accept an
-alternate OAuth client ID. Dynamic registration is for clients without a prior
+for login, refresh, and logout. `cld login --device` uses the same
+registration through the device authorization grant. It does not dynamically
+register or accept an alternate OAuth client ID. Dynamic registration is for clients without a prior
 relationship with the Cloud instance.
 
 ## Authorization-code flow
@@ -104,6 +107,97 @@ The OpenID Connect `sub` claim is the immutable Cloud user UUID. Human-readable
 account names remain available through `uid`; changing a login name does not
 change the subject seen by clients.
 
+## Device authorization flow
+
+The device authorization grant ([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628))
+lets a person approve a sign-in on another device. The client shows a short
+code, and the person enters it in a browser where they are already signed in
+to Cloud. `cld login --device` uses this flow on headless machines.
+
+The flow uses:
+
+```text
+POST /oauth/device_authorization
+GET  /oauth/device
+POST /oauth/token
+```
+
+Only public clients with `allowDeviceGrant` enabled can use it. The first-party
+`cloud-cli` client is enabled. Managed public clients must opt in. Dynamic and
+confidential clients cannot. Other clients receive `unauthorized_client`.
+
+Start an authorization:
+
+```http
+POST /oauth/device_authorization
+Content-Type: application/x-www-form-urlencoded
+
+client_id=<client-id>&scope=openid%20offline_access%20read
+```
+
+```json
+{
+  "device_code": "<opaque device code>",
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://cloud.example/oauth/device",
+  "verification_uri_complete": "https://cloud.example/oauth/device?user_code=WDJB-MJHT",
+  "expires_in": 600,
+  "interval": 5
+}
+```
+
+The requested scopes must be allowed for the client. Without `scope`, Cloud
+requests `openid`. The user code has eight characters from an alphabet
+without `0`, `O`, `1`, and `I`. It is displayed as `XXXX-XXXX` and accepted
+without the dash or in lowercase. Both codes expire after ten minutes. Cloud
+stores only SHA-256 hashes of both codes.
+
+The person opens the verification URI, enters the code, and sees the client
+name, client ID, the code again, the requested scopes, and a warning to approve
+only codes they started themselves. The page requires a browser session. API
+keys and OAuth access tokens cannot approve a device. The client profile and
+access rules apply exactly as in the authorization-code flow. The approve or deny form carries
+a single-use confirmation token bound to that person, and cross-origin
+submissions are rejected. Cloud records both decisions in the audit log as
+`oauth.device.authorize`.
+
+Poll the token endpoint no faster than `interval`:
+
+```http
+POST /oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&
+device_code=<device code>&
+client_id=<client-id>
+```
+
+| Error | Meaning | Client action |
+| --- | --- | --- |
+| `authorization_pending` | Not yet approved or denied | Poll again after `interval` |
+| `slow_down` | Polled within five seconds of the previous poll | Add five seconds to the interval |
+| `access_denied` | The person denied the request | Stop |
+| `expired_token` | The ten minutes passed | Start again |
+| `invalid_grant` | Unknown code, another client's code, or already redeemed | Stop |
+
+After approval, the next poll returns the same token response as the
+authorization-code flow, including a rotating refresh token when
+`offline_access` was granted. A device code can mint tokens only once, and
+only for the client that started it. Core rechecks at issuance that the client
+still allows the grant.
+
+Rate limits:
+
+- `POST /oauth/device_authorization`: 10 requests per minute for each client IP
+  address;
+- code entry: after 10 wrong or expired codes, further entries from that IP
+  address or account are refused until 15 minutes after the first failure;
+- polling: one poll every five seconds for each device code; faster polls
+  receive `slow_down`.
+
+The OAuth app's background cleanup removes device authorizations one hour after
+expiry and immediately after their tokens are issued.
+
 ## Client-credentials flow
 
 The OAuth client must:
@@ -159,6 +253,7 @@ OAuth client creation supports:
 | `allowedUserIds` | `[]` | Users allowed in `specific` mode |
 | `allowedGroupIds` | `[]` | Direct or nested group members allowed in `specific` mode |
 | `isPublic` | `false` | Public client without a secret |
+| `allowDeviceGrant` | `false` | Allow the device authorization grant; public clients only |
 
 Supported scopes:
 

@@ -14,6 +14,7 @@ let cleanupTimer: ReturnType<typeof setInterval> | undefined;
 const cleanupOAuthStorage = async (): Promise<void> => {
   await Promise.all([
     oauth.codes.cleanup(),
+    oauth.device.cleanup(),
     oauth.refreshTokens.cleanup(),
     oauth.clients.cleanupUnusedDynamic(),
     oauth.tokens.cleanupAuthorityGrants(),
@@ -28,6 +29,7 @@ const router = new Hono<AuthContext>()
 
 router.get("/admin/oauth/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/oauth/consent/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/oauth/device/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/oauth/error/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "minimal" }));
 
 export default await app.start({

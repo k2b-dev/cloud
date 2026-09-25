@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-09-23
+updated: 2026-09-25
 ---
 
 # Deployment requirements
@@ -139,7 +139,7 @@ or mutate real data without approval.
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails require shared SMTP. | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
-| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. Discovery alone is insufficient. |
+| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device`. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
@@ -295,7 +295,10 @@ Notebook, or application-schema upgrade checks.
    checks Core's authority before its migrations. Check every service's private
    readiness and its registered public route; gateway health alone is not enough.
    The supplied Compose orders OAuth after Core, but does not impose that order
-   on every other application.
+   on every other application. Core signs device-authorization grants, so an
+   OAuth release with device sign-in needs Core from the same release; with an
+   older Core, device sign-in fails with `server_error` while other flows keep
+   working.
 3. Sign in again with the installation's normal account method. Check logout
    and re-login, an authorized app page, global search, a dashboard widget, and
    a Notebook edit that survives reconnect and reload. If OAuth is used, test an

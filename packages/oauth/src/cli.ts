@@ -92,6 +92,7 @@ const createInput = (flags: {
   allowedUserId: string[];
   allowedGroupId: string[];
   public: boolean;
+  deviceGrant: boolean;
 }): { name: string } & Record<string, unknown> => ({
   name: flags.name,
   ...compact({
@@ -106,6 +107,7 @@ const createInput = (flags: {
     allowedUserIds: flags.allowedUserId.length > 0 ? flags.allowedUserId : undefined,
     allowedGroupIds: flags.allowedGroupId.length > 0 ? flags.allowedGroupId : undefined,
     isPublic: flags.public ? true : undefined,
+    allowDeviceGrant: flags.deviceGrant ? true : undefined,
   }),
 });
 
@@ -128,6 +130,8 @@ const updateInput = (flags: {
   clearAllowedUsers: boolean;
   allowedGroupId: string[];
   clearAllowedGroups: boolean;
+  deviceGrant: boolean;
+  disableDeviceGrant: boolean;
 }): UpdateOAuthClient =>
   compact({
     name: flags.name,
@@ -141,6 +145,7 @@ const updateInput = (flags: {
     accessMode: flags.accessMode,
     allowedUserIds: flags.clearAllowedUsers ? [] : flags.allowedUserId.length > 0 ? flags.allowedUserId : undefined,
     allowedGroupIds: flags.clearAllowedGroups ? [] : flags.allowedGroupId.length > 0 ? flags.allowedGroupId : undefined,
+    allowDeviceGrant: flags.disableDeviceGrant ? false : flags.deviceGrant ? true : undefined,
   });
 
 export default defineCliCommands({
@@ -193,6 +198,7 @@ export default defineCliCommands({
         allowedUserId: flag.stringList({ name: "allowed-user-id", description: "Allowed user id. Repeat or comma-separate." }),
         allowedGroupId: flag.stringList({ name: "allowed-group-id", description: "Allowed group id. Repeat or comma-separate." }),
         public: flag.boolean({ description: "Create a public client without a secret" }),
+        deviceGrant: flag.boolean({ name: "device-grant", description: "Allow device sign-in (RFC 8628); public clients only" }),
       },
       async run({ ctx, flags }) {
         if (!flags.name) throw new Error("Missing required flag --name.");
@@ -236,6 +242,8 @@ export default defineCliCommands({
         clearAllowedUsers: flag.boolean({ name: "clear-allowed-users" }),
         allowedGroupId: flag.stringList({ name: "allowed-group-id" }),
         clearAllowedGroups: flag.boolean({ name: "clear-allowed-groups" }),
+        deviceGrant: flag.boolean({ name: "device-grant", description: "Allow device sign-in (RFC 8628); public clients only" }),
+        disableDeviceGrant: flag.boolean({ name: "disable-device-grant", description: "Stop allowing device sign-in" }),
       },
       async run({ ctx, args, flags }) {
         const client = await resolveClient(ctx, args.client);

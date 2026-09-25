@@ -161,6 +161,7 @@ export const clearOAuthVerifierCacheForTest = (): void => {
 export const getOpenIdConfiguration = (issuer: string) => ({
   issuer,
   authorization_endpoint: `${issuer}/oauth/authorize`,
+  device_authorization_endpoint: `${issuer}/oauth/device_authorization`,
   token_endpoint: `${issuer}/oauth/token`,
   registration_endpoint: `${issuer}/oauth/register`,
   userinfo_endpoint: `${issuer}/oauth/userinfo`,
@@ -199,7 +200,7 @@ export const getOpenIdConfiguration = (issuer: string) => ({
     "resource_id",
   ],
   code_challenge_methods_supported: ["S256"],
-  grant_types_supported: ["authorization_code", "refresh_token", "client_credentials"],
+  grant_types_supported: ["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:device_code"],
   resource_parameter_supported: true,
   // Authorization responses include RFC 9207 `iss`; keep its optional support
   // flag unadvertised until current loopback MCP clients preserve the value.

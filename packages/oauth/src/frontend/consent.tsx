@@ -7,20 +7,11 @@ import type { Context, Env } from "hono";
 import { ssr } from "../config";
 import { oauth } from "../service/oauth";
 import { oauthMessages } from "./messages";
+import { consentScopeLabel } from "./scope-labels";
 
 function localError<E extends Env>(c: Context<E>, description: string) {
   return c.redirect(`/oauth/error?error=invalid_request&error_description=${encodeURIComponent(description)}`);
 }
-
-const scopeLabel = (scope: string, t: ReturnType<typeof oauthMessages.resolve>["t"]): string => {
-  if (scope === "read") return t.scopeConsentRead;
-  if (scope === "write") return t.scopeConsentWrite;
-  if (scope === "offline_access") return t.scopeConsentOffline;
-  if (scope === "openid") return t.scopeConsentOpenId;
-  if (scope === "profile") return t.scopeConsentProfile;
-  if (scope === "email") return t.scopeConsentEmail;
-  return scope;
-};
 
 /** Browser confirmation for one validated dynamic-client authorization request. */
 export default ssr<AuthContext>(async (c) => {
@@ -70,7 +61,7 @@ export default ssr<AuthContext>(async (c) => {
               {request.scopes.map((scope) => (
                 <li class="flex items-start gap-2 text-sm text-secondary">
                   <i class="ti ti-check mt-0.5 text-emerald-600" aria-hidden="true" />
-                  <span>{scopeLabel(scope, t)}</span>
+                  <span>{consentScopeLabel(scope, t)}</span>
                 </li>
               ))}
             </ul>

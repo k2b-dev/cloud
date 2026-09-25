@@ -3,7 +3,8 @@ import { z } from "zod";
 
 export type OAuthUserGrantReference =
   | { kind: "authorization_code"; code: string; nonce: string }
-  | { kind: "refresh_token"; tokenId: string; nonce: string };
+  | { kind: "refresh_token"; tokenId: string; nonce: string }
+  | { kind: "device_code"; deviceAuthorizationId: string; nonce: string };
 
 export type OAuthClientCredentialsGrantReference = { kind: "client_credentials"; grantId: string; nonce: string };
 
