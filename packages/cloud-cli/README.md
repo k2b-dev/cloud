@@ -27,6 +27,17 @@ curl -fsSL https://cloud.example.com/cli | sh -s -- --no-skills
 curl -fsSL https://cloud.example.com/cli | sh -s -- --claude-symlink
 ```
 
+On a machine without a browser, such as a server reached over SSH, sign in
+with a code instead. Open the printed URL on your laptop or phone, sign in,
+and approve the code:
+
+```bash
+cld login --server https://cloud.example.com --device
+```
+
+In an SSH session or with `--no-open`, the normal `cld login` suggests
+`--device`. Run `cld login --help` for all options.
+
 Run it from the workspace without installing a binary:
 
 ```bash

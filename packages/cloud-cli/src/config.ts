@@ -12,6 +12,10 @@
  *   CLD_LOCALE            Output locale used when no `--locale` flag is given.
  *   CLD_RELEASE_BASE      Base URL for release assets (`cld update`).
  *   CLD_RELEASE_API_BASE  Base URL of the release metadata API (`cld update`).
+ *   SSH_CONNECTION / SSH_TTY
+ *                         Read only: mark an SSH session, where `cld login` suggests `--device`.
+ *   DISPLAY / WAYLAND_DISPLAY
+ *                         Read only: a Linux session without either cannot open a browser.
  *   GH_TOKEN / GITHUB_TOKEN
  *                         Optional GitHub token for release metadata requests (lifts the anonymous API rate limit); never sent to asset downloads.
  *   CLD_OUTPUT_DIR        Build only: output directory for the standalone binaries.
@@ -38,6 +42,9 @@ export const envToken = (): string | undefined => read("CLD_TOKEN");
 export const envLocale = (): string | undefined => read("CLD_LOCALE");
 export const envReleaseBase = (): string | undefined => read("CLD_RELEASE_BASE");
 export const envReleaseApiBase = (): string | undefined => read("CLD_RELEASE_API_BASE");
+/** Whether this terminal probably cannot open a local browser: an SSH session, or Linux without a display. */
+export const envLacksLocalBrowser = (): boolean =>
+  Boolean(read("SSH_CONNECTION") ?? read("SSH_TTY")) || (process.platform === "linux" && !read("DISPLAY") && !read("WAYLAND_DISPLAY"));
 export const envGithubToken = (): string | undefined => read("GH_TOKEN")?.trim() || read("GITHUB_TOKEN")?.trim() || undefined;
 
 /** Build-time knobs read by `scripts/build.ts`. */
