@@ -293,7 +293,7 @@ export default function VersionHistory(props: Props) {
   });
   const diffSummary = createMemo(() => summarizeDiff(diffRows()));
 
-  const selectedContentHtml = createMemo(() => markdown.renderSync(selectedVersionData()?.contentMd ?? ""));
+  const selectedContentHtml = createMemo(() => markdown.renderSync(selectedVersionData()?.contentMd ?? "", { notices: "minimal" }));
 
   return (
     <div class="flex min-h-0 flex-1 flex-col gap-2">

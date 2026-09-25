@@ -75,7 +75,7 @@ Notebooks shows some typed sequences as one symbol when you read or edit a note.
 
 ## Callouts {icon="message-circle"}
 
-Use callouts for context, decisions, warnings, and status that should be visible while scanning a note.
+Use callouts for context, decisions, warnings, and status that should be visible while scanning a note. A callout shows its type through color only, without a heading or icon. If readers need a label, start the text with one, such as `Risk:`.
 
 **Readable boxes**
 

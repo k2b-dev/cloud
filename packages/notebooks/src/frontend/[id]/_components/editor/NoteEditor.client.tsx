@@ -424,7 +424,7 @@ function EditorInstance(props: EditorInstanceProps) {
           editor.tablesExtension(props.notebookId),
           editor.imageExtension(props.notebookId),
           editor.listsExtension(),
-          editor.infoBlocksExtension(),
+          editor.infoBlocksExtension(locale()),
           editor.dataBlocksExtension(),
           blockPreviews.extension,
           editor.namedBlocksExtension(),

@@ -1,7 +1,8 @@
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { NOTICE_CARD_CLASSES, NOTICE_CARD_ICONS, type NoticeTone } from "@k2b/ui";
+import { NOTICE_CARD_CLASSES, type NoticeTone } from "@k2b/ui";
+import { bookRendererMessages } from "../../../lib/book-renderer-messages";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
@@ -17,28 +18,13 @@ type InfoBlockData = {
   content: string;
 };
 
-const blockConfig = {
-  note: {
-    label: "Note",
-    tone: "neutral",
-  },
-  info: {
-    label: "Info",
-    tone: "info",
-  },
-  success: {
-    label: "Success",
-    tone: "success",
-  },
-  warning: {
-    label: "Warning",
-    tone: "warning",
-  },
-  danger: {
-    label: "Danger",
-    tone: "danger",
-  },
-} as const satisfies Record<BlockType, { label: string; tone: NoticeTone }>;
+const blockTones = {
+  note: "neutral",
+  info: "info",
+  success: "success",
+  warning: "warning",
+  danger: "danger",
+} as const satisfies Record<BlockType, NoticeTone>;
 
 const parseInfoBlock = (text: string): InfoBlockData | null => {
   const match = text.match(/^:::(\w+)\s*\n([\s\S]*?)\n:::$/);
@@ -48,7 +34,7 @@ const parseInfoBlock = (text: string): InfoBlockData | null => {
   const content = match[2];
   if (!typeStr || content == null) return null;
   const type = typeStr.toLowerCase() as BlockType;
-  if (!blockConfig[type]) return null;
+  if (!blockTones[type]) return null;
 
   return { type, content: content.trim() };
 };
@@ -72,6 +58,7 @@ class InfoBlockWidget extends WidgetType {
   constructor(
     private blockData: InfoBlockData,
     private fromPos: number,
+    private label: string,
   ) {
     super();
   }
@@ -91,36 +78,23 @@ class InfoBlockWidget extends WidgetType {
       event.stopPropagation();
     };
 
-    const config = blockConfig[this.blockData.type];
-
+    // Tone colour only; the type name remains for screen readers.
     const block = document.createElement("div");
     block.className = NOTICE_CARD_CLASSES.root;
-    block.dataset.tone = config.tone;
+    block.dataset.tone = blockTones[this.blockData.type];
+    block.setAttribute("role", "note");
 
-    const inner = document.createElement("div");
-    inner.className = NOTICE_CARD_CLASSES.inner;
-
-    const icon = document.createElement("i");
-    icon.className = `${NOTICE_CARD_ICONS[config.tone]} ${NOTICE_CARD_CLASSES.icon}`;
-    icon.setAttribute("aria-hidden", "true");
-
-    const content = document.createElement("div");
-    content.className = NOTICE_CARD_CLASSES.content;
-
-    const label = document.createElement("p");
-    label.className = NOTICE_CARD_CLASSES.title;
-    label.textContent = config.label;
+    const label = document.createElement("span");
+    label.className = "sr-only";
+    label.textContent = `${this.label}: `;
 
     const contentDiv = document.createElement("div");
     contentDiv.className = NOTICE_CARD_CLASSES.body;
     contentDiv.innerHTML = renderContent(this.blockData.content);
     applyLigatures(contentDiv);
 
-    content.appendChild(label);
-    content.appendChild(contentDiv);
-    inner.appendChild(icon);
-    inner.appendChild(content);
-    block.appendChild(inner);
+    block.appendChild(label);
+    block.appendChild(contentDiv);
     container.appendChild(block);
     return container;
   }
@@ -129,6 +103,7 @@ class InfoBlockWidget extends WidgetType {
     return (
       other instanceof InfoBlockWidget &&
       other.fromPos === this.fromPos &&
+      other.label === this.label &&
       other.blockData.type === this.blockData.type &&
       other.blockData.content === this.blockData.content
     );
@@ -139,8 +114,9 @@ class InfoBlockWidget extends WidgetType {
   }
 
   override get estimatedHeight() {
+    // One 20px body line per source line plus the card's padding and border.
     const lines = this.blockData.content.split("\n").length;
-    return Math.max(60, lines * 20 + 40);
+    return lines * 20 + 26;
   }
 }
 
@@ -152,7 +128,7 @@ const BLOCK_REGEX = /^:::(\w+)\s*\n([\s\S]*?)\n:::$/gm;
  *  key (= which block contains the cursor) doesn't change. Doc
  *  changes are gated by `changesMightAffectBlocks` below — typing
  *  in prose without any `:` skips the rescan entirely. */
-const findInfoBlocks = (state: EditorState): CursorZoneState => {
+const findInfoBlocks = (state: EditorState, labels: Record<BlockType, string>): CursorZoneState => {
   const decorations: Range<Decoration>[] = [];
   const atomicDecorations: Range<Decoration>[] = [];
   const ranges: { from: number; to: number }[] = [];
@@ -183,7 +159,7 @@ const findInfoBlocks = (state: EditorState): CursorZoneState => {
     const blockData = parseInfoBlock(match[0]);
     if (!blockData) continue;
     const blockDecoration = Decoration.replace({
-      widget: new InfoBlockWidget(blockData, blockStart),
+      widget: new InfoBlockWidget(blockData, blockStart, labels[blockData.type]),
       block: true,
     }).range(blockStart, blockEnd);
     decorations.push(blockDecoration);
@@ -218,8 +194,11 @@ const changesMightAffectBlocks = (tr: Transaction): boolean => {
   return might;
 };
 
-export const infoBlocksExtension = (): Extension => {
-  const stateField = cursorZoneStateField(findInfoBlocks, {
+/** `locale` names each notice type for screen readers; the rendered block shows only its tone colour. */
+export const infoBlocksExtension = (locale: string): Extension => {
+  const { t } = bookRendererMessages.resolve([locale]);
+  const labels = { note: t.note, info: t.info, success: t.success, warning: t.warning, danger: t.danger };
+  const stateField = cursorZoneStateField((state) => findInfoBlocks(state, labels), {
     changesMightAffectSyntax: changesMightAffectBlocks,
   });
 

@@ -162,6 +162,11 @@ Deleting an item cannot be undone.
 Callout text supports bold, emphasis, inline code, and line breaks. It does not
 parse lists, links, tables, or nested blocks. Put those after the callout.
 
+The shared `markdown.render()` and `markdown.renderSync()` helpers from
+`@k2b/cloud/shared` render the same callouts. Pass `{ notices: "minimal" }` to
+show only the tone color: the icon and the automatic type label disappear, an
+explicit title stays visible, and screen readers still hear the type name.
+
 The Help renderer also:
 
 - enables GitHub-flavored Markdown;

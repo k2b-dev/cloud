@@ -75,7 +75,7 @@ Notizbücher zeigen einige getippte Zeichenfolgen als ein Zeichen an, wenn du ei
 
 ## Hinweisblöcke {icon="message-circle"}
 
-Verwende Hinweisblöcke für Kontext, Entscheidungen, Warnungen und Statusangaben, die beim Überfliegen einer Notiz sichtbar sein sollen.
+Verwende Hinweisblöcke für Kontext, Entscheidungen, Warnungen und Statusangaben, die beim Überfliegen einer Notiz sichtbar sein sollen. Ein Hinweisblock zeigt seine Art nur durch die Farbe, ohne Überschrift oder Symbol. Brauchen Lesende eine Bezeichnung, beginne den Text damit, zum Beispiel mit `Risiko:`.
 
 **Gut lesbare Kästen**
 
