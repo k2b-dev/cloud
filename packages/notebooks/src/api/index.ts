@@ -1,3 +1,4 @@
+import { cliAmbiguityText, formatCliCandidates, localizeCloudCliText } from "@k2b/cloud/cli";
 import type { MutationResult, PermissionLevel, User } from "@k2b/cloud/contracts";
 import {
   AccessEntrySchema,
@@ -785,8 +786,8 @@ const requireNoteInNotebook = async (notebookId: string, noteShortId: string, lo
   return ok(note);
 };
 
-const formatPathCandidates = (candidates: NotePathCandidate[]): string =>
-  candidates.map((candidate) => `${candidate.path} (${candidate.shortId})`).join(", ");
+const pathCandidates = (candidates: NotePathCandidate[]) =>
+  candidates.map((candidate) => ({ path: candidate.path, id: candidate.shortId }));
 
 /** Render a path problem with its candidates in the request locale. */
 const notePathProblemResult = (
@@ -805,13 +806,20 @@ const notePathProblemResult = (
     case "ambiguous":
       return fail({
         code: "CONFLICT" as const,
-        message: t.notePathAmbiguous({ segment: problem.segment, candidates: formatPathCandidates(problem.candidates) }),
+        message: localizeCloudCliText(
+          getLocale(c),
+          cliAmbiguityText({
+            value: problem.segment,
+            resources: { en: "notes", de: "Notizen" },
+            candidates: pathCandidates(problem.candidates),
+          }),
+        ),
         status: 409 as const,
       });
     case "title-exists":
       return fail({
         code: "CONFLICT" as const,
-        message: t.noteTitleExists({ title: problem.title, candidates: formatPathCandidates(problem.candidates) }),
+        message: t.noteTitleExists({ title: problem.title, candidates: formatCliCandidates(pathCandidates(problem.candidates)) }),
         status: 409 as const,
       });
     case "failed":

@@ -67,8 +67,6 @@ export const notebookApiMessages = i18n.define({
         `A note path may have at most ${maxLength} characters and ${maxSegments} segments.`,
       notePathMissing: ({ segment, parentPath }: { segment: string; parentPath: string }) =>
         `No note matches "${segment}" in ${parentPath ? `"${parentPath}"` : "the notebook root"}.`,
-      notePathAmbiguous: ({ segment, candidates }: { segment: string; candidates: string }) =>
-        `"${segment}" matches several notes: ${candidates}. Use one of these paths or IDs.`,
       noteTitleExists: ({ title, candidates }: { title: string; candidates: string }) =>
         `A note titled "${title}" already exists here: ${candidates}. Write to that path or ID instead.`,
     },
@@ -136,8 +134,6 @@ export const notebookApiMessages = i18n.define({
         `Ein Notizpfad darf höchstens ${maxLength} Zeichen und ${maxSegments} Segmente haben.`,
       notePathMissing: ({ segment, parentPath }) =>
         `Keine Notiz passt zu „${segment}“ in ${parentPath ? `„${parentPath}“` : "der obersten Ebene des Notizbuchs"}.`,
-      notePathAmbiguous: ({ segment, candidates }) =>
-        `„${segment}“ passt zu mehreren Notizen: ${candidates}. Verwende einen dieser Pfade oder eine ID.`,
       noteTitleExists: ({ title, candidates }) =>
         `Eine Notiz mit dem Titel „${title}“ existiert hier bereits: ${candidates}. Schreibe stattdessen in diesen Pfad oder diese ID.`,
     },

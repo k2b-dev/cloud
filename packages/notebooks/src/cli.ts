@@ -6,12 +6,14 @@ import {
   arg,
   type CloudCliContext,
   type CloudCliText,
+  cliAmbiguityText,
   command,
   confirmFlag,
   createAccessCommands,
   defineCliCommands,
   flag,
   localizeCloudCliText,
+  parseCliAddress,
   printRows,
   printStructured,
 } from "@k2b/cloud/cli";
@@ -110,7 +112,7 @@ const isHttpStatus = (error: unknown, status: number): boolean => error instance
 
 const expandHome = (path: string): string => (path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(1)) : path);
 
-const looksLocal = (raw: string): boolean => /^(?:\/|\.{1,2}(?:\/|$)|~(?:\/|$))/.test(raw);
+const looksLocal = (raw: string): boolean => parseCliAddress(raw).kind === "local";
 
 const depthOf = (path: string): number => path.split("/").length - 1;
 
@@ -226,10 +228,13 @@ function notebooksCommands(locale?: string) {
     const list = (items: Notebook[]) => items.map((item) => `${item.name} (${item.id})`).join(", ");
     if (matches.length > 1)
       throw new Error(
-        t({
-          en: `Notebook name "${ref}" is ambiguous: ${list(matches)}. Use the ID.`,
-          de: `Der Notizbuchname „${ref}“ ist mehrdeutig: ${list(matches)}. Verwende die ID.`,
-        }),
+        t(
+          cliAmbiguityText({
+            value: ref,
+            resources: { en: "notebooks", de: "Notizbüchern" },
+            candidates: matches.map((item) => ({ path: item.name, id: item.id })),
+          }),
+        ),
       );
     throw new Error(
       t({
@@ -258,9 +263,10 @@ function notebooksCommands(locale?: string) {
     );
   };
 
+  /** `<notebook>:<path>` split; null for an ID, a name, or a local path. */
   const splitNotebookPath = (raw: string): { notebook: string; path: string } | null => {
-    const colon = raw.indexOf(":");
-    return colon > 0 ? { notebook: raw.slice(0, colon), path: raw.slice(colon + 1) } : null;
+    const address = parseCliAddress(raw);
+    return address.kind === "path" ? { notebook: address.container, path: address.path } : null;
   };
 
   const resolvePath = async (ctx: CloudCliContext, notebookId: string, path: string): Promise<Note & { path: string }> =>
@@ -268,18 +274,18 @@ function notebooksCommands(locale?: string) {
 
   /** Resolve a note address: note ID, `<notebook>:<path>`, or a mirror file. */
   const resolveNote = async (ctx: CloudCliContext, raw: string): Promise<NoteTarget> => {
-    if (!looksLocal(raw) && NOTE_ID.test(raw)) {
+    const address = parseCliAddress(raw);
+    if (address.kind === "ref" && NOTE_ID.test(raw)) {
       const note = await ctx.readJson<Note>(await ctx.fetch(`/api/notebooks/notes/${encodeURIComponent(raw)}`));
       return { notebookId: note.notebookId, noteId: note.id, note };
     }
-    const split = looksLocal(raw) ? null : splitNotebookPath(raw);
-    if (split) {
-      const notebook = await getNotebook(ctx, split.notebook);
-      if (!split.path.replace(/\//g, "").trim())
+    if (address.kind === "path") {
+      const notebook = await getNotebook(ctx, address.container);
+      if (!address.path.replace(/\//g, "").trim())
         throw new Error(
           t({ en: `"${raw}" is the notebook root, not a note.`, de: `„${raw}“ ist die oberste Ebene des Notizbuchs, keine Notiz.` }),
         );
-      const note = await resolvePath(ctx, notebook.id, split.path);
+      const note = await resolvePath(ctx, notebook.id, address.path);
       return { notebookId: notebook.id, noteId: note.id, note };
     }
     const mirror = await requireMirror(ctx, raw);
