@@ -21,16 +21,16 @@ export default ssr<AuthContext>(async (c) => {
   const categoryPolicy = await readAccountCategoryPolicy();
   const { t } = accountMessages.resolve([getLocale(c)]);
   const activityDays = parseActivityDays(c.req.query("activityDays"));
+  const isAdmin = user.roles.includes("admin");
   const token = auth.session.getToken(c);
   const session = token ? await auth.session.authenticateRequest(c, token) : null;
   const [approvalConfig, devices] = await Promise.all([
     appApproval.config(false).catch(() => null),
     session
-      ? appApproval
-          .listDevices({ userId: session.user.id, sid: session.data.sid, admin: session.user.roles.includes("admin") })
-          .catch(() => null)
+      ? appApproval.listDevices({ userId: session.user.id, sid: session.data.sid, admin: isAdmin }).catch(() => null)
       : Promise.resolve(null),
   ]);
+  const availability = approvalAvailability(approvalConfig);
   const [freeIpaEnabledRaw, passkeys, activityPage] = await Promise.all([
     coreSettings.get<boolean>("freeipa.enable"),
     webauthn.listForUser({ userId: user.id }),
@@ -42,11 +42,11 @@ export default ssr<AuthContext>(async (c) => {
       <AccountHub user={user} active="security" loginLabel={categoryPolicy.login.label}>
         <div class="flex flex-col gap-2">
           <AccountPageHeader title={t.security} description={t.securityDescription} />
-          {(user.roles.includes("admin") || approvalConfig?.enabled || devices === null || devices.items.length > 0) && (
+          {(isAdmin || availability === "configured") && (
             <Devices
               initial={devices}
-              availability={approvalAvailability(approvalConfig)}
-              admin={user.roles.includes("admin")}
+              availability={availability}
+              admin={isAdmin}
               pairing={
                 approvalConfig?.enabled && approvalConfig.appOrigin
                   ? {

@@ -77,6 +77,7 @@ export default function ProfileActions(props: Props) {
         removeFailed: t().avatarRemoveFailed,
         replaceDrop: t().avatarReplaceDrop,
         chooseDrop: t().avatarChooseDrop,
+        formats: t().avatarFormats,
         cropHint: t().avatarCropHint,
         removing: t().avatarRemoving,
         remove: t().removeAvatar,
