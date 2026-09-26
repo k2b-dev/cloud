@@ -6,6 +6,7 @@ import { installFirstPartyModules } from "../test/fixtures/first-party";
 
 type MockServerState = {
   refreshCalls: number;
+  clientCredentialCalls?: Array<{ authorization: string | null; scope: string | null }>;
   authorizationCodeCalls?: number;
   revokeCalls: number;
   revokedTokens?: string[];
@@ -76,6 +77,22 @@ const startMockServer = (state: MockServerState) =>
         if (state.tokenDelayMs) await Bun.sleep(state.tokenDelayMs);
         const body = await request.formData();
         const grantType = body.get("grant_type");
+        if (grantType === "client_credentials") {
+          state.clientCredentialCalls ??= [];
+          state.clientCredentialCalls.push({
+            authorization: request.headers.get("authorization"),
+            scope: body.get("scope") as string | null,
+          });
+          if (request.headers.get("authorization") !== `Basic ${Buffer.from("agent-client:agent-secret").toString("base64")}`) {
+            return Response.json({ error: "invalid_client" }, { status: 401 });
+          }
+          return Response.json({
+            access_token: `agent-access-${state.clientCredentialCalls.length}`,
+            token_type: "Bearer",
+            expires_in: 3600,
+            scope: body.get("scope") ?? "read",
+          });
+        }
         if (grantType === "authorization_code") {
           state.authorizationCodeCalls = (state.authorizationCodeCalls ?? 0) + 1;
           expect(body.get("code")).toBe("test-code");
@@ -975,6 +992,93 @@ describe("cloud CLI OAuth session handling", () => {
       };
       expect(stored.profiles.one.oauth.accessToken).toBe("new-access");
       expect(stored.profiles.two.oauth.accessToken).toBe("new-access");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a client-credentials profile obtains, caches, and renews its own access token without printing the secret", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+
+    try {
+      await writeConfig(configPath, {
+        currentProfile: "agent",
+        profiles: {
+          agent: {
+            server: `http://127.0.0.1:${server.port}`,
+            clientCredentials: { clientId: "agent-client", clientSecret: "agent-secret", scope: "read write" },
+          },
+        },
+      });
+
+      const first = await runCli(configPath, ["account", "whoami", "--json"]);
+      expect(first.exitCode).toBe(0);
+      expect(first.stdout).toContain("tester");
+      expect(state.clientCredentialCalls).toEqual([
+        { authorization: `Basic ${Buffer.from("agent-client:agent-secret").toString("base64")}`, scope: "read write" },
+      ]);
+      expect(state.refreshCalls).toBe(0);
+      const stored = JSON.parse(await readFile(configPath, "utf8"));
+      expect(stored.profiles.agent.oauth).toMatchObject({ accessToken: "agent-access-1", scope: "read write" });
+      expect(stored.profiles.agent.oauth.refreshToken).toBeUndefined();
+      expect(stored.profiles.agent.clientCredentials.clientSecret).toBe("agent-secret");
+
+      const second = await runCli(configPath, ["account", "whoami", "--json"]);
+      expect(second.exitCode).toBe(0);
+      expect(state.clientCredentialCalls).toHaveLength(1);
+
+      state.failFirstMe = true;
+      state.meCalls = 0;
+      const renewed = await runCli(configPath, ["account", "whoami", "--json"]);
+      expect(renewed.exitCode).toBe(0);
+      expect(state.meCalls).toBe(2);
+      expect(state.clientCredentialCalls).toHaveLength(2);
+
+      const shown = await runCli(configPath, ["profile", "show", "agent"]);
+      expect(shown.exitCode).toBe(0);
+      expect(shown.stdout).not.toContain("agent-secret");
+      expect(shown.stdout).toContain("agent-client");
+      const status = await runCli(configPath, ["auth", "status", "--json"]);
+      expect(JSON.parse(status.stdout)).toMatchObject({
+        kind: "client-credentials",
+        clientId: "agent-client",
+        clientSecretStorage: "config",
+      });
+      const listed = await runCli(configPath, ["profile", "list"]);
+      expect(listed.stdout).toContain("client-credentials:config");
+
+      const loggedOut = await runCli(configPath, ["logout", "--profile", "agent"]);
+      expect(loggedOut.exitCode).toBe(0);
+      expect(state.revokeCalls).toBe(0);
+      const after = JSON.parse(await readFile(configPath, "utf8"));
+      expect(after.profiles.agent.clientCredentials).toBeUndefined();
+      expect(after.profiles.agent.oauth).toBeUndefined();
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a rejected client credential explains revocation instead of retrying forever", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    try {
+      await writeConfig(configPath, {
+        currentProfile: "agent",
+        profiles: {
+          agent: { server: `http://127.0.0.1:${server.port}`, clientCredentials: { clientId: "agent-client", clientSecret: "wrong" } },
+        },
+      });
+      const result = await runCli(configPath, ["account", "whoami", "--json"]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("rejected the client credentials");
+      expect(result.stderr).not.toContain("wrong");
+      expect(state.clientCredentialCalls).toHaveLength(1);
+      expect(state.meCalls).toBe(0);
     } finally {
       server.stop(true);
     }

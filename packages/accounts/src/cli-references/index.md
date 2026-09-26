@@ -60,10 +60,11 @@ Group members and managers can be users or groups. Resolve a group and principal
 ```bash
 cld accounts audit list --days 30 --search "ada" --json
 cld accounts service-accounts list --status active --json
+cld accounts service-accounts list --kind agent --json
 cld accounts service-accounts revoke <credential-id> --yes
 ```
 
-Use audit events to understand a prior change before making a corrective one. Revoke a service-account credential only after confirming the exact credential ID and its owner.
+Use audit events to understand a prior change before making a corrective one. Revoke a service-account credential only after confirming the exact credential ID and its owner. `--kind` is `user_delegated`, `resource_bound`, `standalone`, or `agent`; the list shows API keys only, so an agent that uses just its OAuth client appears through `cld admin agents ls`.
 
 ## Complete command catalogue
 
