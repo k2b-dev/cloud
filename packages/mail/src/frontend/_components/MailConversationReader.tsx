@@ -1193,6 +1193,7 @@ export default function MailConversationReader(props: {
                           void deriveMessage(kind, selectedMessage);
                         },
                         reconcile: props.onReconcileAfterWrite,
+                        refresh: props.onReconcile,
                         reassign: props.onReassignMessage,
                         split: props.onSplitMessage,
                       }}

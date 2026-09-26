@@ -1,6 +1,6 @@
 import type { CloudTheme } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
-import { type DropdownItem, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
+import { Button, type DropdownItem, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { DraftDerivationKind, DraftIntent, SenderIdentity } from "../../contracts";
 import type { MailSecurityFinding } from "../../security-contracts";
@@ -47,6 +47,7 @@ type MailMessageCardActions = {
   quoteReply: (message: MessageDetail, body: HTMLElement) => void;
   derive: (kind: DraftDerivationKind, message: MessageDetail) => void | Promise<void>;
   reconcile: () => Promise<void>;
+  refresh: () => Promise<void>;
   reassign: (messageId: string) => void | Promise<void>;
   split: (messageId: string) => void | Promise<void>;
 };
@@ -82,6 +83,17 @@ export default function MailMessageCard(props: {
   };
   let messageBody!: HTMLDivElement;
   const [bodyFormatOverride, setBodyFormatOverride] = createSignal<MessageBodyFormat | null>(null);
+  const [refreshing, setRefreshing] = createSignal(false);
+  // Live invalidation replaces the envelope-only snapshot once the body commits;
+  // this local action covers paused live updates without a page reload.
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await props.actions.refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const security = () =>
     props.message.security ?? {
       risk: "none" as const,
@@ -340,7 +352,15 @@ export default function MailMessageCard(props: {
             ) : props.message.hydrationStatus === "failed" ? (
               <Placeholder state="error" variant="compact" title={messages().bodySyncFailed} />
             ) : (
-              <Placeholder state="loading" title={messages().bodySyncing} />
+              <Placeholder
+                state="loading"
+                title={messages().bodySyncing}
+                action={
+                  <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void refresh()}>
+                    {messages().refreshMessage}
+                  </Button>
+                }
+              />
             )}
           </div>
           <Show when={hasCalendarInvitation() && props.context.calendarIntegrationAvailable && !security().linksDisabled}>
