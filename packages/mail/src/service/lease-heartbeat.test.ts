@@ -76,4 +76,47 @@ describe("mail job lease heartbeat", () => {
     ).rejects.toBe(leaseError);
     expect(observedReason).toBe(leaseError);
   });
+
+  test("cancels overdue work and stops renewing its lease during cleanup", async () => {
+    const deadlineError = new Error("operation deadline passed");
+    let beats = 0;
+    let beatsAtAbort = -1;
+    let observedReason: unknown;
+    await expect(
+      withLeaseHeartbeat({
+        intervalMs: 5,
+        heartbeat: async () => {
+          beats += 1;
+        },
+        deadline: { ms: 20, error: () => deadlineError },
+        work: async (assertLeaseActive, signal) => {
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+          observedReason = signal.reason;
+          beatsAtAbort = beats;
+          // Cleanup that spans several heartbeat intervals must not renew the lease.
+          await Bun.sleep(30);
+          await assertLeaseActive();
+          return "late result";
+        },
+      }),
+    ).rejects.toBe(deadlineError);
+    expect(observedReason).toBe(deadlineError);
+    expect(beatsAtAbort).toBeGreaterThanOrEqual(1);
+    expect(beats).toBe(beatsAtAbort);
+  });
+
+  test("returns work that finishes before its deadline", async () => {
+    let signal: AbortSignal | undefined;
+    const result = await withLeaseHeartbeat({
+      intervalMs: 5,
+      heartbeat: async () => undefined,
+      deadline: { ms: 1_000, error: () => new Error("deadline passed") },
+      work: async (_assertLeaseActive, workSignal) => {
+        signal = workSignal;
+        return "done";
+      },
+    });
+    expect(result).toBe("done");
+    expect(signal?.aborted).toBe(false);
+  });
 });

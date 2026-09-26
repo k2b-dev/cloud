@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import type { Socket } from "bun";
 import type { ListResponse } from "imapflow";
+import SMTPConnection from "nodemailer/lib/smtp-connection";
 import {
   assertProviderKeywordsSupported,
   assertSelectedMailbox,
   assertUidValidity,
+  connectSmtpConnection,
   disposeImapClient,
   normalizeImapQuotaEvidence,
   parseEnvelopeHeaders,
@@ -295,5 +298,74 @@ describe("IMAP UIDVALIDITY fencing", () => {
     expect(() => assertSelectedMailbox({ usable: true, mailbox: { uidValidity: 43n } as never }, "42")).toThrow(
       expect.objectContaining({ code: "UIDVALIDITY_CHANGED" }),
     );
+  });
+});
+
+describe("SMTP capability connection", () => {
+  const listen = (handlers: { open(socket: Socket): void; data?(socket: Socket, data: Buffer): void }) =>
+    Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { open: handlers.open, data: handlers.data ?? (() => undefined) } });
+  const connectionTo = (port: number) =>
+    new SMTPConnection({
+      host: "127.0.0.1",
+      port,
+      secure: false,
+      ignoreTLS: true,
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
+      socketTimeout: 5_000,
+    });
+
+  test("connects after the server's greeting and EHLO response", async () => {
+    const server = listen({
+      open: (socket) => {
+        socket.write("220 fixture ESMTP\r\n");
+      },
+      data: (socket, data) => {
+        if (data.toString().startsWith("EHLO")) socket.write("250-fixture\r\n250 SIZE 1000\r\n");
+      },
+    });
+    const connection = connectionTo(server.port);
+    try {
+      await expect(connectSmtpConnection(connection)).resolves.toBeUndefined();
+    } finally {
+      connection.close();
+      server.stop(true);
+    }
+  });
+
+  test("fails instead of waiting forever when the server closes before its greeting", async () => {
+    const server = listen({
+      open: (socket) => {
+        socket.end();
+      },
+    });
+    const connection = connectionTo(server.port);
+    try {
+      await expect(connectSmtpConnection(connection)).rejects.toMatchObject({ code: "ECONNECTION" });
+    } finally {
+      connection.close();
+      server.stop(true);
+    }
+  });
+
+  test("settles with the abort reason while the server withholds its greeting", async () => {
+    const opened = Promise.withResolvers<void>();
+    const server = listen({
+      open: () => {
+        opened.resolve();
+      },
+    });
+    const connection = connectionTo(server.port);
+    const controller = new AbortController();
+    const reason = new Error("rediscovery deadline passed");
+    try {
+      const connecting = connectSmtpConnection(connection, controller.signal);
+      await opened.promise;
+      controller.abort(reason);
+      await expect(connecting).rejects.toBe(reason);
+    } finally {
+      connection.close();
+      server.stop(true);
+    }
   });
 });

@@ -153,6 +153,8 @@ cld --json mail rediscover --wait --timeout-seconds 300
 cld --json mail rediscover --binding <binding-id> --wait --timeout-seconds 300
 ```
 
+Each rediscovery attempt, including provider verification, has five minutes to finish. Mail cancels a longer attempt and releases the remote mailbox, so rediscovery and synchronization of other mailboxes continue. The binding becomes `degraded`, and `cld --json mail binding list` shows `Provider rediscovery did not finish within 300 seconds and was cancelled` as its `lastError`. A `mail rediscover` command fails with the same message and the error code `PROVIDER_REDISCOVERY_TIMEOUT` in `mail operator status`. Background rediscovery retries the binding with backoff; the next successful attempt makes it active again. Repeated timeouts indicate a provider that accepts connections but does not complete verification or folder discovery.
+
 Queue a whole-mailbox sync or one canonical folder:
 
 ```bash

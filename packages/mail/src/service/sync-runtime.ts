@@ -1693,10 +1693,22 @@ export const enqueueMessageHydration = async (messageId: string): Promise<void> 
   await submitHydrationJob(messageId);
 };
 
+// One rediscovery attempt must fit the job's delivery window, which is also the
+// 300-second wait documented for `cld mail rediscover`. Heartbeats keep a working
+// attempt's leases alive inside that window; they must never keep a stuck
+// attempt, its provider lease, and the job's worker slot alive indefinitely.
+const REDISCOVERY_DEADLINE_MS = 5 * 60_000;
+
+const rediscoveryTimeout = (deadlineMs: number): Error =>
+  Object.assign(new Error(`Provider rediscovery did not finish within ${deadlineMs / 1_000} seconds and was cancelled`), {
+    code: "PROVIDER_REDISCOVERY_TIMEOUT",
+  });
+
 export const executeBindingRediscovery = async (
   bindingId: string,
   allowCredentialRevision: boolean,
   jobHeartbeat: () => Promise<void>,
+  deadlineMs = REDISCOVERY_DEADLINE_MS,
 ): Promise<BindingRediscoveryResult> => {
   const [binding] = await sql<{ remote_resource_id: string }[]>`
     SELECT remote_resource_id
@@ -1714,6 +1726,7 @@ export const executeBindingRediscovery = async (
         await extendSyncLease(lock, "during provider rediscovery");
         await jobHeartbeat();
       },
+      deadline: { ms: deadlineMs, error: () => rediscoveryTimeout(deadlineMs) },
       work: async (_assertLeaseActive, signal) => {
         await waitForMailProviderSlot(binding.remote_resource_id, signal);
         return rediscoverProviderBinding({ bindingId, allowCredentialRevision, signal });
@@ -1730,7 +1743,7 @@ const REDISCOVERY_MAX_ATTEMPTS = 5;
 const rediscoveryJob = lazySync((sync) =>
   sync.job<{ bindingId: string; allowCredentialRevision: boolean }>({
     id: "mail:rediscover-binding",
-    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: REDISCOVERY_MAX_ATTEMPTS, backoffMs: [15_000, 30_000, 60_000, 120_000] },
+    delivery: { ackWaitMs: REDISCOVERY_DEADLINE_MS, maxAttempts: REDISCOVERY_MAX_ATTEMPTS, backoffMs: [15_000, 30_000, 60_000, 120_000] },
   }),
 );
 let rediscoveryJobWorker: Worker | undefined;
@@ -1751,6 +1764,12 @@ const startRediscoveryJob = async (): Promise<void> => {
       }
       if (ctx.attempt >= REDISCOVERY_MAX_ATTEMPTS) {
         log.error("Mail provider rediscovery exhausted retries", { bindingId: ctx.input.bindingId, failureCount: ctx.failureCount, code });
+      } else if (code === "PROVIDER_REDISCOVERY_TIMEOUT") {
+        log.warn("Mail provider rediscovery was cancelled at its deadline and will retry", {
+          bindingId: ctx.input.bindingId,
+          attempt: ctx.attempt,
+          maxAttempts: REDISCOVERY_MAX_ATTEMPTS,
+        });
       }
       throw error;
     }

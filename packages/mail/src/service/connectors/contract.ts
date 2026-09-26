@@ -187,7 +187,7 @@ export type SmtpConnectionConfig = {
 };
 
 export interface MailConnector {
-  verify(config: ProviderConnectionInput): Promise<ConnectorVerification>;
+  verify(config: ProviderConnectionInput, signal?: AbortSignal): Promise<ConnectorVerification>;
   verifySmtp(config: SmtpConnectionConfig): Promise<SmtpTransportCapabilities>;
   discoverLimits(config: ProviderConnectionInput): Promise<ProviderLimitSnapshot>;
   discoverFolders(config: ProviderConnectionInput, signal?: AbortSignal): Promise<RemoteFolder[]>;
