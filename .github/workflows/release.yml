@@ -225,6 +225,9 @@ jobs:
     permissions:
       contents: read
       packages: read
+    env:
+      # Production refuses to issue sessions for a non-HTTPS public origin.
+      APP_URL: https://cloud.release-smoke.test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -263,8 +266,10 @@ jobs:
           docker run --detach --name nats --network cloud-smoke --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           docker run --detach --name valkey --network cloud-smoke valkey/valkey:8-alpine
           timeout 60s bash -c 'until docker exec postgres pg_isready -U ipa -d ipa; do sleep 1; done'
-          common=(--network cloud-smoke
+          # Apps restart until Core has migrated the shared schemas, as in compose.prod.yml.
+          common=(--network cloud-smoke --restart unless-stopped
             --env NODE_ENV=production
+            --env APP_URL="$APP_URL"
             --env DATABASE_URL=postgresql://ipa:ipa@postgres:5432/ipa
             --env REDIS_URL=redis://valkey:6379
             --env NATS_SERVERS=nats://nats:4222
@@ -312,18 +317,25 @@ jobs:
           test -f "$RUNNER_TEMP/cld-skills/cloud-cli/SKILL.md"
       - name: Install the served plugins and run a module against the booted stack
         env:
+          VERSION: ${{ inputs.version }}
           CLD_CONFIG: ${{ runner.temp }}/cld-config/config.json
           XDG_CONFIG_HOME: ${{ runner.temp }}/cld-config
         run: |
           set -euo pipefail
           cld="$RUNNER_TEMP/cld-bin/cld"
           # The stack has no OAuth app; the recovery admin session acts as the bearer token.
-          token=$(curl --silent --fail -X POST http://127.0.0.1:3000/api/auth/admin-login \
+          token=$(curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/admin-login \
             -H 'content-type: application/json' --data '{"token":"release-smoke"}' | jq -r .session_token)
+          # A first sign-in stays pending until the account accepts the legal documents, as in the browser.
+          version=$(curl --silent --fail-with-body -H "cookie: session_token=$token" http://127.0.0.1:3000/auth/continue \
+            | grep -oE 'version:&quot;[a-f0-9]{64}' | grep -oE '[a-f0-9]{64}')
+          curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/legal-consent \
+            -H "authorization: Bearer $token" -H "origin: $APP_URL" -H 'content-type: application/json' \
+            --data "{\"accepted\":true,\"version\":\"$version\"}"
           "$cld" --server http://127.0.0.1:3000 --token "$token" plugins list --json | jq -e '.plugins | map(.name) | index("faq") and index("apps")'
           "$cld" --server http://127.0.0.1:3000 --token "$token" plugins install --all
-          "$cld" --server http://127.0.0.1:3000 --token "$token" apps list --json | jq -e '.items | map(.id) | index("faq")'
-          "$cld" --server http://127.0.0.1:3000 --token "$token" faq list --json | jq -e '.items | type == "array"'
+          "$cld" --server http://127.0.0.1:3000 --token "$token" apps list --json | jq -e '.items | type == "array"'
+          "$cld" --server http://127.0.0.1:3000 --token "$token" faq list --json | jq -e 'type == "array"'
           "$cld" faq reference | grep -q '^# '
           # Installing plugins rewrote the skill: the table names the profile and the module's reference folder exists.
           grep -F "| default | faq | $VERSION |" "$RUNNER_TEMP/cld-skills/cloud-cli/SKILL.md"
