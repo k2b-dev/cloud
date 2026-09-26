@@ -101,7 +101,7 @@ lists every candidate. Administrator commands use `--storage` instead of
 | `versions restore <base> <path> <id>` | `versions restore <file> <id>` |
 | `versions comment <base> <path> <id> <text>` | `versions update <file> <id> --comment <text>` |
 | `shares create <base> <path>...` | `shares add <entry>...` |
-| `shares revoke <id>` | `shares rm <id> --yes` |
+| `shares revoke <id>` | `shares revoke <id> --yes` (unchanged name) |
 | `favorites add\|remove <base> <path>` | `favorites add\|remove <entry>` |
 | `documents create <base> <path>` | `documents create <file>` |
 | `documents markdown <base> <path>` | `documents create <file> --kind markdown` |
@@ -116,7 +116,7 @@ lists every candidate. Administrator commands use `--storage` instead of
 | `admin files delete <path> …` | `admin files rm <directory>:/<path> --confirm-path … --yes` |
 | `admin versions list\|delete <path> …` | `admin versions list\|delete <directory>:/<path> …` |
 | `admin directories archive\|retire\|delete <name> --area --kind` | `admin directories archive\|retire\|delete <storage>/<kind>/<name>` |
-| `admin shares revoke <id>` | `admin shares rm <id> --yes` |
+| `admin shares revoke <id>` | `admin shares revoke <id> --yes` (unchanged name) |
 
 `tree` and `cat` are new. `recent`, `favorites list`, `shares list`,
 `templates list`, and the remaining administrator commands keep their names.

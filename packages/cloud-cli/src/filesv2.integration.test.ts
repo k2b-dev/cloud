@@ -1086,7 +1086,7 @@ test("rm, trash restore, versions and shares are thin wrappers over the authenti
   const share = await run(["filesv2", "shares", "add", at(entry.path), "--title", "Report", "--expires-in", "7d"], server);
   expect(share.exitCode, share.stderr).toBe(0);
   expect(share.stdout.trim()).toBe("https://cloud.test/share/filesv2/s/tok");
-  const revoked = await run(["--json", "filesv2", "shares", "rm", "s1", "--yes"], server);
+  const revoked = await run(["--json", "filesv2", "shares", "revoke", "s1", "--yes"], server);
   expect(JSON.parse(revoked.stdout).state).toBe("revoked");
   expect(seen).toEqual([
     `POST /api/filesv2/bases/${base.id}/delete`,
@@ -1177,7 +1177,7 @@ test("new administration and inbox settings use the authenticated API without st
   for (const args of [
     ["admin", "shares", "list"],
     ["admin", "uploads", "list"],
-    ["admin", "shares", "rm", "abc", "--yes"],
+    ["admin", "shares", "revoke", "abc", "--yes"],
     ["admin", "versions", "delete", "cloud/users/alice:/a.txt", "v1", "--confirm-path", "home/alice/a.txt", "--yes"],
     [
       "shares",

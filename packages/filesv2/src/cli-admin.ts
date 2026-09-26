@@ -235,7 +235,7 @@ export function adminCommands(locale?: string) {
         next(ctx, page.next);
       },
     }),
-    command("admin shares rm", {
+    command("admin shares revoke", {
       summary: t({ en: "Revoke any public link as administrator", de: "Einen öffentlichen Link als Administrator widerrufen" }),
       args: { id: arg.required({ description: t({ en: "Share ID", de: "Freigabe-ID" }) }) },
       flags: { yes },
