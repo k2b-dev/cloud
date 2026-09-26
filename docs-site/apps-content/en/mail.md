@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-09-23
+updated: 2026-09-26
 ---
 
 # Mail
@@ -143,15 +143,45 @@ contracts Mail adopts.
 
 ## Automate Mail from the terminal
 
-Mail provides a native CLI module for mailbox operations. These commands list
-readable mailboxes, search the current default mailbox, and show the current
-shared context for one conversation:
+`cld mail` covers everyday mail with the same short verbs as other Cloud
+modules. A mailbox is its ID or exact name, and a folder is
+`<mailbox>:<path>` with `/` between folders, the same path the web app shows.
+Conversations, messages, and drafts are their IDs. A name or path that matches
+several resources fails with status 409 and lists every candidate; Mail never
+picks one:
 
 ```bash
-cld mail list --json
+cld mail ls --json
+cld mail ls "Support:Projekte / 2025" --view mine --json
+cld mail show <conversation-id> --json
+cld mail cat <message-id>
 cld mail search --any "renewal" --json
-cld mail conversation get <conversation-id> --json
 ```
+
+Triage takes up to 50 conversation IDs at a time. Archive, move, read, flag,
+and trash act on the conversation's messages in the Inbox unless `--in` names
+another folder:
+
+```bash
+cld mail assign <conversation-id> <conversation-id> --to me
+cld mail archive <conversation-id> <conversation-id>
+cld mail mv <conversation-id> --to "Support:Projekte / 2025"
+cld mail tag add <conversation-id> --tag Priority
+cld mail rm <conversation-id> --yes
+```
+
+`reply` and `forward` create a draft from a conversation's latest message, and
+`send` sends a draft:
+
+```bash
+cld mail reply <conversation-id> --body "Thanks, it is on its way." --json
+cld mail send <draft-id> --wait
+```
+
+Administration, providers, identities, automations, and operator commands keep
+their group names, such as `cld mail admin` and `cld mail provider`. Run
+`cld mail help` for the full list. The renamed commands are listed in
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#mail-cli-commands).
 
 `--any` searches every indexed Mail field, including text extracted from
 supported attachments in a traced background job. Attachment matches identify
