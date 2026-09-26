@@ -1,4 +1,13 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+
+/** The notebooks module as a package plugin in a private config home; cld loads it like any installed module. */
+const cliHome = await mkdtemp(join(tmpdir(), "cld-notebooks-cli-"));
+await installFirstPartyModules(cliHome, ["notebooks"]);
+afterAll(() => rm(cliHome, { recursive: true, force: true }));
 
 const servers: ReturnType<typeof Bun.serve>[] = [];
 
@@ -10,6 +19,7 @@ const runCli = async (server: string, args: string[]) => {
   const proc = Bun.spawn({
     cmd: [process.execPath, "run", "../cloud-cli/src/index.ts", "--server", server, "--token", "test-token", ...args],
     cwd: new URL("..", import.meta.url).pathname,
+    env: { ...process.env, XDG_CONFIG_HOME: cliHome },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -524,6 +534,7 @@ test("write reads stdin from --from - and adds the current title when the conten
       "sha256:abc",
     ],
     cwd: new URL("..", import.meta.url).pathname,
+    env: { ...process.env, XDG_CONFIG_HOME: cliHome },
     stdin: new Blob(["Just a line\n"]),
     stdout: "pipe",
     stderr: "pipe",

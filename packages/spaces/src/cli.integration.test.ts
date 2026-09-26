@@ -1,8 +1,17 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { natsServers, testFor } from "../../../scripts/fixtures/test-infra";
+import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 import { newShortId } from "./lib/short-id";
+
+/** The spaces module as a package plugin in a private config home; cld loads it like any installed module. */
+const cliHome = await mkdtemp(join(tmpdir(), "cld-spaces-cli-"));
+await installFirstPartyModules(cliHome, ["spaces"]);
+afterAll(() => rm(cliHome, { recursive: true, force: true }));
 
 /**
  * The real `cld spaces` CLI against the real Spaces API: item addressing by
@@ -37,6 +46,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
   const cld = async (args: string[]) => {
     const proc = Bun.spawn({
       cmd: [process.execPath, "run", cliEntry, "--server", serverUrl, "--token", "cli-test", ...args],
+      env: { ...process.env, XDG_CONFIG_HOME: cliHome },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
