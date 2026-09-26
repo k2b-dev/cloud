@@ -199,11 +199,14 @@ recorded in task activity.
 A claim says who is working on a task right now; assignment says who is
 responsible, and the Kanban column stays the only status. People claim from the
 board card or the task details with **I'm on it** and release with a second
-click, optionally leaving a handoff note that is saved as progress. The board
-card shows the holder's avatar in any column, the details name the holder and
-the claim time, and people and service accounts render the same way. Somebody
-else's claim cannot be overwritten; a Space admin may **take over**, which is
-the admin recovery of the exact observed claim followed by a fresh claim.
+click, optionally leaving a handoff note that is saved as progress. In any
+column, the board card puts the holder first in its avatar stack with a green
+ring, shows them once even when they are also assigned, and never hides them in
+the `+N` overflow. The details show the holder in the same row style as the
+assignees, with the claim time. People and service accounts render the same
+way. Somebody else's claim cannot be overwritten; a Space admin may **take
+over** after confirming, which is the admin recovery of the exact observed
+claim followed by a fresh claim.
 Completing a claimed task, including a drag into a done column, requires the
 holder's claim ID and releases the claim; the web UI sends it for your own
 claim.

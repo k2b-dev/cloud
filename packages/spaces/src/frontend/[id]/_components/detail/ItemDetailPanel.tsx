@@ -413,6 +413,13 @@ export default function ItemDetailPanel(props: Props) {
         await releaseTask(target, claim.id, t, note);
         return t.claimReleased;
       }
+      const confirmed = await prompts.confirm(t.takeOverHelp({ name: claim.displayName }), {
+        title: t.takeOverTitle,
+        icon: "ti ti-replace",
+        confirmText: t.takeOverClaim,
+        cancelText: t.cancel,
+      });
+      if (!confirmed) return null;
       await takeOverTask(target, claim, t);
       return t.claimTakenOver({ name: claim.displayName });
     },
@@ -977,14 +984,7 @@ export default function ItemDetailPanel(props: Props) {
                     }
                   >
                     <div class="flex flex-col gap-2">
-                      <ClaimAvatar claim={claim()} currentUserId={props.currentUserId} size="sm" showName />
-                      <p class="text-sm">
-                        {ownClaimId(claim(), props.currentUserId)
-                          ? t.claimHelpOwn
-                          : props.isAdmin && canEditItem()
-                            ? t.takeOverHelp({ name: claim().displayName })
-                            : t.claimHelpOther}
-                      </p>
+                      <ClaimAvatar claim={claim()} currentUserId={props.currentUserId} showName />
                       <p class="text-xs text-dimmed">
                         {t.since} <time datetime={claim().claimedAt}>{dates.formatDateTime(claim().claimedAt, props.dateConfig)}</time>
                       </p>

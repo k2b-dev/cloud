@@ -8,12 +8,15 @@ type Props = {
   claim: SpaceItemClaim;
   currentUserId: string;
   size?: AvatarSize;
-  /** Render the holder's name next to the avatar. */
+  /** Render the holder's name next to the avatar, in the same row layout as the assignees. */
   showName?: boolean;
   class?: string;
 };
 
-/** Who is working on a task right now: the holder's avatar with a success ring, identical for people and service accounts. */
+/**
+ * Who is working on a task right now: the holder's avatar with a success ring, identical for people and service accounts.
+ * The ring is a border inside the avatar's footprint, so the holder keeps the size of the assignee avatars.
+ */
 export default function ClaimAvatar(props: Props) {
   const t = useSpaceMessages();
   const own = () => isOwnClaim(props.claim, props.currentUserId);
@@ -24,7 +27,7 @@ export default function ClaimAvatar(props: Props) {
     <span
       data-spaces-claim-badge
       data-own-claim={own() ? "true" : undefined}
-      class={`inline-flex min-w-0 shrink-0 items-center gap-1.5 ${props.class ?? ""}`}
+      class={`inline-flex min-w-0 shrink-0 items-center gap-2 ${props.class ?? ""}`}
       title={label()}
     >
       <Avatar
@@ -37,10 +40,10 @@ export default function ClaimAvatar(props: Props) {
         }
         icon={user() ? undefined : "ti ti-api"}
         size={props.size ?? "xs"}
-        class="ring-2 ring-[var(--k2b-success-text)] ring-offset-1 ring-offset-[var(--ui-surface)]"
+        class="border-2 border-[var(--k2b-success-text)]"
       />
       <Show when={props.showName}>
-        <span class="min-w-0 truncate text-sm font-medium">{own() ? t.youAreOnIt : props.claim.displayName}</span>
+        <span class="min-w-0 flex-1 truncate text-sm">{own() ? t.youAreOnIt : props.claim.displayName}</span>
       </Show>
     </span>
   );
