@@ -387,6 +387,7 @@ export function createUserActions(props: UserActionsProps) {
       avatarHash: props.user.avatarHash,
       subtitle: messages().avatarSubtitle({ uid: props.user.uid }),
       visibilityText: messages().avatarVisibility,
+      messages: { formats: messages().avatarFormats },
       onSave: saveAvatar,
       onRemove: props.user.avatarHash ? removeAvatar : undefined,
     });

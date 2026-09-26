@@ -22,6 +22,7 @@ export type FileDropzoneProps = FieldProps & {
   accept?: string;
   multiple?: boolean;
   busy?: boolean;
+  /** Full icon class list, for example `"ti ti-photo-plus"`. Defaults to `"ti ti-cloud-upload"`. */
   icon?: string;
   title?: JSX.Element;
   subtitle?: JSX.Element;

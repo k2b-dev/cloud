@@ -22,6 +22,7 @@ export type AvatarUploadDialogOptions = {
     removeFailed: string;
     replaceDrop: string;
     chooseDrop: string;
+    formats: string;
     cropHint: string;
     removing: string;
     remove: string;
@@ -149,13 +150,13 @@ function AvatarUploadDialog(props: AvatarUploadDialogOptions & { close: (saved?:
               disabled={saving() || removing()}
               busy={processing()}
               error={error}
-              icon="ti-photo-plus"
+              icon="ti ti-photo-plus"
               title={
                 sourceFile()
                   ? (props.messages?.replaceDrop ?? "Drop another image or click to replace")
                   : (props.messages?.chooseDrop ?? "Drop image or click to choose")
               }
-              subtitle="PNG, JPEG, or WebP"
+              subtitle={props.messages?.formats ?? "PNG, JPEG, or WebP"}
               hint={props.messages?.cropHint ?? "Adjust the crop, then save."}
               onDrop={handleFiles}
             />
