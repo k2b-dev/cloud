@@ -251,7 +251,13 @@ describe("Core OAuth issuance authority", () => {
 
     const agent = await setup(
       true,
-      authorityState({ user: null, clientServiceAccountId: serviceAccountId, clientScopes: ["read"], grantedScopes: ["read"], serviceAccount: account }),
+      authorityState({
+        user: null,
+        clientServiceAccountId: serviceAccountId,
+        clientScopes: ["read"],
+        grantedScopes: ["read"],
+        serviceAccount: account,
+      }),
     );
     const response = await request(agent.routes);
     expect(response.status).toBe(200);
@@ -278,7 +284,13 @@ describe("Core OAuth issuance authority", () => {
     ]) {
       const denied = await setup(
         true,
-        authorityState({ user: null, clientServiceAccountId: serviceAccountId, clientScopes: ["read"], grantedScopes: ["read"], serviceAccount: invalid }),
+        authorityState({
+          user: null,
+          clientServiceAccountId: serviceAccountId,
+          clientScopes: ["read"],
+          grantedScopes: ["read"],
+          serviceAccount: invalid,
+        }),
       );
       expect((await request(denied.routes)).status).toBe(403);
     }
