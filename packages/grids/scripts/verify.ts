@@ -141,7 +141,8 @@ if (argv.includes("--bootstrap")) {
       ]
         .sort()
         .map((file) => resolve(root, file)),
-      flags: ["--timeout", "30000"],
+      // packages/cloud runs these files with --isolate, so a module mock in one of them must not leak into the next.
+      flags: ["--isolate", "--timeout", "30000"],
     },
     {
       name: "database-and-standard",
