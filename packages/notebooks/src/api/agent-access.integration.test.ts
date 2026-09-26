@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { notebooksService } from "../service";
+import { listNotebookAccess } from "../service/access";
 import notebooksApi from ".";
 
 const suite = databaseSuite();
@@ -67,6 +68,15 @@ suite("Notebooks REST access for standalone agents", () => {
       await grant(granted.id, agent.id, "write");
       await grant(granted.id, bound.id, "read");
       await grant(other.id, bound.id, "read");
+
+      // Access entries name the service-account kind, so `access list` can show agents and hide resource API keys.
+      const kinds = new Map((await listNotebookAccess(granted.id)).map((entry) => [entry.displayName, entry.serviceAccountKind]));
+      expect(kinds).toEqual(
+        new Map([
+          [agent.name, "agent"],
+          [bound.name, "resource_bound"],
+        ]),
+      );
 
       const call = await apiAs(agent, ["openid", "read", "write"]);
       const listed = await call("/");

@@ -234,9 +234,17 @@ export const resolveAccessPrincipal = async (
   return resolveEntityPrincipal(ctx, "service_account", flags.serviceAccount!);
 };
 
+const entryTypeLabel = (entry: AccessEntry): string => {
+  if (entry.principal.type !== "service_account") return entry.principal.type;
+  if (entry.serviceAccountKind === "agent") return "agent";
+  if (entry.serviceAccountKind === "resource_bound") return "resource-bound";
+  return "service account";
+};
+
+// Resource-bound service accounts back resource API keys, which are managed with those keys.
 const accessRows = (entries: AccessEntry[], options: { includeServiceAccounts?: boolean } = {}) =>
   entries
-    .filter((entry) => options.includeServiceAccounts || entry.principal.type !== "service_account")
+    .filter((entry) => options.includeServiceAccounts || entry.serviceAccountKind !== "resource_bound")
     .sort((a, b) => {
       const rank = permissionRank(b.permission) - permissionRank(a.permission);
       if (rank !== 0) return rank;
@@ -245,7 +253,7 @@ const accessRows = (entries: AccessEntry[], options: { includeServiceAccounts?: 
     .map((entry) => ({
       accessId: entry.id,
       principal: entryDisplayName(entry),
-      type: entry.principal.type,
+      type: entryTypeLabel(entry),
       permission: entry.permission,
       createdAt: entry.createdAt,
     }));
@@ -355,7 +363,7 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
     flags: {
       includeServiceAccounts: flag.boolean({
         name: "include-service-accounts",
-        description: "Include resource-bound service account grants that the UI normally hides.",
+        description: "Also show grants of resource-bound service accounts (resource API keys).",
       }),
     },
     examples: adapter.examples?.list,

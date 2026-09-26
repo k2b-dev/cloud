@@ -21,6 +21,7 @@ const createContext = (
   output: CloudCliOutputMode = "text",
 ) => {
   const lines: string[] = [];
+  const tables: Record<string, unknown>[][] = [];
   const ctx: CloudCliContext = {
     args,
     flags,
@@ -40,10 +41,35 @@ const createContext = (
     error: (value) => lines.push(value),
     json: (value) => lines.push(JSON.stringify(value, null, 2)),
     jsonLine: (value) => lines.push(JSON.stringify(value)),
-    table: () => undefined,
+    table: (rows) => void tables.push(rows),
   };
-  return { ctx, lines };
+  return { ctx, lines, tables };
 };
+
+const serviceAccountEntry = (
+  id: string,
+  displayName: string,
+  permission: AccessEntry["permission"],
+  serviceAccountKind?: AccessEntry["serviceAccountKind"],
+): AccessEntry => ({
+  id,
+  principal: { type: "service_account", serviceAccountId: id },
+  permission,
+  displayName,
+  serviceAccountKind,
+  createdAt: "2026-01-01T00:00:00.000Z",
+});
+
+const serviceAccountEntries = (): AccessEntry[] => [
+  userEntry("read"),
+  serviceAccountEntry("33333333-3333-4333-8333-333333333333", "Release agent", "write", "agent"),
+  serviceAccountEntry("44444444-4444-4444-8444-444444444444", "CI export", "read", "standalone"),
+  serviceAccountEntry("55555555-5555-4555-8555-555555555555", "Roadmap API access", "write", "resource_bound"),
+  serviceAccountEntry("66666666-6666-4666-8666-666666666666", "Unknown Service Account", "read"),
+];
+
+const tableSummary = (rows: Record<string, unknown>[] | undefined) =>
+  rows?.map((row) => `${row.principal} | ${row.type} | ${row.permission}`);
 
 const createModule = (
   state: { entries: AccessEntry[]; grants: Principal[]; updates: string[]; revokes: string[] },
@@ -122,6 +148,37 @@ describe("access CLI helper", () => {
     await mod.run(ctx);
 
     expect(lines).toEqual([JSON.stringify({ resource: { id: "resource-a", label: "resource-a" }, entries: state.entries })]);
+  });
+
+  test("access list table shows standalone and agent service accounts and hides resource-bound ones", async () => {
+    const state = { entries: serviceAccountEntries(), grants: [] as Principal[], updates: [] as string[], revokes: [] as string[] };
+    const mod = createModule(state, { allowServiceAccounts: true });
+    const { ctx, tables } = createContext(["access", "list", "resource-a"], {}, () => Response.json({}));
+
+    await mod.run(ctx);
+
+    expect(tableSummary(tables[0])).toEqual([
+      "Release agent | agent | write",
+      "CI export | service account | read",
+      "Unknown Service Account | service account | read",
+      "Valentin Kolb | user | read",
+    ]);
+  });
+
+  test("access list table includes resource-bound service accounts on request", async () => {
+    const state = { entries: serviceAccountEntries(), grants: [] as Principal[], updates: [] as string[], revokes: [] as string[] };
+    const mod = createModule(state, { allowServiceAccounts: true });
+    const { ctx, tables } = createContext(["access", "list", "resource-a"], { "include-service-accounts": true }, () => Response.json({}));
+
+    await mod.run(ctx);
+
+    expect(tableSummary(tables[0])).toEqual([
+      "Release agent | agent | write",
+      "Roadmap API access | resource-bound | write",
+      "CI export | service account | read",
+      "Unknown Service Account | service account | read",
+      "Valentin Kolb | user | read",
+    ]);
   });
 
   test("uuid principal refs are used directly instead of entity search", async () => {

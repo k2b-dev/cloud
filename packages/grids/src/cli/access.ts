@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, confirmFlag, flag, listAccessPrincipalEntities, paginationFlags } from "@k2b/cloud/cli";
+import { arg, command, confirmFlag, flag, listAccessPrincipalEntities, paginationFlags, printAccessEntries } from "@k2b/cloud/cli";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import {
   ACCESS_RESOURCE_TYPES,
@@ -13,41 +13,6 @@ import {
   resolvePrincipalForAccess,
 } from "./access-support";
 import { jsonRequest, type MessageResponse, printCliStructured, printJsonOrMessage, printReference, readApi } from "./runtime";
-
-const principalLabel = (entry: AccessEntry): string => {
-  if (entry.displayName) return entry.displayName;
-  if (entry.principal.type === "user") return entry.principal.userId;
-  if (entry.principal.type === "group") return entry.principal.groupId;
-  if (entry.principal.type === "service_account") return entry.principal.serviceAccountId;
-  return entry.principal.type === "authenticated" ? "All authenticated accounts" : "Public";
-};
-
-const printGridsAccessEntries = (
-  ctx: CloudCliContext,
-  resource: Awaited<ReturnType<typeof resolveAccessResource>>,
-  entries: AccessEntry[],
-  includeServiceAccounts: boolean,
-) => {
-  if (printCliStructured(ctx, { resource, entries })) return;
-  const rows = entries
-    .filter((entry) => includeServiceAccounts || entry.principal.type !== "service_account")
-    .map((entry) => ({
-      principal: principalLabel(entry),
-      type: entry.principal.type,
-      permission: entry.permission,
-      accessId: entry.id,
-    }));
-  if (rows.length === 0) {
-    ctx.print("No direct grants.");
-    return;
-  }
-  ctx.table(rows, [
-    { key: "principal", label: "PRINCIPAL" },
-    { key: "type", label: "TYPE" },
-    { key: "permission", label: "PERMISSION" },
-    { key: "accessId", label: "ACCESS ID" },
-  ]);
-};
 
 export const accessCommands = [
   command("access reference", {
@@ -109,13 +74,13 @@ export const accessCommands = [
     flags: {
       includeServiceAccounts: flag.boolean({
         name: "include-service-accounts",
-        description: "Include service-account grants in text output.",
+        description: "Also show grants of resource-bound service accounts in text output.",
       }),
     },
     async run({ ctx, args, flags }) {
       const resource = await resolveAccessResource(ctx, args.args);
       const entries = await readApi<AccessEntry[]>(ctx, accessResourcePath(resource));
-      printGridsAccessEntries(ctx, resource, entries, flags.includeServiceAccounts);
+      printAccessEntries(ctx, entries, { includeServiceAccounts: flags.includeServiceAccounts, jsonValue: { resource, entries } });
     },
   }),
   command("access grant", {
