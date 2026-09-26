@@ -10,7 +10,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { type AuditActor, audit } from "@k2b/cloud/services";
+import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
@@ -129,8 +129,9 @@ const capabilityNotFound = (message: string): Result<never> => fail({ code: "NOT
 const capabilityMessages = (context: CapabilityExecutionContext) =>
   notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []).t;
 
+// Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
 const effectivePermission = (permission: Exclude<PermissionLevel, "none">, context: CapabilityExecutionContext) =>
-  context.actor.kind === "service_account" && context.actor.serviceAccount.kind === "resource_bound"
+  context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated"
     ? resolveNotebookApiKeyPermission(permission, context.actor.scopes)
     : permission;
 
@@ -142,6 +143,14 @@ const scopedNotebookId = (context: CapabilityExecutionContext, required: Permiss
   const account = context.actor.serviceAccount;
   if (account.kind === "user_delegated") {
     return context.accessSubject.type === "user" && context.user ? ok(null) : fail(err.forbidden(t.accessDenied));
+  }
+  // A standalone or agent account acts under its own grants, capped by its credential scopes.
+  if (isStandaloneServiceAccountKind(account.kind)) {
+    return context.accessSubject.type === "service_account" &&
+      context.accessSubject.serviceAccountId === account.id &&
+      hasPermission(permissionFromScopes(context.actor.scopes), required)
+      ? ok(null)
+      : fail(err.forbidden(t.accessDenied));
   }
   if (
     account.appId !== NOTEBOOKS_APP_ID ||

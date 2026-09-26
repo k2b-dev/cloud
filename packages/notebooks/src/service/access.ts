@@ -9,7 +9,12 @@ import {
   type Principal,
   updateAccess,
 } from "@k2b/cloud/server";
-import { type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
+import {
+  isStandaloneServiceAccountKind,
+  type ServiceAccountCredential,
+  serviceAccountCredentials,
+  serviceAccounts,
+} from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { resolveNotebookApiKeyPermission } from "./api-key-permissions";
@@ -38,6 +43,21 @@ export const NOTEBOOK_RESOURCE_TYPE = "notebook";
 
 export type NotebookApiKey = ServiceAccountCredential & {
   permission: PermissionLevel;
+};
+
+/**
+ * Reads across Notebooks. A resource-bound service account must pass its bound
+ * Notebook; a standalone or agent account is limited only by its own grants.
+ * The kind is read from the account row, so a caller that omits a binding
+ * fails closed.
+ */
+export const mayReadAcrossNotebooks = async (params: {
+  serviceAccountId?: string | null;
+  boundNotebookId?: string | null;
+}): Promise<boolean> => {
+  if (!params.serviceAccountId || params.boundNotebookId) return true;
+  const account = await serviceAccounts.get({ id: params.serviceAccountId });
+  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
 };
 
 export const buildNotebookVisibleAccessCondition = (params: { userId?: string | null; serviceAccountId?: string | null }) => {

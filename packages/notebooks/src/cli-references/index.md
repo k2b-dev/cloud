@@ -380,6 +380,7 @@ cld notebooks export Docs --out ./docs.zip
 cld notebooks access list Docs --json
 cld notebooks access search-principals "operations" --kind group --json
 cld notebooks access grant Docs --group <group-id> --permission write --json
+cld notebooks access grant Docs --service-account "Release agent" --permission write --json
 cld notebooks access set Docs --group <group-id> --permission read --json
 cld notebooks access revoke Docs --access-id <access-id> --yes
 cld notebooks api-keys create Docs automation --permission write --json
@@ -392,7 +393,7 @@ cld notebooks snapshots run Docs
 cld notebooks snapshots logs Docs --json
 ```
 
-Permissions are `read`, `write`, or `admin`. The token from `api-keys create` is shown once; store it in the intended secret manager and never in a note or log. Snapshot reads are redacted; pass secrets through shell variables, not literals.
+Permissions are `read`, `write`, or `admin`. `--service-account` takes a service account ID or exact name, and `search-principals --kind service_account` finds standalone and agent accounts. An agent account with a grant lists, reads, and writes notes under its own identity like a person with the same grant; its token's scopes cap that grant. Creating notebooks, comments, favorites, and access or API-key management stay limited to people. The token from `api-keys create` is shown once; store it in the intended secret manager and never in a note or log. Snapshot reads are redacted; pass secrets through shell variables, not literals.
 
 ## Command reference
 

@@ -51,7 +51,7 @@ and durable data.
   identity and audit context and `accessSubject` for grants; UI visibility is
   not authorization. Only a `resource_bound` service account carries `appId`,
   `resourceType`, and `resourceId`; `standalone` and `agent` accounts are
-  ordinary principals with their own grants.
+  ordinary principals with their own grants, capped by their scopes.
 - Send an interactive credential only to Core. Framework-owned cross-app calls
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.

@@ -24,7 +24,7 @@ import {
   requiresAuth,
   respond,
 } from "@k2b/cloud/server";
-import { settings, settingsService } from "@k2b/cloud/services";
+import { isStandaloneServiceAccountKind, settings, settingsService } from "@k2b/cloud/services";
 import {
   GotenbergRenderError,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
@@ -699,6 +699,13 @@ const getNotebookAccessSubject = (c: Context<AuthContext>) => {
 
 const getCollectionNotebookBinding = (subject: ReturnType<typeof getNotebookAccessSubject>, locale?: string): Result<string | null> => {
   if (!subject.serviceAccountId) return ok(null);
+  // A standalone or agent account acts under its own grants, capped by its credential scopes.
+  if (subject.serviceAccount && isStandaloneServiceAccountKind(subject.serviceAccount.kind)) {
+    return subject.serviceAccount.id === subject.serviceAccountId &&
+      hasPermission(permissionFromScopes(subject.serviceAccountScopes), "read")
+      ? ok(null)
+      : fail(err.forbidden(notebookApiMessages.resolve(locale ? [locale] : []).t.accessDenied));
+  }
   if (
     subject.serviceAccount?.kind !== "resource_bound" ||
     subject.serviceAccount.appId !== NOTEBOOKS_APP_ID ||
@@ -748,7 +755,8 @@ const checkNotebookAccess = async (c: Context<AuthContext>, shortId: string, req
     serviceAccountId: subject.serviceAccountId,
   });
 
-  if (subject.serviceAccount?.kind === "resource_bound") {
+  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
+  if (subject.serviceAccount && subject.serviceAccount.kind !== "user_delegated") {
     permission = minPermission(permission, permissionFromScopes(subject.serviceAccountScopes));
   }
 

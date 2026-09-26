@@ -40,7 +40,7 @@ suite("Spaces comment pagination", () => {
       const eventAbort = new AbortController();
       const cursor = (await latestSpaceEventCursor(space!.id)) ?? "0-0";
       const nextEvent = liveSpaceEvents({ spaceId: space!.id, after: cursor, signal: eventAbort.signal })[Symbol.asyncIterator]().next();
-      const created = await createComment({ itemId: item!.id, userId: user!.id, content: "Initial context" });
+      const created = await createComment({ itemId: item!.id, author: { kind: "user", id: user!.id }, content: "Initial context" });
       expect(created).toMatchObject({ ok: true, data: { canEdit: true, canDelete: true } });
       if (!created.ok) return;
       const live = await Promise.race([
@@ -73,7 +73,7 @@ suite("Spaces comment pagination", () => {
       });
       expect(await removeComment({ id: created.data.id, userId: user!.id })).toMatchObject({ ok: false, status: 403 });
 
-      const removable = await createComment({ itemId: item!.id, userId: user!.id, content: "Remove promptly" });
+      const removable = await createComment({ itemId: item!.id, author: { kind: "user", id: user!.id }, content: "Remove promptly" });
       expect(removable.ok).toBe(true);
       if (removable.ok) expect(await removeComment({ id: removable.data.id, userId: user!.id })).toEqual({ ok: true, data: undefined });
     } finally {

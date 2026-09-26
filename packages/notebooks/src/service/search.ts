@@ -1,7 +1,7 @@
 import type { PaginationParams } from "@k2b/cloud/contracts";
 import { logger, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
-import { buildNotebookVisibleAccessCondition } from "./access";
+import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 import type { Note } from "./notes";
 
 export type SearchFilters = {
@@ -244,7 +244,7 @@ export const searchAcross = async (params: {
   filters: SearchFilters;
   pagination: PaginationParams;
 }): Promise<{ hits: SearchHit[]; total: number }> => {
-  if (params.serviceAccountId && !params.boundNotebookId) return { hits: [], total: 0 };
+  if (!(await mayReadAcrossNotebooks(params))) return { hits: [], total: 0 };
   if (params.boundNotebookId && params.notebookId && params.boundNotebookId !== params.notebookId) {
     return { hits: [], total: 0 };
   }

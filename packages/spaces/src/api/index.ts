@@ -12,7 +12,7 @@ import {
   respond,
   v,
 } from "@k2b/cloud/server";
-import { coreSettings } from "@k2b/cloud/services";
+import { coreSettings, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -88,6 +88,7 @@ import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
 import { spacesService } from "../service";
 import { isSpaceResourceId, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
+import type { CommentAuthor } from "../service/comments";
 import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
 import { loadOverviewWork } from "../service/overview";
 import {
@@ -247,6 +248,17 @@ const requireUserBackedActor = (c: Context<AuthContext>): Result<User> => {
   return ok(user);
 };
 
+/** Comments are written by the user behind the request or by a standalone or agent account under its own name. */
+const getCommentAuthor = (c: Context<AuthContext>): Result<CommentAuthor> => {
+  const user = getUserBackedActor(c);
+  if (user) return ok({ kind: "user", id: user.id });
+  const actor = c.get("actor");
+  if (actor.kind === "service_account" && isStandaloneServiceAccountKind(actor.serviceAccount.kind)) {
+    return ok({ kind: "service_account", id: actor.serviceAccount.id });
+  }
+  return fail(err.forbidden("This endpoint requires a user-backed actor"));
+};
+
 const PERMISSION_RANK: Record<PermissionLevel, number> = {
   none: 0,
   read: 1,
@@ -317,6 +329,18 @@ const getScopedSpaceAccess = (c: Context<AuthContext>): Result<ScopedSpaceAccess
     });
   }
 
+  // A standalone or agent account acts under its own grants, capped by its credential scopes.
+  if (subject.serviceAccount && isStandaloneServiceAccountKind(subject.serviceAccount.kind)) {
+    if (
+      subject.subject.type !== "service_account" ||
+      subject.subject.serviceAccountId !== subject.serviceAccount.id ||
+      !hasPermission(permissionFromScopes(subject.serviceAccountScopes), "read")
+    ) {
+      return fail(err.forbidden("Access denied"));
+    }
+    return ok({ subject: subject.subject, boundSpaceId: null });
+  }
+
   if (subject.subject.type !== "user") return fail(err.forbidden("Access denied"));
 
   return ok({
@@ -379,7 +403,8 @@ const checkSpaceAccess = async (c: Context<AuthContext>, shortId: string, requir
     subject: subject.subject,
   });
 
-  if (subject.serviceAccount?.kind === "resource_bound") {
+  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
+  if (subject.serviceAccount && subject.serviceAccount.kind !== "user_delegated") {
     permission = minPermission(permission, permissionFromScopes(subject.serviceAccountScopes));
   }
 
@@ -2651,9 +2676,8 @@ const app = new Hono<AuthContext>()
     v("query", RecurringOccurrenceQuerySchema),
     v("json", CreateCommentSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
-      const user = userResult.data;
+      const author = getCommentAuthor(c);
+      if (!author.ok) return respond(c, author);
       const spaceShortId = c.req.param("id") ?? "";
       const itemId = c.req.param("itemId") ?? "";
       const { content } = c.req.valid("json");
@@ -2669,7 +2693,7 @@ const app = new Hono<AuthContext>()
             itemId: itemCheck.data.id,
             recurrenceId: c.req.valid("query").recurrence_id,
             dateConfig: getDateConfig(c),
-            userId: user.id,
+            author: author.data,
             content,
           }),
           projectComments,

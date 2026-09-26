@@ -142,8 +142,8 @@ For a resource-bound or standalone service account it includes:
 - authenticated grants;
 - public grants.
 
-A standalone or agent account has no resource binding, so only the grant and
-authenticated checks below apply to it; it is not capped to one resource.
+A standalone or agent account has no resource binding, so it is not capped to
+one resource; its grants and its credential scopes limit it.
 
 Do not pass `User.memberofGroupIds`. The shared resolver reads authoritative
 membership itself.
@@ -233,18 +233,20 @@ export const requireItemPermission = async (input: {
   accessSubject: AccessSubject;
   access: Pick<ResourceAccessAdapter, "list">;
 }): Promise<Result<PermissionLevel>> => {
-  const resourceCredential =
+  // Every service account without a delegated user is capped by its scopes:
+  // resource-bound, standalone, and agent accounts alike.
+  const scopedCredential =
     input.actor.kind === "service_account" &&
     input.actor.delegatedUser === null
       ? input.actor
       : null;
+  const account = scopedCredential?.serviceAccount;
 
   if (
-    resourceCredential &&
-    (resourceCredential.serviceAccount.kind !== "resource_bound" ||
-      resourceCredential.serviceAccount.appId !== "inventory" ||
-      resourceCredential.serviceAccount.resourceType !== "item" ||
-      resourceCredential.serviceAccount.resourceId !== input.itemId)
+    account?.kind === "resource_bound" &&
+    (account.appId !== "inventory" ||
+      account.resourceType !== "item" ||
+      account.resourceId !== input.itemId)
   ) {
     return fail(err.forbidden("Access denied"));
   }
@@ -254,10 +256,10 @@ export const requireItemPermission = async (input: {
     accessIds: entries.map((entry) => entry.id),
     subject: input.accessSubject,
   });
-  const effective = resourceCredential
+  const effective = scopedCredential
     ? lowerPermission(
         granted,
-        permissionFromScopes(resourceCredential.scopes),
+        permissionFromScopes(scopedCredential.scopes),
       )
     : granted;
 
@@ -269,16 +271,19 @@ export const requireItemPermission = async (input: {
 
 This order is deliberate:
 
-1. reject a credential bound to another application or resource;
+1. reject a resource-bound credential bound to another application or resource;
 2. resolve the service-account grant through `accessSubject`;
 3. lower that grant to the credential scope;
 4. compare the effective permission with the operation.
 
 The same helper accepts user and user-delegated actors. They use their user
-grants and do not enter the resource-credential branch.
+grants and are not scope-capped. A standalone or agent account skips the
+binding check, because it has none, but is still lowered to its scopes.
 
-Collection and search endpoints must restrict the query to the bound resource
-or reject the credential. Authentication alone must not expose every item.
+Collection and search endpoints must restrict a resource-bound credential's
+query to its bound resource or reject it. A standalone or agent account lists
+exactly what its grants cover, like a user; never reject it only because it is
+not user-backed. Authentication alone must not expose every item.
 
 See [Resource API keys](/en/docs/identity/resource-api-keys) for service-account
 and credential creation.

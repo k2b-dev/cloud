@@ -8,7 +8,7 @@ import {
   buildSpacePrincipalCondition,
   getSpacePermission,
   grantSpaceAccess,
-  isSpaceResourceId,
+  mayReadAcrossSpaces,
   SPACE_RESOURCE_TYPE,
   SPACES_APP_ID,
 } from "./access";
@@ -152,9 +152,10 @@ export const list = async (params: {
   boundSpaceId?: string | null;
   requiredLevel?: PermissionLevel;
 }): Promise<Space[]> => {
-  if (params.subject.type === "service_account" && !isSpaceResourceId(params.boundSpaceId)) return [];
+  if (!(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) return [];
   const principalMatch = buildSpacePrincipalCondition(params.subject);
-  const bindingMatch = params.subject.type === "service_account" ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
+  const bindingMatch =
+    params.subject.type === "service_account" && params.boundSpaceId ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
   const permissionMatch =
     params.requiredLevel === "admin"
       ? sql`a.permission = 'admin'::auth.permission_level`
@@ -184,12 +185,11 @@ export const listPage = async (params: {
   pagination?: PageParams;
 }): Promise<Paginated<SpaceWithPermission>> => {
   const { page, perPage, offset } = paginate(params.pagination);
-  if (params.subject.type === "service_account" && !isSpaceResourceId(params.boundSpaceId)) {
-    return { items: [], page, perPage, total: 0, hasNext: false };
-  }
+  if (!(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) return { items: [], page, perPage, total: 0, hasNext: false };
 
   const principalMatch = buildSpacePrincipalCondition(params.subject);
-  const bindingMatch = params.subject.type === "service_account" ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
+  const bindingMatch =
+    params.subject.type === "service_account" && params.boundSpaceId ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
   const permissionMatch =
     params.requiredLevel === "admin"
       ? sql`a.permission = 'admin'::auth.permission_level`

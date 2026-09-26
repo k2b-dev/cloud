@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { serviceAccounts } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -30,10 +31,26 @@ describe("resolveSpaceApiKeyPermission", () => {
 });
 
 test("resource service-account collections fail closed without a valid space binding", async () => {
-  expect(await listSpaces({ subject: resourceSubject })).toEqual([]);
-  expect(await searchAcross({ subject: resourceSubject, query: "test", kinds: "all", limit: 10 })).toEqual([]);
-  expect(await listCalendar({ subject: resourceSubject, from: "2026-01-01T00:00:00Z", to: "2026-01-02T00:00:00Z" })).toEqual([]);
-  expect(await checkOverlap({ subject: resourceSubject, from: "2026-01-01T00:00:00Z", to: "2026-01-02T00:00:00Z" })).toEqual([]);
+  const lookup = spyOn(serviceAccounts, "get").mockResolvedValue({
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "Bound key",
+    kind: "resource_bound",
+    status: "active",
+    delegatedUserId: null,
+    appId: "spaces",
+    resourceType: "space",
+    resourceId: "22222222-2222-4222-8222-222222222222",
+    createdBy: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+  try {
+    expect(await listSpaces({ subject: resourceSubject })).toEqual([]);
+    expect(await searchAcross({ subject: resourceSubject, query: "test", kinds: "all", limit: 10 })).toEqual([]);
+    expect(await listCalendar({ subject: resourceSubject, from: "2026-01-01T00:00:00Z", to: "2026-01-02T00:00:00Z" })).toEqual([]);
+    expect(await checkOverlap({ subject: resourceSubject, from: "2026-01-01T00:00:00Z", to: "2026-01-02T00:00:00Z" })).toEqual([]);
+  } finally {
+    lookup.mockRestore();
+  }
 });
 
 databaseTest("Space pages filter and paginate in SQL while enforcing resource bindings", async () => {

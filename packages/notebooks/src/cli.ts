@@ -650,11 +650,16 @@ function notebooksCommands(locale?: string) {
       grant: [
         'cld notebooks access grant "Product Notes" --user valentin.kolb --permission read',
         'cld notebooks access grant "Product Notes" --group "Editors" --permission write',
+        'cld notebooks access grant "Product Notes" --service-account "Release agent" --permission write',
       ],
       set: ['cld notebooks access set "Product Notes" --user valentin.kolb --permission admin'],
       revoke: ['cld notebooks access revoke "Product Notes" --user valentin.kolb --yes'],
-      searchPrincipals: ["cld notebooks access search-principals val --kind user,group"],
+      searchPrincipals: [
+        "cld notebooks access search-principals val --kind user,group",
+        'cld notebooks access search-principals "Release agent" --kind service_account',
+      ],
     },
+    allowServiceAccounts: true,
   });
 
   return defineCliCommands({

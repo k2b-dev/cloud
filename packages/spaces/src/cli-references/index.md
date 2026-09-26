@@ -180,11 +180,14 @@ Spaces generates iCalendar REQUEST, update, and CANCEL payloads from the canonic
 cld spaces access list "Roadmap" --json
 cld spaces access search-principals "Editors" --kind group --json
 cld spaces access grant "Roadmap" --group "Editors" --permission write
+cld spaces access grant "Roadmap" --service-account "Release agent" --permission write
 cld spaces access set "Roadmap" --user ada.lovelace --permission admin
 cld spaces access revoke "Roadmap" --user ada.lovelace --yes
 ```
 
-`access set` updates an existing direct grant or creates it. Revocation needs `--yes`.
+`access set` updates an existing direct grant or creates it. Revocation needs `--yes`. `--service-account` takes a service account ID or exact name; `search-principals --kind service_account` finds standalone and agent accounts by name. `access list` hides service-account grants unless you pass `--include-service-accounts`.
+
+An agent account works like a person with the same grant: it lists the Spaces it was granted, reads and changes items, claims tasks, reports progress, and comments under its own name. Its token's scopes cap the grant, so a `read`-only token cannot write even with a `write` grant. Creating Spaces, managing access and API keys, and editing or deleting comments stay limited to people.
 
 ## Command reference
 

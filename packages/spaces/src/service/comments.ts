@@ -24,6 +24,9 @@ type DbComment = {
 
 type SqlExecutor = typeof sql;
 
+/** A comment is written by a user or by a standalone or agent service account under its own name. */
+export type CommentAuthor = { kind: "user" | "service_account"; id: string };
+
 export const COMMENT_MUTATION_WINDOW_MS = 10 * 60 * 1000;
 
 const isValidOccurrenceScope = async (db: SqlExecutor, itemId: string, recurrenceId: string, dateConfig?: DateContext) => {
@@ -112,10 +115,11 @@ export const list = async (params: {
       AND (${pattern}::text IS NULL OR c.content ILIKE ${pattern})
   `;
   const rows = await sql<DbComment[]>`
-    SELECT c.id, c.item_id, c.recurrence_id, c.user_id, u.display_name AS user_name, u.avatar_hash AS user_avatar_hash,
+    SELECT c.id, c.item_id, c.recurrence_id, c.user_id, COALESCE(u.display_name, sa.name) AS user_name, u.avatar_hash AS user_avatar_hash,
            c.content, c.created_at, c.updated_at
     FROM spaces.comments c
     LEFT JOIN auth.users u ON c.user_id = u.id
+    LEFT JOIN auth.service_accounts sa ON c.service_account_id = sa.id
     WHERE c.item_id = ${params.itemId}
       AND c.recurrence_id IS NOT DISTINCT FROM ${recurrenceId}::timestamptz
       AND (${pattern}::text IS NULL OR c.content ILIKE ${pattern})
@@ -143,18 +147,20 @@ export const get = async (
 ): Promise<SpaceComment | null> => {
   const [row] = lock
     ? await db<DbComment[]>`
-        SELECT c.id, c.item_id, c.recurrence_id, c.user_id, u.display_name AS user_name, u.avatar_hash AS user_avatar_hash,
+        SELECT c.id, c.item_id, c.recurrence_id, c.user_id, COALESCE(u.display_name, sa.name) AS user_name, u.avatar_hash AS user_avatar_hash,
                c.content, c.created_at, c.updated_at
         FROM spaces.comments c
         LEFT JOIN auth.users u ON c.user_id = u.id
+        LEFT JOIN auth.service_accounts sa ON c.service_account_id = sa.id
         WHERE c.id = ${params.id}
         FOR UPDATE OF c
       `
     : await db<DbComment[]>`
-        SELECT c.id, c.item_id, c.recurrence_id, c.user_id, u.display_name AS user_name, u.avatar_hash AS user_avatar_hash,
+        SELECT c.id, c.item_id, c.recurrence_id, c.user_id, COALESCE(u.display_name, sa.name) AS user_name, u.avatar_hash AS user_avatar_hash,
                c.content, c.created_at, c.updated_at
         FROM spaces.comments c
         LEFT JOIN auth.users u ON c.user_id = u.id
+        LEFT JOIN auth.service_accounts sa ON c.service_account_id = sa.id
         WHERE c.id = ${params.id}
       `;
   return row ? mapToComment(row, params.viewerUserId) : null;
@@ -167,11 +173,13 @@ export const create = async (params: {
   itemId: string;
   recurrenceId?: string | null;
   dateConfig?: DateContext;
-  userId: string;
+  author: CommentAuthor;
   content: string;
 }): Promise<MutationResult<SpaceComment>> => {
-  const { itemId, userId, content } = params;
+  const { itemId, author, content } = params;
   const recurrenceId = params.recurrenceId ?? null;
+  const userId = author.kind === "user" ? author.id : null;
+  const serviceAccountId = author.kind === "service_account" ? author.id : null;
 
   const inserted = await withShortId("comment", (shortId) =>
     sql.begin(async (tx): Promise<MutationResult<{ row: DbComment; spaceId: string }>> => {
@@ -187,8 +195,8 @@ export const create = async (params: {
       if (!item) return { ok: false, error: "Item not found", status: 404 };
 
       const [row] = await tx<DbComment[]>`
-      INSERT INTO spaces.comments (short_id, item_id, recurrence_id, user_id, content)
-      VALUES (${shortId}, ${itemId}, ${recurrenceId}, ${userId}, ${content})
+      INSERT INTO spaces.comments (short_id, item_id, recurrence_id, user_id, service_account_id, content)
+      VALUES (${shortId}, ${itemId}, ${recurrenceId}, ${userId}, ${serviceAccountId}, ${content})
       RETURNING id, item_id, recurrence_id, user_id, content, created_at, updated_at
     `;
       if (!row) return { ok: false, error: "Failed to create comment", status: 500 };
@@ -196,7 +204,7 @@ export const create = async (params: {
         {
           spaceId: item.space_id,
           itemId,
-          actor: { kind: "user", id: userId },
+          actor: author,
           action: "comment.created",
           metadata: { itemTitle: item.title },
         },
@@ -207,21 +215,9 @@ export const create = async (params: {
   );
   if (!inserted.ok) return inserted;
 
-  const row = inserted.data.row;
-  // Get user name
-  const [user] = await sql<{ display_name: string; avatar_hash: string | null }[]>`
-    SELECT display_name, avatar_hash FROM auth.users WHERE id = ${userId}
-  `;
   await publishSpaceEvent({ type: "item.updated", spaceId: inserted.data.spaceId, itemId });
-
-  return {
-    ok: true,
-    data: {
-      ...mapToComment(row, userId),
-      userName: user?.display_name ?? null,
-      userAvatarHash: user?.avatar_hash ?? null,
-    },
-  };
+  const created = await get({ id: inserted.data.row.id, viewerUserId: userId });
+  return created ? { ok: true, data: created } : { ok: false, error: "Failed to create comment", status: 500 };
 };
 
 /**

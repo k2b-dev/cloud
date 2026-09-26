@@ -11,6 +11,7 @@ import {
   getNotebookPermission,
   grantNotebookAccess,
   listNotebookAccess,
+  mayReadAcrossNotebooks,
   NOTEBOOK_RESOURCE_TYPE,
   NOTEBOOKS_APP_ID,
 } from "./access";
@@ -191,7 +192,7 @@ export type ListNotebooksParams = {
 
 export const listWithPermission = async (params: ListNotebooksParams): Promise<{ items: NotebookWithPermission[]; total: number }> => {
   const { userId } = params;
-  if (params.serviceAccountId && !params.boundNotebookId) return { items: [], total: 0 };
+  if (!(await mayReadAcrossNotebooks(params))) return { items: [], total: 0 };
   const principalMatch = buildNotebookVisibleAccessCondition({ userId, serviceAccountId: params.serviceAccountId });
   const boundNotebookId = params.boundNotebookId ?? null;
   const requiredRank = params.requiredLevel === "admin" ? 3 : params.requiredLevel === "write" ? 2 : 1;
