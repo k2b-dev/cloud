@@ -699,7 +699,11 @@ different versions side by side, and a version no profile uses disappears.
 The targets are `skills.targets` in the `cld` config. The first `cld login`
 asks whether to write the skill to `~/.agents/skills` and also to
 `~/.claude/skills` for Claude Code (`--yes` takes the default target); the
-installer asks the same. Manage them with:
+installer asks the same. A config that has never recorded an answer, such as
+one from an older `cld`, gets the same question from `cld update` and
+`cld skills sync`. Without a terminal and without `--yes`, nothing is asked or
+written and `cld` prints the `cld skills add` command. An empty list, left by
+`cld skills remove`, is an answer and is never asked again. Manage them with:
 
 ```sh
 cld skills list
