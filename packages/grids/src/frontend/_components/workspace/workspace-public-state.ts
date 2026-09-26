@@ -28,6 +28,7 @@ import {
 } from "../../../api/workflow-api-shared";
 import type { Field } from "../../../contracts";
 import { navigationReferenceKey, visibleNavigationGroups } from "../../../navigation-contracts";
+import { gridsService } from "../../../service";
 import { getBaseNavigation } from "../../../service/base-navigation";
 import { toPublicGqlResponse } from "../../../service/gql-public-result";
 import { projectPublicId, projectPublicIds } from "../../../service/public-resources";
@@ -186,8 +187,10 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
       : null;
     const detail = route.initialSelectedRecordDetail;
     const publicDetail = detail ? await projectPublicWorkspaceRecordDetail(detail, route.fields) : null;
-    const publicQuery = await toPublicRecordQuery(route.initialState.query, route.fields);
-    const publicActiveQuery = route.activeRecordQuery ? await toPublicRecordQuery(route.activeRecordQuery, route.fields) : null;
+    // A view query may filter, sort, or search on fields outside its selected columns; project it against the whole table.
+    const queryFields = state.catalog.fieldsByTable[route.activeTable.id] ?? (await gridsService.field.listByTable(route.activeTable.id));
+    const publicQuery = await toPublicRecordQuery(route.initialState.query, queryFields);
+    const publicActiveQuery = route.activeRecordQuery ? await toPublicRecordQuery(route.activeRecordQuery, queryFields) : null;
     const publicActiveTable = required(activeTable, "active table");
     return {
       ...route,
@@ -195,7 +198,7 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
       activeView: activeView
         ? {
             ...activeView,
-            query: await toPublicRecordQuery(route.activeView!.query, route.fields),
+            query: await toPublicRecordQuery(route.activeView!.query, queryFields),
             displayConfig: activeView.ui.displayConfig ?? { mode: "table" },
           }
         : null,
