@@ -13,15 +13,15 @@ const memoryStore = () => {
   return { store, entries };
 };
 
-const githubFetch = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+const githubFetch = (status: number, body: unknown, responseHeaders: Record<string, string> = {}) => {
   const calls: { url: string; headers: Record<string, string> }[] = [];
   const fetchMock = (async (input: string | URL | Request, init?: RequestInit) => {
-    const headers: Record<string, string> = {};
+    const sent: Record<string, string> = {};
     new Headers(init?.headers).forEach((value, key) => {
-      headers[key] = value;
+      sent[key] = value;
     });
-    calls.push({ url: String(input), headers });
-    return new Response(typeof body === "string" ? body : JSON.stringify(body), { status, headers });
+    calls.push({ url: String(input), headers: sent });
+    return new Response(typeof body === "string" ? body : JSON.stringify(body), { status, headers: responseHeaders });
   }) as unknown as typeof fetch;
   return { fetchMock, calls };
 };
