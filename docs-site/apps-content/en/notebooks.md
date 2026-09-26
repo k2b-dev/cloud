@@ -264,20 +264,25 @@ cld notebooks pull "Kolb Antik Doku" ~/docs-mirror
 ```
 
 `write` replaces a note or creates it when the path does not exist yet; the
-title always comes from the first `# Heading`. `pull` mirrors a notebook
-one-way: a note without children is `<slug>.md`, a note with children is a
+title always comes from the first `# Heading`. `pull` downloads a notebook into
+a folder: a note without children is `<slug>.md`, a note with children is a
 folder with `index.md` for its own content, and attachments are stored in
-`_attachments/` with relative links. When siblings share a title, their file
-names carry the note ID, as in `backup--Ab12Cd.md`; this suffix exists only in
-the mirror. Each file starts with `id`, `title`, and `updatedAt` front matter,
-and `.cld-notebook.json` records one `path`, `contentHash`, and `updatedAt`
-per note.
+`_attachments/`. Links to attachments and to notes in the mirror become
+relative file paths that editors and `rg` can follow; links to notes outside
+the mirror stay `note://` links. When siblings share a title, their file names
+carry the note ID, as in `backup--Ab12Cd.md`; this suffix exists only in the
+mirror. Each file starts with `id`, `title`, and `updatedAt` front matter, and
+`.cld-notebook.json` records one `path`, `contentHash`, `fileHash`, and
+`updatedAt` per note.
 
-Changes go back through `write`, `edit`, `mv`, and `rm`, which update the
-mirror immediately. Writes through a mirror file are rejected with 409 when the
-note changed on the server since the last pull. `pull` downloads only changed
-notes, follows renames, moves, and deletions, and never overwrites a file with
-local changes: it lists such files and exits 1 unless `--force` is given.
+Changes go back through `write`, `edit`, `mv`, and `rm`, which accept mirror
+files and update the mirror immediately. Writing a mirror file turns every
+relative link that names a file in the mirror into a `note://` or `attach://`
+link, including links you typed yourself. Writes through a mirror file are
+rejected with 409 when the note changed on the server since the last pull.
+`pull` downloads only changed notes, follows renames, moves, and deletions, and
+updates links in files whose linked notes moved. It never overwrites a file
+with local changes: it lists such files and exits 1 unless `--force` is given.
 
 Run `cld notebooks help` for the full command set and
 `cld notebooks <command> --help` before editing content, changing access, or
