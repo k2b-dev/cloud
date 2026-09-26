@@ -1166,7 +1166,7 @@ Usage:
 
 Options:
   --version <version>  Install cli-vX.Y.Z or X.Y.Z (default: latest CLI release)
-  --yes                Skip the confirmation prompt
+  --yes                Skip the confirmation prompt; if no skill target was ever chosen, use ${DEFAULT_SKILL_TARGET}
   --no-verify          Skip optional Cosign verification; SHA-256 is always verified
   --no-skills          Do not rewrite the Cloud CLI agent skill afterwards
   --skills-dir <dir>   Add <dir> to the skill targets (default target: ${DEFAULT_SKILL_TARGET})
@@ -1181,7 +1181,7 @@ Verwendung:
 
 Optionen:
   --version <Version>  cli-vX.Y.Z oder X.Y.Z installieren (Standard: neuestes CLI-Release)
-  --yes                Bestätigungsabfrage überspringen
+  --yes                Bestätigungsabfrage überspringen; wurde nie ein Skill-Ziel gewählt, ${DEFAULT_SKILL_TARGET} nehmen
   --no-verify          Optionale Cosign-Prüfung überspringen; SHA-256 wird immer geprüft
   --no-skills          Den Cloud-CLI-Agent-Skill danach nicht neu schreiben
   --skills-dir <Pfad>  <Pfad> zu den Skill-Zielen hinzufügen (Standardziel: ${DEFAULT_SKILL_TARGET})
@@ -1234,15 +1234,30 @@ const runUpdateCommand = async (args: string[], locale: string): Promise<number>
         : "SHA-256 verified";
   printLine(result.replaced ? `Updated cld to ${result.release.version} (${verification}).` : `cld ${cliVersion} is already up to date.`);
   if (noSkills) return 0;
-  // The skill belongs to the release that runs: the new binary writes it after a replacement.
-  const written = result.replaced ? await spawnSkillSync(process.execPath) : await syncSkills(await loadConfig(), locale);
+  // The skill belongs to the release that runs: the new binary asks for targets and writes it after a replacement.
+  if (result.replaced) {
+    for (const path of await spawnSkillSync(process.execPath, yes))
+      printLine(text(locale, `Wrote the cloud-cli skill to ${path}.`, `cloud-cli-Skill nach ${path} geschrieben.`));
+    return 0;
+  }
+  const config = (await offerSkillTargets(locale, yes)) ?? (await loadConfig());
+  if (config.skills === undefined) printErrorLine(noSkillTargetHint(locale));
+  const written = await syncSkills(config, locale);
   for (const path of written) printLine(text(locale, `Wrote the cloud-cli skill to ${path}.`, `cloud-cli-Skill nach ${path} geschrieben.`));
   return 0;
 };
 
-/** Run `cld skills sync` on `executable` (the freshly installed binary) and return the written paths. */
-const spawnSkillSync = async (executable: string): Promise<string[]> => {
-  const child = Bun.spawn([executable, "--json", "skills", "sync"], { stdin: "ignore", stdout: "pipe", stderr: "inherit" });
+/**
+ * Run `cld skills sync` on `executable` (the freshly installed binary) and
+ * return the written paths. It inherits the terminal, so it can ask for the
+ * skill targets of a config that has none yet.
+ */
+const spawnSkillSync = async (executable: string, yes: boolean): Promise<string[]> => {
+  const child = Bun.spawn([executable, "--json", "skills", "sync", ...(yes ? ["--yes"] : [])], {
+    stdin: "inherit",
+    stdout: "pipe",
+    stderr: "inherit",
+  });
   const [exitCode, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
   if (exitCode !== 0) return [];
   const parsed: unknown = JSON.parse(stdout);
@@ -1444,14 +1459,16 @@ Usage:
   cld skills list [--json]
   cld skills add <directory>
   cld skills remove <directory>
-  cld skills sync
+  cld skills sync [--yes]
 
 cld writes the cloud-cli agent skill into every target directory: the core
 SKILL.md and references of this cld release, plus references/<module>/<version>/
 for every module a profile has installed, and a table in SKILL.md that maps each
 profile to its modules. The default target is ${DEFAULT_SKILL_TARGET}; add
 ${CLAUDE_SKILL_TARGET} for Claude Code. Every change to the installed plugins and
-every \`cld update\` rewrites all targets; \`sync\` rewrites them now.
+every \`cld update\` rewrites all targets; \`sync\` rewrites them now. When no
+target was ever chosen, \`sync\` and \`cld update\` ask once; --yes takes the
+default target.
 `,
     `cld skills
 
@@ -1459,7 +1476,7 @@ Verwendung:
   cld skills list [--json]
   cld skills add <Verzeichnis>
   cld skills remove <Verzeichnis>
-  cld skills sync
+  cld skills sync [--yes]
 
 cld schreibt den cloud-cli-Agent-Skill in jedes Zielverzeichnis: SKILL.md und
 Referenzen dieses cld-Releases sowie references/<Modul>/<Version>/ für jedes
@@ -1467,19 +1484,23 @@ Modul, das ein Profil installiert hat, und eine Tabelle in SKILL.md, die jedem
 Profil seine Module zuordnet. Standardziel ist ${DEFAULT_SKILL_TARGET}; für
 Claude Code kommt ${CLAUDE_SKILL_TARGET} hinzu. Jede Änderung an den installierten
 Plugins und jedes \`cld update\` schreibt alle Ziele neu; \`sync\` tut es sofort.
+Wurde nie ein Ziel gewählt, fragen \`sync\` und \`cld update\` einmal; --yes nimmt
+das Standardziel.
 `,
   );
 
 const runSkillsCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
   const locale = global.locale;
-  const parsed = parseArgs(args);
+  const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y"]));
   const [command, target, ...extra] = parsed.args;
   if (!command || isModuleHelpRequest(parsed.args, parsed.flags)) {
     printLine(skillsHelp(locale));
     return 0;
   }
   const output = takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : global.output;
-  const unsupportedFlag = Object.keys(parsed.flags).find((flag) => flag !== "json" && flag !== "jsonl");
+  const yes = takeBooleanFlag(parsed.flags, "yes", "y");
+  if (yes && command !== "sync") throw new CliError("--yes applies only to `cld skills sync`.");
+  const unsupportedFlag = Object.keys(parsed.flags).find((flag) => !["json", "jsonl", "yes", "y"].includes(flag));
   if (unsupportedFlag) throw new CliError(`Unknown skills option "--${unsupportedFlag}".`);
   if (extra.length > 0 || (command === "add" || command === "remove") !== Boolean(target)) {
     throw new CliError("Usage: cld skills <list|add <directory>|remove <directory>|sync>. Run `cld skills help`.");
@@ -1520,7 +1541,7 @@ const runSkillsCommand = async (args: string[], global: GlobalArgs): Promise<num
     return 0;
   }
   if (command === "sync") {
-    const config = await loadConfig();
+    const config = (await offerSkillTargets(locale, yes)) ?? (await loadConfig());
     if ((config.skills?.targets ?? []).length === 0) {
       throw new CliError(
         `No skill target configured. Run \`cld skills add ${DEFAULT_SKILL_TARGET}\` first.`,
@@ -1549,15 +1570,17 @@ const addSkillTargets = (targets: readonly string[]): Promise<CloudCliConfig> =>
   });
 
 /**
- * After the first login, ask where the agent skill should live. `--yes` takes
- * the default target. Without a terminal nothing is asked or written, and the
- * next interactive login asks.
+ * Ask once where the agent skill should live, when the config has no `skills`
+ * yet (first login, or a config from before skill targets). `--yes` takes the
+ * default target. Returns the saved config, or null when nothing was asked:
+ * the answer is already recorded, or there is no terminal and no `--yes`, and
+ * the next interactive login, update, or sync asks.
  */
-const offerSkillTargets = async (locale: string, yes: boolean): Promise<void> => {
-  if ((await loadConfig()).skills !== undefined) return;
+const offerSkillTargets = async (locale: string, yes: boolean): Promise<CloudCliConfig | null> => {
+  if ((await loadConfig()).skills !== undefined) return null;
   let targets: string[] = [];
   if (yes) targets = [DEFAULT_SKILL_TARGET];
-  else if (!process.stdin.isTTY) return;
+  else if (!process.stdin.isTTY) return null;
   else {
     if (
       await confirmPluginInstall(
@@ -1581,16 +1604,20 @@ const offerSkillTargets = async (locale: string, yes: boolean): Promise<void> =>
       targets.push(CLAUDE_SKILL_TARGET);
     }
   }
-  const config = await withConfigLock(async () => {
+  return withConfigLock(async () => {
     const latest = await loadConfig();
     latest.skills = { targets };
     await saveConfig(latest);
     return latest;
   });
-  for (const path of await syncSkills(config, locale)) {
-    printLine(text(locale, `Wrote the cloud-cli skill to ${path}.`, `cloud-cli-Skill nach ${path} geschrieben.`));
-  }
 };
+
+const noSkillTargetHint = (locale: string): string =>
+  text(
+    locale,
+    `cld: no skill target chosen; run \`cld skills add ${DEFAULT_SKILL_TARGET}\` to write the cloud-cli skill for agents.`,
+    `cld: kein Skill-Ziel gewählt; führe \`cld skills add ${DEFAULT_SKILL_TARGET}\` aus, um den cloud-cli-Skill für Agenten zu schreiben.`,
+  );
 
 type PluginCloud = { profile: string; server: string; fetch: (path: string, init?: RequestInit) => Promise<Response> };
 
@@ -2603,7 +2630,11 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   );
   const yes = takeBooleanFlag(parsed.flags, "yes", "y");
   if (!takeBooleanFlag(parsed.flags, "no-plugins")) await offerCloudPlugins({ ...global, profile: name }, yes);
-  await offerSkillTargets(global.locale, yes);
+  const asked = await offerSkillTargets(global.locale, yes);
+  if (asked) {
+    for (const path of await syncSkills(asked, global.locale))
+      printLine(text(global.locale, `Wrote the cloud-cli skill to ${path}.`, `cloud-cli-Skill nach ${path} geschrieben.`));
+  }
   return 0;
 };
 

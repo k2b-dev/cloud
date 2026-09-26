@@ -37,6 +37,16 @@ meaning and register the targets through `cld skills add`. The release still
 publishes `cloud-cli-skill.tar.gz` for `cld` versions before this change. See
 [Application CLI modules](/en/docs/platform/cli-modules#write-the-skill-for-agents).
 
+A config from `cld` 0.17 or earlier has no `skills` entry, because only the
+first `cld login` asked for targets. Updating such an installation to 0.19
+therefore wrote no skill, and `cld skills list` reports no target. `cld update`
+and `cld skills sync` now ask once when the config has no `skills` entry;
+`--yes` takes `~/.agents/skills`, and without a terminal they write nothing and
+print the `cld skills add` command. To restore the skill, run
+`cld skills add ~/.agents/skills` once, or `cld update --yes` once `cld` runs a
+release with this change. A target list emptied with `cld skills remove` stays
+empty.
+
 ## First-party CLI modules are served plugins
 
 `cld` no longer bundles the application modules (`account`, `admin`, `apps`,

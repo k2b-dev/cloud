@@ -47,7 +47,7 @@ cld skills add ~/.claude/skills
 cld skills sync
 ```
 
-`cld` rewrites this skill in every target after each plugin change and each `cld update`. Add a target only when the user asks for it.
+`cld` rewrites this skill in every target after each plugin change and each `cld update`. Add a target only when the user asks for it. When `cld` reports that no skill target was chosen, tell the user; `cld skills sync --yes` writes the default `~/.agents/skills` only after they agree.
 
 ## Package plugins
 

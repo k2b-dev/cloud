@@ -219,3 +219,30 @@ test("login offers the Cloud's plugins and installs them with --yes", async () =
   expect((await cli.config()).skills).toEqual({ targets: ["~/.agents/skills"] });
   expect(await readFile(join(cli.dir, ".agents", "skills", "cloud-cli", "SKILL.md"), "utf8")).toContain("| a | echo | 1.0.0 |");
 });
+
+test("a config from before skill targets is asked once on sync; a recorded empty list is not", async () => {
+  const cli = await setup({ a: { plugins: [], authorizations: [] } });
+  const defaultTarget = join(cli.dir, ".agents", "skills");
+
+  // No terminal and no --yes: nothing is asked, recorded, or written; one line names the command.
+  const unasked = await cli.run(["skills", "sync"]);
+  expect(unasked.exitCode).toBe(1);
+  expect(unasked.stderr.trim().split("\n")).toHaveLength(1);
+  expect(unasked.stderr).toContain("cld skills add ~/.agents/skills");
+  expect((await cli.config()).skills).toBeUndefined();
+  expect(await readdir(defaultTarget).catch(() => [])).toEqual([]);
+
+  // --yes records and writes the default target.
+  const accepted = await cli.run(["--json", "skills", "sync", "--yes"]);
+  expect(accepted.exitCode, accepted.stderr).toBe(0);
+  expect(JSON.parse(accepted.stdout)).toEqual({ written: [join(defaultTarget, "cloud-cli")] });
+  expect((await cli.config()).skills).toEqual({ targets: ["~/.agents/skills"] });
+  expect(await readFile(join(defaultTarget, "cloud-cli", "SKILL.md"), "utf8")).toContain("# ");
+
+  // After `skills remove`, the empty list is an answer: --yes does not ask again.
+  expect((await cli.run(["skills", "remove", "~/.agents/skills"])).exitCode).toBe(0);
+  const declined = await cli.run(["skills", "sync", "--yes"]);
+  expect(declined.exitCode).toBe(1);
+  expect((await cli.config()).skills).toEqual({ targets: [] });
+  expect(await readdir(defaultTarget)).toEqual([]);
+}, 30_000);
