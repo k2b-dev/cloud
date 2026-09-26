@@ -256,8 +256,9 @@ and stop only processes or containers you started and can identify exactly.
 
 When testing the current checkout against the development server, use
 `bun run dev:cld -- <args>`. It runs the workspace CLI source against
-`http://localhost:3000`. Do not use an installed `cld` for this path because it
-may lag behind the checkout. Installed `cld` remains the right choice when the
+`http://localhost:3000` and keeps its own configuration under `.local/cld/`,
+separate from the installed `cld`. Do not use an installed `cld` for this path
+because it may lag behind the checkout. Installed `cld` remains the right choice when the
 task only operates a deployed Cloud installation.
 
 Dependency changes belong to the package that imports them. Shared versions

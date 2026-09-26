@@ -185,6 +185,13 @@ The alias executes `packages/cloud-cli/src/index.ts` and targets
 `http://localhost:3000` by default. Pass another `--server` when the development
 gateway uses a different origin.
 
+The development CLI keeps its own configuration under `.local/cld/` in the
+checkout: profiles, sign-ins, plugins, and locks. It never reads or changes the
+installed `cld` configuration, and it writes no agent skill until you add a
+target with `bun run dev:cld -- skills add <directory>`. Sign in once with
+`bun run dev:cld -- login`. In the browser that opens, use the local
+administrator login with token `dev-admin` described above. Delete `.local/cld/` to start over.
+
 Do not use an installed `cld` for development verification because its release
 may lag behind the checkout. Use the installed CLI when operating a deployed
 Cloud installation.

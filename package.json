@@ -95,7 +95,7 @@
     "dev:logs": "bun scripts/dev-logs.ts",
     "dev:status": "bun scripts/dev-status.ts",
     "dev:help": "bun scripts/dev-help.ts",
-    "dev:cld": "bun packages/cloud-cli/src/index.ts --server http://localhost:3000",
+    "dev:cld": "bun scripts/dev-cld.ts",
     "check": "bun scripts/check.ts",
     "format": "biome format --write .",
     "test": "bun scripts/run-tests.ts",
