@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "faq",
+  cli: { faq: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "FAQ",
   icon: "ti ti-help-circle",
   description: "Frequently asked questions and public help content.",

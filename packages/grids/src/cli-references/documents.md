@@ -1,7 +1,7 @@
 # Grids Documents, templates, and export files
 
 Use this reference to author a template, generate an immutable file, or choose a
-workflow export format. Use [Grids](grids.md) for workflow inputs, expressions,
+workflow export format. Use [Grids](index.md) for workflow inputs, expressions,
 query captures, permissions, retention, and evidence packages.
 
 ## Find the contract before writing
@@ -328,7 +328,7 @@ associated. `documents sources` paginates captured versions; readable current
 labels are for navigation, not a replacement for historical values. For explicit
 batch membership use workflow `associatedData`; for freshness checks before a
 financial export use `sourceVersions`. They solve different problems; see the
-workflow section of [Grids](grids.md).
+workflow section of [Grids](index.md).
 
 Base Read permits browsing/download. Base Admin manages templates; Base Write
 generates and manages document links. A published Custom App exposes only its

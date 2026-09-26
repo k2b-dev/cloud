@@ -17,7 +17,6 @@ import { CLOUD_CLI_MODULE_NAME, localizeCloudCliText, resolveCloudCliLocale } fr
 import type { Hono } from "hono";
 import { hc } from "hono/client";
 import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken } from "./config";
-import { builtInModules, isBuiltInModuleName } from "./modules";
 import {
   collectPluginGarbage,
   downloadPlugin,
@@ -29,6 +28,7 @@ import {
   type PluginLock,
   placePlugin,
   readPluginLock,
+  readStoredReference,
 } from "./plugin-store";
 import {
   commitPlugin,
@@ -116,26 +116,9 @@ const cliVersion = typeof __CLD_VERSION__ === "string" ? __CLD_VERSION__ : "0.0.
 const cliCommit = typeof __CLD_COMMIT__ === "string" ? __CLD_COMMIT__ : "unknown";
 
 /** Top-level names that plugins can never take over. */
-const reservedNames: ReadonlySet<string> = new Set([
-  ...Object.keys(builtInModules),
-  "help",
-  "version",
-  "login",
-  "logout",
-  "auth",
-  "profile",
-  "update",
-  "plugins",
-]);
+const reservedNames: ReadonlySet<string> = new Set(["help", "version", "login", "logout", "auth", "profile", "update", "plugins"]);
 
 const text = (locale: string, en: string, de: string): string => localizeCloudCliText(locale, { en, de });
-
-/** One-line module summary; built-in modules answer without being imported. */
-const moduleSummary = (name: string, fallback: string, locale: string): string => {
-  if (!isBuiltInModuleName(name)) return fallback;
-  const { summary, germanSummary } = builtInModules[name];
-  return text(locale, summary, germanSummary);
-};
 
 class CliError extends Error {
   constructor(
@@ -848,10 +831,14 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
 
 type ModuleSummary = Pick<CloudCliModule, "name" | "summary">;
 
-const moduleList = (locale: string, pluginModules: ModuleSummary[]): string =>
-  [...Object.entries(builtInModules).map(([name, module]) => ({ name, summary: module.summary })), ...pluginModules]
-    .map((module) => `  ${module.name.padEnd(12)} ${moduleSummary(module.name, module.summary, locale)}`)
-    .join("\n");
+const moduleList = (locale: string, modules: ModuleSummary[]): string =>
+  modules.length === 0
+    ? text(
+        locale,
+        "  (none installed; `cld login` offers your Cloud's modules, `cld plugins install --all` installs them)",
+        "  (keine installiert; `cld login` bietet die Module deiner Cloud an, `cld plugins install --all` installiert sie)",
+      )
+    : modules.map((module) => `  ${module.name.padEnd(12)} ${module.summary}`).join("\n");
 
 const helpText = (locale: string, pluginModules: ModuleSummary[]): string =>
   text(
@@ -860,6 +847,7 @@ const helpText = (locale: string, pluginModules: ModuleSummary[]): string =>
 
 Usage:
   cld [global options] <module> <command> [options]
+  cld <module> reference [file]
   cld login [profile] --server <url> [--device]
   cld logout [--profile <name>]
   cld auth status
@@ -880,7 +868,7 @@ Global options:
   --json                  Print JSON where supported
   --jsonl                 Stream one JSON event per line where supported
 
-Modules:
+Modules (installed for the current profile; every Cloud app serves its own):
 ${moduleList(locale, pluginModules)}
 
 Examples:
@@ -894,6 +882,7 @@ Examples:
 
 Verwendung:
   cld [globale Optionen] <Modul> <Befehl> [Optionen]
+  cld <Modul> reference [Datei]
   cld login [Profil] --server <URL> [--device]
   cld logout [--profile <Name>]
   cld auth status
@@ -914,7 +903,7 @@ Globale Optionen:
   --json                  JSON ausgeben, sofern unterstützt
   --jsonl                 Ein kompaktes JSON-Ereignis pro Zeile ausgeben
 
-Module:
+Module (für das aktuelle Profil installiert; jede Cloud-App stellt ihr eigenes bereit):
 ${moduleList(locale, pluginModules)}
 
 Beispiele:
@@ -1108,10 +1097,10 @@ const runUpdateCommand = async (args: string[], locale: string): Promise<number>
   return 0;
 };
 
-/** Run one built-in or plugin module with the shared context. */
+/** Run one installed module with the shared context. */
 const runModule = async (module: CloudCliModule, moduleArgs: string[], global: GlobalArgs): Promise<number> => {
   if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
-    printLine(module.help?.(global.locale) ?? `${module.name}: ${moduleSummary(module.name, module.summary, global.locale)}`);
+    printLine(module.help?.(global.locale) ?? `${module.name}: ${module.summary}`);
     return 0;
   }
 
@@ -1237,10 +1226,28 @@ const lockedDigests = (config: CloudCliConfig): Set<string> =>
  * installed for every profile. Undefined when neither exists.
  */
 const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<CloudCliModule | undefined> => {
-  const config = await loadConfig();
-  const locked = profileLock(config, resolveProfileName(config, global.profile))[name];
+  const locked = await lockedPlugin(name, global);
   const module = locked ? loadStoredPlugin(name, locked) : loadPlugin(name);
   return module.catch((error) => pluginFailure(error, `Plugin "${name}" cannot run`, `Plugin "${name}" kann nicht ausgeführt werden`));
+};
+
+/** The current profile's lock entry for `name`, if the profile installed it from its Cloud. */
+const lockedPlugin = async (name: string, global: GlobalArgs): Promise<LockedPlugin | undefined> => {
+  const config = await loadConfig();
+  return profileLock(config, resolveProfileName(config, global.profile))[name];
+};
+
+/** `cld <module> reference [file]`: print a served plugin's skill reference. */
+const runReferenceCommand = async (name: string, locked: LockedPlugin, args: string[]): Promise<number> => {
+  const [file, ...extra] = args;
+  if (extra.length > 0 || file?.startsWith("-")) {
+    throw new CliError(`Usage: cld ${name} reference [file]`, 1, `Verwendung: cld ${name} reference [Datei]`);
+  }
+  const markdown = await readStoredReference(name, locked, file).catch((error) =>
+    pluginFailure(error, `Cannot read the "${name}" reference`, `Referenz von "${name}" kann nicht gelesen werden`),
+  );
+  process.stdout.write(markdown);
+  return 0;
 };
 
 type PluginCloud = { profile: string; server: string; fetch: (path: string, init?: RequestInit) => Promise<Response> };
@@ -2392,11 +2399,11 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (moduleName === "update") return runUpdateCommand(moduleArgs, global.locale);
   if (moduleName === "plugins") return runPluginsCommand(moduleArgs, global);
 
-  const module = isBuiltInModuleName(moduleName)
-    ? (await builtInModules[moduleName].load()).default
-    : reservedNames.has(moduleName)
-      ? undefined
-      : await loadInstalledModule(moduleName, global);
+  if (moduleArgs[0] === "reference" && !reservedNames.has(moduleName)) {
+    const locked = await lockedPlugin(moduleName, global);
+    if (locked) return runReferenceCommand(moduleName, locked, moduleArgs.slice(1));
+  }
+  const module = reservedNames.has(moduleName) ? undefined : await loadInstalledModule(moduleName, global);
   if (!module) {
     if (CLOUD_CLI_MODULE_NAME.test(moduleName)) {
       throw new CliError(
@@ -2429,10 +2436,7 @@ const errorPayload = (error: unknown, exitCode: number) => {
   };
 };
 
-if (import.meta.main && Bun.argv[2] === "--internal-code-host" && process.send) {
-  const { startCliCodeHostProcess } = await import("@k2b/cloud-app-assistant/cli");
-  await startCliCodeHostProcess();
-} else if (import.meta.main) {
+if (import.meta.main) {
   // A reader that stops early (`cld … | head`) wants no more output; that is not a crash.
   for (const stream of [process.stdout, process.stderr]) {
     stream.on("error", (error: NodeJS.ErrnoException) => {

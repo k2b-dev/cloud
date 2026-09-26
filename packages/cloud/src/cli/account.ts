@@ -224,6 +224,12 @@ const readRequiredSecret = async (input: CliInputFlagValue, label: string): Prom
 export default defineCliCommands({
   name: "account",
   summary: "Manage the authenticated account, profile, personal API keys, and SSH keys.",
+  groupSummaries: {
+    profile: "Show and update the account profile",
+    "api-keys": "Manage personal API keys",
+    "ssh-keys": "Manage SSH public keys",
+    password: "Change the account password",
+  },
   commands: [
     command("whoami", {
       summary: "Show the authenticated account",

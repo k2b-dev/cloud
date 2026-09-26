@@ -133,7 +133,7 @@
     },
     "packages/cloud": {
       "name": "@k2b/cloud",
-      "version": "0.13.0",
+      "version": "0.15.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
         "@hono/standard-validator": "0.2.2",
@@ -141,7 +141,7 @@
         "@k2b/ssr": "0.14.0",
         "@k2b/stdlib": "0.26.0",
         "@k2b/sync": "6.5.0",
-        "@k2b/ui": "0.6.0",
+        "@k2b/ui": "0.6.2",
         "@modelcontextprotocol/sdk": "1.30.0",
         "@napi-rs/canvas": "1.0.9",
         "@nats-io/transport-node": "3.4.0",
@@ -187,27 +187,12 @@
     },
     "packages/cloud-cli": {
       "name": "@k2b/cloud-cli",
-      "version": "0.16.0",
+      "version": "0.18.0",
       "bin": {
         "cld": "src/index.ts",
       },
       "dependencies": {
         "@k2b/cloud": "workspace:*",
-        "@k2b/cloud-app-accounts": "workspace:*",
-        "@k2b/cloud-app-api-docs": "workspace:*",
-        "@k2b/cloud-app-assistant": "workspace:*",
-        "@k2b/cloud-app-contacts": "workspace:*",
-        "@k2b/cloud-app-faq": "workspace:*",
-        "@k2b/cloud-app-filesv2": "workspace:*",
-        "@k2b/cloud-app-grids": "workspace:*",
-        "@k2b/cloud-app-ipa-hosts": "workspace:*",
-        "@k2b/cloud-app-mail": "workspace:*",
-        "@k2b/cloud-app-notebooks": "workspace:*",
-        "@k2b/cloud-app-oauth": "workspace:*",
-        "@k2b/cloud-app-pulse": "workspace:*",
-        "@k2b/cloud-app-spaces": "workspace:*",
-        "@k2b/cloud-app-tools": "workspace:*",
-        "@k2b/cloud-app-venue": "workspace:*",
         "hono": "catalog:",
       },
       "devDependencies": {
@@ -624,7 +609,7 @@
     },
     "packages/ui": {
       "name": "@k2b/ui",
-      "version": "0.6.0",
+      "version": "0.6.2",
       "dependencies": {
         "@fontsource/ibm-plex-mono": "5.3.0",
         "@fontsource/ibm-plex-sans": "5.3.0",

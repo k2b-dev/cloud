@@ -88,6 +88,10 @@ self-contained `dist/cli/<name>/cli.js`, copies its skill references, and
 writes a `manifest.json` with the SHA-512 of every file. It imports each
 bundle once and fails when its module name differs from the declaration. See
 [Application CLI modules](/en/docs/platform/cli-modules#serve-a-module-from-the-application).
+Every built-in application serves its module this way, and Core serves
+`account`, `admin`, `apps`, and `capabilities`; the `cld` binary contains no
+application module. A `cld` release therefore works against a Cloud that
+serves plugins, and users install them with `cld plugins install --all`.
 
 Add `scripts/build-extras.ts` only when the application must generate another
 artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.

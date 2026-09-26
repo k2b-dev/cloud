@@ -9,7 +9,7 @@
  * config, so profiles for different Clouds use different versions and share
  * identical ones.
  */
-import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -179,6 +179,32 @@ export const loadStoredPlugin = async (name: string, locked: LockedPlugin, root 
     throw new PluginError(`Plugin "${name}" is missing from the plugin store. Run \`cld plugins install ${name}\`.`);
   }
   return loadModuleFile(join(pluginStoreDirectory(root), locked.digest, CLOUD_CLI_PLUGIN_ENTRY), name);
+};
+
+/** The skill reference files of a stored plugin, as `references/<path>` in manifest order. */
+export const storedReferenceFiles = async (locked: LockedPlugin, root = pluginsDirectory()): Promise<string[]> => {
+  const raw: unknown = JSON.parse(await readFile(join(pluginStoreDirectory(root), locked.digest, "manifest.json"), "utf8"));
+  return parseCloudCliPluginManifest(raw)
+    .files.map((file) => file.path)
+    .filter((path) => path.startsWith("references/"))
+    .map((path) => path.slice("references/".length));
+};
+
+/** Read one skill reference of a stored plugin; `file` defaults to `index.md`. */
+export const readStoredReference = async (
+  name: string,
+  locked: LockedPlugin,
+  file = "index.md",
+  root = pluginsDirectory(),
+): Promise<string> => {
+  if (!(await hasStoredPlugin(locked.digest, root))) {
+    throw new PluginError(`Plugin "${name}" is missing from the plugin store. Run \`cld plugins install ${name}\`.`);
+  }
+  const files = await storedReferenceFiles(locked, root);
+  if (!files.includes(file)) {
+    throw new PluginError(`Plugin "${name}" has no reference "${file}". Available: ${files.join(", ")}.`);
+  }
+  return readFile(join(pluginStoreDirectory(root), locked.digest, "references", file), "utf8");
 };
 
 /**

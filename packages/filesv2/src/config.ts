@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "filesv2",
+  cli: { filesv2: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Files",
   icon: "ti ti-folders",
   description: "Cloud and FreeIPA files with direct downloads.",

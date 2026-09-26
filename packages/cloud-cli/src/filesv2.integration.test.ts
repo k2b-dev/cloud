@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { lstat, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type RequestListener, type Server } from "node:http";
 import { createServer as createTcpServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { installFirstPartyModules } from "../test/fixtures/first-party";
 
 const repoRoot = resolve(import.meta.dir, "../../..");
 const directories: string[] = [];
@@ -12,6 +13,10 @@ const transferServers: Server[] = [];
 const identityId = "11111111-1111-4111-8111-111111111111";
 const cloudToken = "cld_filesv2_test";
 const leaseSecret = "filegate-lease-secret";
+/** The Files module, installed once as a package plugin for every `cld` run of this file. */
+const pluginsHome = await mkdtemp(join(tmpdir(), "cld-filesv2-plugins-"));
+await installFirstPartyModules(pluginsHome, ["filesv2"]);
+afterAll(() => rm(pluginsHome, { recursive: true, force: true }));
 
 afterEach(async () => {
   for (const server of servers.splice(0)) server.stop(true);
@@ -42,7 +47,7 @@ function serve(fetch: (request: Request) => Response | Promise<Response>) {
 async function start(args: string[], options: { server?: string; stdin?: string; locale?: string } = {}) {
   const config = join(await directory(), "config.json");
   await writeFile(config, "{}", { mode: 0o600 });
-  const env: NodeJS.ProcessEnv = { ...process.env, CLD_CONFIG: config, CLD_LOCALE: options.locale ?? "en" };
+  const env: NodeJS.ProcessEnv = { ...process.env, CLD_CONFIG: config, CLD_LOCALE: options.locale ?? "en", XDG_CONFIG_HOME: pluginsHome };
   delete env.CLD_TOKEN;
   delete env.CLD_SERVER;
   return Bun.spawn({

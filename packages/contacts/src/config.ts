@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "contacts",
+  cli: { contacts: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Contacts",
   icon: "ti ti-address-book",
   description: "Business contact books with structured emails, phones, and postal addresses.",

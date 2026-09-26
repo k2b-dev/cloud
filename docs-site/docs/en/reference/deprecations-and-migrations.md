@@ -10,6 +10,21 @@ updated: 2026-09-26
 
 # Deprecations and migrations
 
+## First-party CLI modules are served plugins
+
+`cld` no longer bundles the application modules (`account`, `admin`, `apps`,
+`capabilities`, `accounts`, `api-docs`, `assistant`, `contacts`, `faq`,
+`filesv2`, `grids`, `ipa-hosts`, `mail`, `notebooks`, `oauth`, `pulse`,
+`spaces`, `tools`, `venue`). Each Cloud serves them as plugins, and a profile
+installs the versions of its Cloud: accept the offer after `cld login`, or run
+`cld plugins install --all`. A Cloud released before its applications served
+plugins offers none; upgrade the Cloud or keep the previous `cld` for it.
+Scripts that ran `cld <module> …` on a fresh machine must install the module
+first. `tools` needs a Cloud to install from as well. The `cloud-cli` skill
+ships no application references any more; `cld <module> reference [file]`
+prints them from the installed plugin. See
+[Application CLI modules](/en/docs/platform/cli-modules#install-a-plugin).
+
 ## CLI plugin installation
 
 `cld plugins install <name>` now installs the plugin that the current

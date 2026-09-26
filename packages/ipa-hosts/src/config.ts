@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "ipa-hosts",
+  cli: { "ipa-hosts": { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Hosts",
   icon: "ti ti-server",
   description: "Manage FreeIPA hosts, hostgroups, and mirrored host membership data.",

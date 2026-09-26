@@ -2,7 +2,7 @@
 
 Use this reference to configure schema and record presentation through the
 Cloud CLI. For record operations, GQL, Combined tables, permissions, and
-finalized captures, return to [Grids](grids.md).
+finalized captures, return to [Grids](index.md).
 
 ## Contents
 

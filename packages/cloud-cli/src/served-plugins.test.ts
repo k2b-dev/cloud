@@ -84,6 +84,15 @@ test("profiles lock their own verified plugin versions and share identical ones"
   }
   expect((await cli.run(["help"])).stdout).toContain("echo         Echo the host CLI context (test plugin).");
 
+  // The plugin's skill references come with it.
+  const reference = await cli.run(["echo", "reference"]);
+  expect(reference.exitCode, reference.stderr).toBe(0);
+  expect(reference.stdout).toBe("# Echo 1.0.0\n");
+  expect((await cli.run(["echo", "reference", "index.md"])).stdout).toBe("# Echo 1.0.0\n");
+  const missingReference = await cli.run(["echo", "reference", "missing.md"]);
+  expect(missingReference.exitCode).toBe(1);
+  expect(missingReference.stderr).toContain('no reference "missing.md". Available: index.md');
+
   // Cloud A moves to v2: list shows the update, update installs it, and the
   // now unused v1 leaves the store because both profiles use the same v2.
   clouds.a.plugins = [v2];
@@ -101,7 +110,7 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(await cli.stored()).toEqual([v2.manifest.digest]);
   expect((await cli.run(["--profile", "b", "plugins", "remove", "echo"])).exitCode).toBe(0);
   expect(await cli.stored()).toEqual([]);
-});
+}, 30_000);
 
 test("a file that does not match the manifest leaves the store and the lock untouched", async () => {
   const plugin = await servedEchoPlugin("1.0.0");

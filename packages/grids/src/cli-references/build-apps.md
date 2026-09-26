@@ -1,10 +1,10 @@
 # Build a business application in Grids
 
-Use this guide when the request is an application or operational process, not just a record edit. Read [Grids CLI](grids.md) for commands and fetch the installed machine references before writing payloads. Build on the user's selected instance; a template is a starting point, not evidence that their business rules are implemented.
+Use this guide when the request is an application or operational process, not just a record edit. Read [Grids CLI](index.md) for commands and fetch the installed machine references before writing payloads. Build on the user's selected instance; a template is a starting point, not evidence that their business rules are implemented.
 
 ## Decide what the application must guarantee
 
-For compact forms, set `width: "compact"` on each selected user-input or computed-summary entry (including inline-create inputs). The default `"fullWidth"` starts a full row; consecutive compact entries share space and wrap without reordering. Object-list child columns have the same option. Use explicit configuration, not field-name heuristics; calculated output needs no special money/total mode. See [Forms and typed object lists](grids-schema.md).
+For compact forms, set `width: "compact"` on each selected user-input or computed-summary entry (including inline-create inputs). The default `"fullWidth"` starts a full row; consecutive compact entries share space and wrap without reordering. Object-list child columns have the same option. Use explicit configuration, not field-name heuristics; calculated output needs no special money/total mode. See [Forms and typed object lists](schema.md).
 
 Published private App pages send signed-out visitors to login and return to the same path and query. Public Apps stay public; signed-in visitors without a grant still receive 404. This does not change API or download authentication.
 
@@ -36,10 +36,10 @@ For stock quantities, an append-only movement table can preserve receipts, issue
 For parent-owned invoice/claim lines, consider a typed `object_list` instead of a
 separate table. It keeps input cells, computed line totals and parent formulas in
 one finalization boundary. Use related records when lines need independent
-identity or lifecycle. Read [schema configuration](grids-schema.md) for exact
+identity or lifecycle. Read [schema configuration](schema.md) for exact
 decimal types, `LIST_SUM`, and ID strategies: enable Durable History and
 Finalization before an invoice number with `assignment: "finalization"`.
-Read [document profiles](grids-documents.md) before choosing invoice or export
+Read [document profiles](documents.md) before choosing invoice or export
 formats; display settings and HTML layout do not implement financial validation.
 
 1. Run `cld apps list --json`, then `cld grids bases ls --json`. Confirm the intended Base or create a dedicated one with the user's authorization. Avoid changing a similarly named production Base by assumption.

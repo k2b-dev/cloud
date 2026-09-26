@@ -9,12 +9,10 @@ import { buildMailWorkflowCatalog } from "../workflows/catalog";
 import { mailWorkflows } from "../workflows/module";
 import { mailHelp } from ".";
 
-const cliAutomationReference = await Bun.file(
-  new URL("../../../../skills/cloud-cli/references/mail-automation.md", import.meta.url),
-).text();
+const cliAutomationReference = await Bun.file(new URL("../cli-references/automation.md", import.meta.url)).text();
 const cliMailReferences = await Promise.all(
-  ["mail.md", "mail-compose.md", "mail-automation.md", "mail-operations.md"].map((file) =>
-    Bun.file(new URL(`../../../../skills/cloud-cli/references/${file}`, import.meta.url)).text(),
+  ["index.md", "compose.md", "automation.md", "operations.md"].map((file) =>
+    Bun.file(new URL(`../cli-references/${file}`, import.meta.url)).text(),
   ),
 );
 

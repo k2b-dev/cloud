@@ -37,9 +37,9 @@ Domain rules include subdomains. Trust rules support sender addresses and sender
 
 Start here for everyday mail, mailbox setup, search, and collaboration. Continue with:
 
-- [Mail compose and drafts](mail-compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
-- [Mail automation](mail-automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, and central run operations.
-- [Mail operations](mail-operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, the contact directory, and provider-backed message changes.
+- [Mail compose and drafts](compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
+- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, and central run operations.
+- [Mail operations](operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, the contact directory, and provider-backed message changes.
 
 ## Safety
 
@@ -135,7 +135,7 @@ cld --json mail forward <conversation-id> --to colleague@example.com --body "FYI
 cld --json mail send <draft-id> --wait
 ```
 
-Both use the conversation's latest message unless `--message` names another, and the mailbox's verified default identity unless `--identity` names another. `reply --all` replies to all recipients. See [Mail compose and drafts](mail-compose.md) for new messages, attachments, scheduling, and safety review.
+Both use the conversation's latest message unless `--message` names another, and the mailbox's verified default identity unless `--identity` names another. `reply --all` replies to all recipients. See [Mail compose and drafts](compose.md) for new messages, attachments, scheduling, and safety review.
 
 ## Discuss a conversation
 
@@ -317,7 +317,7 @@ cld --json mail identity transport remove <identity-id> --yes
 
 Credentials are encrypted and never returned by the API or CLI. The command reads the current transport revision and fails on a concurrent change instead of overwriting it. A queued send remains pinned to the verified transport revision it selected.
 
-Read [Mail operations](mail-operations.md) before replacing or revoking credentials, repairing projections, or changing remote folders.
+Read [Mail operations](operations.md) before replacing or revoking credentials, repairing projections, or changing remote folders.
 
 ## Read and search mail
 
@@ -620,6 +620,6 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 | Collaboration | `conversation collaboration|update|users|activity|context|related|contact-history`, `tag list|create|rename|delete`, `conversation tag list|set`, `reminder get|set|cancel` |
 | Views and repair | `saved-view list|get|create|update|delete|conversations`, `conversation split|merge|reassign-message` |
 
-Message-level provider changes, junk and keyword changes, folder, attachment, and maintenance commands are documented in [Mail operations](mail-operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](mail-compose.md).
+Message-level provider changes, junk and keyword changes, folder, attachment, and maintenance commands are documented in [Mail operations](operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](compose.md).
 
-Live presence and cursor-based WebSocket invalidation are browser transport concerns rather than durable CLI operations. Shared draft leases, recovery copies, and resumable uploads are durable CLI capabilities and are documented in [Mail compose and drafts](mail-compose.md).
+Live presence and cursor-based WebSocket invalidation are browser transport concerns rather than durable CLI operations. Shared draft leases, recovery copies, and resumable uploads are durable CLI capabilities and are documented in [Mail compose and drafts](compose.md).

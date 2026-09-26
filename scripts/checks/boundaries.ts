@@ -73,7 +73,6 @@ const checkAppsBoundaries = (workspaceRoot: string, appNames: string[]): Finding
         const otherAppMatch = specifier.match(/^@k2b\/cloud-app-([a-z0-9-]+)/);
         if (otherAppMatch && otherAppMatch[1] !== appName) {
           if (/^@k2b\/cloud-app-[a-z0-9-]+\/integration$/.test(specifier)) continue;
-          if (appName === "cloud-cli" && /^@k2b\/cloud-app-[a-z0-9-]+\/cli$/.test(specifier)) continue;
           findings.push({
             file,
             line,

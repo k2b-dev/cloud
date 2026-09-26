@@ -361,7 +361,7 @@ cld pulse resources events "container:host-01/f06a6893f7bd" --json
 - Configure detailed telemetry, long-range metric summaries, and sensitive event fields independently. When sensitive retention expires, Pulse clears only the event's `sensitive` object; the remaining event follows raw retention.
 - Deleting a source makes its source-bound credentials unusable and removes source metadata, but retained historical telemetry loses its source association rather than being deleted.
 
-Return to the [Pulse CLI reference](pulse.md) for base discovery, queries, dashboards, access, and lifecycle operations.
+Return to the [Pulse CLI reference](index.md) for base discovery, queries, dashboards, access, and lifecycle operations.
 
 ### Metric definitions and scrapes
 

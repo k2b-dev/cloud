@@ -138,7 +138,7 @@ describe("published App terminal journeys", () => {
     expect(calls).toHaveLength(0);
   });
   test("keeps every published command in the skill index", async () => {
-    const reference = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
+    const reference = await Bun.file(new URL("../cli-references/index.md", import.meta.url)).text();
     const paths = reference
       .split("```text")
       .at(-1)!

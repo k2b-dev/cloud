@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "spaces",
+  cli: { spaces: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Spaces",
   icon: "ti ti-layout-kanban",
   description: "Plan, track, and collaborate on boards, tasks, and events.",

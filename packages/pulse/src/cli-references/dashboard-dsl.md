@@ -29,7 +29,7 @@ Dashboard DSL is the only Pulse dashboard authoring format. It keeps layout, que
 6. Compile the complete document before saving.
 7. Inspect a private snapshot before publishing.
 
-Dashboard DSL embeds [Pulse Query DSL](pulse-query-dsl.md) after each widget's `query` statement.
+Dashboard DSL embeds [Pulse Query DSL](query-dsl.md) after each widget's `query` statement.
 
 ## Smallest dashboard
 
@@ -468,7 +468,7 @@ dashboard "Solar overview" {
 }
 ```
 
-Return to the [Pulse CLI reference](pulse.md) for discovery, source management, access, and lifecycle operations.
+Return to the [Pulse CLI reference](index.md) for discovery, source management, access, and lifecycle operations.
 
 ## Configuration and failure contract
 

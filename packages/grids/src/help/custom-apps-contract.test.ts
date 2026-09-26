@@ -99,7 +99,7 @@ describe("Grids Apps documentation contract", () => {
     const overview = await Bun.file(new URL("./documents/en/grids-custom-apps.help.md", import.meta.url)).text();
     const pages = await Bun.file(new URL("./documents/en/grids-custom-app-pages-blocks.help.md", import.meta.url)).text();
     const yaml = await Bun.file(new URL("./documents/en/grids-custom-app-yaml-cli.help.md", import.meta.url)).text();
-    const cli = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
+    const cli = await Bun.file(new URL("../cli-references/index.md", import.meta.url)).text();
 
     expect(overview).not.toContain("**Bulk actions**");
     expect(yaml).toContain("canonical public resource IDs");

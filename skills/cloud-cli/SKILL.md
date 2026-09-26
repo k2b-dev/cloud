@@ -13,7 +13,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 
 1. On a new machine, sign in with `cld login --server <Cloud URL>`. On a machine without a browser, such as a server reached over SSH, use `cld login --server <Cloud URL> --device`. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`. Read [Sign-in and profiles](references/sign-in.md) for details.
 2. Run `cld apps list --json` before choosing an app command. It shows the live Cloud apps available to the current user; use `--search <text>` to narrow the list.
-3. Run `cld help` to discover installed CLI modules, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Modules of third-party apps come from `cld` plugins; `cld plugins list` shows what the Cloud serves, what is installed, and what needs an update.
+3. Run `cld help` to discover the installed CLI modules, then `cld <app> reference` and `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Every app module, built-in or third-party, is a `cld` plugin served by the Cloud; `cld plugins list` shows what the Cloud serves, what is installed, and what needs an update. A missing module says `run cld plugins install <name>`; do that when the task needs it.
 4. Use the default profile unless the task names another instance; pass `--profile <name>` only when needed.
 
 ## How every `cld` module is organized
@@ -24,7 +24,7 @@ Modules share one command shape, so you can guess the basics before reading a re
 - **Addresses:** a resource argument takes its ID, `<container>:<path>` (container by ID or exact name), or, where the module keeps a local copy, a file path inside it. An ambiguous name fails with every candidate as `path (id)`; retry with one of the IDs. Nothing is guessed.
 - **Flags:** `--json` on every command, `--yes` for destructive or irreversible actions, `--from <file|->` for content, `--out <path>` for downloads. A command exits `0` only when it did everything; otherwise `1`.
 
-The app references below remain authoritative for each module's exact commands and JSON shapes.
+Each module's reference (`cld <app> reference`) remains authoritative for its exact commands and JSON shapes.
 
 ## Agent workflow
 
@@ -38,30 +38,9 @@ The app references below remain authoritative for each module's exact commands a
 
 ## References
 
-Read the app reference for the current task. Follow specialized links inside it only when that operation needs the deeper API; do not preload every linked reference.
+Every module ships its own reference with the plugin. Run `cld <module> reference` for the module of the current task and read it before the first command; it links further files, which `cld <module> reference <file>` prints. Follow those links only when the operation needs the deeper API; do not preload every file.
 
 - Read [Sign-in and profiles](references/sign-in.md) to sign in with a browser or a device code, keep several Cloud instances in profiles, and store refresh tokens in fd0.
-- Read [Account](references/account.md) to manage the signed-in user's profile, personal API keys, SSH keys, and account extension.
-- Read [API Docs](references/api-docs.md) to discover and inspect the live HTTP APIs published by Cloud apps.
-- Read [CLI plugins](references/plugins.md) to list, install, update, or remove `cld` plugins.
-- Read [Capabilities](references/capabilities.md) to discover and invoke live typed app Queries and Actions through the generic CLI.
-- Read [Assistant](references/assistant.md) for one-shot streaming chat, chat history, approvals, files, personalization, and Projects.
-- Read [Contacts](references/contacts.md) for contacts by ID, `<book>:<name>`, or email, and for contact books, tags, notes, vCard import and export, and access grants.
-- Read [FAQ](references/faq.md) to list and manage localized, audience-aware FAQ entries as an administrator.
-- Read [Files](references/filesv2.md) (`cld filesv2`) to work with personal and group files addressed as `<area>:/path` (`ls`, `cat`, `get`, `put`, `mv`, `rm`), shares, trash and versions, and administer directory provisioning, archives, permanent deletion, root maintenance, and storage configuration.
-- Read [Grids](references/grids.md) to create bases from templates and manage schema, records, GQL, views, forms, Custom Apps, documents, access, and workflows.
-- For a complete Grids business application, also read [Build a business application](references/grids-build-apps.md): inventory, CRM, invoicing, expense reimbursement, and merchandise-management model choices and verification.
-- For Grids configuration, read [Schema and records](references/grids-schema.md): table options, every field type, ID assignment, formats, Views, Forms and finalization. For files and financial exports, read [Documents and exports](references/grids-documents.md): templates, Liquid, profiles, SEPA, DATEV, membership and download links. The main Grids reference routes Custom App and Workflow configuration to their complete machine-readable schemas.
-- Read [Mail](references/mail.md) to read, triage, and answer mail by mailbox name and folder path, configure and share mailboxes, and collaborate on conversations, then follow its compose, automation, and operations references for the complete Mail CLI.
-- Read [Notebooks](references/notebooks.md) for collaborative notes addressed by ID or `<notebook>:<path>`, a notebook as a local folder of Markdown files (`pull`, migrating a Git docs folder), knowledge search, safe Markdown editing, query and TOC preview validation, comments, attachments, formulas, exports, and access.
-- Read [Pulse](references/pulse.md) to explore telemetry and observed fields, ingest structured events, run queries, create DSL dashboards, manage sources, and share public displays.
-- Read [Spaces](references/spaces.md) for spaces, items, comments, calendars, and access grants.
-- Read [Tools](references/tools.md) for local password, encoding, QR, encryption, and speedtest utilities.
-- Read [Venue](references/venue.md) to operate venues, opening rules, public sections, shifts, and venue access.
-
-Administrators should additionally read the reference that matches the task:
-
-- [Accounts](references/accounts.md) for accounts, groups, requests, audit events, and service-account credentials.
-- [Administration](references/admin.md) for AI model prices, reference-cost reports, Assistant budgets and resets, background emergency stops, health, diagnostics, logs, request telemetry, background jobs, workflow runs, notifications, announcements, webhooks, storage diagnostics, and metrics.
-- [OAuth](references/oauth.md) for OAuth client configuration.
-- [IPA hosts](references/ipa-hosts.md) for FreeIPA hosts, hostgroups, and host synchronization.
+- Read [CLI plugins](references/plugins.md) to list, install, update, or remove `cld` plugins and to print their references.
+- Run `cld apps reference` and `cld account reference` for the two modules every Cloud serves, `cld capabilities reference` for generic typed Queries and Actions, and `cld api-docs reference` for the live HTTP APIs.
+- Administrators run `cld admin reference`, `cld accounts reference`, `cld oauth reference`, and `cld ipa-hosts reference` for the matching task.

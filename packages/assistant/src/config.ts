@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "assistant",
+  cli: { assistant: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Assistant",
   icon: "ti ti-sparkles",
   description: "General-purpose AI assistant for writing, rewriting, summarizing, and questions.",

@@ -64,7 +64,7 @@ describe("Grids operational CLI", () => {
     expect(values).toEqual([page]);
   });
   test("keeps the skill command index aligned with operational commands", async () => {
-    const reference = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
+    const reference = await Bun.file(new URL("../cli-references/index.md", import.meta.url)).text();
     const index = reference.split("```text").at(-1)!.split("```")[0]!;
     const paths = index.split("\n").flatMap((line) => {
       const parts = line.trim().split(" ");

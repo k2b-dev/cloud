@@ -21,7 +21,7 @@ test("registers complete bilingual Help with a small discovery reference", () =>
   expect(compiled.corpus.documentsByLocale?.de).toHaveLength(gridsHelp.documentsByLocale?.de?.length ?? 0);
 });
 
-const cliSkillReference = await Bun.file(new URL("../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
+const cliSkillReference = await Bun.file(new URL("../src/cli-references/index.md", import.meta.url)).text();
 
 test("documents issuer responsibility without an external E-Invoice approval gate", () => {
   const english = gridsHelp.getMarkdown("grids-documents-pdfs", "en")!;

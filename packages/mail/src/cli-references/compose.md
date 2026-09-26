@@ -1,6 +1,6 @@
 # Mail compose and drafts
 
-Read this reference when creating templates, editing shared drafts, handling attachments, or sending and scheduling mail. Start with [Mail CLI](mail.md) for mailbox setup, permissions, search, and collaboration.
+Read this reference when creating templates, editing shared drafts, handling attachments, or sending and scheduling mail. Start with [Mail CLI](index.md) for mailbox setup, permissions, search, and collaboration.
 
 ## Compose templates and previews
 

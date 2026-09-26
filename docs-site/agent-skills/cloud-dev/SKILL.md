@@ -143,8 +143,8 @@ Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its
 `defineApp({ cli: { <name>: { module, references } } })`: `module` exports
 `defineCliCommands()` named `<name>`, `references` holds agent Markdown with
 `index.md`. The app image serves both at `/cli/plugins/<name>/` to signed-in
-callers `cli.plugins.access` allows; users run `cld plugins install <name>`.
-Commands are `CloudCliContext` API clients; the server keeps authorization.
+callers `cli.plugins.access` allows (`cld plugins install <name>`, `cld <name>
+reference`). Commands are `CloudCliContext` API clients; the server authorizes.
 
 ## Build and verify one complete slice
 

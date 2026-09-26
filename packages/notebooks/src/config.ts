@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "notebooks",
+  cli: { notebooks: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Notebooks",
   icon: "ti ti-note",
   description: "Collaborative notebooks with structured notes and realtime sync.",

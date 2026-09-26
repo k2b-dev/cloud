@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { installFirstPartyModules } from "../test/fixtures/first-party";
 
 type MockServerState = {
   refreshCalls: number;
@@ -20,9 +21,26 @@ type MockServerState = {
 
 const tempDirs: string[] = [];
 
+/** Modules these tests call; a first-party module is a plugin like any other, installed here as a package plugin. */
+const MODULES = [
+  "account",
+  "accounts",
+  "admin",
+  "apps",
+  "assistant",
+  "capabilities",
+  "grids",
+  "mail",
+  "notebooks",
+  "oauth",
+  "pulse",
+  "tools",
+];
+
 const createTempDir = async (): Promise<string> => {
   const dir = await mkdtemp(join(tmpdir(), "cld-cli-test-"));
   tempDirs.push(dir);
+  await installFirstPartyModules(dir, MODULES);
   return dir;
 };
 
@@ -125,7 +143,7 @@ const startCli = (configPath: string, args: string[], extraEnv: Record<string, s
   Bun.spawn({
     cmd: [process.execPath, "run", "packages/cloud-cli/src/index.ts", ...args],
     cwd: process.cwd(),
-    env: { ...process.env, ...extraEnv, CLD_CONFIG: configPath },
+    env: { ...process.env, ...extraEnv, CLD_CONFIG: configPath, XDG_CONFIG_HOME: dirname(configPath) },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -235,7 +253,7 @@ describe("cloud CLI OAuth session handling", () => {
     expect(result.stderr).toContain("--version requires a value.");
   });
 
-  test("top-level help includes the built-in app modules", async () => {
+  test("top-level help lists the installed app modules with their summaries", async () => {
     const dir = await createTempDir();
     const configPath = join(dir, "config.json");
 

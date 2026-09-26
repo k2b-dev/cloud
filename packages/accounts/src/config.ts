@@ -3,6 +3,7 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "accounts",
+  cli: { accounts: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Accounts",
   icon: "ti ti-users-group",
   description: "Manage account access, groups, and account requests.",

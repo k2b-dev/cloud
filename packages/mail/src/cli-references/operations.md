@@ -1,6 +1,6 @@
 # Mail operations
 
-Read this reference for provider credential lifecycle, discovery, synchronization, repair, remote message changes, attachment delivery, and platform observability. Start with [Mail CLI](mail.md) for normal mailbox setup and collaboration.
+Read this reference for provider credential lifecycle, discovery, synchronization, repair, remote message changes, attachment delivery, and platform observability. Start with [Mail CLI](index.md) for normal mailbox setup and collaboration.
 
 ## Inspect mailbox health
 

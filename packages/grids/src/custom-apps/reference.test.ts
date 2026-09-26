@@ -15,7 +15,7 @@ test("documents every block and option in both Help locales and the CLI skill", 
   const documents = await Promise.all([
     Bun.file(new URL("../help/documents/en/grids-custom-app-api.help.md", import.meta.url)).text(),
     Bun.file(new URL("../help/documents/de/grids-custom-app-api.help.md", import.meta.url)).text(),
-    Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text(),
+    Bun.file(new URL("../cli-references/index.md", import.meta.url)).text(),
   ]);
   const object = z.record(z.string(), z.unknown());
   const blocks = new Map<string, Record<string, unknown>>();

@@ -1,6 +1,6 @@
 # Notebook table formulas
 
-This is the complete formula language available in Markdown table cells. For the Notebooks content model and CLI workflows, start with [Notebooks CLI](notebooks.md).
+This is the complete formula language available in Markdown table cells. For the Notebooks content model and CLI workflows, start with [Notebooks CLI](index.md).
 
 ## Contents
 

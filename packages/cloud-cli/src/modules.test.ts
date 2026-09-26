@@ -2,21 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { builtInModules } from "./modules";
 
-test.each(Object.entries(builtInModules))("built-in module %s loads under its own name and summary", async (name, entry) => {
-  const { default: module } = await entry.load();
-  expect(module.name).toBe(name);
-  // `cld help` prints the registry summary without importing the module.
-  expect(entry.summary, `Update the "${name}" summary in packages/cloud-cli/src/modules.ts.`).toBe(module.summary);
-  expect(entry.germanSummary.trim()).not.toBe("");
-});
-
-// Only the host and the shared `@k2b/cloud/cli` helpers may load; module
-// entry points such as `@k2b/cloud/cli/admin` or `@k2b/cloud-app-*/cli` may not.
+// Only the host and the shared `@k2b/cloud/cli` helpers may load for host
+// commands; no plugin from the store or the plugins directory may.
 const hostFile = /\/packages\/(cloud-cli\/src\/[^/]+|cloud\/src\/cli\/(?!(account|apps|capabilities)\.ts$)[^/]+)\.ts$/;
 
-test("host commands load no built-in module", async () => {
+test("host commands load no module", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-modules-test-"));
   const index = resolve(import.meta.dir, "index.ts");
   const probe = `

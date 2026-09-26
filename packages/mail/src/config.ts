@@ -7,6 +7,7 @@ export { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE };
 
 export const app = defineApp({
   id: MAIL_APP_ID,
+  cli: { mail: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Mail",
   icon: "ti ti-mail",
   description: "Read, search, organize, draft, and send email collaboratively.",
