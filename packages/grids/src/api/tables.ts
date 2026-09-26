@@ -56,6 +56,7 @@ import {
 } from "./table-admin-overview";
 import { tableQueryRoutes } from "./table-query-routes";
 import { v } from "./validator";
+import { acknowledgeWorkspaceWrite } from "./workspace-revision";
 
 const PublicRelationLookupResponseSchema = z.object({
   items: z.array(z.object({ id: ShortIdSchema, label: z.string() })),
@@ -731,7 +732,9 @@ export const tablesRoutes = new Hono<AuthContext>()
       const converted = await fromPublicUpdateTable(tableId, c.req.valid("json"));
       if (!converted.ok) return c.json({ message: converted.error.message }, converted.error.status);
       const result = await gridsService.table.update(tableId, converted.data, currentActorUserId(c));
-      return result.ok ? c.json(await toPublicTable(result.data)) : c.json({ message: result.error.message }, result.error.status);
+      if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+      await acknowledgeWorkspaceWrite(c, table.baseId, `table:${table.shortId}`);
+      return c.json(await toPublicTable(result.data));
     },
   )
 

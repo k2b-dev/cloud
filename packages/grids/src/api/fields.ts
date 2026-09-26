@@ -20,6 +20,7 @@ import {
 } from "./public-dto";
 import { internalIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
 import { v } from "./validator";
+import { acknowledgeWorkspaceWrite } from "./workspace-revision";
 
 const PublicFieldDependentSchema = z.object({
   type: z.enum(["view", "form", "formula", "lookup", "rollup", "relation_display", "audit_policy", "federation_mapping"]),
@@ -150,7 +151,9 @@ const app = new Hono<AuthContext>()
       const internal = await fromPublicFieldWrite(body.type, body);
       if (!internal.ok) return respond(c, () => Promise.resolve(internal));
       const result = await gridsService.field.create({ tableId, ...internal.data }, currentActorUserId(c), getLocale(c));
-      return result.ok ? c.json(await toPublicField(result.data), 201) : c.json({ message: result.error.message }, result.error.status);
+      if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+      await acknowledgeWorkspaceWrite(c, table.baseId, `table:${table.shortId}`);
+      return c.json(await toPublicField(result.data), 201);
     },
   )
 
@@ -205,7 +208,9 @@ const app = new Hono<AuthContext>()
       const internal = await fromPublicFieldWrite(field.type, c.req.valid("json"));
       if (!internal.ok) return respond(c, () => Promise.resolve(internal));
       const result = await gridsService.field.update(fieldId, internal.data, currentActorUserId(c), getLocale(c));
-      return result.ok ? c.json(await toPublicField(result.data)) : c.json({ message: result.error.message }, result.error.status);
+      if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+      await acknowledgeWorkspaceWrite(c, table.baseId, `table:${table.shortId}`);
+      return c.json(await toPublicField(result.data));
     },
   )
 
@@ -243,6 +248,7 @@ const app = new Hono<AuthContext>()
       }
       const result = await gridsService.field.softDelete(fieldId, currentActorUserId(c), getLocale(c));
       if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+      await acknowledgeWorkspaceWrite(c, table.baseId, `table:${table.shortId}`);
       return c.body(null, 204);
     },
   )
@@ -272,7 +278,9 @@ const app = new Hono<AuthContext>()
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.field.restore(fieldId, currentActorUserId(c), getLocale(c));
-      return result.ok ? c.json(await toPublicField(result.data)) : c.json({ message: result.error.message }, result.error.status);
+      if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+      await acknowledgeWorkspaceWrite(c, table.baseId, `table:${table.shortId}`);
+      return c.json(await toPublicField(result.data));
     },
   );
 

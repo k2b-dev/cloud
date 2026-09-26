@@ -476,6 +476,7 @@ describe("classic resource route contracts", () => {
           ),
         );
         expect(tableUpdate.status).toBe(200);
+        expect(tableUpdate.headers.get("X-Grids-Workspace-Revision")).toMatch(new RegExp(`^table:${fixture.tablePublicId}=[0-9a-f]{32}$`));
         expect(await tableUpdate.json()).toMatchObject({
           id: fixture.tablePublicId,
           columns: [{ fieldId: createdFieldBody.id }],

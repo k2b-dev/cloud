@@ -7,7 +7,7 @@ order: 150
 ---
 ## Die Basisstruktur wurde geändert {icon="refresh"}
 
-Strukturänderungen zeigen einen Hinweis **Neu laden**, laden die Seite aber nie automatisch neu. Offene Eingaben bleiben erhalten. Hat sich der aktive Bereich geändert, pausiert das Speichern: Sichere deinen Entwurf anderweitig, bevor du das Neuladen bestätigst. Änderungen anderswo sperren die Bearbeitung nicht. Bei Zugriffsentzug oder gelöschter aktiver Ressource wird der betroffene Arbeitsbereich sofort ausgeblendet.
+Ändert jemand anderes die Struktur des Bereichs, in dem du arbeitest, erscheint ein Hinweis **Neu laden**; die Seite lädt nie von selbst neu, und Speichern funktioniert weiter. Struktur heißt: der Tabellenname und die Felder, Quelle und Tabelle eines Views oder die Definition einer App. Spaltenbreiten, Darstellungsmodi, View-Layouts, Feldreihenfolge und Änderungen anderswo in der Base zeigen nichts an. Deine eigenen Änderungen in diesem Tab lösen den Hinweis nie aus. Offene Eingaben bleiben erhalten, bis du das Neuladen bestätigst; ein Speichern, das nicht mehr zur aktuellen Struktur passt, etwa ein Wert für ein gelöschtes Feld, weist der Server mit einer klaren Meldung ab. Bei Zugriffsentzug oder gelöschter aktiver Ressource wird der betroffene Arbeitsbereich sofort ausgeblendet.
 
 ## Eine Ressource fehlt oder lässt sich nicht öffnen {icon="lifebuoy"}
 

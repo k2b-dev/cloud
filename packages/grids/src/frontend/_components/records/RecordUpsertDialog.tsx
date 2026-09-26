@@ -5,7 +5,6 @@ import type { PublicField as Field, PublicGridRecord as GridRecord } from "../..
 import { initialFieldInputValue, isRecordInputField, sanitizeFieldValues } from "../fields/field-render";
 import { FieldInput, type UserInputEntry } from "../forms/form-fields";
 import type { LiveRecordEvent } from "../records-view/live-refresh";
-import { workspaceLiveStatus } from "../workspace/workspace-live-state";
 import { recordMessages } from "./messages";
 
 /**
@@ -203,7 +202,7 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
 
       const handleSubmit = async (e: Event) => {
         e.preventDefault();
-        if (submitting() || conflict() || workspaceLiveStatus().blocked) return;
+        if (submitting() || conflict()) return;
         if (!validate()) {
           if (e.currentTarget instanceof HTMLElement) e.currentTarget.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
           return;
@@ -275,9 +274,6 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
                   <For each={editableFields}>{(f) => renderField(f)}</For>
                 </fieldset>
               </Show>
-              <Show when={workspaceLiveStatus().blocked}>
-                <NoticeCard tone="warning">{workspaceLiveStatus().message}</NoticeCard>
-              </Show>
               <Show when={submitError()}>{(message) => <NoticeCard tone="danger">{message()}</NoticeCard>}</Show>
               <Show when={conflict() && args.reloadRecord}>
                 <Button variant="secondary" onClick={() => void compareCurrent()} disabled={submitting()}>
@@ -291,12 +287,7 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
                 <Button variant="ghost" size="sm" type="button" onClick={requestClose} disabled={submitting()}>
                   {t().cancel}
                 </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  type="submit"
-                  disabled={editableFields.length === 0 || submitting() || conflict() || workspaceLiveStatus().blocked}
-                >
+                <Button variant="primary" size="sm" type="submit" disabled={editableFields.length === 0 || submitting() || conflict()}>
                   {args.mode === "create" ? t().create : t().save}
                 </Button>
               </div>

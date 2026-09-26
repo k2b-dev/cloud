@@ -47,6 +47,7 @@ import { parseJsonbRow } from "./jsonb";
 import { getLauncher } from "./workflow-launchers";
 import { getWorkflow } from "./workflow-read";
 import { workflowInputShapeError } from "./workflow-values";
+import { customAppStructure } from "./workspace-revision";
 
 type DbRow = Record<string, unknown>;
 
@@ -1673,7 +1674,7 @@ export const saveDraft = async (id: string, input: unknown, locale?: string): Pr
         SET name = ${parsed.data.name}, icon = ${parsed.data.icon ?? null}, draft_definition = ${parsed.data}::jsonb,
             draft_capabilities = NULL, updated_at = now()
         WHERE id = ${id}::uuid AND deleted_at IS NULL
-        RETURNING *, md5(to_jsonb(custom_apps)::text) AS workspace_revision
+        RETURNING *, md5(${customAppStructure("custom_apps")}::text) AS workspace_revision
       `;
       if (!updated) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
       return ok({
@@ -1691,7 +1692,7 @@ export const saveDraft = async (id: string, input: unknown, locale?: string): Pr
       SET name = ${definition.name}, icon = ${definition.icon ?? null}, draft_definition = ${definition}::jsonb,
           draft_capabilities = ${capabilities}::jsonb, updated_at = now()
       WHERE id = ${id}::uuid AND deleted_at IS NULL
-      RETURNING *, md5(to_jsonb(custom_apps)::text) AS workspace_revision
+      RETURNING *, md5(${customAppStructure("custom_apps")}::text) AS workspace_revision
     `;
     if (!updated) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const app = mapRow(updated);

@@ -51,19 +51,19 @@ describe("workspace structure reconciliation", () => {
     try {
       controller.check();
       await tick();
-      expect(applied).toEqual({ changed: true, blocked: true, revoked: false });
+      expect(applied).toEqual({ changed: true, revoked: false });
       controller.acknowledge("table:active", "own");
-      expect(applied).toEqual({ changed: false, blocked: false, revoked: false });
+      expect(applied).toEqual({ changed: false, revoked: false });
       snapshot = { ...snapshot, resources: { ...snapshot.resources, "table:active": "foreign" } };
       controller.check();
       await tick();
       controller.acknowledge("table:active", "own");
-      expect(applied).toEqual({ changed: true, blocked: true, revoked: false });
+      expect(applied).toEqual({ changed: true, revoked: false });
     } finally {
       controller.dispose();
     }
   });
-  test("bursts coalesce; unchanged reconnect is silent; unrelated changes do not block", async () => {
+  test("bursts coalesce; unchanged reconnect is silent; changes outside the active resources stay silent", async () => {
     let snapshot = initial;
     let calls = 0;
     const applied: unknown[] = [];
@@ -85,21 +85,18 @@ describe("workspace structure reconciliation", () => {
       for (let i = 0; i < 20; i++) controller.check(`cursor-${i}`);
       await tick();
       expect(calls).toBe(1);
-      expect(applied).toEqual([{ changed: false, blocked: false, revoked: false }]);
+      expect(applied).toEqual([{ changed: false, revoked: false }]);
       expect(cursors).toEqual(["cursor-19"]);
-      snapshot = { ...initial, revision: "two", resources: { ...initial.resources, "table:other": "c" } };
+      snapshot = { ...initial, revision: "two", resources: { ...initial.resources, "table:other": "c", "table:new": "d" } };
       controller.check();
       await tick();
-      expect(applied.at(-1)).toEqual({ changed: true, blocked: false, revoked: false });
-      controller.check();
-      await tick();
-      expect(applied.at(-1)).toEqual({ changed: true, blocked: false, revoked: false });
+      expect(applied.at(-1)).toEqual({ changed: false, revoked: false });
     } finally {
       controller.dispose();
     }
   });
 
-  test("active schema and permission loss block writes; deletion revokes the surface", async () => {
+  test("active structure and permission loss inform; deletion revokes the surface", async () => {
     let snapshot = initial;
     let applied: unknown;
     const controller = createWorkspaceRevisionController({
@@ -116,15 +113,15 @@ describe("workspace structure reconciliation", () => {
       snapshot = { ...initial, resources: { ...initial.resources, "table:active": "changed" } };
       controller.check();
       await tick();
-      expect(applied).toEqual({ changed: true, blocked: true, revoked: false });
+      expect(applied).toEqual({ changed: true, revoked: false });
       snapshot = { ...initial, canAdmin: false };
       controller.check();
       await tick();
-      expect(applied).toEqual({ changed: true, blocked: true, revoked: false });
+      expect(applied).toEqual({ changed: true, revoked: false });
       snapshot = { ...initial, resources: { "table:other": "b" } };
       controller.check();
       await tick();
-      expect(applied).toEqual({ changed: true, blocked: true, revoked: true });
+      expect(applied).toEqual({ changed: true, revoked: true });
     } finally {
       controller.dispose();
     }

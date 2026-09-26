@@ -1,28 +1,28 @@
 import { createSignal } from "solid-js";
+import { workspaceRevisionHeader } from "../../../service/workspace-revision";
 
 // Page-owned status shared by independently hydrated workspace/dialog islands.
-export const [workspaceLiveStatus, setWorkspaceLiveStatus] = createSignal<{
-  blocked: boolean;
-  revoked: boolean;
-  message: string;
-}>({ blocked: false, revoked: false, message: "" });
+export const [workspaceLiveStatus, setWorkspaceLiveStatus] = createSignal<{ revoked: boolean; message: string }>({
+  revoked: false,
+  message: "",
+});
 
-/** Call only after the complete resource response is reflected in the editor. */
-export const acknowledgeWorkspaceResource = (baseId: string, key: string, revision: string | null) => {
-  if (revision) document.dispatchEvent(new CustomEvent("grids:workspace-resource-applied", { detail: { baseId, key, revision } }));
-};
+export const workspaceResourceAppliedEvent = "grids:workspace-resource-applied";
 
-// GQL's POST endpoints only read/compile; stale schema must not stop reconciliation.
-export const isWorkspaceRead = (method: string, pathname: string) =>
-  ["GET", "HEAD", "OPTIONS"].includes(method) ||
-  (method === "POST" &&
-    (/^\/api\/grids\/gql\/by-base\/[^/]+\/(preview|execute|autocomplete|compile-view|views\/[^/]+\/execute)$/.test(pathname) ||
-      /^\/api\/grids\/tables\/[^/]+\/query$/.test(pathname)));
+/** Structure revisions the server reports for a write of this tab: `key=revision[,key=revision]`. */
+export const parseWorkspaceRevisionHeader = (value: string | null): Array<{ key: string; revision: string }> =>
+  (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim().split("="))
+    .filter((parts): parts is [string, string] => parts.length === 2 && parts[0] !== "" && parts[1] !== "")
+    .map(([key, revision]) => ({ key, revision }));
 
-export const workspaceFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+export const workspaceFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const state = workspaceLiveStatus();
-  const pathname = new URL(input instanceof Request ? input.url : String(input), "http://localhost").pathname;
-  if (state.revoked || (state.blocked && !isWorkspaceRead(method, pathname))) return Promise.reject(new Error(state.message));
-  return fetch(input, init);
+  if (state.revoked) throw new Error(state.message);
+  const response = await fetch(input, init);
+  for (const detail of parseWorkspaceRevisionHeader(response.headers.get(workspaceRevisionHeader))) {
+    document.dispatchEvent(new CustomEvent(workspaceResourceAppliedEvent, { detail }));
+  }
+  return response;
 };
