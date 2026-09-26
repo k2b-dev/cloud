@@ -27,7 +27,12 @@ const ownClaim: SpaceItemClaim = {
   claimedAt,
 };
 const otherClaim: SpaceItemClaim = { ...ownClaim, actor: { kind: "user", id: other }, displayName: "Mira Beck", avatarHash: null };
-const botClaim: SpaceItemClaim = { ...ownClaim, actor: { kind: "service_account", id: other }, displayName: "Task worker", avatarHash: null };
+const botClaim: SpaceItemClaim = {
+  ...ownClaim,
+  actor: { kind: "service_account", id: other },
+  displayName: "Task worker",
+  avatarHash: null,
+};
 
 const noop = () => undefined;
 const withLocale = (locale: string, render: () => JSX.Element) =>
@@ -41,7 +46,15 @@ const withLocale = (locale: string, render: () => JSX.Element) =>
   );
 const button = (props: Partial<Parameters<typeof ClaimButton>[0]>, locale = "en") =>
   withLocale(locale, () =>
-    createComponent(ClaimButton, { claim: null, currentUserId: me, isAdmin: false, onClaim: noop, onRelease: noop, onTakeOver: noop, ...props }),
+    createComponent(ClaimButton, {
+      claim: null,
+      currentUserId: me,
+      isAdmin: false,
+      onClaim: noop,
+      onRelease: noop,
+      onTakeOver: noop,
+      ...props,
+    }),
   );
 const avatar = (props: Partial<Parameters<typeof ClaimAvatar>[0]>, locale = "en") =>
   withLocale(locale, () => createComponent(ClaimAvatar, { claim: otherClaim, currentUserId: me, ...props }));

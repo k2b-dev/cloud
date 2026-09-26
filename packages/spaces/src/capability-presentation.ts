@@ -47,6 +47,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             query: "Optionaler Suchtext.",
             deadlineFilter: "Nach Fälligkeit filtern.",
             activity: "Nach Aktivität filtern; stale bedeutet mindestens 30 Tage ohne Aktivität.",
+            claimed: "Nur Aufgaben mit aktiver Übernahme; hat Vorrang vor activity.",
             priority: "Nach Aufgabenpriorität filtern.",
             blocked: "Nach offenen Blockern filtern.",
           },
@@ -293,6 +294,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             "Durchsuchen Sie Aufgaben in einem bekannten Space. SpaceId, ColumnIds und TagIds von space.read abrufen; Verwenden Sie das zurückgegebene spaces.item refs mit item.read, Abhängigkeitsabfragen, Kommentaren oder der Aufgabe Actions.",
           input: {
             activity: "Nach Aktivität filtern; stale bedeutet mindestens 30 Tage ohne Aktivität.",
+            claimed: "Nur Aufgaben mit aktiver Übernahme; hat Vorrang vor activity.",
             deadlineFilter: "Nach Fälligkeit filtern.",
             spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             query: "Optionale Textsuche.",

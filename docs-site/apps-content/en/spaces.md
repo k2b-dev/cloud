@@ -215,7 +215,8 @@ The `comments list` output and the `blocks` field of `deps` are paginated object
 
 For capabilities, use `task.work.read`, `task.claim`, `task.release` and
 `task.progress`; `task.set-completed` accepts optional `result`, `commit` and
-`claimId`. Results and progress notes each have the existing 5,000-character
+`claimId`, and `task.list` and `task.focus` accept `claimed: true` to list
+only claimed tasks. Results and progress notes each have the existing 5,000-character
 text budget. Keep the repository's Space ID in its agent instructions and
 use it in every item address.
 
