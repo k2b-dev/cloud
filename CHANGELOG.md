@@ -3,6 +3,15 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.19.3](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.2...cloud-v0.19.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* **access:** let standalone and agent service accounts use their Spaces and Notebooks grants ([#286](https://github.com/k2b-dev/cloud/issues/286)) ([4093af9](https://github.com/k2b-dev/cloud/commit/4093af9bc7504b2632a02ea9b2662b85b12da92f))
+* **dev:** keep the dev CLI's state inside the checkout ([#280](https://github.com/k2b-dev/cloud/issues/280)) ([d02ad19](https://github.com/k2b-dev/cloud/commit/d02ad191281f583016d6f71000f725607078d536))
+* **dev:** pass APP_URL to the development containers ([#284](https://github.com/k2b-dev/cloud/issues/284)) ([c08c28e](https://github.com/k2b-dev/cloud/commit/c08c28e2497eb64f62e5dacf15126d44fc1ae421))
+
 ## [0.19.2](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.1...cloud-v0.19.2) (2026-09-26)
 
 
