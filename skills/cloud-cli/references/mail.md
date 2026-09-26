@@ -7,7 +7,7 @@ Use `cld mail` to configure Cloud mailboxes and operate mirrored provider mail t
 Read a message with its current explainable security assessment or report a suspicious incoming message:
 
 ```bash
-cld mail message get <message-id> --mailbox <mailbox>
+cld mail cat <message-id> --mailbox <mailbox>
 cld mail message report-phishing <message-id> --mailbox <mailbox> --yes
 ```
 
@@ -35,7 +35,7 @@ cld mail admin security authentication set --server mx.example.org
 
 Domain rules include subdomains. Trust rules support sender addresses and sender domains only. They suppress heuristic warnings only when a trusted receiving mail server also reports successful sender authentication. An explicit block always wins.
 
-Start here for mailbox setup, search, and collaboration. Continue with:
+Start here for everyday mail, mailbox setup, search, and collaboration. Continue with:
 
 - [Mail compose and drafts](mail-compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
 - [Mail automation](mail-automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, and central run operations.
@@ -47,19 +47,113 @@ Start here for mailbox setup, search, and collaboration. Continue with:
 - Use `--json` when a later command needs an id, revision, token, or cursor.
 - Pass provider credentials with `--secret-stdin` or `--secret-file`. Credentials are write-only and are never returned by the API.
 - Read a message and its folder ids before changing provider state, moving, copying, or deleting it.
-- Public Mail resource ids are case-sensitive, exactly six ASCII letters or digits, and must be passed through unchanged. This applies to mailboxes, folders, conversations, messages, attachments, drafts and draft attachments, sender identities, tags, comments, reminders, scheduled deliveries, saved views, compose templates, incoming automations, and automatic replies. Legacy UUID resource ids are rejected; an exact mailbox name remains valid where a command documents `<mailbox-id-or-name>`.
+- Public Mail resource ids are case-sensitive, exactly six ASCII letters or digits, and must be passed through unchanged. This applies to mailboxes, folders, conversations, messages, attachments, drafts and draft attachments, sender identities, tags, comments, reminders, scheduled deliveries, saved views, compose templates, incoming automations, and automatic replies. Legacy UUID resource ids are rejected. Mailboxes also accept their exact name, folders their path, and tags their exact name; see [Address mailboxes and folders](#address-mailboxes-and-folders).
 - Treat technical command, provider, workflow, operation, cursor, and token ids as opaque. Do not derive or shorten them.
 - `sync`, `rediscover`, `repair`, sends, and provider mutations create durable commands. A successful request proves that work was accepted, not that every remote effect has finished. Use the corresponding wait or status command.
 - Do not delete remote messages, revoke credentials, revoke access, cancel another user's work, or delete mailbox resources without an explicit request.
 
 Commands use the mailbox selected by `cld mail use` unless `--mailbox` or a mailbox argument is provided. Prefer an explicit mailbox in unattended scripts.
 
+## Address mailboxes and folders
+
+- A **mailbox** is its ID or its exact name: `Mail01`, `"Support"`.
+- A **folder** is `<mailbox>:<path>`, such as `"Support:Projekte / 2025 / Archiv"`. The path uses `/` between folders, spaces around `/` are optional, and letter case is ignored. `folders` shows each folder's path and ID. A folder ID, or a path without the mailbox part, refers to the mailbox from `--mailbox` or `cld mail use`.
+- **Conversations, messages, and drafts** are their IDs. They belong to the mailbox from `--mailbox` or `cld mail use`.
+- **Tags** are their ID or exact name.
+
+Nothing is guessed. When a name or path matches several mailboxes, folders, or tags, the command fails with status `409` and lists every candidate as `path (id)`; retry with one of the IDs:
+
+```bash
+cld --json mail ls Support:Archiv
+# {"error":{"message":"\"Archiv\" matches several folders: Archiv (Fa9x2Q), archiv (Kp3m8R). Use one of these paths or IDs.","status":409,"exitCode":1}}
+cld --json mail ls Support:Fa9x2Q
+```
+
+## Read mail
+
+List your mailboxes, then the conversations of a mailbox or one folder:
+
+```bash
+cld --json mail ls
+cld --json mail ls Support --view mine
+cld --json mail ls "Support:Projekte / 2025" --status needs_action --limit 20
+```
+
+Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, or `recently_active`; `--status` takes `needs_action`, `waiting`, or `done`. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
+
+Show one conversation with its summary, status, assignee, tags, and latest messages, then print one message:
+
+```bash
+cld --json mail show <conversation-id>
+cld mail cat <message-id>
+```
+
+`show` returns up to the 50 most recent messages; `messagesTruncated: true` means earlier ones exist, and `conversation messages` pages through the full history. `cat --json` returns the complete message, including headers, attachments, and its security assessment.
+
+## Triage conversations
+
+Every triage command takes up to 50 conversation IDs:
+
+```bash
+cld --json mail assign <conversation-id> <second-conversation-id> --to maria
+cld mail assign <conversation-id> --to none
+cld --json mail archive <conversation-id> <second-conversation-id>
+cld --json mail mv <conversation-id> --to "Support:Projekte / 2025"
+cld --json mail read <conversation-id>
+cld --json mail unread <conversation-id>
+cld --json mail flag <conversation-id>
+cld --json mail unflag <conversation-id>
+cld --json mail rm <conversation-id> --yes
+cld --json mail tag add <conversation-id> <second-conversation-id> --tag Priority
+cld --json mail tag rm <conversation-id> --tag Priority
+```
+
+- `assign --to` takes a user ID, an exact username from `conversation users`, `me`, or `none`. It needs no revision, and assigning the current assignee again changes nothing. The new assignee receives one notification for the whole batch; assigning yourself or clearing the assignee sends none.
+- `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, and `rm` change the conversation's messages in one folder: the Inbox unless `--in <folder>` names another. `rm` moves them to the Trash and needs `--yes`. Each conversation becomes durable provider commands; pass `--wait` to wait for them.
+- `tag add` and `tag rm` take `--tag` once per tag. They change Cloud-local tags, not provider keywords.
+
+A batch continues when one conversation fails and then exits with status 1. The JSON result lists each conversation:
+
+```json
+{
+  "results": [
+    { "conversationId": "Cv8aB2", "status": "ok", "correlationId": "5b0e1c2a-8f5e-4c43-9d53-2f0a7c1e9b11", "commands": [] },
+    { "conversationId": "Cv9xQ4", "status": "error", "error": "404 Conversation messages in the selected folder not found" }
+  ]
+}
+```
+
+`assign` returns `{ "assignee": ..., "results": [{ "conversationId", "status": "ok" | "not_found" }] }`. `tag add` returns `updatedConversationIds` and `unchangedConversationIds`; `tag rm` adds `failed`.
+
+## Answer mail
+
+`reply` and `forward` create a draft from a conversation; `send` sends a draft:
+
+```bash
+cld --json mail reply <conversation-id> --body "Thanks, it is on its way."
+cld --json mail forward <conversation-id> --to colleague@example.com --body "FYI"
+cld --json mail send <draft-id> --wait
+```
+
+Both use the conversation's latest message unless `--message` names another, and the mailbox's verified default identity unless `--identity` names another. `reply --all` replies to all recipients. See [Mail compose and drafts](mail-compose.md) for new messages, attachments, scheduling, and safety review.
+
+## Discuss a conversation
+
+Internal Markdown comments are visible to everyone with access to the mailbox, never to external recipients:
+
+```bash
+cld --json mail comments list <conversation-id>
+cld --json mail comments add <conversation-id> --body-file note.md --message <message-id>
+cld --json mail comments update <conversation-id> <comment-id> --revision <revision> --body-file note.md
+cld --json mail comments delete <conversation-id> <comment-id> --revision <revision> --yes
+```
+
 ## Select and configure a mailbox
 
 List accessible mailboxes, inspect one, create a mailbox, and select a default:
 
 ```bash
-cld --json mail list
+cld --json mail ls
 cld --json mail mailbox get <mailbox-id-or-name>
 cld --json mail create "Support"
 cld mail use <mailbox-id>
@@ -261,11 +355,11 @@ cld --json mail search --body overdue --body reminder --or --cursor <next-cursor
 cld --json mail search --attachment-name invoice --comment approved --tag Priority
 ```
 
-`--folder` restricts results to one folder and accepts a folder id or an exact
-folder name (case-insensitive) from `cld --json mail folders`. A name shared by
-several folders matches all of them; pass the id to select exactly one. A value
-that matches no folder fails with `Unknown folder` instead of returning an empty
-result. `--match` does not apply to `--folder`. In a JSON expression, use
+`--folder` restricts results to one folder and accepts a folder ID or path from
+`cld --json mail folders`, resolved like every other folder address. A path that
+matches several folders fails with `409` and lists them; a value that matches no
+folder fails with `404` instead of returning an empty result. Repeat `--folder`
+to require several folders. `--match` does not apply to `--folder`. In a JSON expression, use
 `{ "type": "folder_id", "folderId": "<folder-id>" }` for the same filter; an
 unknown `folderId` fails as not found. The `text` field `folder` remains a
 folder-name text search and can match nothing.
@@ -315,14 +409,11 @@ For nested AND, OR, and NOT expressions, pass the shared search contract through
 cld --json mail search --expression-file query.json --sort newest
 ```
 
-Inspect conversations and messages:
+Inspect conversations and messages beyond `show` and `cat`:
 
 ```bash
 cld --json mail conversation counts
-cld --json mail conversation list --status needs_action
-cld --json mail conversation get <conversation-id>
 cld --json mail conversation messages <conversation-id>
-cld --json mail message get <message-id>
 cld --json mail message inspect <message-id>
 cld --json mail message source <message-id> --out message.eml
 ```
@@ -335,22 +426,17 @@ cld --json mail conversation related <conversation-id> --limit 5
 
 Every result includes the reasons it matched. This conversation-level command is distinct from `conversation contact-history`, which requires one resolved Contact and returns history for that specific Contact.
 
-`conversation get` returns the shared summary, collaboration state, local tags,
-and up to the 50 most recent messages. `messagesTruncated: true` means earlier
-messages exist; use `conversation messages` and its cursor to inspect the full
-chronological history.
-
-Queue provider-backed conversation state changes from a concrete source folder:
+Queue other provider-backed conversation changes from a source folder, the Inbox unless `--in` names another (`not-spam` starts from Junk):
 
 ```bash
-cld --json mail conversation not-spam <conversation-id> --source <junk-folder-id> --wait
-cld --json mail conversation keyword add <conversation-id> FollowUp --source <folder-id> --wait
-cld --json mail conversation keyword remove <conversation-id> FollowUp --source <folder-id> --wait
+cld --json mail conversation not-spam <conversation-id> --wait
+cld --json mail conversation keyword add <conversation-id> --keyword FollowUp --in "Support:Projekte / 2025" --wait
+cld --json mail conversation keyword remove <conversation-id> --keyword FollowUp --wait
 ```
 
 Provider keywords are distinct from Cloud-local tags. The command reports a clear provider error if the selected IMAP folder does not permit custom keywords.
 
-`search`, `conversation list`, activities, saved views, scheduled sends, and deleted-mailbox listings are cursor-paginated. Preserve and pass the returned cursor rather than reconstructing it.
+`search`, `ls`, activities, saved views, scheduled sends, and deleted-mailbox listings are cursor-paginated. Preserve and pass the returned cursor rather than reconstructing it.
 
 Create a reviewable independent draft from an existing message, or prepare a resend of an outbound message:
 
@@ -441,16 +527,7 @@ cld --json mail conversation update \
 cld --json mail conversation activity <conversation-id>
 ```
 
-Assign up to 50 conversations of one mailbox to one person at once, or clear their assignee. `--to` takes a user ID, an exact username from `conversation users`, `me`, or `none`:
-
-```bash
-cld --json mail conversation assign \
-  --conversation <conversation-id>,<second-conversation-id> \
-  --to maria
-cld mail conversation assign --conversation <conversation-id> --to none
-```
-
-The result lists every conversation as `ok` or `not_found`; the command exits with status 1 when any conversation was not found in the mailbox. Unlike `conversation update`, it needs no revision: assigning the current assignee again changes nothing. The new assignee receives one notification for the whole batch, not one per conversation. Assigning yourself or clearing the assignee sends none.
+Assign many conversations at once with [`assign`](#triage-conversations). It exits with status 1 when any conversation was not found in the mailbox.
 
 People can mark a conversation with `--done` or clear Done with `--reopen`. Mail derives `needs_action` and `waiting` from verified mail flow: incoming mail needs action, while a confirmed human reply waits for someone else. Automatic or ambiguous mail does not invent a next step. Done and reopen clear an active snooze, so change completion and snooze in separate commands.
 
@@ -468,24 +545,14 @@ cld --json mail tag create "Priority"
 cld --json mail tag list
 cld --json mail tag rename <tag-id> "Urgent" --revision <tag-revision>
 cld --json mail conversation tag set <conversation-id> --revision <conversation-revision> --tag <tag-id>
-cld --json mail conversation tag add \
-  --conversation <conversation-id> \
-  --conversation <second-conversation-id> \
-  --tag <tag-id>
+cld --json mail tag add <conversation-id> <second-conversation-id> --tag Priority
 cld --json mail conversation tag list <conversation-id>
 cld --json mail tag delete <tag-id> --revision <tag-revision> --yes
 ```
 
-`conversation tag set` replaces the complete tag set for one revision-fenced conversation. `conversation tag add` is an idempotent additive bulk operation for up to 50 conversations and 50 tags; existing assignments remain unchanged.
+`conversation tag set` replaces the complete tag set for one revision-fenced conversation. `tag add` is an idempotent additive bulk operation for up to 50 conversations and 50 tags; existing assignments remain unchanged. `tag rm` removes tags from each conversation at its current revision.
 
-List, add, edit, or tombstone internal Markdown comments:
-
-```bash
-cld --json mail comment list <conversation-id>
-cld --json mail comment add <conversation-id> --body-file note.md --message <message-id>
-cld --json mail comment edit <conversation-id> <comment-id> --revision <revision> --body-file note.md
-cld --json mail comment delete <conversation-id> <comment-id> --revision <revision> --yes
-```
+Comments are described in [Discuss a conversation](#discuss-a-conversation).
 
 Personal reminders are revisioned. Omit `--revision` only when creating the first reminder:
 
@@ -545,13 +612,14 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 
 | Area | Commands |
 | --- | --- |
-| Mailboxes | `list`, `create`, `use`, `current`, `mailbox get`, `mailbox deleted list|get`, `mailbox restore`, `mailbox wait`, `configure`, `delete` |
+| Everyday | `ls`, `show`, `cat`, `assign`, `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, `rm`, `tag add|rm`, `reply`, `forward`, `send`, `comments list|add|update|delete` |
+| Mailboxes | `ls`, `create`, `use`, `current`, `mailbox get`, `mailbox deleted list|get`, `mailbox restore`, `mailbox wait`, `configure`, `delete` |
 | Access | `access list|search-principals|grant|set|revoke` |
 | Discovery | `provider discover|list`, `binding list|attach`, `identity list|add|setup-default|configure|verify|disable`, `folders`, `status` |
-| Read and search | `focus`, `search`, `message get|wait|inspect|source|edit-as-new|resend`, `conversation list|get|messages|counts`, `remote-content list|allow-sender|allow-domain|remove` |
-| Collaboration | `conversation collaboration|update|assign|users|activity|context|related|contact-history`, `tag ...`, `conversation tag ...`, `comment list|add|edit|delete`, `reminder get|set|cancel` |
+| Read and search | `focus`, `search`, `message wait|inspect|source|edit-as-new|resend`, `conversation messages|counts`, `remote-content list|allow-sender|allow-domain|remove` |
+| Collaboration | `conversation collaboration|update|users|activity|context|related|contact-history`, `tag list|create|rename|delete`, `conversation tag list|set`, `reminder get|set|cancel` |
 | Views and repair | `saved-view list|get|create|update|delete|conversations`, `conversation split|merge|reassign-message` |
 
-Provider-backed read, unread, flag, folder, attachment, and maintenance commands are documented in [Mail operations](mail-operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](mail-compose.md).
+Message-level provider changes, junk and keyword changes, folder, attachment, and maintenance commands are documented in [Mail operations](mail-operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](mail-compose.md).
 
 Live presence and cursor-based WebSocket invalidation are browser transport concerns rather than durable CLI operations. Shared draft leases, recovery copies, and resumable uploads are durable CLI capabilities and are documented in [Mail compose and drafts](mail-compose.md).
