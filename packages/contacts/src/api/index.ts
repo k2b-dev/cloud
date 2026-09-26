@@ -1,3 +1,4 @@
+import { cliAmbiguityText, localizeCloudCliText } from "@k2b/cloud/cli";
 import {
   AccessEntrySchema,
   createPagination,
@@ -31,9 +32,10 @@ import { z } from "zod";
 import { ResourceShortIdSchema } from "../capability-contracts";
 import { contactsService } from "../service";
 import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID } from "../service/access";
-import { contactsApiErrorMessage } from "../service/messages";
+import { contactsApiErrorMessage, contactsMessages, notFoundError } from "../service/messages";
 import {
   projectBooks,
+  projectContactReferences,
   projectContacts,
   projectDuplicates,
   projectFavorites,
@@ -45,6 +47,7 @@ import {
   resolvePublicIds,
 } from "../service/public-resources";
 import { isUuid } from "../service/shared";
+import type { ContactBook } from "../service/types";
 import * as vcard from "../service/vcard";
 import { isSafeWebsiteUrl, resolveContactName } from "../shared";
 import wsRoutes from "../ws";
@@ -528,11 +531,16 @@ const requireReadableCollectionBinding = async (c: Context<AuthContext>, subject
  * Resolves one book and checks required permissions for the current actor.
  */
 const requireBookAccess = async (c: Context<AuthContext>, publicBookId: string, requiredLevel: PermissionLevel = "read") => {
-  const subject = getBookAccessSubject(c);
   const bookId = await resolvePublicId("books", publicBookId);
   if (!bookId) {
     return { book: null, bookId: null, error: await respond(c, fail(err.notFound("Book"))) };
   }
+  return requireInternalBookAccess(c, bookId, requiredLevel);
+};
+
+/** `requireBookAccess` for a book whose internal ID is already known. */
+const requireInternalBookAccess = async (c: Context<AuthContext>, bookId: string, requiredLevel: PermissionLevel) => {
+  const subject = getBookAccessSubject(c);
   const book = await contactsService.book.get({ id: bookId });
 
   if (!book) {
@@ -666,10 +674,147 @@ const adminApi = new Hono<AuthContext>()
     return respondMessage(c, contactsService.book.access.remove({ bookId: internalBookId!, accessId }), "Access revoked");
   });
 
+const RESOURCE_SHORT_ID = /^[0-9A-Za-z]{6}$/;
+/** Names and IDs are bounded by the longest stored book name or contact label. */
+const ResolveQuerySchema = z
+  .object({
+    book: z.string().min(1).max(200).optional(),
+    contact: z.string().trim().min(1).max(200).optional(),
+    email: z.string().trim().toLowerCase().pipe(z.email().max(320)).optional(),
+  })
+  .refine((query) => (query.email ? !query.book && !query.contact : Boolean(query.book || query.contact)), {
+    message: "Pass book, contact, or email alone",
+  });
+const ResolveResponseSchema = z.object({ book: ContactBookSchema, contact: ContactSchema.nullable() });
+/** Candidates listed in one ambiguity message. */
+const RESOLVE_CANDIDATES = 20;
+
+/**
+ * Resolves CLI addresses: a book by ID or exact name, a contact by ID or by
+ * exact display name inside a book, or the one contact with an email address.
+ * Never guesses: several matches fail with 409 and list every candidate.
+ * Mounted before `localizeApiError` because its messages are already
+ * localized and the candidate list must survive.
+ */
+const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")).get(
+  "/",
+  documentRoute({
+    tags: ["Contacts"],
+    summary: "Resolve a contact book or contact address",
+    description:
+      "Pass `book` (ID or exact name) alone for a book, `contact` (ID) alone or with `book` (ID or exact display name) for a contact, or `email` alone for the one readable contact with that address. Several matches return 409 with every candidate.",
+    ...requiresAuth,
+    responses: {
+      200: jsonResponse(ResolveResponseSchema, "The book, and the contact when one was addressed"),
+      403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      404: jsonResponse(ErrorResponseSchema, "Nothing matches"),
+      409: jsonResponse(ErrorResponseSchema, "Several resources match; the message lists them"),
+    },
+  }),
+  v("query", ResolveQuerySchema),
+  async (c) => {
+    const locale = getLocale(c);
+    const t = contactsMessages(locale);
+    const query = c.req.valid("query");
+    const subject = getBookAccessSubject(c);
+    const binding = await requireReadableCollectionBinding(c, subject);
+    if (binding.error) return respond(c, fail(err.forbidden(t.accessDenied)));
+    const notFound = (message: string) => respond(c, fail(notFoundError(message)));
+    const ambiguous = (value: string, resources: { en: string; de: string }, candidates: { path: string; id: string }[]) =>
+      respond(
+        c,
+        fail({
+          code: "CONFLICT" as const,
+          status: 409 as const,
+          message: localizeCloudCliText(locale, cliAmbiguityText({ value, resources, candidates })),
+        }),
+      );
+    const readable = async (bookId: string) => {
+      const access = await requireInternalBookAccess(c, bookId, "read");
+      return access.error ? null : access.book;
+    };
+    const found = async (book: ContactBook, contactId: string | null) => {
+      const contact = contactId ? await contactsService.contact.get({ bookId: book.id, id: contactId }) : null;
+      return respond(c, ok({ book: (await projectBooks([book]))[0]!, contact: contact ? (await projectContacts([contact]))[0]! : null }));
+    };
+
+    if (query.email) {
+      const result = await contactsService.lookup.resolveContactsByEmail({
+        subject: subject.subject,
+        boundBookId: binding.boundBookId,
+        input: { emails: [query.email], limit: RESOLVE_CANDIDATES },
+      });
+      if (!result.ok) return respond(c, result);
+      const [match, ...others] = result.data.items;
+      if (!match) return notFound(t.noContactWithEmail({ email: query.email }));
+      if (others.length > 0) {
+        const items = await projectContactReferences(result.data.items);
+        return ambiguous(
+          query.email,
+          { en: "contacts", de: "Kontakten" },
+          items.map((item) => ({ path: `${item.bookName}:${item.displayName}`, id: item.contactId })),
+        );
+      }
+      const book = await readable(match.bookId);
+      return book ? found(book, match.contactId) : respond(c, fail(err.forbidden(t.accessDenied)));
+    }
+
+    if (!query.book) {
+      const contactId = RESOURCE_SHORT_ID.test(query.contact!) ? await resolvePublicId("contacts", query.contact!) : null;
+      const bookId = contactId ? await contactsService.contact.findBookId({ id: contactId }) : null;
+      if (!contactId || !bookId) return notFound(t.noContactWithId({ ref: query.contact! }));
+      const book = await readable(bookId);
+      return book ? found(book, contactId) : respond(c, fail(err.forbidden(t.accessDenied)));
+    }
+
+    // The book: an ID wins; otherwise the exact name among readable books.
+    let book: ContactBook | null = null;
+    const bookIdById = RESOURCE_SHORT_ID.test(query.book) ? await resolvePublicId("books", query.book) : null;
+    if (bookIdById) {
+      book = await readable(bookIdById);
+      if (!book) return respond(c, fail(err.forbidden(t.accessDenied)));
+    } else {
+      const matches = await contactsService.book.findReadableByName({
+        subject: subject.subject,
+        boundBookId: binding.boundBookId,
+        name: query.book,
+        limit: RESOLVE_CANDIDATES,
+      });
+      if (matches.length === 0) return notFound(t.noBookWithRef({ ref: query.book }));
+      if (matches.length > 1)
+        return ambiguous(
+          query.book,
+          { en: "contact books", de: "Kontaktbüchern" },
+          (await projectBooks(matches)).map((item) => ({ path: item.name, id: item.id })),
+        );
+      book = await readable(matches[0]!.id);
+      if (!book) return respond(c, fail(err.forbidden(t.accessDenied)));
+    }
+    if (!query.contact) return found(book, null);
+
+    // The contact inside the book: an ID wins; otherwise the exact display name.
+    const byId = RESOURCE_SHORT_ID.test(query.contact) ? await resolveBookPublicIds("contacts", book.id, [query.contact]) : null;
+    if (byId?.[0]) return found(book, byId[0]);
+    const ids = await contactsService.contact.findByDisplayName({ bookId: book.id, name: query.contact, limit: RESOLVE_CANDIDATES });
+    if (ids.length === 0) return notFound(t.noContactWithName({ name: query.contact, book: book.name }));
+    if (ids.length > 1) {
+      const loaded = await contactsService.contact.getMany({ bookId: book.id, ids });
+      const contacts = loaded.ok ? await projectContacts(loaded.data) : [];
+      return ambiguous(
+        query.contact,
+        { en: "contacts", de: "Kontakten" },
+        contacts.map((contact) => ({ path: `${book.name}:${resolveContactName(contact)}`, id: contact.id })),
+      );
+    }
+    return found(book, ids[0]!);
+  },
+);
+
 /** Contacts API routes for authenticated users and scoped resource credentials. */
 const app = new Hono<AuthContext>()
   .route("/ws", wsRoutes)
   .use(rateLimit())
+  .route("/resolve", resolveApi)
   .use(localizeApiError)
   .route("/admin", adminApi)
   .use(auth.requireRole("authenticated"))
