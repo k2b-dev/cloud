@@ -582,7 +582,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     const listAssignable = spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([
-      { id: userId, displayName: user.displayName, avatarHash: null, description: "spaces-user · direct access" },
+      { id: userId, displayName: user.displayName, avatarHash: null, uid: "spaces-user", description: "spaces-user · direct access" },
     ]);
 
     const result = await spacesCapabilities.queries["space.assignee.list"].run({ spaceId, query: "Spaces", limit: 5 }, userContext);

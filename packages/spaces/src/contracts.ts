@@ -84,6 +84,7 @@ export const SpaceItemAssigneeSchema = z.object({
 export type SpaceItemAssignee = z.infer<typeof SpaceItemAssigneeSchema>;
 
 export const SpaceAssignableUserSchema = SpaceItemAssigneeSchema.extend({
+  uid: z.string().describe("Username"),
   description: z.string().optional().describe("Short source hint for the picker"),
 });
 export type SpaceAssignableUser = z.infer<typeof SpaceAssignableUserSchema>;
@@ -529,6 +530,7 @@ export const ItemFilterSchema = z.object({
   assignedTo: AssignedToFilterSchema.default("all").describe("Filter by assignment: all, me, or unassigned"),
   columnIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Filter by column IDs"),
   deadlineFilter: DeadlineFilterSchema.default("all").describe("Filter by deadline range"),
+  deadlineBefore: z.string().datetime({ offset: true }).optional().describe("Only items with a deadline before this instant"),
   search: z.string().optional().describe("Search in title and description"),
 
   // Sort options

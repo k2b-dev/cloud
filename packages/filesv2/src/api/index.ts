@@ -33,6 +33,7 @@ import {
   DirectoryInputSchema,
   DirectoryTargetSchema,
   DownloadInputSchema,
+  EntryIdSchema,
   EntryQuerySchema,
   ErrorSchema,
   FavoriteInputSchema,
@@ -125,6 +126,12 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Read authorized current file or folder metadata", ...requiresAuth }),
     v("query", EntryQuerySchema),
     async (c) => respond(c, ok(await filesService.entry(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") }))),
+  )
+  .get(
+    "/entries/:id",
+    middleware.openapi({ summary: "Read an authorized file or folder by its file ID", ...requiresAuth }),
+    v("param", EntryIdSchema),
+    async (c) => respond(c, ok(await filesService.entryById(c.get("actor"), c.req.valid("param").id))),
   )
   .get(
     "/bases/:baseId/search",

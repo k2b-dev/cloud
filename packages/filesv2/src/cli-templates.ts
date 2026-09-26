@@ -11,6 +11,7 @@ import {
   readCliInput,
 } from "@k2b/cloud/cli";
 import type { ApiType } from "./api";
+import { fileResolver } from "./cli-address";
 import type { EntryResult } from "./contracts";
 import { TEMPLATE_LIMIT } from "./document-assets";
 import { type FileTemplate, TemplateGrantSchema, TemplateMetadataSchema, type TemplatePage } from "./template-contracts";
@@ -57,8 +58,8 @@ export function templateCommands(locale?: string) {
         },
       }),
     ),
-    command("templates get", {
-      summary: t({ en: "Read template metadata", de: "Vorlageninformationen lesen" }),
+    command("templates show", {
+      summary: t({ en: "Show template metadata", de: "Vorlageninformationen anzeigen" }),
       args: id,
       async run({ ctx, args }) {
         output(ctx, await ctx.readJson<FileTemplate>(await api(ctx)[":id"].$get({ param: args })));
@@ -68,14 +69,18 @@ export function templateCommands(locale?: string) {
       summary: t({ en: "Create an independent file from a template", de: "Unabhängige Datei aus Vorlage erstellen" }),
       args: {
         ...id,
-        base: arg.required({ description: t({ en: "Destination base ID", de: "Zielablagen-ID" }) }),
-        path: arg.required({ description: t({ en: "New file path", de: "Neuer Dateipfad" }) }),
+        file: arg.required({
+          valueLabel: "file",
+          description: t({ en: "<area>:/path of the new file", de: "<bereich>:/pfad der neuen Datei" }),
+        }),
       },
+      examples: ["cld filesv2 templates use <template-id> me:/Documents/Minutes.odt"],
       async run({ ctx, args }) {
+        const target = await fileResolver(ctx).file(args.file);
         output(
           ctx,
           await ctx.readJson<EntryResult>(
-            await api(ctx)[":id"].use.$post({ param: { id: args.id }, json: { baseId: args.base, path: args.path } }),
+            await api(ctx)[":id"].use.$post({ param: { id: args.id }, json: { baseId: target.baseId, path: target.path } }),
           ),
         );
       },
@@ -96,16 +101,19 @@ export function templateCommands(locale?: string) {
     command("admin templates import", {
       summary: t({ en: "Copy an accessible file into the template catalog", de: "Zugängliche Datei in den Vorlagenkatalog kopieren" }),
       args: {
-        base: arg.required({ description: t({ en: "Source base ID", de: "Quellablagen-ID" }) }),
-        path: arg.required({ description: t({ en: "Source path", de: "Quellpfad" }) }),
+        file: arg.required({
+          valueLabel: "file",
+          description: t({ en: "<area>:/path or file ID of the source", de: "<bereich>:/pfad oder Datei-ID der Quelle" }),
+        }),
       },
       flags: metadata,
       async run({ ctx, args, flags }) {
+        const source = await fileResolver(ctx).file(args.file);
         output(
           ctx,
           await ctx.readJson<FileTemplate>(
             await api(ctx).admin.import.$post({
-              json: { ...TemplateMetadataSchema.parse(flags), source: { baseId: args.base, path: args.path } },
+              json: { ...TemplateMetadataSchema.parse(flags), source: { baseId: source.baseId, path: source.path } },
             }),
           ),
         );
@@ -176,22 +184,6 @@ export function templateCommands(locale?: string) {
       args: { ...id, accessId: arg.required({ description: t({ en: "Access entry ID", de: "ID der Zugriffsregel" }) }) },
       async run({ ctx, args }) {
         output(ctx, await ctx.readJson(await api(ctx).admin[":id"].grants[":accessId"].$delete({ param: args })));
-      },
-    }),
-    command("documents markdown", {
-      summary: t({ en: "Create an empty Markdown document", de: "Leeres Markdown-Dokument erstellen" }),
-      args: {
-        base: arg.required({ description: t({ en: "Base ID", de: "Ablagen-ID" }) }),
-        path: arg.required({ description: t({ en: "New .md path", de: "Neuer .md-Pfad" }) }),
-      },
-      async run({ ctx, args }) {
-        const client = ctx.createApiClient<ApiType>("/api/filesv2");
-        output(
-          ctx,
-          await ctx.readJson<EntryResult>(
-            await client.bases[":baseId"].markdown.$post({ param: { baseId: args.base }, json: { path: args.path } }),
-          ),
-        );
       },
     }),
   ];

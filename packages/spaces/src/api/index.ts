@@ -1,3 +1,4 @@
+import { type CloudCliText, cliAmbiguityText, localizeCloudCliText } from "@k2b/cloud/cli";
 import {
   type AccessSubject,
   type AuthContext,
@@ -40,6 +41,7 @@ import {
   OverlapQuerySchema,
   ReorderColumnsSchema,
   ReorderWormholesSchema,
+  ResourceShortIdSchema,
   SetCompletedSchema,
   SpaceAssignableUserSchema,
   SpaceColumnSchema,
@@ -111,6 +113,13 @@ import wsRoutes from "../ws";
 // ==========================
 
 const SpaceListSchema = z.array(SpaceSchema);
+/** Candidates listed by an ambiguous title; the item filter's page size bounds them. */
+const MAX_RESOLVE_CANDIDATES = 100;
+const ResolveQuerySchema = z.object({
+  space: z.string().min(1).max(100).describe("Space ID or exact name"),
+  title: z.string().min(1).max(200).optional().describe("Exact item title"),
+});
+const ResolveResultSchema = z.object({ space: SpaceSchema, item: SpaceItemSchema.nullable() });
 const SpaceItemListSchema = z.array(SpaceItemSchema);
 const SpaceCommentListSchema = z.array(SpaceCommentSchema);
 const SpaceItemResourceReferenceListSchema = z.array(SpaceItemResourceReferenceSchema);
@@ -164,6 +173,8 @@ const localizeApiResponse = async (c: Context, next: () => Promise<void>) => {
   await next();
   if (c.res.status < 400) return;
   if (!c.res.headers.get("content-type")?.includes("application/json")) return;
+  // Handlers that already rendered their message in the request locale mark it.
+  if (c.res.headers.has("content-language")) return;
   const parsed: unknown = await c.res
     .clone()
     .json()
@@ -485,6 +496,129 @@ const app = new Hono<AuthContext>()
   .route("/widget", widgetRoutes)
   .route("/ws", wsRoutes)
   .use(auth.requireRole("authenticated"))
+
+  // ==========================
+  // Addressing (CLI and scripts)
+  // ==========================
+  .get(
+    "/items/:itemId",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Get item by ID",
+      description: "Get an item by its ID alone. Item IDs are unique across spaces; the item's space must be readable.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceItemSchema, "Item details"),
+        404: jsonResponse(ErrorResponseSchema, "Item not found or not readable"),
+      },
+    }),
+    async (c) => {
+      const internalId = await resolvePublicId("items", c.req.param("itemId") ?? "");
+      const item = internalId ? await spacesService.item.get({ id: internalId }) : null;
+      const [projected] = item ? await projectItems([item]) : [];
+      // An unreadable item is reported as missing so its ID does not reveal that it exists.
+      if (!projected || (await checkSpaceAccess(c, projected.spaceId)).error) return respond(c, fail(err.notFound("Item")));
+      return respond(c, ok(projected));
+    },
+  )
+  .get(
+    "/resolve",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Resolve a space and item title",
+      description:
+        "Resolve a space by ID or exact name and, with `title`, one of its items by exact title. " +
+        "Several matches fail with 409 and list every candidate as `path (id)`; nothing is guessed.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(ResolveResultSchema, "Resolved space and item"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Space or item not found"),
+        409: jsonResponse(ErrorResponseSchema, "Several spaces or items match"),
+      },
+    }),
+    v("query", ResolveQuerySchema),
+    async (c) => {
+      const query = c.req.valid("query");
+      const locale = getLocale(c);
+      const text = (value: CloudCliText) => localizeCloudCliText(locale, value);
+      const access = getScopedSpaceAccess(c);
+      if (!access.ok) return respond(c, access);
+      // These messages are already in the request locale; mark them so they are not replaced.
+      const localized = (result: Parameters<typeof respond>[1]) => {
+        c.header("Content-Language", locale);
+        return respond(c, result);
+      };
+
+      let spaceShortId = ResourceShortIdSchema.safeParse(query.space).success ? query.space : null;
+      if (!spaceShortId || !(await resolvePublicId("spaces", spaceShortId))) {
+        const spaces = await spacesService.space.list({ subject: access.data.subject, boundSpaceId: access.data.boundSpaceId });
+        const matches = spaces.items.filter((space) => space.name === query.space);
+        if (matches.length === 0)
+          return localized(
+            fail(
+              err.notFound(
+                text({
+                  en: `No space has the ID or exact name "${query.space}"`,
+                  de: `Kein Space hat die ID oder den exakten Namen „${query.space}“`,
+                }),
+              ),
+            ),
+          );
+        const projected = await projectSpaces(matches);
+        if (projected.length > 1)
+          return localized(
+            fail({
+              code: "CONFLICT" as const,
+              status: 409 as const,
+              message: text(
+                cliAmbiguityText({
+                  value: query.space,
+                  resources: { en: "spaces", de: "Spaces" },
+                  candidates: projected.map((space) => ({ path: space.name, id: space.id })),
+                }),
+              ),
+            }),
+          );
+        spaceShortId = projected[0]!.id;
+      }
+
+      const { space, internalId, error } = await checkSpaceAccess(c, spaceShortId);
+      if (error) return error;
+      const [projectedSpace] = await projectSpaces([space!]);
+      if (query.title === undefined) return respond(c, ok({ space: projectedSpace!, item: null }));
+
+      const matches = await spacesService.item.findByTitle({ spaceId: internalId!, title: query.title, limit: MAX_RESOLVE_CANDIDATES });
+      if (matches.length === 0)
+        return localized(
+          fail(
+            err.notFound(
+              text({
+                en: `No item in "${space!.name}" has the exact title "${query.title}"`,
+                de: `Kein Eintrag in „${space!.name}“ hat den exakten Titel „${query.title}“`,
+              }),
+            ),
+          ),
+        );
+      if (matches.length > 1)
+        return localized(
+          fail({
+            code: "CONFLICT" as const,
+            status: 409 as const,
+            message: text(
+              cliAmbiguityText({
+                value: query.title,
+                resources: { en: "items", de: "Einträgen" },
+                candidates: matches.map((item) => ({ path: `${space!.name}:${item.title}`, id: item.shortId })),
+              }),
+            ),
+          }),
+        );
+      const item = await spacesService.item.get({ id: matches[0]!.id });
+      if (!item) return respond(c, fail(err.notFound("Item")));
+      return respond(c, ok({ space: projectedSpace!, item: (await projectItems([item]))[0]! }));
+    },
+  )
 
   .get(
     "/overview/work",

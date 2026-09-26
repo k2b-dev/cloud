@@ -28,6 +28,60 @@ table, or record argument now also accepts an address such as
 | `bases delete`, `tables delete`, `records delete` | `bases rm`, `tables rm`, `records rm` |
 | `tables list`, `records list` | `tables ls`, `records ls` |
 
+## Files CLI commands
+
+`cld filesv2` was rebuilt around shell-like verbs and file addresses. The old
+command names are removed without aliases; scripts must switch to the new
+names. Files are addressed as `<area>:/path` or by file ID instead of a base ID
+followed by a path, `--path`, or `--to`. The area is `me`, a group's exact name
+or ID, or a full area ID from `ls`; an ambiguous name fails with status 409 and
+lists every candidate. Administrator commands use `--storage` instead of
+`--area` and address directories as `<storage>/<users|groups>/<name>` or
+`<storage>/archive/<archive-id>`. See
+[Files](/en/apps/filesv2#use-the-cli).
+
+| Old command | New command |
+| --- | --- |
+| `bases list` | `ls` |
+| `list <base> --path <path>` | `ls <area>:/<path>` |
+| `stat <base> <path>` | `stat <file>` |
+| `download <base> <path> --out <local>` | `get <file> [<local>]` |
+| `archive <base> <path>... --out <local>` | `get <folder> [<local>]`, `zip <entry>... --out <local>` |
+| `upload <base> <local> --to <path>` | `put <local> <file>` (`--parents` creates folders) |
+| `mkdir <base> <path>` | `mkdir [-p] <folder>` |
+| `rename <base> <path> <name>` | `mv <file> <new-file>` in the same folder |
+| `move <base> <path>... --to <folder>` | `mv <entry>... <folder>/` |
+| `copy <base> <path>... --to <folder> [--target-base <base>]` | `cp <entry>... <folder>` |
+| `delete <base> <path>...` | `rm <entry>... --yes` |
+| `search <base> <query> --path <path>` | `search <folder> <query>` |
+| `trash list <base>`, `trash restore <base> <id>` | `trash list <area>`, `trash restore <area> <id>` |
+| `versions list <base> <path>` | `versions list <file>` |
+| `versions download <base> <path> <id> --out <local>` | `versions get <file> <id> <local>` |
+| `versions restore <base> <path> <id>` | `versions restore <file> <id>` |
+| `versions comment <base> <path> <id> <text>` | `versions update <file> <id> --comment <text>` |
+| `shares create <base> <path>...` | `shares add <entry>...` |
+| `shares revoke <id>` | `shares rm <id> --yes` |
+| `favorites add\|remove <base> <path>` | `favorites add\|remove <entry>` |
+| `documents create <base> <path>` | `documents create <file>` |
+| `documents markdown <base> <path>` | `documents create <file> --kind markdown` |
+| `edit-url <base> <path>` | `edit-url <file>` |
+| `thumbnail <base> <path> --out <local>` | `thumbnail <file> <local>` |
+| `templates get <id>` | `templates show <id>` |
+| `templates use <id> <base> <path>` | `templates use <id> <file>` |
+| `admin templates import <base> <path>` | `admin templates import <file>` |
+| `admin … --area <cloud\|freeipa>` | `admin … --storage <cloud\|freeipa>` |
+| `admin files list --area --kind --name\|--archive-id --path` | `admin files ls <directory>[:/<path>]` |
+| `admin files download <path> … --out <local>` | `admin files get <directory>:/<path> <local>` |
+| `admin files delete <path> …` | `admin files rm <directory>:/<path> --confirm-path … --yes` |
+| `admin versions list\|delete <path> …` | `admin versions list\|delete <directory>:/<path> …` |
+| `admin directories archive\|retire\|delete <name> --area --kind` | `admin directories archive\|retire\|delete <storage>/<kind>/<name>` |
+| `admin shares revoke <id>` | `admin shares rm <id> --yes` |
+
+`tree` and `cat` are new. `recent`, `favorites list`, `shares list`,
+`templates list`, and the remaining administrator commands keep their names.
+The Files API adds `GET /api/filesv2/entries/:id`, which resolves a file ID
+with the same access checks as a path. No stored data changes.
+
 ## Contacts CLI commands
 
 `cld contacts` now uses the shared command verbs and addresses contacts by
@@ -105,6 +159,51 @@ the web UI still seeds it. The Notebooks API adds `GET /api/notebooks/notes/:not
 `GET /api/notebooks/:id/outline`, and `GET /api/notebooks/:id/resolve`, and
 `POST /api/notebooks/:id/notes` accepts `parentPath` and `createParents`. No
 stored data changes.
+
+## Spaces CLI commands
+
+`cld spaces` now uses the shared `cld` verbs and item addresses. The old
+command names are removed without aliases; scripts must switch to the new
+names. An item is addressed as an item ID or `<space>:<title>` instead of a
+leading space argument or `--space`, and the local default space (`use`,
+`current`) is gone. Text input is `--from <file|->` instead of `--file` and
+`--stdin`; `--page-size` is `--per-page`. See
+[Spaces](/en/apps/spaces#automate-spaces-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `list` | `ls` |
+| `use`, `current` | removed; name the space in every address |
+| `get [space]` | `show <space>:` |
+| `create` | `create` (no `--use`) |
+| `items [space]` | `ls <space>` |
+| `items --assigned-to me`, `unassigned` | `ls <space> --mine`, `--unassigned` |
+| `items --deadline`, `--activity inactive` | `ls <space> --due`, `--inactive`; new `--due-before` |
+| `item [space] <item>` | `show <item>` |
+| `add-item [space] <title> --column` | `add <space>:<title> [--column]` (defaults to the first column) |
+| `update-item [space] <item>` | `set <item>` |
+| `update-item --column` | `mv <item> <column>` |
+| none | `rm <item> --yes`, `assign <item> <user\|me\|none>`, `due <item> <date\|none>` |
+| `blockers`, `blocks` | `deps <item>` |
+| `block <task> <blocker>` | `deps <task> --add <blocker>` |
+| `unblock <task> <blocker>` | `deps <task> --rm <blocker>` |
+| `comments` | `comments list` |
+| `comment` | `comments add` (new `comments update`, `comments delete`) |
+| `attachments` | `attachments list` |
+| `add-attachment --file <path>` | `attachments add <item> <path>` |
+| `download-attachment --output` | `attachments download <item> <attachment> --out` |
+| `delete-attachment` | `attachments delete` |
+| `checklist add --label <text>` | `checklist add <item> <text>` |
+| `references remove` | `references delete` |
+| `calendar --from --to` | `calendar <start> <end>` |
+| `overlap --from --to --exclude-item` | `overlap <start> <end> --exclude <item>` |
+| `activity`, `work`, `claim`, `release`, `progress`, `done`, `reopen`, `invitation context`, `invitation draft`, `access …` | unchanged names; the item is one address argument |
+| `--file`, `--stdin` | `--from <file\|->` |
+| `--page-size` | `--per-page` |
+
+The Spaces API adds `GET /api/spaces/items/:itemId` and
+`GET /api/spaces/resolve?space=&title=`; the item filter accepts
+`deadlineBefore`, and assignable users include `uid`. No stored data changes.
 
 ## Workflow action costs
 
@@ -536,7 +635,6 @@ no compatibility renderer. Use `createNavigation` and let the host render
 `Navigation`; Cloud applications bind it through `WorkspaceNavigationProvider`
 or the SSR `WorkspaceNavigation` island. Keep `SidebarDesktop` for desktop.
 See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
-
 
 ## Capability protocol 2
 
