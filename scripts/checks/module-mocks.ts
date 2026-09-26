@@ -15,7 +15,9 @@ const packageTestScript = (cwd: string): string =>
  * `mock.module` replaces a module for the whole process. Without `--isolate`,
  * `bun test` runs every file of a suite in one process in directory order, so
  * a top-level module mock leaks into the files loaded after it and failures
- * depend on the machine's file-system order.
+ * depend on the machine's file-system order. The rule reads each package's own
+ * test script, so a runner that loads an isolated package's files together,
+ * like the Grids certification, must pass `--isolate` as well.
  */
 export const rule: Rule = {
   name: "module-mocks",
