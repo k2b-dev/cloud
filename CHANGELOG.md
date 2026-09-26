@@ -3,6 +3,14 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.19.2](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.1...cloud-v0.19.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **cli:** ask for the skill target when an upgraded config has none ([#276](https://github.com/k2b-dev/cloud/issues/276)) ([079f481](https://github.com/k2b-dev/cloud/commit/079f481f4b73d311b0ddfea5ffa1401d9c742dfc))
+* **cli:** let cld update finish slow downloads ([#275](https://github.com/k2b-dev/cloud/issues/275)) ([fc28fe1](https://github.com/k2b-dev/cloud/commit/fc28fe10a2f42f8e85a353a7b682cf12d1d9a98f))
+
 ## [0.19.1](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.0...cloud-v0.19.1) (2026-09-26)
 
 
