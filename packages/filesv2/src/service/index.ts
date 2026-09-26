@@ -499,6 +499,17 @@ export function createFilesService(
     if (!config.collabora.url) throw new FilesError("editor_disabled", 403);
     return config.collabora;
   };
+  async function entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
+    if (!input.path) throw new FilesError("invalid_path");
+    const current = await authorized(actor, input.baseId, input.path);
+    const favorite = await favorites.has(current.state.self.user.id, current.inspection.binding!.id, current.relative);
+    return {
+      base: current.inspection.summary,
+      entry: { ...fileEntry(current.relative, current.node), actions: await entryActions(current) },
+      favorite,
+      resourceId: await persistedEntryRefId(input.baseId, current.relative),
+    };
+  }
   /** WOPI calls carry only the editor token; user, file and rights are resolved fresh on every call. */
   async function wopiFile(token: string, id: string) {
     const payload = verifyEditorToken(token);
@@ -1325,16 +1336,12 @@ export function createFilesService(
       }
       await uploads.finish(row.id, "aborted", null);
     },
-    async entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
-      if (!input.path) throw new FilesError("invalid_path");
-      const current = await authorized(actor, input.baseId, input.path);
-      const favorite = await favorites.has(current.state.self.user.id, current.inspection.binding!.id, current.relative);
-      return {
-        base: current.inspection.summary,
-        entry: { ...fileEntry(current.relative, current.node), actions: await entryActions(current) },
-        favorite,
-        resourceId: await persistedEntryRefId(input.baseId, current.relative),
-      };
+    entry,
+    /** A file ID (`resourceId`, or a `filesv2.entry` ref) resolves like its area and path, with the same access checks. */
+    async entryById(actor: RequestActor, id: string): Promise<EntryResult> {
+      const ref = await resolveEntryRefId(id);
+      if (!ref) throw new FilesError("not_found", 404);
+      return entry(actor, ref);
     },
     async recent(actor: RequestActor): Promise<MarkedEntry[]> {
       const self = await deps.identities.self(actor);

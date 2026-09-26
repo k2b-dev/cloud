@@ -76,11 +76,11 @@ Select several entries or a folder and use **Download** to receive a ZIP.
 
 ## Use the terminal {icon="terminal"}
 
-After signing in with `cld login --server <Cloud URL>`, use `cld filesv2 bases list --json` to find your base ID. List a folder with `cld filesv2 list <base-id> --path Documents --json`. The result includes `next`; pass it unchanged as `--after` for the next page.
+After signing in with `cld login --server <Cloud URL>`, `cld filesv2 ls` lists your areas: `me` is your personal area, and each group area goes by its group name. Address files as `<area>:/path`, for example `cld filesv2 ls me:/Documents --json`. The result includes `next`; pass it unchanged as `--after` for the next page. When a group name matches more than one area, the command lists the candidates with their IDs; use one of the IDs instead.
 
-Download a file with `cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf`. The CLI downloads directly from Filegate to a new local file. Existing paths are never overwritten. Use `--json` for the saved path and byte count, or `cld filesv2 help` for all available commands.
+Download a file with `cld filesv2 get me:/Documents/report.pdf`, or print a text file with `cld filesv2 cat me:/Notes/todo.md`. The CLI downloads directly from Filegate to a new local file and never overwrites existing paths; a folder arrives as a ZIP. Use `--json` for the saved path and byte count, or `cld filesv2 help` for all available commands.
 
-`cld filesv2 search <base-id> report --path Documents --json` searches names below a folder and `cld filesv2 mkdir <base-id> Documents/2026` creates a folder. `rename`, `move --to`, `copy --to [--target-base]`, `delete`, `trash list|restore`, `versions list|comment|restore|download`, `shares list|create|revoke`, `archive --out` for a ZIP of several entries, and `documents create --kind` plus `edit-url` for office documents cover the remaining operations. `cld filesv2 upload <base-id> ./report.pdf --to Documents/report.pdf` uploads a file directly to the file server; add `--replace` to replace an existing file. `cld filesv2 stat <base-id> <path> --json` reads current file details. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` saves an image preview.
+`cld filesv2 put ./report.pdf me:/Documents/` uploads a file directly to the file server; add `--replace` to replace an existing file and `--parents` to create missing folders. `mkdir -p`, `mv`, `cp`, `rm --yes` (to the trash), `tree`, `stat`, `search`, `trash list|restore`, `versions list|get|restore|update`, `shares list|add|rm`, `zip --out` for a ZIP of several entries, `thumbnail`, and `documents create --kind` plus `edit-url` for office documents cover the remaining operations.
 
 ## When storage is unavailable {icon="alert-circle"}
 
@@ -94,7 +94,7 @@ Open a `.md` or `.markdown` file in the full workspace editor, or choose **Add â
 
 **Add â†’ Template** shows the templates available to you. Choose one and a name to create an independent file in the current folder. You need write access there. Existing files are never replaced. A template may be available even when you cannot access its original file. Later changes to the template do not change your copy. If no templates appear, an administrator can grant you or your groups access.
 
-Use `cld filesv2 documents markdown <base-id> Notes.md`, `cld filesv2 templates list --json`, and `cld filesv2 templates use <template-id> <base-id> Notes.md` for the same actions in the terminal. For conditional replacement, add `--replace --expected-revision <revision>` to `upload`; a conflict leaves the current file untouched.
+Use `cld filesv2 documents create me:/Notes.md --kind markdown`, `cld filesv2 templates list --json`, and `cld filesv2 templates use <template-id> me:/Notes.md` for the same actions in the terminal. For conditional replacement, add `--replace --expected-revision <revision>` to `put`; a conflict leaves the current file untouched.
 
 ## Use files with Assistant {icon="sparkles"}
 
