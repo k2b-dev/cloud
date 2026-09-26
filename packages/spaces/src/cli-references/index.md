@@ -13,7 +13,7 @@ Use `cld spaces` to list and change work, track agent handoffs, manage task depe
 - [Add and change items](#add-and-change-items)
 - [Track implementation work and handoffs](#track-implementation-work-and-handoffs)
 - [Dependencies](#dependencies)
-- [Comments, checklists, references, and attachments](#comments-checklists-references-and-attachments)
+- [Comments, checklists, references, links, and attachments](#comments-checklists-references-links-and-attachments)
 - [Calendar and invitations](#calendar-and-invitations)
 - [Access](#access)
 - [Command reference](#command-reference)
@@ -67,7 +67,7 @@ cld spaces show Item01 --context --json
 | `--q <text>` | Search in title, description, location, and URL |
 | `--sort`, `--ascending`, `--page`, `--per-page` | Order and paging (`--per-page` ≤ 100) |
 
-`--ready` means open and unblocked; it is not a claim. `show <space>:` returns columns and tags with their IDs. `show <item> --context` adds work state, checklist, blockers, a page of dependent tasks, references, and a page of comments; follow `comments.hasNext` and `blocks.hasNext` with `--page` and `--per-page`, or read further pages through `comments list` and `deps`. Pages are fresh reads, not a frozen snapshot.
+`--ready` means open and unblocked; it is not a claim. `show <space>:` returns columns and tags with their IDs. `show <item> --context` adds work state, checklist, blockers, a page of dependent tasks, references, links, and a page of comments; follow `comments.hasNext` and `blocks.hasNext` with `--page` and `--per-page`, or read further pages through `comments list` and `deps`. Pages are fresh reads, not a frozen snapshot.
 
 ## Add and change items
 
@@ -125,7 +125,7 @@ cld spaces deps Item01 --rm Block1
 
 `deps <item>` shows both directions: `blockers` must be done first, `blocks` are tasks waiting for this one. `--add <item>` makes the given task a blocker of `<item>`; `--rm <item>` removes it. Both tasks must belong to the same space, and dependencies cannot form a cycle. The output after a change is the updated view.
 
-## Comments, checklists, references, and attachments
+## Comments, checklists, references, links, and attachments
 
 ```bash
 cld spaces comments list Item01 --json
@@ -141,11 +141,17 @@ cld spaces checklist delete Item01 Check1 --yes
 cld spaces references list Item01 --json
 cld spaces references add Item01 --type notebooks.note --id Note01 --label "Design"
 cld spaces references delete Item01 --type notebooks.note --id Note01 --yes
+cld spaces links ls Item01 --json
+cld spaces links add Item01 https://github.com/k2b-dev/cloud/issues/263
+cld spaces links add Item01 https://example.org/spec --label "Spec"
+cld spaces links rm Item01 https://example.org/spec --yes
 cld spaces attachments list Item01 --json
 cld spaces attachments add Item01 ./bug.png
 cld spaces attachments download Item01 broken-dialog.webp --out ./bug.webp
 cld spaces attachments delete Item01 File01 --yes
 ```
+
+An item's links are its Cloud references plus external URLs. `references` manages Cloud resources by type and ID; `links` manages external `http(s)` URLs (at most 20 per item, 512 characters each) and `links ls` returns both groups. A GitHub issue or pull request URL carries a `preview` with `repo`, `number`, `type`, `title`, and `state` (`open`, `closed`, `merged`) once the server has fetched it; the preview is display-only, cached briefly, and `null` when it is not yet known, the repository is private without a Space token, or the link is not a GitHub issue. Link a task to its issue instead of restating the issue in the description. A Space administrator stores a GitHub token for private repositories in the Space settings; the CLI does not manage it.
 
 Comments can be edited and deleted by their author for a short time. Attachments are task images; `attachments add` uploads the file as-is, subject to the 10 MB stored-file limit. An attachment is named by ID or file name; a file name used twice fails with both IDs. Preview and download links returned by `spaces.item.read` need the same read access as the task; they are not public links.
 
@@ -196,6 +202,7 @@ Run `cld spaces <command> --help` for every flag.
 | Attachments | `attachments list`, `add`, `download`, `delete` |
 | Checklists | `checklist list`, `add`, `update`, `delete` |
 | References | `references list`, `add`, `delete` |
+| Links | `links ls`, `add <item> <url>`, `rm <item> <url>` |
 | Calendar | `calendar <start> <end>`, `overlap <start> <end>`, `invitation context`, `invitation draft` |
 | Access | `access list`, `grant`, `set`, `revoke`, `search-principals` |
 
@@ -209,13 +216,16 @@ Every command takes `--json` (and `--jsonl` for lists), destructive commands nee
 | `ls <space>` | `{ items, total, page, pageSize, totalPages }` with full items |
 | `show <space>:` | Space with `columns` and `tags` |
 | `show <item>` | Item; tasks add `attachments` |
-| `show <item> --context` | Item plus `attachments`, `work`, `checklist`, `blockers`, `blocks` (page), `references`, `comments` (page) |
+| `show <item> --context` | Item plus `attachments`, `work`, `checklist`, `blockers`, `blocks` (page), `references`, `links`, `comments` (page) |
 | `add`, `set`, `mv`, `done`, `reopen`, `assign`, `due` | The resulting item |
 | `rm` | `{ deleted: { id, spaceId, title } }` |
 | `deps` | `{ item: { id, title }, blockers, blocks }`; `blocks` is a page `{ items, page, perPage, total, hasNext }` |
 | `comments list` | Page `{ items, page, perPage, total, hasNext }` |
 | `comments add`, `comments update` | The comment |
 | `comments delete` | `{ deleted: { id, itemId } }` |
+| `links ls` | `{ references, links }`; a link is `{ url, label, createdAt, preview }` |
+| `links add` | The link with `preview: null` |
+| `links rm` | `{ deleted: boolean }` |
 | `attachments list` | Array of attachments `{ id, filename, mimeType, sizeBytes, kind, createdAt }` |
 | `attachments download` | `{ attachment, out }` |
 | `attachments delete` | `{ deleted: attachment }` |

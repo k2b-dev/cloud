@@ -1,6 +1,6 @@
 import type { AccessSubject } from "@k2b/cloud/server";
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
-import type { AccessEntry, Space, SpaceColumn, SpaceComment, SpaceItem, SpaceTag } from "@/contracts";
+import type { AccessEntry, Space, SpaceColumn, SpaceComment, SpaceItem, SpaceItemLink, SpaceTag } from "@/contracts";
 import * as access from "./access";
 import * as activity from "./activity";
 import * as apiKeys from "./api-keys";
@@ -11,8 +11,10 @@ import * as ical from "./ical";
 import * as itemAttachments from "./item-attachments";
 import * as itemChecklist from "./item-checklist";
 import * as itemDependencies from "./item-dependencies";
+import * as itemLinks from "./item-links";
 import * as itemResourceReferences from "./item-resource-references";
 import * as items from "./items";
+import { resolveLinkPreviews } from "./link-previews";
 import * as spaces from "./spaces";
 import * as tags from "./tags";
 import * as work from "./task-work";
@@ -77,6 +79,11 @@ export const spacesService = {
     remove: spaces.remove,
     regenerateICalToken: spaces.regenerateICalToken,
     getByICalToken: spaces.getByICalToken,
+    githubToken: {
+      set: spaces.setGitHubToken,
+      has: spaces.hasGitHubToken,
+      get: spaces.getGitHubToken,
+    },
     permission: {
       canAccess: spaces.canAccess,
       get: spaces.getPermission,
@@ -183,6 +190,18 @@ export const spacesService = {
     },
     dashboardSnapshot: items.dashboardSnapshot,
     references: itemResourceReferences,
+    links: {
+      list: itemLinks.list,
+      add: itemLinks.add,
+      remove: itemLinks.remove,
+      /** Links with display previews; `cached` (SSR) never fetches, `fill` (API) fetches misses. */
+      listWithPreviews: async (params: { itemId: string; spaceId: string; mode: "cached" | "fill" }): Promise<SpaceItemLink[]> =>
+        resolveLinkPreviews(await itemLinks.list({ itemId: params.itemId }), {
+          spaceId: params.spaceId,
+          mode: params.mode,
+          token: () => spaces.getGitHubToken({ id: params.spaceId }),
+        }),
+    },
     dependencies: itemDependencies,
     attachments: itemAttachments,
     checklist: itemChecklist,

@@ -197,6 +197,20 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ spaces.item_resource_refs table");
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_links (
+      item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
+      url TEXT NOT NULL,
+      label TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (item_id, url),
+      CONSTRAINT item_links_url_check CHECK (length(url) BETWEEN 1 AND 512),
+      CONSTRAINT item_links_label_check CHECK (label IS NULL OR length(btrim(label)) BETWEEN 1 AND 500)
+    )
+  `.simple();
+  console.log("  ✓ spaces.item_links table");
+  // Per-Space GitHub token for link previews, encrypted with the platform secret cipher.
+  await sql`ALTER TABLE spaces.spaces ADD COLUMN IF NOT EXISTS github_token_encrypted TEXT`.simple();
+  await sql`
     ALTER TABLE spaces.items
     ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT false
   `.simple();

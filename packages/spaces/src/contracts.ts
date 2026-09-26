@@ -193,6 +193,56 @@ export const SpaceItemResourceReferenceSchema = SpaceItemResourceReferenceInputS
 }).strict();
 export type SpaceItemResourceReference = z.infer<typeof SpaceItemResourceReferenceSchema>;
 
+export const MAX_ITEM_LINKS = 20;
+export const MAX_ITEM_LINK_URL_LENGTH = 512;
+const HttpUrlSchema = z
+  .string()
+  .trim()
+  .max(MAX_ITEM_LINK_URL_LENGTH)
+  .refine(
+    (value) => {
+      try {
+        const url = new URL(value);
+        return url.protocol === "https:" || url.protocol === "http:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "Expected an http(s) URL" },
+  )
+  .describe("Absolute http(s) URL");
+export const SpaceItemLinkInputSchema = z
+  .object({
+    url: HttpUrlSchema,
+    label: z.string().trim().min(1).max(500).nullable().optional().describe("Optional display label"),
+  })
+  .strict();
+export type SpaceItemLinkInput = z.infer<typeof SpaceItemLinkInputSchema>;
+
+export const SpaceItemLinkPreviewSchema = z
+  .object({
+    kind: z.literal("github"),
+    repo: z.string().describe("owner/name"),
+    number: z.number().int().positive(),
+    type: z.enum(["issue", "pull"]),
+    title: z.string(),
+    state: z.enum(["open", "closed", "merged"]),
+  })
+  .strict();
+export type SpaceItemLinkPreview = z.infer<typeof SpaceItemLinkPreviewSchema>;
+
+export const SpaceItemLinkSchema = z
+  .object({
+    url: HttpUrlSchema,
+    label: z.string().nullable().describe("Space-owned display label"),
+    createdAt: z.string().datetime().describe("Link creation timestamp (ISO)"),
+    preview: SpaceItemLinkPreviewSchema.nullable().describe("Cached display preview, or null when none is known"),
+  })
+  .strict();
+export type SpaceItemLink = z.infer<typeof SpaceItemLinkSchema>;
+
+export const SpaceGitHubTokenInputSchema = z.object({ token: z.string().trim().min(1).max(255) }).strict();
+
 export const MAX_TASK_ATTACHMENTS = 20;
 export const MAX_TASK_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 export const SpaceItemAttachmentSchema = z

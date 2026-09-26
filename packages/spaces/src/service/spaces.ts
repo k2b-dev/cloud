@@ -1,5 +1,5 @@
 import { type AccessSubject, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { logger, serviceAccounts } from "@k2b/cloud/services";
+import { decryptSecret, encryptSecret, logger, serviceAccounts } from "@k2b/cloud/services";
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { CreateSpace, MutationResult, Space, SpaceDetail, UpdateSpace } from "@/contracts";
@@ -534,6 +534,45 @@ export const regenerateICalToken = async (params: { id: string }): Promise<Mutat
   }
 
   return { ok: true, data: { icalToken: row.ical_token } };
+};
+
+// ==========================
+// GitHub token (link previews)
+// ==========================
+
+/** Stores or clears the Space's GitHub token; it is only ever read to fetch link previews. */
+export const setGitHubToken = async (params: { id: string; token: string | null }): Promise<MutationResult<{ configured: boolean }>> => {
+  const encrypted = params.token === null ? null : await encryptSecret(params.token);
+  const [row] = await sql<{ configured: boolean }[]>`
+    UPDATE spaces.spaces
+    SET github_token_encrypted = ${encrypted}, updated_at = now()
+    WHERE id = ${params.id}
+    RETURNING github_token_encrypted IS NOT NULL AS configured
+  `;
+  if (!row) return { ok: false, error: "Space not found", status: 404 };
+  return { ok: true, data: { configured: row.configured } };
+};
+
+export const hasGitHubToken = async (params: { id: string }): Promise<boolean> => {
+  const [row] = await sql<{ configured: boolean }[]>`
+    SELECT github_token_encrypted IS NOT NULL AS configured FROM spaces.spaces WHERE id = ${params.id}
+  `;
+  return row?.configured ?? false;
+};
+
+/** The decrypted token for one preview fetch; never leaves the server process. */
+export const getGitHubToken = async (params: { id: string }): Promise<string | null> => {
+  const [row] = await sql<{ github_token_encrypted: string | null }[]>`
+    SELECT github_token_encrypted FROM spaces.spaces WHERE id = ${params.id}
+  `;
+  if (!row?.github_token_encrypted) return null;
+  try {
+    const token = await decryptSecret<string>(row.github_token_encrypted);
+    return typeof token === "string" && token.length > 0 ? token : null;
+  } catch (error) {
+    log.warn("Could not decrypt GitHub token", { spaceId: params.id, error });
+    return null;
+  }
 };
 
 /**

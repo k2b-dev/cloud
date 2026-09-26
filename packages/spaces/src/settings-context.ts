@@ -22,5 +22,7 @@ export const SpaceSettingsContextSchema = z.object({
   accessEntries: z.array(AccessEntrySchema),
   apiKeys: z.array(SpaceApiKeySchema),
   wormholes: z.array(SpaceWormholeSchema),
+  /** Admin-only: whether a GitHub token for link previews is stored; the token itself is never returned. */
+  githubTokenConfigured: z.boolean(),
 });
 export type SpaceSettingsContext = z.infer<typeof SpaceSettingsContextSchema>;

@@ -197,6 +197,28 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       await cldJson(["set", ship.id, "--title", "Ship it"]);
       expect(await cldJson<Item>(["show", `${space.id}:Ship it`])).toMatchObject({ id: ship.id });
 
+      // External links: add, list, and remove through the real API and schema.
+      const issue = "https://github.com/k2b-dev/cloud/issues/263";
+      expect(await cldJson<{ url: string; label: string | null }>(["links", "add", ship.id, issue])).toMatchObject({
+        url: issue,
+        label: null,
+      });
+      await cldJson(["links", "add", ship.id, "https://example.org/spec", "--label", "Spec"]);
+      expect((await cld(["spaces", "links", "add", ship.id, "ftp://example.org"])).exitCode).toBe(1);
+      const listed = await cldJson<{ references: unknown[]; links: { url: string; label: string | null; preview: unknown }[] }>([
+        "links",
+        "ls",
+        ship.id,
+      ]);
+      expect(listed.references).toEqual([]);
+      expect(listed.links.map((entry) => [entry.url, entry.label])).toEqual([
+        [issue, null],
+        ["https://example.org/spec", "Spec"],
+      ]);
+      expect((await cldJson<{ links: unknown[] }>(["show", ship.id, "--context"])).links).toHaveLength(2);
+      expect(await cldJson<{ deleted: boolean }>(["links", "rm", ship.id, issue, "--yes"])).toEqual({ deleted: true });
+      expect((await cldJson<{ links: unknown[] }>(["links", "ls", ship.id])).links).toHaveLength(1);
+
       await cldJson(["comments", "add", ship.id, "--content", "Ready for review"]);
       const comments = await cldJson<{ items: { content: string }[] }>(["comments", "list", ship.id]);
       expect(comments.items.map((comment) => comment.content)).toEqual(["Ready for review"]);

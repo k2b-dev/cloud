@@ -16,7 +16,7 @@ Die Kategorien ordnen die Einstellungen nach Zuständigkeit und Auswirkung:
 
 - **Space** enthält den gemeinsamen Namen, Tags und Workflow-Status.
 - **Persönlich** enthält deine Browser-Voreinstellungen. Änderungen gelten sofort für dich.
-- **Verbindungen** enthält den Kalender-Feed und Wormholes, die von Personen mit Adminzugriff verwaltet werden.
+- **Verbindungen** enthält den Kalender-Feed, Wormholes und das GitHub-Token für Linkvorschauen; Wormholes und Token verwalten Personen mit Adminzugriff.
 - **Freigabe** enthält Berechtigungen und API-Schlüssel für Personen mit Adminzugriff.
 - **Verwaltung** enthält das endgültige Löschen des Space.
 
@@ -27,10 +27,11 @@ Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Za
 :::reference
 - **Lesen:** Die Person kann den Space und seine Einträge sehen.
 - **Schreiben:** Die Person kann Einträge und Kommentare erstellen und bearbeiten sowie Status, Termine, Fälligkeitsdaten und Zuständigkeiten ändern.
-- **Admin:** Die Person kann Angaben zum Space, Zugriffsrechte, Tags, Status, Kalenderexporte und Löscheinstellungen ändern.
+- **Admin:** Die Person kann Angaben zum Space, Zugriffsrechte, Tags, Status, Kalenderexporte, das GitHub-Token und Löscheinstellungen ändern.
+- **GitHub-Token:** Optional und je Space. Es wird verschlüsselt gespeichert, nur für Vorschauen von GitHub-Links an Einträgen dieses Space verwendet und nie wieder angezeigt. Verwende bevorzugt ein fein abgestuftes Token mit Lesezugriff auf Issues und Pull Requests der Repositories, an denen der Space arbeitet. Entferne es, wenn es nicht mehr gebraucht wird.
 - **Kalenderexport:** Verwende den Kalenderexport, wenn geplante Arbeit in einem externen Kalender erscheinen soll. Behandle Export-URLs wie einen Lesezugriff auf die Termindetails.
 :::
 
 :::note Einstellungen mit Adminzugriff
-Nur Personen mit Adminzugriff können Wormholes, Zugriffsrechte, API-Schlüssel und das Löschen verwalten. Personen mit Schreibzugriff können gemeinsame Angaben zum Space, Tags und Status verwalten. Personen mit Lesezugriff können ihre persönlichen Voreinstellungen ändern und den Kalender-Feed kopieren.
+Nur Personen mit Adminzugriff können Wormholes, das GitHub-Token, Zugriffsrechte, API-Schlüssel und das Löschen verwalten. Personen mit Schreibzugriff können gemeinsame Angaben zum Space, Tags und Status verwalten. Personen mit Lesezugriff können ihre persönlichen Voreinstellungen ändern und den Kalender-Feed kopieren.
 :::

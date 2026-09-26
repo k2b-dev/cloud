@@ -47,7 +47,10 @@ import {
   SpaceColumnSchema,
   SpaceCommentSchema,
   SpaceDetailSchema,
+  SpaceGitHubTokenInputSchema,
   SpaceItemAttachmentSchema,
+  SpaceItemLinkInputSchema,
+  SpaceItemLinkSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
   SpaceItemSchema,
@@ -130,6 +133,9 @@ const ChecklistEntryDeleteResultSchema = z.object({ deleted: z.boolean() }).stri
 const SpaceTaskDependentListSchema = z.array(SpaceTaskDependentSchema);
 const ResourceReferenceDeleteSchema = z.object({ ref: SpaceItemResourceReferenceInputSchema.shape.ref }).strict();
 const ResourceReferenceDeleteResultSchema = z.object({ deleted: z.boolean() }).strict();
+const SpaceItemLinkListSchema = z.array(SpaceItemLinkSchema);
+const ItemLinkDeleteSchema = z.object({ url: SpaceItemLinkInputSchema.shape.url }).strict();
+const GitHubTokenStateSchema = z.object({ configured: z.boolean() }).strict();
 const SpaceAssignableUserListSchema = z.array(SpaceAssignableUserSchema);
 const SpaceWormholeListSchema = z.array(SpaceWormholeSchema);
 const SpaceWormholeDestinationListSchema = z.array(SpaceWormholeDestinationSchema);
@@ -1217,6 +1223,68 @@ const app = new Hono<AuthContext>()
       );
     },
   )
+  .get(
+    "/:id/items/:itemId/links",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List item links",
+      description:
+        "External URLs on one item with display previews; a GitHub preview missing from the cache is fetched within the Space's budget.",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(SpaceItemLinkListSchema, "Item links") },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "read");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      return respond(
+        c,
+        ok(await spacesService.item.links.listWithPreviews({ itemId: item.data.id, spaceId: access.internalId!, mode: "fill" })),
+      );
+    },
+  )
+  .post(
+    "/:id/items/:itemId/links",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Add an external link to an item",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(SpaceItemLinkSchema, "Item link") },
+    }),
+    v("json", SpaceItemLinkInputSchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      const link = await spacesService.item.links.add({ itemId: item.data.id, spaceId: access.internalId!, link: c.req.valid("json") });
+      if (!link) return respond(c, fail(err.conflict("Space item already has the maximum number of links")));
+      return respond(c, ok({ ...link, preview: null }));
+    },
+  )
+  .delete(
+    "/:id/items/:itemId/links",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Remove an external link from an item",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(ResourceReferenceDeleteResultSchema, "Delete result") },
+    }),
+    v("json", ItemLinkDeleteSchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      const deleted = await spacesService.item.links.remove({
+        itemId: item.data.id,
+        spaceId: access.internalId!,
+        url: c.req.valid("json").url,
+      });
+      return respond(c, ok({ deleted }));
+    },
+  )
 
   .get(
     "/:id/items/:itemId/invitation-context",
@@ -1450,6 +1518,49 @@ const app = new Hono<AuthContext>()
       const { internalId, error } = await checkSpaceAccess(c, id, "admin");
       if (error) return error;
       return respond(c, spacesService.space.regenerateICalToken({ id: internalId! }));
+    },
+  )
+
+  // ==========================
+  // GitHub token (link previews)
+  // ==========================
+  .put(
+    "/:id/github-token",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Store the Space's GitHub token",
+      description:
+        "Encrypted at rest and used only to preview GitHub links on items of this Space. Admin only; the token is never returned.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(GitHubTokenStateSchema, "Token state"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Space not found"),
+      },
+    }),
+    v("json", SpaceGitHubTokenInputSchema),
+    async (c) => {
+      const { internalId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      if (error) return error;
+      return respond(c, spacesService.space.githubToken.set({ id: internalId!, token: c.req.valid("json").token }));
+    },
+  )
+  .delete(
+    "/:id/github-token",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Remove the Space's GitHub token",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(GitHubTokenStateSchema, "Token state"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Space not found"),
+      },
+    }),
+    async (c) => {
+      const { internalId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      if (error) return error;
+      return respond(c, spacesService.space.githubToken.set({ id: internalId!, token: null }));
     },
   )
 

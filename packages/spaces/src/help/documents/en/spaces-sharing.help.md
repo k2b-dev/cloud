@@ -16,7 +16,7 @@ The category rail separates each setting by ownership and effect:
 
 - **Space** contains shared identity, tags, and workflow statuses.
 - **Personal** contains browser defaults that apply immediately for you.
-- **Connections** contains the calendar feed and admin-managed wormholes.
+- **Connections** contains the calendar feed, admin-managed wormholes, and the GitHub token for link previews.
 - **Sharing** contains permissions and API keys for administrators.
 - **Lifecycle** contains permanent deletion.
 
@@ -27,10 +27,11 @@ When a form has a footer, review its change count and choose **Save changes**. C
 :::reference
 - **Read:** Lets a user see the space and its items.
 - **Write:** Lets a user create and update items, comments, status, dates, and assignments.
-- **Admin:** Lets a user change space metadata, access, tags, statuses, calendar export, and deletion settings.
+- **Admin:** Lets a user change space metadata, access, tags, statuses, calendar export, the GitHub token, and deletion settings.
+- **GitHub token:** Optional and per Space. It is stored encrypted, used only to preview GitHub links on items of this Space, and never shown again. Prefer a fine-grained token with read access to issues and pull requests of the repositories the Space works on. Remove it when it is no longer needed.
 - **Calendar export:** Use calendar export when people need scheduled work in an external calendar. Treat export URLs like read access to event details.
 :::
 
 :::note Admin-only settings
-Only Space administrators can manage wormholes, access, API keys, and deletion. Writers can manage shared Space details, tags, and statuses. Readers can change their personal defaults and copy the calendar feed.
+Only Space administrators can manage wormholes, the GitHub token, access, API keys, and deletion. Writers can manage shared Space details, tags, and statuses. Readers can change their personal defaults and copy the calendar feed.
 :::

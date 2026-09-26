@@ -114,8 +114,9 @@ const projectItemResult = async (result: ItemListResult): Promise<ItemListResult
 });
 
 const projectItemDetail = async (
-  detail: Omit<SpaceItemDetail, "references" | "attachments" | "checklist" | "blockedBy" | "blocks"> & {
+  detail: Omit<SpaceItemDetail, "references" | "links" | "attachments" | "checklist" | "blockedBy" | "blocks"> & {
     references?: SpaceItemDetail["references"];
+    links?: SpaceItemDetail["links"];
     attachments?: SpaceItemDetail["attachments"];
     checklist?: SpaceItemDetail["checklist"];
     blockedBy?: SpaceItemDetail["blockedBy"];
@@ -137,6 +138,7 @@ const projectItemDetail = async (
     commentTarget: { ...detail.commentTarget, itemId: seriesItemId },
     recurringContext: detail.recurringContext ? { ...detail.recurringContext, seriesItemId } : null,
     references: detail.references ?? [],
+    links: detail.links ?? [],
     attachments: detail.attachments ?? [],
     checklist: detail.checklist ?? [],
     blockedBy,
@@ -491,9 +493,10 @@ const loadSelectedItemState = async (params: {
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
 
-  const [work, references, attachments, checklist, blockedBy, blocks] = await Promise.all([
+  const [work, references, links, attachments, checklist, blockedBy, blocks] = await Promise.all([
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve(undefined) : spacesService.item.work.read(detailItem.id),
     spacesService.item.references.list({ itemId: detailItem.id }),
+    spacesService.item.links.listWithPreviews({ itemId: detailItem.id, spaceId: params.spaceId, mode: "cached" }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.attachments.list({ itemId: detailItem.id }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.checklist.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.list({ itemId: detailItem.id }),
@@ -509,6 +512,7 @@ const loadSelectedItemState = async (params: {
       cookie: params.cookieHeader,
       authorization: params.authorizationHeader,
     }),
+    links,
     attachments,
     checklist,
     blockedBy,
@@ -773,9 +777,10 @@ export const loadSpaceItemDetail = async (params: {
     viewerUserId: params.user.id,
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
-  const [work, references, attachments, checklist, blockedBy, blocks] = await Promise.all([
+  const [work, references, links, attachments, checklist, blockedBy, blocks] = await Promise.all([
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve(undefined) : spacesService.item.work.read(detailItem.id),
     spacesService.item.references.list({ itemId: detailItem.id }),
+    spacesService.item.links.listWithPreviews({ itemId: detailItem.id, spaceId: params.spaceId, mode: "fill" }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.attachments.list({ itemId: detailItem.id }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.checklist.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.list({ itemId: detailItem.id }),
@@ -793,6 +798,7 @@ export const loadSpaceItemDetail = async (params: {
         cookie: params.cookieHeader,
         authorization: params.authorizationHeader,
       }),
+      links,
       attachments,
       checklist,
       blockedBy,

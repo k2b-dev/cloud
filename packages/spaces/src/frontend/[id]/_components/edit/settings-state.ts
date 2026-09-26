@@ -38,14 +38,16 @@ export const loadSpaceSettingsContext = async (params: {
       accessEntries: [],
       apiKeys: [],
       wormholes: [],
+      githubTokenConfigured: false,
     });
   }
 
   const actor = spacesService.wormhole.actorForUser(params.user);
-  const [access, apiKeys, wormholes] = await Promise.all([
+  const [access, apiKeys, wormholes, githubTokenConfigured] = await Promise.all([
     spacesService.access.list({ spaceId: params.spaceId }),
     spacesService.access.apiKeys.list({ spaceId: params.spaceId }),
     spacesService.wormhole.listConfigured({ sourceSpaceId: params.spaceId, actor }),
+    spacesService.space.githubToken.has({ id: params.spaceId }),
   ]);
   if (!wormholes.ok) {
     return fail(wormholes.status === 403 ? err.forbidden(wormholes.error) : err.internal(wormholes.error));
@@ -58,5 +60,6 @@ export const loadSpaceSettingsContext = async (params: {
     accessEntries: access.items,
     apiKeys,
     wormholes: await spacesPublicResources.projectWormholes(wormholes.data),
+    githubTokenConfigured,
   });
 };

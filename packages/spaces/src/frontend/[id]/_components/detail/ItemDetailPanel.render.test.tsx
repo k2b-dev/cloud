@@ -210,7 +210,7 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain("color:var(--k2b-warning-text)");
     expect(html).toContain('<i class="ti ti-lock" aria-hidden="true"></i>Blocked by 1');
     expect(html).not.toContain("text-[0.6875rem] font-medium leading-4 text-amber-700");
-    expect(html).toMatch(/aria-label="Task context"[\s\S]*>Blocked by<\/[h]3>[\s\S]*>Blocks<\/[h]3>[\s\S]*>Linked resources<\/[h]3>/);
+    expect(html).toMatch(/aria-label="Task context"[\s\S]*>Blocked by<\/[h]3>[\s\S]*>Blocks<\/[h]3>[\s\S]*>Links<\/[h]3>/);
     expect(html).toContain("Related tasks");
     expect(html).toContain("Prepare launch notes");
   });
@@ -278,7 +278,7 @@ describe("Spaces item detail panel", () => {
 
     expect(html).toContain('aria-label="Task context"');
     expect(html).toContain(">Blocked by</h3>");
-    expect(html).toContain(">Linked resources</h3>");
+    expect(html).toContain(">Links</h3>");
     expect(html).not.toContain(">Blocks</h3>");
     expect(html).toContain("Blocked by 1");
   });
@@ -352,14 +352,43 @@ describe("Spaces item detail panel", () => {
     );
   });
 
-  test("offers the shared Cloud resource picker action before the first link", () => {
+  test("offers the add-link and Cloud resource picker actions before the first link", () => {
     const html = renderPanel({ references: [] });
 
-    expect(html).toContain(">Linked resources</h3>");
+    expect(html).toContain(">Links</h3>");
     expect(html).toContain('aria-label="Resource context"');
     expect(html).toContain("k2b-detail-panel__action");
     expect(html).toContain("ti ti-link-plus text-[var(--k2b-action)]");
+    expect(html).toContain(">Add link</span>");
     expect(html).toContain(">Link Cloud resource</span>");
+  });
+
+  test("renders external links with their GitHub state or their host", () => {
+    const html = renderPanel({
+      references: [],
+      links: [
+        {
+          url: "https://github.com/k2b-dev/cloud/issues/263",
+          label: null,
+          createdAt: now,
+          preview: { kind: "github", repo: "k2b-dev/cloud", number: 263, type: "issue", title: "Links on items", state: "open" },
+        },
+        { url: "https://github.com/k2b-dev/cloud/pull/1", label: null, createdAt: now, preview: null },
+        { url: "https://example.org/spec", label: "Spec", createdAt: now, preview: null },
+      ],
+    });
+
+    expect(html).toContain('href="https://github.com/k2b-dev/cloud/issues/263"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain(">Links on items</span>");
+    expect(html).toContain("k2b-dev/cloud#263");
+    expect(html).toContain(">Open<");
+    // A GitHub link without a preview still reads as repo#number.
+    expect(html).toContain(">k2b-dev/cloud#1</span>");
+    expect(html).toContain('src="https://example.org/favicon.ico"');
+    expect(html).toContain(">Spec</span>");
+    expect(html).toContain(">example.org</span>");
+    expect(html).toContain(">Remove link<");
   });
 
   test("opens accessible linked resources and preserves unavailable reference snapshots", () => {
@@ -386,7 +415,7 @@ describe("Spaces item detail panel", () => {
       canWrite: false,
     });
 
-    expect(html).toContain(">Linked resources</h3>");
+    expect(html).toContain(">Links</h3>");
     expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Resource context"');
     expect(html).toContain('href="/app/mail/Box001?conversation=Conv01"');
     expect(html.match(/ti ti-mail/g)).toHaveLength(2);

@@ -72,6 +72,7 @@ export default function SpaceSettingsDialog(props: Props) {
             accessEntries={context().accessEntries}
             apiKeys={context().apiKeys}
             wormholes={context().wormholes}
+            githubTokenConfigured={context().githubTokenConfigured}
             isAdmin={context().permission === "admin"}
             canWrite={context().permission === "write" || context().permission === "admin"}
             onWorkspaceChange={props.onWorkspaceChange}

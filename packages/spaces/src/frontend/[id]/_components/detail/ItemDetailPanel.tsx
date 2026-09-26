@@ -1,5 +1,4 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
@@ -26,7 +25,6 @@ import type {
   SpaceColumn,
   SpaceItem,
   SpaceItemAssignee,
-  SpaceItemResourceReferenceInput,
   SpaceTag,
   SpaceTaskDependency,
   SpaceTaskDependent,
@@ -50,6 +48,7 @@ import type { SpaceItemDetail } from "../workspace/workspace-types";
 import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughWormhole } from "../wormhole-transfer";
 import CommentsSection from "./CommentsSection";
 import EventInvitations from "./EventInvitations";
+import ItemLinksSection from "./ItemLinksSection";
 import TaskAttachmentsSection from "./TaskAttachmentsSection";
 import TaskChecklistSection from "./TaskChecklistSection";
 
@@ -68,6 +67,7 @@ type Props = {
   commentTarget: SpaceItemDetail["commentTarget"];
   recurringContext: SpaceItemDetail["recurringContext"];
   references?: SpaceItemDetail["references"];
+  links?: SpaceItemDetail["links"];
   work?: SpaceItemDetail["work"];
   attachments?: SpaceItemDetail["attachments"];
   checklist?: SpaceItemDetail["checklist"];
@@ -165,18 +165,6 @@ export default function ItemDetailPanel(props: Props) {
     onError: (error) => prompts.error(error.message),
   });
 
-  const linkReference = mutations.create<void, SpaceItemResourceReferenceInput>({
-    mutation: async (reference, { abortSignal }) => {
-      const response = await apiClient[":id"].items[":itemId"].references.$post(
-        { param: { id: props.spaceId, itemId: props.item.id }, json: reference },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readResponseError(response, t.linkResourceFailed));
-    },
-    onSuccess: () => reconcileAfterWrite(),
-    onError: (error) => prompts.error(error.message),
-  });
-
   const addBlocker = mutations.create<void, string>({
     mutation: async (blockerItemId, { abortSignal }) => {
       const response = await apiClient[":id"].items[":itemId"].blockers.$post(
@@ -200,16 +188,6 @@ export default function ItemDetailPanel(props: Props) {
     onSuccess: () => reconcileAfterWrite(),
     onError: (error) => prompts.error(error.message),
   });
-
-  const linkCloudResource = async () => {
-    const selected = await openCloudResourcePicker({
-      title: t.linkCloudResource,
-      excludeRefs: [{ type: "spaces.item", id: props.item.id }, ...(props.references?.map((reference) => reference.ref) ?? [])],
-      requireReader: true,
-    });
-    if (!selected) return;
-    await linkReference.mutate({ ref: selected.ref, label: selected.title });
-  };
 
   const blockerOptions = async (search: string, signal: AbortSignal) => {
     const response = await apiClient[":id"].items.filter.$post(
@@ -669,75 +647,16 @@ export default function ItemDetailPanel(props: Props) {
     url.searchParams.set("item", itemId);
     return `${url.pathname}${url.search}`;
   };
-  const linkedResourcesSection = () => (
-    <DetailPanel.Section title={t.linkedResources} icon="ti ti-link" tone="neutral">
-      <div class="flex flex-col gap-1">
-        <For each={linkedResources()}>
-          {(reference) => {
-            const href = () => reference.resource?.links?.find((link) => link.rel === "open")?.href;
-            const icon = () => reference.resource?.icon ?? (reference.ref.type === "mail.conversation" ? "ti ti-mail" : "ti ti-link");
-            const menu = () =>
-              canEditItem()
-                ? {
-                    menuLabel: `More actions for ${reference.label}`,
-                    menuItems: [
-                      {
-                        label: t.unlink,
-                        icon: "ti ti-unlink",
-                        disabled: unlinkReference.loading(),
-                        action: () => unlinkReference.mutate(reference.ref),
-                      },
-                    ],
-                  }
-                : {};
-            return (
-              <Show
-                when={href()}
-                fallback={
-                  <DetailPanel.Action
-                    type="button"
-                    disabled
-                    leading={<i class={icon()} aria-hidden="true" />}
-                    title={reference.label}
-                    description={t.resourceUnavailable}
-                    {...menu()}
-                  />
-                }
-              >
-                {(openHref) => (
-                  <DetailPanel.Action
-                    href={openHref()}
-                    leading={<i class={icon()} aria-hidden="true" />}
-                    title={reference.label}
-                    description={reference.resource?.title !== reference.label ? reference.resource?.title : undefined}
-                    trailing={!canEditItem() ? <i class="ti ti-chevron-right" aria-hidden="true" /> : undefined}
-                    {...menu()}
-                  />
-                )}
-              </Show>
-            );
-          }}
-        </For>
-        <Show when={canEditItem()}>
-          <DetailPanel.Action
-            type="button"
-            onClick={() => void linkCloudResource()}
-            disabled={linkReference.loading()}
-            leading={
-              <i
-                class={
-                  linkReference.loading()
-                    ? "ti ti-loader-2 animate-spin text-[var(--k2b-action)]"
-                    : "ti ti-link-plus text-[var(--k2b-action)]"
-                }
-                aria-hidden="true"
-              />
-            }
-            title={t.linkCloudResource}
-          />
-        </Show>
-      </div>
-    </DetailPanel.Section>
+  const hasLinks = () => linkedResources().length > 0 || (props.links?.length ?? 0) > 0;
+  const linksSection = () => (
+    <ItemLinksSection
+      spaceId={props.spaceId}
+      itemId={props.item.id}
+      references={linkedResources()}
+      links={props.links ?? []}
+      canEdit={canEditItem()}
+      onChanged={reconcileAfterWrite}
+    />
   );
 
   return (
@@ -1049,12 +968,7 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
-          <Show
-            when={
-              !isEvent() &&
-              (canEditItem() || (props.blockedBy?.length ?? 0) > 0 || (props.blocks?.length ?? 0) > 0 || linkedResources().length > 0)
-            }
-          >
+          <Show when={!isEvent() && (canEditItem() || (props.blockedBy?.length ?? 0) > 0 || (props.blocks?.length ?? 0) > 0 || hasLinks())}>
             <DetailPanel.Group label={t.taskContext}>
               <DetailPanel.Section title={t.blockedBy} icon="ti ti-lock" tone={activeBlockerCount() > 0 ? "warning" : "neutral"}>
                 <div class="flex flex-col gap-1">
@@ -1126,12 +1040,12 @@ export default function ItemDetailPanel(props: Props) {
                   </div>
                 </DetailPanel.Section>
               </Show>
-              {linkedResourcesSection()}
+              {linksSection()}
             </DetailPanel.Group>
           </Show>
 
-          <Show when={isEvent() && (canEditItem() || linkedResources().length > 0)}>
-            <DetailPanel.Group label={t.resourceContext}>{linkedResourcesSection()}</DetailPanel.Group>
+          <Show when={isEvent() && (canEditItem() || hasLinks())}>
+            <DetailPanel.Group label={t.resourceContext}>{linksSection()}</DetailPanel.Group>
           </Show>
 
           <Show when={relatedTasks().length > 0}>
