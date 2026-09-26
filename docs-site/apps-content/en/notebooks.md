@@ -276,13 +276,14 @@ mirror. Each file starts with `id`, `title`, and `updatedAt` front matter, and
 `updatedAt` per note.
 
 Changes go back through `write`, `edit`, `mv`, and `rm`, which accept mirror
-files and update the mirror immediately. Writing a mirror file turns every
-relative link that names a file in the mirror into a `note://` or `attach://`
-link, including links you typed yourself. Writes through a mirror file are
-rejected with 409 when the note changed on the server since the last pull.
-`pull` downloads only changed notes, follows renames, moves, and deletions, and
-updates links in files whose linked notes moved. It never overwrites a file
-with local changes: it lists such files and exits 1 unless `--force` is given.
+files and update the mirror immediately. Writing a mirror file turns relative
+links to files in the mirror, written the way pull writes them, back into
+`note://` and `attach://` links, including links you typed yourself. Writes
+through a mirror file are rejected with 409 when the note changed on the server
+since the last pull. `pull` downloads only changed notes, follows renames,
+moves, and deletions, and updates links in files whose linked notes moved. It
+never overwrites a file with local changes: it lists such files and exits 1
+unless `--force` is given.
 
 Run `cld notebooks help` for the full command set and
 `cld notebooks <command> --help` before editing content, changing access, or

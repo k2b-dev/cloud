@@ -36,6 +36,7 @@ const notePaths = new Map([
   ["note02", "betrieb/index.md"],
   ["note03", "start.md"],
 ]);
+const noteFiles = new Map([...notePaths].map(([id, path]) => [path, id]));
 
 describe("mirror file format", () => {
   test("round-trips server content through front matter and relative attachment links", () => {
@@ -58,14 +59,21 @@ describe("mirror file format", () => {
       '# Backup\n\n[Start](note://note03) [Betrieb](note://note02#ziel) [Selbst](note://note01 "t") [Fremd](note://other1) note://note03\n';
     const text = renderMirrorFile({ id: "note01", title: "Backup", updatedAt: "x" }, content, "betrieb/backup.md", new Map(), notePaths);
     expect(text).toEndWith('[Start](../start.md) [Betrieb](index.md#ziel) [Selbst](backup.md "t") [Fremd](note://other1) note://note03\n');
-    expect(mirrorFileContent(text, "betrieb/backup.md", notePaths)).toBe(content);
+    expect(mirrorFileContent(text, "betrieb/backup.md", noteFiles)).toBe(content);
   });
 
   test("restores only relative links that name a mirror note from the file's own folder", () => {
     expect(rewriteNoteLinks("[a](note://note01)", "start.md", notePaths)).toBe("[a](betrieb/backup.md)");
     expect(
-      restoreNoteLinks("[a](betrieb/backup.md) [b](backup.md) [c](../start.md) [d](https://x.org/start.md)", "start.md", notePaths),
-    ).toBe("[a](note://note01) [b](backup.md) [c](../start.md) [d](https://x.org/start.md)");
+      restoreNoteLinks(
+        "[a](betrieb/backup.md) [b](backup.md) [c](../start.md) [d](https://x.org/start.md) [e](./betrieb/backup.md) [f](/start.md)",
+        "start.md",
+        noteFiles,
+      ),
+    ).toBe("[a](note://note01) [b](backup.md) [c](../start.md) [d](https://x.org/start.md) [e](./betrieb/backup.md) [f](/start.md)");
+    expect(restoreNoteLinks("[a](../start.md) [b](index.md#x) [c](../betrieb/backup.md)", "betrieb/backup.md", noteFiles)).toBe(
+      "[a](note://note03) [b](note://note02#x) [c](../betrieb/backup.md)",
+    );
   });
 
   test("restores only links written for the file's own depth", () => {

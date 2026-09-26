@@ -28,7 +28,7 @@ import {
   MANIFEST_FILE,
   type Manifest,
   type ManifestNote,
-  manifestPaths,
+  manifestFiles,
   mirrorFileContent,
   newManifest,
   type OutlineEntry,
@@ -990,7 +990,7 @@ function notebooksCommands(locale?: string) {
               );
             source = await readFile(join(ownFile.root, ownPath), "utf8");
           }
-          let content = ownFile && ownPath ? mirrorFileContent(source, ownPath, manifestPaths(ownFile.manifest)) : stripFrontMatter(source);
+          let content = ownFile && ownPath ? mirrorFileContent(source, ownPath, manifestFiles(ownFile.manifest)) : stripFrontMatter(source);
 
           if (destination.kind === "existing") {
             const { target } = destination;

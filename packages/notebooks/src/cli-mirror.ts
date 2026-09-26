@@ -157,7 +157,10 @@ export const restoreAttachmentLinks = (content: string, depth: number): string =
 /** Mirror file path of every note, by note ID. */
 export type NotePaths = ReadonlyMap<string, string>;
 
-export const manifestPaths = (manifest: Manifest): NotePaths => new Map(manifest.notes.map((note) => [note.id, note.path]));
+/** Note ID of every mirror file, by path. */
+export type NoteFiles = ReadonlyMap<string, string>;
+
+export const manifestFiles = (manifest: Manifest): NoteFiles => new Map(manifest.notes.map((note) => [note.path, note.id]));
 
 const relativeNoteLink = (from: string, to: string): string => posix.relative(posix.dirname(from), to);
 
@@ -169,26 +172,25 @@ export const rewriteNoteLinks = (content: string, path: string, notePaths: NoteP
   });
 
 /**
- * `](<relative path>` → `](note://<id>` for every relative link from `path` that names a note's file.
- * Undoes `rewriteNoteLinks`, but also turns a literal relative link to a mirror file into a note link.
+ * `](<relative path>` → `](note://<id>` for every relative link from `path` that names a note's file the way
+ * `rewriteNoteLinks` writes it. Undoes `rewriteNoteLinks`, but also turns such a literal relative link into a note link.
  */
-export const restoreNoteLinks = (content: string, path: string, notePaths: NotePaths): string => {
-  const ids = new Map([...notePaths].map(([id, target]) => [relativeNoteLink(path, target), id]));
-  return content.replace(/\]\(([^()#\s]+\.md)(?=[)#\s])/g, (link, target: string) => {
-    const id = ids.get(target);
-    return id ? `](note://${id}` : link;
+export const restoreNoteLinks = (content: string, path: string, noteFiles: NoteFiles): string =>
+  content.replace(/\]\(([^()#\s]+\.md)(?=[)#\s])/g, (link, target: string) => {
+    const file = posix.join(posix.dirname(path), target);
+    const id = noteFiles.get(file);
+    return id && relativeNoteLink(path, file) === target ? `](note://${id}` : link;
   });
-};
 
 /** Whether the note links of a file at `path` change when notes move from `before` to `after`; literal relative links may also count. */
-const noteLinksChange = (text: string, path: string, before: NotePaths, after: NotePaths): boolean => {
+const noteLinksChange = (text: string, path: string, before: NoteFiles, after: NotePaths): boolean => {
   const content = stripFrontMatter(text);
   return rewriteNoteLinks(restoreNoteLinks(content, path, before), path, after) !== content;
 };
 
 /** Content to upload for a mirror file at `path`: without front matter and with `attach://` and `note://` links. */
-export const mirrorFileContent = (text: string, path: string, notePaths: NotePaths): string =>
-  restoreNoteLinks(restoreAttachmentLinks(stripFrontMatter(text), depthOf(path)), path, notePaths);
+export const mirrorFileContent = (text: string, path: string, noteFiles: NoteFiles): string =>
+  restoreNoteLinks(restoreAttachmentLinks(stripFrontMatter(text), depthOf(path)), path, noteFiles);
 
 export const renderMirrorFile = (
   note: { id: string; title: string; updatedAt: string },
@@ -322,7 +324,7 @@ export const syncMirror = async (
   const layout = mirrorLayout(outline);
   const entries = new Map(outline.map((entry) => [entry.id, entry]));
   const previous = new Map(manifest.notes.map((note) => [note.id, note]));
-  const previousPaths = manifestPaths(manifest);
+  const previousFiles = manifestFiles(manifest);
   const local = new Map(await Promise.all(manifest.notes.map(async (note) => [note.id, await localFileState(root, note)] as const)));
   const edited = (id: string) => !force && !refetch.has(id) && local.get(id)?.state === "modified";
 
@@ -363,18 +365,17 @@ export const syncMirror = async (
 
   // Local edits carry over; everything else is rendered from server content.
   const contentOf = (id: string): string =>
-    edited(id) ? mirrorFileContent(local.get(id)!.text!, previous.get(id)!.path, previousPaths) : (fetched.get(id)!.contentMd ?? "");
+    edited(id) ? mirrorFileContent(local.get(id)!.text!, previous.get(id)!.path, previousFiles) : (fetched.get(id)!.contentMd ?? "");
   const render = (id: string, path: string): string => renderMirrorFile(entries.get(id)!, contentOf(id), path, attachments, placed);
 
   // A move needs a free path: not held by another note, and not by an unrelated local file unless that file
   // already has the exact text (an interrupted pull). A skipped move keeps the old path, which can block another move.
   const moving = force ? [] : outline.map((entry) => entry.id).filter((id) => !kept.has(id) && previous.get(id)?.path !== placed.get(id));
-  const manifestFiles = new Set(previousPaths.values());
   const unrelated = new Map(
     await Promise.all(
       moving.map(async (id) => {
         const path = placed.get(id)!;
-        return [id, manifestFiles.has(path) ? null : await readFile(join(root, path), "utf8").catch(() => null)] as const;
+        return [id, previousFiles.has(path) ? null : await readFile(join(root, path), "utf8").catch(() => null)] as const;
       }),
     ),
   );
@@ -404,7 +405,7 @@ export const syncMirror = async (
           known !== undefined &&
           !fetched.has(entry.id) &&
           state?.state === "clean" &&
-          noteLinksChange(state.text!, known.path, previousPaths, placed)
+          noteLinksChange(state.text!, known.path, previousFiles, placed)
         );
       })
       .map((entry) => entry.id),
