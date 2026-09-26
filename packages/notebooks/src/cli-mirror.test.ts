@@ -9,6 +9,7 @@ import {
   findMirror,
   MANIFEST_FILE,
   type Manifest,
+  manifestFiles,
   mirrorFileContent,
   mirrorLayout,
   newManifest,
@@ -299,24 +300,92 @@ describe("pull", () => {
     expect(await mirror.read("ordner/x.md")).toBe("unrelated\n");
     expect(await mirror.read("z.md")).toContain("# X\n");
     const after = await mirror.manifest();
-    expect(after.notes.find((note) => note.id === "xxxxxx")).toEqual({
-      ...before.notes.find((note) => note.id === "xxxxxx")!,
-      updatedAt: "2026-09-26T10:00:00.000Z+",
+    expect(after.notes.find((note) => note.id === "xxxxxx")).toMatchObject({
+      path: "x.md",
+      contentHash: before.notes.find((note) => note.id === "xxxxxx")!.contentHash,
     });
     expect(after.notes.find((note) => note.id === "zzzzzz")?.path).toBe("z.md");
+    expect(await mirror.pull()).toMatchObject({ written: [], removed: [], kept: report.kept });
+    expect(await mirror.read("x.md")).toBe(edited);
   });
 
-  test("never rewrites a locally modified file whose note stays, even when a linked note moves", async () => {
-    const mirror = await mirrorOf([serverNote("start1", "Start", "\n[B](note://bbbbbb)\n"), serverNote("bbbbbb", "B"), ...folder]);
+  test("a locally modified file keeps its text; only relative links to notes that moved or left follow them", async () => {
+    const mirror = await mirrorOf([
+      serverNote("start1", "Start", "\n[B](note://bbbbbb) [C](note://cccccc#x)\n"),
+      serverNote("uuuuuu", "U", "\n[S](note://start1)\n"),
+      serverNote("dddddd", "D", "\n[B](note://bbbbbb)\n"),
+      serverNote("bbbbbb", "B"),
+      serverNote("cccccc", "C"),
+      ...folder,
+    ]);
     await mirror.pull();
-    // Restoring and rendering this file again would change it: the literal self link and the link to b.md.
-    const edited = `${await mirror.read("start.md")}[Self](start.md) local\n`;
-    await mirror.put("start.md", edited);
+    // Self links, typed note links, and links to notes that stay are never touched.
+    const start = `${await mirror.read("start.md")}[Self](start.md) [Typed](note://bbbbbb) local\n`;
+    const unrelated = `${await mirror.read("u.md")}only text\n`;
+    const deleted = `${await mirror.read("d.md")}gone\n`;
+    await mirror.put("start.md", start);
+    await mirror.put("u.md", unrelated);
+    await mirror.put("d.md", deleted);
     mirror.save("bbbbbb", { parentId: "dir001" });
+    for (const id of ["cccccc", "dddddd"])
+      mirror.notes.splice(
+        mirror.notes.findIndex((note) => note.id === id),
+        1,
+      );
 
     const report = await mirror.pull();
-    expect(report).toMatchObject({ written: ["ordner/b.md"], removed: ["b.md"], kept: [{ path: "start.md", reason: "local-changes" }] });
-    expect(await mirror.read("start.md")).toBe(edited);
+    expect(report).toMatchObject({
+      written: ["start.md", "ordner/b.md", "d.md"],
+      removed: ["b.md", "c.md"],
+      kept: [
+        { path: "d.md", reason: "deleted-on-server" },
+        { path: "start.md", reason: "local-changes" },
+        { path: "u.md", reason: "local-changes" },
+      ],
+    });
+    expect(await mirror.read("start.md")).toBe(start.replace("[B](b.md) [C](c.md#x)", "[B](ordner/b.md) [C](note://cccccc#x)"));
+    expect(await mirror.read("u.md")).toBe(unrelated);
+    expect(await mirror.read("d.md")).toBe(deleted.replace("[B](b.md)", "[B](ordner/b.md)"));
+    expect(mirrorFileContent(await mirror.read("start.md"), "start.md", manifestFiles(await mirror.manifest()))).toBe(
+      "# Start\n\n[B](note://bbbbbb) [C](note://cccccc#x)\n[Self](note://start1) [Typed](note://bbbbbb) local\n",
+    );
+    expect(await mirror.pull()).toMatchObject({ written: [], removed: [], kept: report.kept });
+  });
+
+  test("links in a locally modified file keep their note when another note takes its old path", async () => {
+    const mirror = await mirrorOf([serverNote("start1", "Start", "\n[Plan](note://plan01)\n"), serverNote("plan01", "Plan")]);
+    await mirror.pull();
+    await mirror.put("start.md", `${await mirror.read("start.md")}local\n`);
+    // The old plan is renamed, and a new note takes its file name.
+    mirror.save("plan01", { title: "Plan alt", content: "# Plan alt\n" });
+    mirror.notes.push(serverNote("plan02", "Plan"));
+
+    expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason: "local-changes" }]);
+    const start = await mirror.read("start.md");
+    expect(start).toEndWith("[Plan](plan-alt.md)\nlocal\n");
+    expect(mirrorFileContent(start, "start.md", manifestFiles(await mirror.manifest()))).toBe("# Start\n\n[Plan](note://plan01)\nlocal\n");
+  });
+
+  test("a local edit that the link update turns into the pulled text still counts as a local change", async () => {
+    const mirror = await mirrorOf([
+      serverNote("start1", "Start", "\n[A](note://aaaaaa) [B](note://bbbbbb)\n"),
+      serverNote("aaaaaa", "A"),
+      serverNote("bbbbbb", "B"),
+    ]);
+    await mirror.pull();
+    const pulled = await mirror.read("start.md");
+    // The user swaps the link targets, and the server swaps the titles, so the updated links read like the pulled file.
+    await mirror.put("start.md", pulled.replace("[A](a.md) [B](b.md)", "[A](b.md) [B](a.md)"));
+    mirror.save("aaaaaa", { title: "B", content: "# B\n" });
+    mirror.save("bbbbbb", { title: "A", content: "# A\n" });
+
+    expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason: "local-changes" }]);
+    const start = await mirror.read("start.md");
+    expect(start).toBe(pulled);
+    expect(mirrorFileContent(start, "start.md", manifestFiles(await mirror.manifest()))).toBe(
+      "# Start\n\n[A](note://bbbbbb) [B](note://aaaaaa)\n",
+    );
+    expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason: "local-changes" }]);
   });
 
   test("a locally modified file whose note moves carries its edits and updates its relative links", async () => {

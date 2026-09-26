@@ -29,10 +29,10 @@ import {
   type Manifest,
   type ManifestNote,
   manifestFiles,
-  mirrorFileContent,
   newManifest,
   type OutlineEntry,
   readManifest,
+  restoreMirrorLinks,
   type SyncReport,
   stripFrontMatter,
   syncMirror,
@@ -357,6 +357,20 @@ function notebooksCommands(locale?: string) {
   };
 
   const mirrorPathOf = (manifest: Manifest, noteId: string): string | undefined => manifest.notes.find((note) => note.id === noteId)?.path;
+
+  /**
+   * Content to upload, with the relative links that pull writes turned back into `note://` and `attach://` links. They
+   * resolve from the `--from` file when it lies in a mirror, otherwise from the mirror file being written (`target`).
+   */
+  const restoreUploadLinks = async (
+    content: string,
+    from: string | undefined,
+    target: { path: string; manifest: Manifest } | undefined,
+  ): Promise<string> => {
+    const origin = from !== undefined && from !== "-" ? await findMirror(expandHome(from)) : null;
+    const base = origin ? { path: origin.relPath, manifest: await readManifest(origin.root) } : target;
+    return base ? restoreMirrorLinks(content, base.path, manifestFiles(base.manifest)) : content;
+  };
 
   // ==========================
   // Commands
@@ -990,7 +1004,11 @@ function notebooksCommands(locale?: string) {
               );
             source = await readFile(join(ownFile.root, ownPath), "utf8");
           }
-          let content = ownFile && ownPath ? mirrorFileContent(source, ownPath, manifestFiles(ownFile.manifest)) : stripFrontMatter(source);
+          let content = await restoreUploadLinks(
+            stripFrontMatter(source),
+            flags.from,
+            ownFile && ownPath ? { path: ownPath, manifest: ownFile.manifest } : undefined,
+          );
 
           if (destination.kind === "existing") {
             const { target } = destination;
@@ -1142,7 +1160,7 @@ function notebooksCommands(locale?: string) {
         ],
         async run({ ctx, args, flags }) {
           const target = await resolveNote(ctx, args.note);
-          const operation = await buildEditOperation(flags);
+          let operation = await buildEditOperation(flags);
           if (target.mirror) {
             const { entry, root } = target.mirror;
             if ((await localFileState(root, entry)).state === "modified")
@@ -1153,6 +1171,15 @@ function notebooksCommands(locale?: string) {
                 }),
               );
           }
+          if ("content" in operation)
+            operation = {
+              ...operation,
+              content: await restoreUploadLinks(
+                operation.content,
+                flags.from,
+                target.mirror && { path: target.mirror.entry.path, manifest: target.mirror.manifest },
+              ),
+            };
           const request = {
             operations: [operation],
             ifUpdatedAt: flags.ifUpdatedAt,

@@ -171,15 +171,31 @@ export const rewriteNoteLinks = (content: string, path: string, notePaths: NoteP
     return target ? `](${relativeNoteLink(path, target)}` : link;
   });
 
+const RELATIVE_NOTE_LINK = /\]\(([^()#\s]+\.md)(?=[)#\s])/g;
+
+/** Note of a relative link target from `path`, when it names the note's file the way `rewriteNoteLinks` writes it. */
+const linkedNote = (target: string, path: string, noteFiles: NoteFiles): string | undefined => {
+  const file = posix.join(posix.dirname(path), target);
+  return relativeNoteLink(path, file) === target ? noteFiles.get(file) : undefined;
+};
+
 /**
  * `](<relative path>` → `](note://<id>` for every relative link from `path` that names a note's file the way
  * `rewriteNoteLinks` writes it. Undoes `rewriteNoteLinks`, but also turns such a literal relative link into a note link.
  */
 export const restoreNoteLinks = (content: string, path: string, noteFiles: NoteFiles): string =>
-  content.replace(/\]\(([^()#\s]+\.md)(?=[)#\s])/g, (link, target: string) => {
-    const file = posix.join(posix.dirname(path), target);
-    const id = noteFiles.get(file);
-    return id && relativeNoteLink(path, file) === target ? `](note://${id}` : link;
+  content.replace(RELATIVE_NOTE_LINK, (link, target: string) => {
+    const id = linkedNote(target, path, noteFiles);
+    return id ? `](note://${id}` : link;
+  });
+
+/** Relative note links of a file at `path` follow their notes from `before` to `after`; a note that left gets its `note://` link. */
+const followNoteLinks = (content: string, path: string, before: NoteFiles, after: NotePaths): string =>
+  content.replace(RELATIVE_NOTE_LINK, (link, target: string) => {
+    const id = linkedNote(target, path, before);
+    if (!id) return link;
+    const moved = after.get(id);
+    return moved ? `](${relativeNoteLink(path, moved)}` : `](note://${id}`;
   });
 
 /** Whether the note links of a file at `path` change when notes move from `before` to `after`; literal relative links may also count. */
@@ -188,9 +204,13 @@ const noteLinksChange = (text: string, path: string, before: NoteFiles, after: N
   return rewriteNoteLinks(restoreNoteLinks(content, path, before), path, after) !== content;
 };
 
+/** Mirror text as it lives in a file at `path`, with its relative links turned back into `attach://` and `note://` links. */
+export const restoreMirrorLinks = (content: string, path: string, noteFiles: NoteFiles): string =>
+  restoreNoteLinks(restoreAttachmentLinks(content, depthOf(path)), path, noteFiles);
+
 /** Content to upload for a mirror file at `path`: without front matter and with `attach://` and `note://` links. */
 export const mirrorFileContent = (text: string, path: string, noteFiles: NoteFiles): string =>
-  restoreNoteLinks(restoreAttachmentLinks(stripFrontMatter(text), depthOf(path)), path, noteFiles);
+  restoreMirrorLinks(stripFrontMatter(text), path, noteFiles);
 
 export const renderMirrorFile = (
   note: { id: string; title: string; updatedAt: string },
@@ -304,10 +324,11 @@ const syncAttachments = async (ctx: CloudCliContext, root: string, notebookId: s
 /**
  * Bring the mirror to the server state. Only changed notes are downloaded.
  * Files with local changes are never overwritten or deleted unless `force`
- * is set; they only move along when their note moved. A move onto a path that
- * another file holds is skipped, and the note stays at its old path. Notes in
- * `refetch` were just written: their files take the server copy regardless of
- * local state.
+ * is set; they move along when their note moved, and their relative note
+ * links follow the notes they name, so writing them back keeps every link on
+ * its note. A move onto a path that another file holds is skipped, and the
+ * note stays at its old path. Notes in `refetch` were just written: their
+ * files take the server copy regardless of local state.
  *
  * Note links point to the final paths of the next manifest. A clean file is
  * rendered again from downloaded content when it moves, or when a note it
@@ -366,7 +387,8 @@ export const syncMirror = async (
   // Local edits carry over; everything else is rendered from server content.
   const contentOf = (id: string): string =>
     edited(id) ? mirrorFileContent(local.get(id)!.text!, previous.get(id)!.path, previousFiles) : (fetched.get(id)!.contentMd ?? "");
-  const render = (id: string, path: string): string => renderMirrorFile(entries.get(id)!, contentOf(id), path, attachments, placed);
+  const render = (id: string, path: string, content = contentOf(id)): string =>
+    renderMirrorFile(entries.get(id)!, content, path, attachments, placed);
 
   // A move needs a free path: not held by another note, and not by an unrelated local file unless that file
   // already has the exact text (an interrupted pull). A skipped move keeps the old path, which can block another move.
@@ -379,34 +401,47 @@ export const syncMirror = async (
       }),
     ),
   );
+  const holders = new Map<string, number>();
+  const hold = (path: string, change: number) => holders.set(path, (holders.get(path) ?? 0) + change);
+  for (const path of placed.values()) hold(path, 1);
   for (let changed = true; changed; ) {
     changed = false;
     for (const id of moving) {
       if (kept.has(id)) continue;
       const path = placed.get(id)!;
       const file = unrelated.get(id) ?? null;
-      const held = [...placed].some(([other, at]) => other !== id && at === path);
-      if (!held && (file === null || file === render(id, path))) continue;
+      if (holders.get(path) === 1 && (file === null || file === render(id, path))) continue;
       const known = previous.get(id);
       kept.set(id, { path: known?.path ?? path, reason: "path-occupied" });
-      if (known) placed.set(id, known.path);
-      else placed.delete(id);
+      hold(path, -1);
+      if (known) {
+        placed.set(id, known.path);
+        hold(known.path, 1);
+      } else placed.delete(id);
       changed = true;
     }
   }
 
-  // Clean files whose note links change because a linked note moved, appeared, or left the mirror.
+  // A file with local edits at its final path: moved along with its note, or in place with relative note links that
+  // follow their notes. Everything else in it stays as the user wrote it.
+  const editedText = (id: string, path: string): string => {
+    const text = local.get(id)!.text!;
+    if (path !== previous.get(id)!.path) return render(id, path);
+    const body = stripFrontMatter(text);
+    return `${text.slice(0, text.length - body.length)}${followNoteLinks(body, path, previousFiles, placed)}`;
+  };
+
+  // Clean files whose note links change because a linked note moved, appeared, or left the mirror, and edited files
+  // that pull rewrites, whose file hash must describe the server copy at the new place.
   await download(
     outline
       .filter((entry) => {
         const known = previous.get(entry.id);
+        const path = placed.get(entry.id);
         const state = local.get(entry.id);
-        return (
-          known !== undefined &&
-          !fetched.has(entry.id) &&
-          state?.state === "clean" &&
-          noteLinksChange(state.text!, known.path, previousFiles, placed)
-        );
+        if (!known || state?.text === undefined || path === undefined || fetched.has(entry.id)) return false;
+        if (edited(entry.id)) return path !== known.path || editedText(entry.id, path) !== state.text;
+        return state.state === "clean" && noteLinksChange(state.text, known.path, previousFiles, placed);
       })
       .map((entry) => entry.id),
   );
@@ -414,25 +449,31 @@ export const syncMirror = async (
   const writes: Array<{ path: string; text: string }> = [];
   const removes = new Set<string>();
   const next: ManifestNote[] = [];
+  const keepEdits = (known: ManifestNote, path: string) => {
+    const text = editedText(known.id, path);
+    if (path !== known.path) removes.add(known.path);
+    if (path !== known.path || text !== local.get(known.id)!.text) writes.push({ path, text });
+  };
   for (const entry of outline) {
     const known = previous.get(entry.id);
     const path = placed.get(entry.id);
     if (path === undefined) continue;
-    if (kept.get(entry.id)?.reason === "changed-on-both-sides") {
-      next.push(known!);
-      continue;
-    }
-    if (edited(entry.id)) {
-      // Local edits are never rewritten in place; when their note moved they move along with updated relative links.
-      if (path !== known!.path) {
-        writes.push({ path, text: render(entry.id, path) });
-        removes.add(known!.path);
-      }
-      if (!kept.has(entry.id)) kept.set(entry.id, { path, reason: "local-changes" });
-      next.push({ ...known!, path, updatedAt: entry.updatedAt });
-      continue;
-    }
     const remote = fetched.get(entry.id);
+    if (edited(entry.id)) {
+      keepEdits(known!, path);
+      if (!kept.has(entry.id)) kept.set(entry.id, { path, reason: "local-changes" });
+      // A conflict keeps its old record, so the next pull still sees it. Otherwise the server copy is still the base
+      // of the edits, and the file hash names what pull would write for it at the final place.
+      if (kept.get(entry.id)!.reason === "changed-on-both-sides") next.push(known!);
+      else
+        next.push({
+          ...known!,
+          path,
+          updatedAt: entry.updatedAt,
+          ...(remote ? { fileHash: noteContentHash(render(entry.id, path, remote.contentMd ?? "")) } : {}),
+        });
+      continue;
+    }
     if (!remote) {
       next.push(known!);
       continue;
@@ -450,8 +491,10 @@ export const syncMirror = async (
   }
   for (const known of manifest.notes) {
     if (onServer.has(known.id)) continue;
-    if (kept.has(known.id)) next.push(known);
-    else removes.add(known.path);
+    if (kept.has(known.id)) {
+      keepEdits(known, known.path);
+      next.push(known);
+    } else removes.add(known.path);
   }
 
   const report: SyncReport = { written: [], removed: [], kept: [...kept.values()], attachments: { downloaded: 0, removed: 0 } };
