@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-09-10
+updated: 2026-09-26
 ---
 
 # Runtime configuration
@@ -200,6 +200,24 @@ Applications may declare settings for services such as:
 FreeIPA and Files use administration settings only. Mailbox credentials belong
 to user-created IMAP/SMTP connections, not global provider settings. Grids query
 limits are configured in Grids administration and require restarting every Grids replica.
+
+## Control CLI plugin access
+
+Applications serve their `cld` command modules as plugins. Every plugin
+request needs a signed-in session, an OAuth token, or an API key; signed-out
+requests get neither the plugin list nor any plugin file.
+
+The setting `cli.plugins.access` decides who else is excluded. It applies to
+the list and to every download:
+
+| Value | Who gets plugins |
+| --- | --- |
+| `full_users` (default) | Full accounts and service accounts. Guests get `403`. |
+| `all_users` | Every signed-in account, guests included. |
+
+Change it under **Administration › Settings › Command line**. The setting only
+protects the plugin code; the server still authorizes every command a plugin
+sends. See [Application CLI modules](/en/docs/platform/cli-modules#serve-a-module-from-the-application).
 
 ## Validate a deployment
 

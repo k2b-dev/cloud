@@ -1,3 +1,4 @@
+import { CLOUD_CLI_MODULE_NAME } from "../cli/plugin";
 import type { AppRegistryEntry } from "../contracts/registry";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -112,6 +113,12 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     }
   }
   if (value.settingKeys !== undefined && !isStringArray(value.settingKeys)) return invalid("settingKeys", "an array of strings");
+  if (
+    value.cliModules !== undefined &&
+    (!isStringArray(value.cliModules) || value.cliModules.some((name) => !CLOUD_CLI_MODULE_NAME.test(name)))
+  ) {
+    return invalid("cliModules", "an array of CLI module names");
+  }
   if (value.capabilities !== undefined) {
     if (
       !isRecord(value.capabilities) ||

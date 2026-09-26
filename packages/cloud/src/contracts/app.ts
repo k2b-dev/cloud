@@ -77,6 +77,17 @@ export type AppPresentationCatalog = {
   translations: Readonly<Record<string, AppPresentationTranslation>>;
 };
 
+/** One `cld` module an application serves as a plugin. Paths are relative to the application directory. */
+export type AppCliModule = {
+  /** Source file whose default export is the module from `defineCliCommands()`, e.g. `src/cli.ts`. */
+  module: string;
+  /** Directory of the module's skill references: `index.md` plus any further Markdown files. */
+  references: string;
+};
+
+/** `cld` modules keyed by module name, the command `cld <name>`. */
+export type AppCliModules = Readonly<Record<string, AppCliModule>>;
+
 export type AppMeta = {
   id: string;
   name: string;
@@ -119,6 +130,8 @@ export type AppMeta = {
   settingKeys?: readonly string[];
   /** Gateway-relative URL where this app's OpenAPI JSON is served, or undefined. */
   openapi?: string;
+  /** `cld` modules this app serves as plugins. */
+  cli?: AppCliModules;
 };
 
 export type WidgetEndpoint = {

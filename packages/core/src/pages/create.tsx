@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { cliPluginListRoutes } from "@k2b/cloud/api";
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { authFlows, coreSettings, legalConsent } from "@k2b/cloud/services";
 import { getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
@@ -55,6 +56,8 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     // Serve the installer from the currently deployed Core bundle, rather than
     // piping a mutable branch artifact into a user's shell.
     .get("/cli", (c) => c.body(cliInstaller, 200, { "Content-Type": "text/x-shellscript; charset=utf-8" }))
+    // Applications serve their own plugins under /cli/plugins/<name>/.
+    .route("/cli/plugins", cliPluginListRoutes)
     .get("/service-worker.js", (c) =>
       c.body(browserNotificationServiceWorker, 200, {
         "Content-Type": "application/javascript; charset=utf-8",

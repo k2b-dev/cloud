@@ -61,3 +61,4 @@ export * from "./address";
 export * from "./commands";
 export * from "./locale";
 export * from "./output";
+export * from "./plugin";
