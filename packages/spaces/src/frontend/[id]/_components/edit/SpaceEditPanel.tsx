@@ -7,6 +7,7 @@ import { CalendarSection } from "./CalendarSection";
 import { DangerZone } from "./DangerZone";
 import { DefaultsSection } from "./DefaultsSection";
 import { GeneralSection } from "./GeneralSection";
+import { GitHubSection } from "./GitHubSection";
 import { StatusesSection } from "./StatusesSection";
 import { TagsSection } from "./TagsSection";
 import type { SpaceEditPanelProps } from "./types";
@@ -96,6 +97,15 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
           {isAdmin() && (
             <SettingsModal.Tab id="wormholes" title={m.wormholes} icon="ti ti-arrow-bounce" description={m.wormholesTabDescription}>
               <WormholesSection spaceId={props.space.id} initialWormholes={props.wormholes ?? []} onDirtyChange={setWormholesDirty} />
+            </SettingsModal.Tab>
+          )}
+          {isAdmin() && (
+            <SettingsModal.Tab id="github" title="GitHub" icon="ti ti-brand-github" description={m.githubTabDescription}>
+              <GitHubSection
+                spaceId={props.space.id}
+                configured={props.githubTokenConfigured === true}
+                onSettingsChange={props.onSettingsChange}
+              />
             </SettingsModal.Tab>
           )}
         </SettingsModal.Group>

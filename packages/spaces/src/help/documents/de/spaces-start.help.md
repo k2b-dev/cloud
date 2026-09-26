@@ -43,9 +43,13 @@ Spaces verwaltet den importierten Terminstatus, Wiederholungen, organisierende u
 - Wenn Mail oder die benötigte Capability nicht verfügbar ist, bleiben die Einladungsfunktionen ausgeblendet. Spaces kann weiterhin vollständig als Kalender verwendet werden.
 - Wähle in einem Mail-Entwurf einen vorhandenen Termin oder erstelle einen kompakten Termin in einem beschreibbaren Space. Hänge anschließend die Einladung an. Der Entwurf bleibt bearbeitbar und wird nur über den normalen Versandablauf von Mail gesendet.
 
-## Cloud-Ressourcen mit Arbeit verknüpfen {icon="link"}
+## Ressourcen und Seiten mit Arbeit verknüpfen {icon="link"}
 
-Ein Eintrag kann dauerhafte Verweise auf Ressourcen anderer Cloud-Anwendungen enthalten. Wähle beim Bearbeiten unter **Verknüpfte Ressourcen** die Aktion **Cloud-Ressource verknüpfen**. Damit kannst du über die Cloud-Suche unterstützte Ressourcen finden und anhängen, auf die du aktuell zugreifen darfst. Mail verwendet dasselbe Modell, um eine gesamte Unterhaltung mit einer bestehenden Aufgabe oder einem Termin zu verknüpfen oder daraus einen neuen verknüpften Eintrag zu erstellen. Importierte Kalendereinladungen fügen denselben Verweis auf die Unterhaltung automatisch hinzu.
+Jeder Eintrag hat eine Liste **Links** für Cloud-Ressourcen und externe Seiten. Wähle beim Bearbeiten **Link hinzufügen**, um eine `http(s)`-URL mit optionaler Bezeichnung anzuhängen, oder **Cloud-Ressource verknüpfen**, um über die Cloud-Suche unterstützte Ressourcen zu finden und anzuhängen, auf die du aktuell zugreifen darfst. Ein Eintrag fasst bis zu 20 externe Links.
+
+Ein Link auf ein GitHub-Issue oder einen Pull Request zeigt `Repository#Nummer`, den Titel und ob er offen, geschlossen oder gemergt ist. Andere Links zeigen das Symbol und den Host der Seite oder die Bezeichnung, die du vergeben hast. Vorschauen sind schreibgeschützt und aktualisieren sich wenige Minuten nach einer Änderung auf GitHub; Spaces schreibt nie nach GitHub. Öffentliche Repositories brauchen keine Einrichtung. Für private Repositories kann eine Person mit Adminzugriff unter **Space-Einstellungen › GitHub** ein GitHub-Token hinterlegen; ohne Token erscheinen private Links als einfache Links. Verknüpfe eine Aufgabe mit ihrem Issue, statt das Issue in der Beschreibung zu wiederholen.
+
+Ein Eintrag kann dauerhafte Verweise auf Ressourcen anderer Cloud-Anwendungen enthalten. Mail verwendet dasselbe Modell, um eine gesamte Unterhaltung mit einer bestehenden Aufgabe oder einem Termin zu verknüpfen oder daraus einen neuen verknüpften Eintrag zu erstellen. Importierte Kalendereinladungen fügen denselben Verweis auf die Unterhaltung automatisch hinzu.
 
 Der Verweis gehört zum gemeinsamen Eintrag und nicht zu der Person, die ihn erstellt hat. Der Zugriff auf den Space bestimmt, wer den Verweis sehen oder entfernen darf. Beim Öffnen prüft die Zielanwendung zusätzlich die aktuelle Berechtigung für ihre Ressource. Wenn das Ziel gelöscht oder der Zugriff geändert wurde, bleibt die gespeicherte Bezeichnung für Personen mit Lesezugriff sichtbar. Eine Person mit Schreibzugriff kann den nicht mehr verfügbaren Verweis entfernen.
 

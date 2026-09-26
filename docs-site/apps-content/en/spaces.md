@@ -55,6 +55,7 @@ when the audience or lifecycle is different.
 | Item | Task or event with shared content and workflow fields |
 | Column and tag | Ordered workflow stage and cross-cutting label |
 | Comment, checklist entry, and assignee | Collaboration context attached to one item |
+| Link | A Cloud resource reference or an external URL on one item; GitHub issue and pull request links show a cached preview |
 | Calendar surface | Time-based view, invitation integration, and optional iCal export |
 
 Tasks use deadlines; events use a schedule and may recur. Views, filters, and
@@ -74,6 +75,18 @@ In list and table views, changing search or filters keeps the open item's
 editor and unfinished comment in place. If you select another item while a
 calendar date change is loading, the completed date change keeps your newer
 selection.
+
+An item's **Links** list holds Cloud resource references and external URLs
+(at most 20 URLs per item). A GitHub issue or pull request link renders as
+`repo#number` with its title and open, closed, or merged state; other links
+show the site's favicon and host or the label you gave them. Previews are
+fetched server-side, cached in Valkey for five minutes per Space, and never
+fetched while a page renders: a first view shows the plain link and the
+detail panel fills the preview once. Public repositories work without
+configuration. A Space administrator can store one GitHub token per Space
+under **Settings › GitHub**; it is encrypted at rest, used only to preview
+links in that Space, and never displayed again. Without a token, private links
+render without a preview. Spaces never writes to GitHub.
 
 Task checklist entries are deliberately small: one completion state and one
 label, without separate assignees, dates, or detail pages. Checklist changes
@@ -123,7 +136,7 @@ its space.
 
 The commands follow the shared `cld` verbs: `ls`, `show`, `add`, `set`, `mv`,
 and `rm`, the quick actions `done`, `reopen`, `assign`, and `due`, `deps` for
-blockers, and the groups `comments`, `attachments`, `checklist`, `references`,
+blockers, and the groups `comments`, `attachments`, `checklist`, `references`, `links`,
 `invitation`, and `access`. `calendar` and `overlap` query a time range across
 spaces. Every command supports `--json`; destructive commands need `--yes`,
 and long text comes from `--from <file|->`. Run `cld spaces help` for the
@@ -207,8 +220,8 @@ an outcome with verification evidence and an optional commit SHA in the same
 transaction as completion. Both user and resource-bound service accounts can
 record this work under their actual identity. Comments remain user-authored.
 
-`show <item> --context` includes work state, checklist, attachments, references, and
-blockers, plus explicit pages of comments and dependent tasks. Follow `hasNext`
+`show <item> --context` includes work state, checklist, attachments, references,
+links, and blockers, plus explicit pages of comments and dependent tasks. Follow `hasNext`
 in those pages using `comments list` and `deps`; use `activity --cursor` to read
 older work notes. Pages are fresh reads and may change during collaboration.
 The `comments list` output and the `blocks` field of `deps` are paginated objects.

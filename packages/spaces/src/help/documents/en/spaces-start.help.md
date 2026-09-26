@@ -43,9 +43,13 @@ Spaces owns imported meeting state, recurrence, organizers, attendees, and invit
 - If Mail or its required capability surface is unavailable, invitation controls stay hidden and Spaces remains fully usable as a calendar.
 - From a Mail draft, choose an existing event or create a compact event in a writable Space, then attach its invitation. The draft remains editable and Mail sends it only through the normal delivery flow.
 
-## Link Cloud resources to work {icon="link"}
+## Link resources and pages to work {icon="link"}
 
-A Space item can keep stable references to resources owned by other Cloud applications. In an editable item, use **Link Cloud resource** under **Linked resources** to find and attach any currently accessible resource supported by Cloud search. Mail also uses the same model to link a whole conversation to an existing task or event, or to create a linked item from the conversation details. Imported calendar invitations add the same conversation reference automatically.
+Every item has one **Links** list for Cloud resources and external pages. In an editable item, use **Add link** to attach an `http(s)` URL with an optional label, or **Link Cloud resource** to find and attach any currently accessible resource supported by Cloud search. Each item holds up to 20 external links.
+
+A link to a GitHub issue or pull request shows `repository#number`, the title, and whether it is open, closed, or merged. Other links show the site's icon and host, or the label you gave them. Previews are read-only and refresh a few minutes after the state changes on GitHub; Spaces never writes to GitHub. Public repositories need no setup. For private repositories, a Space administrator can store a GitHub token under **Space settings › GitHub**; without one, private links appear as plain links. Link a task to its issue instead of restating the issue in the description.
+
+A Space item can keep stable references to resources owned by other Cloud applications. Mail also uses the same model to link a whole conversation to an existing task or event, or to create a linked item from the conversation details. Imported calendar invitations add the same conversation reference automatically.
 
 The reference belongs to the shared Space item, not to the person who created it. Space access controls who can see or remove the link, while the target application checks its own current permission whenever someone opens the resource. If the target is removed or access changes, the stored label remains visible to Space readers and a writer can unlink the unavailable reference.
 

@@ -21,6 +21,7 @@ When you create an item, Spaces initially selects a task or event based on the c
 - **Blocked by:** Add every unfinished task that must be completed first. A blocked task cannot be completed until all active blockers are complete. Dependencies must stay within one Space and cannot form a cycle.
 - **Blocks:** Open the task details to see the reverse direction: every task that currently depends on this task.
 - **Related tasks:** Link tasks that share context but do not depend on each other. A related-task link is not a blocker.
+- **Links:** Attach Cloud resources and external pages such as the GitHub issue a task implements. GitHub issue and pull request links show their title and open, closed, or merged state.
 - **Checklist:** Break a task into small steps when a checkbox and label are enough. Checklist entries intentionally have no assignees, dates, or separate detail view.
 - **Attachments:** Add screenshots and other images to a task when the work needs visual context, such as a bug report. Spaces downscales large source images before uploading them. Select an existing image to open the attachment gallery, download the stored image, or remove it. Each task supports up to 20 images. Attachments and their automation links follow the task's read and write permissions.
 - **Recurrence:** Use recurring events for repeated appointments or routines. Keep one-off tasks as normal tasks.

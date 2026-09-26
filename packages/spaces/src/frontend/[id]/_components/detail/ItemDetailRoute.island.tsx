@@ -333,6 +333,7 @@ export default function ItemDetailRoute(props: Props) {
               commentTarget={current().commentTarget}
               recurringContext={current().recurringContext}
               references={current().references}
+              links={current().links}
               work={current().work}
               attachments={current().attachments}
               checklist={current().checklist}

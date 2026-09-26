@@ -75,6 +75,12 @@ const attachment = {
   createdAt: "2026-08-20T15:00:00.000Z",
 };
 const work = { claim: { id: CLAIM_ID, claimedAt: "2026-09-08T12:00:00.000Z" }, progress: null, result: null };
+const link = {
+  url: "https://github.com/k2b-dev/cloud/issues/263",
+  label: null,
+  createdAt: "2026-08-11T08:00:00.000Z",
+  preview: { kind: "github", repo: "k2b-dev/cloud", number: 263, type: "issue", title: "Links on items", state: "open" },
+};
 const commentsPage = { items: [{ id: "Cmt001", content: "Looks good", userName: "Ada" }], page: 2, perPage: 10, total: 11, hasNext: false };
 const blocksPage = {
   items: [{ dependent: { id: "Next01", spaceId: "Space1", title: "Announce", completedAt: null }, createdAt: "x" }],
@@ -168,6 +174,14 @@ beforeAll(async () => {
           return json(request.method === "DELETE" ? { deleted: true } : { id: "Check1", label: "Verify", completed: true });
         if (suffix === "/references")
           return json(request.method === "GET" ? [] : request.method === "DELETE" ? { deleted: true } : { ref: {} });
+        if (suffix === "/links")
+          return json(
+            request.method === "GET"
+              ? [link]
+              : request.method === "DELETE"
+                ? { deleted: true }
+                : { ...(body as object), createdAt: "2026-08-11T08:00:00.000Z", preview: null },
+          );
         if (suffix === "/invitation-context") return json({ mailboxes: [], attendees: [], lastDelivery: null });
         if (suffix === "/invitation-draft") return json({ draftId: "d1", href: "/mail/d1" });
       }
@@ -302,7 +316,16 @@ describe("browse", () => {
 
   test("show --context bundles work, checklist, deps, references and a comments page", async () => {
     const { json } = await run(["show", "Item01", "--context", "--page", "2", "--per-page", "10"]);
-    expect(json).toMatchObject({ id: "Item01", work, checklist: [], blockers, blocks: blocksPage, references: [], comments: commentsPage });
+    expect(json).toMatchObject({
+      id: "Item01",
+      work,
+      checklist: [],
+      blockers,
+      blocks: blocksPage,
+      references: [],
+      links: [link],
+      comments: commentsPage,
+    });
   });
 });
 
@@ -446,6 +469,20 @@ describe("secondary resources", () => {
     });
     expect((await failing(["references", "delete", "Item01", ...reference])).requests).toEqual([]);
     expect((await run(["references", "delete", "Item01", ...reference, "--yes"])).json).toEqual({ deleted: true });
+  });
+
+  test("links", async () => {
+    expect((await run(["links", "ls", "Item01"])).json).toEqual({ references: [], links: [link] });
+    const added = await run(["links", "add", "Item01", "https://example.org/spec", "--label", "Spec"]);
+    expect(writes(added.requests)[0]).toMatchObject({
+      path: "/api/spaces/Space1/items/Item01/links",
+      body: { url: "https://example.org/spec", label: "Spec" },
+    });
+    expect(added.json).toMatchObject({ url: "https://example.org/spec", label: "Spec", preview: null });
+    expect((await failing(["links", "rm", "Item01", "https://example.org/spec"])).requests).toEqual([]);
+    const removed = await run(["links", "rm", "Item01", "https://example.org/spec", "--yes"]);
+    expect(writes(removed.requests)[0]).toMatchObject({ method: "DELETE", body: { url: "https://example.org/spec" } });
+    expect(removed.json).toEqual({ deleted: true });
   });
 
   test("calendar, overlap and invitations", async () => {

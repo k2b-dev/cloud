@@ -28,6 +28,12 @@ mock.module("@/service", () => ({
         return spaceExists ? { ...space, columns: [], tags: [] } : null;
       },
       permission: { get: async () => permission },
+      githubToken: {
+        has: async () => {
+          calls.push("githubToken.has");
+          return true;
+        },
+      },
     },
     access: {
       list: async () => {
@@ -81,6 +87,7 @@ describe("Space settings context", () => {
     expect(result.data.accessEntries).toEqual([]);
     expect(result.data.apiKeys).toEqual([]);
     expect(result.data.wormholes).toEqual([]);
+    expect(result.data.githubTokenConfigured).toBe(false);
     expect(calls).toEqual(["space.getDetail"]);
   });
 
@@ -91,7 +98,8 @@ describe("Space settings context", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.permission).toBe("admin");
-    expect(calls).toEqual(["space.getDetail", "access.list", "apiKeys.list", "wormholes.listConfigured"]);
+    expect(result.data.githubTokenConfigured).toBe(true);
+    expect(calls).toEqual(["space.getDetail", "access.list", "apiKeys.list", "wormholes.listConfigured", "githubToken.has"]);
   });
 
   test("fails closed before loading settings data", async () => {

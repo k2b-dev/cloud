@@ -13,6 +13,8 @@ export type SpaceEditPanelProps = {
   accessEntries?: AccessEntry[];
   apiKeys?: ResourceApiKey[];
   wormholes?: SpaceWormhole[];
+  /** Admin-only: whether a GitHub token for link previews is stored. */
+  githubTokenConfigured?: boolean;
   isAdmin?: boolean;
   canWrite?: boolean;
 };

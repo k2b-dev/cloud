@@ -28,6 +28,7 @@ import type {
   SpaceDetail,
   SpaceItem,
   SpaceItemAttachment,
+  SpaceItemLink,
   SpaceItemResourceReference,
   SpaceTaskChecklistEntry,
   SpaceTaskDependency,
@@ -340,6 +341,7 @@ function spacesCommands(locale?: string) {
       }),
       checklist: t({ en: "Manage a task checklist", de: "Die Checkliste einer Aufgabe pflegen" }),
       references: t({ en: "Link Cloud resources to an item", de: "Cloud-Ressourcen mit einem Eintrag verknüpfen" }),
+      links: t({ en: "External links on an item, with GitHub previews", de: "Externe Links an einem Eintrag, mit GitHub-Vorschau" }),
       invitation: t({ en: "Prepare Mail invitations for an event", de: "Mail-Einladungen für einen Termin vorbereiten" }),
     },
     commands: [
@@ -440,8 +442,8 @@ function spacesCommands(locale?: string) {
         flags: {
           context: flag.boolean({
             description: t({
-              en: "Include work state, checklist, dependencies, references, and a comments page",
-              de: "Arbeitsstand, Checkliste, Abhängigkeiten, Verweise und eine Kommentarseite einbeziehen",
+              en: "Include work state, checklist, dependencies, references, links, and a comments page",
+              de: "Arbeitsstand, Checkliste, Abhängigkeiten, Verweise, Links und eine Kommentarseite einbeziehen",
             }),
           }),
           ...pageFlags,
@@ -470,9 +472,10 @@ function spacesCommands(locale?: string) {
           if (flags.context) {
             const page = flags.page ?? 1;
             const perPage = flags.perPage ?? 50;
-            const [comments, references, work, checklist, deps] = await Promise.all([
+            const [comments, references, links, work, checklist, deps] = await Promise.all([
               readApi<Paginated<SpaceComment>>(ctx, withQuery(itemApi(item, "/comments/page"), { page, per_page: perPage })),
               readApi<SpaceItemResourceReference[]>(ctx, itemApi(item, "/references")),
+              readApi<SpaceItemLink[]>(ctx, itemApi(item, "/links")),
               attachments ? readApi<TaskWork>(ctx, itemApi(item, "/work")) : Promise.resolve(null),
               attachments ? readApi<SpaceTaskChecklistEntry[]>(ctx, itemApi(item, "/checklist")) : Promise.resolve([]),
               attachments ? loadDeps(ctx, item, page, perPage) : Promise.resolve(null),
@@ -485,6 +488,7 @@ function spacesCommands(locale?: string) {
               blockers: deps?.blockers ?? [],
               blocks: deps?.blocks ?? null,
               references,
+              links,
               comments,
             };
             if (!printStructured(ctx, context)) ctx.print(JSON.stringify(context, null, 2));
@@ -1094,6 +1098,64 @@ function spacesCommands(locale?: string) {
           },
         }),
       ),
+
+      // ---------- Links ----------
+      command("links ls", {
+        summary: t({ en: "List Cloud references and external links", de: "Cloud-Verweise und externe Links auflisten" }),
+        args: itemArg,
+        examples: ["cld spaces links ls Item01 --json"],
+        async run({ ctx, args }) {
+          const item = await resolveItem(ctx, args.item);
+          const [references, links] = await Promise.all([
+            readApi<SpaceItemResourceReference[]>(ctx, itemApi(item, "/references")),
+            readApi<SpaceItemLink[]>(ctx, itemApi(item, "/links")),
+          ]);
+          const result = { references, links };
+          if (printStructured(ctx, result)) return;
+          for (const reference of references) ctx.print(`${reference.ref.type}:${reference.ref.id}\t${reference.label}`);
+          for (const link of links) {
+            const preview = link.preview
+              ? `${link.preview.repo}#${link.preview.number} [${link.preview.state}] ${link.preview.title}`
+              : (link.label ?? "");
+            ctx.print(`${link.url}\t${preview}`);
+          }
+        },
+      }),
+      command("links add", {
+        summary: t({ en: "Add an external link", de: "Einen externen Link hinzufügen" }),
+        args: {
+          ...itemArg,
+          url: arg.required({ valueLabel: "url", description: t({ en: "Absolute http(s) URL", de: "Absolute http(s)-URL" }) }),
+        },
+        flags: { label: flag.string({ description: t({ en: "Display label", de: "Anzeigename" }) }) },
+        examples: [
+          "cld spaces links add Item01 https://github.com/k2b-dev/cloud/issues/263",
+          'cld spaces links add Item01 https://example.org/spec --label "Spec"',
+        ],
+        async run({ ctx, args, flags }) {
+          const item = await resolveItem(ctx, args.item);
+          const link = await send<SpaceItemLink>(ctx, "POST", itemApi(item, "/links"), { url: args.url, label: flags.label ?? null });
+          if (!printStructured(ctx, link)) ctx.print(`${t({ en: "Added", de: "Hinzugefügt" })} ${link.url}`);
+        },
+      }),
+      command("links rm", {
+        summary: t({ en: "Remove an external link", de: "Einen externen Link entfernen" }),
+        args: {
+          ...itemArg,
+          url: arg.required({ valueLabel: "url", description: t({ en: "The link's URL", de: "Die URL des Links" }) }),
+        },
+        flags: yesFlag({ en: "Confirm the removal", de: "Entfernen bestätigen" }),
+        examples: ["cld spaces links rm Item01 https://example.org/spec --yes"],
+        async run({ ctx, args, flags }) {
+          requireYes(flags.yes === true);
+          const item = await resolveItem(ctx, args.item);
+          const result = await send<{ deleted: boolean }>(ctx, "DELETE", itemApi(item, "/links"), { url: args.url });
+          if (!printStructured(ctx, result))
+            ctx.print(
+              `${t({ en: result.deleted ? "Removed" : "Not found", de: result.deleted ? "Entfernt" : "Nicht gefunden" })} ${args.url}`,
+            );
+        },
+      }),
 
       // ---------- Calendar ----------
       command("calendar", {
