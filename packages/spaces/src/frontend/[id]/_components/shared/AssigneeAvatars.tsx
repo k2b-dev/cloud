@@ -39,9 +39,10 @@ export default function AssigneeAvatars(props: Props) {
   return (
     <Show when={props.assignees.length > 0 || props.claim} fallback={props.empty ?? null}>
       <div class={`flex min-w-0 items-center gap-2 ${props.class ?? ""}`} title={names() || undefined}>
-        <div class="flex shrink-0 -space-x-1">
+        {/* `isolate` keeps the holder's layer inside the stack; the holder paints above the next avatar so its ring stays whole. */}
+        <div class="isolate flex shrink-0 -space-x-1">
           <Show when={props.claim}>
-            {(claim) => <ClaimAvatar claim={claim()} currentUserId={props.currentUserId ?? ""} size={size()} />}
+            {(claim) => <ClaimAvatar claim={claim()} currentUserId={props.currentUserId ?? ""} size={size()} class="relative z-[1]" />}
           </Show>
           <For each={visible()}>
             {(assignee) => (

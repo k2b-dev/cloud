@@ -183,6 +183,10 @@ describe("Spaces claim controls", () => {
     expect(claimed.match(/data-size="xs"/g)).toHaveLength(3);
     expect(claimed.match(/border-2 border-\[var\(--ui-surface\)\]/g)).toHaveLength(3);
     expect(claimed.match(/border-2 border-\[var\(--k2b-success-text\)\]/g)).toHaveLength(1);
+    // The holder paints above the overlapping next avatar so its ring stays whole, inside the stack's own layer.
+    expect(claimed).toContain('class="isolate flex shrink-0 -space-x-1"');
+    expect(claimed).toMatch(/data-spaces-claim-badge class="[^"]* relative z-\[1\]"/);
+    expect(claimed.match(/z-\[1\]/g)).toHaveLength(1);
 
     // A service account or unassigned holder still shows on a card without assignees, and nothing hides at max 1.
     const bot = stack({ claim: botClaim });

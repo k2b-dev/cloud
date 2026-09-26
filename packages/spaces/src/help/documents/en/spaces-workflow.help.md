@@ -51,16 +51,17 @@ handoff** in their details. Reopening keeps the last result.
 
 Press **I'm on it** on a board card or in the task details to claim a task; a
 second click releases it, and in the details you can leave a short handoff note
-on release. While a task is claimed, the card shows the holder's avatar in any
-column, and the **In progress** filter lists claimed tasks. A claim only marks
-who is working on it right now; assignment and the column do not change. CLI
-workers and service accounts claim the same way and appear the same way.
+on release. While a task is claimed, the card shows the holder's avatar with a
+green ring first among the assignees in any column, and the **In progress**
+filter lists claimed tasks. A claim only marks who is working on it right now;
+assignment and the column do not change. CLI workers and service accounts claim
+the same way and appear the same way.
 
 Claims do not expire and cannot be overwritten. Completing a claimed task,
 including dragging it into a done column, is reserved for the holder and
-releases the claim. Space admins see **Take over** for another account's claim,
-with the previous holder shown; ordinary collaborative edits remain available
-while a task is claimed.
+releases the claim. Space admins see **Take over** for another account's claim
+and confirm it in a dialog that names the current holder; ordinary
+collaborative edits remain available while a task is claimed.
 
 ## Prepare invitations from Cloud search {icon="calendar-event"}
 
