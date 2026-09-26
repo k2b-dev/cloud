@@ -973,6 +973,30 @@ export const get = async (config: { bookId: string; id: string }): Promise<Conta
   return contact;
 };
 
+/**
+ * Contacts of one book whose display name is exactly `name`, at most `limit`
+ * of them. The SQL mirrors `resolveContactName`: label, full name, company,
+ * first email, then first phone.
+ */
+export const findByDisplayName = async (config: { bookId: string; name: string; limit: number }): Promise<string[]> => {
+  if (!isUuid(config.bookId)) return [];
+  const rows = await sql<{ id: string }[]>`
+    SELECT c.id
+    FROM contacts.contacts c
+    WHERE c.book_id = ${config.bookId}::uuid
+      AND COALESCE(
+        NULLIF(BTRIM(c.label), ''),
+        NULLIF(CONCAT_WS(' ', NULLIF(BTRIM(c.first_name), ''), NULLIF(BTRIM(c.last_name), '')), ''),
+        NULLIF(BTRIM(c.company_name), ''),
+        (SELECT NULLIF(BTRIM(e.email), '') FROM contacts.contact_emails e WHERE e.contact_id = c.id ORDER BY e.position, e.created_at LIMIT 1),
+        (SELECT NULLIF(BTRIM(p.phone), '') FROM contacts.contact_phones p WHERE p.contact_id = c.id ORDER BY p.position, p.created_at LIMIT 1)
+      ) = ${config.name}
+    ORDER BY c.id
+    LIMIT ${config.limit}
+  `;
+  return rows.map((row) => row.id);
+};
+
 /** Resolves the owning manual book for a stable contact id. */
 export const findBookId = async (config: { id: string }): Promise<string | null> => {
   if (!isUuid(config.id)) return null;
