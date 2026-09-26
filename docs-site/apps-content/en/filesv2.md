@@ -402,7 +402,7 @@ cld filesv2 rm me:/Documents/old.txt --yes
 cld filesv2 trash restore me <trash-id> --json
 cld filesv2 versions list me:/Documents/report.pdf --json
 cld filesv2 shares add me:/Documents/report.pdf --title "Report" --expires-in 7d --json
-cld filesv2 shares rm <share-id> --yes
+cld filesv2 shares revoke <share-id> --yes
 cld filesv2 documents create me:/Documents/Minutes --kind text --json
 cld filesv2 edit-url me:/Documents/Minutes.odt
 cld filesv2 favorites add me:/Documents --json
@@ -414,7 +414,7 @@ cld filesv2 admin directories archive freeipa/groups/editors --yes
 cld filesv2 admin archives list --storage freeipa --json
 cld filesv2 admin files ls freeipa/archive/<archive-uuid>:/Documents --json
 cld filesv2 admin archives restore <archive-uuid> --confirm-path groups/editors --yes
-cld filesv2 admin shares rm <share-id> --yes
+cld filesv2 admin shares revoke <share-id> --yes
 ```
 
 Names are matched exactly and never guessed. When a name matches several areas,

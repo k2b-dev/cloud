@@ -69,7 +69,7 @@ Historical versions can be permanently deleted only from the administrator file 
 
 `cld filesv2 admin inventory --storage freeipa --kind groups --json` reads the same inventory. Pass a returned `next` cursor with `--after`. Read configuration with `cld filesv2 admin configuration get --json`; write a complete edited configuration with `cld filesv2 admin configuration set --input-file ./filesv2.json` or `--stdin`. An omitted or empty `token` preserves the secret.
 
-`cld filesv2 admin shares list --json` lists all links; `admin shares rm <share-id> --yes` revokes one. `cld filesv2 admin uploads list --json` lists unresolved inbox reservations. These lists accept `--after` for further pages.
+`cld filesv2 admin shares list --json` lists all links; `admin shares revoke <share-id> --yes` revokes one. `cld filesv2 admin uploads list --json` lists unresolved inbox reservations. These lists accept `--after` for further pages.
 
 Directory and file commands address a directory as `<storage>/<users|groups>/<name>` or an archive as `<storage>/archive/<archive-id>`, followed by `:/path` for an entry, for example `cld filesv2 admin files ls cloud/groups/team:/trash`. `cld filesv2 help` lists the directory, archive, and inspection commands. CLI actions require the same administrative permissions and confirmations as their interface counterparts.
 

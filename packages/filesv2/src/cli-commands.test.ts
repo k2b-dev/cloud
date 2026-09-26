@@ -597,7 +597,7 @@ test("trash restore, versions and search round-trip", async () => {
   expect(requests.at(-1)).toBe(`GET /bases/${home.id}/search`);
 });
 
-test("shares add, list and rm keep passwords in a private file and require --yes to revoke", async () => {
+test("shares add, list and revoke keep passwords in a private file and require --yes to revoke", async () => {
   const dir = await directory();
   const passwordFile = join(dir, "password.txt");
   await writeFile(passwordFile, "correct horse battery\n", { mode: 0o600 });
@@ -615,8 +615,8 @@ test("shares add, list and rm keep passwords in a private file and require --yes
     "exactly one folder",
   );
   expect((await cli(["shares", "list"])).json.items).toHaveLength(2);
-  expect(await failure(["shares", "rm", inbox.json.id])).toBe("This operation requires --yes.");
-  expect((await cli(["shares", "rm", inbox.json.id], { yes: true })).json.state).toBe("revoked");
+  expect(await failure(["shares", "revoke", inbox.json.id])).toBe("This operation requires --yes.");
+  expect((await cli(["shares", "revoke", inbox.json.id], { yes: true })).json.state).toBe("revoked");
 });
 
 test("favorites and edit-url use addresses; recent-style rows print addresses", async () => {

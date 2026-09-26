@@ -60,7 +60,7 @@ cld filesv2 search me:/Documents report --json
 | `versions update <file> <version-id> --comment <text>` | Sets a version comment | the version |
 | `shares list` | Lists your links | `{items, next}` |
 | `shares add <entry>... --title <title>` | Creates a link or inbox | the share, with `url` once |
-| `shares rm <share-id> --yes` | Revokes a link | the share, `state: "revoked"` |
+| `shares revoke <share-id> --yes` | Revokes a link | the share, `state: "revoked"` |
 | `recent`, `favorites list` | Lists marked entries | array of `{base, entry, markedAt}` |
 | `favorites add <entry>`, `favorites remove <entry>` | Marks or unmarks | `{favorite}` |
 | `documents create <file> --kind <kind>` | Creates an empty document | `{base, entry}` |
@@ -194,14 +194,14 @@ cld filesv2 shares add me:/Documents/report.pdf --title "Report" --expires-in 7d
 cld filesv2 shares add team:/Incoming --kind inbox --title "Send files" --expires-in 7d --max-file-size 104857600 --max-total-size 1073741824 --public-note "Send your documents here" --json
 cld filesv2 shares add me:/Documents --title "Documents" --password-file ./password.txt --json
 cld filesv2 shares list --after '<next>' --json
-cld filesv2 shares rm <share-id> --yes --json
+cld filesv2 shares revoke <share-id> --yes --json
 ```
 
 `--kind download` (default) shares the listed entries of one area; `--kind
 inbox` shares exactly one folder as an anonymous upload target. Both print the
 public URL once, on creation only; treat that response as a secret. `shares
 list` returns only your own links and never returns the URL again (`url` is
-null). `shares rm` revokes a link at once; it stays listed with `state:
+null). `shares revoke` disables a link at once; it stays listed with `state:
 "revoked"`. Creators can revoke their links after losing file access.
 
 Read a password with `--password-file`. The UTF-8 file must contain 8–256
@@ -368,7 +368,7 @@ server checks the destination before moving anything.
 
 ```bash
 cld filesv2 admin shares list --json
-cld filesv2 admin shares rm <share-id> --yes --json
+cld filesv2 admin shares revoke <share-id> --yes --json
 cld filesv2 admin uploads list --json
 ```
 

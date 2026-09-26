@@ -873,7 +873,7 @@ function filesCommands(locale?: string) {
           if (!printStructured(ctx, result)) ctx.print(result.url ?? "");
         },
       }),
-      command("shares rm", {
+      command("shares revoke", {
         summary: t({ en: "Revoke a public link or inbox", de: "Öffentlichen Link oder Eingang widerrufen" }),
         description: t({
           en: "The link stops working at once and stays listed as revoked.",

@@ -69,7 +69,7 @@ Historische Versionen lassen sich nur über die Versionsaktion im administrative
 
 `cld filesv2 admin inventory --storage freeipa --kind groups --json` liest denselben Bestand. Übergib einen zurückgegebenen `next`-Cursor als `--after`. `cld filesv2 admin configuration get --json` liest die Konfiguration. Übermittle eine vollständige bearbeitete Konfiguration mit `cld filesv2 admin configuration set --input-file ./filesv2.json` oder `--stdin`. Ein fehlender oder leerer `token` behält das Secret bei.
 
-`cld filesv2 admin shares list --json` zeigt alle Links; `admin shares rm <share-id> --yes` sperrt einen davon. `cld filesv2 admin uploads list --json` zeigt ungeklärte Eingangsreservierungen. Mit `--after` erreichst du weitere Seiten dieser Listen.
+`cld filesv2 admin shares list --json` zeigt alle Links; `admin shares revoke <share-id> --yes` sperrt einen davon. `cld filesv2 admin uploads list --json` zeigt ungeklärte Eingangsreservierungen. Mit `--after` erreichst du weitere Seiten dieser Listen.
 
 Verzeichnis- und Dateibefehle adressieren ein Verzeichnis als `<ablage>/<users|groups>/<name>` oder ein Archiv als `<ablage>/archive/<archiv-id>`, gefolgt von `:/pfad` für einen Eintrag, zum Beispiel `cld filesv2 admin files ls cloud/groups/team:/trash`. `cld filesv2 help` zeigt die Verzeichnis-, Archiv- und Inspektionsbefehle. CLI-Aktionen benötigen dieselben Adminrechte und Bestätigungen wie ihre Entsprechungen in der Oberfläche.
 
